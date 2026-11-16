@@ -326,7 +326,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     public async Task TaskInfo_KnownTask_EveryParameterIncludesDefaultValueKey()
     {
         await StartDefaultApplicationAsync();
-        // Regression: a missing defaultValue key makes
+        // A missing defaultValue key makes
         // arcgis.geoprocessing.import_toolbox() raise KeyError('defaultValue').
         // Esri always emits the key (null when unset) on every parameter.
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
@@ -358,7 +358,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         string taskName, string parameterName, string dataType, JsonValueKind expectedKind, string expectedJson)
     {
         await StartDefaultApplicationAsync();
-        // Regression: Esri's Python SDK writes non-string defaults into
+        // Esri's Python SDK writes non-string defaults into
         // generated code with str(), so a "false" string became an unbound name.
         using var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);

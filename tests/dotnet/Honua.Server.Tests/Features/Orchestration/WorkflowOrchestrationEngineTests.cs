@@ -491,7 +491,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task ReconcileWorkflowRun_FailsStepWhenArtifactsUnavailable_AndDownstreamBindingsExist()
     {
-        // HIGH regression: when a step's underlying job succeeds but results retrieval fails
+        // When a step's underlying job succeeds but results retrieval fails
         // (e.g. transient result-package store outage) AND downstream steps bind artifacts
         // from it, the engine must fail the step fast so the run surfaces the real cause
         // rather than later failing the dependent with a confusing selector error.
@@ -656,7 +656,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task ReconcileWorkflowRun_TransientObservationFailureDoesNotTerminaliseStep()
     {
-        // Regression: a transient GetJobAsync exception must not surface as a permanent step
+        // A transient GetJobAsync exception must not surface as a permanent step
         // failure. The state should be preserved so the next reconcile observes the actual
         // job outcome. After the transport heals, the step completes normally.
         var harness = new OrchestrationTestHarness();
@@ -775,7 +775,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task ReconcileWorkflowRun_SubmitsJobWithTimeoutSecondsMetadataWhenConfigured()
     {
-        // Regression: WorkflowStepDefinition.TimeoutSeconds was documented as surfaced to
+        // WorkflowStepDefinition.TimeoutSeconds was documented as surfaced to
         // the underlying job substrate but was not plumbed into the protocol metadata.
         // Verify it is now published so substrate adapters and cost/quota controls can
         // consume it.

@@ -132,7 +132,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
     }
 
-    // BUG A regression: returnExceededLimitFeatures must be accepted (not 400) alongside
+    // ReturnExceededLimitFeatures must be accepted (not 400) alongside
     // other query controls, since the ArcGIS Maps SDK for .NET always sends it.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -177,7 +177,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         content.Should().NotContain("cannot exceed");
     }
 
-    // BUG C regression: an unknown geometryType must be rejected, not coerced to an envelope.
+    // An unknown geometryType must be rejected, not coerced to an envelope.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
@@ -1106,7 +1106,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         categories.Distinct(StringComparer.OrdinalIgnoreCase).Should().HaveCount(categories.Count);
     }
 
-    // Regression: returnDistinctValues must honor the caller's outFields verbatim.
+    // ReturnDistinctValues must honor the caller's outFields verbatim.
     // Force-appending objectid would give every distinct row a unique OID and defeat
     // de-duplication, so the OID must NOT appear in the returned attributes.
     [IntegrationTest]

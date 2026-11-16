@@ -1003,7 +1003,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true&f=pbf")]
     public async Task QueryFeatures_WithReturnCountOnlyAndPbf_ReturnsProtobufCount()
     {
-        // Regression: the count-only path ignored f=pbf and returned JSON. It must
+        // The count-only path ignored f=pbf and returned JSON. It must
         // emit a protobuf-encoded count (CountResult arm of the FeatureCollectionPBuffer
         // QueryResult oneof) with Content-Type application/x-protobuf, mirroring the
         // feature query pbf path.
@@ -1197,7 +1197,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true&f=pbf")]
     public async Task QueryFeatures_WithReturnIdsOnlyAndPbf_ReturnsProtobufIds()
     {
-        // Regression: returnIdsOnly ignored f=pbf and returned JSON. It must emit the
+        // ReturnIdsOnly ignored f=pbf and returned JSON. It must emit the
         // ObjectIdsResult arm of the FeatureCollectionPBuffer QueryResult oneof with
         // Content-Type application/x-protobuf, mirroring the count-pbf path.
         var response = await _fixture.Client.GetAsync(
@@ -1218,7 +1218,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnExtentOnly=true&f=pbf")]
     public async Task QueryFeatures_WithReturnExtentOnlyAndPbf_ReturnsProtobufExtent()
     {
-        // Regression: returnExtentOnly ignored f=pbf and returned JSON. It must emit the
+        // ReturnExtentOnly ignored f=pbf and returned JSON. It must emit the
         // ExtentCountResult arm of the FeatureCollectionPBuffer QueryResult oneof with
         // Content-Type application/x-protobuf.
         var response = await _fixture.Client.GetAsync(
@@ -1241,7 +1241,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true&f=geojson")]
     public async Task QueryFeatures_WithReturnCountOnlyAndGeoJson_ReturnsBadRequest()
     {
-        // Regression: geojson on the secondary modes was silently downgraded to an
+        // Geojson on the secondary modes was silently downgraded to an
         // Esri-JSON 200; it must be a clean 400 instead.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnCountOnly=true&f=geojson");
@@ -1403,7 +1403,7 @@ public sealed partial class FeatureServerEndpointTests
         }
     }
 
-    // Regression: ArcGIS API for Python POSTs generateRenderer (form body).
+    // ArcGIS API for Python POSTs generateRenderer (form body).
     // The POST companion must accept the body payload instead of returning 405.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -1430,7 +1430,7 @@ public sealed partial class FeatureServerEndpointTests
         jsonDoc.RootElement.GetProperty("field").GetString().Should().Be("objectid");
     }
 
-    // Regression: POST generateRenderer with no body returns the simple
+    // POST generateRenderer with no body returns the simple
     // renderer (mirrors the GET form) rather than 405.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -2840,7 +2840,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
     {
         await UseIsolatedApplicationAsync();
-        // Regression: a real Esri FeatureServer always includes per-layer
+        // A real Esri FeatureServer always includes per-layer
         // updateResults and deleteResults (empty arrays when none). arcpy's `da` driver
         // raises without them. An adds-only payload must still emit all three arrays.
         var request = """
@@ -2895,7 +2895,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_LayerLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
     {
         await UseIsolatedApplicationAsync();
-        // Regression: Esri clients expect all three result arrays even when the
+        // Esri clients expect all three result arrays even when the
         // request contains only one edit kind.
         var request = """
             {
@@ -4389,7 +4389,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_WithGeometryTypeMismatch_FailsPerFeatureWithoutStoring()
     {
         await UseIsolatedApplicationAsync();
-        // Bug A regression: a polygon must not be accepted/stored on an esriGeometryPoint layer.
+        // A polygon must not be accepted/stored on an esriGeometryPoint layer.
         var editsRequest = """
             {
               "adds": [
@@ -4469,7 +4469,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_DefaultRollbackOnFailure_RollsBackAllLayerEdits()
     {
         await UseIsolatedApplicationAsync();
-        // Bug B regression: with rollbackOnFailure=true a valid add must NOT persist when a
+        // With rollbackOnFailure=true a valid add must NOT persist when a
         // sibling edit targeting the same layer fails. The two array elements both target
         // layer 0; the failing update (objectid that does not exist) must roll back the add.
         var marker = $"bugB-{Guid.NewGuid():N}";
@@ -4521,7 +4521,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures()
     {
         await UseIsolatedApplicationAsync();
-        // Bug C regression: deleteFeatures must honor a where clause (here in the request body)
+        // DeleteFeatures must honor a where clause (here in the request body)
         // to select rows, not just explicit objectIds.
         var marker = $"bugC-where-{Guid.NewGuid():N}";
         var addPayload = $$"""
@@ -4577,7 +4577,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task DeleteFeatures_WithGeometryFilterInQuery_DeletesMatchingFeatures()
     {
         await UseIsolatedApplicationAsync();
-        // Bug C regression: deleteFeatures must honor a spatial (geometry) filter for selection.
+        // DeleteFeatures must honor a spatial (geometry) filter for selection.
         var marker = $"bugC-geom-{Guid.NewGuid():N}";
         var addPayload = $$"""
             {

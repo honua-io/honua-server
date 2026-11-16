@@ -320,7 +320,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_BandIdsNonAscending_AlignsStatisticsWithHistogramsByBand()
     {
-        // Regression: GetStatisticsAsync streams cached rows in DB-ascending band order,
+        // GetStatisticsAsync streams cached rows in DB-ascending band order,
         // while GetHistogramsAsync preserves caller-supplied order. When the caller asks
         // for bands 3,1 (bandIds=2,0) the parallel statistics/histograms arrays would silently
         // misalign — the handler must reorder both to a single canonical order so that

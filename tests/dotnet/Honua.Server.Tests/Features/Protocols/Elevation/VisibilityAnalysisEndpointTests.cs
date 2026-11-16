@@ -133,7 +133,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
     public async Task PostLineOfSight_EndpointOutsideCoverage_ReturnsNotFoundAndNotVisible()
     {
-        // Regression: an observer/target ground sample that resolves to no-data
+        // An observer/target ground sample that resolves to no-data
         // (outside coverage) must not be coerced to 0.0 and reported visible.
         // The service now fails the request rather than fabricating sea-level
         // terrain, so the endpoint maps it to a 404 and never claims visibility.

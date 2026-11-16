@@ -164,7 +164,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_UniqueValueRenderer_DivergentDefaultSymbolLayout_ReportsPictureMarkerPartial()
     {
-        // Regression: stops are uniform (all zero offsets/angle) so the partial
+        // Stops are uniform (all zero offsets/angle) so the partial
         // diagnostic on stops alone would miss the layout drop.  The defaultSymbol
         // carries a divergent xoffset/yoffset/angle and the layout uniformity
         // check evaluates all images including defaultSymbol, so icon-offset /

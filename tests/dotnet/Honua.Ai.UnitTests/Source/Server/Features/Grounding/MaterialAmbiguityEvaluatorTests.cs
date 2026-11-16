@@ -482,7 +482,7 @@ public sealed class MaterialAmbiguityEvaluatorTests
     [UnitTest]
     public void Evaluate_PublishWithServiceIdExplicitInput_StillAsksForSource()
     {
-        // Regression: when ExplicitInputs names an id that the ranking knows
+        // When ExplicitInputs names an id that the ranking knows
         // is a service catalog entry, the source is not resolved — services
         // cannot be drafted as a PublishSourceKind.FeatureLayer. The
         // evaluator must keep emitting the publish.source clarification so

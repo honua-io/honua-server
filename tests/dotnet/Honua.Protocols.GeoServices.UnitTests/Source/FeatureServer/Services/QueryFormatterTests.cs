@@ -660,7 +660,7 @@ public sealed class QueryFormatterTests
     [Fact]
     public async Task FormatQueryResultAsync_GeoJson_MultipartPolygon_EmitsMultiPolygonNotGeometryCollection()
     {
-        // Regression: a multipart Esri geometry surfaces as an NTS GeometryCollection
+        // A multipart Esri geometry surfaces as an NTS GeometryCollection
         // of single-part polygons; RFC 7946 requires the homogeneous form to be tagged
         // MultiPolygon, not GeometryCollection.
         var geoJson = await FormatGeoJsonGeometryAsync(

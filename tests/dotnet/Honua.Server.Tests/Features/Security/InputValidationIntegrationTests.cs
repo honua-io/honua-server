@@ -315,7 +315,7 @@ public sealed class InputValidationIntegrationTests : IClassFixture<InputValidat
         response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
     }
 
-    // BUG B regression: SQL-injection heuristics must NOT run over feature-edit attribute
+    // SQL-injection heuristics must NOT run over feature-edit attribute
     // DATA values. Values are bound as SQL parameters, so "--", "/* */", ";", and quotes
     // are harmless and must round-trip rather than being rejected as injection attempts.
     [IntegrationTest]
@@ -354,7 +354,7 @@ public sealed class InputValidationIntegrationTests : IClassFixture<InputValidat
         addResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
     }
 
-    // BUG B regression (protection intact): a malicious where clause submitted via a
+    // A malicious where clause submitted via a
     // form-urlencoded POST must STILL be rejected. The edit-payload exemption must not
     // weaken where/SQL-context injection protection.
     [IntegrationTest]

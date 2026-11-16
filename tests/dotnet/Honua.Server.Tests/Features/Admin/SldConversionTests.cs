@@ -732,7 +732,7 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_DuplicateRuleNames_ProduceDistinctLayerIds()
     {
-        // Regression: SLD allows two Rules to share a Name. The previous converter
+        // SLD allows two Rules to share a Name. The previous converter
         // built layer ids from `{sanitizedRuleName}-{symbolizerIndex}` only, so two
         // matching rule names with matching symbolizer positions both produced the
         // same id. MapLibreStyleNormalizer rejects duplicate ids and the SLD would
@@ -919,7 +919,7 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_LineSymbolizer_GraphicStroke_WarnsAndDropsSymbolizer()
     {
-        // Regression: a LineSymbolizer with only a GraphicStroke fell back to the
+        // A LineSymbolizer with only a GraphicStroke fell back to the
         // empty SldStroke fallback inside ParseLineSymbolizer, so the converter
         // produced a line layer with empty paint and the renderer defaulted to a
         // 1px opaque line. The symbolizer must now be dropped entirely.

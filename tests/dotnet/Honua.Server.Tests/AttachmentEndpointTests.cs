@@ -164,7 +164,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
     public async Task QueryAttachments_AlwaysEmitsParentGlobalIdKey()
     {
-        // Regression: the ArcGIS API for Python AttachmentManager.search() reads
+        // The ArcGIS API for Python AttachmentManager.search() reads
         // group['parentGlobalId'] unconditionally and raises KeyError when the key
         // is absent. Esri always emits the key (empty string when there is no
         // global-id column). Assert the raw JSON carries the key on every group,
@@ -343,7 +343,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
     public async Task AddAttachment_ThenGetAttachmentInfos_ReturnsNewAttachmentNotStaleCache()
     {
-        // Regression: the per-feature attachment-infos GET must not be served from the
+        // The per-feature attachment-infos GET must not be served from the
         // anonymous-only output cache, otherwise the ArcGIS SDK round-trip
         // attachments.add(oid) -> get_list(oid) returns the stale empty list cached by the
         // first get_list. Prime the cache, add, then re-read for the SAME oid.

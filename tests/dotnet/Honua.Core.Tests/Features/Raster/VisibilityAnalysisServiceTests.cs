@@ -252,10 +252,6 @@ public sealed class VisibilityAnalysisServiceTests
     [UnitTest]
     public async Task ComputeLineOfSightAsync_SampleCountTwoBothNoData_Fails()
     {
-        // Regression: with sampleCount==2 there are no intermediate samples, so
-        // HasNoDataSamples (which only inspects interior samples) stays false.
-        // The previous code coerced both endpoints to 0.0 and reported
-        // visible=true. The service must now fail on the no-data endpoints.
         var service = new VisibilityAnalysisService(
             new EndpointNoDataElevationService(observerNoData: true, targetNoData: true, baseElevation: 100));
 

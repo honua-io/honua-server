@@ -181,7 +181,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_DefaultSridLatitudeOutOfRange_ReturnsUnprocessableEntity()
     {
-        // Regression: default SRID is 4326. PostGIS geography only accepts SRID
+        // Default SRID is 4326. PostGIS geography only accepts SRID
         // 4326, so latitudes outside [-90, 90] must be rejected at the edge as
         // a stable 422 rather than leaking a provider-side geography exception.
         await using var heldRasters = await HoldFullWorldRasterAsync(1);
@@ -238,7 +238,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/value")]
     public async Task GetElevationValue_SourceRasterMissingCrs_ReturnsUnprocessableEntity()
     {
-        // Regression: PostgresElevationService must reject source rasters with
+        // PostgresElevationService must reject source rasters with
         // SRID 0/unset before issuing geometry-transform SQL, otherwise the
         // failure surfaces as a provider-side ST_Transform exception instead
         // of the documented 422 problem response.
@@ -450,7 +450,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_DefaultSridLatitudeOutOfRange_ReturnsUnprocessableEntity()
     {
-        // Regression: default SRID is 4326. Reject any LineString vertex with
+        // Default SRID is 4326. Reject any LineString vertex with
         // latitude outside [-90, 90] before reaching the PostGIS geography cast.
         await using var heldRasters = await HoldFullWorldRasterAsync(1);
 
@@ -498,7 +498,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_SourceRasterMissingCrs_ReturnsUnprocessableEntity()
     {
-        // Regression: profile SQL transforms each sample point into the source
+        // Profile SQL transforms each sample point into the source
         // raster SRID; a raster registered with SRID 0 must be rejected as a
         // 422 problem response before any PostGIS transform runs.
         await using var heldRasters = await HoldRasterAsync(srid: 0, value: 1);
@@ -535,7 +535,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_WithProjectedSrid_ReturnsValidGeodesicLength()
     {
-        // Regression: profile lines in projected CRSs (e.g. EPSG:3857) must be
+        // Profile lines in projected CRSs (e.g. EPSG:3857) must be
         // transformed to WGS84 before any geography cast — PostGIS geography
         // only accepts SRID 4326 input.
         await using var heldRasters = await HoldFullWorldRasterAsync(42);

@@ -89,7 +89,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     public async Task QueryTopFeatures_WithPbf_ReturnsProtobuf()
     {
-        // Regression: queryTopFeatures rejected f=pbf ("Supported formats: json,
+        // QueryTopFeatures rejected f=pbf ("Supported formats: json,
         // pjson"). ArcGIS supports pbf here, so it must return application/x-protobuf.
         var topFilter = JsonSerializer.Serialize(new
         {

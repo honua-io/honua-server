@@ -4369,7 +4369,7 @@ public sealed partial class GeoprocessingJobServiceTests
             .WithMessage("*could not be confirmed*");
     }
 
-    // Regression: a failed remote job that the reconciler re-queued for retry sits at
+    // A failed remote job that the reconciler re-queued for retry sits at
     // Queued + AttemptCount > 0 + NextRetryAt != null + ProviderOperationId == null. That is
     // semantically pre-submission for the next attempt (the provider object for the failed
     // attempt may already be TTL-cleaned), so cancel must take the local pre-submission

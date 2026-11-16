@@ -569,7 +569,7 @@ public sealed class GdalUntrustedInputHardeningTests
     [UnitTest]
     public async Task StatisticsExecutor_AcceptsGeoTiff_AndInvokesGdal()
     {
-        // Regression: a normal (binary) GeoTIFF passes the guard and reaches gdalinfo,
+        // A normal (binary) GeoTIFF passes the guard and reaches gdalinfo,
         // which the fake runner answers with a minimal stats document.
         const string gdalinfoJson =
             "{\"bands\":[{\"band\":1,\"type\":\"Byte\",\"minimum\":0,\"maximum\":255,\"mean\":128,\"stdDev\":10,\"validCount\":256}]}";
@@ -671,7 +671,7 @@ public sealed class GdalUntrustedInputHardeningTests
     [UnitTest]
     public async Task VectorReprojectExecutor_AcceptsGeoJson_AndInvokesGdal()
     {
-        // Regression: a genuine GeoJSON data URI passes the guard and reaches ogr2ogr.
+        // A genuine GeoJSON data URI passes the guard and reaches ogr2ogr.
         // ogr2ogr arg order is `… <outputPath> <inputPath>`, so the output is the
         // second-to-last argument (index 1 from the end).
         var geojson = "{\"type\":\"FeatureCollection\",\"features\":[]}";

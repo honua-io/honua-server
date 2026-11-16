@@ -291,7 +291,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_SupportedImageFormatTypes_DoesNotAdvertiseGif()
     {
-        // Regression: GIF was advertised in supportedImageFormatTypes but the
+        // GIF was advertised in supportedImageFormatTypes but the
         // SkiaSharp export renderer ships no GIF encoder, so export?format=gif was
         // rejected. Capabilities must match behavior -> GIF must not be advertised.
         var response = await Fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");

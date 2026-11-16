@@ -141,7 +141,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         await invalidSingular.AssertGeoServicesErrorAsync(400);
     }
 
-    // Regression: findAddressCandidates must reproject candidate locations to a
+    // FindAddressCandidates must reproject candidate locations to a
     // requested outSR (e.g. Web Mercator 3857) instead of rejecting it with 400.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -249,7 +249,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.False(attributes.TryGetProperty("Match_addr", out _));
     }
 
-    // Regression: reverseGeocode must read the INPUT location's own
+    // ReverseGeocode must read the INPUT location's own
     // spatialReference (here Web Mercator 3857) and use outSR only for the OUTPUT
     // geometry. A location in 3857 with outSR=3857 must reproject to the provider SRID
     // for the query and back to 3857 for the response (rather than 404).
@@ -277,7 +277,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.InRange(locationElement.GetProperty("y").GetDouble(), 4706000, 4708000);
     }
 
-    // Regression: a location expressed in WGS84 (4326, the default input SR)
+    // A location expressed in WGS84 (4326, the default input SR)
     // with outSR=3857 must reproject the OUTPUT to Web Mercator without 404 and without
     // misinterpreting the input location as being in outSR.
     [IntegrationTest]
@@ -565,7 +565,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.True(locations[0].TryGetProperty("score", out _));
     }
 
-    // Regression: the ArcGIS Maps SDK for JavaScript locator.addressesToLocations
+    // The ArcGIS Maps SDK for JavaScript locator.addressesToLocations
     // (and ArcGIS Pro) serialize a configured output spatial reference as the canonical
     // Esri JSON object, e.g. outSR={"wkid":4326}, not a bare WKID integer. The batch
     // geocodeAddresses op must accept that JSON spatial-reference shape rather than
@@ -603,7 +603,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Equal(1, locations.GetArrayLength());
     }
 
-    // Regression: findAddressCandidates must likewise accept the Esri JSON
+    // FindAddressCandidates must likewise accept the Esri JSON
     // spatial-reference object for outSR (latestWkid form), reprojecting candidate
     // locations to that WKID rather than rejecting the request with HTTP 400.
     [IntegrationTest]

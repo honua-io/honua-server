@@ -334,7 +334,7 @@ public sealed class GdalRasterDimensionGuardTests
     [UnitTest]
     public void TryAdmit_StillAdmitsAllowlistedFormats()
     {
-        // Regression: the allowlist must not disturb the dimension-guarded formats.
+        // The allowlist must not disturb the dimension-guarded formats.
         GdalRasterDimensionGuard.TryAdmit(TiffHeaderBuilder.Classic(512, 512, 3, 8), Options(), out _).Should().BeTrue();
         GdalRasterDimensionGuard.TryAdmit(TiffHeaderBuilder.Png(256, 256, colourType: 6), Options(), out _).Should().BeTrue();
         GdalRasterDimensionGuard.TryAdmit(TiffHeaderBuilder.Jpeg(800, 600, 3), Options(), out _).Should().BeTrue();

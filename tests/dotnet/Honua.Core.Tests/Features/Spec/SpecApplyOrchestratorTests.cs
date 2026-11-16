@@ -402,10 +402,6 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_CallerCancellation_DoesNotStopRun()
     {
-        // Regression test for the review finding: SSE/gRPC stream disconnects
-        // must not cancel the apply run. The caller-supplied token only scopes
-        // the initial plan phase — once StartAsync returns, the run is owned
-        // by the orchestrator CTS and only TryCancel can trip it.
         var fixture = new OrchestratorFixture();
         var started = new TaskCompletionSource();
         var release = new TaskCompletionSource();
@@ -440,10 +436,6 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_TryCancel_DeferredNodesEmitApplyCancelledNotUpstreamFailed()
     {
-        // Regression: the earlier skip path emitted `upstream-failed` for every
-        // downstream node when the real cause was cooperative cancellation.
-        // Admin tooling keys off the diagnostic code — confusing the two codes
-        // leads operators to hunt for a phantom upstream failure.
         var fixture = new OrchestratorFixture();
         var started = new TaskCompletionSource();
         var release = new TaskCompletionSource();

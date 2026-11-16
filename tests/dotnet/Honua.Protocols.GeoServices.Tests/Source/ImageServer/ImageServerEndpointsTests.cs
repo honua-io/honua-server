@@ -2188,8 +2188,6 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Distance)]
     public async Task Measure_DistanceAndAngle_GeographicDegrees_ReturnsGroundMeters()
     {
-        // EPSG:4269 (NAD83) 1° of longitude at 40°N. The pre-fix planar path returned the raw
-        // degree delta (~1.0) as "meters"; the ground distance is ~85 km.
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {

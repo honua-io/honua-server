@@ -167,7 +167,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
             $"{geometryType} identify tolerance applies around the geometry boundary");
     }
 
-    // Regression: the ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
+    // The ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
     // envelope ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}); it must be accepted, not 400.
     [IntegrationTest]
     [Operation(Operations.Identify)]

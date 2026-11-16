@@ -206,7 +206,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public void AddOperationsToolset_WithoutProposalStore_UsesFailClosedReplayVerifierAndBoots()
     {
-        // Regression: the real replay verifier requires IOperationProposalStore in its
+        // The real replay verifier requires IOperationProposalStore in its
         // constructor and the dispatcher requires a verifier, so no-store hosts failed
         // ValidateOnBuild at boot (trunk red, run 33241561197). Degraded hosts must
         // compose, and replay verification must refuse without the durable authority.
@@ -297,7 +297,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public void AddOperationsToolset_WithControlPlaneExecutors_RegistersLegacyAdaptersWithoutThrowing()
     {
-        // Regression: the legacy adapters are factory descriptors, and registering
+        // The legacy adapters are factory descriptors, and registering
         // them via TryAddEnumerable threw ArgumentException ("indistinguishable
         // from other services") the moment a control-plane executor was present —
         // i.e. in every full host, but in no unit-scoped test host, which is how

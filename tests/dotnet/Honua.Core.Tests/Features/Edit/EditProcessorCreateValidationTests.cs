@@ -239,12 +239,6 @@ public sealed class EditProcessorCreateValidationTests
             "field presence check must be case-insensitive so 'NAME' satisfies the 'name' schema field");
     }
 
-    // Resource that carries BOTH a distinct public primary id ("id", string, id.primary role) AND a
-    // separate server-assigned integer object-id ("objectid", no role) — the shape of the OGC API
-    // Features String-ID layers (OgcFeaturesStringIdentifierEndpointTests, StringIdLayerId=99).
-    // FindPrimaryIdField resolves to the roled public "id", so before this fix the conventional
-    // integer "objectid" fell through the primary-id skip and a create omitting it (the normal case,
-    // since the server auto-assigns it) was rejected — surfacing as an OGC HTTP 500.
     private static MetadataV2Object CreateResourceWithDistinctPublicIdAndObjectId() => new()
     {
         SchemaFields =

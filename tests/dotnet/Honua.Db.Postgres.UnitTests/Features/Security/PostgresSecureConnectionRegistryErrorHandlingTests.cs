@@ -40,9 +40,6 @@ public sealed class PostgresSecureConnectionRegistryErrorHandlingTests
     [Fact]
     public async Task GetActiveConnectionsAsync_InterfaceWrapper_RespectsCancellation()
     {
-        // The ContinueWith pre-fix flavour swallowed cancellation when the source
-        // task had already completed. The async/await variant should observe a
-        // pre-cancelled token before it ever opens a connection.
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 

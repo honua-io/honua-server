@@ -366,10 +366,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
-    // Regression for review finding "WebSocket control frames are read with no
-    // size limit". A misbehaving client cannot exhaust server memory by sending
-    // an oversized control frame; the server bounces it with a client-safe
-    // error and closes the connection.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_OversizedControlFrame_ReturnsErrorAndCloses()
@@ -416,10 +412,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    // Regression for review finding "WebSocket subscriptions are unbounded
-    // per session". A bad client cannot inflate per-session work indefinitely
-    // by piling on unique subscribe ids; the server replies with a typed
-    // error frame and keeps the connection open so the client can recover.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_SubscriptionLimit_RejectsExcessSubscribesWithError()
@@ -475,11 +467,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    // Regression for review finding "WebSocket subscriptions are unbounded
-    // per session" (subscriptionId length cap): an oversize subscriptionId
-    // is rejected with a client-safe error before it reaches the session
-    // dictionary, where it would otherwise inflate per-message dedup keys
-    // and log lines.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_OversizedSubscriptionId_ReturnsErrorAndStaysOpen()
@@ -527,12 +514,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    // Regression for review finding "WebSocket writer drops same-event frames
-    // for additional subscriptions". When two subscriptions on a single
-    // WebSocket both match the same event, both frames must arrive on the
-    // wire — they share a cursor but are distinct (eventId, subscriptionId)
-    // deliveries. The previous session-wide cursor watermark dropped the
-    // second frame.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_TwoSubscriptionsMatchingSameEvent_DeliversBothFrames()
@@ -569,10 +550,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
             RequestId = "req-multi-sub"
         });
 
-        // Expect a feature-change frame per matching subscription on this
-        // session: default (no filter), sub-a, and sub-b. Pre-fix, the writer
-        // task's session-wide cursor watermark dropped the second and third
-        // frames because they shared a cursor with the first.
         var deliveredSubscriptions = new HashSet<string>(StringComparer.Ordinal);
         var deliveredEventId = (string?)null;
         while (!deliveredSubscriptions.Contains("sub-a") || !deliveredSubscriptions.Contains("sub-b"))
@@ -599,12 +576,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
-    // Regression for review finding "Queued WebSocket frames survive subscription
-    // removal or replacement". After unsubscribe, frames that the broadcast had
-    // already queued for that subscription must not reach the wire — the writer
-    // drain rejects them on the per-(event, subscription) generation check before
-    // claiming dedup, so a future subscribe with the same id would also see
-    // those events fresh from a replay (not pre-claimed and silently dropped).
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_QueuedFrames_AfterUnsubscribe_AreNotDelivered()
@@ -719,11 +690,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
-    // Regression for review finding "Client can replace the reserved default
-    // subscription and break durable polling". The default subscription is
-    // server-managed and the WebSocket writer pins its generation at session
-    // setup; replacing it from the control frame would silently strand every
-    // cross-node poll under the old generation.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_SubscribeWithReservedDefaultId_ReturnsErrorAndStaysOpen()
@@ -807,18 +773,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
-    // Regression for review finding "High-volume WebSocket replay handoff can
-    // duplicate the first queued default frame". The WebSocket writer drain
-    // must apply a default-subscription cursor fence the same way SSE does:
-    // queued default-subscription frames whose envelope cursor is at or below
-    // the writer's running replayCursor are duplicates already delivered, and
-    // the recent-event LRU (RecentEventIdCapacity = 128) cannot be relied on
-    // alone to dedupe across large replay windows.
-    //
-    // This test broadcasts a synthetic envelope with a fresh eventId and a
-    // cursor that is provably <= the writer's replayCursor. Without the fence,
-    // dedup alone would let it through (the eventId was never claimed). With
-    // the fence, the writer drops it before the dedup claim.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_DefaultSubscription_DoesNotDuplicateStaleQueuedFrameAfterReplay()
@@ -1018,15 +972,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    // Regression for review finding "WebSocket live sends do not advance
-    // durable-poll watermarks". The writer's per-(event, subscription) dedup
-    // is the bounded RecentEventIdCapacity LRU (128 entries per session). A
-    // non-default subscription that delivers more live frames than the LRU
-    // can hold would, on the next durable-store sweep, see the early frames
-    // re-emitted because their dedup keys were evicted and the per-sub poll
-    // watermark stayed at the pre-add seed. Advancing LastPolledCursor on
-    // each successful live send scopes the next sweep past the live
-    // delivery cursor and preserves the documented at-least-once contract.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_LiveSendsToControlSubscription_AdvanceDurablePollWatermark()
@@ -1162,10 +1107,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
             var subscribed = await ReceiveWebSocketJsonAsync(ws, cts.Token);
             subscribed.GetProperty("status").GetString().Should().Be("subscribed");
 
-            // Continuous heartbeat broadcasts keep the session channel hot
-            // without advancing any cursor. Pre-fix, the per-iteration
-            // Task.Delay reset would prevent the poll branch from ever
-            // firing under this load.
             using var stopHeartbeats = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
             var heartbeatTask = Task.Run(async () =>
             {
@@ -1192,9 +1133,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
             // hot-channel WhenAny path when the deadline elapses.
             await Task.Delay(TimeSpan.FromMilliseconds(200), cts.Token);
 
-            // With the relay removed, this change can only reach the subscription
-            // through the durable-store poll. Pre-fix, continuous outbound traffic would prevent the
-            // poll from firing and this event would never arrive.
             const string crossNodeServiceId = "test";
             await fixture.AppendChangeAsync(new FeatureChangeEventRequest
             {
@@ -1316,12 +1254,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    // Regression for review finding "legacy layerIds stream subscriptions
-    // bypass layer access checks". The legacy `?layerIds=...` alias and the
-    // canonical `?layers=...` parameter must run through the same parser/
-    // authorizer helper, so the same unknown-layer rejection (a side-effect
-    // of the existence check) applies to both. Pre-fix, the legacy branch
-    // skipped existence/access entirely and accepted unknown ids silently.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithLegacyLayerIdsParam_AndUnknownLayer_ReturnsBadRequest()
@@ -1358,14 +1290,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         body.Should().Contain("Layer 99999 not found");
     }
 
-    // Regression for review finding "Reject empty layer filter lists". Inputs
-    // like ?layers=, slipped past Split(',', RemoveEmptyEntries) producing an
-    // empty layer-id array that was treated as a valid filtered subscription
-    // (HasSubscription=true). That bypassed the unfiltered admin gate in
-    // HandleFeatureStream, opening an anonymous no-op SSE session that still
-    // consumed a MaxConcurrentSessions slot. The parser must reject empty
-    // results before the gate runs. Both parameter aliases share the same
-    // helper, so both must reject.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithEmptyLayersParam_ReturnsBadRequest()
@@ -1400,10 +1324,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         body.Should().Contain("at least one layer ID");
     }
 
-    // Security closure: an anonymous client sending ?layers=, must not open
-    // an SSE session. Pre-fix the empty-filter bug bypassed the unfiltered
-    // admin gate; post-fix the parser-level 400 fires first so the gate
-    // never gets a chance to be skipped.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithoutAuthAndEmptyLayersParam_DoesNotBypassUnfilteredGate()
@@ -1750,11 +1670,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    // Regression for review finding "Streaming access checks bypass
-    // service-level policies". A layer in a service with a role-gated policy
-    // must not appear in capabilities even when the layer itself has no
-    // layer-level policy — the service policy is the only gate. Pre-fix the
-    // capabilities filter only consulted the layer policy.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features/capabilities")]
     public async Task Capabilities_OmitsLayersWhoseServicePolicyDenies()
@@ -1786,10 +1701,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    // Regression for the same finding's other half: when a serviceId is
-    // supplied, layer ids must be members of that service. Pre-fix the code
-    // fell back to a global GetLayerAsync, letting callers attach layers
-    // that don't belong to the named service.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithServiceIdAndForeignLayer_ReturnsBadRequest()
@@ -1821,10 +1732,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    // Regression for review finding "Service-only subscriptions remain
-    // effectively unfiltered". The admission path must persist the service's
-    // routable storage-layer ids in the session filter; service id alone is not
-    // sufficient because change envelopes are matched by storage layer.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithServiceIdOnly_ScopesSessionToRoutableStorageLayers()
@@ -1959,10 +1866,6 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    // Regression for review finding "Streaming capabilities expose
-    // inaccessible layer metadata". The discovery endpoint must omit layers
-    // the caller cannot read; otherwise restricted layer names, CRS, or
-    // time-aware status leak through the anonymous-readable capabilities.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features/capabilities")]
     public async Task Capabilities_OmitsLayersTheCallerCannotAccess()

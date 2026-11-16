@@ -568,7 +568,7 @@ public sealed class FilterPlanCompilerTests
     [Operation(Operations.SpatialQuery)]
     public void Compile_SpatialOnNon4326Layer_GeoJsonDefaultsTo4326()
     {
-        // Regression: untagged GeoJSON must default to EPSG:4326 per RFC 7946,
+        // Untagged GeoJSON must default to EPSG:4326 per RFC 7946,
         // not the layer SRID, so the downstream pipeline can ST_Transform correctly.
         var webMercatorResource = CreateResource(
             "mercator_layer",

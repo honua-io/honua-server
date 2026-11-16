@@ -51,7 +51,7 @@ public sealed class RelatedRecordsServiceTests
         attributes["timestamp"].Should().Be(new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
     }
 
-    // Regression: queryRelatedRecords must populate the field schema
+    // QueryRelatedRecords must populate the field schema
     // from the related layer (so clients can map the returned attributes) and, per the
     // Esri spec, those fields live at the response top level while each group's
     // relatedRecords is a flat array of records.
@@ -243,7 +243,7 @@ public sealed class RelatedRecordsServiceTests
         withoutRecords.RelatedRecords.Should().BeNull();
     }
 
-    // Regression: in the standard (non-count) queryRelatedRecords flow, a source object
+    // In the standard (non-count) queryRelatedRecords flow, a source object
     // with no related rows must still carry relatedRecords as an empty array rather than
     // null/omitted. The @arcgis/core JS SDK reads group.relatedRecords.length and throws
     // "Cannot read properties of undefined (reading 'length')" otherwise.

@@ -212,9 +212,6 @@ public sealed class YarpRollingDeployBackendTests
     [Fact]
     public async Task PromoteAsync_SwapsProxyAndRetainsOldReplica_ReturnsSucceeded()
     {
-        // The old replica must survive cutover so the durable post-activation
-        // observation window has something to recover to. Stopping it here (the pre-fix behavior)
-        // disconnected the advertised rollback protection window from reality.
         var backend = CreateBackend(out var runtime, out var proxy, out var probe);
         probe.Healthy = true;
         runtime.SeedActive(ActiveContainerName(), CurrentRevision);

@@ -413,11 +413,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Equal(11L, delivered[0].Envelope.Cursor);
     }
 
-    // Regression for review finding "WebSocket per-subscription replay races
-    // the live writer". When a subscribe handler is replaying old events
-    // directly to the socket, live broadcasts must not queue events for the
-    // paused subscription — replay covers the cursor range itself, and
-    // queueing would create concurrent SendAsync + duplicate delivery.
     [UnitTest]
     public void Broadcast_WithPausedSubscription_SkipsQueueing()
     {
@@ -468,13 +463,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Contains(messages, m => m.Envelope.Cursor == 22 && m.Envelope.SubscriptionId == "subB");
     }
 
-    // Regression for review finding "Queued WebSocket events are marked
-    // delivered before they are sent": broadcast must NOT claim the (event,
-    // subscription) delivery slot when it queues. If it did and the bounded
-    // channel later dropped the frame as pre-drain overflow, a subsequent
-    // replay would observe the claim and skip the event entirely. The slot is
-    // claimed at send time by either the writer task or the per-subscription
-    // replay path, whichever arrives first.
     [UnitTest]
     public void Broadcast_AfterReplayMarkedSubscription_StillQueuesForWriterToDedupAtSendTime()
     {
@@ -507,7 +495,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.False(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-101"));
     }
 
-    // Regression: broadcast does NOT claim the (event, subscription) slot
+    // Broadcast does NOT claim the (event, subscription) slot
     // when it queues. Replay (or the writer) is the first to claim at send
     // time — whichever path arrives first wins.
     [UnitTest]
@@ -532,11 +520,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.True(_manager.TryRememberSubscriptionDelivery(session.SessionId, "subB", "evt-201"));
     }
 
-    // Regression for review finding "Queued WebSocket events are marked
-    // delivered before they are sent": when the bounded channel is full
-    // pre-drain and a broadcast frame is silently dropped, the (event,
-    // subscription) slot must remain unclaimed so a subsequent replay can
-    // still deliver the event.
     [UnitTest]
     public void Broadcast_PreDrainChannelFull_DoesNotClaimSlot_ReplayCanStillDeliver()
     {
@@ -561,11 +544,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             lostEventId));
     }
 
-    // Regression for review finding "WebSocket writer drops same-event frames
-    // for additional subscriptions". When two subscriptions on a single
-    // session both match the same event, broadcast must queue both frames so
-    // the WebSocket carries one delivery per subscription — they share a
-    // cursor but are distinct (eventId, subscriptionId) deliveries.
     [UnitTest]
     public void Broadcast_WithMultipleMatchingSubscriptions_QueuesOneFramePerSubscription()
     {
@@ -1056,12 +1034,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.False(filtered.Reader.TryRead(out _));
     }
 
-    // Regression for review finding "WebSocket subscriptions are unbounded
-    // per session": new subscribe frames over the configured cap must be
-    // rejected with a typed result so the connection stays alive but cannot
-    // accumulate unbounded fan-out work. Replacing an existing id keeps the
-    // count flat so a paused-then-resubscribe handshake on the same id still
-    // succeeds when the cap is full.
     [UnitTest]
     public void TryAddSubscription_AtCap_RejectsNewIdsButAllowsReplacement()
     {
@@ -1091,11 +1063,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Equal(AddSubscriptionResult.SessionGone, _manager.TryAddSubscription(Guid.NewGuid(), "subA", filter: null).Result);
     }
 
-    // Regression for review finding "Control-frame subscriptions are excluded from
-    // durable cross-node polling". The writer's onPoll closure walks this snapshot
-    // each interval; the snapshot must include only non-default, non-paused
-    // subscriptions and must carry the generation captured at snapshot time so
-    // the per-(event, subscription) dedup claim can fence stale frames.
     [UnitTest]
     public void GetActivePollableSubscriptions_OnlyIncludesNonDefaultNonPausedSubscriptions()
     {
@@ -1227,9 +1194,6 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Equal(21L, secondMessage.Envelope.Cursor);
     }
 
-    // Regression for review finding "Queued WebSocket frames survive subscription
-    // removal or replacement". Each TryAddSubscription allocates a new generation;
-    // the writer drain rejects queued frames whose generation is no longer current.
     [UnitTest]
     public void TryAddSubscription_AllocatesMonotonicGenerationsPerSession()
     {
@@ -1253,7 +1217,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.True(replaceA.Generation > addB.Generation);
     }
 
-    // Regression: queued frames stamped with a subscription's generation are
+    // Queued frames stamped with a subscription's generation are
     // rejected by the writer-side claim after the subscription is unsubscribed.
     // Without this fence, the writer would still send the queued frame because
     // dedup alone cannot distinguish "already delivered" from "subscription gone".
@@ -1279,7 +1243,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", add.Generation, "evt-b"));
     }
 
-    // Regression: queued frames stamped with the prior generation are rejected
+    // Queued frames stamped with the prior generation are rejected
     // after a same-id subscribe replaces the filter. Without this fence the writer
     // would send the gen=N frame under the new gen=N+1 subscription, leaking events
     // that the new filter would not have matched.
@@ -1306,7 +1270,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", second.Generation, "evt-a"));
     }
 
-    // Regression: even after unsubscribe, the resubscribe of the same id never
+    // Even after unsubscribe, the resubscribe of the same id never
     // collides with a stale frame because generation is session-monotonic and
     // never resets. A frame stamped under the long-gone first generation stays
     // rejected even after the same id is reused multiple times.
@@ -1330,7 +1294,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             _manager.TryClaimSubscriptionDelivery(session.SessionId, "subB", first.Generation, "evt-a"));
     }
 
-    // Regression: a writer can win the delivery claim, then wait behind an unsubscribe
+    // A writer can win the delivery claim, then wait behind an unsubscribe
     // acknowledgement for the WebSocket write lock. Sequence allocation is the final
     // generation fence; its failed old-generation claim must neither reach the wire nor
     // poison delivery after the same subscription id is reused.
@@ -1338,7 +1302,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     public Task SendStampedWebSocketJsonAsync_UnsubscribeAfterClaim_SkipsStaleAndLetsResubscribeDeliver()
         => AssertClaimRaceDoesNotBlockReplacementAsync(replaceBeforeStaleSendCompletes: false);
 
-    // Regression: same-id replacement has the same claim-to-sequence race as unsubscribe.
+    // Same-id replacement has the same claim-to-sequence race as unsubscribe.
     // The replacement generation must be able to claim and deliver the event even though the
     // retired generation claimed that event id before losing the final generation fence.
     [UnitTest]
@@ -1425,7 +1389,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             _manager.NextSubscriptionSequence(session.SessionId, "subB", replacement.Generation));
     }
 
-    // Regression: Broadcast must stamp each queued copy with the matching
+    // Broadcast must stamp each queued copy with the matching
     // subscription's generation so the writer drain can fence stale frames.
     [UnitTest]
     public void Broadcast_StampsSubscriptionGenerationOnQueuedFrames()
@@ -1452,7 +1416,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Equal(add.Generation, subBFrame.SubscriptionGeneration);
     }
 
-    // Regression: heartbeats remain stamp-free (and bypass the writer's claim
+    // Heartbeats remain stamp-free (and bypass the writer's claim
     // gate) because they are not subscription-scoped. They must reach every
     // session regardless of subscription churn.
     [UnitTest]

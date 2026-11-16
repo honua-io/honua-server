@@ -77,7 +77,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_ColorblindSafeProfile_PreservesInputAlpha()
     {
-        // Regression: GeoServices conversion emits rgba(...) strings that can carry
+        // GeoServices conversion emits rgba(...) strings that can carry
         // sub-1.0 alpha (default polygon fill is rgba(45,105,165,0.4)).  The palette
         // swap must preserve the input alpha rather than forcing every paint
         // property to opaque.
@@ -183,7 +183,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_PrintProfile_ForcesExpressionOpacityToOne()
     {
-        // Regression: the normalizer accepts opacity expressions, so the print
+        // The normalizer accepts opacity expressions, so the print
         // theme must coerce expression-typed opacity values to the scalar 1.0
         // alongside scalar opacity values — otherwise a valid style with an
         // expression-typed fill-opacity remains semi-transparent under print.
@@ -249,7 +249,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_PrintProfile_ForcesExpressionLineColorToBlack()
     {
-        // Regression: the normalizer accepts expression-typed line-color, so the
+        // The normalizer accepts expression-typed line-color, so the
         // print theme must coerce expression-valued line-color to #000000
         // alongside scalar line-color values — otherwise a valid line-color
         // match/step/case expression remains colored under ?theme=print despite
@@ -364,7 +364,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_PreservesColorLikeMatchInputLabels()
     {
-        // Regression: a uniqueValue category whose feature value is itself a
+        // A uniqueValue category whose feature value is itself a
         // color-like string (e.g. "#ff0000") must NOT be rewritten by the theme
         // walker — match input labels are feature values, not output colors.
         // Only the second element of each pair (the output color) and the
@@ -405,7 +405,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_PreservesNumericStepStops()
     {
-        // Regression: numeric stops in `step` are not strings, but if a future
+        // Numeric stops in `step` are not strings, but if a future
         // generator ever emits string-typed stops the operator-aware walker
         // still skips them (only outputs at indices 2, 4, 6, ... are visited).
         // This style mirrors the structure emitted by the classBreaks converter.
@@ -447,7 +447,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_DoesNotRewriteCasePredicateColorLiterals()
     {
-        // Regression: a case predicate that compares against a color-like
+        // A case predicate that compares against a color-like
         // literal must keep the comparison value untouched — predicates are
         // skipped entirely by the operator-aware walker.
         const string json = """
@@ -581,7 +581,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_PreservesNestedGetInsideInterpolate()
     {
-        // Regression: a nested ["get", "red"] inside an interpolate stop-output
+        // A nested ["get", "red"] inside an interpolate stop-output
         // position must keep its field name even though the surrounding
         // interpolate falls through to the generic walker.
         const string json = """
@@ -719,7 +719,7 @@ public class StyleThemeTransformerTests
         int expectedB,
         int expectedA)
     {
-        // Regression: the admin normalizer accepts rgb()/rgba() in CSS Color
+        // The admin normalizer accepts rgb()/rgba() in CSS Color
         // Module Level 4 modern syntax (space-separated channels, `/` alpha)
         // via SplitCssFunctionArguments, but TryParseMapLibreColor's old
         // comma-only split rejected those forms — so a stored
@@ -765,7 +765,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_PreservesConcatStringOperands()
     {
-        // Regression: ["concat", str1, str2, ...] returns a concatenated string.
+        // ["concat", str1, str2, ...] returns a concatenated string.
         // Operands are string-construction inputs, never color outputs.  A
         // generic walker that themed any operand parsing as a color would
         // rewrite "red" inside ["concat", "red", "fish"], producing
@@ -802,7 +802,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_PreservesLiteralValueVerbatim()
     {
-        // Regression: ["literal", value] produces value as a verbatim literal
+        // ["literal", value] produces value as a verbatim literal
         // and must not be themed.  Without the allow-list, ["literal", "red"]
         // had its "red" operand rewritten as a themed hex literal, defeating
         // the user's explicit "treat this as a literal" intent.
@@ -835,7 +835,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_ColorblindSafeProfile_PreservesTopLevelComparatorOperands()
     {
-        // Regression: ["==", left, right] is a boolean comparator.  Even when
+        // ["==", left, right] is a boolean comparator.  Even when
         // it appears at the top of a color paint property (a malformed but
         // accepted input shape), its operands are predicate values that must
         // not be themed — "red" is being compared as a literal feature value,
@@ -869,7 +869,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_PreservesAllAndAnyOperands()
     {
-        // Regression: ["all", expr1, expr2, ...] / ["any", expr1, expr2, ...]
+        // ["all", expr1, expr2, ...] / ["any", expr1, expr2, ...]
         // are boolean combinators whose operands are predicate expressions.
         // A color-like string nested inside is a feature value or comparison
         // target, not a color output.  Skip the whole expression.
@@ -990,7 +990,7 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_PreservesNestedConcatInsideCaseOutput()
     {
-        // Regression: a case output that is itself a non-color-output
+        // A case output that is itself a non-color-output
         // expression (e.g. ["concat", "red", "fish"] used as a malformed but
         // accepted color paint) must not have its operands themed when reached
         // via TransformOutputElement → TransformExpressionColors.

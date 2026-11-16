@@ -342,7 +342,7 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     [Fact]
     public async Task TickAsync_PendingCursorProtectsReplay_WhenCursorAdvanceFails()
     {
-        // Regression: if CreateRunAsync succeeds and AdvanceScheduleCursorAsync fails (simulating
+        // If CreateRunAsync succeeds and AdvanceScheduleCursorAsync fails (simulating
         // a crash between the two), the durable pending cursor marker must prevent a restarted
         // scheduler from replaying the same occurrence after the claim TTL expires.
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);

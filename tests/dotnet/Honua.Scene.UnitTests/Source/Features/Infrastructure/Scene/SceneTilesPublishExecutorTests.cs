@@ -919,7 +919,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_ProtectedLayer_RegistersSceneAsProtectedWithRoles()
     {
-        // High/correctness regression: source layers with a non-anonymous
+        // Source layers with a non-anonymous
         // access policy must materialise non-public scenes that forward
         // the role allow-list. Without this mapping, generating a tileset
         // from a protected layer would publish its geometry/attributes

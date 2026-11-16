@@ -127,7 +127,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithHighObjectId_ResolvesRelatedRecords()
     {
-        // Regression: queryRelatedRecords must resolve related records for ANY
+        // QueryRelatedRecords must resolve related records for ANY
         // origin object-id magnitude, not just the low seeded ids. Build the fixture in
         // the arrange step against the unmodified shared seed: insert a NEW origin feature
         // into the editable layer 0 (the server assigns a high auto-incremented object id),
@@ -912,7 +912,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_EmptyGroupAlwaysEmitsRelatedRecordsArray()
     {
-        // Regression: the @arcgis/core JS SDK reads group.relatedRecords.length
+        // The @arcgis/core JS SDK reads group.relatedRecords.length
         // unconditionally and throws "Cannot read properties of undefined (reading
         // 'length')" when the key is absent. Every group (including objectIds with no
         // related rows) must carry relatedRecords as an array. Mix an object with

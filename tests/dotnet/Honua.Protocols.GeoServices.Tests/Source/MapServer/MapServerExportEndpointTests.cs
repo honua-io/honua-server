@@ -67,7 +67,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithGifFormat_ReturnsBadRequest()
     {
-        // Regression: format=gif must be rejected cleanly (400), and the
+        // Format=gif must be rejected cleanly (400), and the
         // capability advertisement above must not promise it.
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=gif&f=image");
@@ -80,7 +80,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithEmptyShowSelection_RendersEveryLayer()
     {
-        // Regression: layers=show: was rejected with "layers parameter contains an empty
+        // Layers=show: was rejected with "layers parameter contains an empty
         // layer id." That is exactly what stock QGIS sends when its ArcGIS REST Server
         // connection is pointed at a MapServer's "(All layers)" entry - captured from
         // QGIS 3.44.14's own arcgismapserver provider, which means "no restriction" by
@@ -152,7 +152,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithJpgPngFormat_ReturnsPngImage()
     {
-        // Regression: format=jpgpng was rejected with "Output format 'jpgpng' is not
+        // Format=jpgpng was rejected with "Output format 'jpgpng' is not
         // supported." That is the Image Encoding QGIS's ArcGIS REST Server connection
         // defaults to, so a stock QGIS user adding a Honua MapServer saw an empty canvas
         // and "Error 400: Bad Request" while identify, legend and the service document
