@@ -69,7 +69,7 @@ internal sealed class ImageServerTileExportProducer(IServiceScopeFactory scopeFa
         foreach (var tile in TileExportGridPlanner.Create(plan).Tiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var envelope = CreateTileEnvelope(tile.Level, tile.Row, tile.Column);
+            var envelope = ImageServerMosaicHelpers.CreateTileEnvelope(tile.Level, tile.Row, tile.Column);
             var selected = await rasterStore.QueryRastersAsync(
                 layerId,
                 new RasterSelectionQuery { Geometry = envelope, GeometrySrid = 3857, Timestamp = timestamp, TimeStart = timeStart },
@@ -115,18 +115,6 @@ internal sealed class ImageServerTileExportProducer(IServiceScopeFactory scopeFa
         => ImageServerMosaicHelpers.TryParseTime(timeSelection, out var timestamp, out var timeStart, out _)
             ? (timestamp, timeStart)
             : (null, null);
-
-    // Web Mercator (EPSG:3857) tile envelope in WKB, matching the synchronous exportTiles handler.
-    private static byte[] CreateTileEnvelope(int level, int row, int col)
-    {
-        const double worldExtent = 20037508.342789244;
-        var tileSpan = (worldExtent * 2d) / (1 << level);
-        var minX = -worldExtent + (col * tileSpan);
-        var maxX = minX + tileSpan;
-        var maxY = worldExtent - (row * tileSpan);
-        var minY = maxY - tileSpan;
-        return ImageServerMosaicHelpers.CreateEnvelopeGeometry(minX, minY, maxX, maxY);
-    }
 }
 
 // The queued export confirms the pinned metadata revision is still resolvable, so it does not silently render newer or missing state under the old artifact identity.
