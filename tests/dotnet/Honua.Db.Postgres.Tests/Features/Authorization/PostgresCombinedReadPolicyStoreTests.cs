@@ -222,6 +222,30 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
         Assert.Empty(await _fields.GetEffectivePoliciesAsync([], "alpha", "parcels"));
     }
 
+    [IntegrationTest]
+    [SecurityTest]
+    public async Task GetEffectiveReadPoliciesAsync_ConfiguredRestrictions_PreservesEveryReadPath()
+    {
+        var created = await _rows.CreatePolicyAsync(new RlsPolicy
+        {
+            Role = "reader", Service = "alpha", Layer = "parcels",
+            Attribute = "region", ClaimType = "region",
+            FilterExpression = "name = 'allowed'",
+            AreaGeometry = """{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}"""
+        });
+
+        var fetched = await _rows.GetPolicyAsync(created.PolicyId);
+        var listed = Assert.Single(await _rows.ListPoliciesAsync());
+        var effective = Assert.Single(await _rows.GetEffectivePoliciesAsync(["reader"], "alpha", "parcels"));
+        var combined = await Combined().GetEffectiveReadPoliciesAsync(_fields, ["reader"], ["alpha"], "parcels");
+        foreach (var policy in new[] { fetched, listed, effective, Assert.Single(combined.RowPolicies) })
+        {
+            Assert.NotNull(policy);
+            Assert.Equal(created.FilterExpression, policy.FilterExpression);
+            Assert.Equal(created.AreaGeometry, policy.AreaGeometry);
+        }
+    }
+
     private ICombinedReadPolicyStore Combined() => Assert.IsAssignableFrom<ICombinedReadPolicyStore>(_rows);
 
     private async Task ResetAsync()
@@ -235,7 +259,8 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
             CREATE TABLE {_schema}.rbac_rls_policies (
                 policy_id uuid PRIMARY KEY, role text, service text, layer text, attribute text,
                 claim_type text, comparison smallint, description text,
-                created_at timestamptz, updated_at timestamptz);
+                created_at timestamptz, updated_at timestamptz,
+                filter_expression text, area_geometry text);
             CREATE TABLE {_schema}.rbac_field_mask_policies (
                 policy_id uuid PRIMARY KEY, role text, service text, layer text, attribute text,
                 description text, created_at timestamptz, updated_at timestamptz);
