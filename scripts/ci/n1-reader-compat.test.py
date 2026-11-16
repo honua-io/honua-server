@@ -218,7 +218,8 @@ class Applies(unittest.TestCase):
                      "src/Honua.Db/Postgres/Migrations/008_AddRaster.sql",
                      "src/Honua.Db/Postgres/Features/Infrastructure/Migrations/PostgresCoreSchemaGuard.cs",
                      "src/Honua.Core/Core/Features/Infrastructure/Migrations/MigrationReaderCompatibility.cs",
-                     "eng/schema/schema-migration-hashes.v1.json",
+                     "eng/schema/migration-hashes/src/Honua.Server/Migrations/146_AddX.sql.sha256",
+                     "eng/schema/migration-hashes/src/Honua.Db/Postgres/Migrations/009_AddRaster.sql.sha256",
                      n1.RELEASE_BOUNDARY,
                      "scripts/ci/n1-reader-compat.py"):
             self.assertTrue(n1.path_applies(path), path)
