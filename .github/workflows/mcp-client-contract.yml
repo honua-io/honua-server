@@ -27,6 +27,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: mcp-client-contract-${{ github.event.pull_request.number || github.run_id }}
