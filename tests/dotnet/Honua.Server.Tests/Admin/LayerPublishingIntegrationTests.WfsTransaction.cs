@@ -18,6 +18,7 @@ public sealed partial class LayerPublishingIntegrationTests
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Protocol(TestProtocols.Admin, TestProtocols.Wfs20)]
+    [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_IntoManagedStore_AcceptsWfsTransactionThroughTheAdvertisedType()
     {
