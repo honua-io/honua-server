@@ -10,6 +10,39 @@ This guide covers migration for the Honua control-plane/admin API only.
 This guide covers the Honua control-plane (admin) API only. For SDK support windows and
 release-channel expectations, see [Server + SDK compatibility](../concepts/ecosystem.md).
 
+## Forms routes and operation names
+
+Forms authoring routes move from `/api/v1/admin/forms/packages` to
+`/api/v1/admin/forms`; runtime routes move from `/api/v1/forms/packages` to
+`/api/v1/forms`. Append the same Form ID, Version and action suffixes to the new
+base. Version path parameters are named `formVersion` instead of `packageVersion`.
+There are no aliases for the retired routes or operation names.
+
+Regenerate SDKs from the matching server contract and update Console and direct
+HTTP callers together. The persisted `honua.form-package.v1` document schema and
+its wire fields retain their current names; this route change does not migrate
+stored documents.
+
+| Previous operation | Operation |
+| --- | --- |
+| `ListFormPackages` | `ListForms` |
+| `CreateFormPackageDraft` | `CreateFormDraft` |
+| `GetCurrentFormPackage` | `GetCurrentForm` |
+| `ListFormPackageVersions` | `ListFormVersions` |
+| `GetFormPackageVersion` | `GetFormVersion` |
+| `UpdateFormPackageDraft` | `UpdateFormDraft` |
+| `ValidateFormPackageDraft` | `ValidateFormDraft` |
+| `PublishFormPackageDraft` | `PublishFormDraft` |
+| `ReopenFormPackageVersion` | `ReopenFormVersion` |
+| `GetPublishedFormPackage` | `GetPublishedForm` |
+| `GetPublishedFormPackageVersion` | `GetPublishedFormVersion` |
+| `GetFormPackageCompatibility` | `GetFormCompatibility` |
+| `SubmitFormPackage` | `SubmitForm` |
+
+The curated admin snapshot uses lower-camel-case operation IDs. Its validation
+and publish operations become `validateFormDraft` and `publishFormDraft`.
+`GetFormOfflinePolicy` keeps its name.
+
 ## rc.2 Layer selectors
 
 Regenerate clients against the matching rc.2 admin contract. Global metadata and Connection routes accept `storageLayerId`; Service-scoped routes accept `serviceLayerIndex` with the Service. Publishing receipts expose `storageLayerId`, while a resolved native publish operation can also report its Service-local `serviceLayerIndex`. These numbers can differ; do not substitute one for the other.

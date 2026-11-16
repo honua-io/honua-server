@@ -63,9 +63,25 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTheory]
+    [InlineData("/api/v1/admin/forms/packages/{0}/versions/1")]
+    [InlineData("/api/v1/forms/packages/{0}/versions/1")]
+    [Operation(Operations.Configuration)]
+    public async Task RetiredPackageRoutes_AreNotAliases(string retiredRoute)
+    {
+        var draft = await CreateDraftAsync(CreatePackage("Canonical Form route"));
+        using var retired = await _fixture.Client.GetAsync(
+            string.Format(System.Globalization.CultureInfo.InvariantCulture, retiredRoute, draft.FormId));
+        retired.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var current = await GetJsonAsync($"/api/v1/admin/forms/{draft.FormId}/versions/1",
+            FormPackageJsonContext.Default.FormPackageVersion);
+        current.FormId.Should().Be(draft.FormId);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish")]
+    [Endpoint("POST /api/v1/admin/forms/{formId}/versions/{formVersion}/publish")]
     public async Task AgentAdministrator_CannotPublishFormPackage()
     {
         var draft = await CreateDraftAsync(CreatePackage("Agent publication"));
@@ -74,11 +90,11 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         using var agent = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key.Key));
 
         using var response = await agent.PostAsync(
-            $"/api/v1/admin/forms/packages/{draft.FormId}/versions/1/publish", null);
+            $"/api/v1/admin/forms/{draft.FormId}/versions/1/publish", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await response.Content.ReadAsStringAsync()).Should().Contain("ask one to make this change in Console");
-        var current = await GetJsonAsync($"/api/v1/admin/forms/packages/{draft.FormId}",
+        var current = await GetJsonAsync($"/api/v1/admin/forms/{draft.FormId}",
             FormPackageJsonContext.Default.FormPackageVersion);
         current.Status.Should().Be(FormPackageStatus.Draft);
         current.PublishedAt.Should().BeNull();
@@ -86,50 +102,50 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /api/v1/admin/forms/packages")]
-    [Endpoint("POST /api/v1/admin/forms/packages")]
-    [Endpoint("GET /api/v1/admin/forms/packages/{formId}")]
-    [Endpoint("GET /api/v1/admin/forms/packages/{formId}/versions")]
-    [Endpoint("GET /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}")]
-    [Endpoint("PUT /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}")]
-    [Endpoint("POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate")]
-    [Endpoint("POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish")]
-    [Endpoint("POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen")]
-    [Endpoint("GET /api/v1/forms/packages/{formId}")]
-    [Endpoint("GET /api/v1/forms/packages/{formId}/versions/{packageVersion}")]
-    [Endpoint("GET /api/v1/forms/packages/{formId}/offline-policy")]
+    [Endpoint("GET /api/v1/admin/forms")]
+    [Endpoint("POST /api/v1/admin/forms")]
+    [Endpoint("GET /api/v1/admin/forms/{formId}")]
+    [Endpoint("GET /api/v1/admin/forms/{formId}/versions")]
+    [Endpoint("GET /api/v1/admin/forms/{formId}/versions/{formVersion}")]
+    [Endpoint("PUT /api/v1/admin/forms/{formId}/versions/{formVersion}")]
+    [Endpoint("POST /api/v1/admin/forms/{formId}/versions/{formVersion}/validate")]
+    [Endpoint("POST /api/v1/admin/forms/{formId}/versions/{formVersion}/publish")]
+    [Endpoint("POST /api/v1/admin/forms/{formId}/versions/{formVersion}/reopen")]
+    [Endpoint("GET /api/v1/forms/{formId}")]
+    [Endpoint("GET /api/v1/forms/{formId}/versions/{formVersion}")]
+    [Endpoint("GET /api/v1/forms/{formId}/offline-policy")]
     public async Task PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works()
     {
         var draft = await CreateDraftAsync(CreatePackage("Lifecycle inspection"));
         draft.Status.Should().Be(FormPackageStatus.Draft);
         draft.Version.Should().Be(1);
 
-        var list = await GetJsonAsync($"/api/v1/admin/forms/packages", FormPackageJsonContext.Default.FormPackageSummaryArray);
+        var list = await GetJsonAsync($"/api/v1/admin/forms", FormPackageJsonContext.Default.FormPackageSummaryArray);
         list.Should().Contain(summary => summary.FormId == draft.FormId && summary.CurrentDraftVersion == 1);
 
-        var currentDraft = await GetJsonAsync($"/api/v1/admin/forms/packages/{draft.FormId}", FormPackageJsonContext.Default.FormPackageVersion);
+        var currentDraft = await GetJsonAsync($"/api/v1/admin/forms/{draft.FormId}", FormPackageJsonContext.Default.FormPackageVersion);
         currentDraft.Status.Should().Be(FormPackageStatus.Draft);
 
-        var versions = await GetJsonAsync($"/api/v1/admin/forms/packages/{draft.FormId}/versions", FormPackageJsonContext.Default.FormPackageVersionArray);
+        var versions = await GetJsonAsync($"/api/v1/admin/forms/{draft.FormId}/versions", FormPackageJsonContext.Default.FormPackageVersionArray);
         versions.Should().ContainSingle(version => version.Version == 1);
 
-        var draftByVersion = await GetJsonAsync($"/api/v1/admin/forms/packages/{draft.FormId}/versions/1", FormPackageJsonContext.Default.FormPackageVersion);
+        var draftByVersion = await GetJsonAsync($"/api/v1/admin/forms/{draft.FormId}/versions/1", FormPackageJsonContext.Default.FormPackageVersion);
         draftByVersion.ETag.Should().Be(draft.ETag);
 
         var validation = await PostJsonAsync(
-            $"/api/v1/admin/forms/packages/{draft.FormId}/versions/1/validate",
+            $"/api/v1/admin/forms/{draft.FormId}/versions/1/validate",
             FormPackageJsonContext.Default.FormPackageValidationResult);
         validation.IsValid.Should().BeTrue();
 
         var published = await PostJsonAsync(
-            $"/api/v1/admin/forms/packages/{draft.FormId}/versions/1/publish",
+            $"/api/v1/admin/forms/{draft.FormId}/versions/1/publish",
             FormPackageJsonContext.Default.FormPackageVersion);
         published.Status.Should().Be(FormPackageStatus.Published);
         published.PublishedAt.Should().NotBeNull();
 
         using (var updatePublished = new HttpRequestMessage(
             HttpMethod.Put,
-            $"/api/v1/admin/forms/packages/{published.FormId}/versions/1")
+            $"/api/v1/admin/forms/{published.FormId}/versions/1")
         {
             Content = JsonContent(CreatePackage("Published update attempt"))
         })
@@ -139,13 +155,13 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             conflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
         }
 
-        var runtimeCurrent = await GetJsonAsync($"/api/v1/forms/packages/{published.FormId}", FormPackageJsonContext.Default.FormPackageVersion);
+        var runtimeCurrent = await GetJsonAsync($"/api/v1/forms/{published.FormId}", FormPackageJsonContext.Default.FormPackageVersion);
         runtimeCurrent.Status.Should().Be(FormPackageStatus.Published);
 
-        var runtimeVersion = await GetJsonAsync($"/api/v1/forms/packages/{published.FormId}/versions/1", FormPackageJsonContext.Default.FormPackageVersion);
+        var runtimeVersion = await GetJsonAsync($"/api/v1/forms/{published.FormId}/versions/1", FormPackageJsonContext.Default.FormPackageVersion);
         runtimeVersion.Version.Should().Be(1);
 
-        var offlinePolicy = await GetJsonAsync($"/api/v1/forms/packages/{published.FormId}/offline-policy", FormPackageJsonContext.Default.FormOfflinePolicyResponse);
+        var offlinePolicy = await GetJsonAsync($"/api/v1/forms/{published.FormId}/offline-policy", FormPackageJsonContext.Default.FormOfflinePolicyResponse);
         offlinePolicy.Enabled.Should().BeTrue();
         offlinePolicy.AvailableTransports.Should().Contain(["feature-server-replica", "fieldcollection"]);
         offlinePolicy.RequiredHeaders.Should().ContainKey("X-Honua-Client-Id");
@@ -153,7 +169,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         offlinePolicy.Links.Should().Contain(link => link.Rel == "fieldcollection-generation");
 
         var reopened = await PostJsonAsync(
-            $"/api/v1/admin/forms/packages/{published.FormId}/versions/1/reopen",
+            $"/api/v1/admin/forms/{published.FormId}/versions/1/reopen",
             FormPackageJsonContext.Default.FormPackageVersion);
         reopened.Status.Should().Be(FormPackageStatus.Draft);
         reopened.Version.Should().Be(2);
@@ -161,7 +177,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
         using var updateDraft = new HttpRequestMessage(
             HttpMethod.Put,
-            $"/api/v1/admin/forms/packages/{published.FormId}/versions/2")
+            $"/api/v1/admin/forms/{published.FormId}/versions/2")
         {
             Content = JsonContent(CreatePackage("Lifecycle inspection updated"))
         };
@@ -174,8 +190,8 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("POST /api/v1/admin/forms/packages")]
-    [Endpoint("POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate")]
+    [Endpoint("POST /api/v1/admin/forms")]
+    [Endpoint("POST /api/v1/admin/forms/{formId}/versions/{formVersion}/validate")]
     public async Task PackageValidation_WithMissingDomainChoiceCode_ReturnsValidationIssueWithoutDraftSaveFailure()
     {
         var packageJson = $$"""
@@ -198,12 +214,12 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             }
             """;
 
-        var createResponse = await _fixture.Client.PostAsync("/api/v1/admin/forms/packages", JsonContent(packageJson));
+        var createResponse = await _fixture.Client.PostAsync("/api/v1/admin/forms", JsonContent(packageJson));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var draft = await ReadJsonAsync(createResponse, FormPackageJsonContext.Default.FormPackageVersion);
 
         var validation = await PostJsonAsync(
-            $"/api/v1/admin/forms/packages/{draft.FormId}/versions/{draft.Version}/validate",
+            $"/api/v1/admin/forms/{draft.FormId}/versions/{draft.Version}/validate",
             FormPackageJsonContext.Default.FormPackageValidationResult);
 
         validation.IsValid.Should().BeFalse();
@@ -212,7 +228,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
+    [Endpoint("POST /api/v1/forms/{formId}/submissions")]
     public async Task SubmitForm_WithIdempotency_ReplaysSamePayloadAndRejectsChangedPayload()
     {
         var published = await PublishPackageAsync(CreatePackage("Idempotent create"));
@@ -221,7 +237,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             FormPackageJsonContext.Default.FormSubmissionRequest);
 
         var first = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/packages/{published.FormId}/submissions",
+            $"/api/v1/forms/{published.FormId}/submissions",
             JsonContent(payload));
         first.StatusCode.Should().Be(HttpStatusCode.OK);
         var firstBody = await ReadJsonAsync(first, FormPackageJsonContext.Default.FormSubmissionResponse);
@@ -231,7 +247,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         firstBody.TargetFeatureId.Should().NotBeNull();
 
         var replay = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/packages/{published.FormId}/submissions",
+            $"/api/v1/forms/{published.FormId}/submissions",
             JsonContent(payload));
         replay.StatusCode.Should().Be(HttpStatusCode.OK);
         var replayBody = await ReadJsonAsync(replay, FormPackageJsonContext.Default.FormSubmissionResponse);
@@ -242,7 +258,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             CreateSubmission("idem-create-1", "Changed feature"),
             FormPackageJsonContext.Default.FormSubmissionRequest);
         var changed = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/packages/{published.FormId}/submissions",
+            $"/api/v1/forms/{published.FormId}/submissions",
             JsonContent(changedPayload));
         changed.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
@@ -311,7 +327,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
-    [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
+    [Endpoint("POST /api/v1/forms/{formId}/submissions")]
     public async Task SubmitForm_WithOperationDeniedByPackage_ReturnsRejectedPolicyResponse()
     {
         var published = await PublishPackageAsync(CreatePackage("Create only"));
@@ -322,7 +338,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             targetFeatureId: 1);
 
         var response = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/packages/{published.FormId}/submissions",
+            $"/api/v1/forms/{published.FormId}/submissions",
             JsonContent(update));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -333,7 +349,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
+    [Endpoint("POST /api/v1/forms/{formId}/submissions")]
     public async Task SubmitForm_WithNonnumericGeometry_ReturnsRejectedValidationResponse()
     {
         var published = await PublishPackageAsync(CreatePackage("Geometry validation"));
@@ -343,7 +359,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             geometry: Json("""{"x":"west","y":21.3069,"spatialReference":{"wkid":4326}}"""));
 
         var response = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/packages/{published.FormId}/submissions",
+            $"/api/v1/forms/{published.FormId}/submissions",
             JsonContent(submission));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -354,7 +370,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
-    [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
+    [Endpoint("POST /api/v1/forms/{formId}/submissions")]
     public async Task SubmitForm_WithMultipartAttachment_PersistsFeatureAttachmentAndMinimizedSubmissionRecord()
     {
         var published = await PublishPackageAsync(CreatePackage("Attachment create", includeAttachment: true));
@@ -371,7 +387,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         form.Add(file, "photo-file", "photo.png");
 
         var response = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/packages/{published.FormId}/submissions",
+            $"/api/v1/forms/{published.FormId}/submissions",
             form);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -425,7 +441,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
-    [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
+    [Endpoint("POST /api/v1/forms/{formId}/submissions")]
     public async Task SubmitForm_WithMultipartAttachmentRejectedByFieldPolicy_ReturnsRejectedResponse()
     {
         var published = await PublishPackageAsync(CreatePackage(
@@ -445,7 +461,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         form.Add(file, "photo-file", "photo.jpg");
 
         var response = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/packages/{published.FormId}/submissions",
+            $"/api/v1/forms/{published.FormId}/submissions",
             form);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -482,7 +498,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     private async Task<FormPackageVersion> CreateDraftAsync(FormPackageDocument package)
     {
-        var response = await _fixture.Client.PostAsync("/api/v1/admin/forms/packages", JsonContent(package));
+        var response = await _fixture.Client.PostAsync("/api/v1/admin/forms", JsonContent(package));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return await ReadJsonAsync(response, FormPackageJsonContext.Default.FormPackageVersion);
     }
@@ -491,12 +507,12 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
     {
         var draft = await CreateDraftAsync(package);
         var validation = await PostJsonAsync(
-            $"/api/v1/admin/forms/packages/{draft.FormId}/versions/{draft.Version}/validate",
+            $"/api/v1/admin/forms/{draft.FormId}/versions/{draft.Version}/validate",
             FormPackageJsonContext.Default.FormPackageValidationResult);
         validation.IsValid.Should().BeTrue(validation.Issues.Length == 0 ? string.Empty : validation.Issues[0].Message);
 
         return await PostJsonAsync(
-            $"/api/v1/admin/forms/packages/{draft.FormId}/versions/{draft.Version}/publish",
+            $"/api/v1/admin/forms/{draft.FormId}/versions/{draft.Version}/publish",
             FormPackageJsonContext.Default.FormPackageVersion);
     }
 
@@ -533,8 +549,8 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /api/v1/forms/packages/{formId}/offline-policy")]
-    [Endpoint("GET /api/v1/forms/packages/{formId}/compatibility")]
+    [Endpoint("GET /api/v1/forms/{formId}/offline-policy")]
+    [Endpoint("GET /api/v1/forms/{formId}/compatibility")]
     public async Task OfflineFormRuntime_WithCommunityLicense_ReturnsPaymentRequired()
     {
         var fixture = new WebAppFixture()
@@ -545,8 +561,8 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         {
             foreach (var path in new[]
             {
-                "/api/v1/forms/packages/community-form/offline-policy",
-                "/api/v1/forms/packages/community-form/compatibility"
+                "/api/v1/forms/community-form/offline-policy",
+                "/api/v1/forms/community-form/compatibility"
             })
             {
                 var response = await fixture.Client.GetAsync(path);
