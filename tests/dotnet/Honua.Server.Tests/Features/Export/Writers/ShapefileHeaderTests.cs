@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using System.IO.Compression;
 using Honua.Io.Export;
 using Honua.Io.Export.Writers;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -15,7 +16,7 @@ namespace Honua.Server.Tests.Features.Export.Writers;
 
 public sealed class ShapefileHeaderTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(0, false, 100)]
     [InlineData(1, false, 128)]
     [InlineData(2, false, 156)]
@@ -50,7 +51,7 @@ public sealed class ShapefileHeaderTests
         }
     }
 
-    [Fact]
+    [UnitTest]
     public async Task WriteAsync_CancelledEmptyExport_DoesNotPublishArchive()
     {
         using var cancellation = new CancellationTokenSource();
