@@ -286,11 +286,11 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ScanSourceAsync_WithFixtureSource_CapturesCollectionsSchemaPagingAndItems(bool relativeLinks)
+    [InlineData("https://demo.example")]
+    [InlineData("")]
+    public async Task ScanSourceAsync_WithFixtureSource_CapturesCollectionsSchemaPagingAndItems(string linkOrigin)
     {
-        using var httpClient = new HttpClient(new FixtureOgcApiFeaturesHandler { RelativeLinks = relativeLinks })
+        using var httpClient = new HttpClient(new FixtureOgcApiFeaturesHandler { LinkOrigin = linkOrigin })
         {
             BaseAddress = new Uri("https://demo.example")
         };
@@ -442,7 +442,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 
     private sealed class FixtureOgcApiFeaturesHandler : HttpMessageHandler
     {
-        public bool RelativeLinks { get; init; }
+        public string LinkOrigin { get; init; } = "https://demo.example";
 
         public List<Uri> RequestUris { get; } = [];
 
@@ -549,9 +549,9 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
                 });
             }
 
-            if (RelativeLinks && json != null)
+            if (json != null)
             {
-                json = json.Replace("https://demo.example", string.Empty, StringComparison.Ordinal);
+                json = json.Replace("https://demo.example", LinkOrigin, StringComparison.Ordinal);
             }
 
             return Task.FromResult<HttpResponseMessage>(json == null

@@ -278,7 +278,7 @@ internal sealed class LayerValidationService(
             return;
         }
 
-        if (!PermanentFilterLanguages.TryResolve(permanentFilter.Language, out var filterLanguage))
+        if (PermanentFilterLanguages.Resolve(permanentFilter.Language) is not { } filterLanguage)
         {
             checks.Add(Error(
                 "permanent-filter",

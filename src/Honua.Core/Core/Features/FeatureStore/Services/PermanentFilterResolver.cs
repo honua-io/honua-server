@@ -76,7 +76,7 @@ internal static class PermanentFilterResolver
                 $"Saved permanent filter for resource '{resource.Metadata.Id}' cannot be evaluated.");
         }
 
-        if (!PermanentFilterLanguages.TryResolve(v2Filter.Language, out var v2Language))
+        if (PermanentFilterLanguages.Resolve(v2Filter.Language) is not { } v2Language)
         {
             throw new InvalidOperationException(
                 $"Saved permanent filter for resource '{resource.Metadata.Id}' uses unsupported language '{v2Filter.Language}'.");

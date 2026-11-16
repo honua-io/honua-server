@@ -26,30 +26,14 @@ public static class MetadataV2PermanentFilterLanguages
 
     public const string Cql2Json = "cql2-json";
 
-    /// <summary>Resolves saved filter language names and legacy aliases; unknown names fail closed.</summary>
-    public static bool TryResolve(string? language, out FilterLanguage filterLanguage)
+    public static FilterLanguage? Resolve(string? language)
     {
-        filterLanguage = FilterLanguage.GeoServicesSql;
-        var normalized = (language ?? GeoServicesSql)
-            .Trim()
-            .ToLowerInvariant();
-
-        switch (normalized)
+        return (language ?? GeoServicesSql).Trim().ToLowerInvariant() switch
         {
-            case GeoServicesSql:
-            case "arcgis":
-            case "geoservices-sql":
-                filterLanguage = FilterLanguage.GeoServicesSql;
-                return true;
-            case Cql2Text:
-            case "cql2":
-                filterLanguage = FilterLanguage.Cql2Text;
-                return true;
-            case Cql2Json:
-                filterLanguage = FilterLanguage.Cql2Json;
-                return true;
-            default:
-                return false;
-        }
+            GeoServicesSql or "arcgis" or "geoservices-sql" => FilterLanguage.GeoServicesSql,
+            Cql2Text or "cql2" => FilterLanguage.Cql2Text,
+            Cql2Json => FilterLanguage.Cql2Json,
+            _ => null
+        };
     }
 }
