@@ -816,7 +816,6 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/cache/status")]
     [Endpoint("GET /api/v1/admin/operations/cache/health")]
     [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
-    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
     [Endpoint("GET /sharing/rest/info")]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public void TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked()
@@ -885,7 +884,6 @@ public class OidcAuthenticationTests
             "Get Cache Status",
             "Get Cache Health",
             "Get Cache Statistics",
-            "Get Redis Cache Metrics",
             "ArcGIS Portal Sharing Info"
         }.Select(displayName =>
             Assert.Single(routeEndpoints, endpoint => endpoint.DisplayName == displayName));
@@ -960,7 +958,6 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/cache/status")]
     [Endpoint("GET /api/v1/admin/operations/cache/health")]
     [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
-    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
     [Endpoint("GET /sharing/rest/info")]
     public async Task TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers()
     {
@@ -987,7 +984,6 @@ public class OidcAuthenticationTests
             "/api/v1/admin/cache/status",
             "/api/v1/admin/operations/cache/health",
             "/api/v1/admin/operations/cache/statistics",
-            "/api/v1/admin/operations/cache/redis",
             "/sharing/rest/info"
         }.Select(route => new HttpRequestMessage(HttpMethod.Get, route)))
         {

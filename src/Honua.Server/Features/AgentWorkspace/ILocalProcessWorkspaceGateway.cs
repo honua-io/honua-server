@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 
 namespace Honua.Server.Features.AgentWorkspace;
@@ -8,7 +8,7 @@ internal interface ILocalProcessWorkspaceGateway
 {
     bool IsConfigured { get; }
     Task<LocalProcessProjectIdentity> GetIdentityAsync(LocalProcessWorkspaceAccess access, CancellationToken cancellationToken);
-    Task<LocalProcessProjectIdentity> BindAsync(LocalProcessWorkspaceAccess access, string projectId, CancellationToken cancellationToken);
+    Task<LocalProcessProjectIdentity> BindProjectAsync(LocalProcessWorkspaceAccess access, string projectId, CancellationToken cancellationToken);
     Task RevokeAsync(LocalProcessWorkspaceAccess access, CancellationToken cancellationToken);
     Task<LocalProcessProject> GetProjectAsync(LocalProcessWorkspaceAccess access, CancellationToken cancellationToken);
     Task<LocalProcessSourceFile> ReadSourceAsync(LocalProcessWorkspaceAccess access, string path, CancellationToken cancellationToken);
