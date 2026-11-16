@@ -10,9 +10,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for the interactive API explorer (Scalar) at /docs.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 [Collection("Database.CoreEndpoints")]
 public sealed class ApiExplorerEndpointTests : IAsyncLifetime

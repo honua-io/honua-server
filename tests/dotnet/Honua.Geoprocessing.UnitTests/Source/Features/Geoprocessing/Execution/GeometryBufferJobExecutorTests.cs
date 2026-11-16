@@ -15,13 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Direct executor coverage that does not require the durable runtime. These
-/// tests pin the failure surfaces called out by issue #1031 (slice 1):
-/// unsupported process ids must fail cleanly with a process-classified error
-/// instead of falling through to <c>NoExecutorForKind</c>, and oversized
-/// artifacts must trip the configured guardrail before publication.
-/// </summary>
 public sealed class GeometryBufferJobExecutorTests
 {
     // POINT(0 0) — same WKB the durable-runtime tests use.

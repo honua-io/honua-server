@@ -10,9 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Tiles;
 
-/// <summary>
-/// Unit tests for the shared Esri exploded-cache tile-package (TPK) writer.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class TilePackageWriterTests
 {

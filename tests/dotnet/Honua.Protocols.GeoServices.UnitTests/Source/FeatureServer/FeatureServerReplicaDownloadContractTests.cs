@@ -16,13 +16,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Contract coverage for replica downloads (#4027) and the synchronize upload fingerprint (#4031) below the
-/// HTTP surface. The endpoint tests run on the in-memory feature store, which ignores
-/// <see cref="FeatureQuery.IncludeZ"/>, <see cref="FeatureQuery.IncludeM"/> and
-/// <see cref="FeatureQuery.OutputSrid"/>; these cases pin what the handler asks a real provider for.
-/// The Postgres half (plain WKB unless Z/M is requested) is FeatureQueryBuilderZMTests.
-/// </summary>
 public sealed class FeatureServerReplicaDownloadContractTests
 {
     private const string Edits = """[{"id":0,"adds":[{"attributes":{"name":"a"}}]}]""";

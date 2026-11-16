@@ -20,9 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Unit tests for OData metadata-v2 publication visibility.
-/// </summary>
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataQueryHandlerTests
 {

@@ -13,11 +13,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// #5437: exportImage serves raw pixel blocks of the stored samples — SOAP <c>esriImageBSQ</c>
-/// (URL and MIME data) and REST <c>bsq</c>, <c>bip</c> and <c>lerc</c> — and every block decodes
-/// to the fixture raster's own pixel values, NoData included.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerRawPixelExportTests : IClassFixture<WebAppFixture>

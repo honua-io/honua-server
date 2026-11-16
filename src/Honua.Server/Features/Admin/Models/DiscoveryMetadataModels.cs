@@ -24,7 +24,10 @@ public sealed record DiscoveryMetadataResponse
     public IReadOnlyList<DiscoveryPublicationImpact> AffectedPublications { get; init; } = [];
 }
 
-public sealed record DiscoveryPublicationImpact(string PublicationId, string ServiceName, string Identifier);
+public sealed record DiscoveryPublicationImpact(string PublicationId, string ServiceName, string Identifier)
+{
+    public int? PreviewStorageLayerId { get; init; }
+}
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(DiscoveryMetadataUpdateRequest))]

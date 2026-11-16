@@ -22,19 +22,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.DataEnrichment;
 
-/// <summary>
-/// End-to-end coverage for the async batch enrichment job (#2283): the
-/// <c>enrichment.enrich</c> process is submitted through the canonical OGC API
-/// Processes execution endpoint with the enrichment vocabulary (datasetId, method,
-/// outputFields), executed by the durable job runtime against the real PostGIS
-/// seed layers (the enrichment dataset points at seed join layer 1, the source at
-/// seed layer 0 — the same wiring as the synchronous <c>POST /api/enrich</c>
-/// tests), and its lifecycle is exercised through the EXISTING job endpoints:
-/// submit → poll → fetch results → dismiss. Also covers the large-input handoff:
-/// the sync endpoint's 413 names this async process, and the same over-cap request
-/// succeeds as a job. Edition/entitlement gating is covered at the executor and
-/// synchronous-HTTP levels instead — see the note above the large-input test.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(ProtocolNames.OgcApiProcesses)]
 public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter database)
@@ -43,10 +30,8 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
     private const string ProcessId = "enrichment.enrich";
     private const string DataUriPrefix = "data:application/geo+json;base64,";
 
-    /// <summary>Seed layer the configured enrichment dataset is backed by.</summary>
     private const int DatasetLayerId = 1;
 
-    /// <summary>A role no test client holds, used to lock a layer down.</summary>
     private const string RestrictedReaderRole = "enrichment-restricted-reader";
 
     [IntegrationTest]
@@ -431,24 +416,12 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
             })
             .ConfigureServices(services => configureServices?.Invoke(services));
 
-    /// <summary>
-    /// Replaces the default role store — whose seeded <c>admin</c> role carries a wildcard
-    /// <c>*:*:*</c> grant — with one granting only <c>process:*:execute</c>. That leaves the
-    /// caller with process-execution authority and NO layer-read grant, so layer reads fall
-    /// through to the coarse access policy. An explicit role list is not skipped by a
-    /// built-in wildcard grant (#6358).
-    /// </summary>
     private static void SeedProcessExecuteOnlyRole(IServiceCollection services)
     {
         services.RemoveAll<IRoleStore>();
         services.AddSingleton<IRoleStore>(new ProcessExecuteOnlyRoleStore());
     }
 
-    /// <summary>
-    /// Minimal role store granting every caller only <c>process:*:execute</c>. The grant
-    /// service is the literal <c>process</c> operator resource, so it can never match a
-    /// catalog <c>(service, layer, query)</c> tuple and never authorizes a layer read.
-    /// </summary>
     private sealed class ProcessExecuteOnlyRoleStore : IRoleStore
     {
         private static readonly PermissionGrant ExecuteGrant = new()
@@ -518,10 +491,6 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
         return JsonSerializer.Serialize(new { response = "document", inputs });
     }
 
-    /// <summary>
-    /// The same enrichment request sourced from a staged inline FeatureCollection rather
-    /// than a registered layer, so the layer-only windowing filters have nothing to act on.
-    /// </summary>
     private static string InlineExecuteRequestBody(params (string Name, string Value)[] extraInputs)
     {
         const string StagedCollection = """
@@ -546,11 +515,6 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
         return JsonSerializer.Serialize(new { response = "document", inputs });
     }
 
-    /// <summary>
-    /// Posts an execution request and hands the raw response back so authorization
-    /// outcomes can be asserted without the 201-only expectation
-    /// <see cref="SubmitJobAsync"/> bakes in.
-    /// </summary>
     private static async Task<HttpResponseMessage> PostExecutionAsync(HttpClient client, string body)
     {
         using var request = new HttpRequestMessage(

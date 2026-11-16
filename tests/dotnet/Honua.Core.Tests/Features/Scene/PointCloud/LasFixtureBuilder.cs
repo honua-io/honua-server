@@ -5,14 +5,8 @@ using System.Buffers.Binary;
 
 namespace Honua.Core.Tests.Features.Scene.PointCloud;
 
-/// <summary>
-/// Synthesizes minimal, valid uncompressed LAS 1.2 buffers in memory for the
-/// point-cloud ingest tests (#1201). Avoids committing a binary fixture while
-/// exercising the real header/point-record byte layout.
-/// </summary>
 internal static class LasFixtureBuilder
 {
-    /// <summary>A single point to encode into a LAS 1.2 point data record format 3 file.</summary>
     internal readonly record struct Point(
         double X,
         double Y,
@@ -26,10 +20,6 @@ internal static class LasFixtureBuilder
     private const int HeaderSize = 227;       // LAS 1.2 public header block.
     private const int RecordLengthFormat3 = 34; // base 28 + RGB 6.
 
-    /// <summary>
-    /// Builds a LAS 1.2, point data record format 3 (XYZ + GPS time + RGB)
-    /// buffer from the supplied points with the given scale/offset.
-    /// </summary>
     internal static byte[] BuildFormat3(
         IReadOnlyList<Point> points,
         double scale = 0.01,
@@ -104,7 +94,6 @@ internal static class LasFixtureBuilder
         return buffer;
     }
 
-    /// <summary>Marks a format-3 buffer as LAZ-compressed (sets bit 7 of the format byte).</summary>
     internal static byte[] MarkCompressed(byte[] lasBuffer)
     {
         var copy = (byte[])lasBuffer.Clone();

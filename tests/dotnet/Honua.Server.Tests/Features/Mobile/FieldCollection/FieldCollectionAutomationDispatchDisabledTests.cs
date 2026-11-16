@@ -10,9 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Mobile.FieldCollection;
 
-/// <summary>
-/// Dispatch kill-switch and bounded-queue behavior for FieldCollection automation (#6125).
-/// </summary>
 public sealed class FieldCollectionAutomationDispatchDisabledTests
 {
     [UnitTest]

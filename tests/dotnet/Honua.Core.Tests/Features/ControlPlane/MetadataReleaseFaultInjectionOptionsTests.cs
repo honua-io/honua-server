@@ -5,11 +5,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Core.Tests.Features.ControlPlane;
 
-/// <summary>
-/// Fence coverage for the Demo B smoke-gate fault injection. The injection must be inert by default
-/// and must never fire against an environment that is not on the explicit allow-list, so a
-/// misconfiguration can never fail a real (e.g. production / live) metadata release.
-/// </summary>
 public sealed class MetadataReleaseFaultInjectionOptionsTests
 {
     [Trait("Tier", "Fast")]

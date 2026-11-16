@@ -12,7 +12,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>Verifies public URL and path-prefix handling in SensorThings discovery.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsServiceRootPublicUrlTests : IAsyncLifetime

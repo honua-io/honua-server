@@ -534,13 +534,6 @@ public sealed partial class Wfs20EndpointsTests
     // collapses to this slug, which the geometry-from-type regression tests request by TYPENAMES.
     private const string GeometryFromTypeTypeName = "pub-geometry-from-type-wfs";
 
-    /// <summary>
-    /// Builds a graph with a single point feature type that declares a geometry type but
-    /// carries NO geometry schema field (only objectid/name), reproducing a FeatureServer
-    /// layer such as honua:browser_points. The storage binding targets the seeded layer 0
-    /// rows so GetFeature returns real point geometry. WFS must still expose geometry in
-    /// DescribeFeatureType and GetFeature exactly as GeoServices REST and OGC API Features do.
-    /// </summary>
     private static TestMetadataV2GraphProvider BuildGeometryFromTypeMetadataProvider()
     {
         const string ResourceId = "res-geometry-from-type";
@@ -2602,10 +2595,6 @@ public sealed partial class Wfs20EndpointsTests
 
     // ---- Regression tests for BH-008, BH-009, BH-010, BH-011 ----
 
-    /// <summary>
-    /// BH-008 regression: ISO 19142 §15.2.5.3 requires a zero-match Delete to succeed and
-    /// report totalDeleted=0, not return a 400 error.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("POST /wfs")]
@@ -2635,9 +2624,6 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("<wfs:totalDeleted>0</wfs:totalDeleted>");
     }
 
-    /// <summary>
-    /// BH-008 regression: a zero-match Update filter must also succeed with totalUpdated=0.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("POST /wfs")]
@@ -2670,10 +2656,6 @@ public sealed partial class Wfs20EndpointsTests
         content.Should().Contain("<wfs:totalUpdated>0</wfs:totalUpdated>");
     }
 
-    /// <summary>
-    /// A multi-layer WFS Transaction uses one provider transaction when
-    /// rollbackOnFailure=true (the default), so every layer commits atomically.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("POST /wfs")]
@@ -2743,11 +2725,6 @@ public sealed partial class Wfs20EndpointsTests
         related.Should().Contain("BH009 Related Layer Feature");
     }
 
-    /// <summary>
-    /// BH-010 regression: a WFS GetFeature POST request with an XML query containing a
-    /// fes:Filter must carry that filter through into the 'next' paging link.  Before the
-    /// fix, following page 2 fetched the unfiltered result set.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /wfs")]
@@ -2849,11 +2826,6 @@ public sealed partial class Wfs20EndpointsTests
         returnedNames.Should().Contain(secondMarker).And.NotContain(firstMarker);
     }
 
-    /// <summary>
-    /// BH-011 regression: a WFS Transaction inserting a 3D LineString (srsDimension=3) with
-    /// an even vertex count must succeed and store the correct 2-point geometry.  Before the
-    /// fix, 6 ordinates (2 vertices × 3) were mis-parsed as 3 2D coordinates.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("POST /wfs")]

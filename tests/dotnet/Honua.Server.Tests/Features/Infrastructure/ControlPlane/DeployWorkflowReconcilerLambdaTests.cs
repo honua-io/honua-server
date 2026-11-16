@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Reconciler-level coverage for the Lambda alias rollout backend wiring,
-/// including telemetry-gated promotion and rollback paths.
-/// </summary>
 public sealed class DeployWorkflowReconcilerLambdaTests
 {
     [Fact]

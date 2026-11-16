@@ -13,13 +13,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// Integration tests for the GeoServices NAServer route / service-area solve
-/// adapters. The pgRouting test image does not ship the <c>pgrouting</c> extension,
-/// so these tests register a deterministic in-process <see cref="IRoutingProvider"/>
-/// (see <see cref="TestRoutingProvider"/>) to exercise the full
-/// adapter → provider → Esri response path without a live topology.
-/// </summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.NAServer)]
 public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsFixture>
@@ -1014,12 +1007,6 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     }
 }
 
-/// <summary>
-/// Per-class wrapper fixture that builds a single <see cref="WebAppFixture"/> with the
-/// deterministic <see cref="TestRoutingProvider"/> registered, so the shared-fixture tests
-/// in <see cref="NAServerEndpointTests"/> initialize the host once per class instead of once
-/// per test method. <see cref="WebAppFixture"/> is sealed, so it is wrapped rather than subclassed.
-/// </summary>
 public sealed class NAServerEndpointTestsFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture()

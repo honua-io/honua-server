@@ -18,12 +18,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Provisioner;
 
-/// <summary>
-/// Regression coverage for PR #1752: the default zero-config <c>local</c> backend enqueues
-/// <see cref="ExecutionJobKind.GeocoderBuild"/> / <see cref="ExecutionJobKind.RouterBuild"/>
-/// jobs, so an in-process <see cref="IJobExecutor"/> must be registered for each kind or
-/// <c>JobExecutionService</c> never claims them and they stay <c>Queued</c> forever.
-/// </summary>
 public sealed class ProvisionerBuildJobExecutorTests
 {
     [UnitTest]

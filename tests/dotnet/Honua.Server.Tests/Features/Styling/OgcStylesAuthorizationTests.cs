@@ -12,15 +12,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Styling;
 
-/// <summary>
-/// Authorization depth for the styling mutation surface (#2983). The default test
-/// fixture runs with the HONUA_DEV_AUTH bypass, so these tests boot a host with
-/// real API-key authentication (mirroring <c>AdminAuthorizationTests</c>) and prove
-/// that PUT/POST/DELETE /ogc/styles and the style-suggestion endpoint reject
-/// missing and invalid credentials while the read surface stays public, and that
-/// a correctly authenticated mutation is subject to the shared request-body size
-/// guard (413).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
 public sealed class OgcStylesAuthorizationTests : IAsyncLifetime

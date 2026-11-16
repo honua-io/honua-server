@@ -5,17 +5,6 @@ using Honua.Core.Features.Collaboration.Operations;
 
 namespace Honua.Server.Tests.Features.Collaboration;
 
-/// <summary>
-/// Op-log repository that declares the restart-durable replay contract the checkpoint surface
-/// requires (honua-server#2999 review), delegating everything else to the in-memory log.
-/// </summary>
-/// <remarks>
-/// The shipped <see cref="InMemorySavedMapOperationLogRepository"/> reports
-/// <c>SupportsRestartDurableReplay = false</c> because an acknowledged operation is lost when the
-/// process restarts, so checkpointing fails closed with it. Checkpoint behavior is therefore
-/// exercised against a log that satisfies the contract the endpoint demands, which is what a
-/// durable (replica-shared, restart-surviving) implementation will provide.
-/// </remarks>
 internal sealed class RestartDurableSavedMapOperationLog : ISavedMapOperationLogRepository
 {
     private readonly ISavedMapOperationLogRepository _inner;
@@ -49,10 +38,6 @@ internal sealed class RestartDurableSavedMapOperationLog : ISavedMapOperationLog
         _inner.RecordCheckpointAsync(mapId, checkpointCursor, cancellationToken);
 }
 
-/// <summary>
-/// Operation-log decorator that fails the first checkpoint-cursor write after the immutable
-/// version has committed, simulating cancellation/process failure between the two durable stores.
-/// </summary>
 internal sealed class FailFirstCheckpointRecordOperationLog : ISavedMapOperationLogRepository
 {
     private readonly ISavedMapOperationLogRepository _inner;
@@ -101,22 +86,8 @@ internal sealed class FailFirstCheckpointRecordOperationLog : ISavedMapOperation
     }
 }
 
-/// <summary>
-/// Op-log repository that reproduces the replay-window race in the stream handshake: the resume
-/// cursor is inside the retained window for the FIRST replay (so the preliminary check reports Ok
-/// and no <c>resync-required</c> is announced), then concurrent appends prune it before the
-/// snapshot tail is read, so the next replay reports
-/// <see cref="SavedMapOperationReplayStatus.ResyncRequired"/> (honua-server#2999 review).
-/// </summary>
-/// <remarks>
-/// Only the replay path is simulated; appends pass through, so the retained operations the handshake
-/// finally delivers are real log entries. The prune is expressed as "every replay after the first
-/// can only start at <see cref="PrunedMinimumCursor"/>", which is exactly what the in-memory log
-/// reports once the requested cursor ages out of the retained window.
-/// </remarks>
 internal sealed class WindowAdvancesAfterFirstReplayOperationLog : ISavedMapOperationLogRepository
 {
-    /// <summary>Window base the log falls back to once the resume cursor has been pruned.</summary>
     public const long PrunedMinimumCursor = 2;
 
     private readonly ISavedMapOperationLogRepository _inner;
@@ -171,13 +142,6 @@ internal sealed class WindowAdvancesAfterFirstReplayOperationLog : ISavedMapOper
         _inner.RecordCheckpointAsync(mapId, checkpointCursor, cancellationToken);
 }
 
-/// <summary>
-/// Op-log repository that holds the FIRST append's continuation open after its cursor has been
-/// assigned, so a second concurrent append completes first. This reproduces the interleaving
-/// where cursors are assigned in one order and the requests resume in the other; without a
-/// serialization point between assignment and live fan-out the stream broadcasts the later
-/// cursor first (honua-server#2999 review).
-/// </summary>
 internal sealed class DelayedFirstAppendOperationLog : ISavedMapOperationLogRepository
 {
     private readonly ISavedMapOperationLogRepository _inner;
@@ -193,7 +157,6 @@ internal sealed class DelayedFirstAppendOperationLog : ISavedMapOperationLogRepo
         _delay = delay;
     }
 
-    /// <summary>Completes once the first append has been assigned its server cursor.</summary>
     public Task FirstAppendAssigned => _firstAppendAssigned.Task;
 
     public bool SupportsReplicaSharedReplay => _inner.SupportsReplicaSharedReplay;

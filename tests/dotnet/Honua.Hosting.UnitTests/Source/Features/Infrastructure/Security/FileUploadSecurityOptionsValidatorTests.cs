@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Security;
 
-/// <summary>
-/// Unit tests for FileUploadSecurityOptionsValidator to ensure proper validation of security configuration.
-/// </summary>
 public class FileUploadSecurityOptionsValidatorTests
 {
     private readonly FileUploadSecurityOptionsValidator _validator = new();

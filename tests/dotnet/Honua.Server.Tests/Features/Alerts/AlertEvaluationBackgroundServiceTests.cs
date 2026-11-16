@@ -15,10 +15,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Checkpoint reload on leadership changes, and a startup read failure that must not
-/// stop the host (#6190).
-/// </summary>
 public sealed class AlertEvaluationBackgroundServiceTests
 {
     [UnitTest]

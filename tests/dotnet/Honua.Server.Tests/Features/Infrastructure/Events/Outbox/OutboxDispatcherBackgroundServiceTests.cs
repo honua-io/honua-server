@@ -534,14 +534,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             NullLogger<OutboxDispatcherBackgroundService>.Instance);
     }
 
-    /// <summary>
-    /// Subscribes a <see cref="MeterListener"/> to a single named counter on a specific
-    /// meter instance and accumulates the measurements observed during the listener's
-    /// lifetime. Filtering by the exact meter instance (rather than the "Honua" name)
-    /// keeps parallel tests isolated from one another's instruments (#2802). Tests use
-    /// this to verify the dispatcher routes terminal outcomes (Failed, DeadLettered,
-    /// StaleClaim, Errored) onto the expected counters rather than predicting from input shape.
-    /// </summary>
     private sealed class MeterSampleCollector : IDisposable
     {
         private readonly MeterListener _listener;
@@ -579,12 +571,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         public List<(Guid OutboxId, string OwnerNodeId, string Error)> Failed { get; } = new();
         public int RecoverCallCount { get; private set; }
         public int ExpiredClaimsToRecover { get; set; }
-        /// <summary>
-        /// The node id stamped on the most recent ClaimPendingAsync call. Used by tests to
-        /// assert that the dispatcher threads the claim owner back through MarkDispatchedAsync
-        /// and MarkFailedAsync, since the dispatcher's internal _nodeId derives from the host
-        /// environment rather than a constructor parameter.
-        /// </summary>
         public string? LastClaimNodeId { get; private set; }
         public OutboxBacklogMetrics Backlog { get; set; } = new()
         {
@@ -593,11 +579,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             OldestPendingAgeSeconds = 0,
         };
 
-        /// <summary>
-        /// Set of outbox ids whose claims should be considered stale (e.g. recovered or
-        /// reclaimed by another node). MarkDispatchedAsync/MarkFailedAsync return false for
-        /// these ids without recording the terminal update.
-        /// </summary>
         public HashSet<Guid> StaleClaims { get; } = new();
 
         public List<Guid> DispatchedIds => Dispatched.Select(static x => x.OutboxId).ToList();
@@ -605,24 +586,10 @@ public sealed class OutboxDispatcherBackgroundServiceTests
 
         public Guid OnlyOutboxId => Pending.FirstOrDefault()?.OutboxId ?? Dispatched.Select(static x => x.OutboxId).Concat(Failed.Select(static x => x.OutboxId)).Single();
 
-        /// <summary>
-        /// Set this to a thrown exception factory to simulate ClaimPendingAsync failure
-        /// (missing table, permission issue, transient connectivity failure). When set,
-        /// every call throws and no rows are dequeued.
-        /// </summary>
         public Func<Exception>? ClaimFailureFactory { get; set; }
 
-        /// <summary>
-        /// Set this to simulate GetBacklogMetricsAsync failure. When set, every call throws.
-        /// </summary>
         public Func<Exception>? BacklogFailureFactory { get; set; }
 
-        /// <summary>
-        /// Set this to simulate RecoverExpiredClaimsAsync failure. The dispatcher's
-        /// RecoveryIntervalSeconds default in the test BuildDispatcher is 0 so recovery
-        /// runs every pass; set this factory alongside ClaimFailureFactory to simulate a
-        /// total storage outage (e.g. missing outbox table) where no query succeeds.
-        /// </summary>
         public Func<Exception>? RecoveryFailureFactory { get; set; }
 
         public Task<IReadOnlyList<FeatureChangeOutboxEntry>> ClaimPendingAsync(

@@ -10,18 +10,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Coverage for the pre-Build Redis connection-string secret-reference resolution
-/// (<see cref="StartupConfigurationHelpers.ResolveRedisConnectionSecretReferencesAsync"/>,
-/// honua-server#3011). The <c>aws:secretsmanager:</c> resolution mechanism itself — the part that
-/// matters for the bug (a secret reference must come out the other side as a real connection
-/// string before <c>ConfigurationOptions.Parse</c> sees it) — is covered without any network access
-/// in <c>ConnectionStringResolutionHelperTests</c>, since this method delegates to
-/// <c>ConnectionStringResolutionHelper.ResolveConnectionStringValueAsync</c> with a bootstrap-only
-/// <c>AwsSecretsManagerResolver</c> instance. These tests instead prove the production entry
-/// point's guard behavior: it must recognize non-reference values and return immediately without
-/// constructing an HTTP client or touching the network.
-/// </summary>
 public sealed class StartupConfigurationHelpersTests
 {
     [Fact]

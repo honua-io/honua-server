@@ -19,11 +19,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Slice 4 — schema-mapping diagnostics. Covers each classification (assisted, manual-review,
-/// unsupported, clean) plus a JSON round-trip through <see cref="ImportJsonContextProxy"/> to lock
-/// the wire shape consumed by the OGC API Features import endpoint.
-/// </summary>
 public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
 {
     [Trait("Tier", "Fast")]
@@ -328,11 +323,6 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
             });
     }
 
-    /// <summary>
-    /// Local mirror of the server's <c>ImportJsonContext</c>. Mirrors the same
-    /// <see cref="JsonSerializerOptions"/> so we can assert wire shape without taking a dependency
-    /// on the server assembly from the core test project.
-    /// </summary>
     [JsonSourceGenerationOptions(
         PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

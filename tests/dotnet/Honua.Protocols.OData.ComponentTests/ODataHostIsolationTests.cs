@@ -7,7 +7,6 @@ using Xunit;
 
 namespace Honua.Protocols.OData.ComponentTests;
 
-/// <summary>Candidate-only surface isolation; excluded from the shared parity filter.</summary>
 [Trait("Category", "HostIsolation")]
 [global::Xunit.Trait("Tier", "Integration")]
 public sealed class ODataHostIsolationTests(ODataComponentFixture fixture) : IClassFixture<ODataComponentFixture>

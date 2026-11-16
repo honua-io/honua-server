@@ -11,10 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Raster.Multidimensional;
 
-/// <summary>
-/// Verifies the default not-enabled reader returns the documented unavailability
-/// error rather than silently succeeding. See ADR-0039.
-/// </summary>
 public sealed class NotEnabledMultidimensionalCoverageMetadataReaderTests
 {
     private static MultidimensionalCoverageRegistration BuildRegistration() => new()

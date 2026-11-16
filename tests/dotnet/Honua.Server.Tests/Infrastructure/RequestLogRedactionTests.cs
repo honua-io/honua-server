@@ -193,10 +193,6 @@ public sealed class RequestLogRedactionTests
             captured.SetResult();
         }
 
-        /// <summary>
-        /// Waits until an event has been captured for every supplied message template prefix.
-        /// Returns on timeout so the assertions that follow report which event is missing.
-        /// </summary>
         public async Task WaitForEventsAsync(TimeSpan timeout, params string[] messageTemplatePrefixes)
         {
             using var expiry = new CancellationTokenSource(timeout);

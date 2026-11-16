@@ -11,11 +11,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Authorization tests covering protected scenes. Public scenes (no access
-/// policy) are exercised in <see cref="SceneTilesetEndpointTests"/>; this
-/// fixture disables dev-auth so authorization gaps fail loudly.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class SceneAuthorizationTests : IAsyncLifetime

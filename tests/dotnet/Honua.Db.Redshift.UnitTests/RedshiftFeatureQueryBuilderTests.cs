@@ -7,12 +7,6 @@ using Honua.Db.Redshift.Features.FeatureStore.Services;
 
 namespace Honua.Db.Redshift.Tests;
 
-/// <summary>
-/// Ungated unit tests for Redshift SQL generation. Verifies ANSI double-quoted identifiers,
-/// Npgsql-style named parameter binding, Redshift-native spatial function translation, paging,
-/// and the NotSupportedException contract for out-of-scope operations. These tests require no
-/// external Redshift service and run in normal CI.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class RedshiftFeatureQueryBuilderTests
 {

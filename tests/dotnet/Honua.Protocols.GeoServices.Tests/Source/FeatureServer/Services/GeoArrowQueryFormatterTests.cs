@@ -987,11 +987,6 @@ public sealed class GeoArrowQueryFormatterTests
             .WithMessage("*GeoArrow*returnM=true*XY and XYZ geometries*");
     }
 
-    /// <summary>
-    /// The exact GeoArrow 0.2 extension metadata the formatter must emit for EPSG:4326
-    /// output: the authoritative catalog PROJJSON plus <c>crs_type</c>, with planar edges
-    /// declared by omitting <c>edges</c> and no GeoParquet-only keys.
-    /// </summary>
     private static string ExpectedWgs84ExtensionMetadata()
     {
         GeoParquetProjJsonCatalog.TryGetProjJson(4326, out var projJson).Should().BeTrue(
@@ -1063,12 +1058,6 @@ public sealed class GeoArrowQueryFormatterTests
     private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
         => FormatterTestResources.WithoutSpatialSlot(HarborsMetadata(), fields);
 
-    /// <summary>
-    /// honua-server#4747: GeoArrow encoded <c>geometry_types</c> with the same reflection-based
-    /// serializer overload as GeoParquet, and unconditionally, so every <c>f=geoarrow</c> response
-    /// with geometry failed on the shipped server. This runs the formatter in a child process with
-    /// JSON reflection disabled and decodes the stream it produced.
-    /// </summary>
     [Fact]
     public async Task FormatAsGeoArrowAsync_WithReflectionDisabled_WritesConcreteGeometryTypesAndValues()
     {

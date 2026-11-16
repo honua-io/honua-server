@@ -7,12 +7,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Licensing.EntitlementSweep;
 
-/// <summary>
-/// A single representative HTTP request that exercises the <c>LicenseGate</c> check for
-/// one <see cref="FeatureCatalog"/> entitlement key. The sweep (<see cref="EntitlementSweepEditionTestsBase"/>)
-/// sends this request against Community/Pro/Enterprise-licensed hosts and asserts 402 below
-/// the key's <see cref="FeatureDefinition.MinimumEdition"/> and non-402 at/above it.
-/// </summary>
 internal sealed record EntitlementProbe(
     string Key,
     HttpMethod Method,
@@ -33,42 +27,12 @@ internal sealed record EntitlementProbe(
     }
 }
 
-/// <summary>
-/// An entitlement key with no request-triggerable HTTP surface to probe (worker/infra
-/// entitlement, boot-time gate, dormant scaffolding, or a soft-degrade feature that never
-/// returns 402). Mirrors the capability no-surface allowlist pattern
-/// (<c>CapabilityKeyCatalog</c>'s Community-only additive list) for the entitlement side.
-/// Every entry here must be independently verified (by reading the enforcing code, or its
-/// absence) rather than assumed — the reason string is the evidence trail.
-/// </summary>
 internal sealed record EntitlementNoSurfaceEntry(string Key, string Reason);
 
-/// <summary>
-/// A <em>known enforcement gap</em>: the catalog declares a paid edition for this key, an
-/// HTTP surface exists for the underlying capability, but no <c>LicenseGate</c> check (or an
-/// equivalent, license-derived gate) actually protects it today. This bucket exists so the
-/// sweep can land green while the gap is fixed on its own timeline — see
-/// <c>docs/internal/contributor/entitlement-sweep-known-gaps.md</c> equivalent context in the
-/// PR body. Every entry MUST reference a tracking issue; do not add an entry without one.
-/// </summary>
 internal sealed record EntitlementKnownGapEntry(string Key, string Reason, string TrackingIssue);
 
-/// <summary>
-/// Catalog-generated entitlement probe/allowlist/known-gap registry for the local entitlement
-/// sweep (#2980). <see cref="EntitlementSweepCoverageTests"/> asserts every Pro/Enterprise
-/// <see cref="FeatureCatalog"/> key resolves to exactly one of <see cref="Probes"/>,
-/// <see cref="NoHttpSurfaceAllowlist"/>, or <see cref="KnownGaps"/> — a new gated key with an
-/// HTTP surface and no row here fails the suite (fail-closed coverage).
-/// </summary>
 internal static class EntitlementProbeRegistry
 {
-    /// <summary>
-    /// Every Pro/Enterprise entitlement key in the catalog. Community-tier
-    /// <see cref="FeatureCatalog"/> entries (e.g. <c>identity.portal-token</c>,
-    /// <c>styling.defaults</c>, <c>temporal.filtering</c>, <c>import.file</c>,
-    /// <c>ai.mcp-discovery</c>) are never 402-gated by definition and are excluded from the
-    /// sweep's target set.
-    /// </summary>
     public static IReadOnlyList<FeatureDefinition> GatedKeys { get; } =
         FeatureCatalog.All.Where(f => f.MinimumEdition > HonuaEdition.Community).ToArray();
 
@@ -87,17 +51,8 @@ internal static class EntitlementProbeRegistry
     private static void WithScimBearer(HttpRequestMessage request)
         => request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", IdentityScimBearerToken);
 
-    /// <summary>Shared SCIM bearer token the sweep's fixtures configure via <c>Scim:BearerToken</c>.</summary>
     public const string IdentityScimBearerToken = "entitlement-sweep-scim-token";
 
-    /// <summary>
-    /// One representative HTTP request per Pro/Enterprise entitlement key with a real,
-    /// probeable HTTP surface. Gate-ordering was verified by reading each handler: every
-    /// probe here reaches its <c>LicenseGate</c> check regardless of whether the referenced
-    /// resource (service/layer/dataset id) exists, EXCEPT where a comment says otherwise, in
-    /// which case the probe uses the seeded <c>test</c> service / layer 0 (temporal-enabled)
-    /// so resource validation upstream of the gate succeeds.
-    /// </summary>
     public static IReadOnlyDictionary<string, EntitlementProbe> Probes { get; } =
         new EntitlementProbe[]
         {
@@ -251,23 +206,12 @@ internal static class EntitlementProbeRegistry
 
     private const string AlertRulesPath = "/api/v1/admin/alerts/rules";
 
-    /// <summary>
-    /// An enter-trigger rule (Pro tier) carrying the given delivery channel, so each channels.*
-    /// probe isolates its own key: at Pro the trigger is entitled and only the probed channel's
-    /// key appears in the 402; at Community the combined 402 lists the probed channel key
-    /// alongside alerts.enter-exit, which still satisfies the per-key body assertion.
-    /// </summary>
     private static string EnterRuleJson(string channel)
         => $$"""{"serviceId":"entitlement-sweep","layerId":1,"zoneId":1,"ruleName":"sweep {{channel}} probe","triggerType":"enter","conditionsJson":"{}","cooldownSeconds":30,"severity":"warning","editionRequired":"pro","channels":["{{channel}}"],"isActive":true}""";
 
     private static string BuildMarkers(int count)
         => string.Join('|', Enumerable.Range(0, count).Select(i => $"-122.{400 + i},37.7{i},red"));
 
-    /// <summary>
-    /// Entitlement keys with no request-triggerable HTTP 402 surface. Each reason is the
-    /// evidence read directly from the enforcing (or non-existent) code path — see the sweep
-    /// PR body for the full audit trail.
-    /// </summary>
     public static IReadOnlyDictionary<string, EntitlementNoSurfaceEntry> NoHttpSurfaceAllowlist { get; } =
         new EntitlementNoSurfaceEntry[]
         {
@@ -349,12 +293,6 @@ internal static class EntitlementProbeRegistry
                 "Verified enforced in code (OidcClaimsMappingEntitlementTests); not a gap."),
         }.ToDictionary(e => e.Key, StringComparer.Ordinal);
 
-    /// <summary>
-    /// Known enforcement gaps: the catalog declares a paid edition, an HTTP surface exists,
-    /// and no gate protects it today. Loud and minimal by design (#2980) — every entry
-    /// must reference the tracking issue that owns its resolution, and deleting an entry (once
-    /// fixed) is exactly the signal that resolution landed.
-    /// </summary>
     public static IReadOnlyDictionary<string, EntitlementKnownGapEntry> KnownGaps { get; } =
         // #2997/#2998 resolved the last known gaps (OIDC identity.*, Alerts/Channels
         // alerts.*/channels.*, caching.output-cache): every declared Pro/Enterprise key with an
