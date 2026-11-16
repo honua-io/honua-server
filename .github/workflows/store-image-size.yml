@@ -14,6 +14,7 @@ on:
       - 'Directory.*.targets'
       - 'src/Honua.Server/Startup/DataStoreBuildPolicy.cs'
       - 'scripts/ci/*measure-serving-image.py'
+      - 'scripts/ci/test-image-layer-size.py'
       - 'scripts/ci/test-health-probe.py'
       - 'scripts/ci/test-runtime-native.py'
       - 'scripts/ci/Dockerfile.native-runtime-test*'
@@ -100,6 +101,7 @@ jobs:
       - name: Test measurement and health probe
         run: |
           python3 scripts/ci/test-measure-serving-image.py
+          python3 scripts/ci/test-image-layer-size.py
           python3 scripts/ci/test-health-probe.py
           if [[ "${{ runner.environment }}" == "github-hosted" ]]; then
             sudo python3 scripts/ci/test-runtime-native.py

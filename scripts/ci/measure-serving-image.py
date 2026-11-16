@@ -3,6 +3,8 @@
 
 import argparse
 import hashlib
+import gzip
+import io
 import re
 import json
 import os
@@ -10,6 +12,7 @@ from itertools import chain
 from pathlib import Path
 import subprocess
 import tarfile
+import tempfile
 
 STORE_FILES = (
     'Honua.DuckDB.dll', 'DuckDB.NET.Data.dll', 'DuckDB.NET.Bindings.dll', 'libduckdb.so',
@@ -108,24 +111,83 @@ def manifest_matches_image(payload, image_id):
             or 'sha256:' + hashlib.sha256(payload).hexdigest() == image_id)
 
 
+def oci_image_payload(archive, image_id):
+    pending = json.load(archive.extractfile('index.json'))['manifests']
+    while pending:
+        payload = oci_blob(archive, pending.pop())
+        manifest = json.loads(payload)
+        if 'manifests' in manifest:
+            pending.extend(manifest['manifests'])
+        elif manifest_matches_image(payload, image_id):
+            return payload
+    raise ValueError('OCI archive does not contain the loaded image')
+
+
+def uncompressed_oci_bytes(archive, payload):
+    manifest = json.loads(payload)
+    config = json.loads(oci_blob(archive, manifest['config']))
+    diff_ids = image_diff_ids(config, len(manifest['layers']))
+    size = 0
+    for layer, diff_id in zip(manifest['layers'], diff_ids):
+        compressed = io.BytesIO(oci_blob(archive, layer))
+        media_type = layer.get('mediaType', '')
+        if media_type.endswith(('+gzip', '.gzip')):
+            with gzip.GzipFile(fileobj=compressed) as stream:
+                size += verified_layer_bytes(stream, diff_id)
+        elif media_type in ('application/vnd.oci.image.layer.v1.tar',
+                            'application/vnd.docker.image.rootfs.diff.tar'):
+            size += verified_layer_bytes(compressed, diff_id)
+        else:
+            raise ValueError('Unsupported layer compression for uncompressed measurement')
+    return size
+
+
 def measure_oci_archive(path, image_id):
     with tarfile.open(path) as archive:
-        pending = json.load(archive.extractfile('index.json'))['manifests']
-        while pending:
-            manifest_payload = oci_blob(archive, pending.pop())
-            manifest = json.loads(manifest_payload)
-            if 'manifests' in manifest:
-                pending.extend(manifest['manifests'])
+        payload = oci_image_payload(archive, image_id)
+        return {**compressed_manifest_measurement(payload, image_id),
+                'uncompressed_layer_bytes': uncompressed_oci_bytes(archive, payload)}
+
+
+def image_diff_ids(config, layer_count):
+    rootfs = config.get('rootfs', {})
+    diff_ids = rootfs.get('diff_ids', [])
+    if rootfs.get('type') != 'layers' or not diff_ids or len(diff_ids) != layer_count:
+        raise ValueError('Image config has missing or mismatched layer diff IDs')
+    return diff_ids
+
+
+def verified_layer_bytes(stream, diff_id):
+    digest = hashlib.sha256()
+    size = 0
+    for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+        digest.update(chunk)
+        size += len(chunk)
+    if 'sha256:' + digest.hexdigest() != diff_id:
+        raise ValueError('Uncompressed layer diff ID mismatch')
+    return size
+
+
+def saved_image_bytes(path, image_id):
+    with tarfile.open(path) as archive:
+        if 'index.json' in archive.getnames():
+            return uncompressed_oci_bytes(archive, oci_image_payload(archive, image_id))
+        manifests = json.load(archive.extractfile('manifest.json'))
+        for manifest in manifests:
+            payload = archive.extractfile(manifest['Config']).read()
+            if 'sha256:' + hashlib.sha256(payload).hexdigest() != image_id:
                 continue
-            if not manifest_matches_image(manifest_payload, image_id):
-                continue
-            oci_blob(archive, manifest['config'])
-            for layer in manifest['layers']:
-                if not layer.get('mediaType', '').endswith(('+gzip', '+zstd', '.gzip')):
-                    raise ValueError('OCI size evidence must contain compressed layers')
-                oci_blob(archive, layer)
-            return compressed_manifest_measurement(manifest_payload, image_id)
-    raise ValueError('OCI archive does not contain the loaded image')
+            diff_ids = image_diff_ids(json.loads(payload), len(manifest['Layers']))
+            return sum(verified_layer_bytes(archive.extractfile(layer), diff_id)
+                       for layer, diff_id in zip(manifest['Layers'], diff_ids))
+    raise ValueError('Saved archive does not contain the loaded image')
+
+
+def measure_saved_image(reference, image_id):
+    with tempfile.TemporaryDirectory(prefix='honua-image-size-') as directory:
+        path = Path(directory) / 'image.tar'
+        subprocess.run(['docker', 'image', 'save', '--output', str(path), reference], check=True)
+        return saved_image_bytes(path, image_id)
 
 
 def compressed_manifest_measurement(payload, image_id):
@@ -219,7 +281,10 @@ def main():
 
 
 def measure_published(args, inspection):
-    report = {'image': args.image, 'image_id': inspection['Id'], 'bytes': inspection['Size'],
+    size = measure_saved_image(args.image, inspection['Id'])
+    report = {'image': args.image, 'image_id': inspection['Id'], 'bytes': size,
+              'docker_storage_bytes': inspection['Size'],
+              'size_method': 'verified-uncompressed-layer-bytes',
               'release_stage': args.release_stage,
               'size_budget_bytes': IMAGE_SIZE_BUDGETS[args.release_stage],
               'profile': args.profile, 'tags': os.environ.get('IMAGE_TAGS', '').splitlines(),
@@ -227,18 +292,21 @@ def measure_published(args, inspection):
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     if args.default_image:
-        verify_size(inspection['Size'], args.profile, args.release_stage)
+        verify_size(report['bytes'], args.profile, args.release_stage)
     if args.verify_jit_boundary:
         files, deps = exported_files(args.image)
         verify_files(files, args.profile)
         verify_build_inputs({'assets': {'targets': {}}, 'responses': [],
                              'deps': deps, 'compilation': 'jit'}, args.profile)
-    print(f"{args.profile}: {inspection['Size']} uncompressed bytes; "
+    print(f"{args.profile}: {size} uncompressed bytes; "
           f"{report['oci']['compressed_layer_bytes']} compressed layer bytes")
 
 
 def measure_export(args, inspection):
     baseline = inspect_image(args.baseline)
+    baseline_size = measure_saved_image(args.baseline, baseline['Id'])
+    oci = measure_oci_archive(args.oci_archive, inspection['Id']) if args.oci_archive else None
+    size = oci['uncompressed_layer_bytes'] if oci else measure_saved_image(args.image, inspection['Id'])
     files, deps = exported_files(args.image)
     evidence = {
         'assets': json.loads((args.evidence_directory / 'project.assets.json').read_text()),
@@ -253,19 +321,22 @@ def measure_export(args, inspection):
         'profile': args.profile,
         'release_stage': args.release_stage,
         'size_budget_bytes': IMAGE_SIZE_BUDGETS[args.release_stage],
-        'bytes': inspection['Size'],
+        'bytes': size,
+        'docker_storage_bytes': inspection['Size'],
+        'size_method': 'verified-uncompressed-layer-bytes',
         'app_bytes': sum(app_files.values()),
         'baseline_image': args.baseline,
-        'baseline_bytes': baseline['Size'],
-        'saved_bytes': baseline['Size'] - inspection['Size'],
+        'baseline_bytes': baseline_size,
+        'baseline_docker_storage_bytes': baseline['Size'],
+        'saved_bytes': baseline_size - size,
         'files': app_files,
     }
-    if args.oci_archive:
-        report['oci'] = measure_oci_archive(args.oci_archive, inspection['Id'])
+    if oci:
+        report['oci'] = oci
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     if args.compilation == 'aot' or args.default_image:
-        verify_size(inspection['Size'], args.profile, args.release_stage)
+        verify_size(report['bytes'], args.profile, args.release_stage)
     verify_files(files, args.profile)
     verify_build_inputs(evidence, args.profile)
     print(f"{args.profile}: {report['bytes']} bytes; saved {report['saved_bytes']} bytes")

@@ -25,7 +25,9 @@ class ServingImageMeasurementTests(unittest.TestCase):
             digest = 'sha256:' + hashlib.sha256(payload).hexdigest()
             blobs['blobs/sha256/' + digest.split(':')[1]] = payload
             return {'digest': digest, 'size': len(payload)}
-        config = blob(b'{"architecture":"amd64","os":"linux"}')
+        diff_id = 'sha256:' + hashlib.sha256(b'image layer bytes').hexdigest()
+        config = blob(json.dumps({'architecture': 'amd64', 'os': 'linux',
+                                  'rootfs': {'type': 'layers', 'diff_ids': [diff_id]}}).encode())
         layer = blob(gzip.compress(b'image layer bytes', mtime=0))
         layer['mediaType'] = 'application/vnd.oci.image.layer.v1.tar+gzip'
         manifest = blob(json.dumps({'schemaVersion': 2, 'config': config,
@@ -48,6 +50,7 @@ class ServingImageMeasurementTests(unittest.TestCase):
                                '--output', str(Path(directory) / 'report.json')]), \
              patch.object(self.measurement, 'inspect_image', return_value={'Id': 'sha256:' + 'b' * 64, 'Size': size}), \
              patch.object(self.measurement, 'measure_registry_image', return_value={'compressed_layer_bytes': 50}), \
+             patch.object(self.measurement, 'measure_saved_image', return_value=size), \
              patch.object(self.measurement, 'exported_files', return_value=(files, deps)):
             self.measurement.main()
 
