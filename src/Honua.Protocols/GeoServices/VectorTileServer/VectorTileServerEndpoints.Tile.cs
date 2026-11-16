@@ -163,7 +163,7 @@ internal static partial class VectorTileServerEndpoints
                 x,
                 y,
                 z,
-                query,
+                await VectorTileQuery.ForLayerAsync(context, resource, query).ConfigureAwait(false),
                 tileOptions,
                 tileLimits,
                 cancellationToken);

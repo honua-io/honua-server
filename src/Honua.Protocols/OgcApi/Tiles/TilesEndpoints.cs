@@ -725,11 +725,14 @@ internal static partial class TilesEndpoints
                 tileCol,
                 tileRow,
                 zoomLevel,
-                CreateVectorTileQuery(
-                    layer.SpatialReferenceSrid,
-                    isGeographic,
-                    temporalFilter: GetTemporalFilterForLayer(layer, temporalFilters),
-                    gridGeometry: vectorGridGeometry),
+                await VectorTileQuery.ForLayerAsync(
+                    context,
+                    layer.Resource,
+                    CreateVectorTileQuery(
+                        layer.SpatialReferenceSrid,
+                        isGeographic,
+                        temporalFilter: GetTemporalFilterForLayer(layer, temporalFilters),
+                        gridGeometry: vectorGridGeometry)).ConfigureAwait(false),
                 tileOptionsValue,
                 tileLimits,
                 cancellationToken,

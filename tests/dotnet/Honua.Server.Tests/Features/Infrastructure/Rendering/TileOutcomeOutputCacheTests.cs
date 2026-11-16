@@ -202,14 +202,15 @@ public sealed class TileOutcomeOutputCacheTests
                 }).CacheOutput(policy));
             })).StartAsync();
 
-    private static Task<IResult> ExecuteAsync(HttpContext context, int bytes, long budget)
+    private static async Task<IResult> ExecuteAsync(HttpContext context, int bytes, long budget)
     {
         var provider = Substitute.For<ITileProvider>();
         provider.GetMvtTileAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(),
             Arg.Any<FeatureQuery?>(), Arg.Any<TileOptions>(), Arg.Any<TileLimits>(),
             Arg.Any<GridGeometry?>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult<byte[]?>(new byte[bytes]));
-        return VectorTileExecution.ExecuteAsync(context, provider, 1, 0, 0, 0, new FeatureQuery(),
+        var query = await VectorTileQuery.ForLayerAsync(context, TileTestLayer.Resource, new FeatureQuery());
+        return await VectorTileExecution.ExecuteAsync(context, provider, 1, 0, 0, 0, query,
             new TileOptions(), new TileLimits { MaxTileSize = budget }, CancellationToken.None);
     }
 
