@@ -34,7 +34,7 @@ PRODUCTION_SUFFIXES = (
 )
 TEST_SUFFIXES = (".cs", ".razor", ".json", ".csproj")
 CODE_SUFFIXES = (".cs", ".razor", ".cshtml")
-COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+COMMENT_OR_STRING = re.compile(r'"(?:\\.|[^"\\\n])*"|//[^\n]*|/\*.*?\*/', re.S)
 TYPE = re.compile(
     r"^\s*(?:\[[^\]]*\]\s*)*(?:(?:public|internal|private|protected|static|sealed|abstract|partial|readonly|file|unsafe|ref|new)\s+)*"
     r"(?:class|record(?:\s+(?:struct|class))?|struct|interface|enum)\s+([A-Z]\w*)",
@@ -59,7 +59,9 @@ def read(root: Path, path: str) -> str:
         text = (root / path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
-    return COMMENT.sub(" ", text) if path.endswith(CODE_SUFFIXES) else text
+    if not path.endswith(CODE_SUFFIXES):
+        return text
+    return COMMENT_OR_STRING.sub(lambda match: match.group(0) if match.group(0).startswith('"') else " ", text)
 
 
 def declarations(root: Path, sources: list[str]) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
@@ -128,7 +130,9 @@ def self_test() -> int:
         "src/A/Split.Part1.cs": "namespace A;\npublic partial class Split { }\n",
         "src/A/Split.Part2.cs": "namespace A;\npublic partial class Split { }\n",
         "src/A/Host.cs": "namespace A;\ninternal static class Host { static object M() => new Split(); }\n",
-        "tests/A.Tests/T.cs": "class T { object a = new OnlyTests(); object b = new Used(); object c = new Split(); object d = typeof(Endpoints); }\n",
+        "src/A/AfterUrl.cs": "namespace A;\npublic sealed class AfterUrl { }\n",
+        "src/A/Link.cs": "namespace A;\ninternal static class Link { static object M() => new[] { (object)\"https://example.test\", new AfterUrl() }; }\n",
+        "tests/A.Tests/T.cs": "class T { object a = new OnlyTests(); object b = new Used(); object c = new Split(); object d = typeof(Endpoints); object e = new AfterUrl(); }\n",
     }
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)

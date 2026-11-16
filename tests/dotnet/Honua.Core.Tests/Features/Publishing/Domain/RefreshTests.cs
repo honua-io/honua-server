@@ -88,12 +88,3 @@ public class RefreshPolicyTests
         manual.WithRefreshCompleted().Mode.Should().Be(RefreshMode.Manual);
     }
 }
-
-public class RefreshRequestTests
-{
-
-}
-
-public class RefreshResultTests
-{
-}

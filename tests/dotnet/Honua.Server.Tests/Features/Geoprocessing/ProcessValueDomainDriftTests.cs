@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
@@ -83,7 +82,7 @@ public sealed class ProcessValueDomainDriftTests
 
         undeclared.Should().BeEmpty(
             "every finite token set ProcessPlanValidator enforces must be published as AllowedValues so "
-            + "GPServer choiceList, OGC JSON Schema enum and the toolbox translation probe all see it; "
+            + "GPServer choiceList and the toolbox translation probe all see it; "
             + "add the domain to ProcessValueDomains and reference it from BuiltInProcessCatalog, or "
             + "document an exclusion in UnpublishedDomains");
     }
@@ -167,10 +166,6 @@ public sealed class ProcessValueDomainDriftTests
                     processId, parameterName);
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Published metadata surfaces (#3048 acceptance: GPServer choiceList / OGC enum)
-    // -----------------------------------------------------------------------
 
     // -----------------------------------------------------------------------
     // Helpers

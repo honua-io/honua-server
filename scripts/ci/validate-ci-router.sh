@@ -1647,7 +1647,7 @@ assert_descriptor \
   "Caching File Storage Styling and Infrastructure"
 assert_descriptor \
   "core-caching-targeted-to-split-child" \
-  "src/Honua.Core/Core/Features/Caching/MetadataCacheState.cs" \
+  "src/Honua.Core/Core/Features/Caching/CacheOptions.cs" \
   "targeted" \
   "false" \
   "Caching File Storage Styling and Infrastructure"
