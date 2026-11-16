@@ -237,7 +237,9 @@ internal sealed partial class FeatureQueryBuilder
             var isDistinctObjectId = query.Distinct &&
                 (fieldName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase)
                  || fieldName.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase));
-            if ((!DatabaseSchema.CanUseJsonPath(fieldName) && !isDistinctObjectId) || !seenFields.Add(fieldName))
+            // A stored id attribute is independent of the physical objectid column.
+            var isStoredId = fieldName.Equals(DatabaseSchema.IdColumn, StringComparison.OrdinalIgnoreCase);
+            if ((!DatabaseSchema.CanUseJsonPath(fieldName) && !isDistinctObjectId && !isStoredId) || !seenFields.Add(fieldName))
             {
                 continue;
             }
