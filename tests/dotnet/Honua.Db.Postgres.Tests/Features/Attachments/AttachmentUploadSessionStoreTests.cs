@@ -157,8 +157,13 @@ public sealed partial class AttachmentUploadSessionStoreTests(PostgresFixture fi
             var mutations = new PostgresAttachmentMutationStore(provider, schema, attachments);
             var delete = new AttachmentDeleteRequest
             {
-                OwnerId = "owner", ServiceId = "service", LayerId = 0, FeatureId = 42,
-                AttachmentId = 1, IdempotencyKey = "delete", Lifetime = TimeSpan.FromHours(1)
+                OwnerId = "owner",
+                ServiceId = "service",
+                LayerId = 0,
+                FeatureId = 42,
+                AttachmentId = 1,
+                IdempotencyKey = "delete",
+                Lifetime = TimeSpan.FromHours(1)
             };
             var deletion = await Assert.ThrowsAsync<InvalidOperationException>(() => mutations.DeleteAsync(delete));
             deletion.Message.Should().Be("Attachment migration identities were not supplied by the host.");
