@@ -208,8 +208,10 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             .GetProperty("id").GetString().Should().Be("roads");
 
         await CallAsync("validate_draft", $$"""{"draftId":"{{draftId}}"}""");
+        using var editor = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "dashboard-human-editor");
         using var saveContent = new StringContent("""{"changeNote":"dashboard fixture"}""", Encoding.UTF8, "application/json");
-        using var saveResponse = await _client.PostAsync(
+        using var saveResponse = await editor.Client.PostAsync(
             $"/api/v1/studio/package-drafts/{draftId:D}/content-versions",
             saveContent);
         saveResponse.StatusCode.Should().Be(HttpStatusCode.Created, await saveResponse.Content.ReadAsStringAsync());
@@ -241,10 +243,13 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(_ => new PostgresStudioPackageStore(connectionProvider, _studioSchema));
         });
+        HumanApprovalHttpClient.Configure(replica, _identityProvider);
         await replica.InitializeAsync();
         try
         {
             using var replicaClient = replica.CreateAdminClient();
+            using var replicaEditor = await HumanApprovalHttpClient.AuthenticateAsync(
+                replica, _identityProvider, "dashboard-human-editor");
             var versionPath = $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}";
             using var getResponse = await replicaClient.GetAsync(versionPath);
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -253,7 +258,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             reloaded.GetProperty("versionId").GetGuid().Should().Be(version.VersionId);
             reloaded.GetProperty("contentHash").GetString().Should().Be(expectedHash);
             using var reopenContent = new StringContent("{}", Encoding.UTF8, "application/json");
-            using var reopenResponse = await replicaClient.PostAsync(versionPath + "/reopen", reopenContent);
+            using var reopenResponse = await replicaEditor.Client.PostAsync(versionPath + "/reopen", reopenContent);
             reopenResponse.StatusCode.Should().Be(HttpStatusCode.Created, await reopenResponse.Content.ReadAsStringAsync());
             using var reopenedDocument = JsonDocument.Parse(await reopenResponse.Content.ReadAsStringAsync());
             var reopened = JsonSerializer.Deserialize(reopenedDocument.RootElement.GetProperty("data"),

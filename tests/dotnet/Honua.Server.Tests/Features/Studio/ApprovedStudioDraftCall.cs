@@ -21,7 +21,10 @@ internal static class ApprovedStudioDraftCall
         (WebAppFixture Fixture, AdminAuthEndpointsTests.StubHttpClientFactory IdentityProvider, string? Tenant) context)
     {
         var verb = tool.Replace("honua_studio_", "", StringComparison.Ordinal);
-        if (verb is not ("create_draft" or "update_draft" or "validate_draft" or "save_version")) return null;
+        if (verb is not ("create_draft" or "update_draft" or "validate_draft" or "save_version"
+            or "add_layer" or "remove_layer" or "set_layer_style" or "set_layer_visibility" or "set_view"
+            or "add_widget" or "remove_widget" or "bind_interaction" or "remove_interaction"
+            or "add_control" or "remove_control")) return null;
         var proposalId = GetProposalId(response);
         if (proposalId is null) return null;
 
@@ -79,9 +82,12 @@ internal static class ApprovedStudioDraftCall
             && data.TryGetProperty("approvalRequired", out var required) && required.GetBoolean()
             && data.TryGetProperty("proposalId", out var errorProposal))
             return errorProposal.GetString();
-        if (response.TryGetProperty("result", out var result)
-            && result.TryGetProperty("structuredContent", out var content)
-            && content.TryGetProperty("operation", out var operation)
+        if (!response.TryGetProperty("result", out var result)
+            || !result.TryGetProperty("structuredContent", out var content)) return null;
+        if (content.TryGetProperty("approvalRequired", out var approvalRequired) && approvalRequired.GetBoolean()
+            && content.TryGetProperty("proposalId", out var directProposal))
+            return directProposal.GetString();
+        if (content.TryGetProperty("operation", out var operation)
             && operation.TryGetProperty("status", out var status) && status.GetString() == "RequiresApproval"
             && operation.TryGetProperty("proposalId", out var proposal))
             return proposal.GetString();
