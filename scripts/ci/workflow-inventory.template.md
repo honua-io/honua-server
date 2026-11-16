@@ -815,15 +815,16 @@ minutes, including setup allowance. These initialized the dispatch ranks.
 Measured ranks (16 Nov 2026): each recorded `dispatch_rank` is the median passing
 job duration over eleven full trunk runs, counting a sample only when its filter
 and project selection match the current definition (gate-model.md, "Measured
-ranks"). Full run 43819793722 supplies 205 passing child samples and 46 newly
-measured children. After replacing the two gRPC definitions with three whole-class
-children, 214 of 220 definitions have passing measurements. The three new gRPC
-ranks allocate the old combined 24.3 minutes by TRX timing; three other definitions
-retain prior ranks without a matching passing sample. Ranks sum to 1,525.1
-runner-minutes, previously 1,644.0; 190 children fit the unchanged 10-minute PR
-shard budget, previously 189. These are scheduling estimates, not runtime savings.
-Temporal's explicit source override now uses `prioritize: true` as a tie-breaker
+ranks"). Full run 43819793722 supplies 205 passing child samples. On the timing
+repair's 225-child layout, 213 definitions have matching passing measurements;
+the ten replacement children and two other definitions retain their prior ranks
+or estimates. Remove 39 obsolete child estimates; eleven split-child estimates
+remain until passing measurements exist. Ranks sum to 1,566.2 runner-minutes,
+previously 1,696.9 on the repaired layout; 197 children fit the unchanged
+10-minute PR shard budget. These are scheduling estimates, not runtime savings.
+Temporal's explicit source override uses `prioritize: true` as a tie-breaker
 after changed-test and path-hit counts; candidate admission and caps still apply.
+Override priorities must be boolean; malformed values fail schema validation.
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 

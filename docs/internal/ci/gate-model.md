@@ -4,6 +4,17 @@ Every source path has at least one shard owner inside the PR time budget. `test-
 
 #7678 split the nine over-budget shards that were still the only owners of 61 source paths (Admin Catalog and Configuration, Admin Network and Jobs, Admin Platform and Connections, OData Mutations and Batch, Miscellaneous 1 and 2, Cloud and Streaming Import, SensorThings, gRPC Protocol and Scene) into 28 children from the TRX class spans of full run `43580101834`. Classes longer than a child's 5.5-minute share are cut at method boundaries, and classes with no shard time in that run (Tier Fast or Slow) stay in the last child, which also owns future tests. Child ranks are estimates in `full-run-capacity-contracts.json` until the next passing full run measures them. Miscellaneous children continue that family's numbering (3 to 8).
 
+Scheduled full run `43819793722` measured four of those children above ten
+minutes including setup: Miscellaneous 3 (841 seconds), Miscellaneous 4 (603),
+gRPC 1 (646), and gRPC 2 (810). They are replaced by Miscellaneous 9–13 and
+gRPC 3–7, bringing the matrix to 225 jobs. The cuts balance TRX start/end
+intervals, including per-test lifecycle time that the reported test duration
+omits. Each estimate includes the previous job's non-interval overhead (at
+least four minutes) plus thirty seconds of margin. Estimated job durations are
+8.3–8.7 minutes; a scheduled full run must still confirm timing, images and TRX
+coverage before the issue closes. Each residual child owns future methods;
+projects, source triggers, timeouts and report ownership are conserved.
+
 Server Features Streaming Snapshot and Conformance selects the snapshot and conformance classes. The deleted cursor-durability class is omitted from that shard, its parent and the miscellaneous residual filters.
 
 The latest full-run capacity audit partitions eleven additional parents into 26
@@ -1049,44 +1060,35 @@ Passing children count even when their full workflow fails or is cancelled;
 failed, skipped and cancelled children do not supply timing samples.
 
 The latest completed run, [43819793722](https://github.com/honua-io/honua-server/actions/runs/43819793722),
-contains all 219 then-current server children: 205 passed and 14 failed. It
-supplies 46 newly measured children. Before repartitioning gRPC, 216 definitions
-have matching passing measurements. The two old gRPC definitions are replaced
-below, leaving 214 measured definitions among 220 current children (1 to 7 samples,
-median 3; 54 have one sample). Migration
-Source Imports changed project selection and loses its predecessor's sample;
-its current job failed. It and Server Features Miscellaneous 4 and 8 retain their
-previous ranks. Failed duration is not a successful completion estimate, and
-failures remain gating.
+contains all 219 then-current server children: 205 passed and 14 failed. After
+the separately owned timing repair replaces four definitions with ten children,
+213 of 225 current definitions have matching passing samples: 1 to 7 each,
+median 3; 53 have one sample. The ten replacement children retain their repair's
+conservative estimates until matching passing full-run measurements exist.
+Server Features Miscellaneous 8 and Migration Source Imports also have no
+matching passing sample. Migration Source Imports changed project selection;
+its predecessor's timing cannot be reused. Failed duration is not a successful
+completion estimate, and failures remain gating.
 
 `scripts/ci/fixtures/measured-dispatch-ranks.json` records the ranks and runs;
 `test-full-run-capacity-partitions.py` rejects rank drift. Split children use
 their measured rank, else their contract estimate, else the parent's rank.
 Remove a child's estimate once measured; the estimate-sum conservation rule
-applies only while every child is estimated. This refresh removes 42 obsolete
-child estimates. Five estimates remain: Miscellaneous 4 and 8, plus the three
-new gRPC children.
-
-The old gRPC children measured 10.8 and 13.5 minutes, both outside the unchanged
-10-minute PR shard budget. Regrouping by whole class gives SceneGrpcIntegrationTests,
-GrpcIntegrationTests and a complement containing all other current and future
-gRPC classes. Their provisional ranks, 10.9, 8.6 and 4.8 minutes, allocate the
-old combined 24.3 job-minutes in proportion to passing TRX test durations from
-run 43819793722. These are estimates for new definitions, not measured savings.
-The Scene child remains deferred by the PR budget; the other two restore a
-budget-eligible gRPC source owner. Coverage fixtures prove an exact partition
-and unchanged execution policies.
+applies only while every child is estimated. This refresh removes 39 obsolete
+child estimates and retains eleven, including the ten newly partitioned children.
+The timing repair's exact partitions, execution policies and evidence remain intact.
 
 An explicit Temporal source override uses `prioritize: true` to keep a narrow
 source owner ahead of broad inherited coverage when changed-test and path-hit
 counts tie. It changes ranking only: candidate admission, the six-job cap and
 time budgets still apply. Unmarked overrides retain their previous ranking.
+The schema accepts only boolean override priorities; malformed values fail validation.
 
-Ranks sum to 1,525.1 runner-minutes, previously 1,644.0; 190 of 220 children fit
-the 10-minute PR shard budget, previously 189 of 219. These are scheduling
-estimates, not measured runtime savings. The separate tiny-shard consolidation
-measurement remains 75.38 to 12.11 runner-minutes (63.27 saved). Single-sample
-ranks and new partition estimates need subsequent passing full-run evidence.
+Ranks sum to 1,566.2 runner-minutes, previously 1,696.9 on the repaired layout;
+197 of 225 children fit the unchanged 10-minute PR shard budget. These are
+scheduling estimates, not measured runtime savings. The separate tiny-shard
+consolidation measurement remains 75.38 to 12.11 runner-minutes (63.27 saved).
+Single-sample ranks and new partition estimates need subsequent passing full-run evidence.
 
 ### Standalone tooling in affected producer builds
 
