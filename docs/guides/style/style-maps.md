@@ -69,7 +69,7 @@ A MapLibre client may paint `text-field` from the style document it fetches. Tha
 
    Run `POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style` with `{"preferredMethod":"Quantile","preferredPalette":"Viridis","classCount":5}`.
 
-   The response contains a ready-to-apply `mapLibreStyle`, a matching `drawingInfo`, and legend metadata. All request fields are optional (`preferredField`, `preferredMethod` of `EqualInterval`/`Quantile`/`NaturalBreaks`/`UniqueValue`, `preferredPalette` of `Viridis`/`CartoBold`/`RdBu`, `classCount` 2–12); a value outside those is ignored, not refused. Field-based classification requires the Pro `styling.auto-suggest` entitlement; Community editions get geometry-aware defaults.
+   The response contains a ready-to-apply `mapLibreStyle`, a matching `drawingInfo`, and legend metadata. All request fields are optional (`preferredField`, `preferredMethod` of `EqualInterval`/`Quantile`/`NaturalBreaks`/`UniqueValue`, `preferredPalette` of `Viridis`/`CartoBold`/`RdBu`, `classCount` 2–12). Unsupported method and palette preferences are ignored; `classCount` is clamped to 2–12. Field-based classification requires the Pro `styling.auto-suggest` entitlement; Community editions get geometry-aware defaults.
 
 4. Serve themed variants from the style endpoint. Themes are derived on read — the stored style is untouched. On a default install the endpoint answers 401 without credentials, so the client needs read access ([authentication](../secure/authentication.md)):
 
