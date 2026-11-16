@@ -12,7 +12,7 @@ internal static partial class ObservationStreamEndpoints
 {
     private static readonly TimeSpan CloseWriteBudget = TimeSpan.FromSeconds(2);
 
-    private static async Task HandleWebSocketAsync(
+    internal static async Task HandleWebSocketAsync(
         HttpContext context,
         ObservationStreamSession session,
         long? datastreamId)
@@ -20,13 +20,15 @@ internal static partial class ObservationStreamEndpoints
         using var socket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
         using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.RequestAborted, session.DisconnectToken);
+        using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(
+            context.RequestAborted, session.DisconnectToken);
         using var receiveCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
-        var receiveTask = ReceiveUntilCloseAsync(socket, sendCts, receiveCts.Token);
+        var receiveTask = ReceiveUntilCloseAsync(socket, sendCts, writeCts, receiveCts.Token);
         try
         {
             await SendObservationFramesUntilEndedAsync(SendFramesAsync(), sendCts.Token).ConfigureAwait(false);
 
-            // Only this handler writes to the socket. Finish delivery before acknowledging Close.
+            // Finish delivery before acknowledging Close; the authorization wrapper serializes terminal writes.
             if (socket.State == WebSocketState.CloseReceived)
             {
                 await AcknowledgeCloseAsync(context, socket).ConfigureAwait(false);
@@ -48,8 +50,8 @@ internal static partial class ObservationStreamEndpoints
             await SendSocketAsync(socket,
                 JsonSerializer.Serialize(ObservationStreamStatus.Connected(datastreamId),
                     ObservationStreamJsonContext.Default.ObservationStreamStatus),
-                sendCts.Token).ConfigureAwait(false);
-            await SendObservationFramesAsync(socket, session, sendCts.Token).ConfigureAwait(false);
+                writeCts.Token).ConfigureAwait(false);
+            await SendObservationFramesAsync(socket, session, sendCts.Token, writeCts.Token).ConfigureAwait(false);
         }
     }
 
@@ -75,7 +77,8 @@ internal static partial class ObservationStreamEndpoints
     }
 
     private static async Task ReceiveUntilCloseAsync(
-        WebSocket socket, CancellationTokenSource sendCts, CancellationToken cancellationToken)
+        WebSocket socket, CancellationTokenSource sendCts, CancellationTokenSource writeCts,
+        CancellationToken cancellationToken)
     {
         // Client data is unused; discard it in bounded chunks while still processing control frames.
         var buffer = new byte[256];
@@ -99,7 +102,10 @@ internal static partial class ObservationStreamEndpoints
         }
         finally
         {
+            // Stop reads immediately, but let an active transport write finish before Close.
+            // Cancelling that write immediately would abort a managed WebSocket.
             sendCts.Cancel();
+            writeCts.CancelAfter(CloseWriteBudget);
         }
     }
 
@@ -125,7 +131,7 @@ internal static partial class ObservationStreamEndpoints
     }
 
     private static async Task SendObservationFramesAsync(
-        WebSocket socket, ObservationStreamSession session, CancellationToken ct)
+        WebSocket socket, ObservationStreamSession session, CancellationToken ct, CancellationToken writeToken)
     {
         while (!ct.IsCancellationRequested && socket.State == WebSocketState.Open)
         {
@@ -138,7 +144,8 @@ internal static partial class ObservationStreamEndpoints
             if (completed == timeoutTask)
             {
                 await SwallowAsync(readTask).ConfigureAwait(false);
-                await SendSocketAsync(socket, "{\"heartbeat\":true}", ct).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+                await SendSocketAsync(socket, "{\"heartbeat\":true}", writeToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -148,10 +155,11 @@ internal static partial class ObservationStreamEndpoints
                 break;
             }
 
-            while (session.Reader.TryRead(out var frame))
+            while (!ct.IsCancellationRequested && socket.State == WebSocketState.Open
+                && session.Reader.TryRead(out var frame))
             {
                 var message = FormatDelivery(frame);
-                await SendSocketAsync(socket, message.Json, ct).ConfigureAwait(false);
+                await SendSocketAsync(socket, message.Json, writeToken).ConfigureAwait(false);
                 if (frame is RealtimeDelivery.Reset) return;
             }
         }
