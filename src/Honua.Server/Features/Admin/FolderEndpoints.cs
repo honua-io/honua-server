@@ -21,7 +21,7 @@ internal static class FolderEndpoints
             .AddEndpointFilter<FolderReplayAuthorizationFilter>()
             .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Services").RequireAdminAuthorization();
         var list = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.list");
-        group.MapMethods(list.Path, [list.Method.Method], List).WithAdminOperation(list);
+        group.MapMethods(list.Path, [list.Method.Method], (Delegate)List).WithAdminOperation(list);
         var create = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.create");
         group.MapMethods(create.Path, [create.Method.Method], Create).WithAdminOperation(create);
         var update = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.update");
