@@ -17,8 +17,8 @@ using Npgsql;
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
 /// <summary>
-/// An admin finishes the closed operator roster through MCP. A caller without the admin grant
-/// is permission_denied and creates no connection row.
+/// An admin finishes the closed operator roster through MCP, each change after one human approval.
+/// A caller without the admin grant is permission_denied and creates no connection row.
 /// </summary>
 /// <remarks>
 /// Lane A and Lane B executors compose only when a durable proposal store is already registered.
@@ -114,7 +114,10 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
             inlineSecret.GetRawText().Should().NotContain("inline-value-must-not-be-echoed");
             (await ConnectionNamesAsync(admin)).Should().NotContain(inlineName);
 
-            var created = await CallOkAsync(admin, "honua_admin_connections_create", new
+            // MCP callers are agents: each change is a proposal one person approves, and the
+            // approval replays under the proposer's managed key, not the bootstrap admin key.
+            using var agent = await HumanApprovedOperation.CreateProposerClientAsync(fixture);
+            var created = await CallApprovedAsync(fixture, agent, "honua_admin_connections_create", new
             {
                 name = connectionName,
                 host = builder.Host,
@@ -136,7 +139,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 .Should().Be(connectionId);
 
             var tableName = $"roster{suffix}";
-            var imported = await CallOkAsync(admin, "honua_admin_import_upload_url", new
+            var imported = await CallApprovedAsync(fixture, agent, "honua_admin_import_upload_url", new
             {
                 sourceUrl = SourceUrl,
                 fileName = "parcels.geojson",
@@ -244,6 +247,19 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         structured.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace(structured.GetRawText());
     }
 
+    private static async Task<JsonElement> CallApprovedAsync(
+        WebAppFixture fixture, HttpClient agent, string name, object arguments)
+    {
+        var root = await CallAsync(agent, name, arguments);
+        var structured = root.GetProperty("result").GetProperty("structuredContent");
+        structured.GetProperty("status").GetString().Should().Be("RequiresApproval", structured.GetRawText());
+        var proposalId = structured.GetProperty("proposalId").GetString();
+        proposalId.Should().NotBeNullOrWhiteSpace(structured.GetRawText());
+        var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, proposalId!);
+        handle.GetProperty("status").GetString().Should().Be("Completed", handle.GetRawText());
+        return handle;
+    }
+
     private static async Task<JsonElement> CallOkAsync(HttpClient client, string name, object arguments)
     {
         var root = await CallAsync(client, name, arguments);
@@ -279,7 +295,11 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
 
     private static JsonDocument ResponseJson(JsonElement structured)
     {
-        var response = structured.GetProperty("details").GetProperty("response").GetString();
+        // A direct MCP result carries details at the top; an approved handle nests them under result.
+        var status = structured.TryGetProperty("result", out var result) && result.ValueKind == JsonValueKind.Object
+            ? result
+            : structured;
+        var response = status.GetProperty("details").GetProperty("response").GetString();
         response.Should().NotBeNullOrWhiteSpace(structured.GetRawText());
         return JsonDocument.Parse(response!);
     }
