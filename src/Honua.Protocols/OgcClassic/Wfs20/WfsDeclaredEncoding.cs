@@ -37,7 +37,7 @@ internal sealed record WfsDeclaredEncoding
 
     internal bool IsGmlField(string fieldName) => Contains(GmlFields, fieldName);
 
-    internal WfsDeclaredEncoding WithoutNamespace() => this with { NamespacePrefix = null, NamespaceUri = null };
+    internal WfsDeclaredEncoding WithoutNamespace() => this with { NamespacePrefix = null, NamespaceUri = null, Wfs10Schema = null };
 
     internal static WfsDeclaredEncoding Read(MetadataV2Object resource)
     {

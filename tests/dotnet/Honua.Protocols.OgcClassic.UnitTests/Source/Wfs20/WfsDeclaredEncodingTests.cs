@@ -79,13 +79,14 @@ public sealed class WfsDeclaredEncodingTests
         => WfsDeclaredEncoding.Read(new MetadataV2Object()).Should().BeSameAs(WfsDeclaredEncoding.None);
 
     [UnitTest]
-    public void WithoutNamespace_KeepsTheEncoding()
+    public void WithoutNamespace_DropsTheNamespaceSpecificSchemaAndKeepsTheEncoding()
     {
-        var declared = Read("""{"namespace":{"prefix":"ext","uri":"https://example.test/a"},"legacyEncoding":{"omitNullProperties":true}}""")
+        var declared = Read("""{"namespace":{"prefix":"ext","uri":"https://example.test/a"},"legacyEncoding":{"omitNullProperties":true,"wfs10Schema":"<declared-schema/>"}}""")
             .WithoutNamespace();
 
         declared.NamespacePrefix.Should().BeNull();
         declared.NamespaceUri.Should().BeNull();
+        declared.Wfs10Schema.Should().BeNull();
         declared.OmitNullProperties.Should().BeTrue();
     }
 }

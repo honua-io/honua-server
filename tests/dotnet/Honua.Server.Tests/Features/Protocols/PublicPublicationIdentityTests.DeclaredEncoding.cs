@@ -40,6 +40,14 @@ public sealed partial class PublicPublicationIdentityTests
         feature.Elements(declared + "name").Should().BeEmpty("a hidden field is not written");
         feature.Elements().Last().Descendants().Should().Contain(
             element => element.Name.Namespace == LegacyGml, "the geometry follows the attributes");
+        var schema = await ReadXmlAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION={version}&TYPENAME=ext:roads_primary");
+        XNamespace xsd = "http://www.w3.org/2001/XMLSchema";
+        var propertyNames = schema.Descendants(xsd + "sequence").Single().Elements(xsd + "element")
+            .Select(element => element.Attribute("name")!.Value);
+        feature.Elements().Where(element => element.Name.Namespace == declared)
+            .Select(element => element.Name.LocalName).Should().Equal(propertyNames,
+                "the emitted feature must follow its schema sequence, including hidden fields and geometry ordering");
         var box = feature.Elements(LegacyGml + "boundedBy").Elements(LegacyGml + "Box").ToArray();
         if (version == "1.0.0")
         {
