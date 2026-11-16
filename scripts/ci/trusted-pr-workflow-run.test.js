@@ -227,8 +227,8 @@ test('accepts only positive safe integer workflow run ids', () => {
   }
 });
 
-// Observation-only consumers (pr-gate-impact-observe, native-image-impact-observe,
-// server-test-prebuild-observe) wake on EVERY completed source run, including the
+// Observation-only consumers (native-image-impact-observe) wake on EVERY completed
+// source run, including the
 // cancelled/superseded ones a fresh push produces. Fail-closed is still correct,
 // but for them the correct fail-closed outcome is a clean skip, not ~93 red runs.
 // Only the superseded class may be downgraded, and each shape reports its code.
@@ -340,7 +340,7 @@ test('resolveForObservation records one skip and returns null', async () => {
   const result = await resolveForObservation({
     ...options(github),
     core,
-    label: 'pr-gate-impact',
+    label: 'example-observer',
     markerPath: '/tmp/marker.json',
     fs: { writeFileSync: (path, body) => { written[path] = body; } },
   });
@@ -352,7 +352,7 @@ test('resolveForObservation records one skip and returns null', async () => {
   const marker = JSON.parse(written['/tmp/marker.json']);
   assert.equal(marker.contract, 'honua.ci.observation-skipped/v1');
   assert.equal(marker.code, 'no-pull-request-association');
-  assert.equal(marker.observer, 'pr-gate-impact');
+  assert.equal(marker.observer, 'example-observer');
   assert.equal(marker.source_run_conclusion, 'success');
 });
 
@@ -362,7 +362,7 @@ test('resolveForObservation passes a resolved source straight through', async ()
   const result = await resolveForObservation({
     ...options(github),
     core,
-    label: 'pr-gate-impact',
+    label: 'example-observer',
   });
   assert.equal(result.pullRequestNumber, 42);
   assert.equal(core.outputs.skip, 'false');
@@ -373,12 +373,12 @@ test('resolveForObservation still throws drift and requires its own inputs', asy
   const { github } = fixtures({ run: { name: 'Lookalike' } });
   const core = recordingCore();
   await assert.rejects(
-    resolveForObservation({ ...options(github), core, label: 'pr-gate-impact' }),
+    resolveForObservation({ ...options(github), core, label: 'example-observer' }),
     /completed canonical/,
   );
   assert.equal(core.outputs.skip, undefined);
   await assert.rejects(
-    resolveForObservation({ ...options(github), label: 'pr-gate-impact' }),
+    resolveForObservation({ ...options(github), label: 'example-observer' }),
     /requires core and a label/,
   );
 });
@@ -388,7 +388,7 @@ test('recordObservationSkip mirrors the resolver skip surface and bounds its cod
   const written = {};
   recordObservationSkip({
     core,
-    label: 'server-test-prebuild',
+    label: 'example-observer',
     markerPath: '/tmp/draft.json',
     fs: { writeFileSync: (path, body) => { written[path] = body; } },
     code: 'pull-request-draft',

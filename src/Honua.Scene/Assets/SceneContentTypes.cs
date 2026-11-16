@@ -3,41 +3,14 @@
 
 namespace Honua.Scene.Assets;
 
-/// <summary>
-/// MIME-type mapping for OGC 3D Tiles asset payloads.
-/// </summary>
-/// <remarks>
-/// The 3D Tiles specification leaves binary content types unspecified, so we
-/// follow Cesium's convention of <c>application/octet-stream</c> for the tile
-/// container formats and use the registered <c>model/gltf-*</c> media types
-/// for glTF/GLB payloads. Image and JSON payloads use their standard types.
-/// This type is shared by the HTTP/I3S scene adapters (Honua.Protocols.Scene)
-/// and the gRPC scene services so the asset path-safety + content-type contract
-/// has a single implementation.
-/// </remarks>
 internal static class SceneContentTypes
 {
-    /// <summary>
-    /// Default content type for unknown extensions or extensionless files.
-    /// </summary>
     public const string DefaultContentType = "application/octet-stream";
 
-    /// <summary>
-    /// JSON content type used for <c>tileset.json</c> and nested tileset
-    /// references.
-    /// </summary>
     public const string JsonContentType = "application/json";
 
-    /// <summary>
-    /// USDA text-format OpenUSD stage manifest content type.
-    /// </summary>
     public const string OpenUsdStageContentType = "model/vnd.usda";
 
-    /// <summary>
-    /// Resolves the MIME type for a 3D Tiles asset by its filename or path.
-    /// </summary>
-    /// <param name="path">Asset path or filename.</param>
-    /// <returns>The matching media type, or <see cref="DefaultContentType"/> when unknown.</returns>
     public static string Resolve(string path)
     {
         if (string.IsNullOrEmpty(path))

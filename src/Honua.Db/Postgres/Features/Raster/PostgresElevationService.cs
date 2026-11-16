@@ -432,17 +432,6 @@ internal sealed class PostgresElevationService : IElevationService
                 exception.MessageText.StartsWith($"{routine}:", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// SQL fragment that resolves the effective sample count from explicit
-    /// <c>@sampleCount</c>, derived <c>@interval</c> against the geodesic line
-    /// length, or the configured <c>@defaultSampleCount</c>. Always clamped to
-    /// <c>[2, @maxSampleCount]</c>. The derived branch keeps the
-    /// <c>length / interval</c> result in <c>float8</c> and clamps against
-    /// <c>@maxSampleCount</c> before the <c>::int</c> cast so very long lines
-    /// at very small intervals never overflow <c>integer</c>. Nullable
-    /// parameters are cast to concrete types so PostgreSQL can resolve them
-    /// when the value is NULL.
-    /// </summary>
     private static string ResolvedSampleCountExpression =>
         """
         GREATEST(2, LEAST(@maxSampleCount,
@@ -457,14 +446,6 @@ internal sealed class PostgresElevationService : IElevationService
             END))
         """;
 
-    /// <summary>
-    /// Validates that every source raster declares one positive SRID that the
-    /// spatial reference registry recognises. The point and profile SQL paths
-    /// transform sample geometries into <c>ST_SRID(raster)</c>, so an
-    /// unregistered or zero source SRID would otherwise surface as a
-    /// provider-side <c>ST_Transform</c> exception instead of the documented
-    /// <c>422 Unprocessable Entity</c> response.
-    /// </summary>
     private async Task ValidateSourceRastersAsync(
         RasterInfo[] rasters,
         CancellationToken cancellationToken)
