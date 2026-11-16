@@ -3050,6 +3050,32 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-admin-live",
+      "route": "/api/v1/admin/live",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Admin.AdminLiveEndpointTests.GetLive_Anonymous_ReturnsUnauthorized",
+        "Honua.Server.Tests.Admin.AdminLiveEndpointTests.GetLive_FullSubscriptionCloses_EmitsSlowConsumerReset",
+        "Honua.Server.Tests.Admin.AdminLiveEndpointTests.GetLive_InvalidCursor_ReturnsBadRequest",
+        "Honua.Server.Tests.Admin.AdminLiveEndpointTests.GetLive_UnknownTopic_ReturnsBadRequest",
+        "Honua.Server.Tests.Admin.AdminRealtimeGroupsTests.Live_AnotherTaskPublishes_ReceivesHealthAndResumesTransitionsOnReplacementTask",
+        "Honua.Server.Tests.Admin.AdminRealtimeGroupsTests.Live_InProcessProvider_WakesAfterCommittedProposalAndWorkflowWrites",
+        "Honua.Server.Tests.Admin.AdminRealtimeGroupsTests.Live_StatusOnlyConnection_ReplaysEventsAfterDisconnect",
+        "Honua.Server.Tests.Admin.AdminRealtimeGroupsTests.Live_WorkflowTransitions_ShareEventIdentityWithRestTimeline",
+        "Honua.Server.Tests.Features.Admin.GlobalAdminDataAuthorizationTests.AdminLive_PlatformOrUnboundAdministrator_CanOpen",
+        "Honua.Server.Tests.Features.Admin.GlobalAdminDataAuthorizationTests.GlobalAdministration_TenantAdministrator_IsForbidden",
+        "Honua.Server.Tests.Features.Security.AuthorizedRouteAnonymousDenialMatrixTests.EveryAuthorizedRoute_AnonymousCaller_Returns401",
+        "Honua.Server.Tests.Features.Security.InputValidationIntegrationTests.AdminLive_WithSqlInjectionInQuery_ReturnsBadRequest",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-admin-metadata-coordinated-releases-operations-operationid-approval-review-gate",
       "route": "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}",
       "method": "GET",
