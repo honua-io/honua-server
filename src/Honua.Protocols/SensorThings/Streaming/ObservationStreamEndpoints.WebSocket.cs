@@ -91,6 +91,7 @@ internal static partial class ObservationStreamEndpoints
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // The handler stops the pending receive after completing its terminal write.
         }
         catch (WebSocketException)
         {
