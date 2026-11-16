@@ -14205,13 +14205,13 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.ConditionalSceneRead_WithMatchingIfNoneMatch_ReturnsNotModified",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_CommunityEdition_ReturnsForbidden",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_InvalidCoordinateMetadata_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_MissingDeclaredObservationSidecar_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_MissingScene_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_ProtectedSceneRequiresAuthAndReturnsPrivateCache",
-        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_PublicConstructionScene_ReturnsDeterministicUsdaManifest",
-        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_WithMatchingIfNoneMatch_ReturnsNotModified"
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_PublicConstructionScene_ReturnsDeterministicUsdaManifest"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "experimental",
@@ -14239,6 +14239,8 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAuthorizationTests.GetTileset_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAuthorizationTests.GetTileset_PublicScene_DoesNotRequireAuth",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAuthorizationTests.GetTileset_PublicScene_ReturnsPublicCacheControl",
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.ConditionalProtectedSceneRead_Gzip_KeepsAcceptEncodingAndCredentialVary",
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.ConditionalSceneRead_WithMatchingIfNoneMatch_ReturnsNotModified",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetSceneAsset_HttpThenHttps_ResolvesBothAndCachesWithinScheme",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetSceneAsset_InternalAndAdvertisedHosts_SharePublicCacheEntry",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetSceneAsset_MissingThenPublished_DoesNotRetain404AcrossHostsOrSchemes",
@@ -14263,6 +14265,7 @@
       "proving_tests": [
         "Honua.Protocols.Scene.ComponentTests.SceneComponentTests.PublicAsset_ConditionalAndRangeRequests_PreserveWireContract",
         "Honua.Protocols.Scene.ComponentTests.SceneGenerationETagTests.GetAsset_GenerationChangesWithIdenticalContent_ReturnsNewValidator",
+        "Honua.Protocols.Scene.ComponentTests.SceneGenerationETagTests.GetAsset_GzipAcceptedForBinaryAsset_PreservesStrongIfRangeValidator",
         "Honua.Server.Tests.Features.Protocols.Scene.NvidiaConstructionFixtureTests.GetSceneAsset_ObservationsSidecar_ReturnsJsonWithStableSceneId",
         "Honua.Server.Tests.Features.Protocols.Scene.NvidiaConstructionFixtureTests.GetSceneAsset_StructureTile_ReturnsB3dmBinary",
         "Honua.Server.Tests.Features.Protocols.Scene.PublicSceneDiscoveryEndpointTests.GetSceneAsset_ForDowntownHonoluluFixture_ReturnsSceneMetadataJson",
@@ -16027,6 +16030,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.ConditionalSceneRead_WithMatchingIfNoneMatch_ReturnsNotModified",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.HeadTileset_ReturnsHeadersWithoutBody"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
@@ -23061,6 +23065,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_EsriFeatureEnvelopeAndDeleteIds_RoundTripAllOperations",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_FlatFormFailingEdit_ReturnsErrorEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_FlatFormUpload_AppliesEdits",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ForeignCommitAfterUpload_RetainsExactConflictResolutionBase",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_GeometryOnlyConflict_ClassifiesAsGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_IdenticalUploadAfterAnotherUpload_AppliesAgain",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_ManualReviewConflictHandling_WithholdsConflictingEdit",
@@ -23288,6 +23293,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithValidPointGeometry_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithZCoordinates_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.FeatureServerGdbVersionFlowTests.GdbVersionFlow_EditQueryReconcilePost_IsolatesThenMerges",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.FeatureEdits_ProtectedVersionOfAnotherOwner_AreDeniedAndWriteNothing",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Update_AndTheGeoServicesWriteForTheSameRow_AreBlockedByOneLease",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_DeletePayload_DeleteGrantAllowsDeletesWhenUpdateGrantDoesNot",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_UpdatePayload_DeleteOnlyGrantDeniesUpdate",
