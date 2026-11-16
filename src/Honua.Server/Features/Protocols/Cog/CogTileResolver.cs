@@ -311,7 +311,7 @@ internal sealed class CogTileResolver : ICogTileResolver
 
         // Score each overview by its ground sample distance against the requested tile geometry
         // using the shared selector so the COG and PostGIS-pyramid read paths rank levels
-        // identically (#1836).
+        // identically.
         var candidateResolutions = new (double ResolutionX, double ResolutionY)[metadata.OverviewLevels.Length];
         for (var i = 0; i < metadata.OverviewLevels.Length; i++)
         {

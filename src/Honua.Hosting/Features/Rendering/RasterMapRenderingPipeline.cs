@@ -925,7 +925,7 @@ internal static partial class RasterMapRenderingPipeline
         FeatureQuery query,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // ArcGIS raster operations do not define a feature-count truncation contract (#4044).
+        // ArcGIS raster operations do not define a feature-count truncation contract.
         // Treat the configured limit as a bounded page size, not a total cap: every page is
         // rendered immediately, while the request timeout token bounds total database/render work.
         var pageSize = Math.Max(1, query.Limit ?? MaxFeaturesPerLayer);

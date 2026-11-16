@@ -161,7 +161,7 @@ public static partial class OidcAuthenticationExtensions
                 var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
                 if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Honua-issued operator bearers (#2258) are routed to their own
+                    // Honua-issued operator bearers are routed to their own
                     // validator before the OIDC JWT scheme: they are signed with the
                     // operator-bearer key, not the IdP key, so the JWT scheme would
                     // reject them. Issuer match is a routing hint only; trust is
@@ -193,7 +193,7 @@ public static partial class OidcAuthenticationExtensions
                     return AdminSessionScheme;
                 }
 
-                // #2958: the client-certificate scheme is only registered (and only a valid
+                // The client-certificate scheme is only registered (and only a valid
                 // forward target) when the security.mtls experimental capability is enabled.
                 // Routing to it while the flag is off would throw (no handler registered for
                 // the scheme), so the capability flag is checked before Mode/certificate
@@ -299,13 +299,13 @@ public static partial class OidcAuthenticationExtensions
         var schemes = new List<string>
         {
             CompositeScheme,
-            // Console-consumable operator bearer (#2258): admin policies must accept
+            // Console-consumable operator bearer: admin policies must accept
             // a principal projected from a forwardable operator bearer so it resolves
             // to the same RBAC as the cookie session it was issued from.
             OperatorBearerScheme
         };
 
-        // #2958: the client-certificate scheme is only registered when the security.mtls
+        // The client-certificate scheme is only registered when the security.mtls
         // experimental capability is enabled; adding an unregistered scheme name to a
         // policy throws at authorization time, so it must be conditional here too.
         if (mtlsCapabilityEnabled)
@@ -349,7 +349,7 @@ public static partial class OidcAuthenticationExtensions
         {
             policy.RequireAuthenticatedUser();
             policy.RequireAssertion(context => roles.Any(role => context.User.IsInRole(role)));
-            // Preserve scoped API-key permission enforcement (#1985) when the policy is
+            // Preserve scoped API-key permission enforcement when the policy is
             // rebuilt for OIDC. Without this requirement a scoped admin key (e.g.
             // admin:read or admin:read + admin:approve) — which the API-key handler
             // stamps with the admin role — would satisfy the role assertion alone and
@@ -627,8 +627,8 @@ public static partial class OidcAuthenticationExtensions
                 // Configure metadata retrieval for signing-key discovery. With a single
                 // provider the standard Authority-driven configuration manager applies.
                 // With multiple providers every authority's metadata is loaded, but a
-                // token may be signed only by keys from the authority it names
-                // (honua-server#6165). A flat key union would let one IdP sign for another.
+                // token may be signed only by keys from the authority it names.
+                // A flat key union would let one IdP sign for another.
                 var authorities = new List<string>();
 
                 if (oidcOptions.AzureAd?.IsValid == true)
@@ -691,7 +691,7 @@ public static partial class OidcAuthenticationExtensions
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
                     OidcAuthenticationLog.JwtTokenValidated(logger);
 
-                    // Mark this principal as governed by OAuth access-token scopes (#2851). The
+                    // Mark this principal as governed by OAuth access-token scopes. The
                     // marker fires only for JwtBearer-validated access tokens — not interactive
                     // OIDC sign-in and not X-API-Key — so the operator scope authorizer knows to
                     // fail closed when a bearer token presents no recognized Honua MCP scope,

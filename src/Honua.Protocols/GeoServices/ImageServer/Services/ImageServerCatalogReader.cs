@@ -573,7 +573,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         // LowPS/HighPS are the source cell. MinPS/MaxPS are the visibility window.
         // ArcGIS sets MinPS to 0 on the finest rasters and MaxPS to HighPS times the
         // default range factor when nothing coarser takes over. Using the cell size for
-        // both ends shows the raster at exactly one resolution (#6563).
+        // both ends shows the raster at exactly one resolution.
         var lowPixelSize = Math.Min(pixelSizeX, pixelSizeY);
         var highPixelSize = Math.Max(pixelSizeX, pixelSizeY);
         var maxPixelSize = highPixelSize > 0 ? highPixelSize * CellSizeRangeFactor : 0;

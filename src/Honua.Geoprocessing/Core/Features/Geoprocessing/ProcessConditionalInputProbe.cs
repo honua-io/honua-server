@@ -177,7 +177,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         // The branch space IS enumerable here, so every conditional requirement can be stated
         // exactly, branch by branch, by FindConditionalBranchRequirements. Nothing is left
         // unverifiable, and repeating those parameters here would report the same gap twice
-        // under a weaker, conservative code (#3048).
+        // under a weaker, conservative code.
         return [];
     }
 

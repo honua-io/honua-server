@@ -120,7 +120,7 @@ internal static partial class MapServerEndpoints
                     var attributes = new Dictionary<string, object?>(feature.Attributes.Count, StringComparer.Ordinal);
                     foreach (var kvp in feature.Attributes)
                     {
-                        // Publisher-hidden right-side fields never reach the joined output (#6098).
+                        // Publisher-hidden right-side fields never reach the joined output.
                         if (!IsPublicAttribute(kvp.Key, rightHiddenFields))
                         {
                             continue;

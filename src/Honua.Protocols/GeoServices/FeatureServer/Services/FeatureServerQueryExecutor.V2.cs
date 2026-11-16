@@ -310,7 +310,7 @@ internal sealed partial class FeatureServerQueryExecutor
             // A reader that cannot stream (federated ArcGIS REST, warehouse providers) must
             // not be wrapped in MaterializingFeatureStream here: with no limit that pulls
             // every full feature, geometry included, into memory before the first id is
-            // written (#6113). Ask the reader for object ids only, under a hard ceiling.
+            // written. Ask the reader for object ids only, under a hard ceiling.
             var bounded = await QueryBoundedObjectIdsAsync(
                 routedReader,
                 storageLayerId,

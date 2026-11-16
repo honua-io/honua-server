@@ -395,7 +395,7 @@ internal static partial class FeatureStreamEndpoints
             // For fresh sessions, grace was already cleared above.
             bool handoffDone = !hasReplay;
 
-            // Default-subscription delivery fence (honua-server#6104). replayCursor is the
+            // Default-subscription delivery fence. replayCursor is the
             // durable-store sweep floor and only advances through store sweeps; live sends
             // are remembered per cursor instead of raising a high-water mark, so a frame
             // that arrives after a higher cursor is still delivered once.
@@ -511,7 +511,7 @@ internal static partial class FeatureStreamEndpoints
 
                     // Drop only frames already handled: at or below the swept floor, or
                     // already delivered live. A lower cursor that was never delivered is
-                    // still sent (honua-server#6104).
+                    // still sent.
                     if (!message.IsHeartbeat && liveDelivered.IsHandled(message.Envelope.Cursor))
                     {
                         continue;

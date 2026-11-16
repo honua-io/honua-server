@@ -40,7 +40,7 @@ internal static class AuditExportServiceCollectionExtensions
 
         // Retention is independent of the SIEM push sinks: a bounded retention
         // window (RetentionDays > 0) schedules a background sweep that prunes
-        // expired audit records even when no export sink is enabled (#509). A
+        // expired audit records even when no export sink is enabled. A
         // Postgres-backed pruner is used when a database is wired; otherwise the
         // no-op pruner keeps the sweep inert (tests / non-database hosts).
         if (options.ToRetentionPolicy().IsBounded)

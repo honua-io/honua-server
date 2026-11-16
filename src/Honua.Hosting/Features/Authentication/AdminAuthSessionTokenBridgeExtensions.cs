@@ -13,7 +13,7 @@ internal static class AdminAuthSessionTokenBridgeExtensions
     {
         return app.Use(async (context, next) =>
         {
-            // #6100: never turn the session cookie into a bearer for a cross-site unsafe request.
+            // Never turn the session cookie into a bearer for a cross-site unsafe request.
             if (context.Request.Headers.ContainsKey(HeaderNames.Authorization) ||
                 !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) ||
                 AdminSessionCrossSiteRequestGuard.IsCrossSiteUnsafeRequest(context.Request))

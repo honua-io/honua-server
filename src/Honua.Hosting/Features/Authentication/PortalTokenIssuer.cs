@@ -313,8 +313,8 @@ internal sealed partial class PortalTokenIssuer(
         return record.ClientType switch
         {
             PortalTokenClientType.Bearer => true,
-            // generateToken desktop clients omit Referer after minting client=referer
-            // (honua-server#5558). That exception is stored on the record. Browser
+            // generateToken desktop clients omit Referer after minting client=referer.
+            // That exception is stored on the record. Browser
             // OAuth tokens use the same client type and still require the header.
             PortalTokenClientType.Referer => (record.AcceptMissingReferer && string.IsNullOrWhiteSpace(binding.Referer))
                 || string.Equals(

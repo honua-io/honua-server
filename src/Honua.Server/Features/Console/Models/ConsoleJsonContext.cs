@@ -22,7 +22,7 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(ApiResponse<ConsoleRbacRole>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleRoleAuditPage>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
-// Share access projection, public-link, and embed contracts (#1215).
+// Share access projection, public-link, and embed contracts.
 [JsonSerializable(typeof(ApiResponse<ConsoleShareProjection>))]
 [JsonSerializable(typeof(ApiResponse<ConsolePublicLinkToken>))]
 [JsonSerializable(typeof(ApiResponse<ConsolePublicLinkListResponse>))]
@@ -30,7 +30,7 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(ApiResponse<ConsoleEmbedToken>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleEmbedRedeemResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleShareDependencyClosureResponse>))]
-// Open-data DCAT + STAC publication API (#1214).
+// Open-data DCAT + STAC publication API.
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataPageResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataPage>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataEligibilityResponse>))]
@@ -49,7 +49,7 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(StacProjectionCatalog))]
 [JsonSerializable(typeof(StacProjectionCollection))]
 [JsonSerializable(typeof(StacProjectionItem))]
-// Catalog discovery-endpoints registry read API (#1279).
+// Catalog discovery-endpoints registry read API.
 [JsonSerializable(typeof(ApiResponse<CatalogDiscoveryRegistry>))]
 [JsonSerializable(typeof(ApiResponse<CatalogEndpointDetail>))]
 [JsonSerializable(typeof(ApiResponse<CatalogItem>))]

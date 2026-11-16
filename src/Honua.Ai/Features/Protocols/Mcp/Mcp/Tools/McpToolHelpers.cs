@@ -254,7 +254,7 @@ internal static class McpToolHelpers
         GeoprocessingNotFoundException => "UnknownDataset",
         GeoprocessingPreconditionFailedException => "PreconditionFailed",
         Honua.Infrastructure.Rendering.RasterRenderingUnavailableException => "PreconditionFailed",
-        // honua-release#202: a refusal that names a dependency the install never composed is a
+        // A refusal that names a dependency the install never composed is a
         // precondition failure, not an execution failure — nothing ever ran. Matches the
         // RasterRenderingUnavailableException precedent above. Adapters that reuse this
         // exception for a transient upstream carry no receipt and keep the previous kind.

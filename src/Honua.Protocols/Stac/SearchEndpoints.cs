@@ -456,7 +456,7 @@ internal static class SearchEndpoints
             // collection, preserving SQL AND/OR/NOT semantics. Rejecting the whole search
             // was a real interop failure: an unscoped `client.search(filter=...)` on any
             // collection-specific property (or on `datetime`, which /stac/queryables
-            // advertises catalog-wide) returned 400 (honua-server#3392). The error is
+            // advertises catalog-wide) returned 400. The error is
             // retained and still returned when no selected collection declares the
             // property, so a typo is never silently answered with an empty result set.
             string? inapplicableFilterError = null;

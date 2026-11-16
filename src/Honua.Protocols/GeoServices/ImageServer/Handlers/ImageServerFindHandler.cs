@@ -82,7 +82,7 @@ internal sealed class ImageServerFindHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid ImageServer find filter.");
             }
 
-            // Orientation-ranked selection (#1880): when any candidate carries exterior
+            // Orientation-ranked selection: when any candidate carries exterior
             // orientation (off-nadir angle), prefer the most nadir-looking images at the target,
             // breaking ties by footprint distance. Falls back to pure distance ranking when no
             // candidate has orientation metadata (the common case for plain COGs).
@@ -330,7 +330,7 @@ internal sealed class ImageServerFindHandler
     private static ImageServerFindImage BuildImage(ImageServerCatalogItem item, ImmutableArray<string> maskedFields)
     {
         // MinPS is the visibility floor (0 = visible when zoomed in), not the source cell.
-        // Report LowPS so find keeps advertising the native resolution (#6563).
+        // Report LowPS so find keeps advertising the native resolution.
         double? pixelSize = null;
         if (!ImageServerCatalogSecurity.IsMasked(maskedFields, "MinPS") &&
             !ImageServerCatalogSecurity.IsMasked(maskedFields, "MaxPS"))

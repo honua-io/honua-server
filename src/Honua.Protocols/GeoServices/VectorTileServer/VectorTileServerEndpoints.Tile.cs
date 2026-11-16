@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// VectorTileServer vector tile data route (honua-server#1778). Implemented WITHOUT editing
+// VectorTileServer vector tile data route. Implemented WITHOUT editing
 // the shared VectorTileServerEndpoints.cs: the route is declared here in this partial file.
 //
 // The handler is a thin protocol adapter over the shared vector-tile pipeline. It resolves
