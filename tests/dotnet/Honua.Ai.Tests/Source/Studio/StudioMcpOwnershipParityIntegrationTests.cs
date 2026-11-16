@@ -135,27 +135,9 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
             .Should().Be(aliceOwnerId);
     }
 
-    private async Task<HttpClient> CreateOwnerSessionAsync(string ownerId)
-    {
-        using var scope = _fixture.Services.CreateScope();
-        var sessions = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
-        var sessionId = await sessions.CreateAuthenticatedSessionAsync(new AdminAuthAuthenticatedSession
-        {
-            ProviderKey = "emulated-owner",
-            AccessToken = "emulated-owner-token",
-            Origin = AdminAuthSessionOrigin.InteractiveOidc,
-            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
-            Claims = [new() { Type = ClaimTypes.NameIdentifier, Value = ownerId }],
-        }, CancellationToken.None);
-        var client = _fixture.CreateClient();
-        client.BaseAddress = new Uri("https://localhost");
-        client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}");
-        using var response = await client.GetAsync("/api/v1/admin/auth/csrf");
-        response.EnsureSuccessStatusCode();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        client.DefaultRequestHeaders.Add("X-Honua-CSRF", document.RootElement.GetProperty("requestToken").GetString());
-        return client;
-    }
+    private Task<HttpClient> CreateOwnerSessionAsync(string ownerId) =>
+        EmulatedHumanApprovalSession.CreateClientAsync(_fixture.Services, () => _fixture.CreateClient(),
+            [new() { Type = ClaimTypes.NameIdentifier, Value = ownerId }]);
 
     private async Task<JsonElement> ApproveMutationAsync(JsonElement result)
     {
