@@ -36,8 +36,7 @@ public static partial class FeatureEditGate
                 continue;
             }
 
-            var attributes = check.EffectiveAttributes?.Invoke(row) ?? row.Feature?.Attributes ?? ImmutableDictionary<string, object?>.Empty;
-            var result = AttributeRuleEngine.Apply(check.Resource, attributes, Event(row.Kind), check.UnsupportedExpressions);
+            var result = EvaluateRules(check, row);
             if (!result.IsValid)
             {
                 rejected.Add(new(row.Kind, row.Index, result.Violations[0].Message));
@@ -56,6 +55,11 @@ public static partial class FeatureEditGate
 
         return new(ReplaceCalculatedFeatures(check.Batch, replacements), rejected);
     }
+
+    private static AttributeRuleApplicationResult EvaluateRules(FeatureEditCheck check, FeatureEditRow row)
+        => AttributeRuleEngine.Apply(check.Resource,
+            check.EffectiveAttributes?.Invoke(row) ?? row.Feature?.Attributes ?? ImmutableDictionary<string, object?>.Empty,
+            Event(row.Kind), check.UnsupportedExpressions);
 
     private static ValidationResult<ImmutableDictionary<string, object?>> ValidateCalculatedFields(
         MetadataV2Object resource, AttributeRuleApplicationResult result)

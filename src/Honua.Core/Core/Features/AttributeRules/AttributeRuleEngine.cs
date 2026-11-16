@@ -62,9 +62,7 @@ public static class AttributeRuleEngine
         {
             // Batch rules are deferred to the explicit batch pass; immediate rules run inline.
             // A rule whose triggering event does not match the current edit operation is skipped.
-            if (!rule.IsEnabled ||
-                rule.Batch != (pass == AttributeRulePass.Batch) ||
-                !AppliesTo(rule, editEvent))
+            if (!ShouldApply(rule, pass, editEvent))
             {
                 continue;
             }
@@ -78,8 +76,9 @@ public static class AttributeRuleEngine
                             continue;
                         }
 
-                        if (RejectIdentityCalculation(resource, rule, ref violations))
+                        if (IdentityCalculationViolation(resource, rule) is { } identityViolation)
                         {
+                            (violations ??= []).Add(identityViolation);
                             break;
                         }
 
@@ -152,17 +151,16 @@ public static class AttributeRuleEngine
         };
     }
 
-    private static bool RejectIdentityCalculation(
-        MetadataV2Object resource, MetadataV2AttributeRule rule, ref List<AttributeRuleViolation>? violations)
-    {
-        if (!rule.FieldName!.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
+    private static bool ShouldApply(
+        MetadataV2AttributeRule rule, AttributeRulePass pass, AttributeRuleEditEvent editEvent)
+        => rule.IsEnabled && rule.Batch == (pass == AttributeRulePass.Batch) && AppliesTo(rule, editEvent);
+
+    private static AttributeRuleViolation? IdentityCalculationViolation(
+        MetadataV2Object resource, MetadataV2AttributeRule rule)
         // Identity must match the response and durable replay receipt on every edit event.
-        (violations ??= []).Add(new(rule.Name, "Calculation rules cannot write the global ID field."));
-        return true;
-    }
+        => rule.FieldName!.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase)
+            ? new(rule.Name, "Calculation rules cannot write the global ID field.")
+            : null;
 
     private static void AddViolation(ref List<AttributeRuleViolation>? violations, MetadataV2AttributeRule rule)
     {
