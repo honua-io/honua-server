@@ -359,7 +359,11 @@ def match_signature(header: str) -> tuple[str, str, bool] | None:
         return None
     if "new" in prefix and not has_return:
         return None
-    return name, parameter_types(params), "static" in prefix
+    # Preprocessor lines are not masked: "#region static helpers" must not make a method static.
+    lines = left.split("\n")
+    directives = [index for index, line in enumerate(lines) if line.lstrip().startswith("#")]
+    declaration = " ".join(lines[directives[-1] + 1 :] if directives else lines)
+    return name, parameter_types(params), "static" in declaration.split()[:-1]
 
 
 def matching_brace(masked: str, open_index: int) -> int | None:
@@ -441,9 +445,7 @@ def scan(root: Path, static_helpers: bool = False) -> tuple[list[str], list[str]
         if not balanced:
             unbalanced.append(relative)
             continue
-        methods.extend(
-            method for method in found if (len(method.body) < MIN_LINES) == static_helpers
-        )
+        methods.extend(method for method in found if in_tier(method, static_helpers))
 
     by_endpoint: dict[str, list[Method]] = {}
     for method in methods:
@@ -477,6 +479,11 @@ def scan(root: Path, static_helpers: bool = False) -> tuple[list[str], list[str]
                     first, second = sorted((left_id, right_id))
                     pairs.add(f"{first}|{second}")
     return sorted(pairs), unbalanced
+
+
+def in_tier(method: Method, static_helpers: bool) -> bool:
+    """Short static helpers belong to the static-helper list only; longer methods to the general list only."""
+    return (len(method.body) < MIN_LINES) == static_helpers
 
 
 def is_pair(left: Method, right: Method) -> bool:
@@ -581,6 +588,22 @@ internal sealed class Short
     changed, _ = extract_methods("src/E.cs", helper.replace("value.Trim()", "value.TrimEnd()"))
     if is_pair(one[0], changed[0]):
         print("self-test: a short static helper with a different body paired", file=sys.stderr)
+        return 1
+    if in_tier(one[0], False) or not in_tier(one[0], True):
+        print("self-test: a short static helper belongs to the static-helper list only", file=sys.stderr)
+        return 1
+    if in_tier(first[0], True) or not in_tier(first[0], False):
+        print("self-test: a long method belongs to the general list only", file=sys.stderr)
+        return 1
+    retyped, _ = extract_methods("src/F.cs", helper.replace("Trim(string value)", "Trim(ReadOnlySpan<char> value)"))
+    if is_pair(one[0], retyped[0]):
+        print("self-test: short static helpers with different parameter types paired", file=sys.stderr)
+        return 1
+    region, _ = extract_methods(
+        "src/G.cs", helper.replace("    private string Label", "    #region static helpers\n    private string Label")
+    )
+    if [method.name for method in region] != ["Trim"]:
+        print("self-test: a preprocessor line made an instance method static", file=sys.stderr)
         return 1
     print("self-test ok", file=sys.stderr)
     return 0

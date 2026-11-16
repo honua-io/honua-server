@@ -23,10 +23,6 @@ namespace Honua.Architecture.Tests;
 /// Regenerate the seed, then delete lines rather than adding them:
 /// <c>python3 scripts/ci/duplicate-method-ratchet.py --write tests/dotnet/Honua.Architecture.Tests/duplicate-method-baseline.txt</c>.
 /// </para>
-/// <para>
-/// <c>--static-helpers</c> lists exact copies of static helpers of 8 to 24 normalized
-/// lines against <c>duplicate-static-helper-baseline.txt</c>, under the same rules.
-/// </para>
 /// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class DuplicateMethodRatchetTests
