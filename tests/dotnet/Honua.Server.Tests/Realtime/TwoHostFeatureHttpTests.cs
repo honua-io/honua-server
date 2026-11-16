@@ -81,11 +81,11 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
     {
         await _taskB.DisposeAsync();
         _taskB = TwoHostFeatureHarness.NewHost(new Dictionary<string, string?>
-            {
-                // A transaction proxy deliberately selects the production poll-only path;
-                // the ordinary database connection still targets the shared fixture database.
-                ["ConnectionStrings:RealtimeListener"] = "Host=disabled.proxy-local;Database=unused;Username=unused"
-            }).ShareSchemaWith(_taskA);
+        {
+            // A transaction proxy deliberately selects the production poll-only path;
+            // the ordinary database connection still targets the shared fixture database.
+            ["ConnectionStrings:RealtimeListener"] = "Host=disabled.proxy-local;Database=unused;Username=unused"
+        }).ShareSchemaWith(_taskA);
         await _taskB.InitializeAsync();
         TwoHostFeatureHarness.EnableEditing(_taskB);
         var listener = _taskB.GetService<RealtimeListener>();
