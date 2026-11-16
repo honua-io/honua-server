@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.WebSockets;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -33,7 +34,8 @@ public sealed partial class FeatureStreamEndpointsTests
             var body = await response.Content.ReadAsStringAsync();
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
-            body.Should().Contain("Field 'description' is masked");
+            using var problem = JsonDocument.Parse(body);
+            problem.RootElement.GetProperty("detail").GetString().Should().Contain("Field 'description' is masked");
         }
         finally
         {
@@ -77,7 +79,8 @@ public sealed partial class FeatureStreamEndpointsTests
             var body = await response.Content.ReadAsStringAsync();
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
-            body.Should().Contain("Field 'timestamp' is masked");
+            using var problem = JsonDocument.Parse(body);
+            problem.RootElement.GetProperty("detail").GetString().Should().Contain("Field 'timestamp' is masked");
         }
         finally
         {
