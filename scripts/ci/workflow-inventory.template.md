@@ -870,14 +870,23 @@ cancels before publishing change outputs when admission fails, so deferred work
 cannot become a successful CI baseline. Admitted affected shards run two at once;
 scheduled and non-selective full runs retain their 16-shard concurrency.
 
-Two concurrent shards keep an affected run to usually one and at most two
-`honua-heavy` runners (even matrix indices), so it runs beside PR Gate instead
+Two concurrent trusted shards use at most two `honua-heavy` runners, so an
+affected run runs beside PR Gate instead
 of waiting for an idle PR queue. The former PR Gate priority
 workflow cancelled affected runs whenever a PR Gate started and admission refused
 while one was active; with up to ten open PRs that admitted 0 of 32 dispatches
 from 05:52 to 17:02 UTC on 14 Nov 2026. Required PR gates and shard definitions are
 unchanged. The reported baseline incident (about 170 jobs, two hours queued,
 seven of eight heavy runners) predates the 40-job bound and the two-shard width.
+
+Trusted server-test matrices use the configured `HONUA_HEAVY_RUNNER` pool for
+all indices. Mixing hosted and heavy runners under one `max-parallel` limit
+allowed hosted jobs waiting for capacity to consume admission slots while heavy
+runners sat idle. At 14:17 UTC on 15 Nov, full run 43709972683 had 13 admitted
+hosted jobs waiting plus three executing shards, filling its 16 slots; another
+58 heavy shards had not been admitted. Fork guards, hosted fallback, shard
+coverage and the full/affected concurrency bounds remain unchanged. Live
+post-deployment runner idle times remain to be measured.
 
 ### Covered trunk runs
 
