@@ -11,13 +11,8 @@ const script = step.split('          script: |\n')[1]
   .split('\n').map(line => line.replace(/^ {12}/, '')).join('\n');
 const execute = new (Object.getPrototypeOf(async function () {}).constructor)('require', 'process', 'github', script);
 
-async function report({ destination = 'owner/tracker', repository = { private: true }, lookupError,
-  duplicate = false, severity = 'HIGH', existing = [] } = {}) {
-  const calls = [];
-  const finding = { release: 'test-release', platform: 'linux/amd64', VulnerabilityID: 'TEST-1',
-    PkgName: 'test-package', Severity: severity, dueBy: '2026-12-16' };
-  const title = '[release image] test-release linux/amd64: TEST-1 in test-package';
-  const github = {
+function mockGithub({ calls, lookupError, repository, duplicate, title, existing }) {
+  return {
     rest: {
       repos: { get: async args => {
         calls.push(['lookup', args]);
@@ -41,6 +36,15 @@ async function report({ destination = 'owner/tracker', repository = { private: t
       return duplicate ? [{ title, body: 'Advisory: TEST-1 (HIGH)' }] : existing;
     },
   };
+}
+
+async function report({ destination = 'owner/tracker', repository = { private: true }, lookupError,
+  duplicate = false, severity = 'HIGH', existing = [] } = {}) {
+  const calls = [];
+  const finding = { release: 'test-release', platform: 'linux/amd64', VulnerabilityID: 'TEST-1',
+    PkgName: 'test-package', Severity: severity, dueBy: '2026-12-16' };
+  const title = '[release image] test-release linux/amd64: TEST-1 in test-package';
+  const github = mockGithub({ calls, lookupError, repository, duplicate, title, existing });
   const requireMock = name => {
     assert.equal(name, 'fs');
     return { readFileSync: () => {
