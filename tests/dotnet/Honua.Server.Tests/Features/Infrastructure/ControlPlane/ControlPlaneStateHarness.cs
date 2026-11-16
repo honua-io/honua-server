@@ -12,6 +12,7 @@ using Honua.Server.Features.Operations;
 using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.Server.Features.Infrastructure.McpSessions;
 using Honua.Server.Features.Studio.Drafts;
+using Honua.Server.Features.Protocols.Wfs20;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Microsoft.AspNetCore.DataProtection;
@@ -35,7 +36,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.154_CreatePackageDraftsAndMcpSessions.sql",
         "Honua.Server.Migrations.156_CreateConfigurationDocuments.sql",
         "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql",
-        "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql"
+        "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql",
+        "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
@@ -76,8 +78,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public Task<T?> ScalarAsync<T>(string sql, params NpgsqlParameter[] parameters) => _jobs.ScalarAsync<T>(sql, parameters);
 
-    public PostgresOperationProposalStore CreateProposalStore()
-        => new(new ControlPlaneStorage(_jobs.Database, Leases), Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
+    public PostgresOperationProposalStore CreateProposalStore(IControlPlaneRealtimeWriter? realtime = null)
+        => new(new ControlPlaneStorage(_jobs.Database, Leases) { Realtime = realtime }, Options.Create(Retention), NullLogger<PostgresOperationProposalStore>.Instance);
 
     public PostgresOpsNotificationStore CreateNotificationStore()
         => new(_jobs.Database, Options.Create(Retention));
@@ -88,9 +90,9 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresOperationSecretStore CreateSecretStore(IDataProtectionProvider dataProtectionProvider)
         => new(DataSource, _jobs.Database, dataProtectionProvider);
 
-    public PostgresWorkflowOperationStore CreateWorkflowOperationStore()
+    public PostgresWorkflowOperationStore CreateWorkflowOperationStore(IControlPlaneRealtimeWriter? realtime = null)
         => new(
-            new ControlPlaneStorage(_jobs.Database, Leases),
+            new ControlPlaneStorage(_jobs.Database, Leases) { Realtime = realtime },
             new WorkflowOperationRetention(Options.Create(Retention), Options.Create(new MetadataReleaseOperationOptions())),
             NullLogger<PostgresWorkflowOperationStore>.Instance);
 
@@ -121,6 +123,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public PostgresPackageDraftBacking CreatePackageDraftBacking() => new(_jobs.Database);
 
     public PostgresMcpSessionStore CreateMcpSessionStore() => new(_jobs.Database);
+
+    public PostgresWfsStoredQueryStore CreateWfsStoredQueryStore() => new(_jobs.Database);
 
     // Every stored column of the approval tables as text, so a leak through any field is seen.
     public async Task<StoredTextScan> ScanApprovalTablesForAsync(string text)

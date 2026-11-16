@@ -69,31 +69,6 @@ public interface IGeocodeProvider
 }
 
 /// <summary>
-/// Factory for creating geocoding providers
-/// </summary>
-public interface IGeocodeProviderFactory
-{
-    /// <summary>
-    /// Create a geocoding provider by name
-    /// </summary>
-    /// <param name="providerName">Name of the provider</param>
-    /// <returns>Geocoding provider instance</returns>
-    IGeocodeProvider? CreateProvider(string providerName);
-
-    /// <summary>
-    /// Get all available provider names
-    /// </summary>
-    /// <returns>List of available provider names</returns>
-    IReadOnlyList<string> GetAvailableProviders();
-
-    /// <summary>
-    /// Get the default provider
-    /// </summary>
-    /// <returns>Default geocoding provider</returns>
-    IGeocodeProvider GetDefaultProvider();
-}
-
-/// <summary>
 /// Service for coordinating multiple geocoding providers
 /// </summary>
 public interface IGeocodeProviderCoordinator

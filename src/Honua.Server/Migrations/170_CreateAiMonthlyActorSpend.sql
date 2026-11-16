@@ -1,7 +1,6 @@
 -- Copyright (c) Honua Geo Inc. All rights reserved.
 -- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
--- honua:compatibility-review reason=monthly actor caps are opt-in and require stopped/drained admission; independent triggers fence legacy writers
--- honua:reader-incompatible reason=monthly-cap policy cannot be removed by readers that ignore the new field
+-- honua:compatibility-review reason=additive table, functions and triggers; caps are opt-in and need stopped/drained admission; until a cap is set the triggers do nothing, so the prior server reads and writes unchanged; once set, a prior server's policy write that drops the cap is refused rather than applied
 
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.ai_monthly_actor_notices (
     deployment_id TEXT NOT NULL REFERENCES $HonuaSchema$.ai_execution_policies(deployment_id),

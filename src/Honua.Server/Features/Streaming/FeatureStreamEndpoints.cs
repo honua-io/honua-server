@@ -6,7 +6,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Helpers;
@@ -14,6 +13,7 @@ using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -31,7 +31,7 @@ internal static partial class FeatureStreamEndpoints
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var streamGroup = endpoints.MapGroup("/api/v{version:apiVersion}/streaming")
-            // Opt-in Experimental: streams work on a single node, and delivery across several nodes needs an optional Redis add-on.
+            // Opt-in Experimental: streams deliver from the PostgreSQL event log; several nodes need the cross-node provider.
             .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
@@ -236,7 +236,7 @@ internal static partial class FeatureStreamEndpoints
                 ? ["layer", "bbox", "attribute", "temporal"]
                 : [],
             ReplaySupported = enabled,
-            CursorRetentionLimit = deps.EventOptions.Value.MaxRetainedEvents,
+            CursorRetentionLimit = deps.RealtimeLimits.CursorRetentionLimit,
             HeartbeatIntervalSeconds = options.HeartbeatInterval.TotalSeconds,
             MaxConcurrentSessions = options.MaxConcurrentSessions,
             DeleteBeforeImages = enabled,

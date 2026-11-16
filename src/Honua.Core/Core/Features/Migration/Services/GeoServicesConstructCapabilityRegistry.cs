@@ -3,12 +3,11 @@
 
 using System.Collections.Frozen;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstructCapabilityRegistry
+public sealed class GeoServicesConstructCapabilityRegistry
 {
     public static class Keys
     {

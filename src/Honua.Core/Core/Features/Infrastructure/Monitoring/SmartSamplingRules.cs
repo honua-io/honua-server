@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-public sealed partial class SmartSamplingRules : ISmartSamplingRules
+public sealed partial class SmartSamplingRules
 {
     private readonly ILogger<SmartSamplingRules> _logger;
     private readonly HashSet<string> _vipClients;
@@ -404,17 +404,6 @@ public sealed partial class SmartSamplingRules : ISmartSamplingRules
             Message = "Removed VIP client: {ClientId}")]
         public static partial void VipClientRemoved(ILogger logger, string clientId);
     }
-}
-
-public interface ISmartSamplingRules
-{
-    SmartSamplingDecision EvaluateSampling(SamplingContext context);
-
-    void UpdatePerformanceBaseline(string operationName, double baselineDurationMs);
-
-    void AddVipClient(string clientId);
-
-    void RemoveVipClient(string clientId);
 }
 
 public sealed record SamplingContext

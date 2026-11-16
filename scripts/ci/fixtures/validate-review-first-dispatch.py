@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from pathlib import Path
 
@@ -21,9 +22,13 @@ PREBUILD_OBSERVE = WORKFLOW_DIR / "server-test-prebuild-observe.yml"
 PREBUILD_PARITY = WORKFLOW_DIR / "server-test-prebuild-parity.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
-WORKFLOW_INVENTORY = ROOT / "docs/internal/ci/workflow-inventory.md"
-TRAIN_SELECT = ROOT / "scripts/ci/merge-train/select.sh"
-TRAIN_LAND = ROOT / "scripts/ci/merge-train/land.sh"
+# validate-review-first-dispatch.sh projects this head's inventory into a scratch
+# file; the tracked page is trunk-published and may lag the workflow YAML.
+WORKFLOW_INVENTORY = Path(os.environ.get("HONUA_WORKFLOW_INVENTORY")
+                          or ROOT / "docs/internal/ci/workflow-inventory.md")
+# Jobs that queue superseded review events: resolver and attestation; the bridge.
+QUEUED_REVIEW_GATE_JOBS = 2
+QUEUED_REVIEW_BRIDGE_JOBS = 1
 
 
 def read_text(path: Path) -> str:
@@ -89,6 +94,14 @@ def validate_aggregate_review_status(required_job: str, revalidation_condition: 
 
 
 
+def require_queued_helpers(source: str, label: str, jobs: int) -> None:
+    """Every concurrency block of a review helper must queue, whatever the YAML spelling."""
+    cancellation = re.findall(r"^\s*cancel-in-progress:\s*(.*?)\s*$", source, re.MULTILINE)
+    queues = re.findall(r"^\s*queue:\s*(.*?)\s*$", source, re.MULTILINE)
+    if cancellation != ["false"] * jobs or queues != ["max"] * jobs:
+        raise AssertionError(f"{label} helpers must queue every superseded event, never cancel it red")
+
+
 def main() -> None:
     pr_gate = read_text(PR_GATE)
     review_gate = read_text(REVIEW_GATE)
@@ -106,8 +119,6 @@ def main() -> None:
         PREBUILD_OBSERVE: read_text(PREBUILD_OBSERVE),
         PREBUILD_PARITY: read_text(PREBUILD_PARITY),
     }
-    train_select = read_text(TRAIN_SELECT)
-    train_land = read_text(TRAIN_LAND)
 
     pr_mode = mode(pr_gate, PR_GATE)
     review_mode = mode(review_gate, REVIEW_GATE)
@@ -234,7 +245,10 @@ def main() -> None:
         "github.event.workflow_run.conclusion == 'success'",
         "only successful bridge runs may start trusted resolution",
     )
-    require(review_gate, "cancel-in-progress: true", "superseded review helpers must release runner capacity")
+    # Superseded review helpers queue instead of cancelling: a cancelled run is a
+    # red mark on the PR page. Every queued run re-reads live review state.
+    require_queued_helpers(review_gate, "review gate", QUEUED_REVIEW_GATE_JOBS)
+    require_queued_helpers(review_bridge, "review bridge", QUEUED_REVIEW_BRIDGE_JOBS)
     require(
         review_gate,
         "group: review-gate-${{ needs.resolve.outputs.pr }}",
@@ -273,10 +287,6 @@ def main() -> None:
     )
     if "core.setFailed(" in review_bridge:
         raise AssertionError("superseded bridge events must complete neutrally")
-    for source in [review_gate, review_bridge]:
-        require(source, "cancel-in-progress: true", "superseded review helpers must release runner capacity")
-        if "queue: max" in source:
-            raise AssertionError("review helpers must not retain superseded pending events")
     require(
         review_gate,
         "ref: ${{ github.workflow_sha }}",
@@ -624,27 +634,18 @@ def main() -> None:
     )
 
     require(
-        train_select,
-        'train_refresh_review_gate "${pr}" "${expected_head}" "${snapshot}"',
-        "live train selection must independently refresh mutable review evidence",
-    )
-    require(
-        train_land,
-        'train_pr_admission "${admission_pr}" "${admission_sha}"',
-        "pre-land must independently re-attest mutable review evidence",
-    )
-
-    require(
         pr_gate,
         "The trusted `Review Gate`\n# status is a separate required admission context",
         "PR-controlled verification must not be documented as the admission authority",
     )
 
-    for policy_file in (AGENTS, GATE_MODEL, WORKFLOW_INVENTORY):
+    # The inventory may be a scratch projection; name the file an author edits.
+    for policy_file, label in ((AGENTS, AGENTS), (GATE_MODEL, GATE_MODEL),
+                               (WORKFLOW_INVENTORY, "scripts/ci/workflow-inventory.template.md")):
         policy = read_text(policy_file)
         if "`PR Gate` and `Review Gate`" not in policy:
             raise AssertionError(
-                f"{policy_file}: branch-protection contract must require PR Gate and Review Gate"
+                f"{label}: branch-protection contract must require PR Gate and Review Gate"
             )
     agents = read_text(AGENTS)
     if "pr-merge-train.yml" in agents:

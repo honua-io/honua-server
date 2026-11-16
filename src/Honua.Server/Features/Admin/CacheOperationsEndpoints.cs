@@ -13,7 +13,6 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Server.Features.Admin;
 
@@ -41,12 +40,6 @@ internal static class CacheOperationsEndpoints
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<CacheStatisticsResponse>>();
 
-        group.MapGet("/redis", HandleGetRedisMetrics)
-            .WithDisplayName("Get Redis Cache Metrics")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            .Produces<ApiResponse<RedisConnectionMetricsResponse>>();
-
         group.MapPost("/invalidate", HandleInvalidateCache)
             .WithDisplayName("Invalidate Cache")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
@@ -65,13 +58,6 @@ internal static class CacheOperationsEndpoints
             var options = cacheOptions.Value;
             var isHealthy = await healthChecker.IsCacheHealthyAsync(context.RequestAborted).ConfigureAwait(false);
 
-            RedisServerInfoResponse? redisInfo = null;
-            var redis = context.RequestServices.GetService<IConnectionMultiplexer>();
-            if (redis is not null)
-            {
-                redisInfo = await BuildRedisInfoAsync(redis, logger).ConfigureAwait(false);
-            }
-
             AdminLog.CacheHealthCheckCompleted(logger, isHealthy, healthChecker.IsUsingFallback);
 
             var response = new CacheHealthResponse
@@ -81,7 +67,6 @@ internal static class CacheOperationsEndpoints
                 CacheEnabled = options.Enabled,
                 KeyPrefix = options.KeyPrefix,
                 DefaultTtlSeconds = options.DefaultTtlSeconds,
-                RedisServerInfo = redisInfo,
                 MetricsEndpoint = "/api/v1/admin/operations/cache/statistics",
                 GeneratedAt = DateTimeOffset.UtcNow
             };
@@ -103,7 +88,7 @@ internal static class CacheOperationsEndpoints
 
     private static async Task<IResult> HandleGetCacheStatistics(
         [FromServices] ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider,
-        [FromServices] ICacheStorageMetricsProvider storageMetricsProvider,
+        [FromServices] InMemoryCacheService storageMetricsProvider,
         HttpContext context,
         ILogger<CacheOperationsEndpointsLog> logger)
     {
@@ -125,9 +110,6 @@ internal static class CacheOperationsEndpoints
                 IsUsingFallback = storage.IsUsingFallback,
                 LocalKeyCount = storage.LocalKeyCount,
                 DistributedKeyCount = storage.DistributedKeyCount,
-                RedisDatabaseSize = storage.RedisDatabaseSize,
-                RedisUsedMemoryBytes = storage.RedisUsedMemoryBytes,
-                RedisUsedMemoryHuman = storage.RedisUsedMemoryHuman,
                 Types = snapshot.Types.ToDictionary(
                     static kvp => kvp.Key,
                     static kvp =>
@@ -158,42 +140,6 @@ internal static class CacheOperationsEndpoints
                 StatusCodes.Status500InternalServerError,
                 "Cache statistics retrieval failed.");
         }
-    }
-
-    private static async Task<IResult> HandleGetRedisMetrics(
-        HttpContext context,
-        ILogger<CacheOperationsEndpointsLog> logger)
-    {
-        var redis = context.RequestServices.GetService<IConnectionMultiplexer>();
-        if (redis is null)
-        {
-            var unconfigured = new RedisConnectionMetricsResponse
-            {
-                GeneratedAt = DateTimeOffset.UtcNow,
-                IsConfigured = false,
-                IsConnected = false
-            };
-
-            return Results.Json(
-                ApiResponse<RedisConnectionMetricsResponse>.CreateSuccess(unconfigured),
-                CacheOperationsJsonContext.Default.ApiResponseRedisConnectionMetricsResponse);
-        }
-
-        var counters = redis.GetCounters();
-        var response = new RedisConnectionMetricsResponse
-        {
-            GeneratedAt = DateTimeOffset.UtcNow,
-            IsConfigured = true,
-            IsConnected = redis.IsConnected,
-            ClientName = redis.ClientName,
-            TotalOutstanding = counters.TotalOutstanding,
-            EndpointCount = redis.GetEndPoints().Length,
-            ServerInfo = await BuildRedisInfoAsync(redis, logger).ConfigureAwait(false)
-        };
-
-        return Results.Json(
-            ApiResponse<RedisConnectionMetricsResponse>.CreateSuccess(response),
-            CacheOperationsJsonContext.Default.ApiResponseRedisConnectionMetricsResponse);
     }
 
     private static async Task<IResult> HandleInvalidateCache(
@@ -314,75 +260,6 @@ internal static class CacheOperationsEndpoints
             .Where(p => p.LayerIndex.HasValue)
             .Select(p => p.LayerIndex!.Value)
             .ToArray();
-    }
-
-    private static async Task<RedisServerInfoResponse> BuildRedisInfoAsync(IConnectionMultiplexer redis, ILogger logger)
-    {
-        if (!redis.IsConnected)
-        {
-            return new RedisServerInfoResponse { IsConnected = false };
-        }
-
-        try
-        {
-            var endpoints = redis.GetEndPoints();
-            if (endpoints.Length == 0)
-            {
-                return new RedisServerInfoResponse { IsConnected = true };
-            }
-
-            var server = redis.GetServer(endpoints[0]);
-            var info = await server.InfoAsync().ConfigureAwait(false);
-            var db = redis.GetDatabase();
-            var dbSize = await db.ExecuteAsync("DBSIZE").ConfigureAwait(false);
-
-            string? version = null;
-            string? usedMemory = null;
-            int? connectedClients = null;
-            long? uptimeSeconds = null;
-
-            foreach (var section in info)
-            {
-                foreach (var kvp in section)
-                {
-                    switch (kvp.Key)
-                    {
-                        case "redis_version":
-                            version = kvp.Value;
-                            break;
-                        case "used_memory_human":
-                            usedMemory = kvp.Value;
-                            break;
-                        case "connected_clients":
-                            if (int.TryParse(kvp.Value, out var clients))
-                                connectedClients = clients;
-                            break;
-                        case "uptime_in_seconds":
-                            if (long.TryParse(kvp.Value, out var uptime))
-                                uptimeSeconds = uptime;
-                            break;
-                    }
-                }
-            }
-
-            return new RedisServerInfoResponse
-            {
-                IsConnected = true,
-                RedisVersion = version,
-                UsedMemory = usedMemory,
-                ConnectedClients = connectedClients,
-                DatabaseSize = (long?)dbSize,
-                UptimeSeconds = uptimeSeconds
-            };
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional broad catch: best-effort Redis server-info probe for the admin
-            // diagnostics endpoint; any failure falls back to a minimal connected-state
-            // response below rather than failing the whole admin request.
-            AdminLog.RedisInfoRetrievalFailed(logger, ex);
-            return new RedisServerInfoResponse { IsConnected = redis.IsConnected };
-        }
     }
 
     private static double Ratio(long numerator, long denominator)

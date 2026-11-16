@@ -5,17 +5,17 @@ using System.IO.Compression;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.ControlPlane;
-using Honua.Server.Features.Admin.Jobs;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Compression;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Jobs;
 using Honua.Server.Features.Operations.Status;
 using Microsoft.AspNetCore.ResponseCompression;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -67,6 +67,7 @@ internal static class ObservabilityServiceCollectionExtensions
         ConfigureResponseCompression(services);
 
         AddOperateObservability(services);
+        services.AddOpsSelfChecks(configuration);
 
         // Ops-health snapshot composer + deterministic ops-findings engine (ADR-0060 WS4 / #2457).
         // Both are scoped because they compose the scoped deploy-preflight probe.
@@ -93,6 +94,8 @@ internal static class ObservabilityServiceCollectionExtensions
             CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),
             TimeProvider = sp.GetService<TimeProvider>(),
             ManagedComposeObserver = sp.GetService<IManagedComposeObserver>(),
+            SelfChecks = sp.GetRequiredService<OpsSelfChecks>(),
+            CdnPurgeBudget = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.ICdnPurgeBudget>(),
         });
         // One scoped instance behind both seams: callers that only need findings keep the domain
         // abstraction, while the read/proposal surfaces resolve the evidence-carrying view.
@@ -103,6 +106,9 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddScoped<IMcpOpsObservabilityReader, McpOpsObservabilityReader>();
         services.AddScoped<IMcpJobDiagnosticsReader, McpJobDiagnosticsReader>();
         services.AddScoped<IMcpPlatformOpsReader, McpPlatformOpsReader>();
+        services.AddScoped<IOpsExternalEventConsumer>(sp => new OpsAlarmIncidentCollector(
+            sp.GetRequiredService<IOpsIncidentObservationStore>(),
+            sp.GetRequiredService<IOpsIncidentEpisodeStore>()));
 
         // Persisted ops-health rollup store + per-replica sampler (#2553). The store itself is registered by
         // the Postgres provider; the sampler and history service resolve it as optional so non-Postgres
@@ -114,7 +120,7 @@ internal static class ObservabilityServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<OpsHealthFlushSignal>();
-        services.AddScoped<IOpsHealthHistoryService, OpsHealthHistoryService>();
+        services.AddScoped<OpsHealthHistoryService>();
         // The sampler reads and writes the Postgres rollup store on an interval. An event-handler
         // Lambda is frozen between invocations and releases its pool when the request ends, so the
         // loop must not resume on the next thaw and hold a connection past that release.

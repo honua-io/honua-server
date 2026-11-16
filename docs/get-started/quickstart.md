@@ -457,7 +457,7 @@ python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activa
 pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1'
 ```
 
-Save this as `quickstart.py`. It registers that database as a connection,
+Save this as `publish-quickstart.py`, keeping the package's `quickstart.py` initializer. It registers that database as a connection,
 publishes the table as a layer, and queries it back:
 
 <!-- docs-validation:install.publish mode=run -->
@@ -494,7 +494,7 @@ print(json.dumps(result["features"], indent=2))
 
 <!-- docs-validation:install.query mode=run -->
 ```bash
-python quickstart.py
+python publish-quickstart.py
 ```
 
 The first line is the service name and layer id. Two features follow, with their
@@ -506,7 +506,8 @@ is how you publish a table you did not create yourself.
 
 The layer is now served over every protocol the deployment advertises, from that
 one publish — OGC API Features at `/ogc/features/collections`, GeoServices REST at
-`/rest/services/quickstart/FeatureServer/0`, plus WMS, WFS, vector tiles and the
+`/rest/services/quickstart/FeatureServer/<layer id>` (the id printed above; layer ids
+are deployment-wide, not zero-based), plus WMS, WFS, vector tiles and the
 rest. `admin.list_services()` and `admin.get_capabilities()` report what this
 deployment actually exposes, rather than what the list above assumes.
 

@@ -129,7 +129,7 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
     public async Task MonthlySchema_ReplayingFinancialMigration_DoesNotRemoveMonthlyFence()
     {
         await SeedMonthlySchemaAsync(15);
-        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "CreateAiFinancialAccounting.sql"));
+        var sql = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "CreateAiFinancialAccounting.sql"));
         await ExecuteAsync(sql.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal));
         var insert = async () => await CloneMonthlyReservationAsync();
         (await insert.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
@@ -139,7 +139,7 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
     public async Task MonthlySchema_NonUtcSession_CountsSettledUsageThroughUtcMonthEnd()
     {
         await SeedMonthlySchemaAsync(30);
-        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "CreateAiMonthlyActorSpend.sql"));
+        var sql = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "CreateAiMonthlyActorSpend.sql"));
         sql = sql.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal)
             .Replace("clock_timestamp()", "TIMESTAMPTZ '2026-03-15 12:00:00+00'", StringComparison.Ordinal);
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
@@ -192,7 +192,7 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
 
     private async Task ApplyMonthlySchemaAsync()
     {
-        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "CreateAiMonthlyActorSpend.sql"));
+        var sql = await File.ReadAllTextAsync(Path.Join(AppContext.BaseDirectory, "Migrations", "CreateAiMonthlyActorSpend.sql"));
         await ExecuteAsync(sql.Replace("$HonuaSchema$", $"\"{_schema}\"", StringComparison.Ordinal));
     }
 

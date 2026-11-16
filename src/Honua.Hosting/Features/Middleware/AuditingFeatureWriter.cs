@@ -195,6 +195,7 @@ internal sealed class AuditingFeatureWriter(
                 EventType = AuditEventType.DataDelete,
                 Actor = actor,
                 ActorType = actorType,
+                ActorAgent = context is null ? null : AuditContextResolver.ResolveAgent(context),
                 ResourceType = "feature",
                 ResourceId = layerId.ToString(CultureInfo.InvariantCulture),
                 Action = action,
@@ -232,13 +233,25 @@ internal sealed class AuditingFeatureWriter(
             return result;
         }
 
-        public async Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+        public bool SupportsDurableReceipts => inner.SupportsDurableReceipts;
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
             CancellationToken cancellationToken = default)
+            => CommitAndAuditAsync(() => inner.CommitAsync(cancellationToken), cancellationToken);
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            FeatureWriterTransactionReceipt receipt,
+            CancellationToken cancellationToken = default)
+            => CommitAndAuditAsync(() => inner.CommitAsync(receipt, cancellationToken), cancellationToken);
+
+        private async Task<FeatureWriterTransactionCommitOutcome> CommitAndAuditAsync(
+            Func<Task<FeatureWriterTransactionCommitOutcome>> commit,
+            CancellationToken cancellationToken)
         {
             try
             {
-                var outcome = await inner.CommitAsync(cancellationToken).ConfigureAwait(false);
-                if (outcome == FeatureWriterTransactionCommitOutcome.Unknown)
+                var outcome = await commit().ConfigureAwait(false);
+                if (outcome != FeatureWriterTransactionCommitOutcome.Committed)
                 {
                     await EmitRollbackFailuresAsync(CancellationToken.None).ConfigureAwait(false);
                     return outcome;

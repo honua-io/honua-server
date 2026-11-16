@@ -88,7 +88,7 @@ namespace Honua.Db.Postgres;
 /// <summary>
 /// Dependency injection extensions for PostgreSQL services
 /// </summary>
-internal static class ServiceCollectionExtensions
+internal static partial class ServiceCollectionExtensions
 {
     /// <summary>
     /// Add PostgreSQL services including feature store and health checking
@@ -249,7 +249,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAlertChangeReader>(static serviceProvider => new PostgresAlertChangeReader(
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
             new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider))));
-        services.AddKeyedScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>("postgres", (provider, _) =>
+        services.AddScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>(provider =>
             new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
         services.AddScoped<Honua.Core.Features.Security.Admission.IAiMonthlyActorNoticeStore>(provider =>
@@ -310,10 +310,7 @@ internal static class ServiceCollectionExtensions
             new PostgresOpsHealthRollupStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
-        services.AddScoped<IOpsExternalEventStore>(serviceProvider =>
-            new PostgresOpsExternalEventStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
+        AddOpsIncidentServices(services, configuration);
         services.AddScoped<IOpsAutonomyPolicyStore>(serviceProvider =>
             new PostgresOpsAutonomyPolicyStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
@@ -1039,12 +1036,11 @@ internal static class ServiceCollectionExtensions
         // path is Postgres-backed (reads the tile catalog populated by the importer).
         services.AddSingleton<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageReader,
             Honua.Core.Features.TileCachePackage.Services.GeoServicesTileCachePackageReader>();
-        services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageImportService,
-            Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
+        services.AddScoped<Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
             Honua.Db.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
 
-        services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
+        services.AddScoped<OgcTileCacheExportService>(serviceProvider =>
         {
             var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
             return new OgcTileCacheExportService(

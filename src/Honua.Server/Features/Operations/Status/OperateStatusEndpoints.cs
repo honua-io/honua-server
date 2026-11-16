@@ -29,7 +29,7 @@ internal static class OperateStatusEndpoints
     }
 
     private static async Task<IResult> HandleGetStatus(
-        [FromServices] IOperateStatusService service,
+        [FromServices] OperateStatusService service,
         HttpContext context)
     {
         var status = await service.GetAsync(context.RequestAborted).ConfigureAwait(false);
