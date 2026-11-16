@@ -9,14 +9,8 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Edr;
 
-/// <summary>
-/// OGC API - Environmental Data Retrieval (EDR) endpoints (#1757). Exposes
-/// <c>position</c> (point time-series) and <c>cube</c> (area/subset) queries over the
-/// registered coverage/datacube collections, returning CoverageJSON.
-/// </summary>
 public static class EdrEndpoints
 {
-    /// <summary>Maps the OGC API - EDR endpoints.</summary>
     public static void MapEdrEndpoints(this IEndpointRouteBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);

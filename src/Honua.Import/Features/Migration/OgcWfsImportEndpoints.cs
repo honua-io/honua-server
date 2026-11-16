@@ -19,14 +19,8 @@ using Honua.Import.RasterImport;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Admin endpoints for OGC Web Feature Service (WFS) data import.
-/// </summary>
 internal static partial class OgcWfsImportEndpoints
 {
-    /// <summary>
-    /// Maps WFS data import endpoints.
-    /// </summary>
     public static void MapOgcWfsImportEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/admin/import/ogc-wfs")
@@ -182,7 +176,6 @@ internal static partial class OgcWfsImportEndpoints
     private static ILogger<OgcWfsImportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<OgcWfsImportEndpointsLog>>();
 
-    /// <summary>Log category marker for OGC WFS import endpoint operations.</summary>
     internal sealed class OgcWfsImportEndpointsLog;
 
     private static partial class Log
@@ -192,45 +185,30 @@ internal static partial class OgcWfsImportEndpoints
     }
 }
 
-/// <summary>
-/// API request model for WFS data import.
-/// </summary>
 internal sealed record OgcWfsImportApiRequest
 {
-    /// <summary>WFS service URL (root or GetCapabilities URL).</summary>
     public string? ServiceUrl { get; init; }
 
-    /// <summary>Optional WFS version such as 2.0.0, 1.1.0, or 1.0.0.</summary>
     public string? Version { get; init; }
 
-    /// <summary>Optional HTTP Basic username for WFS authentication.</summary>
     public string? Username { get; init; }
 
-    /// <summary>Optional HTTP Basic password for WFS authentication.</summary>
     public string? Password { get; init; }
 
-    /// <summary>Specific feature types to import (omit to import all).</summary>
     public string[]? FeatureTypeNames { get; init; }
 
-    /// <summary>Target PostGIS schema (defaults to the configured operational schema).</summary>
     public string? TargetSchema { get; init; }
 
-    /// <summary>Whether to drop and recreate existing tables.</summary>
     public bool? OverwriteExisting { get; init; }
 
-    /// <summary>Preview mode: build the manifest without writing to PostGIS.</summary>
     public bool? DryRun { get; init; }
 
-    /// <summary>Operator opt-in safety gate for non-dry-run imports.</summary>
     public bool? ApplyMode { get; init; }
 
-    /// <summary>Optional target SRID. Preserves source SRID when omitted.</summary>
     public int? TargetSrid { get; init; }
 
-    /// <summary>Page size for paged GetFeature requests.</summary>
     public int? PageSize { get; init; }
 
-    /// <summary>Per-WFS-call timeout in seconds.</summary>
     public int? RequestTimeoutSeconds { get; init; }
 }
 

@@ -18,27 +18,10 @@ namespace Honua.Protocols.Ogc.Api.Maps;
 
 public static partial class OgcMapsEndpoints
 {
-    /// <summary>
-    /// OGC API - Maps Part 1 (<c>/req/collection-map/desc-links</c>) names the map relation
-    /// <see cref="OgcCommon.RelationTypes.Map"/> or its CURIE.
-    /// </summary>
     private const string MapRelationCurie = "[ogc-rel:map]";
 
-    /// <summary>
-    /// The <c>http://</c> form of the map relation, as the OGC definitions server registers it.
-    /// GDAL's OGCAPI driver (the provider QGIS uses for OGC API - Maps) takes the map URL only
-    /// from a link with exactly this relation and a media type. Every other link, including the
-    /// spec's <c>https://</c> form and the CURIE, lands in one fallback slot that the last link in
-    /// the array overwrites, so without it GDAL requests the <c>alternate</c> HTML link as the map
-    /// (#4991).
-    /// </summary>
     private const string RegisteredMapRelation = "http://www.opengis.net/def/rel/ogc/1.0/map";
 
-    /// <summary>
-    /// Get the collection description for a collection that serves maps (OGC API - Maps
-    /// Part 1, <c>/req/collection-map/desc-links</c>). Map clients such as GDAL read this
-    /// resource before they request <c>/map</c>, so it resolves exactly when <c>/map</c> does.
-    /// </summary>
     private static async Task<IResult> GetCollection(
         string collectionId,
         string? f,
