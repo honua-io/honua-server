@@ -5,6 +5,7 @@ using System.Xml.Linq;
 using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Xunit;
 
 namespace Honua.Architecture.Tests;
 
@@ -37,14 +38,36 @@ public sealed class RetiredCacheDependencyTests
         var violations = _sourceDirectories
             .SelectMany(directory => RepositoryFiles(Path.Join(root, directory)))
             .Where(path => Path.GetExtension(path) == ".cs")
-            .SelectMany(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path)).GetRoot()
-                .DescendantTokens()
-                .Where(token => token.IsKind(SyntaxKind.IdentifierToken)
-                    && token.ValueText == "IConnectionMultiplexer")
-                .Select(token => $"{Path.GetRelativePath(root, path)}:{token.GetLocation().GetLineSpan().StartLinePosition.Line + 1}"))
+            .Where(path => UsesRetiredConnectionMultiplexer(File.ReadAllText(path)))
+            .Select(path => Path.GetRelativePath(root, path))
             .ToArray();
 
         violations.Should().BeEmpty("source must use the native cache and durable database abstractions");
+    }
+
+    [Theory]
+    [InlineData("class C { IConnectionMultiplexer cache; }", true)]
+    [InlineData("#if NET11_0_OR_GREATER\nclass C { IConnectionMultiplexer cache; }\n#endif", true)]
+    [InlineData("#if false\n#if OPTIONAL\nclass C { IConnectionMultiplexer cache; }\n#endif\n#endif", true)]
+    [InlineData("#if true\nclass C {}\n#else\nclass C { IConnectionMultiplexer cache; }\n#endif", true)]
+    [InlineData("#if OPTIONAL\nclass C { @IConnectionMultiplexer cache; }\n#endif", true)]
+    [InlineData("// IConnectionMultiplexer\nclass C { string Name = \"IConnectionMultiplexer\"; }", false)]
+    [InlineData("#if OPTIONAL\n// IConnectionMultiplexer\nclass C { string Name = \"IConnectionMultiplexer\"; }\n#endif", false)]
+    public void ConnectionGuard_ConditionalSource_InspectsIdentifiersOnly(string source, bool expected)
+    {
+        UsesRetiredConnectionMultiplexer(source).Should().Be(expected);
+    }
+
+    private static bool UsesRetiredConnectionMultiplexer(string source)
+    {
+        var root = CSharpSyntaxTree.ParseText(source).GetRoot();
+        var disabledTokens = root.DescendantTrivia()
+            .Where(trivia => trivia.IsKind(SyntaxKind.DisabledTextTrivia))
+            .SelectMany(trivia => SyntaxFactory.ParseTokens(trivia.ToFullString()));
+
+        return root.DescendantTokens().Concat(disabledTokens)
+            .Any(token => token.IsKind(SyntaxKind.IdentifierToken)
+                && token.ValueText == "IConnectionMultiplexer");
     }
 
     private static IEnumerable<string> RepositoryFiles(string directory)
