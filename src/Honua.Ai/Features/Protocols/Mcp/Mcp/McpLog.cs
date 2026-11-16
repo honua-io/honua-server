@@ -20,12 +20,6 @@ internal static partial class McpLog
     [LoggerMessage(8154, LogLevel.Information, "MCP authorization denied: ToolOrResource={Target}, Authenticated={Authenticated}")]
     public static partial void AuthorizationDenied(ILogger logger, string target, bool authenticated);
 
-    [LoggerMessage(8155, LogLevel.Information, "MCP boundary rejection: Target={Target}, Reason={Reason}")]
-    public static partial void BoundaryRejection(ILogger logger, string target, string reason);
-
-    [LoggerMessage(8156, LogLevel.Debug, "MCP stub tool invoked: ToolName={ToolName}, BlockedBy={BlockedBy}")]
-    public static partial void StubToolInvoked(ILogger logger, string toolName, string blockedBy);
-
     [LoggerMessage(8157, LogLevel.Information, "MCP operator surface initialized: Tools={ToolCount}, Resources={ResourceCount}")]
     public static partial void SurfaceInitialized(ILogger logger, int toolCount, int resourceCount);
 
@@ -92,7 +86,7 @@ internal static partial class McpLog
     [LoggerMessage(8225, LogLevel.Information, "MCP session mode selected: Mode={Mode}, Reason={Reason}")]
     public static partial void SessionModeSelected(ILogger logger, string mode, string reason);
 
-    [LoggerMessage(8226, LogLevel.Warning, "MCP sessions are in-memory on a multi-instance host; another instance will answer a session id with 404. Set Mcp:SessionSigningKey or connect Redis. Reason={Reason}")]
+    [LoggerMessage(8226, LogLevel.Warning, "MCP sessions are in-memory on a multi-instance host; another instance will answer a session id with 404. Set Mcp:SessionSigningKey or configure the PostgreSQL system database. Reason={Reason}")]
     public static partial void SessionModeDegraded(ILogger logger, string reason);
 
     [LoggerMessage(8192, LogLevel.Warning, "MCP shared session store unavailable: Operation={Operation}")]

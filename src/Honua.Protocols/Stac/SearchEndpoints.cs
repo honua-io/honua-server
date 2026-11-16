@@ -456,7 +456,7 @@ internal static class SearchEndpoints
             // collection, preserving SQL AND/OR/NOT semantics. Rejecting the whole search
             // was a real interop failure: an unscoped `client.search(filter=...)` on any
             // collection-specific property (or on `datetime`, which /stac/queryables
-            // advertises catalog-wide) returned 400 (honua-server#3392). The error is
+            // advertises catalog-wide) returned 400. The error is
             // retained and still returned when no selected collection declares the
             // property, so a typo is never silently answered with an empty result set.
             string? inapplicableFilterError = null;
@@ -1192,14 +1192,14 @@ internal static class SearchEndpoints
         return true;
     }
 
-    // TODO(#1035 follow-up): the V2 fields lookup is now keyed on
+    // TODO: the V2 fields lookup is keyed on
     // <see cref="MetadataV2Object.SchemaFields"/>, so query parameters like
     // <c>fields=+properties.foo</c> only resolve when the V2 graph carries <c>foo</c>
     // as a schema field. Tests that mutate the v1 <c>honua.layer_fields</c> table
     // (e.g. WebAppFixture UpsertLayerFieldAsync) currently bypass the V2 snapshot
     // and will return "Unknown fields include" until the V2 graph is rederived
     // from the v1 catalog or the fixtures are ported to publish via the V2 builder
-    // directly. See task #55 (Port test fixtures off v1).
+    // directly.
     internal static bool TryBuildFieldSelection(
         MetadataV2Object resource,
         StacFieldsExtension fields,

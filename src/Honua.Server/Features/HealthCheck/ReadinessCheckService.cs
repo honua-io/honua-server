@@ -63,7 +63,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         var currentReasonCode = ReadinessReasonCodes.DatabaseUnavailable;
         try
         {
-            // Degraded start (#1632): the host is serving without database access because the
+            // Degraded start: the host is serving without database access because the
             // database was transiently unavailable at boot. Report the sanitized phase and failure
             // class until the background recovery loop restores access.
             // On AWS Lambda the background recovery loop only runs while an invocation executes,
@@ -77,7 +77,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
 
             if (_degradedStartup is { IsAwaitingDatabase: true } degraded)
             {
-                // honua-server#5916: a schema behind this binary (migrations not applied yet) is its
+                // A schema behind this binary (migrations not applied yet) is its
                 // own reason, so a cold start before the migration task ran reads as schema-floor.
                 var schemaFloor = string.Equals(
                     degraded.ReasonCode, ReadinessReasonCodes.SchemaFloor, StringComparison.Ordinal);
@@ -164,7 +164,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                 }
 
                 // In-memory single-node mode is healthy-but-degraded,
-                // mirroring the cache fallback check above; it must not fail readiness (#1618).
+                // mirroring the cache fallback check above; it must not fail readiness.
                 Log.HealthCheckExecuted(
                     _logger,
                     "FeatureChangeEventStore",
@@ -172,7 +172,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                     featureChangeStoreStopwatch.Elapsed.TotalMilliseconds);
             }
 
-            // Alert control loops (#2810): operators page on readiness, so a stalled alert control
+            // Alert control loops: operators page on readiness, so a stalled alert control
             // plane must surface here. Only *loop-broken* conditions fail readiness — a hung
             // dispatcher heartbeat, a hung evaluation leader, or a fleet-wide no-leader stall — never
             // a mere delivery backlog / dead-letter accumulation (those remain on the health-check

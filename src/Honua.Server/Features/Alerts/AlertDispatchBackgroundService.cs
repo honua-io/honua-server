@@ -99,14 +99,13 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     // Readiness measures whether the dispatcher loop is alive, not whether an
                     // arbitrary remote webhook is responsive. Stamp before claiming/dispatching
                     // the batch so a slow or black-holed sink cannot make every replica appear
-                    // dead while the loop is still making progress (#30).
+                    // dead while the loop is still making progress.
                     Interlocked.Exchange(ref _lastPollAtTicks, now.UtcTicks);
 
                     // Resolved per batch so the entitlement is read LIVE: a dispatch queued while
                     // its channel was entitled can sit in the outbox across a license expiry —
                     // suppressed, retrying, or dead-lettered and revived — and the admission-time
-                    // check in AlertPipeline.GetDeliverableChannels cannot see that
-                    // (honua-server#2998 review).
+                    // check in AlertPipeline.GetDeliverableChannels cannot see that.
                     var editionPolicy = scope.ServiceProvider.GetService<IAlertEditionPolicy>();
 
                     var batch = await dispatchStore
@@ -220,7 +219,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         // may last minutes, requiring an operator to find and redrive them, and even a single
         // dead-lettered row trips the default unhealthy threshold. Rescheduling follows the
         // rate-limit and circuit-breaker paths, which likewise defer on conditions that clear on
-        // their own, and it does NOT consume the retry budget (honua-server#2998 review).
+        // their own, and it does NOT consume the retry budget.
         if (editionPolicy is not null && !editionPolicy.IsChannelAllowed(item.ChannelType))
         {
             var entitlementRetryAt = now.Add(UnentitledChannelRetryDelay);

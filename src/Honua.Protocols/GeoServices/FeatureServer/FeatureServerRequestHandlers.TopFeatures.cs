@@ -151,7 +151,7 @@ internal static partial class FeatureServerEndpoints
         // returnIdsOnly mirrors the normal layer query: return only the objectId-set
         // form ({ objectIdFieldName, objectIds }). The ArcGIS API for Python's
         // query_top_features() always sends it, so it must produce the id payload
-        // rather than 400 (#1906).
+        // rather than 400.
         if (!TryParseBoolValue(values, "returnIdsOnly", false, out var returnIdsOnly, out var idsError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -160,7 +160,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         // returnGeometry defaults to true (Esri default); an explicit false omits the
-        // geometry from each feature, matching the normal query operation (#1906).
+        // geometry from each feature, matching the normal query operation.
         if (!TryParseBoolValue(values, "returnGeometry", true, out var returnGeometry, out var geometryError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -198,7 +198,7 @@ internal static partial class FeatureServerEndpoints
 
         // outSR reprojects output geometry to the requested WKID (bare WKID or a
         // spatialReference JSON object). Honored so Esri clients that request a
-        // display SRID receive correctly-projected geometry (#1906).
+        // display SRID receive correctly-projected geometry.
         if (!TryParseTopFeaturesOutputSrid(GetValueString(values, "outSR"), out var outputSrid, out var outSrError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -256,7 +256,7 @@ internal static partial class FeatureServerEndpoints
 
         // returnIdsOnly: return the objectId-set payload, mirroring the normal query
         // operation. pbf returns the ObjectIdsResult arm; JSON returns
-        // { objectIdFieldName, objectIds } (#1906).
+        // { objectIdFieldName, objectIds }.
         if (returnIdsOnly)
         {
             var idsObjectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
@@ -298,7 +298,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         // f=pbf returns the FeatureResult arm of the FeatureCollectionPBuffer; ArcGIS
-        // queryTopFeatures supports pbf, so emit protobuf rather than rejecting it (#1824).
+        // queryTopFeatures supports pbf, so emit protobuf rather than rejecting it.
         if (topFeaturesIsPbf)
         {
             var pbfFormatter = context.RequestServices.GetRequiredService<PbfQueryFormatter>();
@@ -343,7 +343,7 @@ internal static partial class FeatureServerEndpoints
                         feature.Geometry, null, null, false, false)
                     : null,
                 // returnGeometry=false must omit the geometry property entirely (not emit
-                // null), matching the normal query operation (#1906).
+                // null), matching the normal query operation.
                 IncludeGeometry = returnGeometry
             };
         }).ToArray();

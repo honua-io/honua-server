@@ -9,11 +9,11 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> TemporalEndpoints =>
     [
-        // Temporal data history (slice 1 of #1166): capability discovery + as-of read.
+        // Temporal data history: capability discovery + as-of read.
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities"),
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of"),
 
-        // Temporal data history (slices 2-5 of #1166): diff, feature timeline, governed rollback.
+        // Temporal data history: diff, feature timeline, governed rollback.
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/diff"),
         new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/features/{featureId}/timeline"),
         new("POST", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/rollback/plan"),

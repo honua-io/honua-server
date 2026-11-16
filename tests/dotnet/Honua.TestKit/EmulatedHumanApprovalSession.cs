@@ -10,7 +10,16 @@ namespace Honua.TestKit;
 
 internal static class EmulatedHumanApprovalSession
 {
-    internal static async Task<HttpClient> CreateClientAsync(IServiceProvider services, Func<HttpClient> createClient)
+    internal static Task<HttpClient> CreateClientAsync(IServiceProvider services, Func<HttpClient> createClient) =>
+        CreateClientAsync(services, createClient,
+        [
+            new() { Type = "iss", Value = "https://identity.example.test" },
+            new() { Type = ClaimTypes.NameIdentifier, Value = "emulated-reviewer" },
+            new() { Type = ClaimTypes.Role, Value = "admin" },
+        ]);
+
+    internal static async Task<HttpClient> CreateClientAsync(
+        IServiceProvider services, Func<HttpClient> createClient, AdminAuthSessionClaim[] claims)
     {
         using var scope = services.CreateScope();
         var sessions = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
@@ -20,12 +29,7 @@ internal static class EmulatedHumanApprovalSession
             AccessToken = "emulated-interactive-token",
             Origin = AdminAuthSessionOrigin.InteractiveOidc,
             ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
-            Claims =
-            [
-                new() { Type = "iss", Value = "https://identity.example.test" },
-                new() { Type = ClaimTypes.NameIdentifier, Value = "emulated-reviewer" },
-                new() { Type = ClaimTypes.Role, Value = "admin" },
-            ],
+            Claims = claims,
         }, CancellationToken.None);
         var client = createClient();
         client.BaseAddress = new Uri("https://localhost");

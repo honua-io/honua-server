@@ -470,7 +470,7 @@ internal sealed class ZarrCoverageService
             {
                 // A subset targeting a declared additional coordinate axis
                 // (vertical/elevation/named) is resolved from coordinate values to a
-                // grid-index slice through the shared coordinate-axis indexer (#1872).
+                // grid-index slice through the shared coordinate-axis indexer.
                 if (TryMatchCoordinateAxis(metadata, segment, out var axis))
                 {
                     if (!TryResolveCoordinateSubset(axis!, segment, out var resolved, out error))

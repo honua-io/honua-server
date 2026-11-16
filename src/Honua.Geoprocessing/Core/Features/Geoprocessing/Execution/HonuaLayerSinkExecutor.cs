@@ -81,9 +81,9 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         }
 
         // Accept both the inline back-compat data URI and a spilled honua-feature-stream
-        // reference (server#4628): FeatureCollectionArtifact.TryParseDataUri alone rejected
-        // any transform output that crossed FeatureStreamPublisher's inline threshold, so a
-        // workflow's success depended on its dataset size relative to that threshold rather
+        // reference: FeatureCollectionArtifact.TryParseDataUri alone would reject
+        // any transform output that crosses FeatureStreamPublisher's inline threshold, so a
+        // workflow's success would depend on its dataset size relative to that threshold rather
         // than on its content. OutputRootDirectory rejects a stream reference whose backing
         // path was injected outside the geoprocessing sandbox.
         if (!FeatureStreamArtifact.TryOpenRead(
@@ -165,7 +165,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
             if (rows.Count >= maxFeatures)
             {
                 // A spilled stream is deliberately unbounded end-to-end, but this sink still
-                // loads through a single transactional batch (server#4628 non-goal: not a
+                // loads through a single transactional batch (by design it is not a
                 // distributed data engine). Fail closed with a clear, actionable message
                 // instead of growing the in-memory row buffer without limit.
                 return JobExecutionResult.Failed(
@@ -180,7 +180,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
 
         await context.ReportProgressAsync(70, "Loading into catalog layer", cancellationToken).ConfigureAwait(false);
 
-        // Fence stale attempts at the write boundary (server#4626): a queue lease or
+        // Fence stale attempts at the write boundary: a queue lease or
         // artifact-publication fence alone cannot undo a row already committed to the
         // catalog, so re-check ownership immediately before the transactional write.
         await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
@@ -212,8 +212,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         // what the cancellation token does next. Publish/report with CancellationToken.None
         // from here so a cancellation racing in during this narrow window cannot make the job
         // falsely report Cancelled (implying no effect / safe to discard) over data that was
-        // actually written (server#4626: "cancellation does not claim rollback of committed
-        // data").
+        // actually written: a cancellation never claims to roll back committed data.
         await context.RecordCommittedEffectAsync(
             SinkResultArtifact.Build(
                 HandledProcessId,
@@ -239,7 +238,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
             return "the destination could not be authorized: no authorization scope is available in this deployment.";
         }
 
-        // Mirrors source.honua-layer's fail-closed contract (honua-server#3068): a job with no
+        // Mirrors source.honua-layer's fail-closed contract: a job with no
         // captured submitter cannot be constrained to anyone, so it must be refused rather than
         // writing under an unconstrained identity.
         var submitter = JobSecurityScope.Current?.Submitter;
@@ -282,7 +281,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         // brand-new table. Ordinary per-layer write grants say nothing about that authority — an
         // editor of layer A must not be able to conjure layer B into existence in any schema the
         // Postgres role can reach — so creation is governed separately and requires an
-        // administrative role (#4625 AC: "Govern creation of new destinations separately").
+        // administrative role.
         var rbacOptions = services.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions();
         return RbacRoleClaims.IsAdmin(principal, rbacOptions, services)
             ? null

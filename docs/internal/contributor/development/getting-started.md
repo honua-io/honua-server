@@ -207,6 +207,6 @@ dotnet nuget locals all --clear && dotnet restore --force
 
 ## Next steps
 
-- [Contributing](contributing.md) — code style, architecture rules, PR process
+- [Development guide](contributing.md) — code style, architecture rules, PR process
 - [Architecture](../ARCHITECTURE.md) — system design and component interaction
 - [ADRs](../adr/README.md) — rationale behind key design decisions

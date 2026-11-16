@@ -651,7 +651,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             }
 
             // Accepted spellings of WGS 84 lon/lat, matched EXACTLY through the
-            // shared identifier parser (#3053): EPSG:4326, the OGC URN and HTTP
+            // shared identifier parser: EPSG:4326, the OGC URN and HTTP
             // URI forms, and the CRS84 aliases. Substring probes for "4326" /
             // "CRS84" also admitted contrived near-misses such as EPSG:43260
             // and NOT_CRS84, which name a different CRS or none at all.

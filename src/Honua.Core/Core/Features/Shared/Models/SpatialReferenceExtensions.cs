@@ -8,16 +8,6 @@ namespace Honua.Core.Features.Shared.Models;
 
 public static class SpatialReferenceExtensions
 {
-    public static SpatialReference ToUnifiedSpatialReference(this (int Srid, string? WellKnownText) catalogSpatialRef)
-        => new()
-        {
-            Wkid = catalogSpatialRef.Srid,
-            Wkt = catalogSpatialRef.WellKnownText
-        };
-
-    public static (int Srid, string? WellKnownText) ToCatalogSpatialReference(this SpatialReference spatialRef)
-        => (spatialRef.Wkid, spatialRef.Wkt);
-
     public static string ToOgcCrsUri(this SpatialReference spatialRef)
         => spatialRef.Wkid switch
         {
@@ -85,9 +75,6 @@ public static class SpatialReferenceExtensions
         return uris.ToImmutableArray();
     }
 
-    public static bool IsSupportedByOgc(this SpatialReference spatialRef)
-        => spatialRef.Wkid is 4326 or 3857 or > 0;
-
     // WKID 4326 is CRS84 and is governed by the OGC, so its authority name is OGC rather than EPSG.
     public static string GetAuthorityName(this SpatialReference spatialRef)
         => spatialRef.Wkid == 4326 ? "OGC" : "EPSG";
@@ -111,16 +98,4 @@ public static class SpatialReferenceExtensions
 
     public static bool IsWebMercatorSrid(int srid)
         => NormalizeWebMercatorSrid(srid) == 3857;
-
-    public static SpatialReference FromWkid(int wkid)
-        => SpatialReference.Create(wkid);
-
-    public static SpatialReference FromWkidAndWkt(int wkid, string? wkt)
-        => new() { Wkid = wkid, Wkt = wkt };
-
-    public static SpatialReference? ToNullable(this SpatialReference spatialRef)
-        => spatialRef;
-
-    public static SpatialReference? FromOptionalWkid(int? wkid)
-        => wkid.HasValue ? SpatialReference.Create(wkid.Value) : null;
 }

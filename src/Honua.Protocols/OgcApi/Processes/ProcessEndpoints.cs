@@ -88,7 +88,7 @@ internal static class ProcessEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .ExcludeFromDescription();
 
-        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // HANDLER-AUTHORIZED: the handler calls
         // IGeoprocessingJobService.EnsureCallerAuthorizedAsync for Process+Execute
         // before reading the body so unauthenticated callers get 401 ahead of
         // 400. Marked AllowAnonymous so the audit architecture guard records
@@ -634,7 +634,7 @@ internal static class ProcessEndpoints
         {
             // Log the operation the denied check actually evaluated (e.g.
             // ExecuteMutatingProcess) so a mutating-tier 403 is distinguishable from a
-            // baseline Execute denial rather than always reading as Execute (#2798).
+            // baseline Execute denial rather than always reading as Execute.
             OgcProcessesLog.AuthorizationDenied(
                 logger,
                 (authEx.ResourceType ?? OperatorResourceType.Process).ToString(),

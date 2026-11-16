@@ -56,7 +56,7 @@ internal sealed class GeocodeTool : IMcpTool
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken)
             .ConfigureAwait(false);
 
-        // No entitlement gate: forward geocoding is a Community capability (#2981).
+        // No entitlement gate: forward geocoding is a Community capability.
         var argument = McpToolHelpers.ParseArguments(arguments, LocationJsonContext.Default.McpGeocodeArgument);
         var request = ToDomainRequest(argument);
         var providerName = string.IsNullOrWhiteSpace(argument.Provider) ? null : argument.Provider.Trim();
@@ -75,7 +75,7 @@ internal sealed class GeocodeTool : IMcpTool
         if (!result.IsSuccess)
         {
             // A named provider that is not registered must fail closed. Store-unavailable
-            // would look retryable and used to hide a silent Nominatim substitution (#6601).
+            // would look retryable and could hide a silent Nominatim substitution.
             if (result.ErrorMessage?.StartsWith("provider_unavailable:", StringComparison.Ordinal) == true)
             {
                 throw new GeoprocessingPreconditionFailedException(result.ErrorMessage);

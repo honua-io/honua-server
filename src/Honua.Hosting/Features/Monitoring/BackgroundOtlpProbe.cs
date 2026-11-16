@@ -70,8 +70,6 @@ internal sealed class BackgroundOtlpProbe : BackgroundService
 
     public OtlpProbeSnapshot Snapshot => Volatile.Read(ref _snapshot);
 
-    internal Task ProbeOnceForTestsAsync(CancellationToken cancellationToken) => RunProbeAsync(cancellationToken);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // First probe runs after one interval to avoid blocking startup.

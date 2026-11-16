@@ -148,7 +148,7 @@ internal static partial class Wps20Endpoint
         }
         catch (GeoprocessingStoreUnavailableException storeEx)
         {
-            // honua-release#202: project the capability-unavailable receipt into the OWS exception
+            // Project the capability-unavailable receipt into the OWS exception
             // report. The exceptionCode stays "ServerBusy" because OWS constrains that vocabulary
             // and CITE checks it; the machine-readable fields ride additional ows:ExceptionText
             // elements as stable "key: value" lines, the same convention the GeoServices

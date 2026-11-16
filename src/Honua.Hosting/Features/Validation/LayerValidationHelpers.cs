@@ -139,16 +139,15 @@ internal static partial class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, null, null, null, error);
         }
 
-        // Per-operation RBAC grants are consulted first (#1376) via the shared
-        // seam; the coarse AccessPolicy is the no-grant fallback. This central
-        // validator is the enforcement point for OData / OGC API Features / WFS /
-        // tiles / STAC layer reads & mutations, so wiring it here re-routes those
-        // adapters through the resolver consistently.
+        // Per-operation RBAC grants are consulted first via the shared seam; the coarse
+        // AccessPolicy is the no-grant fallback. This central validator is the enforcement
+        // point for OData / OGC API Features / WFS / tiles / STAC layer reads & mutations,
+        // so wiring it here re-routes those adapters through the resolver consistently.
         // /tiles' ProblemJson opt-in must also govern authorization failures, not just
         // not-found: AccessPolicyHelpers.RequireResourceAccessAsync formats denials via
         // StandardErrorHelpers, which the path-classified StandardErrorResponseFormatter
-        // would otherwise wrap as a GeoServices 200-envelope for /tiles (honua-server#2945
-        // review). Evaluate the decision directly and format it as problem+json here.
+        // would otherwise wrap as a GeoServices 200-envelope for /tiles. Evaluate the
+        // decision directly and format it as problem+json here.
         var accessError = protocol == ValidationProtocol.ProblemJson
             ? await RequireResourceAccessAsProblemJsonAsync(context, resource!, service, scope, effectiveToken).ConfigureAwait(false)
             : await AccessPolicyHelpers.RequireResourceAccessAsync(
@@ -311,9 +310,6 @@ internal static partial class LayerValidationHelpers
         var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource?.Metadata.Name;
         return string.IsNullOrWhiteSpace(collectionId) ? resource?.Metadata.Id : collectionId;
     }
-
-    internal static int QueryCacheLayerId(MetadataV2Layer publication, int storageLayerId)
-        => publication.LayerIndex ?? storageLayerId;
 
     internal static MetadataV2Layer? SelectMatchingCollectionPublication(
         IEnumerable<MetadataV2Layer> publications,
@@ -668,28 +664,6 @@ internal static partial class LayerValidationHelpers
         return byLayer.ToDictionary(kv => kv.Key, kv => kv.Value.Service);
     }
 
-    public static async Task<MetadataV2Service?> ResolvePrimaryServiceV2Async(
-        HttpContext context,
-        int layerId,
-        string? requiredProtocol = null,
-        CancellationToken cancellationToken = default)
-    {
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var (_, _, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
-        return service;
-    }
-
-    public static async Task<string?> ResolvePrimaryServiceNameV2Async(
-        HttpContext context,
-        int layerId,
-        string? requiredProtocol = null,
-        CancellationToken cancellationToken = default)
-    {
-        var service = await ResolvePrimaryServiceV2Async(context, layerId, requiredProtocol, cancellationToken)
-            .ConfigureAwait(false);
-        return service?.Metadata.Name;
-    }
-
     public static async Task<string?> ResolvePrimaryServiceNameByProtocolV2Async(
         HttpContext context,
         int layerId,
@@ -902,9 +876,9 @@ internal static partial class LayerValidationHelpers
 
         // Declared capabilities are an editing contract, not advisory text. The Esri
         // GeoServices edits handler already refuses an edit kind the publication never
-        // declared (#4073); this surface did not, so a layer published with the default
+        // declared; this surface did not, so a layer published with the default
         // ["Query","Extract"] capabilities accepted OGC API Features writes it never
-        // advertised (#4707). Both surfaces now resolve capabilities the same way.
+        // advertised. Both surfaces now resolve capabilities the same way.
         var capabilityError = ValidateDeclaredEditCapability(context, validation, operation);
         if (capabilityError != null)
         {
@@ -918,7 +892,7 @@ internal static partial class LayerValidationHelpers
 
         // Storage-routing contract: refuse a mutation the managed feature writer cannot
         // land where the serving protocols read, instead of acknowledging a write that is
-        // never readable back (#4707).
+        // never readable back.
         var routingError = await ValidateWriteRoutingAsync(
             context, validation, cancellationToken).ConfigureAwait(false);
         if (routingError != null)
@@ -1205,86 +1179,4 @@ internal static partial class LayerValidationHelpers
 
         return validation;
     }
-
-    public static async Task<MetadataV2ServiceValidationResult> ValidateServiceWithAccessV2Async(
-        HttpContext context,
-        string serviceName,
-        string? requiredProtocol = null,
-        AccessScope scope = AccessScope.Read,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(serviceName))
-        {
-            return new MetadataV2ServiceValidationResult(
-                false, null, [], [],
-                StandardErrorHelpers.CreateBadRequest(context, "Service name is required."));
-        }
-
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-
-        // Prefer a protocol match; otherwise fall back to name match.
-        MetadataV2Service? service = null;
-        if (!string.IsNullOrWhiteSpace(requiredProtocol))
-        {
-            service = snapshot.Graph.Services.FirstOrDefault(s =>
-                MetadataV2ServiceProtocols.IsProtocolEnabled(s, requiredProtocol) &&
-                string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase));
-        }
-        service ??= snapshot.Index.ServicesByName.TryGetValue(serviceName, out var s) ? s : null;
-
-        if (service is null || !TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
-        {
-            return new MetadataV2ServiceValidationResult(
-                false, null, [], [],
-                StandardErrorHelpers.CreateNotFound(context, $"Service '{serviceName}' not found."));
-        }
-
-        if (!string.IsNullOrWhiteSpace(requiredProtocol) &&
-            !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
-        {
-            return new MetadataV2ServiceValidationResult(
-                false, service, [], [],
-                StandardErrorHelpers.CreateNotFound(
-                    context, $"{requiredProtocol} is not enabled for service '{serviceName}'."));
-        }
-
-        var serviceAccessError = await AccessPolicyHelpers.RequireServiceAccessAsync(
-            context, service, AccessPolicyHelpers.DefaultOperationForScope(scope), cancellationToken).ConfigureAwait(false);
-        if (serviceAccessError != null)
-        {
-            return new MetadataV2ServiceValidationResult(false, service, [], [], serviceAccessError);
-        }
-
-        var publications = snapshot.PublicationsForService(service.Metadata.Id);
-        var visiblePublications = new List<MetadataV2Layer>(publications.Count);
-        var resources = new List<MetadataV2Object>(publications.Count);
-        foreach (var pub in publications)
-        {
-            var resource = snapshot.ResolveResource(pub);
-            if (!snapshot.IsRoutable(pub))
-            {
-                continue;
-            }
-            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource!, service))
-            {
-                continue;
-            }
-            // Drop resources the caller can't read; capability documents normally hide them.
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service, scope))
-            {
-                continue;
-            }
-            visiblePublications.Add(pub);
-            resources.Add(resource!);
-        }
-
-        return new MetadataV2ServiceValidationResult(true, service, visiblePublications, resources, null);
-    }
 }
-
-internal readonly record struct MetadataV2ServiceValidationResult(
-    bool IsValid,
-    MetadataV2Service? Service,
-    IReadOnlyList<MetadataV2Layer> Publications,
-    IReadOnlyList<MetadataV2Object> AccessibleResources,
-    IResult? ErrorResult);

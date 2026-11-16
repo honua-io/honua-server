@@ -114,7 +114,7 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
                 }
 
                 // A readiness endpoint that answers the expected 2xx with an error envelope or an
-                // "Unhealthy" report is not healthy (#4617). An oversized body cannot be inspected
+                // "Unhealthy" report is not healthy. An oversized body cannot be inspected
                 // and is treated as a failed check rather than assumed healthy.
                 if (DeployProbeBodyInspector.IsSuccessStatus(request.ExpectedStatusCode))
                 {
@@ -197,7 +197,7 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
             }
 
             // A 2xx that carries an error envelope (GeoServices {"error":...}, OGC exception report,
-            // problem details) is a failed query, not a result, whatever else it contains (#4617).
+            // problem details) is a failed query, not a result, whatever else it contains.
             if (DeployProbeBodyInspector.IsSuccessStatus(request.ExpectedStatusCode) &&
                 DeployProbeBodyInspector.DescribeErrorEnvelope(body) is { } envelope)
             {

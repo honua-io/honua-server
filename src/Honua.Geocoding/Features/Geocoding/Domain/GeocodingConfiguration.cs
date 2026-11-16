@@ -56,6 +56,4 @@ public static class GeocodeProviderNames
     public const string AzureMaps = "azure-maps";
 
     public const string Local = "local";
-
-    public static string[] GetAll() => [Nominatim, AmazonLocation, AzureMaps, Local];
 }

@@ -18,7 +18,7 @@ internal static class CollaborationSessionServices
     {
         services.AddHttpContextAccessor();
         services.TryAddSingleton<ICollaborationSessionClock, SystemCollaborationSessionClock>();
-        // Studio-lifecycle-backed authorization (#2999): joins/edits/checkpoints are scoped to a
+        // Studio-lifecycle-backed authorization: joins/edits/checkpoints are scoped to a
         // Studio draft or content item and follow the Studio identity model (admin family plus
         // owner semantics under the end-user flag). Unresolvable map ids stay fail-closed.
         services.TryAddSingleton<ISavedMapCollaborationAuthorizer, StudioSavedMapCollaborationAuthorizer>();
@@ -41,7 +41,7 @@ internal static class CollaborationSessionServices
         // Deployment topology drives the collaboration fail-closed rules; it is deliberately an
         // operator declaration (Deployment:Mode / Collaboration:MultiReplica) rather than an
         // inference from Redis presence, since a single instance commonly uses Redis for
-        // cache/jobs and must keep full live co-editing (honua-server#2999 review).
+        // cache/jobs and must keep full live co-editing.
         services.TryAddSingleton<SavedMapCollaborationTopology>();
         // The advertised session capabilities must match what the endpoints will accept: when
         // edits fail closed, the stream advertises operations/replay as unavailable. Computed on
@@ -61,7 +61,7 @@ internal static class CollaborationSessionServices
         services.AddFeatureLockCollaboration();
         services.AddSavedMapOperationLog();
         // Checkpoint-facing facade pairing the full-log replay with the replica-continuity
-        // proof that gates it (honua-server#2999); keeps the endpoint within DI limits.
+        // proof that gates it; keeps the endpoint within DI limits.
         services.TryAddSingleton<Checkpoints.SavedMapCheckpointOperationLog>();
         return services;
     }

@@ -117,23 +117,6 @@ internal static class ODataUtilityService
             });
     }
 
-    public static IResult CreateStandardODataError(HttpContext context, string detail, int statusCode = 400, IReadOnlyList<string>? additionalDetails = null)
-    {
-        var errorResponse = statusCode switch
-        {
-            StatusCodes.Status400BadRequest => StandardErrorResponse.BadRequest(detail, additionalDetails),
-            StatusCodes.Status401Unauthorized => StandardErrorResponse.Unauthorized(detail, additionalDetails),
-            StatusCodes.Status403Forbidden => StandardErrorResponse.Forbidden(detail, additionalDetails),
-            StatusCodes.Status404NotFound => StandardErrorResponse.NotFound(detail, additionalDetails),
-            StatusCodes.Status409Conflict => StandardErrorResponse.Conflict(detail, additionalDetails),
-            StatusCodes.Status500InternalServerError => StandardErrorResponse.InternalServerError(detail, additionalDetails),
-            StatusCodes.Status503ServiceUnavailable => StandardErrorResponse.ServiceUnavailable(detail, null, additionalDetails),
-            _ => new StandardErrorResponse(statusCode, "Error", detail, additionalDetails)
-        };
-
-        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
-    }
-
     public static string GenerateNextLink(
         HttpRequest request,
         int nextSkip,
@@ -313,23 +296,6 @@ internal static class ODataUtilityService
         };
     }
 
-    public static ODataFeatureResponse CreateODataFeatureResponse(
-        string baseUrl,
-        long objectId,
-        int layerId,
-        ODataSpatialGeometry? geometry,
-        Dictionary<string, object?> attributes)
-    {
-        return new ODataFeatureResponse
-        {
-            Context = BuildContextUrl(baseUrl, "Features", isSingle: true),
-            ObjectId = objectId,
-            LayerId = layerId,
-            Geometry = geometry,
-            Attributes = attributes
-        };
-    }
-
     public static string GetBaseUrl(HttpRequest request)
     {
         return BaseUrlResolver.GetBaseUrl(request);
@@ -459,26 +425,6 @@ internal static class ODataUtilityService
     public static string CreateLocationHeader(string baseUrl, int layerId, long objectId)
     {
         return $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={objectId})";
-    }
-
-    public static string CreateODataEntityId(string baseUrl, int layerId, long objectId)
-    {
-        return $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={objectId})";
-    }
-
-    public static bool IsValidLayerId(int layerId)
-    {
-        return layerId > 0;
-    }
-
-    public static bool IsValidObjectId(long objectId)
-    {
-        return objectId > 0;
-    }
-
-    public static int GetStatusCodeForCrudResult<T>(ODataCrudResult<T> result)
-    {
-        return result.StatusCode;
     }
 
     public static IResult CreateResultFromCrudResult<T>(
@@ -676,12 +622,6 @@ internal static class ODataUtilityService
         }
 
         return sb.Length > 0 ? sb.ToString() : "Identifier";
-    }
-
-    public static string BuildRelationshipMetadataName(string relationshipName, int relationshipId)
-    {
-        var sanitized = SanitizeIdentifier(relationshipName);
-        return $"{sanitized}_r{relationshipId}";
     }
 
     public static string BuildRelationshipMetadataNameForV2(string relationshipName, string relationshipId)

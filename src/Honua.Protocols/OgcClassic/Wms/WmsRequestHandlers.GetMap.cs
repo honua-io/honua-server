@@ -160,7 +160,7 @@ internal static partial class WmsRequestHandlers
         }
         // STYLES and FILTER are positional against the requested LAYERS list, so they are
         // validated above before repeated storage layers collapse to their first occurrence.
-        // Each surviving layer is queried and drawn once (#6097).
+        // Each surviving layer is queried and drawn once.
         (renderLayers, var layerFilters) = DeduplicateWmsLayers(renderLayers, filterResult.Filters);
         activity?.SetTag("wms.filter_applied", layerFilters is not null);
 

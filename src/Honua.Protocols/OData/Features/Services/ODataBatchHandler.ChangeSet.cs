@@ -445,7 +445,7 @@ internal sealed partial class ODataBatchHandler
         var updateCount = updateRequests.Values.Sum(list => list.Count);
         var deleteCount = deleteRequests.Values.Sum(list => list.Count);
 
-        // OData $batch change-set writes are Community (#1591). They still flow through the
+        // OData $batch change-set writes are Community. They still flow through the
         // shared edit processor, validation, authz, event, and telemetry paths below.
 
         if (EditLimitPolicy.Evaluate(new EditCounts(addCount, updateCount, deleteCount), _editLimits) is { } limitViolation)
