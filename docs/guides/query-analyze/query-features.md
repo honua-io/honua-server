@@ -27,7 +27,7 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 
 ## Steps
 
-1. Ask an attribute question — "population over 10000". The `<service>/<layer>` reference uses the numeric layer id that `honua layers <service>` lists; do not assume `0`:
+1. Ask an attribute question — "population over 10000". The `<service>/<layer>` reference uses the numeric layer id that `honua layers <service>` lists. Layer ids are deployment-wide rather than per-service positions, so the `1` below is only a placeholder. The later steps reuse `LAYER_ID`:
 
    ```bash
    honua layers my_service
@@ -46,7 +46,7 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 
    CQL2 and FeatureServer also take real geometries, and OData supports `geo.distance` and `geo.intersects` in `$filter` (see [CQL2 and filtering](../../reference/cql2-and-filtering.md)).
 
-3. Page through large results with `--limit` (the response notes when more rows are available):
+3. Page through large results with `--limit` (the table output notes when more rows are available):
 
    ```bash
    honua query "my_service/$LAYER_ID" --limit 100
@@ -71,14 +71,15 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
 ## Verify
 
 ```bash
+LAYER_ID=1  # replace with an id from `honua layers my_service`
 honua query "my_service/$LAYER_ID" --limit 1 --format geojson
 ```
 
-Expected (trimmed): a GeoJSON FeatureCollection holding one feature. The CLI prints the features only; for a total, run the same query with `--count`, and for `numberMatched` and `next` links, request the OGC API Features items endpoint.
+Expected (trimmed): a GeoJSON FeatureCollection with at most one feature. The CLI prints only `type` and `features` (no `numberMatched` or `links`); for a total, run the same query with `--count`, and for `numberMatched` and `next` links, request the OGC API Features items endpoint.
 
 ```json
 { "type": "FeatureCollection",
-  "features": [ { "type": "Feature", "geometry": { "type": "Point" }, "properties": { } } ] }
+  "features": [ { "type": "Feature", "geometry": { }, "properties": { } } ] }
 ```
 
 ## Troubleshoot

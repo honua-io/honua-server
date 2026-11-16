@@ -103,7 +103,7 @@ export HONUA_API_KEY=your-admin-api-key
 
 honua services
 honua layers default
-LAYER_ID=1  # replace with the layer id from the publish result or the list above
+LAYER_ID=1  # placeholder; see below
 honua query "default/$LAYER_ID" --limit 5
 honua query "default/$LAYER_ID" --count
 ```
