@@ -52,6 +52,7 @@ internal static class FolderMutationService
             return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.From(exception)));
         }
     }
+
     private static async Task<FolderExecutionFailure?> AuthorizeOperatorAsync(
         ClaimsPrincipal principal, IServiceProvider services, CancellationToken cancellationToken)
     {
