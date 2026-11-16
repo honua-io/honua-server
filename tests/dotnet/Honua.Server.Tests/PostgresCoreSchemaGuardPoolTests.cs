@@ -10,6 +10,7 @@ using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -18,6 +19,8 @@ using Xunit.Abstractions;
 namespace Honua.Server.Tests;
 
 [Collection("Database.CoreFeatureStore")]
+[Protocol(ProtocolNames.Infrastructure)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class PostgresCoreSchemaGuardPoolTests(ITestOutputHelper output) : IAsyncLifetime
 {
     private readonly PostgresFixture _postgres = new();
