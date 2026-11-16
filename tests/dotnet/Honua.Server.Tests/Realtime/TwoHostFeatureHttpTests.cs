@@ -154,8 +154,8 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
             await listen.ExecuteNonQueryAsync(timeout.Token);
         }
         var reading = ReadChangesAsync(reader, Edits, timeout.Token);
-        var relayTimes = SampleRelayAsync(TwoHostFeatureHarness.Relay(_taskB), sampling.Token);
-        var probing = ProbeNotificationsAsync(probe, sampling.Token);
+        var relayTimes = TwoHostDeliveryProbes.SampleRelayAsync(TwoHostFeatureHarness.Relay(_taskB), sampling.Token);
+        var probing = TwoHostDeliveryProbes.ProbeNotificationsAsync(probe, sampling.Token);
         try
         {
             var committed = new Dictionary<long, long>();
@@ -197,74 +197,23 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
             .Order().ToArray();
         // Split each delivery at the moment task B's relay passed the frame's generation, so a
         // miss says whether the wait was in the provider (commit to relay) or the stream (relay to frame).
-        var toRelay = frames.Select(frame => Stopwatch.GetElapsedTime(committed[frame.ObjectId], RelayedAt(relayed, frame)))
+        var toRelay = frames
+            .Select(frame => Stopwatch.GetElapsedTime(committed[frame.ObjectId], TwoHostDeliveryProbes.RelayedAt(relayed, frame)))
             .Order().ToArray();
-        var toFrame = frames.Select(frame => Stopwatch.GetElapsedTime(RelayedAt(relayed, frame), frame.ReceivedAt))
+        var toFrame = frames
+            .Select(frame => Stopwatch.GetElapsedTime(TwoHostDeliveryProbes.RelayedAt(relayed, frame), frame.ReceivedAt))
             .Order().ToArray();
         var p95 = (int)Math.Ceiling(Edits * 0.95) - 1;
         var listenerB = _taskB.GetService<RealtimeListener>();
         var logHeadB = await _taskB.GetService<PostgresFeatureChangeLog>().ReadHeadAsync(cancellationToken);
         latencies[p95].Should().BeLessThanOrEqualTo(latencyTarget,
             $"p95 commit-to-relay was {toRelay[p95].TotalMilliseconds:F0} ms and relay-to-frame {toFrame[p95].TotalMilliseconds:F0} ms; " +
-            $"relay moved {relayed.Count} times ({DescribeRelay(relayed)}) for frame generations " +
+            $"relay moved {relayed.Count} times ({TwoHostDeliveryProbes.DescribeRelay(relayed)}) for frame generations " +
             $"{frames[0].Generation}..{frames[^1].Generation}; {notifications} feature notifications seen by a probe; " +
             $"task B feature log head {logHeadB}, " +
             $"listener connected {listenerB.IsConnected} (pid {listenerB.ProcessId}, reconnects {listenerB.Reconnects}, " +
             $"poll-only reason {listenerB.PollOnlyReason ?? "none"})");
     }
-
-    // Records when task B's feature relay first reached each position, sampled every few
-    // milliseconds; the relay position is the generation it last handed to local sessions.
-    private static async Task<List<(long Position, long At)>> SampleRelayAsync(
-        FeatureStreamRealtimeRelay relay, CancellationToken cancellationToken)
-    {
-        var samples = new List<(long Position, long At)>();
-        var last = relay.Position;
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                var position = relay.Position;
-                if (position != last)
-                {
-                    samples.Add((position, Stopwatch.GetTimestamp()));
-                    last = position;
-                }
-                await Task.Delay(2, cancellationToken);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // Sampling ends with delivery.
-        }
-        return samples;
-    }
-
-    private static async Task ProbeNotificationsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
-    {
-        try
-        {
-            while (true)
-            {
-                await connection.WaitAsync(cancellationToken);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // Probing ends with delivery.
-        }
-    }
-
-    private static string DescribeRelay(List<(long Position, long At)> samples)
-        => samples.Count == 0
-            ? "never"
-            : $"first {samples[0].Position}, last {samples[^1].Position}, " +
-              $"largest step {samples.Zip(samples.Skip(1), (a, b) => b.Position - a.Position).DefaultIfEmpty(samples[0].Position).Max()}";
-
-    private static long RelayedAt(List<(long Position, long At)> samples, FeatureFrame frame)
-        => samples.FirstOrDefault(sample => sample.Position >= frame.Generation) is { At: > 0 } sample
-            ? sample.At
-            : frame.ReceivedAt;
 
     [IntegrationTest(Timeout = 240000)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
