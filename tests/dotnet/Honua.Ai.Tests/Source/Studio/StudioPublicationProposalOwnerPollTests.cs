@@ -11,6 +11,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.TestKit.Extensions;
 using Honua.TestKit;
@@ -62,6 +63,8 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
                 builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
+                builder.UseSetting("MultiTenancy:Enabled", "false");
+                builder.UseSetting("MultiTenancy:DefaultTenantId", "public");
 
                 // Symmetric-key generic OIDC provider so issuer-bearing tokens are minted and
                 // validated in-process without a live IdP (mirrors McpBearerAuthenticationTests).
@@ -103,7 +106,8 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
         var ownerMcp = new StudioMcpHttpClient(owner);
         var strangerMcp = new StudioMcpHttpClient(stranger);
 
-        var proposalId = await ProposeAsync(ownerMcp, "bearer");
+        var proposalId = await ProposeAsync(ownerMcp, "bearer",
+            $"subject:{Uri.EscapeDataString(Issuer)}:studio-owner-alice@tenant:");
 
         var ownerRead = await ownerMcp.SendRpcAsync(ReadProposalRequest(proposalId));
         AssertProposalReadable(ownerRead, proposalId);
@@ -130,7 +134,7 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
         var ownerMcp = new StudioMcpHttpClient(owner);
         var strangerMcp = new StudioMcpHttpClient(stranger);
 
-        var proposalId = await ProposeAsync(ownerMcp, "apikey");
+        var proposalId = await ProposeAsync(ownerMcp, "apikey", ownerKey.Record.Id.ToString("D"));
 
         var ownerRead = await ownerMcp.SendRpcAsync(ReadProposalRequest(proposalId));
         AssertProposalReadable(ownerRead, proposalId);
@@ -140,28 +144,44 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Composes, saves and proposes a publication as one principal, returning the proposal
-    /// id the tool reports. Every step runs over MCP, as the SDK replay harness does.
+    /// Seeds a saved version owned by the credential, then proposes publication over MCP.
+    /// Draft writes require human approval too; setup must not assume they execute inline.
     /// </summary>
-    private static async Task<string> ProposeAsync(StudioMcpHttpClient mcp, string label)
+    private async Task<string> ProposeAsync(StudioMcpHttpClient mcp, string label, string ownerId)
     {
         var packageKey = $"proposal-owner-{label}-{Guid.NewGuid():N}";
-        var created = await mcp.CallToolAsync("honua_studio_create_draft",
-            $$"""{"packageKey":"{{packageKey}}","family":"dashboard","schemaVersion":"1.0"}""");
-        var draftId = created.GetProperty("draftId").GetGuid();
-
-        var updated = await mcp.CallToolAsync("honua_studio_update_draft",
-            $$$"""{"body":{"layers":[{"id":"roads"}],"view":{"center":[-158,22],"zoom":7}},"draftId":"{{{draftId:D}}}","generation":1,"packageKey":"{{{packageKey}}}","schemaVersion":"1.0"}""");
-        var generation = updated.GetProperty("generation").GetInt64();
-
-        await mcp.CallToolAsync("honua_studio_validate_draft", $$"""{"draftId":"{{draftId:D}}"}""");
-
-        var saved = await mcp.CallToolAsync("honua_studio_save_version",
-            $$"""{"draftId":"{{draftId:D}}","generation":{{generation}}}""");
-        var version = saved.GetProperty("version");
+        var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();
+        using var body = JsonDocument.Parse(
+            """{"layers":[{"id":"roads"}],"view":{"center":[-158,22],"zoom":7}}""");
+        var envelope = new StudioPackageEnvelope
+        {
+            Family = StudioPackageFamily.Dashboard,
+            SchemaVersion = "1.0",
+            Format = "studio_dashboard_package.v1",
+            Body = body.RootElement.Clone(),
+        };
+        var validation = _fixture.Services.GetRequiredService<IStudioPackageValidator>().Validate(envelope);
+        var now = DateTimeOffset.UtcNow;
+        var draft = await store.CreateDraftAsync(new StudioPackageDraft
+        {
+            DraftId = Guid.NewGuid(),
+            ItemId = Guid.NewGuid(),
+            PackageKey = packageKey,
+            OwnerId = ownerId,
+            TenantId = "public",
+            Family = envelope.Family,
+            Envelope = envelope with { Validation = validation },
+            Validation = validation,
+            Generation = 1,
+            CreatedBy = ownerId,
+            UpdatedBy = ownerId,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+        var version = await store.CreateVersionAsync(draft, "proposal-owner fixture", ownerId);
 
         var proposed = await mcp.CallToolAsync("honua_studio_propose_publication",
-            $$"""{"itemId":"{{version.GetProperty("itemId").GetGuid():D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"/studio/{{packageKey}}","visibility":"personal"}""");
+            $$"""{"itemId":"{{version.ItemId:D}}","versionId":"{{version.VersionId:D}}","contentHash":"{{version.ContentHash}}","route":"/studio/{{packageKey}}","visibility":"personal"}""");
         proposed.GetProperty("status").GetString().Should().Be("AwaitingApproval");
         var proposalId = proposed.GetProperty("proposalId").GetString();
         proposalId.Should().NotBeNullOrWhiteSpace();
