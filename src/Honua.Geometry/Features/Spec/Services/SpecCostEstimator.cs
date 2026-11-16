@@ -12,7 +12,7 @@ namespace Honua.Core.Features.Spec.Services;
 /// rough shape from upstream plan nodes plus operator heuristics; it never
 /// invokes the compute backend.
 /// </summary>
-internal sealed class SpecCostEstimator : ISpecCostEstimator
+internal sealed class SpecCostEstimator
 {
     private const long DefaultBytesPerRow = 512;
     private const double DefaultMsPerThousandRows = 5.0;

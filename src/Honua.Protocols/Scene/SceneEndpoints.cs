@@ -189,7 +189,7 @@ internal static partial class SceneEndpoints
             // would surface that exception during parameter binding before
             // the catch could intercept it.
             var envelopeService = context.RequestServices
-                .GetRequiredService<ISceneAccessEnvelopeService>();
+                .GetRequiredService<SceneAccessEnvelopeService>();
             envelope = envelopeService.Issue(scene.Id);
         }
         catch (InvalidOperationException ex)
@@ -300,7 +300,7 @@ internal static partial class SceneEndpoints
 
             activity?.SetTag(SceneTelemetry.ResultSizeTag, manifest.SizeBytes);
 
-            var etag = await ConfigurationResponseETag.ForResponseAsync(context, manifest.ETag).ConfigureAwait(false);
+            var etag = await ConfigurationResponseETag.ForResponseAsync(context, manifest.ETag, SceneContentTypes.OpenUsdStageContentType).ConfigureAwait(false);
             SetDynamicSceneCacheHeaders(
                 context,
                 etag,
@@ -309,7 +309,7 @@ internal static partial class SceneEndpoints
                 scene.CachePolicy);
 
             var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
-            if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, etag))
+            if (!context.RequestServices.GetRequiredService<IETagService>().IsModified(ifNoneMatch, etag))
             {
                 return Results.StatusCode(StatusCodes.Status304NotModified);
             }
@@ -411,7 +411,7 @@ internal static partial class SceneEndpoints
                         // Resolving inside this try block keeps verifier
                         // configuration state from escaping as a server error.
                         var envelopeService = context.RequestServices
-                            .GetRequiredService<ISceneAccessEnvelopeService>();
+                            .GetRequiredService<SceneAccessEnvelopeService>();
                         validation = envelopeService.Validate(rawToken, scene.Id);
                     }
                     catch (InvalidOperationException ex)
@@ -473,12 +473,12 @@ internal static partial class SceneEndpoints
             return MapResolutionError(context, scene, resolvedAssetPath, error, activity, logger);
         }
 
-        var etag = await ConfigurationResponseETag.ForResponseAsync(context, ComputeETag(resolved.File))
+        var etag = await ConfigurationResponseETag.ForResponseAsync(context, ComputeETag(resolved.File), resolved.ContentType)
             .ConfigureAwait(false);
         SetCacheHeaders(context, etag, resolved.File, cacheMaxAge, isProtected, scene.CachePolicy, tokenTransport);
 
         var ifNoneMatch = context.Request.Headers[HeaderNames.IfNoneMatch].ToString();
-        if (!string.IsNullOrEmpty(ifNoneMatch) && IfNoneMatchMatches(ifNoneMatch, etag))
+        if (!context.RequestServices.GetRequiredService<IETagService>().IsModified(ifNoneMatch, etag))
         {
             return Results.StatusCode(StatusCodes.Status304NotModified);
         }
@@ -565,11 +565,11 @@ internal static partial class SceneEndpoints
             headers[HeaderNames.CacheControl] = "no-store";
             if (isProtected && tokenTransport is SceneAccessTokenTransport.None)
             {
-                headers[HeaderNames.Vary] = CredentialVaryHeaders;
+                VaryHeader.AppendMissing(headers, CredentialVaryHeaders);
             }
             else if (isProtected && tokenTransport is SceneAccessTokenTransport.Header)
             {
-                headers[HeaderNames.Vary] = BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader;
+                VaryHeader.AppendMissing(headers, BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader);
             }
         }
         else if (isProtected)
@@ -577,11 +577,11 @@ internal static partial class SceneEndpoints
             headers[HeaderNames.CacheControl] = SharedCacheGuard.NotShared;
             if (tokenTransport is SceneAccessTokenTransport.None)
             {
-                headers[HeaderNames.Vary] = CredentialVaryHeaders;
+                VaryHeader.AppendMissing(headers, CredentialVaryHeaders);
             }
             else if (tokenTransport is SceneAccessTokenTransport.Header)
             {
-                headers[HeaderNames.Vary] = BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader;
+                VaryHeader.AppendMissing(headers, BypassOutputCacheOnSceneAccessTokenPolicy.TokenHeader);
             }
         }
         else
@@ -612,13 +612,13 @@ internal static partial class SceneEndpoints
             headers[HeaderNames.CacheControl] = "no-store";
             if (isProtected)
             {
-                headers[HeaderNames.Vary] = CredentialVaryHeaders;
+                VaryHeader.AppendMissing(headers, CredentialVaryHeaders);
             }
         }
         else if (isProtected)
         {
             headers[HeaderNames.CacheControl] = SharedCacheGuard.NotShared;
-            headers[HeaderNames.Vary] = CredentialVaryHeaders;
+            VaryHeader.AppendMissing(headers, CredentialVaryHeaders);
         }
         else
         {
@@ -632,21 +632,6 @@ internal static partial class SceneEndpoints
         ResponseAccessVerdict.Record(context, AccessDecision.Allowed());
         SharedCacheResponse.UseLifetime(context, SharedCacheLifetime.ForBrowserAndCdn(maxAgeSeconds));
         SharedCacheResponse.Apply(context);
-    }
-
-    private static bool IfNoneMatchMatches(string headerValue, string currentETag)
-    {
-        var trimmed = headerValue.AsSpan().Trim();
-        if (trimmed.SequenceEqual("*"))
-        {
-            return true;
-        }
-
-        var candidates = headerValue
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(chunk => chunk.StartsWith("W/", StringComparison.OrdinalIgnoreCase) ? chunk[2..] : chunk);
-
-        return candidates.Any(candidate => string.Equals(candidate, currentETag, StringComparison.Ordinal));
     }
 
     private static async Task<OpenUsdSceneManifestReader.SceneDatasetRecordView?> ResolveSceneDatasetRecordViewAsync(

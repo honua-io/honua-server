@@ -59,4 +59,11 @@ public interface IFeatureEditIdempotencyReceipts
     /// <param name="scope">Hashed retry scope.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     ValueTask<ReadOnlyMemory<byte>?> TryReadAsync(string scope, CancellationToken cancellationToken = default);
+
+    async ValueTask<FeatureEditReceiptReplay?> TryReadWithEvidenceAsync(
+        string scope, CancellationToken cancellationToken = default)
+    {
+        var payload = await TryReadAsync(scope, cancellationToken).ConfigureAwait(false);
+        return payload is { } bytes ? new FeatureEditReceiptReplay { Payload = bytes } : null;
+    }
 }

@@ -2339,6 +2339,7 @@ internal sealed class FeatureServerEditsHandler(
             {
                 ObjectId = responseObjectId ?? result.ObjectId,
                 GlobalId = result.GlobalId,
+                OperationEvidence = result.OperationEvidence,
                 Success = true
             };
         }

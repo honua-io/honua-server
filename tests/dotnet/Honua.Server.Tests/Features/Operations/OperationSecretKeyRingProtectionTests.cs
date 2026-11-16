@@ -516,6 +516,84 @@ public sealed class OperationSecretKeyRingProtectionTests
             .Should().NotBeNull("SimpleActivator resolves .ctor(IServiceProvider) by reflection");
     }
 
+    // Before both runtimes shared one format, JIT nodes wrote certificate EncryptedXml keys and
+    // native AOT nodes could not read them, so a JIT-to-AOT upgrade or a rollback lost every
+    // protected row. The production registration must still read a ring the JIT path wrote.
+    [UnitTest]
+    public void KeyRing_WrittenByTheLegacyJitCertificateProtector_StaysReadable()
+    {
+        using var certificate = CreateCertificate();
+        var repository = new MemoryKeyRepository();
+        string legacyPayload;
+        using (var legacy = BuildLegacyJitProvider(repository, certificate))
+        {
+            legacyPayload = legacy.GetDataProtector("Honua.Server.Operations").Protect("legacy-secret");
+        }
+
+        DecryptorTypes(repository).Should().ContainSingle()
+            .Which.Should().StartWith("Microsoft.AspNetCore.DataProtection.XmlEncryption.EncryptedXmlDecryptor");
+
+        Unprotect(repository, certificate, legacyPayload).Should().Be("legacy-secret");
+    }
+
+    [UnitTest]
+    public void KeyRing_WithLegacyAndCurrentKeys_UnprotectsPayloadsFromBoth()
+    {
+        using var certificate = CreateCertificate();
+        var repository = new MemoryKeyRepository();
+        string legacyPayload;
+        using (var legacy = BuildLegacyJitProvider(repository, certificate))
+        {
+            legacyPayload = legacy.GetDataProtector("Honua.Server.Operations").Protect("legacy-secret");
+        }
+
+        string currentPayload;
+        using (var current = BuildProvider(repository, certificate))
+        {
+            // A key activated after the legacy one becomes the default, as at the next rotation.
+            var keyManager = current.GetRequiredService<Microsoft.AspNetCore.DataProtection.KeyManagement.IKeyManager>();
+            keyManager.CreateNewKey(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(90));
+            currentPayload = current.GetDataProtector("Honua.Server.Operations").Protect("current-secret");
+        }
+
+        DecryptorTypes(repository).Should().HaveCount(2)
+            .And.Contain(typeof(RsaAesGcmKeyRingDecryptor).AssemblyQualifiedName);
+        using var reader = BuildProvider(repository, certificate);
+        var protector = reader.GetDataProtector("Honua.Server.Operations");
+        protector.Unprotect(legacyPayload).Should().Be("legacy-secret");
+        protector.Unprotect(currentPayload).Should().Be("current-secret");
+    }
+
+    [UnitTest]
+    public void KeyRing_ProductionRegistration_WritesOnlyTheSharedFormat()
+    {
+        using var certificate = CreateCertificate();
+        var repository = new MemoryKeyRepository();
+        _ = Protect(repository, certificate, "approved-secret");
+
+        DecryptorTypes(repository).Should().ContainSingle()
+            .Which.Should().Be(typeof(RsaAesGcmKeyRingDecryptor).AssemblyQualifiedName);
+    }
+
+    private static string[] DecryptorTypes(MemoryKeyRepository repository)
+    {
+        XNamespace dataProtection = "http://schemas.asp.net/2015/03/dataProtection";
+        return repository.Elements
+            .SelectMany(element => element.Descendants(dataProtection + "encryptedSecret"))
+            .Select(secret => secret.Attribute("decryptorType")!.Value)
+            .ToArray();
+    }
+
+    private static ServiceProvider BuildLegacyJitProvider(MemoryKeyRepository repository, X509Certificate2 certificate)
+    {
+        var services = new ServiceCollection();
+        services.AddDataProtection()
+            .SetApplicationName("Honua.Server")
+            .AddKeyManagementOptions(options => options.XmlRepository = repository)
+            .ProtectKeysWithCertificate(certificate);
+        return services.BuildServiceProvider();
+    }
+
     private static string Protect(MemoryKeyRepository repository, X509Certificate2 certificate, string value)
     {
         using var provider = BuildProvider(repository, certificate);

@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Check optional PR admission boundaries and retained trunk link coverage."""
 from functools import lru_cache
+import importlib.util
 import json
+import os
 import re
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 
 import yaml
@@ -14,6 +20,56 @@ ROOT = Path(__file__).resolve().parents[3]
 @lru_cache(maxsize=None)
 def workflow(name):
     return yaml.load((ROOT / ".github/workflows" / name).read_text(), Loader=yaml.BaseLoader)
+
+
+GRAPH_GENERATOR = """from pathlib import Path
+import sys
+root = Path(__file__).resolve().parents[2]
+Path(sys.argv[2]).write_text((root / "docs/a").read_text() + "+" + (root / "docs/b").read_text())
+"""
+
+
+def fixture_environment(**extra):
+    """Keep git on the fixture repository only, whatever git state the caller exports."""
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    # The step under test calls a bare python3; resolve it to this interpreter.
+    path = os.pathsep.join([os.path.dirname(sys.executable), environment.get("PATH", "")])
+    return {**environment, "PATH": path, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", **extra}
+
+
+def git(work, *arguments):
+    return subprocess.run(
+        ["git", "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+         "-c", "commit.gpgsign=false", *arguments],
+        cwd=work, check=True, capture_output=True, text=True, env=fixture_environment()).stdout.strip()
+
+
+def commit(work, message, **files):
+    for name, content in files.items():
+        target = work / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "--no-verify", "-m", message)
+    return git(work, "rev-parse", "HEAD")
+
+
+def merged_pull_request(work):
+    """Check out a pull request merge whose head and trunk each changed one document."""
+    git(work, "init", "-q", "-b", "trunk")
+    commit(work, "fork point", **{"docs/a": "base", "docs/b": "base",
+                                  "scripts/ci/generate-okf-graph.py": GRAPH_GENERATOR})
+    git(work, "checkout", "-q", "-b", "head")
+    head = commit(work, "head", **{"docs/a": "head"})
+    git(work, "checkout", "-q", "trunk")
+    commit(work, "trunk moved", **{"docs/b": "trunk"})
+    git(work, "merge", "-q", "--no-ff", "--no-verify", "-m", "merge", "head")
+    return head
+
+
+def step(name):
+    steps = workflow("docs-link-gate.yml")["jobs"]["check"]["steps"]
+    return next(candidate for candidate in steps if candidate.get("name") == name)
 
 
 def admitted(name, path):
@@ -42,21 +98,76 @@ def path_matches(path, pattern):
 
 
 class OptionalInputTests(unittest.TestCase):
-    def test_normalization_retains_generators_receipts_and_build_inputs(self):
+    def test_normalization_runs_for_its_recipe_and_every_pinned_generator_input(self):
         name = "normalize-derived-artifacts.yml"
-        for path in ("src/Honua.Server/Program.cs", "tests/dotnet/Honua.Server.Tests/NewTests.cs",
-                     "tests/baselines/client-compat/maplibre/latest.cert.json",
-                     "docs/gis/data/capability-route-mapping.v1.json", "global.json",
-                     "tests/fixtures/plugins/Honua.Sample.UtilityValidationPlugin/Plugin.cs",
-                     "Directory.Build.props", "src/Nested/Build.props"):
+        spec = importlib.util.spec_from_file_location(
+            "envelope", ROOT / "scripts/ci/normalization-envelope.py")
+        envelope = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(envelope)
+        recipe = (".github/workflows/normalize-derived-artifacts.yml", ".github/actions/setup-dotnet-ci/action.yml",
+                  "scripts/ci/normalization-envelope.py", *envelope.OUTPUT_LIMITS)
+        for path in (*recipe, *envelope.GENERATOR_INPUTS):
             self.assertTrue(admitted(name, path), path)
-        for path in ("docs/gis/new-guide.md", "tests/python/unrelated_test.py", "README.md"):
+        # Ordinary source still regenerates and reports drift in PR Gate's
+        # architecture job; the observe-only envelope adds nothing there.
+        for path in ("src/Honua.Server/Program.cs", "tests/dotnet/Honua.Server.Tests/NewTests.cs",
+                     "docs/gis/new-guide.md", "tests/python/unrelated_test.py", "README.md"):
             self.assertFalse(admitted(name, path), path)
+        lean_gate = (ROOT / ".github/actions/lean-gate/action.yml").read_text()
+        self.assertIn("bash scripts/ci/regenerate-generated-files.sh --configuration Release", lean_gate)
+        self.assertIn("bash scripts/ci/report-generated-file-drift.sh", lean_gate)
+        fast = workflow("pr-gate.yml")["jobs"]["fast-tests"]
+        self.assertIn("architecture", fast["strategy"]["matrix"]["test-group"])
+        self.assertNotIn("if", fast)
+        spec = importlib.util.spec_from_file_location(
+            "fast_selection", ROOT / "scripts/ci/compute-fast-test-selection.py")
+        selection = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(selection)
+        # Any non-empty closure keeps architecture, even one no group's roots reach.
+        no_roots = {group: set() for group in selection.GROUPS}
+        for closure in (None, ["ALL"], ["src/Honua.Server/Honua.Server.csproj"]):
+            self.assertIn("architecture", selection.select(closure, no_roots), closure)
 
     def test_github_globs_respect_directory_boundaries(self):
         self.assertTrue(path_matches("Directory.Build.props", "**/*.props"))
         self.assertTrue(path_matches("src/Build.props", "**/*.props"))
         self.assertFalse(path_matches("src/Nested.sln", "*.sln"))
+
+    def test_docs_gate_validates_the_merge_result_with_its_own_checkers(self):
+        steps = workflow("docs-link-gate.yml")["jobs"]["check"]["steps"]
+        checkout = next(candidate for candidate in steps
+                        if candidate.get("uses", "").startswith("actions/checkout@"))
+        # No ref: a pull request run checks out its merge into trunk, so a head cut
+        # before a checker existed is still judged by the checkers this workflow calls.
+        self.assertEqual(checkout["with"], {"fetch-depth": "0"})
+        self.assertEqual(step("Regenerate trunk-owned documentation for validation")["run"].split(),
+                         ["python3", "scripts/ci/generate-workflow-inventory.py",
+                          "python3", "scripts/ci/generate-capability-concepts.py"])
+        self.assertIn("""--base "${{ github.event_name == 'pull_request' && 'HEAD^1' || 'origin/trunk' }}\"""",
+                      step("Reject raw curl additions in documentation")["run"])
+
+    def test_docs_gate_publishes_the_graph_of_the_exact_head(self):
+        generate = step("Generate exact-head OKF agent graph")
+        upload = step("Upload exact-head OKF agent graph")
+        self.assertEqual(generate["env"], {"HEAD_SHA": "${{ github.event.pull_request.head.sha || github.sha }}"})
+        self.assertEqual(upload["with"]["path"], "${{ runner.temp }}/exact-head/domain-graph.v1.json")
+        self.assertEqual(upload["with"]["name"],
+                         "okf-agent-graph-${{ github.event.pull_request.head.sha || github.sha }}")
+        with tempfile.TemporaryDirectory() as directory:
+            work, temp = Path(directory) / "repo", Path(directory) / "temp"
+            work.mkdir()
+            temp.mkdir()
+            head = merged_pull_request(work)
+            self.assertEqual((work / "docs/a").read_text() + "+" + (work / "docs/b").read_text(), "head+trunk")
+            for _ in range(2):
+                # The second pass is a reused workspace whose earlier tree is gone.
+                completed = subprocess.run(
+                    ["bash", "-e", "-c", generate["run"]], cwd=work, capture_output=True, text=True,
+                    check=False, env=fixture_environment(HEAD_SHA=head, RUNNER_TEMP=str(temp)))
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual((temp / "exact-head/domain-graph.v1.json").read_text(), "head+base")
+                shutil.rmtree(temp)
+                temp.mkdir()
 
     def test_runtime_links_still_gate_affected_and_full_trunk_runs(self):
         name = "docs-link-gate.yml"
@@ -68,6 +179,10 @@ class OptionalInputTests(unittest.TestCase):
         steps = [step for step in router["steps"] if "check-doc-links.py" in step.get("run", "")]
         self.assertEqual(len(steps), 1)
         self.assertIn("python3 scripts/ci/check-doc-links.test.py", steps[0]["run"])
+        # The router leaves the tracked inventory page untouched; links are
+        # checked against this head's projection, as in Docs Link Gate.
+        self.assertLess(steps[0]["run"].index("python3 scripts/ci/generate-workflow-inventory.py\n"),
+                        steps[0]["run"].index("python3 scripts/ci/check-doc-links.py"))
         self.assertNotIn("if", steps[0])
         self.assertNotIn("continue-on-error", steps[0])
         self.assertNotIn("continue-on-error", router)

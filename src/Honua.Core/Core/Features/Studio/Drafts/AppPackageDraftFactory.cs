@@ -18,7 +18,7 @@ namespace Honua.Core.Features.Studio.Drafts;
 /// starts with the closed-by-default <see cref="AppSharePolicy.Closed"/> sharing
 /// posture, which the caller cannot widen through this entry point.
 /// </remarks>
-public sealed class AppPackageDraftFactory : IAppPackageDraftFactory
+public sealed class AppPackageDraftFactory
 {
     /// <summary>Server-owned package format discriminator.</summary>
     public const string AppPackageFormat = "honua_app_package.v1";

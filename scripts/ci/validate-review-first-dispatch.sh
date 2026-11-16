@@ -8,8 +8,12 @@ cd "${repo_root}"
 . "${repo_root}/scripts/ci/lib/python-resolve.sh"
 python_bin="$(honua_resolve_python)"
 
-# Validate the workflow inventory projected from this checkout.
-"${python_bin}" scripts/ci/generate-workflow-inventory.py
+# Validate the workflow inventory projected from this checkout, in a scratch
+# file: later PR Gate steps require the tracked checkout unchanged.
+inventory="$(mktemp)"
+trap 'rm -f "${inventory}"' EXIT
+"${python_bin}" scripts/ci/generate-workflow-inventory.py --output "${inventory}"
+export HONUA_WORKFLOW_INVENTORY="${inventory}"
 
 # Prove the decode diagnostic fails, not just that it passes (#3321).
 "${python_bin}" scripts/ci/fixtures/validate-review-first-utf8.py

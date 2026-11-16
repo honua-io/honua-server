@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Server.Features.Admin.PairedPublications;
 using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.DataProtection;
@@ -217,6 +218,9 @@ var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !
 await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
     builder.Configuration,
     builder.Environment.IsProduction());
+// Responses do not name the web server implementation.
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(
+    options => options.AddServerHeader = false);
 var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuthenticationMode>(
     "Authentication:ClientCertificates:Mode");
 if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
@@ -335,9 +339,8 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
 {
     // The key ring lives in the system database so that every node unprotects what any node
     // protected: an operation secret consumed on another node is deleted before it is
-    // unprotected. Native AOT cannot run EncryptedXml, so there each key is wrapped with the
-    // certificate using RSA-OAEP and AES-GCM instead.
-    var nativeAot = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
+    // unprotected. Both runtimes wrap new keys with the certificate using RSA-OAEP and AES-GCM,
+    // so a JIT and a native AOT node (or an upgrade or rollback between them) read one ring.
     builder.Services.AddSingleton(static provider => new PostgresDataProtectionKeyRepository(
         provider.GetRequiredService<Npgsql.NpgsqlDataSource>(),
         provider.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>()));
@@ -379,14 +382,7 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
         new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
 
-    if (nativeAot)
-    {
-        keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
-    }
-    else
-    {
-        keyRing.ProtectKeysWithCertificate(keyRingCertificate);
-    }
+    keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
 }
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
@@ -518,8 +514,7 @@ builder.Services.Configure<Honua.Infrastructure.Caching.QueryResultCacheOptions>
     options.EnableDetailedMetrics = !builder.Environment.IsProduction();
 });
 
-builder.Services.AddSingleton<Honua.Infrastructure.Caching.IQueryResultCacheManager,
-    Honua.Infrastructure.Caching.QueryResultCacheManager>();
+builder.Services.AddSingleton<Honua.Infrastructure.Caching.QueryResultCacheManager>();
 
 if (useTestSchemaHeaders)
 {
@@ -918,11 +913,10 @@ if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment
     Honua.Infrastructure.Redis.RedisThawProbeExtensions.AddRedisThawProbe(builder.Services);
 }
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
-// evaluation, rate accounting, and redacted analytics ingestion. In-memory
-// defaults; durable providers can replace these via TryAdd later.
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedKeyStore>(sp =>
+// evaluation, rate accounting, and redacted analytics ingestion. In-memory stores.
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore>(sp =>
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedKeyStore(sp.GetService<TimeProvider>()));
-builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.IEmbedAnalyticsStore>(
+builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore>(
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore());
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
@@ -1031,7 +1025,7 @@ builder.Services.AddAdminAccessOperations();
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
 #endif
-builder.Services.AddAdminRealtime(builder.Configuration);
+builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
@@ -1119,8 +1113,7 @@ if (offlineSyncEnabled)
             sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
             sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
 #endif
-    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
-        Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
 }
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations
@@ -1650,7 +1643,6 @@ app.UseHonuaClientCertificateAuthentication();
 
 // Authenticate the default scheme before hydrating additional credential types.
 app.UseAuthentication();
-app.UseBrowserSessionSecurity();
 
 // Bridge ArcGIS-style portal tokens (?token=, form POST token, X-Esri-Authorization,
 // Authorization: Bearer)
@@ -1658,6 +1650,7 @@ app.UseBrowserSessionSecurity();
 // UseAuthentication and before authorization and tenant resolution
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
+app.UseBrowserSessionSecurity();
 
 // Mark MCP callers and agent-grant API keys before authorization, so approval gates and the
 // operation policy treat them as agents on every path.
@@ -1851,7 +1844,7 @@ app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
 app.MapConsoleJobEndpoints();
 app.MapShareAdminEndpoints();
-app.MapAdminRealtimeHub();
+app.MapAdminLive();
 
 // Configure layer publishing endpoints
 app.MapLayerPublishingEndpoints();
@@ -2102,6 +2095,7 @@ if (offlineSyncEnabled)
     app.MapFieldCollectionSyncEndpoints();
 }
 app.MapTileOperationsEndpoints();
+app.MapPairedPublicationReadEndpoints();
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
