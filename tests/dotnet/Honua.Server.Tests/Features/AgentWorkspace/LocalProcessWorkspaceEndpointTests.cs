@@ -119,10 +119,22 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/agent/workspaces")]
     public async Task CreateWorkspace_BrowserCookieWithoutCsrf_IsRejected()
     {
-        using var owner = Client("alice", "tenant-a");
+        using var owner = _fixture.CreateClient();
+        owner.DefaultRequestHeaders.Clear();
         owner.DefaultRequestHeaders.Add("Cookie", "honua_admin_session=untrusted-browser-cookie");
         using var response = await owner.PostAsync("/api/v1/agent/workspaces", null);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _sandbox.Calls.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/agent/workspaces")]
+    public async Task CreateWorkspace_ExplicitBearerWithBrowserCookie_DoesNotRequireCsrf()
+    {
+        using var owner = Client("alice", "tenant-a");
+        owner.DefaultRequestHeaders.Add("Cookie", "honua_admin_session=untrusted-browser-cookie");
+        using var response = await owner.PostAsync("/api/v1/agent/workspaces", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
         _sandbox.Calls.Should().Be(0);
     }
 
