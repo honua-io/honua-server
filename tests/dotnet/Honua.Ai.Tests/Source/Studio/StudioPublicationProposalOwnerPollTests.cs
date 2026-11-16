@@ -132,9 +132,22 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
 
     // Draft writes require human approval too; seed setup through the store.
     private async Task<string> ProposeAsync(StudioMcpHttpClient mcp, string label, string ownerId)
-
     {
         var packageKey = $"proposal-owner-{label}-{Guid.NewGuid():N}";
+        var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();
+        var draft = await SeedDraftAsync(packageKey, ownerId);
+        var version = await store.CreateVersionAsync(draft, "proposal-owner fixture", ownerId);
+
+        var proposed = await mcp.CallToolAsync("honua_studio_propose_publication",
+            $$"""{"itemId":"{{version.ItemId:D}}","versionId":"{{version.VersionId:D}}","contentHash":"{{version.ContentHash}}","route":"/studio/{{packageKey}}","visibility":"personal"}""");
+        proposed.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        var proposalId = proposed.GetProperty("proposalId").GetString();
+        proposalId.Should().NotBeNullOrWhiteSpace();
+        return proposalId!;
+    }
+
+    private async Task<StudioPackageDraft> SeedDraftAsync(string packageKey, string ownerId)
+    {
         var store = _fixture.Services.GetRequiredService<IStudioPackageStore>();
         using var body = JsonDocument.Parse(
             """{"layers":[{"id":"roads"}],"view":{"center":[-158,22],"zoom":7}}""");
@@ -147,7 +160,7 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
         };
         var validation = _fixture.Services.GetRequiredService<IStudioPackageValidator>().Validate(envelope);
         var now = DateTimeOffset.UtcNow;
-        var draft = await store.CreateDraftAsync(new StudioPackageDraft
+        return await store.CreateDraftAsync(new StudioPackageDraft
         {
             DraftId = Guid.NewGuid(),
             ItemId = Guid.NewGuid(),
@@ -163,14 +176,6 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
             CreatedAt = now,
             UpdatedAt = now,
         });
-        var version = await store.CreateVersionAsync(draft, "proposal-owner fixture", ownerId);
-
-        var proposed = await mcp.CallToolAsync("honua_studio_propose_publication",
-            $$"""{"itemId":"{{version.ItemId:D}}","versionId":"{{version.VersionId:D}}","contentHash":"{{version.ContentHash}}","route":"/studio/{{packageKey}}","visibility":"personal"}""");
-        proposed.GetProperty("status").GetString().Should().Be("AwaitingApproval");
-        var proposalId = proposed.GetProperty("proposalId").GetString();
-        proposalId.Should().NotBeNullOrWhiteSpace();
-        return proposalId!;
     }
 
     private static string ReadProposalRequest(string proposalId) =>

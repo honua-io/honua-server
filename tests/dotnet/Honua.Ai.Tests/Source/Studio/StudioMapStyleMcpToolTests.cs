@@ -2,14 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Studio.Abstractions;
-using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -22,15 +17,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
          "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}
         """;
 
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        // Exercise direct draft composition under the supported Pro policy. Enterprise's
-        // default approval flow is a separate contract from this persistence round trip.
-        .ConfigureWebHost(builder => builder.UseSetting("Licensing:DevGrantEdition", "Pro"))
-        .ConfigureServices(services =>
-        {
-            services.RemoveAll<IStudioPackageStore>();
-            services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-        });
+    private readonly WebAppFixture _fixture = StudioMcpFixtures.CreateCompositionFixture();
 
     private StudioMcpHttpClient _mcp = null!;
 
