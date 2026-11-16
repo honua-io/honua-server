@@ -506,8 +506,10 @@ is how you publish a table you did not create yourself.
 
 The layer is now served over every protocol the deployment advertises, from that
 one publish — OGC API Features at `/ogc/features/collections`, GeoServices REST at
-`/rest/services/quickstart/FeatureServer/0`, plus WMS, WFS, vector tiles and the
-rest. `admin.list_services()` and `admin.get_capabilities()` report what this
+`/rest/services/quickstart/FeatureServer`, plus WMS, WFS, vector tiles and the
+rest. The GeoServices service document lists each layer with its `id`; the layer
+URL is `/rest/services/quickstart/FeatureServer/{id}`. Read the id from that
+document: it is assigned at publish and is not always `0`. `admin.list_services()` and `admin.get_capabilities()` report what this
 deployment actually exposes, rather than what the list above assumes.
 
 ## Approved operations and recovery

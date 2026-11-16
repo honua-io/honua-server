@@ -20,7 +20,7 @@ Honua exposes each published service as:
 
 1. Open a map in the desktop client.
 2. Add data from a path (for example **Map** ribbon, **Add Data → Data From Path**).
-3. Paste the FeatureServer layer URL, for example `http://localhost:8080/rest/services/my-service/FeatureServer/0`, and add it. The layer draws and appears in the table of contents.
+3. Paste the FeatureServer layer URL, `http://localhost:8080/rest/services/my-service/FeatureServer/{layerIndex}`, and add it. `{layerIndex}` is the layer's `id` in the service document at `.../FeatureServer?f=json` ([layer index](../../reference/protocols/geoservices-rest.md#layer-index)); it is not always `0`. You can also paste the service URL ending in `FeatureServer` and pick the layer in the client. The layer draws and appears in the table of contents.
 4. Repeat with the `MapServer` URL to add the server-rendered map service instead.
 5. To filter, set a definition query on the layer, such as `OBJECTID > 0`; Honua's `query` endpoint evaluates the expression server-side.
 
@@ -52,8 +52,9 @@ Reuse the token on any `/rest/services/*` request as `?token=<opaque>`, `Authori
 The same URLs work in native GeoServices REST client SDKs, for example a JavaScript feature layer:
 
 ```js
+// layerIndex: the layer's id from http://localhost:8080/rest/services/my-service/FeatureServer?f=json
 const layer = new FeatureLayer({
-  url: "http://localhost:8080/rest/services/my-service/FeatureServer/0"
+  url: `http://localhost:8080/rest/services/my-service/FeatureServer/${layerIndex}`
 });
 ```
 
@@ -61,7 +62,7 @@ const layer = new FeatureLayer({
 
 Confirm the service metadata and a query respond before blaming the client:
 
-Open `http://localhost:8080/rest/services/{service}/FeatureServer?f=json` and `http://localhost:8080/rest/services/{service}/FeatureServer/0/query?where=1%3D1&resultRecordCount=1&f=json` in a browser, substituting the service id. The first response describes the service and the second returns one feature.
+Open `http://localhost:8080/rest/services/{service}/FeatureServer?f=json` and `http://localhost:8080/rest/services/{service}/FeatureServer/{layerIndex}/query?where=1%3D1&resultRecordCount=1&f=json` in a browser, substituting the service id and a layer `id` from the first response. The first response describes the service and lists its layers; the second returns one feature.
 
 In the desktop client, the layer should draw, the attribute table should open, and a definition query should change the feature count.
 

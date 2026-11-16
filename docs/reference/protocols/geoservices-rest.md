@@ -71,7 +71,11 @@ a fresh import; this correction does not rewrite those tables in place.
 
 Registered but **not implemented** (return a spec-shaped not-implemented error): `sharedTemplates` (and its `query`/`add`/`update`/`delete`), `htmlPopup`, `image`, `/{layerId}/hasAssets`, `queryAssets`, `cleanupAssets`, `uploadAssets`, `convert3D`, `query3D`, `/{layerId}/metadata/update`. GET-only `queryContingentValues` is implemented and returns graph-backed definitions (or an empty collection).
 
-> Open `https://server.example.com/rest/services/roads/FeatureServer/0/query?where=1%3D1&outFields=*&resultRecordCount=10&f=json` in a browser.
+### Layer index
+
+`{layerId}` in these paths is the layer's `serviceLayerIndex`: the `id` listed for it in the service document at `/rest/services/{serviceId}/FeatureServer?f=json`. It is an integer scoped to one service, assigned when the layer is published. It is not always `0`, and a layer migrated from another GeoServices server does not keep its source number, so read it from the service document instead of assuming it.
+
+> Open `https://server.example.com/rest/services/roads/FeatureServer?f=json` in a browser, take a layer `id`, then open `https://server.example.com/rest/services/roads/FeatureServer/{id}/query?where=1%3D1&outFields=*&resultRecordCount=10&f=json`.
 
 Use the `@honua/sdk-js` FeatureLayer client and call `applyEdits({ adds: [{ geometry: { x: -122.4, y: 37.8 }, attributes: { name: "New point" } }] })`.
 

@@ -107,7 +107,7 @@ CQL2 JSON (same endpoint, `filter-lang=cql2-json`):
 GeoServices (FeatureServer query):
 
 ```
-GET /rest/services/hydrants/FeatureServer/0/query?where=status='active'
+GET /rest/services/hydrants/FeatureServer/{layerIndex}/query?where=status='active'
   &geometry={"rings":[[[-122.5,47.5],[-122.5,47.7],[-122.2,47.7],[-122.2,47.5],[-122.5,47.5]]]}
   &geometryType=esriGeometryPolygon&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&f=geojson
 ```
