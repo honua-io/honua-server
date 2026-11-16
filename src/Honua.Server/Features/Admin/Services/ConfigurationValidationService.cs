@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Data.Common;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Capabilities;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.Admin.Services;
@@ -67,15 +68,7 @@ internal static class ConfigurationValidationService
                 errors.Add("HONUA_DEV_AUTH is enabled. This should only be used in development environments.");
             }
 
-            var adminPassword = configuration["HONUA_ADMIN_PASSWORD"];
-            if (string.IsNullOrEmpty(adminPassword))
-            {
-                errors.Add("HONUA_ADMIN_PASSWORD is required in non-development environments.");
-            }
-            else
-            {
-                ValidateAdminPassword(adminPassword, errors);
-            }
+            ValidateProductionAdminPassword(configuration, errors, warnings);
 
             if (basicAuthCompatibilityEnabled && !basicAuthRequireHttps)
             {
@@ -325,6 +318,39 @@ internal static class ConfigurationValidationService
         ConfigurationLog.ConfigurationSummary(logger,
             hasConnection ? "configured" : "not configured",
             cacheEnabled ? "enabled" : "disabled");
+    }
+
+    // With OIDC sign-in configured the administrator password is optional; an install that keeps it
+    // can limit it to loopback clients (Authentication:AdminPassword:LoopbackOnly) as a break-glass path.
+    private static void ValidateProductionAdminPassword(IConfiguration configuration, List<string> errors, List<string> warnings)
+    {
+        var adminPassword = configuration["HONUA_ADMIN_PASSWORD"];
+        var oidcOptions = configuration.GetSection(OidcAuthenticationOptions.SectionName).Get<OidcAuthenticationOptions>()
+            ?? new OidcAuthenticationOptions();
+        var oidcSignIn = OidcAuthenticationExtensions.HasUsableSignInProvider(oidcOptions);
+        if (!string.IsNullOrEmpty(adminPassword))
+        {
+            ValidateAdminPassword(adminPassword, errors);
+        }
+        else if (!oidcSignIn)
+        {
+            errors.Add("HONUA_ADMIN_PASSWORD is required in non-development environments unless Oidc:Enabled is true and an OIDC provider is fully configured.");
+        }
+
+        if (!configuration.GetValue(AdminPasswordNetworkPolicy.LoopbackOnlyKey, false))
+        {
+            return;
+        }
+
+        // On Lambda the web adapter delivers every request from loopback and there is no host shell.
+        if (!string.IsNullOrEmpty(configuration["AWS_LAMBDA_RUNTIME_API"]))
+        {
+            errors.Add("Authentication:AdminPassword:LoopbackOnly cannot be used on AWS Lambda, where every request reaches the server from loopback; unset it and rely on OIDC, optionally removing HONUA_ADMIN_PASSWORD.");
+        }
+        else if (!oidcSignIn)
+        {
+            warnings.Add("Authentication:AdminPassword:LoopbackOnly is true and no OIDC provider is configured: administrators can sign in remotely only with a managed API key.");
+        }
     }
 
     private static void ValidateAdminPassword(string password, List<string> errors)
