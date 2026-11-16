@@ -30,7 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 430,
-      "provingTestCount": 1884,
+      "provingTestCount": 1885,
       "maturity": {
         "implemented": 427,
         "experimental": 3
@@ -1601,7 +1601,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 3,
-      "provingTestCount": 4,
+      "provingTestCount": 15,
       "maturity": {
         "deferred": 3
       },
@@ -1890,7 +1890,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 134,
+      "provingTestCount": 135,
       "maturity": {
         "implemented": 21
       },
@@ -2231,7 +2231,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 64,
-      "provingTestCount": 237,
+      "provingTestCount": 250,
       "maturity": {
         "preview": 64
       },
@@ -2601,7 +2601,7 @@
       "edition": "Pro",
       "status": "experimental",
       "entryCount": 7,
-      "provingTestCount": 146,
+      "provingTestCount": 150,
       "maturity": {
         "experimental": 7
       },
