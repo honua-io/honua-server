@@ -4,6 +4,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography.Xml;
 using System.Text;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
@@ -163,6 +164,39 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
         Assert.Contains(
             response.Headers.GetValues("Set-Cookie"),
             c => c.Contains("honua_admin_session", StringComparison.Ordinal));
+    }
+
+    [IntegrationTheory]
+    [InlineData("http://www.w3.org/2001/04/xmldsig-more#sha384", "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384")]
+    [InlineData("http://www.w3.org/2001/04/xmlenc#sha512", "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512")]
+    [Endpoint("POST /saml/acs")]
+    public async Task Acs_SupportedSigningProfile_EstablishesSession(string digestMethod, string signatureMethod)
+    {
+        var assertion = SamlTestAssertions.CreateSignedResponseWithAlgorithms(_certificate, digestMethod, signatureMethod);
+
+        using var response = await PostAcsAsync(assertion);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Contains(
+            response.Headers.GetValues("Set-Cookie"),
+            cookie => cookie.Contains("honua_admin_session", StringComparison.Ordinal));
+    }
+
+    [IntegrationTheory]
+    [InlineData(SignedXml.XmlDsigSHA1Url, SignedXml.XmlDsigRSASHA256Url)]
+    [InlineData(SignedXml.XmlDsigSHA256Url, SignedXml.XmlDsigRSASHA1Url)]
+    [InlineData(SignedXml.XmlDsigSHA1Url, SignedXml.XmlDsigRSASHA1Url)]
+    [Endpoint("POST /saml/acs")]
+    public async Task Acs_UnsupportedSigningProfile_IsRejected(string digestMethod, string signatureMethod)
+    {
+        var assertion = SamlTestAssertions.CreateSignedResponseWithAlgorithms(_certificate, digestMethod, signatureMethod);
+
+        using var response = await PostAcsAsync(assertion);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.DoesNotContain(
+            response.Headers.TryGetValues("Set-Cookie", out var cookies) ? cookies : [],
+            cookie => cookie.Contains("honua_admin_session", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
