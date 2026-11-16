@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
