@@ -259,8 +259,8 @@ internal sealed partial class Wfs20Handler
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var operations = ImmutableArray.CreateBuilder<PreparedTransactionOperation>();
         var distinctLayerIds = new HashSet<int>();
-        // Keyed on (layerId, operation) so per-operation authorization (BH3-001/BH3-014)
-        // is enforced independently for each action type: a transaction that both inserts
+        // Keyed on publication and operation so every addressed service and action
+        // is authorized independently: a transaction that both inserts
         // into and updates the same layer must clear both the Insert and Update gates,
         // not just the first one seen.
         var validatedPublications = new HashSet<(string PublicationId, AuthorizationOperation Operation)>();
