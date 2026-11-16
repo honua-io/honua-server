@@ -30,8 +30,13 @@ public sealed partial class OpsNotificationServiceTests
         var store = Substitute.For<IAiIncidentNoticeStore>();
         var notice = new AiIncidentNotice
         {
-            DeploymentId = "deployment", AuthorityScope = "ops:deployment", EpisodeId = Guid.NewGuid(),
-            ChargedTokens = 24, ChargedMoney = 8, TokenLimit = 30, MoneyLimit = 10,
+            DeploymentId = "deployment",
+            AuthorityScope = "ops:deployment",
+            EpisodeId = Guid.NewGuid(),
+            ChargedTokens = 24,
+            ChargedMoney = 8,
+            TokenLimit = 30,
+            MoneyLimit = 10,
         };
         store.ListPendingIncidentAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new[] { notice }, new[] { notice }, new[] { notice with { EpisodeId = Guid.NewGuid() } });
