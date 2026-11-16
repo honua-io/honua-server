@@ -48,7 +48,7 @@ class PrManagedBuildTests(unittest.TestCase):
         self.assertTrue(jobs['affected-shard']['strategy']['fail-fast'])
         self.assertFalse(jobs['fast-tests']['strategy']['fail-fast'])
         producer = job('server-test-producer')
-        for contract in ['Await exact-head review', 'Classify docs-only diff', 'phase: build',
+        for contract in ['Classify docs-only diff', 'phase: build',
                          'test-group: server-producer', 'partition-managed-producer.py server-projects',
                          'Publish selected server test outputs']:
             self.assertIn(contract, producer)
@@ -100,7 +100,7 @@ class PrManagedBuildTests(unittest.TestCase):
         self.assertIn('phase: all', fast)
         self.assertIn('build-scope: test-roots', fast)
         self.assertIn("run-analyzers: 'false'", fast)
-        self.assertIn('Await exact-head review', fast)
+        self.assertNotIn('Await exact-head review', fast)
         self.assertIn('fast-tests', job('required'))
         self.assertNotIn('Lean gate (fast unit and architecture verification)', job('runtime-proofs', CI))
 
@@ -161,8 +161,8 @@ class PrManagedBuildTests(unittest.TestCase):
     def test_admission_and_consumer_ownership(self):
         producer, consumer = job('pr-gate'), job('runtime-proofs', CI)
         self.assertIn('name: PR Gate / Build and tests', producer)
-        self.assertIn('- name: Await exact-head review', producer)
-        self.assertIn("github.run_attempt == 1", producer)
+        self.assertNotIn('- name: Await exact-head review', producer)
+        self.assertNotIn('REVIEW_FIRST_MODE', producer)
         self.assertIn('needs: build', consumer)
         self.assertNotIn('  runtime-proofs:', TEXT)
         self.assertIn('phase: build',producer)
@@ -172,7 +172,7 @@ class PrManagedBuildTests(unittest.TestCase):
         self.assertNotIn('continue-on-error: true',consumer.split('- name: Lean gate',1)[0])
         self.assertNotIn('REVIEW_FIRST_MODE', consumer)
 
-    def test_review_admission_mutations_rejected(self):
+    def test_required_verification_mutations_rejected(self):
         path = ROOT / 'scripts/ci/fixtures/validate-review-first-dispatch.py'
         spec = importlib.util.spec_from_file_location('review_contract', path)
         contract = importlib.util.module_from_spec(spec)
@@ -213,7 +213,7 @@ class PrManagedBuildTests(unittest.TestCase):
         proof = producer.split('- name: Honua.Server boot + migrations smoke', 1)[1].split('- name:', 1)[0]
         self.assertIn("steps.docs-only.outputs.docs_only != 'true'", proof)
         self.assertIn("steps.generated-only.outputs.generated_only != 'true'", proof)
-        self.assertIn("env.REVIEW_FIRST_MODE != 'enforce'", proof)
+        self.assertNotIn('REVIEW_FIRST_MODE', proof)
         self.assertNotIn('continue-on-error', proof)
 
     def test_same_canonical_selector_and_runtime_tests(self):

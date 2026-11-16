@@ -2,12 +2,9 @@ name: PR Gate
 
 # This workflow is the required verification context. The trusted `Review Gate`
 # status is a separate required admission context, so PR-authored workflow code
-# cannot satisfy branch protection before exact-head review. In observe mode
-# this workflow records the review-first receipt while preserving eager behavior.
-# After the measured shadow period in #3216, changing REVIEW_FIRST_MODE to
-# `enforce` makes pull_request attempt 1 admission-only and fail-closed. The
-# trusted default-branch Review Gate workflow releases the same run exactly once
-# after exact-head review; attempt 2 performs the existing expensive gate.
+# cannot satisfy branch protection before exact-head review. Verification runs
+# eagerly; ready pull requests revalidate the SHA-bound review status before
+# the required verification context succeeds.
 #
 # Do not rename the workflow/job or add a paths filter: either change silently
 # un-gates trunk or leaves pull requests waiting for a status that never exists.
@@ -48,10 +45,6 @@ env:
   DOTNET_CLI_USE_MSBUILD_SERVER: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
-  # Staged rollout: observe first, then flip this one audited value to enforce.
-  # Keep synchronized with review-gate.yml; the admission validator fails on
-  # drift. Rollback is the inverse one-line change back to `observe`.
-  REVIEW_FIRST_MODE: observe
   # Selected shards fail the required gate on red or missing execution receipts.
   AFFECTED_SHARDS_MODE: enforce
   # Bound per-PR fan-out; the trailing matrix retains complete coverage.
@@ -63,8 +56,7 @@ jobs:
   # With the variable unset every step skips and the output stays ubuntu-latest.
   # This job must never fail: its dependents include the required producer,
   # which may not carry a job condition. Step timeouts therefore sum below the
-  # job timeout, so a slow step falls back to hosted instead of failing the job. Enforce mode stays hosted because the
-  # review release reruns only failed jobs and would reuse a stale choice.
+  # job timeout, so a slow step falls back to hosted instead of failing the job.
   runner-select:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: PR Gate / Runner select
@@ -91,7 +83,7 @@ jobs:
             echo "TMP=${RUNNER_TEMP}"
           } >> "${GITHUB_ENV}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'
+        if: vars.HONUA_PR_GATE_RUNNER != ''
         continue-on-error: true
         timeout-minutes: 1
         with:
@@ -101,7 +93,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Assume the build-host wake role
-        if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce' && github.event_name == 'pull_request'
+        if: vars.HONUA_PR_GATE_RUNNER != '' && github.event_name == 'pull_request'
         continue-on-error: true
         timeout-minutes: 2
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
@@ -112,7 +104,7 @@ jobs:
 
       - name: Select compute
         id: select
-        if: vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'
+        if: vars.HONUA_PR_GATE_RUNNER != ''
         continue-on-error: true
         timeout-minutes: 5
         env:
@@ -135,17 +127,8 @@ jobs:
         include: ${{ fromJSON(github.event.pull_request.draft && '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"}]' || '[{"check":"Format","format":"true","analyzer-build":"false","analyzer-partition":"all"},{"check":"Analyzers","format":"false","analyzer-build":"true","analyzer-partition":"source"},{"check":"Analyzers (tests)","format":"false","analyzer-build":"true","analyzer-partition":"tests","analyzer-test-partition":"other"},{"check":"Analyzers (server tests)","format":"false","analyzer-build":"true","analyzer-partition":"tests","analyzer-test-partition":"server"}]') }}
     steps:
       - *job-temp
-      # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
-      # independent path an admission failure too, otherwise a skipped-success
-      # format job would never execute on enforced attempt 2.
-      - name: Await exact-head review
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.event.pull_request.draft != true && github.run_attempt == 1
-        run: |
-          echo "Admission passed; exact-head review has not released format verification yet."
-          exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1
         with:
           fetch-depth: 2
 
@@ -167,7 +150,7 @@ jobs:
         run: scripts/ci/docs-only-diff.sh --github-output
 
       - name: Setup .NET
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -175,11 +158,11 @@ jobs:
       - name: Restore
         # Analyzer rows restore their selected Release graph inside format-check.
         # Only dotnet format needs this full-solution workspace restore.
-        if: matrix.format == 'true' && (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: matrix.format == 'true' && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/dotnet-restore-retry.sh Honua.sln
 
       - name: Format Check
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.event.pull_request.draft == true || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/format-check
         with:
           format-scope: affected
@@ -203,22 +186,13 @@ jobs:
         test-group: [architecture, unit-fast, server-fast, server-governance]
     steps:
       - *job-temp
-      # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
-      # independent path an admission failure too, otherwise a skipped-success
-      # Fast job would never execute on enforced attempt 2.
-      - name: Await exact-head review
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
-        run: |
-          echo "Admission passed; exact-head review has not released Fast and architecture verification yet."
-          exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         with:
           fetch-depth: 2
 
       - name: Lint workflow syntax and expressions
-        if: matrix.test-group == 'architecture' && (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1)
+        if: matrix.test-group == 'architecture'
         run: bash scripts/ci/validate-workflows.sh
 
       # Only the immutable base supplies executable classification policy.
@@ -244,12 +218,12 @@ jobs:
       # the background while setup and the build proceed. Self-hosted runners
       # have no sudo and keep their own free-disk floor.
       - name: Free disk space
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false' && runner.environment == 'github-hosted'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false' && runner.environment == 'github-hosted'
         run: |
           nohup sudo rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache/CodeQL >/dev/null 2>&1 &
 
       - name: Setup .NET
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -262,10 +236,9 @@ jobs:
           python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
           echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
 
-
       # This independent build avoids serializing Fast coverage behind the producer.
       - name: Lean gate (build and fast unit/architecture verification)
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
         uses: ./.github/actions/lean-gate
         with:
           phase: all
@@ -276,14 +249,6 @@ jobs:
           run-format: 'false'
           run-analyzers: 'false'
 
-      - name: Revalidate exact-head review before success
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const revalidate = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/revalidate-exact-head-review.cjs`);
-            await revalidate({ github, context, core, expectedHead: '${{ github.event.pull_request.head.sha }}' });
-
   server-test-producer:
     name: PR Gate / Server test producer
     needs: runner-select
@@ -293,17 +258,7 @@ jobs:
       producer-attempt: ${{ steps.managed-producer.outputs.producer-attempt }}
       managed-sdk-version: ${{ steps.managed-sdk.outputs.dotnet-sdk-version }}
     steps:
-      # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
-      # independent path an admission failure too, otherwise a skipped-success
-      # Fast job would never execute on enforced attempt 2.
-      - name: Await exact-head review
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
-        run: |
-          echo "Admission passed; exact-head review has not released Fast and architecture verification yet."
-          exit 1
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         with:
           fetch-depth: 2
 
@@ -324,13 +279,13 @@ jobs:
 
       - name: Setup .NET
         id: managed-sdk
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Plan server test producer
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         env:
           CAP: ${{ env.AFFECTED_SHARDS_CAP }}
           BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
@@ -344,7 +299,7 @@ jobs:
       # Compile even when no selected shard consumes Server.Tests: this retains
       # full-fallback coverage after excluding it from the main producer.
       - name: Build server test producer
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/lean-gate
         with:
           phase: build
@@ -355,20 +310,12 @@ jobs:
 
       - name: Publish selected server test outputs
         id: managed-producer
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: publish
           projects-file: artifacts/pr-gate/server-projects.json
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
-
-      - name: Revalidate exact-head review before success
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const revalidate = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/revalidate-exact-head-review.cjs`);
-            await revalidate({ github, context, core, expectedHead: '${{ github.event.pull_request.head.sha }}' });
 
   pr-gate:
     # This exact string is the branch-protection verification context. Changing it
@@ -473,49 +420,13 @@ jobs:
       - name: Verify CITE normalization and supplemental HTTP controls
         run: python3 -m unittest discover -s scripts/conformance/cite/tests -p 'test_*.py'
 
-      - name: Verify review-first admission contract
+      - name: Verify required review contract
         run: scripts/ci/validate-review-first-dispatch.sh
 
       - name: Verify .NET base-image security inventory
         run: |
           scripts/ci/base-image-mirrors.sh --self-test
           scripts/ci/base-image-mirrors.sh --verify-inventory-doc docs/internal/security/code-scanning-2026-Q2-remediation.md
-
-      # The trusted dispatcher requires this exact successful step before it
-      # can release an enforced attempt 1. A failed admission never reaches it.
-      - name: Admission receipt
-        run: |
-          echo "mode=${REVIEW_FIRST_MODE}"
-          echo "event=${GITHUB_EVENT_NAME}"
-          echo "attempt=${GITHUB_RUN_ATTEMPT}"
-          echo "head=${GITHUB_SHA}"
-          {
-            echo "### PR Gate admission"
-            echo "- Mode: \`${REVIEW_FIRST_MODE}\`"
-            echo "- Attempt: \`${GITHUB_RUN_ATTEMPT}\`"
-            echo "- Head: \`${GITHUB_SHA}\`"
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      # This intentional failure keeps the required context non-green until a
-      # trusted exact-head review releases the failed job as attempt 2.
-      - name: Await exact-head review
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
-        run: |
-          echo "Admission passed; exact-head review has not released verification yet."
-          exit 1
-
-      # Review evidence is mutable after the trusted dispatcher accepts the
-      # rerun. Check its SHA-bound status before spending runners and again
-      # immediately before the required verification context can become green. A
-      # dismissal, deleted clean result, or new unresolved thread therefore
-      # fails attempt 2 closed instead of relying only on its run number.
-      - name: Revalidate exact-head review before verification
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const revalidate = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/revalidate-exact-head-review.cjs`);
-            await revalidate({ github, context, core, expectedHead: '${{ github.event.pull_request.head.sha }}' });
 
       # DOCS-ONLY EXIT (operator ruling A, 2026-09-11; #3213). A diff that
       # touches only documentation cannot change what the steps below compile
@@ -525,8 +436,7 @@ jobs:
       # -- including the scan that keeps any document a test or build reads
       # out of the class -- is defined once, in scripts/ci/docs-only-diff.sh,
       # which the format and affected-shards-select jobs call as well. It sits
-      # after the review-first admission steps, so an enforced attempt 1 still
-      # fails at `Await exact-head review` exactly as before and never gets here.
+      # after the lightweight security and instruction checks.
       #
       # The classifier is PR-authored and decides what this very job skips, so
       # its fixtures run first, the same way the shard selector is validated
@@ -597,7 +507,7 @@ jobs:
       # The full-solution Release build can exhaust ubuntu-latest disk once
       # every project writes bin/obj. Best-effort cleanup mirrors ci.yml.
       - name: Free disk space
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: |
           sudo rm -rf /usr/local/lib/android || true
           sudo rm -rf /usr/share/swift || true
@@ -606,7 +516,7 @@ jobs:
           df -h / || true
 
       - name: Setup .NET
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         id: managed-sdk
         uses: ./.github/actions/setup-dotnet-ci
         with:
@@ -632,17 +542,17 @@ jobs:
           enable-build-cache: ${{ vars.PR_GATE_BUILD_CACHE == 'true' && 'true' || 'false' }}
 
       - name: Prove ephemeral private-feed restore for authentication changes
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         timeout-minutes: 6
         run: python3 scripts/ci/prove-nuget-auth.py
 
       # Warm the required boot proof while the managed graph compiles.
       - name: Pre-pull Testcontainers PostGIS image (background)
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: scripts/ci/prepull-testcontainers-postgis.sh
 
       - name: Plan managed test producer
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         env:
           CAP: ${{ env.AFFECTED_SHARDS_CAP }}
           BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
@@ -654,7 +564,7 @@ jobs:
           python3 scripts/ci/partition-managed-producer.py main-projects --projects-file "artifacts/pr-gate/managed-projects.json" --output "artifacts/pr-gate/managed-projects.json"
 
       - name: Lean gate (managed build producer)
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/lean-gate
         with:
           phase: build
@@ -677,7 +587,7 @@ jobs:
 
       - name: Publish pristine managed test outputs
         id: managed-producer
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: publish
@@ -687,22 +597,14 @@ jobs:
       # The standalone host needs its canonical bin directory. Verify it here
       # after publishing pristine test outputs instead of shipping a second host.
       - name: Await Testcontainers PostGIS pre-pull
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         env:
           PREPULL_AWAIT_TIMEOUT_SECONDS: '120'
         run: scripts/ci/prepull-testcontainers-postgis.sh --await
 
       - name: Honua.Server boot + migrations smoke
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        if: steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: timeout 175s scripts/ci/server-boot-smoke.sh
-
-      - name: Revalidate exact-head review before success
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const revalidate = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/revalidate-exact-head-review.cjs`);
-            await revalidate({ github, context, core, expectedHead: '${{ github.event.pull_request.head.sha }}' });
 
   # Select at most six families with the trailing matrix's router and runner.
   # Keep per-shard failures available for receipt upload; the aggregate enforces
@@ -726,15 +628,6 @@ jobs:
       deferred_to_trunk: ${{ steps.select.outputs.deferred_to_trunk }}
     steps:
       - *job-temp
-      # Same shape as the `format` job's admission failure. `rerun-failed-jobs`
-      # releases only jobs that FAILED attempt 1, so a job that quietly
-      # succeeded by skipping its steps would never execute on the enforced
-      # attempt 2 -- and the shards it selects would never run at all.
-      - name: Await exact-head review
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
-        run: |
-          echo "Admission passed; exact-head review has not released shard selection yet."
-          exit 1
 
       # fetch-depth 2 for the same reason the required job documents above: the
       # checked-out ref is refs/pull/N/merge and its FIRST PARENT is the current
@@ -1016,26 +909,19 @@ jobs:
     timeout-minutes: 10
     steps:
       - *job-temp
-      - name: Await exact-head review
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
-        run: |
-          echo "Admission passed; exact-head review has not released CI router validation yet."
-          exit 1
 
       # fetch-depth 2: refs/pull/N/merge's first parent is the target-branch
       # tip, exactly what scripts/ci/pr-touches-ci-surface.sh diffs against.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1
         with:
           fetch-depth: 2
 
       - name: Classify CI-surface diff
         id: ci-surface
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1
         run: scripts/ci/pr-touches-ci-surface.sh --github-output
 
       - name: Validate CI router and single merge authority
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1) && steps.ci-surface.outputs.ci_surface == 'true'
+        if: steps.ci-surface.outputs.ci_surface == 'true'
         run: |
           scripts/ci/validate-ci-router.sh
           bash scripts/ci/validate-single-merge-authority.sh
@@ -1071,26 +957,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Await exact-head review
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
-        run: |
-          echo "Admission passed; exact-head review has not released N-1 reader compatibility yet."
-          exit 1
 
       # fetch-depth 2: refs/pull/N/merge's first parent is the target-branch tip,
       # which is what "added by this change" is measured against.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         with:
           fetch-depth: 2
 
       - name: Self-test the N-1 outcome classifier
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         run: python3 scripts/ci/n1-reader-compat.test.py
 
       - name: Classify migration-surface diff
         id: applies
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         run: |
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
@@ -1254,13 +1132,13 @@ jobs:
       # parallel verification paths have completed. It closes the interval in
       # which review evidence could be dismissed while format was still running.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft != true
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Revalidate exact-head review before success
-        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft != true
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |

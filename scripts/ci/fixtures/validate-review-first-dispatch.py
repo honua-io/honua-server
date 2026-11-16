@@ -114,25 +114,15 @@ def main() -> None:
         REVIEW_GATE: review_gate,
     }
 
-    pr_mode = mode(pr_gate, PR_GATE)
     review_mode = mode(review_gate, REVIEW_GATE)
-    if pr_mode != review_mode:
-        raise AssertionError(
-            f"review-first mode drift: pr-gate={pr_mode}, review-gate={review_mode}"
-        )
+    if "REVIEW_FIRST_MODE" in pr_gate:
+        raise AssertionError("PR Gate must not restore retired admission-mode predicates")
 
     require(pr_gate, "name: PR Gate", "required workflow/job context was renamed")
     require(pr_gate, "  pull_request:\n", "PR Gate must remain unconditional on pull_request")
     if re.search(r"^\s+paths(?:-ignore)?:", pr_gate, re.MULTILINE):
         raise AssertionError("required PR Gate must not use a paths filter")
 
-    ordered_steps = [
-        "Verify review-first admission contract",
-        "Verify .NET base-image security inventory",
-        "Admission receipt",
-        "Await exact-head review",
-        "Free disk space",
-    ]
     def job(name: str) -> str:
         match = re.search(r"^  " + re.escape(name) + r":\n(.*?)(?=^  [\w-]+:|\Z)", pr_gate, re.M | re.S)
         if match is None:
@@ -140,78 +130,27 @@ def main() -> None:
         return match.group(1)
 
     build_test_job = job("pr-gate")
-    require(build_test_job, "name: PR Gate / Build and tests", "exact admission job name must remain stable")
-    positions = [build_test_job.index(f"- name: {name}") for name in ordered_steps]
-    if positions != sorted(positions):
-        raise AssertionError("admission receipt/wait must precede every expensive step")
-
-    wait_condition = (
-        "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
-        "'pull_request' && github.run_attempt == 1"
-    )
-    require(pr_gate, wait_condition, "attempt 1 does not fail closed in enforce mode")
-    review_clause = (
-        "env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
-        "'pull_request' || github.run_attempt > 1"
-    )
-    full_condition = f"if: {review_clause}"
-    # The docs-only exit (scripts/ci/docs-only-diff.sh) ANDs one clause onto the
-    # expensive steps that follow its classification. The review clause stays
-    # whole and parenthesised, so a docs-only verdict can only skip more on
-    # attempt 1; it can never release a step early.
-    docs_gated_condition = (
-        f"if: ({review_clause}) && steps.docs-only.outputs.docs_only != 'true'"
-    )
-    generated_gated_condition = (
-        f"if: ({review_clause}) && steps.generated-only.outputs.generated_only != 'true'"
-    )
-
-    def review_gated(step: str) -> bool:
-        return any(condition in step for condition in (
-            full_condition, docs_gated_condition, generated_gated_condition,
-            docs_gated_condition.replace("steps.docs-only", "needs.pr-gate"),
-            generated_gated_condition.replace("steps.generated-only", "needs.pr-gate"),
-            f"if: ({review_clause}) && needs.pr-gate.outputs.skip != 'true'",
-        ))
-
-    # Pin named expensive steps rather than a global condition count. A producer
-    # failure on enforced attempt 1 also blocks its dependent consumer job.
+    require(build_test_job, "name: PR Gate / Build and tests", "build job name must remain stable")
+    for obsolete in ("Admission receipt", "Await exact-head review", "Revalidate exact-head review before verification"):
+        if f"- name: {obsolete}" in pr_gate:
+            raise AssertionError(f"PR Gate must not restore retired admission step {obsolete}")
+    # Verification runs eagerly, retaining the immutable diff classifiers. A
+    # docs-only or generated-only decision may skip work, never final review.
     for source, names in [
         (build_test_job, ["Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"]),
         (job("fast-tests"), ["Setup .NET", "Lean gate (build and fast unit/architecture verification)"]),
+        (job("server-test-producer"), ["Setup .NET", "Plan server test producer", "Build server test producer", "Publish selected server test outputs"]),
     ]:
         for name in names:
             step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
-            if not review_gated(step):
-                raise AssertionError(f"{name} must remain behind exact-head review")
-    fast_job = job("fast-tests")
-    wait = fast_job.index("- name: Await exact-head review")
-    checkout = fast_job.index("- uses: actions/checkout@")
-    if wait >= checkout:
-        raise AssertionError("independent Fast job must fail admission before checkout")
-    require(fast_job[wait:checkout], wait_condition, "Fast attempt 1 must fail closed")
-    require(fast_job[wait:checkout], "exit 1", "Fast admission must fail for rerun release")
-    require(fast_job[checkout:].split("- name:", 1)[0], full_condition, "Fast checkout must wait for review")
-    revalidation_condition = (
-        "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
-        "'pull_request' && github.run_attempt > 1"
-    )
-    require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
-    for source, label, expensive_name in [
-        (build_test_job, "producer", "Free disk space"),
-    ]:
-        before_name = "Revalidate exact-head review before verification"
-        after_name = "Revalidate exact-head review before success"
-        before = source.index(f"- name: {before_name}")
-        expensive = source.index(f"- name: {expensive_name}")
-        after = source.index(f"- name: {after_name}")
-        if not before < expensive < after:
-            raise AssertionError(f"review evidence must bracket {label} verification")
-        for name in [before_name, after_name]:
-            step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
-            require(step, revalidation_condition, f"{label} {name} must be attempt-2-only")
-            require(step, "revalidate-exact-head-review.cjs", f"{label} {name} must call shared exact-head review status validation")
+            require(step, "steps.docs-only.outputs.docs_only != 'true'", f"{name} must retain docs-only gating")
+            require(step, "steps.generated-only.outputs.generated_only != 'true'", f"{name} must retain generated-only gating")
+    revalidation_condition = "if: github.event_name == 'pull_request' && github.event.pull_request.draft != true"
+    require(pr_gate, "  statuses: read", "final validation needs bounded access to Review Gate status")
     validate_aggregate_review_status(job("required"), revalidation_condition)
+    for name in ("fast-tests", "server-test-producer", "pr-gate"):
+        if "Revalidate exact-head review before success" in job(name):
+            raise AssertionError("leaf verification must not race the independent Review Gate")
 
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(
@@ -688,7 +627,7 @@ def main() -> None:
             f"exist: {', '.join(phantom)}. Move them to 'Recently retired' or delete the row."
         )
 
-    print(f"review-first-dispatch=ok mode={pr_mode}")
+    print(f"review-first-dispatch=ok review-mode={review_mode}")
 
 
 if __name__ == "__main__":

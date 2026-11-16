@@ -266,7 +266,7 @@ the changed paths on stdin.
 
 | Job | Still runs | Skipped |
 |---|---|---|
-| `PR Gate / Build and tests` | The UTF-8 tracked-file guard (#3320); the terminal-error receipt, client-certification roster, review-first admission and base-image inventory checks; the admission receipt; the classifier's own fixtures; the Markdown command policy; installation-reference validation; and a public-image Docker proof only when artifact versions or executable installation procedures/harness change. | Disk cleanup, .NET setup, managed producer planning, compilation, managed artifact publication and source-built boot/migration smoke. |
+| `PR Gate / Build and tests` | The UTF-8 tracked-file guard (#3320); the terminal-error receipt, client-certification roster, required-review contract and base-image inventory checks; the classifier's own fixtures; the Markdown command policy; installation-reference validation; and a public-image Docker proof only when artifact versions or executable installation procedures/harness change. | Disk cleanup, .NET setup, managed producer planning, compilation, managed artifact publication and source-built boot/migration smoke. |
 | `PR Gate / Fast and architecture (<group>)` | Checkout and classification. | Disk cleanup, .NET setup, the group's test-root build and its tests. |
 | `PR Gate / Format`, `PR Gate / Analyzers`, `PR Gate / Analyzers (tests)` | Checkout and classification. | .NET setup, restore, and `dotnet format` or the analyzer build. |
 | `PR Gate / Affected shards (select)` | Classification. The job publishes `skip=true` with `reason=docs_only`, so the aggregate reports `skipped`. | Selector validation and shard selection. |

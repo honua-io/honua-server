@@ -1,8 +1,8 @@
-// Shared fail-closed review revalidation; callers preserve attempt-2 admission.
+// Shared fail-closed review revalidation; the aggregate required gate checks the ready PR head.
 module.exports = async ({ github, context, core, expectedHead }) => {
   const head = context.payload.pull_request?.head?.sha;
   if (!head || head !== expectedHead) {
-    core.setFailed('Attempt 2 has no trustworthy pull-request head.');
+    core.setFailed('No trustworthy pull-request head for final review validation.');
     return;
   }
   const statuses = await github.paginate(

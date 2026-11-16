@@ -394,7 +394,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
             with self.subTest(ready=ready, fork=fork, index=index, configured=configured):
                 self.assertEqual(self.evaluate_routing(probe, context), expected)
 
-    def test_selection_cannot_fail_and_is_inert_without_the_variable_or_in_enforce_mode(self):
+    def test_selection_cannot_fail_and_is_inert_without_the_variable(self):
         select = self.jobs["runner-select"]
         self.assertEqual(select["if"], READY_ONLY)
         self.assertEqual(select["outputs"]["runner"], "${{ steps.select.outputs.runner || 'ubuntu-latest' }}")
@@ -405,7 +405,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
                     self.assertNotIn("if", step)
                     self.assertEqual(step["timeout-minutes"], 1)
                     continue
-                self.assertTrue(step["if"].startswith("vars.HONUA_PR_GATE_RUNNER != '' && env.REVIEW_FIRST_MODE != 'enforce'"))
+                self.assertTrue(step["if"].startswith("vars.HONUA_PR_GATE_RUNNER != ''"))
                 self.assertTrue(step["continue-on-error"])
         self.assertLess(sum(step["timeout-minutes"] for step in select["steps"]), select["timeout-minutes"])
 

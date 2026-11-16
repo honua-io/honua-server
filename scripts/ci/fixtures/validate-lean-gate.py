@@ -259,11 +259,12 @@ assert [(row['check'], row['analyzer-partition'], row['analyzer-build']) for row
 assert [row.get('analyzer-test-partition', 'all') for row in _ready] == ['all', 'all', 'other', 'server']
 assert _draft == _ready[:1]
 _format_job = PR_GATE.read_text().split('  format:\n', 1)[1].split('\n  fast-tests:', 1)[0]
-_wait = _format_job.split('- name: Await exact-head review', 1)[1].split('- uses:', 1)[0]
-assert "github.event.pull_request.draft != true" in _wait
+assert "Await exact-head review" not in _format_job
 for _name in ['Setup .NET', 'Restore', 'Format Check']:
     _step = _format_job.split('- name: ' + _name, 1)[1].split('- name:', 1)[0]
-    assert "github.event.pull_request.draft == true" in _step
+    assert "REVIEW_FIRST_MODE" not in _step
+    assert "steps.docs-only.outputs.docs_only != 'true'" in _step
+    assert "steps.generated-only.outputs.generated_only != 'true'" in _step
 require(
     r"format-scope: affected\n\s+format: \$\{\{ matrix\.format \}\}\n"
     r"\s+analyzer-build: \$\{\{ matrix\.analyzer-build \}\}\n"
@@ -398,14 +399,8 @@ require(
     text=PR_GATE_TEXT,
 )
 require(
-    r"format:\n[\s\S]*?- name: Await exact-head review\n"
-    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?exit 1",
-    "fail the format job on enforced attempt 1 so rerun-failed-jobs releases it",
-    text=PR_GATE_TEXT,
-)
-require(
     r"required:\n[\s\S]*?- name: Revalidate exact-head review before success\n"
-    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?"
+    r"\s+if: github\.event_name == 'pull_request' && github\.event\.pull_request\.draft != true[\s\S]*?"
     r"require\(`\$\{process\.env\.GITHUB_WORKSPACE\}/\.github/scripts/revalidate-exact-head-review\.cjs`\);\n"
     r"\s+await revalidate\(\{ github, context, core, expectedHead: '\$\{\{ github\.event\.pull_request\.head\.sha \}\}' \}\);",
     "revalidate exact-head review after both parallel paths complete",

@@ -322,8 +322,7 @@ def job(name: str, following: str) -> str:
 
 CALL = "run: scripts/ci/docs-only-diff.sh --github-output"
 GATED = (
-    "if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' "
-    "|| github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'"
+    "if: steps.docs-only.outputs.docs_only != 'true'"
 )
 fmt = job("format", "fast-tests")
 fast = job("fast-tests", "server-test-producer")
@@ -337,9 +336,7 @@ for label, body in (("format", fmt), ("fast-tests", fast), ("server-test-produce
     if body.count(CALL) != 1 or "id: docs-only" not in body:
         problems.append(f"{label} must classify once, as step id docs-only")
 FORMAT_GATED = (
-    "if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' "
-    "|| github.event.pull_request.draft == true || github.run_attempt > 1) "
-    "&& steps.docs-only.outputs.docs_only != 'true' "
+    "if: steps.docs-only.outputs.docs_only != 'true' "
     "&& steps.generated-only.outputs.generated_only != 'true'"
 )
 for name in ("Setup .NET", "Restore", "Format Check"):
@@ -352,17 +349,16 @@ for name in ("Setup .NET", "Restore", "Format Check"):
 for name in ("Setup .NET", "Plan server test producer", "Build server test producer", "Publish selected server test outputs"):
     block = server.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
     if GATED not in block:
-        problems.append(f"server producer step {name} must obey docs-only and review verdicts")
+        problems.append(f"server producer step {name} must obey both diff verdicts")
 for name in ("Free disk space", "Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"):
     block = gate.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
     if GATED not in block:
-        problems.append(f"producer step {name} must obey docs-only and review verdicts")
+        problems.append(f"producer step {name} must obey both diff verdicts")
 for name in ("Free disk space", "Setup .NET", "Lean gate (build and fast unit/architecture verification)"):
     block = fast.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
     if GATED not in block:
-        problems.append(f"Fast step {name} must obey docs-only and review verdicts")
+        problems.append(f"Fast step {name} must obey both diff verdicts")
 order = [
-    "- name: Revalidate exact-head review before verification",
     "- name: Validate the docs-only classifier before consuming it",
     "- name: Classify docs-only diff",
     "- name: Documentation Command Policy (docs-only diff)",
@@ -370,8 +366,8 @@ order = [
 ]
 positions = [gate.find(step) for step in order]
 if -1 in positions or positions != sorted(positions):
-    problems.append("pr-gate must classify after the review-first admission steps and before any expensive step")
-policy = gate[gate.find(order[3]) :].split("- name:", 2)[1]
+    problems.append("pr-gate must validate before classifying and classify before any expensive step")
+policy = gate[gate.find("- name: Documentation Command Policy (docs-only diff)") :].split("- name:", 2)[1]
 if "if: steps.docs-only.outputs.docs_only == 'true'" not in policy or "check-markdown-command-policy.ps1" not in policy:
     problems.append("a docs-only diff must still run the Markdown command policy")
 indexes = gate.split("- name: Validate derived documentation indexes (docs-only diff)", 1)
@@ -387,7 +383,7 @@ if len(install) != 2 or "--smoke-base HEAD^1" not in install[1].split("- name:",
 proof = gate.split("- name: Prove the published Docker installation", 1)
 if len(proof) != 2 or "if: steps.public-install.outputs.smoke == 'true'" not in proof[1].split("- name:", 1)[0]:
     problems.append("public Docker proof must run only when selected, including on docs-only changes")
-for name in ("Verify tracked text files are UTF-8", "Verify review-first admission contract", "Admission receipt"):
+for name in ("Verify tracked text files are UTF-8", "Verify review-first admission contract", "Verify .NET base-image security inventory"):
     block = gate[gate.find(f"- name: {name}") :].split("- name:", 2)[1]
     if "docs-only" in block:
         problems.append(f"the always-on step {name!r} must not depend on the docs-only verdict")

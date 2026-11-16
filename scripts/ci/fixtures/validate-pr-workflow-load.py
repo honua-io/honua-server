@@ -296,9 +296,8 @@ class PullRequestLoadTests(unittest.TestCase):
                         {"source", "tests"},
                     )
 
-    def test_draft_format_steps_run_before_review_release(self):
+    def test_format_steps_run_on_every_attempt_for_draft_and_ready(self):
         format_steps = workflow("pr-gate.yml")["jobs"]["format"]["steps"]
-        env = {"REVIEW_FIRST_MODE": "enforce"}
         steps = {key: {"outputs": {field: "false"}} for key, field in (
             ("docs-only", "docs_only"), ("generated-only", "generated_only"),
         )}
@@ -310,15 +309,14 @@ class PullRequestLoadTests(unittest.TestCase):
             for step in format_steps:
                 name = step.get("name", "")
                 is_checkout = step.get("uses", "").startswith("actions/checkout@")
-                if name not in ("Await exact-head review", "Setup .NET", "Restore", "Format Check") and not is_checkout:
+                if name not in ("Setup .NET", "Restore", "Format Check") and not is_checkout:
                     continue
                 with self.subTest(step=name or "checkout", draft=draft, attempt=attempt):
-                    review_wait = not draft and attempt == 1
                     self.assertEqual(
                         evaluate(step.get("if", "true"), event, {
-                            "env": env, "steps": steps, "matrix": {"format": "true"},
+                            "steps": steps, "matrix": {"format": "true"},
                         }),
-                        review_wait if name == "Await exact-head review" else not review_wait,
+                        True,
                     )
 
     def test_only_formatter_restores_before_the_shared_action(self):
@@ -332,7 +330,7 @@ class PullRequestLoadTests(unittest.TestCase):
             for docs_only, generated_only in ((False, False), (True, False), (False, True)):
                 with self.subTest(check=row["check"], docs=docs_only, generated=generated_only):
                     context = {
-                        "matrix": row, "env": {"REVIEW_FIRST_MODE": "enforce"},
+                        "matrix": row,
                         "steps": {
                             "docs-only": {"outputs": {"docs_only": str(docs_only).lower()}},
                             "generated-only": {"outputs": {"generated_only": str(generated_only).lower()}},
