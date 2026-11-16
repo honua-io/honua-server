@@ -18,7 +18,7 @@ internal sealed partial class HonuaFeatureService
 
     public override async Task<Proto.BeginAttachmentUploadResponse> BeginAttachmentUpload(
         Proto.BeginAttachmentUploadRequest request, ServerCallContext context)
-        => new() { Session = ToAttachmentSession(await BeginAttachmentSessionAsync(request.Upload, "chunked", context).ConfigureAwait(false)) };
+        => new() { Session = ToAttachmentSession(await BeginAttachmentSessionAsync(request.Upload, "chunked", context).ConfigureAwait(false), context) };
 
     public override async Task<Proto.UploadAttachmentResponse> UploadAttachment(
         Proto.UploadAttachmentRequest request, ServerCallContext context)
@@ -50,7 +50,7 @@ internal sealed partial class HonuaFeatureService
         ValidateAttachmentMimeType(session.Request.ContentType, context);
         return new Proto.UploadAttachmentChunkResponse
         {
-            Session = ToAttachmentSession(await AppendAttachmentChunkAsync(session, request, context).ConfigureAwait(false))
+            Session = ToAttachmentSession(await AppendAttachmentChunkAsync(session, request, context).ConfigureAwait(false), context)
         };
     }
 
@@ -182,12 +182,12 @@ internal sealed partial class HonuaFeatureService
         }
     }
 
-    private static Proto.AttachmentUploadSession ToAttachmentSession(AttachmentUploadSession session)
+    private static Proto.AttachmentUploadSession ToAttachmentSession(AttachmentUploadSession session, ServerCallContext context)
         => new()
         {
             SessionId = session.SessionId.ToString("D"),
             ExpiresAtUtcMs = session.ExpiresAt.ToUnixTimeMilliseconds(),
             NextOffsetBytes = session.NextOffsetBytes,
-            MaxChunkBytes = session.Request.MaxChunkBytes
+            MaxChunkBytes = Math.Min(session.Request.MaxChunkBytes, AttachmentPayloadLimit(context, AttachmentChunkEnvelopeBytes))
         };
 }

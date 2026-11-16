@@ -18,15 +18,18 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 public sealed partial class GrpcFeatureServiceTests
 {
+    [Theory]
+    [InlineData(524160)]
+    [InlineData(1048576)]
     [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/BeginAttachmentUpload")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/BeginAttachmentUpload")]
-    public async Task BeginAttachmentUpload_ReducedReceiveLimit_ReturnsUsableChunkSize()
+    public async Task BeginAttachmentUpload_ReducedReceiveLimit_ClampsNewAndResumedSessions(int storedChunkBytes)
     {
         ArrangeAttachmentEditing();
         var store = Substitute.For<IAttachmentUploadSessionStore>();
         store.BeginAsync(Arg.Any<AttachmentUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult(NewAttachmentSession(call.Arg<AttachmentUploadRequest>())));
+            .Returns(call => Task.FromResult(NewAttachmentSession(call.Arg<AttachmentUploadRequest>() with { MaxChunkBytes = storedChunkBytes })));
         using var context = CreateCallContext(null, null, null, services =>
         {
             services.AddSingleton(store);
