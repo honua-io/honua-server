@@ -130,7 +130,8 @@ internal static class BatchAndDeployBackendsRegistration
         // whenever an operator targets Backend=honua-aws-batch.
 #if !HONUA_EXCLUDE_AWS
         services.AddOptions<AwsBatchExecutionOptions>()
-            .BindConfiguration(AwsBatchExecutionOptions.SectionName);
+            .BindConfiguration(AwsBatchExecutionOptions.SectionName)
+            .PostConfigure<IConfiguration>(AwsBatchExecutionOptions.ApplyStackNameFallback);
         services.AddSingleton<IAwsBatchJobClient, AwsSdkBatchJobClient>();
         services.AddSingleton<AwsBatchComputeBackend>();
         services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AwsBatchComputeBackend>());

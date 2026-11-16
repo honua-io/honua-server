@@ -126,6 +126,15 @@ timeout / retry stay per-submit overrides and are unaffected by tier selection.
 > (`batch.job_queue_arn`, `batch.region`, `batch.job_definition_arn`,
 > `batch.job_definition_arn.{s,m,l,xl}`) is identical on both sides.
 
+### Stack tag
+
+Every job the server submits carries the tag `honua:stack` with the install's stack name, taken from
+`ControlPlane__AwsBatch__StackName` or, when that is unset, `Observability__Heartbeat__StackName`.
+Use it to scope the server role: allow `batch:SubmitJob` and `batch:TagResource` only with
+`aws:RequestTag/honua:stack` equal to the stack name, and `batch:CancelJob` and `batch:TerminateJob`
+only on jobs whose `aws:ResourceTag/honua:stack` matches. Without a stack name the server submits
+untagged jobs and logs a warning from `AwsBatchComputeBackend` ("…is submitted without the honua:stack tag…"); a role scoped this way then refuses the submit.
+
 ## Per-job resource sizing
 
 Per-job sizing is **runtime and instant** — no terraform, no agent in the job

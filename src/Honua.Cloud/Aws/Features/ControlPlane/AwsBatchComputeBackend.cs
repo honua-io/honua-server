@@ -8,6 +8,7 @@ using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
@@ -180,7 +181,21 @@ internal sealed class AwsBatchExecutionOptions
 {
     public const string SectionName = "ControlPlane:AwsBatch";
 
+    internal const string StackTagKey = "honua:stack";
+
     public int CustomCodeMaxQueueWaitSeconds { get; set; } = 3600;
+
+    // Submitted jobs are tagged with this name so IAM can scope cancel and terminate to this install.
+    // Falls back to Observability:Heartbeat:StackName, which stack-based installs set.
+    public string? StackName { get; set; }
+
+    internal static void ApplyStackNameFallback(AwsBatchExecutionOptions options, IConfiguration configuration)
+    {
+        if (string.IsNullOrWhiteSpace(options.StackName))
+        {
+            options.StackName = configuration["Observability:Heartbeat:StackName"];
+        }
+    }
 
     // Each job-definition ARN is stored as an entry value because a colon in an ARN is a configuration-path delimiter.
     public List<AwsBatchJobDefinitionContractOptions> JobDefinitions { get; set; } = [];
@@ -436,7 +451,8 @@ internal sealed partial class AwsBatchComputeBackend(
             GpuCount = TryParseInt(parameters, AwsBatchParameterKeys.GpuCount),
             AttemptDurationSeconds = TryParseInt(parameters, AwsBatchParameterKeys.TimeoutSeconds),
             RetryAttempts = job.Audit.CustomCodeOwnerScope is not null ? 1 : TryParseInt(parameters, AwsBatchParameterKeys.RetryAttempts),
-            ShareIdentifier = GetOptionalParameter(parameters, AwsBatchParameterKeys.ShareIdentifier)
+            ShareIdentifier = GetOptionalParameter(parameters, AwsBatchParameterKeys.ShareIdentifier),
+            Tags = BuildStackTags(job.OperationId)
         };
 
         try
@@ -936,6 +952,22 @@ internal sealed partial class AwsBatchComputeBackend(
         }
     }
 
+    // An install whose IAM policy requires the tag on SubmitJob refuses an untagged submit itself.
+    private Dictionary<string, string> BuildStackTags(string operationId)
+    {
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(options.Value.StackName))
+        {
+            Log.BatchJobSubmittedWithoutStackTag(logger, operationId);
+        }
+        else
+        {
+            tags[AwsBatchExecutionOptions.StackTagKey] = options.Value.StackName.Trim();
+        }
+
+        return tags;
+    }
+
     internal static string BuildJobName(string operationId, int attemptCount)
     {
         // AWS Batch job names are 1-128 chars, [A-Za-z0-9_-]. Embed a per-attempt
@@ -1034,6 +1066,9 @@ internal sealed partial class AwsBatchComputeBackend(
 
     internal static partial class Log
     {
+        [LoggerMessage(9060, LogLevel.Warning, "AWS Batch job for execution job {OperationId} is submitted without the honua:stack tag: set ControlPlane:AwsBatch:StackName (or Observability:Heartbeat:StackName) so IAM can limit cancel and terminate to this install's jobs")]
+        public static partial void BatchJobSubmittedWithoutStackTag(ILogger logger, string operationId);
+
         [LoggerMessage(9040, LogLevel.Information, "Submitted AWS Batch job {OperationId} ({ProviderJobId}) to queue {JobQueue} using definition {JobDefinition}")]
         public static partial void BatchJobSubmitted(ILogger logger, string operationId, string providerJobId, string jobQueue, string jobDefinition);
 
