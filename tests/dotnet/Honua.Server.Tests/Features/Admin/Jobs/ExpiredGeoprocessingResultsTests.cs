@@ -3,6 +3,7 @@
 
 using System.Net;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -51,11 +52,14 @@ public sealed class ExpiredGeoprocessingResultsTests
             using var client = fixture.CreateAdminClient();
             using var response = await client.GetAsync($"/ogc/processes/jobs/{job.OperationId}/results");
 
-            response.StatusCode.Should().Be(expectedStatus, await response.Content.ReadAsStringAsync());
-            await packages.Received(expectedStoreCalls).GetAsync(job.OperationId, Arg.Any<CancellationToken>());
-            await packages.Received(expectedStoreCalls).SetAsync(
-                job.OperationId, Arg.Any<AnalysisResultPackage>(),
-                Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+            var body = await response.Content.ReadAsStringAsync();
+
+            using var scope = new AssertionScope();
+            response.StatusCode.Should().Be(expectedStatus, body);
+            packages.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(packages.GetAsync))
+                .Should().Be(expectedStoreCalls, "the store is read only while results are retained");
+            packages.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(packages.SetAsync))
+                .Should().Be(expectedStoreCalls, "the replay writes only while results are retained");
         }
         finally
         {
@@ -70,6 +74,10 @@ public sealed class ExpiredGeoprocessingResultsTests
             services.AddSingleton(jobs);
             services.RemoveAll<IGeoprocessingResultPackageStore>();
             services.AddSingleton(packages);
+            // The worker registers this callback only when a job queue is present; the read path
+            // under test needs it whatever the fixture's worker wiring is.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>());
             services.PostConfigure<TenantContextOptions>(options => options.DefaultTenantId = "public");
             services.PostConfigure<GeoprocessingExecutorOptions>(options =>
                 options.ResultRetention = TimeSpan.FromHours(1));
