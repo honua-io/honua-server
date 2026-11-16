@@ -39,9 +39,9 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
 
     private static FolderOperationResponse Failure(FolderExecutionFailure failure) => failure switch
     {
-        FolderExecutionFailure.Replay => Problem(403, FolderApprovalAuthorization.FreshProposalRequired),
+        FolderExecutionFailure.Replay => HttpProblem(403, FolderApprovalAuthorization.FreshProposalRequired),
         FolderExecutionFailure.Mutation mutation => mutation.Refusal.Status == 404
-            ? new(404, string.Empty) : Problem(mutation.Refusal.Status, mutation.Refusal.Detail),
+            ? new(404, string.Empty) : HttpProblem(mutation.Refusal.Status, mutation.Refusal.Detail),
         FolderExecutionFailure.Authorization authorization => Authorization(authorization.Decision),
         FolderExecutionFailure.Approval approval => new(403, JsonSerializer.Serialize(new ApprovalDeniedProblemDetails
         {
@@ -76,13 +76,23 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
             ? "Authentication is required for this operation." : "You do not have permission to perform this operation.");
 
     internal static FolderOperationResponse Problem(int status, string detail)
+        => Problem(status, detail, "https://honua.io/problems/admin",
+            Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(status));
+
+    private static FolderOperationResponse HttpProblem(int status, string detail)
+    {
+        var problem = TypedResults.Problem(statusCode: status, detail: detail).ProblemDetails;
+        return Problem(status, detail, problem.Type!, problem.Title!);
+    }
+
+    private static FolderOperationResponse Problem(int status, string detail, string type, string title)
     {
         var buffer = new System.Buffers.ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
-            writer.WriteString("type", "https://honua.io/problems/admin");
-            writer.WriteString("title", Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(status));
+            writer.WriteString("type", type);
+            writer.WriteString("title", title);
             writer.WriteNumber("status", status);
             writer.WriteString("detail", detail);
             writer.WriteEndObject();

@@ -47,8 +47,13 @@ internal static class FolderMutationService
         if (store is null) return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.ReadOnlyCatalog));
         try
         {
-            if (replay is not null && !await FolderApprovalAuthorization.IsCurrentAsync(replay.Proposal, services, cancellationToken).ConfigureAwait(false))
-                return new(null, null, new FolderExecutionFailure.Replay());
+            var requester = principal;
+            if (replay is not null)
+            {
+                var currentRequester = await FolderApprovalAuthorization.ResolveCurrentRequesterAsync(replay.Proposal, services, cancellationToken).ConfigureAwait(false);
+                if (currentRequester is null) return new(null, null, new FolderExecutionFailure.Replay());
+                requester = currentRequester;
+            }
             var snapshot = await store.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             if (snapshot.Etag != execution.ExpectedEtag)
                 return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.SnapshotChanged));
@@ -59,7 +64,7 @@ internal static class FolderMutationService
                 OperatorPrincipal = operatorPrincipal, FolderTenant = folderTenant,
                 RequesterAccess = new ServiceAccessContext
                 {
-                    Services = services, Principal = replay?.RequesterPrincipal ?? principal,
+                    Services = services, Principal = requester,
                     TenantId = tenant, Operation = AuthorizationOperation.Admin,
                     RequestCache = replay is null ? execution.RequestCache : null
                 }

@@ -20,6 +20,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -80,7 +81,7 @@ internal static class FolderApprovalAuthorization
             ServiceIds = mutation.AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal).ToArray(),
             ExpiresAt = await EvidenceExpiryAsync(context).ConfigureAwait(false)
         };
-        var revision = await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false);
+        var revision = (await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false)).Revision;
         var authorizationContext = new FolderAuthorizationContext
         {
             Original = snapshot.Graph,
@@ -98,7 +99,7 @@ internal static class FolderApprovalAuthorization
         };
         if ((await FolderServiceAuthorization.EvaluateAsync(authorizationContext, cancellationToken).ConfigureAwait(false)).Failure is not null)
             throw new FolderProposalRefusal("The requester does not have access to every affected service.");
-        if (revision != await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false))
+        if (revision != (await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false)).Revision)
             throw new FolderProposalRefusal(FreshProposalRequired);
         return plan with { FolderAuthorization = authorization with { PolicyRevision = revision } };
     }
@@ -119,28 +120,33 @@ internal static class FolderApprovalAuthorization
     }
 
     internal static async Task<bool> IsCurrentAsync(OperationProposal proposal, IServiceProvider services, CancellationToken cancellationToken)
+        => await ResolveCurrentRequesterAsync(proposal, services, cancellationToken).ConfigureAwait(false) is not null;
+
+    internal static async Task<ClaimsPrincipal?> ResolveCurrentRequesterAsync(
+        OperationProposal proposal, IServiceProvider services, CancellationToken cancellationToken)
     {
         var authorization = proposal.Plan.FolderAuthorization;
         if (authorization is null || authorization.OperationId != proposal.OperationId || authorization.RequesterId != proposal.RequestedBy ||
-            authorization.ExpiresAt <= services.GetRequiredService<TimeProvider>().GetUtcNow()) return false;
+            authorization.ExpiresAt <= services.GetRequiredService<TimeProvider>().GetUtcNow()) return null;
         try
         {
-            if (proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan)) return false;
+            if (proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan)) return null;
             var replay = FolderReplayRequest.ReadSealedRequest(proposal.Plan, proposal.OperationId, proposal.TenantId);
-            if (replay.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) return false;
+            if (replay.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) return null;
             var snapshot = await services.GetRequiredService<IMetadataV2GraphStore>()
                 .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             if (snapshot.Etag != authorization.SnapshotEtag ||
-                replay.Request.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag ||
-                authorization.PolicyRevision != await PolicyRevisionAsync(services, authorization, null, cancellationToken).ConfigureAwait(false)) return false;
+                replay.Request.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag) return null;
+            var policy = await PolicyRevisionAsync(services, authorization, null, cancellationToken).ConfigureAwait(false);
+            if (authorization.PolicyRevision != policy.Revision) return null;
             var affected = BuildMutation(snapshot.Graph, replay.Request, proposal.TenantId)
                 .AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal);
-            return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal);
+            return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal) ? policy.Requester : null;
         }
         catch (Exception exception) when (exception is FolderProposalRefusal or JsonException or ArgumentException or KeyNotFoundException ||
             (exception is InvalidOperationException && exception is not ServiceUnavailableException))
         {
-            return false;
+            return null;
         }
     }
 
@@ -161,7 +167,7 @@ internal static class FolderApprovalAuthorization
         return FolderMutationCommand.FromRequest(request).Apply(graph, tenant);
     }
 
-    private static async Task WriteCredentialPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
+    private static async Task<ClaimsPrincipal> WriteCredentialPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
         string requesterId, CancellationToken cancellationToken)
     {
         var authority = new OperationProposerApiKeyAuthority(services.GetRequiredService<TimeProvider>(), services.GetService<IAdminApiKeyStore>());
@@ -182,9 +188,17 @@ internal static class FolderApprovalAuthorization
             writer.WriteEndArray();
         }
         writer.WriteEndArray();
+        var identity = new ClaimsIdentity(AuthenticationExtensions.ApiKeyScheme);
+        identity.AddClaim(new Claim(ClaimTypes.Name, key.Name));
+        identity.AddClaim(new Claim("api_key_id", key.Id.ToString("D")));
+        identity.AddClaim(new Claim(ClaimTypes.Role, LayerScopedWriteKey.ConfersFullAdmin(key.Permissions)
+            ? OperationPolicyBuiltInRules.FullAdministratorRole : AdminApiKeyPermission.ScopedAdminRole));
+        foreach (var permission in key.Permissions)
+            identity.AddClaim(new Claim(AdminApiKeyPermission.PermissionClaimType, permission));
+        return new ClaimsPrincipal(identity);
     }
 
-    private static async Task WriteMembershipPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
+    private static async Task<ClaimsPrincipal?> WriteMembershipPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
         FolderRequesterAuthorization authorization, ClaimsPrincipal? requester, CancellationToken cancellationToken)
     {
         writer.WriteStartArray();
@@ -210,6 +224,16 @@ internal static class FolderApprovalAuthorization
             foreach (var role in membership.Roles.Order(StringComparer.Ordinal)) writer.WriteStringValue(role);
         }
         writer.WriteEndArray();
+        if (authorization.SubjectId is null) return null;
+        var identity = new ClaimsIdentity("FolderRequesterMembership");
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, authorization.SubjectId));
+        if (authorization.SubjectIssuer is not null)
+            identity.AddClaim(new Claim("iss", authorization.SubjectIssuer));
+        if (membership is not null)
+            foreach (var role in membership.Roles.Where(role => !string.IsNullOrWhiteSpace(role))
+                .Select(role => role.Trim()).Distinct(StringComparer.Ordinal))
+                identity.AddClaim(new Claim(ClaimTypes.Role, role));
+        return new ClaimsPrincipal(identity);
     }
 
     // A second lookup could authorize a different membership snapshot than the one sealed.
@@ -222,10 +246,14 @@ internal static class FolderApprovalAuthorization
         }
     }
 
-    private static async Task<string> PolicyRevisionAsync(IServiceProvider services, FolderRequesterAuthorization authorization,
+    // Replay uses the authority read for this revision, never a second lookup or the approver's claims.
+    private sealed record CurrentPolicy(string Revision, ClaimsPrincipal Requester);
+
+    private static async Task<CurrentPolicy> PolicyRevisionAsync(IServiceProvider services, FolderRequesterAuthorization authorization,
         ClaimsPrincipal? requester, CancellationToken cancellationToken)
     {
         using var bytes = new MemoryStream();
+        ClaimsPrincipal? currentRequester = null;
         using (var writer = new Utf8JsonWriter(bytes))
         {
             var options = services.GetRequiredService<IOptions<RbacOptions>>().Value;
@@ -237,10 +265,11 @@ internal static class FolderApprovalAuthorization
             foreach (var role in options.DataEditorRoles.Order(StringComparer.Ordinal)) writer.WriteStringValue(role);
             writer.WriteEndArray();
             if (OperationProposerApiKeyAuthority.IsApiKeyActor(authorization.RequesterId))
-                await WriteCredentialPolicyAsync(writer, services, authorization.RequesterId, cancellationToken).ConfigureAwait(false);
+                currentRequester = await WriteCredentialPolicyAsync(writer, services, authorization.RequesterId, cancellationToken).ConfigureAwait(false);
             writer.WriteBooleanValue(LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OidcAuthenticationKey));
             writer.WriteBooleanValue(LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OidcClaimsMappingKey));
-            await WriteMembershipPolicyAsync(writer, services, authorization, requester, cancellationToken).ConfigureAwait(false);
+            var member = await WriteMembershipPolicyAsync(writer, services, authorization, requester, cancellationToken).ConfigureAwait(false);
+            currentRequester ??= member;
             var store = services.GetService<IRoleStore>();
             writer.WriteBooleanValue(store is not null);
             if (store is not null)
@@ -264,7 +293,8 @@ internal static class FolderApprovalAuthorization
             }
             writer.WriteEndArray();
         }
-        return Convert.ToHexString(SHA256.HashData(bytes.ToArray()));
+        return new(Convert.ToHexString(SHA256.HashData(bytes.ToArray())), currentRequester ??
+            new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, authorization.RequesterId)], "FolderRequester")));
     }
 }
 
