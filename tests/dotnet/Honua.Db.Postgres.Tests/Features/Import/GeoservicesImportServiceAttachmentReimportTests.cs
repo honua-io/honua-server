@@ -359,7 +359,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
         {
             var storage = new ImportStorage();
             var store = await CreatePersistentStoreAsync(schema, storage);
-            var handler = new AttachmentFeatureServerHandler();
+            using var handler = new AttachmentFeatureServerHandler();
             var service = CreateService(handler, store, new StubLayerPublishingService(42), schema);
             (await service.ImportLayerAsync(ReimportRequest(schema))).Success.Should().BeTrue();
 
