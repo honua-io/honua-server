@@ -29,6 +29,7 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
     private const string TargetId = "coordinated-local";
     private const string CurrentRevision = "honua/server:v20";
     private const string DesiredRevision = "honua/server:v21";
+    private const string ScriptedNoPriorRevisionMessage = "scripted backend has no prior revision";
 
     [Fact]
     public async Task Reconcile_ProductionContainerChildSettlesAfterRestart_BeforeParentRollback()
@@ -180,7 +181,7 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                 manualChildAfterRestart.ObservedState.Should().Be(DesiredRevision, "the ledger must preserve that the failed revision remained observed");
                 afterRestartPoll.CoordinatedRelease.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
                     .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
-                afterRestartPoll.ErrorMessage.Should().Contain("previously observed revision");
+                afterRestartPoll.ErrorMessage.Should().Contain(ScriptedNoPriorRevisionMessage);
                 provider.CandidateStarts.Should().Be(1, "the provider reported that no prior revision was available");
                 ledger.FinalSplitStateReason = afterRestartPoll.ErrorMessage;
             }
@@ -440,7 +441,7 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
             {
                 return Task.FromResult(Observation(operation, WorkflowOperationStatus.ManualInterventionRequired, observedRevision: null) with
                 {
-                    Message = "Rollback requires a previously observed revision, but none was captured for this operation."
+                    Message = ScriptedNoPriorRevisionMessage
                 });
             }
 

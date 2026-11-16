@@ -162,7 +162,7 @@ jobs:
     timeout-minutes: 20
     # No Redis service: the deploy workflow store uses the migrated PostgreSQL system database
     # (PostgresDatabaseMigrationRunner), so nothing in Category=LocalSubstrate reads a Redis address.
-    # ADR-0060 substrate-neutral lane (#2166, #2457): single-host, zero-cloud (no Kubernetes, no
+    # ADR-0060 substrate-neutral lane: single-host, zero-cloud (no Kubernetes, no
     # cloud). GP = LocalProcessPoolBatchComputeBackend + real child processes; migration gate = the
     # real PostgresDatabaseMigrationRunner over a Testcontainers Postgres. FREE (no cloud secrets),
     # plain ubuntu runner with Docker. Every test [SkippableFact]-skips when Docker is absent.
@@ -207,8 +207,7 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./artifacts/test-results
 
-      # honua-server#4415/#4414: LocalSubstratePostgresFixture
-      # silently sets Available=false on ANY InitializeAsync exception (image-pull failure, full disk,
+      # LocalSubstratePostgresFixture silently sets Available=false on ANY InitializeAsync exception (image-pull failure, full disk,
       # container-start timeout — not just "Docker isn't installed"), and every [SkippableFact] in this
       # lane treats Available=false as a skip. `dotnet test` exits 0 whether every one of the lane's
       # cases ran or every one of them skipped, so a fixture regression on this runner turns the entire
