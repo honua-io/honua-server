@@ -22,4 +22,3 @@ internal interface IAdminHttpOperationDefinition
     OperationApprovalModel? ApprovalModel { get; }
     OperationClass OperationClass { get; }
 }
-
