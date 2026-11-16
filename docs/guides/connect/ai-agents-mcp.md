@@ -145,9 +145,10 @@ This rule is built in and applies whether or not `Operations:Policy` is enabled 
 ### Verify
 
 The [quickstart](../../get-started/quickstart.md) publishes the server on
-`http://localhost:18080` (`HONUA_HTTP_PORT`). Handshake methods are open, so
-this check sends no API key. Use the published MCP Python client to initialize
-the session and list tools:
+`http://localhost:18080` (`HONUA_HTTP_PORT`). The handshake is open, but an
+anonymous `tools/list` returns an empty array, so this check sends an API key.
+Set `HONUA_API_KEY` to the key your agent uses, then use the published MCP
+Python client to initialize the session and list tools:
 
 ```bash
 python3 -m pip install 'mcp==2.1.1'
@@ -156,12 +157,16 @@ python3 -m pip install 'mcp==2.1.1'
 ```bash
 python3 - <<'PY'
 import asyncio
+import os
 
 from mcp import ClientSessionGroup
 from mcp.client.session_group import StreamableHttpParameters
 
 async def discover():
-    server = StreamableHttpParameters(url="http://localhost:18080/mcp")
+    server = StreamableHttpParameters(
+        url="http://localhost:18080/mcp",
+        headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
+    )
     async with ClientSessionGroup() as group:
         session = await group.connect_to_server(server)
         listed = await session.list_tools()
@@ -174,7 +179,7 @@ asyncio.run(discover())
 PY
 ```
 
-The response lists the `honua_*` tools this deployment advertises, with JSON Schema input definitions. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
+The script prints the `honua_*` tools in the server's default workflow view (12 discovery tools on a quickstart) and exits non-zero when none is listed, which is what a missing or unknown key produces. Each tool carries a JSON Schema input definition. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 
 Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`) and a `structuredContentSchema` describing the tool's structured result, so schema-driven clients can reason about safety and validate responses.
 
