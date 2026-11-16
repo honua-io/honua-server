@@ -114,7 +114,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
             inlineSecret.GetRawText().Should().NotContain("inline-value-must-not-be-echoed");
             (await ConnectionNamesAsync(admin)).Should().NotContain(inlineName);
 
-            using var connectionBody = await ProposeThenApplyAsync(admin, "honua_admin_connections_create", "connections", new
+            using var connectionBody = await ProposeThenApplyAsync(admin, ("honua_admin_connections_create", "connections"), new
             {
                 name = connectionName,
                 host = builder.Host,
@@ -136,7 +136,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 .Should().Be(connectionId);
 
             var tableName = $"roster{suffix}";
-            using var importBody = await ProposeThenApplyAsync(admin, "honua_admin_import_upload_url", "import/upload-url", new
+            using var importBody = await ProposeThenApplyAsync(admin, ("honua_admin_import_upload_url", "import/upload-url"), new
             {
                 sourceUrl = SourceUrl,
                 fileName = "parcels.geojson",
@@ -246,10 +246,10 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
     // MCP callers are agents, so a change over MCP is only a proposal and creates nothing. The
     // administrator then makes the same change in the admin API, as a person in Console would.
     private static async Task<JsonDocument> ProposeThenApplyAsync(
-        HttpClient admin, string tool, string adminRoute, object arguments)
+        HttpClient admin, (string Tool, string AdminRoute) change, object arguments)
     {
-        await CallProposalAsync(admin, tool, arguments);
-        using var response = await admin.PostAsJsonAsync($"/api/v1/admin/{adminRoute}", arguments);
+        await CallProposalAsync(admin, change.Tool, arguments);
+        using var response = await admin.PostAsJsonAsync($"/api/v1/admin/{change.AdminRoute}", arguments);
         var body = await response.Content.ReadAsStringAsync();
         response.IsSuccessStatusCode.Should().BeTrue(body);
         return JsonDocument.Parse(body);
