@@ -242,12 +242,6 @@ public sealed class AuthenticationResponseCacheTests
     }
 }
 
-/// <summary>
-/// Blocked-license denial for a credential-response endpoint must still carry
-/// <c>Cache-Control: no-store</c> (#4609 review): the deny path short-circuits before the
-/// endpoint runs, so the cache middleware's OnStarting registration must happen ahead of
-/// the license middleware in the real pipeline, not just when a test wires it that way.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class LicenseBlockedCredentialResponseCacheTests : IAsyncLifetime

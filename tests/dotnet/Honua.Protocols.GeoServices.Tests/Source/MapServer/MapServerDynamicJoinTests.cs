@@ -27,13 +27,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// Integration coverage for MapServer <c>dynamicLayers</c> <c>joinTable</c> data sources (#1866).
-/// A joinTable joins an allowlisted left (geometry/identity) layer to an allowlisted right
-/// (attribute) layer on a key; joined attributes are surfaced through identify and the dynamicLayer
-/// metadata resource. The join honours <c>joinType</c> (left outer / inner), enforces the right
-/// layer's access policy, and is parameter-safe (no raw SQL).
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerDynamicJoinTests : IClassFixture<MapServerDynamicJoinTests.Fixture>
 {
@@ -253,10 +246,6 @@ public sealed class MapServerDynamicJoinTests : IClassFixture<MapServerDynamicJo
             + $"\"leftTableKey\":\"{leftKey}\",\"rightTableKey\":\"{rightKey}\","
             + $"\"joinType\":\"{joinType}\"}}}}}}";
 
-    /// <summary>
-    /// Builds the in-memory join host. With <paramref name="hiddenFields"/>, the left layer's
-    /// <c>category</c> and the right layer's <c>name</c> are publisher-hidden (#6098).
-    /// </summary>
     internal static WebApplicationFactory<Program> CreateFactory(
         bool rightLayerAnonymous,
         bool temporalFields = false,

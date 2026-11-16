@@ -41,6 +41,11 @@ def image_to_pull(manifest: dict) -> str:
     return image
 
 
+# The GeoServices layer number is assigned at publish and is not always 0, so
+# installation pages take it from the service document instead of naming one.
+FIXED_LAYER_URL = re.compile(r"/rest/services/[\w.-]+/FeatureServer/\d")
+
+
 FENCES = re.compile(r"^```([^\n]*)\n(.*?)^```\s*$", re.M | re.S)
 
 
@@ -57,6 +62,8 @@ def check(root: Path = ROOT) -> list[str]:
     problems = []
     pages = {path: (root / path).read_text() for path in INSTALL_PAGES + CLIENT_PAGES}
     for path in INSTALL_PAGES:
+        if FIXED_LAYER_URL.search(pages[path]):
+            problems.append(f"{path}: read the GeoServices layer id from the service document; do not fix a layer number")
         if "customer-install-manifest.json" not in pages[path]:
             problems.append(f"{path}: installation instructions must reference customer-install-manifest.json")
         pins = IMAGE_ASSIGNMENT.findall(pages[path])

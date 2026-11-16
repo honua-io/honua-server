@@ -17,10 +17,6 @@ using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// Unit tests for the feature-stream session manager covering session lifecycle,
-/// heartbeat broadcast, slow-consumer disconnect, and admin visibility.
-/// </summary>
 public sealed class FeatureStreamSessionManagerTests : IDisposable
 {
     private readonly FeatureStreamSessionManager _manager;

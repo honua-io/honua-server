@@ -8,26 +8,12 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Core.Features.Authorization;
 
-/// <summary>
-/// Default <see cref="IAgentGuardrailPolicy"/>: derives the AI-operations
-/// guardrail level from the active license edition (#1631) and computes the
-/// concrete guardrails for a given agent operation.
-/// </summary>
-/// <remarks>
-/// Reads the active edition from <see cref="ILicenseEntitlementService"/>, the
-/// same snapshot used by the rest of the licensing surface, so the ladder stays
-/// consistent with feature gating. Non-mutating (read/discovery/query) agent
-/// operations are never gated regardless of edition, preserving the founder
-/// posture that Community keeps full agent operability and that even Pro and
-/// Enterprise leave agent reads unguarded.
-/// </remarks>
 public sealed class EditionAgentGuardrailPolicy(ILicenseEntitlementService entitlementService)
     : IAgentGuardrailPolicy
 {
     private readonly ILicenseEntitlementService _entitlementService =
         entitlementService ?? throw new ArgumentNullException(nameof(entitlementService));
 
-    /// <inheritdoc />
     public AgentGuardrailLevel LevelFor(HonuaEdition edition) => edition switch
     {
         HonuaEdition.Enterprise => AgentGuardrailLevel.Approval,
@@ -35,7 +21,6 @@ public sealed class EditionAgentGuardrailPolicy(ILicenseEntitlementService entit
         _ => AgentGuardrailLevel.Direct,
     };
 
-    /// <inheritdoc />
     public AgentGuardrailDecision Evaluate(AgentOperationDescriptor operation)
     {
         ArgumentNullException.ThrowIfNull(operation);

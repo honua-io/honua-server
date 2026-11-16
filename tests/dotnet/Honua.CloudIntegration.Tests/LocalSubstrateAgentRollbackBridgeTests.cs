@@ -930,7 +930,6 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests
 
     private sealed record RecordedAuditEvent(string AuditId, AuditEvent AuditEvent);
 
-    /// <summary>Identity-assigning audit sink that retains every event for assertion.</summary>
     private sealed class RecordingAuditLog : IAuditLog
     {
         private readonly ConcurrentQueue<RecordedAuditEvent> _events = new();

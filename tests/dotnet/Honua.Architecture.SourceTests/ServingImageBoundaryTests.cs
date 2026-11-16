@@ -5,9 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the native-AOT web image and isolated GDAL-worker distribution boundary.
-/// </summary>
 public sealed class ServingImageBoundaryTests
 {
     private const string VerifierCommand = "scripts/ci/verify-serving-image-boundary.py --serving-image";
@@ -19,8 +16,7 @@ public sealed class ServingImageBoundaryTests
         var dockerfiles = new Dictionary<string, string>
         {
             ["docker/Dockerfile.aot"] = "/app/Honua.Server",
-            ["docker/Dockerfile.lambda.aot"] = "/var/task/Honua.Server",
-            ["docker/Dockerfile.functions.aot"] = "/home/site/wwwroot/app/Honua.Server"
+            ["docker/Dockerfile.lambda.aot"] = "/var/task/Honua.Server"
         };
 
         foreach (var (relativePath, entrypoint) in dockerfiles)
@@ -51,27 +47,24 @@ public sealed class ServingImageBoundaryTests
         }
 
         var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
-        nightly.Should().Contain(VerifierCommand, Exactly.Thrice(),
+        nightly.Should().Contain(VerifierCommand, Exactly.Twice(),
             "the generic and Lambda AOT digests must be inspected before their manifests are "
-            + "published, and the Azure Functions AOT rootfs is boundary-verified nightly too "
-            + "with registry attestations retained for every published variant");
+            + "published, with registry attestations retained for every published variant");
         nightly.Should().Contain("id: build", Exactly.Twice(),
-            "the generic and Lambda builds expose their digest under this identifier; "
-            + "Functions exposes functions_candidate.outputs.digest to its verifier");
-        nightly.Should().Contain("steps.functions_candidate.outputs.digest");
-        nightly.Should().Contain("--require-attestations", Exactly.Twice(),
-            "Lambda and Functions must fail before publication if registry attestations are absent or mismatched");
-        nightly.Should().Contain("provenance: mode=max", Exactly.Twice());
+            "the generic and Lambda builds expose their digest under this identifier");
+        nightly.Should().Contain("--require-attestations", Exactly.Once(),
+            "Lambda must fail before publication if registry attestations are absent or mismatched");
+        nightly.Should().Contain("provenance: mode=max", Exactly.Once());
         nightly.Should().NotContain("load: true", "local image stores can discard attestation manifests");
         nightly.Should().Contain("type=raw,value=nightly-aot-${{ needs.select-candidate.outputs.sha7 }}",
             "dated and SHA AOT compatibility tags must retain their established infix naming");
-        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Times(6),
-            "canonical, Lambda, Functions and Compose executor indexes, and the Lambda serving child, must receive GitHub provenance");
-        nightly.Should().Contain("attestations: write", Exactly.Times(6));
-        nightly.Should().Contain("id-token: write", Exactly.Times(6));
+        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Times(5),
+            "canonical, Lambda and Compose executor indexes, and the Lambda serving child, must receive GitHub provenance");
+        nightly.Should().Contain("attestations: write", Exactly.Times(5));
+        nightly.Should().Contain("id-token: write", Exactly.Times(5));
         nightly.Should().Contain("subject-digest: ${{ steps.manifest.outputs.subject_digest }}", Exactly.Thrice(),
             "attestations must bind the final pushed manifest digest rather than a mutable tag");
-        nightly.Should().Contain("push-to-registry: true", Exactly.Times(7),
+        nightly.Should().Contain("push-to-registry: true", Exactly.Times(6),
             "gh attestation verify oci://... requires the provenance and SBOM to be available with the image");
     }
 
@@ -292,6 +285,35 @@ public sealed class ServingImageBoundaryTests
         gateScript.Should().Contain("--ignore-unfixed", "the gate blocks only findings with an upstream fix, by design");
     }
 
+    [ArchitectureTest]
+    public void NightlyComposeExecutor_ShouldBeScannedBeforeItIsTaggedOrPackaged()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml")).ReplaceLineEndings("\n");
+        var job = workflow[workflow.IndexOf("\n  compose-executor:\n", StringComparison.Ordinal)..];
+        job = job[..job.IndexOf("\n  manifest-jit:\n", StringComparison.Ordinal)];
+
+        var build = job.IndexOf("- name: Build executor candidate by digest", StringComparison.Ordinal);
+        var gate = job.IndexOf("- name: Gate executor on fixable HIGH/CRITICAL vulnerabilities", StringComparison.Ordinal);
+        var tags = job.IndexOf("- name: Publish executor tags from the scanned digest", StringComparison.Ordinal);
+        var package = job.IndexOf("- name: Package immutable customer quickstart", StringComparison.Ordinal);
+        var attest = job.IndexOf("- name: Attest executor index", StringComparison.Ordinal);
+
+        build.Should().BeGreaterThan(-1);
+        gate.Should().BeGreaterThan(build, "the executor is scanned after it is built");
+        tags.Should().BeGreaterThan(gate, "no executor tag is assigned before the scan");
+        package.Should().BeGreaterThan(gate, "the quickstart pins only a scanned executor");
+        attest.Should().BeGreaterThan(gate, "only a scanned executor is attested");
+        job[build..gate].Should().Contain("push-by-digest=true").And.NotContain("tags:");
+        job[gate..tags].Should().Contain("scripts/ci/trivy-release-gate.sh \"$CANDIDATE\"")
+            .And.Contain("CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}")
+            .And.Contain("TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:")
+            .And.NotContain("continue-on-error")
+            .And.NotContain("if:", "the gate also scans an executor published by an earlier run");
+        job[tags..].Should().Contain("scripts/ci/promote-verified-image.py");
+        job.Should().NotContain("push: true", "executor tags come only from the scanned digest");
+    }
+
     private static (string Candidate, string Gate, string Publication) SliceTagReleaseLeg(string workflow, TagReleaseLeg leg)
     {
         var candidateIndex = workflow.IndexOf(leg.Candidate, StringComparison.Ordinal);
@@ -376,8 +398,7 @@ public sealed class ServingImageBoundaryTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var dockerfiles = new[]
         {
-            "docker/Dockerfile.lambda",
-            "docker/Dockerfile.functions"
+            "docker/Dockerfile.lambda"
         };
 
         foreach (var relativePath in dockerfiles)
@@ -437,8 +458,7 @@ public sealed class ServingImageBoundaryTests
 
         platformDeploy.Should().Contain("tag_suffix: -ecs-jit");
         platformDeploy.Should().Contain("tag_suffix: -lambda-jit");
-        platformDeploy.Should().Contain("tag_suffix: -functions-jit");
-        platformDeploy.Should().Contain("publish_aot_alias: true", Exactly.Thrice());
+        platformDeploy.Should().Contain("publish_aot_alias: true", Exactly.Twice());
         platformDeploy.Should().Contain("targets+=(-t \"${tag%-aot}\")");
     }
 
@@ -463,7 +483,7 @@ public sealed class ServingImageBoundaryTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/serving-image-boundary.yml"));
 
-        // The canonical JIT and two platform AOT variants build as parallel matrix legs, not three serial
+        // The canonical JIT and the platform AOT variant build as parallel matrix legs, not serial
         // step pairs in one job: they share no artifact, cache scope, or step
         // output, and the serial arrangement cost a ~140-minute critical path
         // where the bound should be the slowest single build. The proof that
@@ -472,8 +492,7 @@ public sealed class ServingImageBoundaryTests
         foreach (var productionVariant in new[]
                  {
                      "Dockerfile",
-                     "docker/Dockerfile.lambda.aot",
-                     "docker/Dockerfile.functions.aot"
+                     "docker/Dockerfile.lambda.aot"
                  })
         {
             workflow.Should().Contain($"dockerfile: {productionVariant}",
@@ -496,15 +515,13 @@ public sealed class ServingImageBoundaryTests
         foreach (var cacheScope in new[]
                  {
                      "honua-jit-amd64",
-                     "honua-lambda-aot-amd64",
-                     "honua-functions-aot-amd64"
+                     "honua-lambda-aot-amd64"
                  })
         {
             workflow.Should().Contain($"cache_scope: {cacheScope}");
             var variantScope = cacheScope[..^"-amd64".Length];
             var nightlyScope = variantScope switch
             {
-                "honua-functions-aot" => cacheScope,
                 "honua-jit" => "honua-jit${{ matrix.store_suffix }}-${{ matrix.arch }}",
                 _ => variantScope + "-${{ matrix.arch }}"
             };
@@ -535,25 +552,9 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("continue-on-error: true", Exactly.Twice(),
             "optional marker cache transport must fail open for restore and save");
 
-        var functionsDockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.functions.aot"));
-        functionsDockerfile.Should().Contain("-p:HonuaSkipOracleForAotVerification=true", Exactly.Thrice());
-        functionsDockerfile.Should().Contain("-p:HonuaSkipSnowflakeForAotVerification=true", Exactly.Thrice());
-        functionsDockerfile.Should().Contain("-p:IlcSingleThreaded=true");
-        functionsDockerfile.Should().Contain("ARG AOT_PUBLISH_MAX_ATTEMPTS=3");
-        foreach (var project in new[]
-                 {
-                     "Honua.Db/Redshift",
-                     "Honua.Db/Snowflake",
-                     "Honua.Db/Databricks",
-                     "Honua.Protocols/SensorThings"
-                 })
-        {
-            functionsDockerfile.Should().Contain($"COPY src/{project}/*.csproj src/{project}/");
-        }
-
         // #3204 routing contract. The pull_request trigger carries the inputs
         // that DEFINE the image and nothing else. Managed-source inputs are
-        // deliberately absent: they invalidate all three variants on nearly
+        // deliberately absent: they invalidate every variant on nearly
         // every pull request, which is what made this workflow a ~140-minute
         // serial native build on every review-fix push. Their evidence is
         // placed on named lanes instead, asserted below.
@@ -569,8 +570,6 @@ public sealed class ServingImageBoundaryTests
                      "'Dockerfile'",
                      "'docker/Dockerfile.aot'",
                      "'docker/Dockerfile.lambda.aot'",
-                     "'docker/Dockerfile.functions.aot'",
-                     "'docker/cloud/azure-functions/**'",
                      "'scripts/docker/restore-dotnet-with-github-packages.sh'",
                      "'scripts/ci/verify-serving-image-boundary.py'",
                      "'scripts/ci/serving-image-reuse.py'",
@@ -600,7 +599,7 @@ public sealed class ServingImageBoundaryTests
         {
             triggerPaths.Should().NotContain(deferredInput,
                 "managed-source inputs are verified by the batch train's AOT compile job pre-merge "
-                + "and by the nightly/release/deploy final-rootfs lanes, not by three serial native "
+                + "and by the nightly/release/deploy final-rootfs lanes, not by serial native "
                 + "builds on every push (#3204)");
         }
 
@@ -609,8 +608,7 @@ public sealed class ServingImageBoundaryTests
         foreach (var productionVariant in new[]
                  {
                      "docker/Dockerfile.aot",
-                     "docker/Dockerfile.lambda.aot",
-                     "docker/Dockerfile.functions.aot"
+                     "docker/Dockerfile.lambda.aot"
                  })
         {
             nightly.Should().Contain($"file: {productionVariant}",

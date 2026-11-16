@@ -20,12 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit tests for <see cref="ImageServerComputeClassStatisticsHandler"/>. Exercises the class
-/// signature pipeline over synthetic per-pixel band vectors returned by a substituted raster store:
-/// per-class count, per-band mean, and the covariance signature are asserted against hand-computed
-/// values, and unsupported request combinations are explicitly rejected.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerComputeClassStatisticsHandlerTests
 {

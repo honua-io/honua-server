@@ -13,21 +13,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Studio;
 
-/// <summary>
-/// Dependency injection helpers for Studio package lifecycle services.
-/// </summary>
 public static class StudioServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the shared Studio package lifecycle service and fallback in-memory store.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">
-    /// Optional application configuration, bound to <see cref="StudioEndUserAuthorizationOptions"/>
-    /// (<c>Studio:EndUserAuthorization</c>, honua-server#3001). When omitted, the options bind
-    /// to their defaults (<see cref="StudioEndUserAuthorizationOptions.Enabled"/> = <see
-    /// langword="false"/>), matching the pre-#3001 admin-only posture (NFR-001).
-    /// </param>
     public static IServiceCollection AddStudioPackageLifecycle(
         this IServiceCollection services,
         IConfiguration? configuration = null)
@@ -36,13 +23,13 @@ public static class StudioServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
 
-        // ADR-0076 (honua-server#3255): the deterministic map/app draft factories
+        // ADR-0076: the deterministic map/app draft factories
         // that replaced the retired server-side generation families. Registered
         // here so every host that composes the Studio slice can create drafts.
         services.AddStudioDraftFactories();
 
         services.TryAddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-        // ADR-0069 (honua-server#3004): the catalog decides at resolve time which family
+        // ADR-0069: the catalog decides at resolve time which family
         // persistence bridges are available (native forms/analysis stores may be registered
         // before or after this call depending on the host), and the lifecycle service and
         // family registry consume it to route the form/analysis families through their native
@@ -51,7 +38,7 @@ public static class StudioServiceCollectionExtensions
         services.TryAddScoped<StudioPackageFamilyRegistry>();
         services.TryAddScoped<IStudioPackageValidator, StudioPackageValidator>();
         services.TryAddScoped<IStudioPackageLifecycleService, StudioPackageLifecycleService>();
-        // StudioAuthorizationService enforces the OAuth scope ceiling itself (honua-server#3431),
+        // StudioAuthorizationService enforces the OAuth scope ceiling itself,
         // so the Studio slice must be able to resolve a scope authorizer even in a host that does
         // not run Honua.Server's authentication registration. TryAdd leaves the server's own
         // AddSingleton registration authoritative wherever it also runs.
@@ -60,14 +47,14 @@ public static class StudioServiceCollectionExtensions
 
         var optionsBuilder = services.AddOptions<StudioEndUserAuthorizationOptions>();
 
-        // Admin-role recognition (honua-server#3001 follow-up): bind from the same Oidc:*
+        // Admin-role recognition: bind from the same Oidc:*
         // config key OidcAuthenticationOptions.AdminRoles reads, so StudioAuthorizationService
         // recognizes configured OIDC admin-role aliases (for example "administrator") without
         // Honua.Core referencing Honua.Hosting's OidcAuthenticationOptions type. See
         // AdminRoleOptions for the full rationale.
         var adminRoleOptionsBuilder = services.AddOptions<AdminRoleOptions>();
 
-        // Tenant ownership (honua-server#4905): bind from the same MultiTenancy config section
+        // Tenant ownership: bind from the same MultiTenancy config section
         // TenantContextOptions reads, so the Core-level tenant boundary agrees with the
         // resolution middleware on the default tenant and the multi-tenant admin roles. See
         // TenantIsolationOptions for the full rationale.

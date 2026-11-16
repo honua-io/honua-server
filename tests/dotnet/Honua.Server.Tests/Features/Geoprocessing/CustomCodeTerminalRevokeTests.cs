@@ -20,11 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Proves a custom-code job's scoped callback token is revoked the moment the job
-/// reaches a terminal state (Phase-0 invariant #5: the credential never outlives the
-/// job).
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.GPServer)]
 [Operation(Operations.Security)]

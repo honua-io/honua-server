@@ -14,12 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr;
 
-/// <summary>
-/// Integration tests for the OGC API - Environmental Data Retrieval (EDR) surface (#1757):
-/// collections discovery, the position (point time-series) query, and the cube (area/subset)
-/// query over the registered coverage collection, returning CoverageJSON. Raster reads are
-/// mocked so position/cube exercise the canonical point-sample pipeline deterministically.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiCoverages)]
 public sealed class EdrEndpointsTests : IAsyncLifetime
@@ -622,19 +616,9 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             });
     }
 
-    /// <summary>
-    /// The fixture raster's synthetic pixel function, mirroring the derivable-oracle pattern
-    /// of <c>ImageServerZarrTestFixture</c>. Band index, longitude and latitude each carry a
-    /// different weight so the tested coordinates distinguish band selection and axis swaps.
-    /// </summary>
     internal static double ExpectedBandValue(int band, double x, double y)
         => (band * 1000.0) + (Math.Round(x, 6) * 10.0) + Math.Round(y, 6);
 
-    /// <summary>
-    /// Asserts that every value of <paramref name="parameterName"/> in a cube response is the
-    /// pixel function evaluated at the corresponding advertised grid coordinate in row-major order. A handler that sampled the wrong
-    /// coordinates, transposed the axes or reused one sample for the whole cube fails here.
-    /// </summary>
     private static void AssertCubeValuesDerivedFromDomain(
         JsonElement root,
         int band,

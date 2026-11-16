@@ -13,10 +13,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.ParityExports;
 
-/// <summary>
-/// Drift gate and opt-in emitter for the authoritative Admin OpenAPI and MCP
-/// projection exports consumed by generated clients and candidate certification.
-/// </summary>
 public sealed class AdminOperationParityExportTests
 {
     private const string EmitVariable = "HONUA_EMIT_ADMIN_PARITY_EXPORTS";

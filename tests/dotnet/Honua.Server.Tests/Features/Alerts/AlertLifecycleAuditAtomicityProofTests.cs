@@ -21,25 +21,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Control-plane integrity proof for alert lifecycle audit (#3865).
-///
-/// <para>
-/// <c>ObservabilityAlertEndpoints</c> used to write acknowledge/suppress/resolve
-/// state and then call <see cref="IAuditLog"/> as a separate operation, so a
-/// failure or a process death between them exposed a successful lifecycle
-/// mutation with no matching alert domain audit record and nothing to complete
-/// it. These cases run the hosted, authenticated Admin API against real Postgres,
-/// inject an audit-sink failure at exactly that boundary, restart the host, and
-/// assert the mutation is still accompanied by evidence.
-/// </para>
-/// <para>
-/// The audit sink under fault injection is a DECORATOR over the real
-/// <c>PostgresAuditLog</c>, not a substitute for it: when the fault is disarmed,
-/// records land in <c>honua.audit_log</c> with their production hash chain, and
-/// the proof verifies that chain.
-/// </para>
-/// </summary>
 [Collection("Database")]
 [Trait("Category", "AlertAuditAtomicityProof")]
 public sealed partial class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
@@ -241,21 +222,12 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests : IAsyncLifet
         return await _client.SendAsync(request);
     }
 
-    /// <summary>
-    /// Runs one reconciliation pass. The host also runs this on startup - the
-    /// registration is asserted separately - but the proof drives a pass directly
-    /// so the assertion does not race the background loop.
-    /// </summary>
     private async Task ReconcileAsync()
     {
         var reconciler = _fixture.GetService<AlertAuditOutboxReconciler>();
         await reconciler.ReconcileOnceAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// The reconciler must be a hosted service, or a restart would not complete a
-    /// pending intent without operator action.
-    /// </summary>
     private void AssertReconcilerRunsOnStartup()
     {
         _fixture.Services.GetServices<IHostedService>().OfType<AlertAuditOutboxReconciler>()
@@ -270,28 +242,6 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests : IAsyncLifet
         _ => "open"
     };
 
-    /// <summary>
-    /// Creates the alert and audit tables this proof's stores read and write inside the
-    /// fixture's own schema.
-    /// </summary>
-    /// <remarks>
-    /// The shared seed (<c>tests/seed/server.yaml</c>) declares these tables against the
-    /// literal, process-global <c>honua</c> schema because the production stores hard-qualify
-    /// to it, so a per-test schema does not contain them and every case here failed in
-    /// <see cref="InitializeAsync"/> with <c>42P01</c>. The proof cannot fall back to
-    /// <c>honua</c>: a lifecycle mutation whose audit intent is deliberately left pending
-    /// would be drained by any other collection's host reconciler polling the same shared
-    /// table before this test asserts the intent is still pending.
-    /// <para>
-    /// The shapes are CLONED from the seeded tables rather than restated here, so the
-    /// schema this proof runs its real stores against cannot drift from the one the rest of
-    /// the suite - and the migrations the seed mirrors - define. <c>LIKE ... INCLUDING ALL</c>
-    /// copies columns, defaults, check constraints and indexes but not foreign keys; the
-    /// proof asserts audit and lifecycle behaviour, and the "no such event" case is a 404
-    /// the store derives from its own existence check (<c>MutateAsync</c> returning null),
-    /// not from a referential violation.
-    /// </para>
-    /// </remarks>
     private Task CreateAlertSchemaAsync()
         => _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
             CREATE TABLE IF NOT EXISTS "{_schema}".alert_rules (LIKE honua.alert_rules INCLUDING ALL);
@@ -345,10 +295,6 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests : IAsyncLifet
         return document.RootElement.GetProperty("lifecycleStatus").GetString();
     }
 
-    /// <summary>
-    /// Reads the pending intent's retry state. <c>next_attempt_at</c> is compared against
-    /// the database clock, which is the clock the store's own drain predicate uses.
-    /// </summary>
     private async Task<(int Attempts, bool BackedOff)> ReadRetryStateAsync()
     {
         await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
@@ -362,10 +308,6 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests : IAsyncLifet
         return (reader.GetInt32(0), reader.GetBoolean(1));
     }
 
-    /// <summary>
-    /// Makes every pending intent due now, so a pass driven by the test observes what a
-    /// pass after the backoff has elapsed would.
-    /// </summary>
     private async Task ExpireRetryBackoffAsync()
     {
         await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
@@ -470,16 +412,11 @@ public sealed partial class AlertLifecycleAuditAtomicityProofTests : IAsyncLifet
         string? EntryHash,
         string? PrevHash);
 
-    /// <summary>Shared, host-restart-surviving arming switch for the injected fault.</summary>
     private sealed class AuditFaultSwitch
     {
         public volatile bool Fail;
     }
 
-    /// <summary>
-    /// Fails the audit write at the point the lifecycle mutation has already reached
-    /// its persistence boundary, then delegates to the real sink once disarmed.
-    /// </summary>
     private sealed class FaultInjectingAuditLog : IAuditLog
     {
         private readonly IAuditLog _inner;

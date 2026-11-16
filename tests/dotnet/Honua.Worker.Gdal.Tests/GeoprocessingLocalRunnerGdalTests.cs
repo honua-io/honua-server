@@ -11,15 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Offline coverage for the headless <see cref="GeoprocessingLocalRunner"/> (GP Devkit,
-/// issue #2123) driving a native GDAL op. The runner invokes the real
-/// <c>gdal.ogr2ogr</c> executor with no Redis/queue/job-store; a
-/// <see cref="FakeGdalCommandRunner"/> stands in for the <c>ogr2ogr</c> CLI so the run
-/// is fully offline. This proves the GP Devkit contract for native ops: the run
-/// returns the published artifact AND the structured logs that carry the actual GDAL
-/// command line a developer would otherwise have to reconstruct by hand.
-/// </summary>
 public sealed class GeoprocessingLocalRunnerGdalTests
 {
     private const string ScratchSuite = "honua-gdal-local-runner-test";

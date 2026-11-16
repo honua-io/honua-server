@@ -9,24 +9,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the <c>gdal.ogr2ogr</c> process:
-/// vector format conversion backed by the GDAL/OGR <c>ogr2ogr</c> CLI.
-///
-/// This is the heavyweight counterpart to the lean managed vector executors. It
-/// runs only inside the GDAL worker image (it overrides
-/// <see cref="AcceptedRuntimeProfiles"/> to <c>{ "native" }</c>, so the substrate
-/// claim fence keeps the lean managed worker from ever claiming it). It reads a
-/// base64 source dataset and a target OGR driver from the durable spec, runs the
-/// conversion in an isolated scratch workspace, and publishes the converted bytes
-/// as a canonical data-URI artifact through the shared execution context.
-/// </summary>
 internal sealed partial class GdalVectorConvertJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalVectorConvertJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "gdal.ogr2ogr";
 
     private static readonly IReadOnlySet<string> NativeProfileSet =
@@ -42,20 +29,13 @@ internal sealed partial class GdalVectorConvertJobExecutor(
             ["ESRI Shapefile"] = (".shp", "application/octet-stream"),
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc />
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the GDAL dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

@@ -7,11 +7,6 @@ using Honua.Core.Features.Spec.Grammar;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Unit tests for <see cref="SpecParser"/> — verifies the S1 happy path,
-/// diagnostic-collecting error recovery, and that every diagnostic carries
-/// a 1-based line+column (the key acceptance criterion from ticket 788).
-/// </summary>
 public sealed class SpecParserTests
 {
     private static SpecParseResult Parse(string text) => new SpecParser().Parse(text);

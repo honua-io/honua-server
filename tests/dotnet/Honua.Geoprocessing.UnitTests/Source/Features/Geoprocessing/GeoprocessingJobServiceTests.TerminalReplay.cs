@@ -16,10 +16,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// #6107: the result/status read path replays terminal callbacks to heal jobs whose first
-/// transition never ran them. That replay must be non-destructive.
-/// </summary>
 public sealed partial class GeoprocessingJobServiceTests
 {
     [UnitTest]

@@ -8,14 +8,6 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Studio.Services.Bridging;
 
-/// <summary>
-/// <see cref="IStudioPackageStore"/> decorator that routes bridged families (ADR-0069,
-/// honua-server#3004) to their <see cref="IStudioFamilyPersistenceBridge"/> adapters while
-/// every other operation delegates to the inner Studio store. Drafts always live in the inner
-/// store (they are Studio working state with <c>generation</c> concurrency); immutable
-/// versions, item pointers, publication, and enumeration for bridged families read and write
-/// through the family's native store.
-/// </summary>
 public sealed class BridgedStudioPackageStore : IStudioPackageStore
 {
     private static readonly StudioPackageFamily[] AllFamilies = Enum.GetValues<StudioPackageFamily>();
@@ -23,7 +15,6 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
     private readonly IStudioPackageStore _inner;
     private readonly Dictionary<StudioPackageFamily, IStudioFamilyPersistenceBridge> _bridges;
 
-    /// <summary>Initializes the bridged store decorator.</summary>
     public BridgedStudioPackageStore(IStudioPackageStore inner, IEnumerable<IStudioFamilyPersistenceBridge> bridges)
     {
         ArgumentNullException.ThrowIfNull(inner);
@@ -32,14 +23,11 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         _bridges = bridges.ToDictionary(static bridge => bridge.Family);
     }
 
-    /// <inheritdoc />
     public StudioPackagePersistenceMode PersistenceMode => _inner.PersistenceMode;
 
-    /// <inheritdoc />
     public Task<StudioPackageDraft> CreateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default)
         => _inner.CreateDraftAsync(draft, cancellationToken);
 
-    /// <inheritdoc />
     public Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.GetDraftAsync(draftId, cancellationToken);
 
@@ -50,18 +38,15 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         StudioDraftRevisionQuery query, CancellationToken cancellationToken = default)
         => _inner.ListDraftRevisionsAsync(query, cancellationToken);
 
-    /// <inheritdoc />
     public Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default)
         => _inner.UpdateDraftAsync(draft, cancellationToken);
 
-    /// <inheritdoc />
     public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.DeleteDraftAsync(draftId, cancellationToken);
 
     public Task<bool> DeleteDraftAsync(Guid draftId, long expectedGeneration, CancellationToken cancellationToken = default)
         => _inner.DeleteDraftAsync(draftId, expectedGeneration, cancellationToken);
 
-    /// <inheritdoc />
     public Task<StudioContentVersion> CreateVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -74,7 +59,6 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
             : _inner.CreateVersionAsync(draft, changeNote, actorId, cancellationToken);
     }
 
-    /// <inheritdoc />
     public Task<StudioContentVersion> CreateCheckpointVersionAsync(
         StudioPackageDraft draft,
         string? changeNote,
@@ -98,7 +82,6 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
             cancellationToken);
     }
 
-    /// <inheritdoc />
     public Task<StudioCheckpointedVersion?> GetLatestCheckpointVersionAsync(
         string mapId,
         long afterCursor,
@@ -106,13 +89,11 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken = default) =>
         _inner.GetLatestCheckpointVersionAsync(mapId, afterCursor, throughCursor, cancellationToken);
 
-    /// <inheritdoc />
     public Task AcknowledgeCheckpointVersionAsync(
         Guid versionId,
         CancellationToken cancellationToken = default) =>
         _inner.AcknowledgeCheckpointVersionAsync(versionId, cancellationToken);
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         foreach (var bridge in _bridges.Values)
@@ -127,7 +108,6 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         return await _inner.ListVersionsAsync(itemId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default)
     {
         foreach (var bridge in _bridges.Values)
@@ -142,13 +122,12 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         return await _inner.GetVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
     {
         var bridged = await ResolveBridgedPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
         if (bridged is not null)
         {
-            // honua-server#5825: only an item that actually resolved through the bridge gives up
+            // Only an item that actually resolved through the bridge gives up
             // Studio route ownership. A same-family row that still lives in the inner store
             // (for example a form saved before the native store existed) keeps the default.
             return bridged.Pointers with { GovernsStudioRoutes = false };
@@ -157,7 +136,6 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         return await _inner.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<StudioContentItemListResult> ListContentItemsAsync(
         StudioContentItemQuery query,
         CancellationToken cancellationToken = default)
@@ -220,11 +198,9 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         };
     }
 
-    /// <inheritdoc />
     public Task<StudioPackageDraftListResult> ListDraftsAsync(StudioPackageDraftQuery query, CancellationToken cancellationToken = default)
         => _inner.ListDraftsAsync(query, cancellationToken);
 
-    /// <inheritdoc />
     public async Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
         Guid? expectedCurrentVersionId,
@@ -235,7 +211,7 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         var bridged = await ResolveBridgedPointersAsync(request.ItemId, cancellationToken).ConfigureAwait(false);
         if (bridged is not null)
         {
-            // honua-server#3980: a bridged family keeps its pointers in the native store, so the
+            // A bridged family keeps its pointers in the native store, so the
             // compare-and-set is asserted against the pointers just resolved from it. The native
             // store owns the final write; this check stops an approval whose current pointer has
             // already moved from reaching PublishAsync at all.
@@ -255,7 +231,6 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
         Guid itemId,
         Guid versionId,
@@ -263,18 +238,11 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken = default)
         => _inner.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Bridged families publish into their native stores (a form publishes through the form
-    /// registry; analysis has no publish-request concept), so only natively persisted
-    /// publication requests govern a Studio route.
-    /// </remarks>
     public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
         string route,
         CancellationToken cancellationToken = default)
         => _inner.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
 
-    /// <inheritdoc />
     public async Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,

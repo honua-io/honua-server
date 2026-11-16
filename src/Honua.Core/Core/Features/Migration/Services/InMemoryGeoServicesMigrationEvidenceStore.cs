@@ -30,7 +30,7 @@ public sealed class InMemoryGeoServicesMigrationEvidenceStore : IGeoServicesMigr
         lock (_gate)
         {
             // Re-recording a manifest drops the previous parity verdict. The old
-            // pass/fail described a different source scan (#6180).
+            // pass/fail described a different source scan.
             _runs[record.RunId] = new StoredRun(record, manifest, null);
         }
 

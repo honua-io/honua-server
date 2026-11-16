@@ -9,13 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Raster.Multidimensional;
 
-/// <summary>
-/// Verifies the Path B (ADR-0039) GDAL <c>gdalmdiminfo</c> JSON mapper. The
-/// golden document below is the verbatim output of
-/// <c>gdalmdiminfo maui_sst.nc</c> (OSGeo GDAL <c>ubuntu-full</c> image) over a
-/// CF-1.8 NetCDF4 cube: data variable <c>sst(time,lat,lon)</c> with deflate
-/// chunking, plus <c>time</c>/<c>lat</c>/<c>lon</c> coordinate variables.
-/// </summary>
 public sealed class GdalMultidimensionalMetadataMapperTests
 {
     // gdalmdiminfo maui_sst.nc  (NETCDF4, CF-1.8)

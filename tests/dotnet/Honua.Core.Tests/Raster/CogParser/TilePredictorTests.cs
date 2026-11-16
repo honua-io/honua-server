@@ -7,10 +7,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Raster.CogParser;
 
-/// <summary>
-/// Unit coverage for the horizontal differencing predictor, including the byte orders
-/// and sample strides the GDAL fixtures cannot reach (GDAL writes little-endian only).
-/// </summary>
 public class TilePredictorTests
 {
     [Trait("Tier", "Fast")]

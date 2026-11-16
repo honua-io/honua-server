@@ -326,6 +326,13 @@ runs:
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
         bash scripts/ci/report-generated-file-drift.sh
 
+    - name: Validate operation-capability join against fresh catalog
+      if: inputs.phase != 'build' && contains(fromJSON('["all","architecture"]'), inputs.test-group)
+      shell: bash
+      run: |
+        python3 scripts/ci/generate-operation-capability.test.py
+        python3 scripts/ci/generate-operation-capability.py --check
+
     # Server.Tests compares the admin parity exports with the current contract,
     # so the server groups refresh them as the full regeneration above does.
     - name: Regenerate admin parity exports

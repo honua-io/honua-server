@@ -8,7 +8,6 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
-using Honua.Infrastructure.Redis;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -146,7 +145,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         var passwordValidation = await ValidateAdminPasswordAsync(
-            new AdminPasswordAttempt(presentation.ApiKey, presentation.SchemeName, presentation.Request?.ClientIp),
+            new AdminPasswordAttempt(presentation.ApiKey, presentation.SchemeName, presentation.Request?.Client ?? default),
             dependencies, logger, cancellationToken).ConfigureAwait(false);
         return lookup.StoreUnavailable && passwordValidation.Rejection is ApiKeyRejection.AdminPasswordNotConfigured or ApiKeyRejection.InvalidKey
             ? new ApiKeyValidation(null, ApiKeyRejection.CredentialStoreUnavailable)
@@ -167,13 +166,23 @@ internal sealed class ApiKeyAuthenticationHandler(
             return new ApiKeyValidation(null, ApiKeyRejection.SourceRefused, RetryAfter: retryAfter);
         }
 
-        var validation = await CompareAdminPasswordAsync(attempt, dependencies, logger, cancellationToken).ConfigureAwait(false);
+        // Refused before the password is resolved or compared, so the answer says nothing about it; it
+        // still counts as a failed attempt, as a wrong password would.
+        var validation = AdminPasswordNetworkPolicy.Permits(dependencies.Options, attempt.Client.Reach)
+            ? await CompareAdminPasswordAsync(attempt, dependencies, logger, cancellationToken).ConfigureAwait(false)
+            : RefuseNetworkPassword(logger);
         if (validation.CountsAsFailure)
         {
             tracked.CountFailure();
         }
 
         return validation;
+    }
+
+    private static ApiKeyValidation RefuseNetworkPassword(ILogger logger)
+    {
+        AuthenticationLog.AdminPasswordRefusedOnNetworkPath(logger);
+        return new ApiKeyValidation(null, ApiKeyRejection.InvalidKey, CountsAsFailure: true);
     }
 
     private static async Task<StoredKeyLookup> LookUpStoredKeyAsync(
@@ -189,19 +198,13 @@ internal sealed class ApiKeyAuthenticationHandler(
 
         try
         {
-            // One completed-reader fault is a torn Redis pipe (Lambda freeze/thaw or a
-            // timeout). Retry once so the multiplexer can reconnect and a managed key
-            // still authenticates.
-            var storedKey = await RedisClientFault.RetryCompletedReaderAsync(
-                () => store.ValidateAsync(presentation.ApiKey, cancellationToken),
-                cancellationToken);
+            var storedKey = await store.ValidateAsync(presentation.ApiKey, cancellationToken);
             return new StoredKeyLookup(storedKey is null ? null : ResolveStoredKey(storedKey.Record, presentation, logger), StoreUnavailable: false);
         }
-        catch (Exception ex) when (RedisClientFault.IsCredentialStoreUnavailable(ex))
+        catch (Exception ex) when (CredentialStoreFault.IsUnavailable(ex))
         {
-            // RedisTimeoutException derives from TimeoutException, not RedisException.
-            // A second completed-reader fault is the same outage: fall through to the
-            // HONUA_ADMIN_PASSWORD break-glass comparison instead of an unhandled 500.
+            // Fall through to the HONUA_ADMIN_PASSWORD break-glass comparison instead of an
+            // unhandled 500.
             AuthenticationLog.AdminApiKeyStoreUnavailable(logger, ex);
             return new StoredKeyLookup(null, StoreUnavailable: true);
         }

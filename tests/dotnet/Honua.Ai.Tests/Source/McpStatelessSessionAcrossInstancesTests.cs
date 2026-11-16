@@ -16,14 +16,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Two in-process server instances with NO shared session store, standing in
-/// for AWS Lambda execution environments on a Redis-off cell (honua-release run
-/// 38242272260: <c>initialize</c> succeeded, then <c>tools/list</c> and
-/// <c>DELETE /mcp</c> answered 404 on another environment). In stateless mode a
-/// session minted on A answers the negotiated view on B with no memory shared
-/// between them; an id that fails validation still answers 404.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStatelessSessionAcrossInstancesTests : IAsyncLifetime

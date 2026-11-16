@@ -6,11 +6,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Exercises the signed reconciliation scorecard builder (issue #1381): aggregation of per-layer
-/// data-reconciliation outcomes, strict separation of the capability-parity dimension, and the
-/// deterministic evidence-pack-style fingerprint.
-/// </summary>
 public sealed class MigrationReconciliationScorecardBuilderTests
 {
     private static readonly DateTimeOffset GeneratedAt = new(2026, 6, 4, 12, 0, 0, TimeSpan.Zero);

@@ -12,11 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.NlQuery;
 
-/// <summary>
-/// End-to-end tests verifying that realistic NL query filter plans compile
-/// correctly into the expected FilterExpression AST. These represent the 10
-/// acceptance criteria test cases for ticket #343.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class NlQueryEndToEndTests
 {
@@ -58,10 +53,6 @@ public sealed class NlQueryEndToEndTests
             description: "Air quality monitoring sensors");
     }
 
-    /// <summary>
-    /// NL: "Show me all vacant parcels zoned commercial"
-    /// Expected: is_vacant = true AND zoning = 'C' (multi-clause comparison)
-    /// </summary>
     [UnitTest]
     [Operation(Operations.Query)]
     public void E2E_01_VacantCommercialParcels_CompilesToBoolAndStringComparison()
@@ -87,10 +78,6 @@ public sealed class NlQueryEndToEndTests
             .Should().BeOfType<Literal>().Which.Value.Should().Be("C");
     }
 
-    /// <summary>
-    /// NL: "Find parcels worth more than $500,000 that were built before 1990"
-    /// Expected: assessed_value &gt; 500000 AND year_built &lt; 1990
-    /// </summary>
     [UnitTest]
     [Operation(Operations.Query)]
     public void E2E_02_HighValueOldParcels_CompilesToNumericComparisons()
@@ -116,10 +103,6 @@ public sealed class NlQueryEndToEndTests
         right.Operator.Should().Be(BinaryOperator.LessThan);
     }
 
-    /// <summary>
-    /// NL: "Show parcels within downtown Portland"
-    /// Expected: spatial intersects with a polygon envelope
-    /// </summary>
     [UnitTest]
     [Operation(Operations.SpatialQuery)]
     public void E2E_03_ParcelsWithinPolygon_CompilesToSpatialIntersects()
@@ -148,10 +131,6 @@ public sealed class NlQueryEndToEndTests
         spatial.Right.Should().BeOfType<GeometryLiteral>().Which.Srid.Should().Be(4326);
     }
 
-    /// <summary>
-    /// NL: "Find parcels sold after January 2024 near the airport"
-    /// Expected: temporal after + spatial dwithin (combined)
-    /// </summary>
     [UnitTest]
     [Operation(Operations.SpatialQuery)]
     public void E2E_04_RecentSalesNearAirport_CompilesToTemporalPlusSpatial()
@@ -189,10 +168,6 @@ public sealed class NlQueryEndToEndTests
         ((double)dist.Value!).Should().Be(3000.0); // 3 km → meters
     }
 
-    /// <summary>
-    /// NL: "Show parcels zoned residential or mixed-use"
-    /// Expected: zoning IN ['R', 'MU'] via OR combinator or IN operator
-    /// </summary>
     [UnitTest]
     [Operation(Operations.Query)]
     public void E2E_05_MultiZoning_CompilesToInList()
@@ -215,10 +190,6 @@ public sealed class NlQueryEndToEndTests
         binary.Right.Should().BeOfType<ValueList>().Which.Values.Should().HaveCount(2);
     }
 
-    /// <summary>
-    /// NL: "Find large parcels over 10,000 sqft that are either residential or commercial"
-    /// Expected: area_sqft > 10000 AND (zoning = 'R' OR zoning = 'C') — nested OR
-    /// </summary>
     [UnitTest]
     [Operation(Operations.Query)]
     public void E2E_06_LargeParcelsWithNestedZoning_CompilesToNestedOr()
@@ -248,10 +219,6 @@ public sealed class NlQueryEndToEndTests
         nested.Operator.Should().Be(BinaryOperator.Or);
     }
 
-    /// <summary>
-    /// NL: "Show sensors with AQI above 150 reading PM2.5"
-    /// Expected: aqi_value > 150 AND pollutant = 'PM2.5'
-    /// </summary>
     [UnitTest]
     [Operation(Operations.Query)]
     public void E2E_07_HighAqiSensors_CompilesToMultiFieldComparison()
@@ -273,10 +240,6 @@ public sealed class NlQueryEndToEndTests
         and.Operator.Should().Be(BinaryOperator.And);
     }
 
-    /// <summary>
-    /// NL: "Show me parcels where the owner name contains 'Smith'"
-    /// Expected: owner_name LIKE '%Smith%'
-    /// </summary>
     [UnitTest]
     [Operation(Operations.Query)]
     public void E2E_08_OwnerNameSearch_CompilesToLikePattern()
@@ -299,10 +262,6 @@ public sealed class NlQueryEndToEndTests
         binary.Right.Should().BeOfType<Literal>().Which.Value.Should().Be("%Smith%");
     }
 
-    /// <summary>
-    /// NL: "Find active sensors within 2 miles of downtown that read after March 2025"
-    /// Expected: is_active = true AND spatial dwithin AND temporal after (three-clause AND)
-    /// </summary>
     [UnitTest]
     [Operation(Operations.SpatialQuery)]
     public void E2E_09_ActiveSensorsNearbyRecent_CompilesToThreeClauseAnd()
@@ -341,10 +300,6 @@ public sealed class NlQueryEndToEndTests
         innerAnd.Right.Should().BeOfType<SpatialDistancePredicate>();
     }
 
-    /// <summary>
-    /// NL: "Find parcels sold between 2023 and 2024"
-    /// Expected: temporal during with interval
-    /// </summary>
     [UnitTest]
     [Operation(Operations.Query)]
     public void E2E_10_ParcelsSoldDuringPeriod_CompilesToTemporalDuring()

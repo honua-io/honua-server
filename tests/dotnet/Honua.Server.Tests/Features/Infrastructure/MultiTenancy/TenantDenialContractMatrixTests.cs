@@ -26,10 +26,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Full tenant-middleware denial matrix for the eight release protocol families (issue #3904).
-/// Each cell proves the denial is native, correlated, and terminates before the route handler.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class TenantDenialContractMatrixTests
 {

@@ -16,9 +16,6 @@ using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.Parameter
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Builds SQL queries for PostgreSQL feature store operations
-/// </summary>
 internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 {
     private const double WebMercatorEarthRadius = 6378137d;
@@ -367,12 +364,6 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Object-id query over the pre-change row images the change-tracking trigger recorded for
-    /// <paramref name="changeIds"/> (migration 121, #4879). The images are exposed as a subquery with the
-    /// base table's column shape, like the branch-version overlay, so the same where-clause, enforced
-    /// read policy and spatial filter SQL applies unchanged. Changes without a recorded image never match.
-    /// </summary>
     public CoreParameterizedQuery BuildPreChangeObjectIdsQuery(
         int layerId,
         FeatureQuery query,
@@ -505,7 +496,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             // PostgreSQL does not fold repeated PostGIS calls. Selecting the decoded or
             // reprojected geometry once in a materialized CTE keeps ST_Extent and the SRID
-            // aggregates from evaluating that expression up to six times per row (#6070).
+            // aggregates from evaluating that expression up to six times per row.
             sql.Append(CultureInfo.InvariantCulture, $@"
             WITH extent_rows AS MATERIALIZED (
                 SELECT {extentExpression} AS geom
@@ -542,11 +533,6 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
     public CoreParameterizedQuery BuildTemporalExtentQuery(int layerId, string fieldName, TemporalPropertyType propertyType)
         => BuildTemporalExtentQuery(layerId, fieldName, propertyType, query: null);
 
-    /// <summary>
-    /// Postgres-specific overload that also applies the supplied query's filters
-    /// (notably the enforced permanent filter) so hidden rows do not leak their
-    /// min/max temporal values through the extent.
-    /// </summary>
     public CoreParameterizedQuery BuildTemporalExtentQuery(
         int layerId,
         string fieldName,
@@ -567,8 +553,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         // The same date/datetime attribute can be persisted as ISO-8601 text (seeded
         // rows) or as epoch-milliseconds rendered as text (Esri applyEdits). A bare
         // ::timestamptz/::date cast on epoch-ms text raises SQLSTATE 22008 and 500s the
-        // WMS/WMTS GetCapabilities document (honua-server#1911) and the temporalExtent
-        // resource (honua-server#1910). Use the same epoch-aware cast the order-by/filter
+        // WMS/WMTS GetCapabilities document and the temporalExtent
+        // resource. Use the same epoch-aware cast the order-by/filter
         // paths already apply so MIN/MAX over the configured time field succeeds
         // regardless of the on-disk encoding.
         var fieldExpression = propertyType switch
@@ -636,7 +622,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
     {
         GuardVersionedReadSupported(query, "mvt-tile");
 
-        // Operator-defined custom gridset (#1839): the caller only supplies a gridGeometry for
+        // Operator-defined custom gridset: the caller only supplies a gridGeometry for
         // custom gridsets (the two built-in pyramids are passed as null), so the tile envelope and
         // target SRID come from the gridset geometry. The built-in pyramids keep the original
         // byte-identical path below so the OGC CITE snapshot guard stays green.
@@ -697,8 +683,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 if (layerSrid != targetTileSrid)
                 {
                     // Route through the shared clamp so a polar vertex in a geographic layer
-                    // cannot abort the Web Mercator tile statement (#6109). The catalog
-                    // selection is the grid whose area contains this tile (#5194).
+                    // cannot abort the Web Mercator tile statement. The catalog
+                    // selection is the grid whose area contains this tile.
                     var selection = TileDatumSelection(query, layerSrid, targetTileSrid, tileBounds);
                     geometryForTile = DatumTransformSql.BuildTransformExpression(
                         geometryOperand, targetTileSrid, selection, layerSrid);
@@ -713,7 +699,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             }
             else
             {
-                // Layer SRID unknown: clamp geographic rows by their runtime SRID (#6109).
+                // Layer SRID unknown: clamp geographic rows by their runtime SRID.
                 geometryForTile = DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
                 filterGeometryOperand = geometryForTile;
             }
@@ -799,14 +785,6 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    /// <summary>
-    /// Builds the MVT tile query for an operator-defined custom gridset (#1839). The tile envelope
-    /// is derived from the gridset geometry (origin + per-level cell size) in the gridset CRS, and
-    /// the stored geometry is reprojected into the gridset SRID with <c>ST_Transform</c> before
-    /// <c>ST_AsMVTGeom</c> rasterizes it into tile space. The buffer is expressed in gridset-CRS
-    /// units (pixels → map units via the level cell size) and the tile-envelope filter is pushed
-    /// down in the layer's storage SRID so the spatial index is still used.
-    /// </summary>
     private CoreParameterizedQuery BuildCustomGridsetMvtTileQuery(
         int layerId,
         int x,
@@ -853,8 +831,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             // Reproject the stored geometry into the gridset SRID for tile rasterization, and push
             // the spatial filter down in the layer's storage SRID so the GiST index is usable.
-            // A geographic layer aimed at a Web Mercator gridset is clamped first (#6109).
-            // The catalog selection matches feature query output (#5194).
+            // A geographic layer aimed at a Web Mercator gridset is clamped first.
+            // The catalog selection matches feature query output.
             var selection = TileDatumSelection(query, query?.SpatialReferenceSrid, targetTileSrid, tileBounds);
             var geometryForTile = query?.SpatialReferenceSrid is { } storageSrid
                 ? DatumTransformSql.BuildTransformExpression(
@@ -964,11 +942,6 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
     private static string SqlDouble(double value)
         => value.ToString("R", CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// Catalog pipeline for a tile reprojection. An explicit query selection wins.
-    /// The tile envelope picks the catalog area (Alaska, not CONUS). No single area,
-    /// and no catalog entry, stays null so the SQL keeps two-argument <c>ST_Transform</c>.
-    /// </summary>
     private static DatumTransformationSelection? TileDatumSelection(
         FeatureQuery? query,
         int? layerSrid,

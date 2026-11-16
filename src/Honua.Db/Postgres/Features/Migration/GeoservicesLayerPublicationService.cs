@@ -26,11 +26,6 @@ internal sealed partial class GeoservicesLayerPublicationService
     private readonly IMetadataV2GraphWriteBaseReader? _metadataWriteBaseReader;
     private readonly ILogger<GeoservicesLayerPublicationService> _logger;
 
-    /// <summary>
-    /// Initializes the publication service. Every collaborator is optional so the host can run the
-    /// importer without an admin/publishing surface; the AutoPublish, style, and reconciliation steps
-    /// each no-op (with the same operator warnings as before) when their collaborator is absent.
-    /// </summary>
     public GeoservicesLayerPublicationService(
         ILogger<GeoservicesLayerPublicationService> logger,
         ILayerPublishingService? layerPublishingService = null,
@@ -44,25 +39,15 @@ internal sealed partial class GeoservicesLayerPublicationService
         _styleConverter = styleConverter;
         _styleCatalog = styleCatalog;
         _reconciliationService = reconciliationService;
-        // The catalog-reconciliation read-back (issue #1379) needs the genuinely-persisted current
+        // The catalog-reconciliation read-back needs the genuinely-persisted current
         // graph (where AutoPublish materialized res-layer-{layerId}), never the V1-catalog compat
         // synthesis. The Postgres store implements this seam; a non-implementing test double leaves
         // the reader null and catalog reconciliation is skipped.
         _metadataWriteBaseReader = metadataGraphStore as IMetadataV2GraphWriteBaseReader;
     }
 
-    /// <summary>
-    /// True when a reconciliation service is registered, so the importer emits the "Validating" progress
-    /// phase and runs the post-publish gate. Mirrors the previous inline <c>_reconciliationService is not
-    /// null</c> guard so the ordered progress phases are unchanged.
-    /// </summary>
     public bool ReconciliationEnabled => _reconciliationService is not null;
 
-    /// <summary>
-    /// Publishes the freshly imported table as a Honua layer (AutoPublish) and attaches its converted
-    /// MapLibre style. Returns the published layer summary, or <c>null</c> with an operator warning when
-    /// publishing is unavailable, no target service name was supplied, or publishing did not complete.
-    /// </summary>
     public async Task<PublishedLayerSummary?> TryPublishImportedLayerAsync(
         GeoservicesImportRequest request,
         string targetSchema,

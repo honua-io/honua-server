@@ -6,11 +6,6 @@ using Honua.Core.Features.Spec.Services;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Proves the content-hash cache key contract: the hash is deterministic and
-/// changes when any participant changes. These are the tests the cache and the
-/// rest of the apply engine rely on.
-/// </summary>
 public class SpecContentHashCalculatorTests
 {
     private const string GrammarV1 = "grammar/1.0";

@@ -3,31 +3,19 @@
 
 using System.Collections.Immutable;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Tiles.Models;
 
-/// <summary>
-/// Response payload for a tilesets list.
-/// </summary>
-public sealed record TileSetsList : ICollectionResponse<TileSetItem>
+public sealed record TileSetsList
 {
     [JsonPropertyName("tilesets")]
     public required ImmutableArray<TileSetItem> Tilesets { get; init; }
 
     [JsonPropertyName("links")]
     public ImmutableArray<Link>? Links { get; init; }
-
-    // ICollectionResponse implementation
-    ImmutableArray<TileSetItem> ICollectionResponse<TileSetItem>.Items => Tilesets;
-    ImmutableArray<ILink>? ICollectionResponse<TileSetItem>.Links => Links?.Cast<ILink>().ToImmutableArray();
-    IPaginationMetadata? ICollectionResponse<TileSetItem>.Pagination => null;
 }
 
-/// <summary>
-/// Summary metadata for a tileset entry.
-/// </summary>
 public sealed record TileSetItem
 {
     [JsonPropertyName("title")]
@@ -52,9 +40,6 @@ public sealed record TileSetItem
     public required ImmutableArray<Link> Links { get; init; }
 }
 
-/// <summary>
-/// Detailed tileset metadata response.
-/// </summary>
 public sealed record TileSet
 {
     [JsonPropertyName("title")]
@@ -85,9 +70,6 @@ public sealed record TileSet
     public ImmutableArray<string>? MediaTypes { get; init; }
 }
 
-/// <summary>
-/// Limits for a tile matrix within a tileset.
-/// </summary>
 public sealed record TileMatrixSetLimit
 {
     [JsonPropertyName("tileMatrix")]
@@ -106,26 +88,15 @@ public sealed record TileMatrixSetLimit
     public int MaxTileCol { get; init; }
 }
 
-/// <summary>
-/// Response payload for a tile matrix sets list.
-/// </summary>
-public sealed record TileMatrixSetsList : ICollectionResponse<TileMatrixSetItem>
+public sealed record TileMatrixSetsList
 {
     [JsonPropertyName("tileMatrixSets")]
     public required ImmutableArray<TileMatrixSetItem> TileMatrixSets { get; init; }
 
     [JsonPropertyName("links")]
     public ImmutableArray<Link>? Links { get; init; }
-
-    // ICollectionResponse implementation
-    ImmutableArray<TileMatrixSetItem> ICollectionResponse<TileMatrixSetItem>.Items => TileMatrixSets;
-    ImmutableArray<ILink>? ICollectionResponse<TileMatrixSetItem>.Links => Links?.Cast<ILink>().ToImmutableArray();
-    IPaginationMetadata? ICollectionResponse<TileMatrixSetItem>.Pagination => null;
 }
 
-/// <summary>
-/// Summary metadata for a tile matrix set entry.
-/// </summary>
 public sealed record TileMatrixSetItem
 {
     [JsonPropertyName("id")]
@@ -144,9 +115,6 @@ public sealed record TileMatrixSetItem
     public required ImmutableArray<Link> Links { get; init; }
 }
 
-/// <summary>
-/// Full tile matrix set definition response.
-/// </summary>
 public sealed record TileMatrixSetDefinition
 {
     [JsonPropertyName("id")]
@@ -168,9 +136,6 @@ public sealed record TileMatrixSetDefinition
     public required ImmutableArray<TileMatrix> TileMatrices { get; init; }
 }
 
-/// <summary>
-/// Tile matrix definition within a tile matrix set.
-/// </summary>
 public sealed record TileMatrix
 {
     [JsonPropertyName("id")]

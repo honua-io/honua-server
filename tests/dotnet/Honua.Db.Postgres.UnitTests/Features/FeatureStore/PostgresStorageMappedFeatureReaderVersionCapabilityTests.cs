@@ -13,7 +13,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>Binding capability discovery uses the same eligibility as branch reads (#5047).</summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed partial class PostgresStorageMappedFeatureReaderVersionCapabilityTests
 {

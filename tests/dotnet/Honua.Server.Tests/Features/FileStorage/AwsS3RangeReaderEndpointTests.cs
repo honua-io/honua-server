@@ -15,12 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.FileStorage;
 
-/// <summary>
-/// Regression for #4998: against an S3-compatible endpoint (FileStorage:AwsS3:ServiceUrl) the
-/// range reader must sign with the configured region instead of resolving one from the ambient
-/// chain, whose last step (EC2 instance metadata) never answers inside a container. Every call is
-/// bounded, so a regression fails fast instead of hanging the run.
-/// </summary>
 public sealed class AwsS3RangeReaderEndpointTests
 {
     // Deliberately not a common default (us-east-1 / us-west-2), so an ambient AWS_REGION or
@@ -110,7 +104,6 @@ public sealed class AwsS3RangeReaderEndpointTests
 
     internal sealed record ObservedRequest(string Method, IReadOnlyDictionary<string, string> Headers);
 
-    /// <summary>Loopback object endpoint answering HEAD, full/range GET and If-Match preconditions.</summary>
     internal sealed class FakeObjectEndpoint : IDisposable
     {
         private readonly TcpListener _listener;

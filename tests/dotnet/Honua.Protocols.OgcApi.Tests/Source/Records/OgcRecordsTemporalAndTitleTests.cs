@@ -11,28 +11,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 
-/// <summary>
-/// Gives the OGC API Records surface a fixture with discriminating power over time and title
-/// (honua-server#4425).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The shared Records fixture seeds four records, none with a temporal value and none with a title
-/// distinct from its name. Consequently the only <c>datetime</c> test asserted that the filter
-/// <em>did nothing</em> — and it could not have done otherwise, because both record factories
-/// hard-coded <c>Modified: null</c> and the filter short-circuited before its comparison ran. No
-/// query could exclude a record by time, and the mismatch between the shipped coverage document
-/// (which says <c>q</c> searches title) and the implementation (which searched name) was invisible
-/// because <c>Title ?? Name</c> collapsed.
-/// </para>
-/// <para>
-/// These tests set a real <c>updatedAt</c> and a title that shares no token with the record's name,
-/// then assert both halves: the record is returned when the interval covers its timestamp and
-/// absent when it does not, and <c>q</c> matches on the title. The #1988 guarantee — a record with
-/// no temporal value is never excluded by <c>datetime</c> — is asserted alongside, against a record
-/// that genuinely has no timestamp.
-/// </para>
-/// </remarks>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiRecords)]
 public sealed class OgcRecordsTemporalAndTitleTests : IAsyncLifetime

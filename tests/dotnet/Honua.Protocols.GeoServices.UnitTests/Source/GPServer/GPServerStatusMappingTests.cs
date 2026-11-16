@@ -9,9 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Unit tests for GPServer lifecycle state mapping per ADR-0029.
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerStatusMappingTests
 {

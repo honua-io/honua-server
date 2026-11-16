@@ -22,7 +22,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
 
         services.TryAddSingleton<DefaultComplianceControlCatalog>();
-        services.TryAddSingleton<IDataResidencyPolicyProvider, DefaultDataResidencyPolicyProvider>();
+        services.TryAddSingleton<DefaultDataResidencyPolicyProvider>();
         services.TryAddSingleton<InMemoryEncryptionPostureProvider>();
 
         // The dependency gate inspects scoped services (IAuditLog, IRoleStore, IOidcProviderStore)

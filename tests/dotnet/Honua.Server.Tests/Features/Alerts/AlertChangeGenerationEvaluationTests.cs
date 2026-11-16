@@ -27,14 +27,10 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// A below/above/below burst committed before evaluation must keep one event per
-/// transition, using the feature image that generation committed (#3864).
-/// </summary>
 [Protocol(ProtocolNames.Infrastructure)]
 [Operation(Operations.ContractTesting)]
 [Collection("Database.Alerts")]
-public sealed class AlertChangeGenerationEvaluationTests(DatabaseFixtureAdapter database)
+public sealed partial class AlertChangeGenerationEvaluationTests(DatabaseFixtureAdapter database)
 {
     private const string ServiceId = "alert-burst-3864";
     private const int ThresholdLayerId = 386410;

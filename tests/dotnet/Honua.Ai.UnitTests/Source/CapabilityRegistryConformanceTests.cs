@@ -28,14 +28,6 @@ using NSubstitute;
 
 namespace Honua.Ai.Tests.Capabilities;
 
-/// <summary>
-/// Runtime registry↔catalog conformance check for the unified capability registry
-/// (ADR-0058, honua-server B1 / #2333). It fails if the <see cref="CapabilityRegistry"/>
-/// drifts from the live surface it mirrors: a live <c>/mcp</c> tool/resource or a
-/// #1186 capability-manifest capability with no registry descriptor, or a registry
-/// descriptor that resolves to nothing real. Modelled on
-/// <c>McpTaxonomyAlignmentTests</c> and <c>FeatureCatalogDriftTests</c>.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class CapabilityRegistryConformanceTests
 {

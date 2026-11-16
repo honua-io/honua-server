@@ -7,7 +7,6 @@ using Honua.Server.Features.Admin.Services;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>Concurrency and immutable-name coverage for the fallback role store.</summary>
 public sealed class InMemoryRoleStoreTests
 {
     [Fact]

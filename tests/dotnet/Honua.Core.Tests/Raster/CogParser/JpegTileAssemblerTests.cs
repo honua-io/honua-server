@@ -10,15 +10,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Raster.CogParser;
 
-/// <summary>
-/// Structural proof for JPEGTables assembly (#4205) against GDAL-written TIFF-JPEG tiles.
-///
-/// The <c>jpeg_*</c> fixtures were written by GDAL 3.13.1 with its default
-/// <c>JPEGTABLESMODE=1</c> (<c>scripts/raster/generate-jpeg-cog-fixtures.py</c>): the
-/// quantization tables live only in tag 347 and every tile is an abbreviated stream. The
-/// pixel-level oracle (GDAL's own decode, compared after a real JPEG decoder reads the
-/// assembled stream) is in the server COG tests, which carry a JPEG decoder.
-/// </summary>
 public sealed class JpegTileAssemblerTests
 {
     private static readonly string FixtureDirectory =

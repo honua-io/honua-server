@@ -15,13 +15,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for the native-profile raster.* executors:
-/// <see cref="GdalRasterClipJobExecutor"/>, <see cref="GdalRasterReprojectCatalogJobExecutor"/>,
-/// <see cref="GdalRasterStatisticsJobExecutor"/>, and
-/// <see cref="GdalRasterZonalStatisticsJobExecutor"/>. Each test pins routing,
-/// argument projection, guardrails, and the canonical artifact contract.
-/// </summary>
 public sealed class GdalRasterExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-raster-test";
@@ -436,18 +429,6 @@ public sealed class GdalRasterExecutorTests
     // raster.zonal-statistics
     // -------------------------------------------------------------------------
 
-    /// <summary>
-    /// Proves the <c>gdalinfo</c> aggregate <em>parser</em>, not the statistic
-    /// (honua-server#4400).
-    /// </summary>
-    /// <remarks>
-    /// The count/mean/min/max/sum asserted below are parsed out of
-    /// <c>ZonalGdalinfoFixture</c>, a hand-authored <c>gdalinfo</c> stdout string this test
-    /// itself provides through <c>FakeGdalCommandRunner</c>. Nothing computes a zonal statistic
-    /// here. The executed receipt for <c>raster.zonal-statistics</c> is
-    /// <c>RasterExecutionProofTests</c>, which runs the production executor against the pinned
-    /// GDAL image with hand-derived aggregates.
-    /// </remarks>
     [UnitTest]
     public async Task ZonalStatistics_OneZone_ParsesGdalinfoAggregatesIntoPerZoneScalar()
     {

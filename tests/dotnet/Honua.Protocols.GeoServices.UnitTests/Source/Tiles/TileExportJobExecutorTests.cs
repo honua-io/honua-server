@@ -18,9 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Tiles;
 
-/// <summary>
-/// Focused contract tests for the canonical durable tile-export executor.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class TileExportJobExecutorTests
 {

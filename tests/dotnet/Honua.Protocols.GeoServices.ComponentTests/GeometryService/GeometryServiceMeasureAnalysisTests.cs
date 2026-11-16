@@ -12,12 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// Integration coverage for the measure/edit/analysis GeometryServer operations
-/// (#1301): distance, relation, densify, convexHull, generalize, labelPoints.
-/// These are the operations ArcGIS Pro and the ArcGIS API for Python invoke most
-/// frequently and which previously returned 404.
-/// </summary>
 [Protocol(TestProtocols.GeometryService)]
 [Collection("Database.GeoServicesRaster")]
 public sealed class GeometryServiceMeasureAnalysisTests

@@ -62,7 +62,7 @@ jobs:
               && !pr.labels.pageInfo.hasNextPage
               && !pr.labels.nodes.some(label => ['hold', 'train:hold', 'train:escalated'].includes(label.name));
             const mergeMethod = pr?.commits.totalCount > 1 ? 'MERGE' : 'SQUASH';
-            if (pr?.autoMergeRequest && (!eligible || pr.autoMergeRequest.mergeMethod !== mergeMethod)) {
+            if (pr?.autoMergeRequest && !eligible) {
               await github.graphql(`
                 mutation($pullRequestId: ID!) {
                   disablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
@@ -70,7 +70,7 @@ jobs:
                   }
                 }`, { pullRequestId: pr.id });
             } else if (pr?.autoMergeRequest) {
-              core.notice('Auto-merge already uses the live commit-count method.');
+              core.notice('Preserving the existing auto-merge method.');
               return;
             }
             if (!eligible) {

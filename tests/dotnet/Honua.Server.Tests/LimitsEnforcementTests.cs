@@ -14,10 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for limits enforcement across all protocols.
-/// Tests Issue #63 - Shared limits configuration implementation.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class LimitsEnforcementTests : IAsyncLifetime

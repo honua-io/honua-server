@@ -11,15 +11,11 @@ using Honua.Db.Postgres.Features.Styling;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Applies converted migration styles through the canonical style catalog abstractions.
-/// </summary>
 internal sealed class PostgresMigrationStyleApplicator(
     IStyleCatalog styleCatalog,
     ILayerStyleCatalog layerStyleCatalog,
     IMetadataV2StyleGraphSync? styleGraphSync = null) : IMigrationStyleApplicator
 {
-    /// <inheritdoc />
     public async Task<MigrationStyleApplyOutcome> ApplyAsync(
         MigrationLiveStyleApplyRequest request,
         CancellationToken cancellationToken = default)

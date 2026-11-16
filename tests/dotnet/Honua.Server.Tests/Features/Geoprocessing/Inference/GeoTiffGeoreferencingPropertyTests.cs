@@ -14,11 +14,6 @@ using Gen = FsCheck.Fluent.Gen;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Inference;
 
-/// <summary>
-/// Bounded properties and deterministic regression seeds for the small GeoTIFF
-/// metadata reader. The fast tier never decodes pixels and caps generated input
-/// at 4 KiB; the opt-in soak repeats the same structured mutation grammar.
-/// </summary>
 public sealed class GeoTiffGeoreferencingPropertyTests
 {
     private const int FastRandomCases = 256;

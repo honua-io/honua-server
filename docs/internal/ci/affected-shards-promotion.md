@@ -119,12 +119,8 @@ counts only reconciled false reds. The upper bound
 treats every unresolved red run as false, once per run. This does not classify
 unknown reds. It makes the uncertainty explicit.
 
-The separate `impact-routing-evidence-ledger.yml` and
-`audit-impact-routing-evidence.py` measure docs-only gate and native-image
-routing receipts. Their seven-day integrity/loss trend and routing sample
-cohorts are useful context, but cannot substitute for this lane's shard
-false-red measurement. Current `/v4` routing policy sets docs-only and native
-minimums to 20 each; the 60 executed-sample floor applies to this shard audit.
+The 60 executed-sample floor applies to this shard audit. Its run catalogs
+come from `scripts/ci/collect-impact-routing-runs.py`.
 
 ## Verification
 

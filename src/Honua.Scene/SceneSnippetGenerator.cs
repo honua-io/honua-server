@@ -3,31 +3,14 @@
 
 namespace Honua.Core.Features.Scene;
 
-/// <summary>
-/// Builds copy-paste embed snippets for hosted 3D Tiles datasets.
-/// </summary>
-/// <remarks>
-/// Output is intentionally minimal so callers can paste into a CesiumJS
-/// initialization block or into HTML using the upcoming
-/// <c>&lt;honua-scene&gt;</c> custom element. The tileset URL is rendered
-/// inside JSON-quoted or HTML-attribute contexts; both must be safe to
-/// concatenate, so the URL is escaped before substitution.
-/// </remarks>
 public static class SceneSnippetGenerator
 {
-    /// <summary>
-    /// Builds a CesiumJS initialization snippet that creates a
-    /// <c>Cesium3DTileset</c> for the given absolute tileset URL.
-    /// </summary>
     public static string BuildCesiumJs(string tilesetUrl)
     {
         ValidateTilesetUrl(tilesetUrl);
         return $"new Cesium.Cesium3DTileset({{ url: \"{EscapeForJsString(tilesetUrl)}\" }})";
     }
 
-    /// <summary>
-    /// Builds a custom-element tag for the given absolute tileset URL.
-    /// </summary>
     public static string BuildHonuaSceneTag(string tilesetUrl)
     {
         ValidateTilesetUrl(tilesetUrl);

@@ -10,12 +10,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.AuditLog;
 
-/// <summary>
-/// PostgreSQL-backed <see cref="IAuditLog"/> writing to <c>honua.audit_log</c>.
-/// Append-only by design (see migration 033): only INSERTs are issued, and
-/// failures are logged and return no receipt. Callers requiring durable audit
-/// evidence must reject or roll back their mutation when no receipt is returned.
-/// </summary>
 internal sealed class PostgresAuditLog : IAuditLog
 {
     // Max field widths must agree with migration 033. Values longer than the
@@ -35,7 +29,7 @@ internal sealed class PostgresAuditLog : IAuditLog
     private const string TruncationMarker = "\u2026";
 
     // Stable, table-scoped key for the transaction advisory lock that serializes
-    // hash-chain construction (#350). Concurrent audit inserts briefly contend on
+    // hash-chain construction. Concurrent audit inserts briefly contend on
     // this lock so the (prev_hash -> entry_hash) chain stays linear; audit volume
     // is low (security-relevant events only) so the contention is negligible.
     private const long HashChainAdvisoryLockKey = 0x484F4E55_41554449L; // "HONUAUDI"
@@ -220,10 +214,6 @@ internal sealed class PostgresAuditLog : IAuditLog
         return string.Concat(value.AsSpan(0, contentLength), TruncationMarker);
     }
 
-    /// <summary>
-    /// Drops U+0000 and unpaired UTF-16 surrogates. Valid surrogate pairs are kept.
-    /// Returns the original instance when the value needs no rewrite.
-    /// </summary>
     internal static string SanitizeText(string? value)
     {
         if (string.IsNullOrEmpty(value) || !NeedsSanitize(value))

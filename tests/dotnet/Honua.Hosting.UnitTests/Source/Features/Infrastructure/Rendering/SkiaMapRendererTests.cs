@@ -12,9 +12,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Tests for SkiaSharp-based map image rendering.
-/// </summary>
 [Trait("Component", "MapServer")]
 public class SkiaMapRendererTests
 {
@@ -427,9 +424,6 @@ public class SkiaMapRendererTests
         act.Should().Throw<ObjectDisposedException>();
     }
 
-    /// <summary>
-    /// Creates a simple WKB Point geometry.
-    /// </summary>
     private static byte[] CreateWkbPoint(double x, double y)
     {
         var wkb = new byte[21];

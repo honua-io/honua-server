@@ -15,10 +15,6 @@ using Honua.Tests.ProviderUnitSupport;
 
 namespace Honua.Db.MySql.Tests;
 
-/// <summary>
-/// Unit tests for <see cref="MySqlFeatureStore"/> behaviours that do not require a real
-/// MySQL/MariaDB connection — primarily streaming-path budget handling.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class MySqlFeatureStoreTests
 {

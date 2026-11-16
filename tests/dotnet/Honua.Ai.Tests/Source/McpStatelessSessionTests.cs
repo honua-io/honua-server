@@ -10,13 +10,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Stateless MCP sessions (honua-server#5629): on a host that runs as several
-/// instances with no shared session store (AWS Lambda with Redis off), the
-/// session id carries the negotiated state under a signature every instance can
-/// check, so a session minted on one instance answers the negotiated view on
-/// any other, and an id that fails validation still answers HTTP 404.
-/// </summary>
 public sealed class McpStatelessSessionTests
 {
     private const string Secret = "Host=db;Database=honua;Username=honua;Password=shared-by-every-instance";

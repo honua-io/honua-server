@@ -5,24 +5,8 @@ using System.Collections.Frozen;
 
 namespace Honua.Core.Features.ControlPlane.Abstractions;
 
-/// <summary>
-/// Builds the per-process-id routing table a geoprocessing dispatcher uses to
-/// fan a claimed job out to the matching <see cref="IProcessExecutor"/>. Shared by
-/// the managed <c>GeoprocessingDispatchJobExecutor</c> and the native
-/// <c>GdalDispatchJobExecutor</c> so both get identical duplicate/empty-id
-/// diagnostics from a single auto-registration loop (issue #2122).
-/// </summary>
 public static class ProcessExecutorRouteTable
 {
-    /// <summary>
-    /// Builds an ordinal <c>processId -&gt; executor</c> map from the registered
-    /// executor set. Throws <see cref="InvalidOperationException"/> when an executor
-    /// declares no ids, declares a null/whitespace id, or when two executors claim
-    /// the same id — surfacing authoring mistakes at composition time rather than
-    /// silently dropping a process at runtime.
-    /// </summary>
-    /// <param name="executors">The DI-resolved per-process executors.</param>
-    /// <returns>A frozen ordinal lookup keyed by process id.</returns>
     public static FrozenDictionary<string, IProcessExecutor> Build(
         IEnumerable<IProcessExecutor> executors)
     {
