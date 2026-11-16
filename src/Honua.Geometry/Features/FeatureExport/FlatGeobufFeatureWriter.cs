@@ -32,7 +32,7 @@ internal static class FlatGeobufFeatureWriter
 
     internal sealed class ExportOptions
     {
-        internal required MetadataV2Resource Resource { get; init; }
+        internal required MetadataV2Object Resource { get; init; }
         internal required FeatureQuery Query { get; init; }
         internal required IEnumerable<MetadataV2Field> ProjectedFields { get; init; }
         internal int? OutputSrid { get; init; }

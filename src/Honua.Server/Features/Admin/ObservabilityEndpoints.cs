@@ -89,7 +89,7 @@ internal static class ObservabilityEndpoints
             Realtime = new ObservabilityRealtimeStatus
             {
                 Supported = true,
-                HubPath = AdminRealtimeContract.HubPath,
+                StreamPath = AdminRealtimeContract.LivePath,
                 Protocol = AdminRealtimeContract.Protocol,
                 Events = [AdminRealtimeContract.StatusChangedEventName]
             },

@@ -4,8 +4,8 @@
 using Honua.Core.Features.Federation.Abstractions;
 using Honua.Core.Features.Federation.Services;
 using Honua.Core.Features.Infrastructure.Resilience;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Features.Federation;
 
@@ -16,7 +16,7 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddSingleton<IFederationQueryPlanner, FederationQueryPlanner>();
         services.TryAddSingleton<FederationMetrics>();
-        services.TryAddSingleton<IFederatedQueryExecutor>(static sp => new FederatedQueryExecutor(
+        services.TryAddSingleton<FederatedQueryExecutor>(static sp => new FederatedQueryExecutor(
             sp.GetRequiredService<IFederationQueryPlanner>(),
             sp.GetServices<IFederatedSourceConnector>(),
             sp.GetService<ResiliencePolicyOptions>() ?? ResiliencePolicyOptions.Default,

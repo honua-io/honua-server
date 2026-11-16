@@ -12,7 +12,6 @@ public static partial class EndpointRegistry
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("GET", "/api/v1/admin/operations/cache/statistics"),
-        new("GET", "/api/v1/admin/operations/cache/redis"),
         new("POST", "/api/v1/admin/operations/cache/invalidate"),
         new("GET", "/api/v1/admin/operations/streaming/subscribers"),
         new("GET", "/api/v1/admin/operations/streaming/alerts"),
@@ -21,6 +20,8 @@ public static partial class EndpointRegistry
         // v1 feature-change streaming endpoints (#501)
         new("GET", "/api/v1/streaming/features"),
         new("GET", "/api/v1/streaming/features/capabilities"),
+        new("GET", "/api/v1/streaming/jobs"),
+        new("GET", "/api/v1/streaming/layers"),
         new("GET", "/api/v1/admin/streaming/features/sessions"),
         new("DELETE", "/api/v1/admin/streaming/features/sessions/{sessionId}"),
 

@@ -9,11 +9,11 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Protocols.GeoServices;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.GeoJson;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -22,26 +22,7 @@ using NtsGeometryType = NetTopologySuite.IO.GeometryType;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-internal interface IQueryFormatter
-{
-    ValueTask<(object response, string contentType)> FormatQueryResultAsync(
-        QueryResult<Feature> result,
-        MetadataV2Resource resource,
-        string format,
-        bool returnGeometry,
-        int? outputSrid,
-        bool returnZ,
-        bool returnM,
-        int? geometryPrecision,
-        double? maxAllowableOffset,
-        string[]? outFields = null,
-        bool suppressObjectId = false,
-        bool returnCentroid = false,
-        int? requestedOutputSrid = null,
-        QuantizationTransform? quantizationTransform = null);
-}
-
-internal sealed class QueryFormatter : IQueryFormatter
+internal sealed class QueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
     private readonly GeoParquetLimits _geoParquetLimits;
@@ -58,7 +39,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
     public ValueTask<(object response, string contentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string format,
         bool returnGeometry,
         int? outputSrid,
@@ -83,7 +64,17 @@ internal sealed class QueryFormatter : IQueryFormatter
         return format.ToLowerInvariant() switch
         {
             "pbf" => ValueTask.FromResult<(object response, string contentType)>(
-                _pbfFormatter.FormatAsPbf(result, resource, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, quantizationTransform)),
+                _pbfFormatter.FormatAsPbfStream(result, resource, new PbfStreamEncodingOptions
+                {
+                    ReturnGeometry = returnGeometry,
+                    OutputSrid = outputSrid,
+                    ReturnZ = returnZ,
+                    ReturnM = returnM,
+                    GeometryPrecision = geometryPrecision,
+                    MaxAllowableOffset = maxAllowableOffset,
+                    OutFields = outFields,
+                    QuantizationTransform = quantizationTransform
+                })),
             "geojson" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatAsGeoJson(result, resource, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
             "json" => ValueTask.FromResult<(object response, string contentType)>(
@@ -113,7 +104,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
     private (object response, string contentType) FormatParquet(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -121,25 +112,25 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits effectiveLimits,
         string[]? outFields)
     {
-        var (response, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquet(
-            result,
-            resource,
-            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
-            returnGeometry,
-            outputSrid,
-            returnZ,
-            returnM,
-            effectiveLimits,
-            outFields,
-            _logger,
-            _geoParquetLimits);
+        var (response, contentType) = GeoParquetFeatureWriter.FormatAsGeoParquetStream(result, resource, new GeoParquetStreamEncodingOptions
+        {
+            ObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
+            ReturnGeometry = returnGeometry,
+            OutputSrid = outputSrid,
+            ReturnZ = returnZ,
+            ReturnM = returnM,
+            GeometryLimits = effectiveLimits,
+            OutFields = outFields,
+            Logger = _logger,
+            EncodingLimits = _geoParquetLimits
+        });
 
-        return (response, contentType);
+        return (Results.Stream(response, contentType), contentType);
     }
 
     private static async Task<(object response, string contentType)> FormatArrowAsync(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -162,7 +153,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
     private static (object response, string contentType) FormatAsGeoServicesJson(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -245,7 +236,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
     private static (object response, string contentType) FormatAsGeoJson(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         bool returnZ,
         bool returnM,
@@ -322,7 +313,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
     private static GeoJsonFeature ConvertToGeoJsonFeature(
         Feature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         GeoJsonFeatureBuildOptions buildOptions,
         bool returnZ,
@@ -455,7 +446,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     }
 
     internal static GeoJsonFeatureBuildOptions CreateFeatureServerGeoJsonBuildOptions(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlySet<string>? projectedProperties)
         => GeoJsonFeatureBaseBuilder.PrepareOptions(resource, new(
             ProjectedProperties: projectedProperties,
@@ -468,7 +459,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             ResolveIdFromProperties: true));
 
     internal static GeoServicesFieldInfo[] BuildQueryFields(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string[]? outFields,
         string objectIdFieldName,
         IReadOnlyCollection<GeoServicesFieldInfo>? runtimeFields = null,
@@ -603,7 +594,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     }
 
     internal static string ResolveDisplayFieldName(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyList<GeoServicesFieldInfo> fields,
         string objectIdFieldName)
     {
@@ -936,7 +927,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             _ => null
         };
 
-    internal static bool ShouldReturnCentroid(MetadataV2Resource resource, bool returnCentroid)
+    internal static bool ShouldReturnCentroid(MetadataV2Object resource, bool returnCentroid)
         => returnCentroid &&
            (resource.ReadGeometryType() is MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon);
 
@@ -956,7 +947,7 @@ internal sealed class StreamingQueryFormatter
 
     public Task StreamAsGeoServicesJsonAsync(
         IAsyncEnumerable<Feature> features,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -986,7 +977,7 @@ internal sealed class StreamingQueryFormatter
     // exceededTransferLimit is written after the features are enumerated, so a pass-through limit probe can set it without buffering the result.
     public async Task StreamAsGeoServicesJsonAsync(
         IAsyncEnumerable<Feature> features,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -1110,7 +1101,7 @@ internal sealed class StreamingQueryFormatter
 
     public Task StreamAsGeoJsonAsync(
         IAsyncEnumerable<Feature> features,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         bool returnZ,
         bool returnM,
@@ -1136,7 +1127,7 @@ internal sealed class StreamingQueryFormatter
     // The GeoJSON exceededTransferLimit flag is written after the features are enumerated, so a pass-through limit probe can set it without buffering the result.
     public async Task StreamAsGeoJsonAsync(
         IAsyncEnumerable<Feature> features,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         bool returnZ,
         bool returnM,
@@ -1342,7 +1333,7 @@ internal sealed class StreamingQueryFormatter
     private static void WriteGeoJsonFeature(
         Utf8JsonWriter writer,
         Feature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         bool returnGeometry,
         GeoJsonFeatureBuildOptions buildOptions,
         bool returnZ,

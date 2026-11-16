@@ -191,7 +191,7 @@ internal static class McpServiceCollectionExtensions
         // Authoring tools (#1951, re-founded by ADR-0076 / #3255):
         // create_map_package / create_app_package create draft packages
         // deterministically from structured input through the shared
-        // IMapPackageDraftFactory / IAppPackageDraftFactory in Honua.Core. They
+        // MapPackageDraftFactory / AppPackageDraftFactory in Honua.Core. They
         // make no model call and take no prompt.
         //
         // Both factories arrive by CONSTRUCTOR injection rather than a
@@ -474,7 +474,10 @@ internal static class McpServiceCollectionExtensions
         // enqueues them onto the owning session; the progress bridge polls the
         // canonical job runtime and forwards progress to the session that started
         // the job. Both are process-wide singletons.
-        services.TryAddSingleton<IMcpNotificationPublisher, McpNotificationPublisher>();
+        services.TryAddSingleton<IMcpNotificationPublisher>(sp => new McpNotificationPublisher(
+            sp.GetRequiredService<McpSessionManager>(),
+            sp.GetRequiredService<ILogger<McpNotificationPublisher>>(),
+            McpRealtimeStream.ResolveFanout(sp)));
         services.TryAddSingleton<McpJobProgressBridge>();
 
         // ADR-0058 B2 (#2334): bind the served /mcp catalog to the unified

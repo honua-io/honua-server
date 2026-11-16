@@ -4,7 +4,7 @@ set -uo pipefail
 
 jq -cs --arg instance "$1" --argjson now "$(date +%s)" '
   def integer: if type == "number" then floor == . else false end;
-  def unavailable: {state: "booting", heavy_ready: false};
+  def unavailable: {state: "booting", heavy_ready: false, heavy_idle: 0};
   def heavy_available:
     if (.heavy | type) != "object" then false
     else .heavy.version == 1 and (.heavy.idle | integer)
@@ -15,6 +15,7 @@ jq -cs --arg instance "$1" --argjson now "$(date +%s)" '
       or (.at | integer | not) or .at > $now or ($now - .at) > 90 then unavailable
     else
       {state: (if (.idle | integer) and .idle >= 2 then "ready" else "busy" end),
-       heavy_ready: heavy_available}
+       heavy_ready: heavy_available,
+       heavy_idle: (if heavy_available then .heavy.idle else 0 end)}
     end
   end'

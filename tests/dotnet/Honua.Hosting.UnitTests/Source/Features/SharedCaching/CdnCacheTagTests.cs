@@ -33,7 +33,10 @@ public sealed partial class CdnCacheTagTests
         SharedCacheResponse.Apply(context);
         SharedCacheGuard.Apply(context);
 
-        context.Response.Headers[TagHeader].ToString().Should().Be("honua-service:parcels,honua-layer:parcels/3,honua-scope:tiles/3");
+        var tags = context.Response.Headers[TagHeader].ToString().Split(',');
+        tags.Should().Contain(["honua-service:parcels", "honua-layer:parcels/3", "honua-scope:tiles/3"]);
+        tags.Should().Contain(tag => tag.StartsWith("honua-region:tiles/3/", StringComparison.Ordinal));
+        tags.Should().HaveCountLessThanOrEqualTo(CdnTileRegionTags.MaxInvalidations);
     }
 
     [UnitTest]
@@ -341,7 +344,7 @@ public sealed partial class CdnCacheTagTests
     private static MetadataV2Graph TwoServicesWithLayerZero()
     {
         var builder = new TestMetadataV2GraphBuilder()
-            .AddResource("res-0", "Layer 0", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("res-0", "Layer 0", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding("binding-0", "res-0", "features:0", storageLayerId: 0);
         foreach (var name in new[] { "parcels", "roads" })
         {
@@ -353,7 +356,7 @@ public sealed partial class CdnCacheTagTests
                     resourceId: "res-0",
                     layerIndex: 0,
                     serviceLocalId: "0",
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+                    publicationType: MetadataV2LayerType.EsriFeatureLayer);
         }
 
         var graph = builder.Build();

@@ -1417,6 +1417,52 @@ public sealed class JobExecutionServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTheory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task ProcessJob_ShutdownAfterCompletion_RequiresCommittedOutcomeAndDurableReceipt(
+        bool committedOutcome, bool recordReceipt)
+    {
+        var durable = CreateProvisioningJob();
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call => { durable = call.Arg<ExecutionJobRecord>(); return true; });
+        var queue = Substitute.For<IJobQueue>();
+        using var stoppingCts = new CancellationTokenSource();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (recordReceipt)
+                {
+                    await call.Arg<IJobExecutionContext>().RecordCommittedEffectAsync("paired-publication:descriptor");
+                }
+                await stoppingCts.CancelAsync();
+                return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = committedOutcome };
+            });
+        using var service = new JobExecutionService(queue, store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!, stoppingCts.Token);
+
+        if (committedOutcome && recordReceipt)
+        {
+            Assert.Equal(ExecutionJobStatus.Succeeded, durable.Status);
+            Assert.Contains("paired-publication:descriptor", durable.CommittedEffectReferences);
+            await queue.DidNotReceive().RequeueAsync(durable.OperationId, Arg.Any<OperationPriority>(),
+                Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        }
+        else
+        {
+            Assert.Equal(ExecutionJobStatus.Queued, durable.Status);
+            await queue.Received(1).RequeueAsync(durable.OperationId, Arg.Any<OperationPriority>(),
+                Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        }
+    }
+
     /// <summary>
     /// Regression: when both shutdown and timeout fire concurrently, the
     /// timed-out job must fail terminally instead of being force-requeued.

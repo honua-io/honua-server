@@ -38,7 +38,7 @@ public sealed class WmsFilterValidationTests
 
     public WmsFilterValidationTests()
     {
-        _sql.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+        _sql.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
             .Returns(call =>
             {
                 _translated = call.Arg<FilterExpression>();
@@ -141,7 +141,7 @@ public sealed class WmsFilterValidationTests
     private (SqlFragment? Filter, IResult? Error) Translate(string filter)
         => Translate(filter, Layer(null));
 
-    private (SqlFragment? Filter, IResult? Error) Translate(string filter, MetadataV2Resource resource)
+    private (SqlFragment? Filter, IResult? Error) Translate(string filter, MetadataV2Object resource)
     {
         var context = new DefaultHttpContext
         {
@@ -178,14 +178,14 @@ public sealed class WmsFilterValidationTests
         return (httpContext.Response.StatusCode, await reader.ReadToEndAsync());
     }
 
-    private static MetadataV2Resource Layer(int? srid)
+    private static MetadataV2Object Layer(int? srid)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-0", Name = "Test Layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Spatial = srid is null
                 ? null
-                : new MetadataV2ResourceSpatial
+                : new MetadataV2ObjectSpatial
                 {
                     SpatialReference = new MetadataV2SpatialReference
                     {

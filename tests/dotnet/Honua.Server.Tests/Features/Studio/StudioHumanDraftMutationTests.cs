@@ -132,7 +132,10 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
             using var pending = JsonDocument.Parse(body);
             pending.RootElement.GetProperty("data").GetProperty("status").GetInt32()
                 .Should().Be((int)OperationHandleStatus.RequiresApproval);
-            (await store.GetDraftAsync(draftId)).Should().BeEquivalentTo(draft);
+            (await store.GetDraftAsync(draftId)).Should().BeEquivalentTo(draft, options => options
+                .Using<JsonElement>(context => JsonElement.DeepEquals(context.Subject, context.Expectation)
+                    .Should().BeTrue("the stored draft JSON must remain unchanged"))
+                .WhenTypeIs<JsonElement>());
         }
     }
 

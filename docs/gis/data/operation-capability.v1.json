@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 523,
-    "unresolvedCount": 0,
+    "operationCount": 522,
+    "unresolvedCount": 1,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 429,
+      "admin-api": 428,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,7 +21,7 @@
       "studio-api": 24
     },
     "perCapability": {
-      "admin.control-plane": 310,
+      "admin.control-plane": 309,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -3070,16 +3070,6 @@
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/operations/cache/redis",
-      "operationId": "getOperationsCacheRedisMetrics",
-      "capability": "admin.control-plane",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-operations-cache-redis"
-    },
-    {
-      "spec": "admin-api",
-      "method": "GET",
       "path": "/api/v1/admin/operations/cache/statistics",
       "operationId": "getOperationsCacheStatistics",
       "capability": "admin.control-plane",
@@ -5278,5 +5268,12 @@
       "catalogEntryId": "post-api-v1-studio-kind-id-export"
     }
   ],
-  "unresolved": []
+  "unresolved": [
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/live",
+      "operationId": "GetAdminLive"
+    }
+  ]
 }

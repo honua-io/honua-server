@@ -176,6 +176,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             // Second segment is a fixed relative literal filename, so it can never be
             // rooted and silently discard workspace.
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
+            using var remoteInputScope = GdalRemoteInputScope.Trust(sourceInput.ReferencedPath);
 
             // Bound the DECLARED pixel footprint before any native tool runs
             // so a compressible GeoTIFF declaring enormous dimensions cannot force a

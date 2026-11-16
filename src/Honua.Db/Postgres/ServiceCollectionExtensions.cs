@@ -249,7 +249,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAlertChangeReader>(static serviceProvider => new PostgresAlertChangeReader(
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
             new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider))));
-        services.AddKeyedScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>("postgres", (provider, _) =>
+        services.AddScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>(provider =>
             new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
 
@@ -273,7 +273,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetService<ISchemaContext>(),
-                serviceProvider.GetRequiredService<IConfiguration>()));
+                serviceProvider.GetRequiredService<IConfiguration>(),
+                serviceProvider.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()));
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore>(
             serviceProvider => (Honua.Core.Features.SensorThings.Abstractions.ISensorThingsEntityStore)
                 serviceProvider.GetRequiredService<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>());
@@ -389,6 +390,11 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>()));
+
+        // A host that replaces or decorates IMetadataV2GraphStore has no activation journal: the watch
+        // store resolves to null there, so the watcher idles and its findings source reports notConfigured.
+        services.AddScoped<ICatalogActivationWatchStore>(serviceProvider =>
+            (serviceProvider.GetRequiredService<IMetadataV2GraphStore>() as ICatalogActivationWatchStore)!);
 
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.
@@ -1030,12 +1036,11 @@ internal static class ServiceCollectionExtensions
         // path is Postgres-backed (reads the tile catalog populated by the importer).
         services.AddSingleton<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageReader,
             Honua.Core.Features.TileCachePackage.Services.GeoServicesTileCachePackageReader>();
-        services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageImportService,
-            Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
+        services.AddScoped<Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
             Honua.Db.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
 
-        services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
+        services.AddScoped<OgcTileCacheExportService>(serviceProvider =>
         {
             var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
             return new OgcTileCacheExportService(

@@ -35,6 +35,7 @@ internal static class MigrationPinnedDns
         return new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
+            UseProxy = false,
             MaxConnectionsPerServer = client.MaxConnectionsPerServer,
             ConnectCallback = (context, cancellationToken) =>
                 ConnectAsync(context, resolver, client.UnsafeLocalUrlsAllowed.Value, client.Policy, cancellationToken)
