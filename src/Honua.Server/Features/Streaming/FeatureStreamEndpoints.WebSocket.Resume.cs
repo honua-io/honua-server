@@ -26,7 +26,7 @@ internal static partial class FeatureStreamEndpoints
         FeatureStreamDependencies Dependencies,
         WebSocket Socket,
         FeatureStreamSession Session,
-        IStreamSubscriptionFilter? Filter,
+        StreamSubscriptionFilter? Filter,
         FeatureStreamSubscriptionMode Mode,
         string SubscriptionId,
         JsonElement Cursor);
@@ -40,7 +40,7 @@ internal static partial class FeatureStreamEndpoints
         WebSocket Socket,
         FeatureStreamSession Session,
         IFeatureChangeEventStore EventStore,
-        IStreamSubscriptionFilter? Filter,
+        StreamSubscriptionFilter? Filter,
         string SubscriptionId);
 
     private static async Task AnnounceWebSocketConnectionAsync(

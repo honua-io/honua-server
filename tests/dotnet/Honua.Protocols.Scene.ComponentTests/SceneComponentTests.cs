@@ -67,7 +67,7 @@ public sealed class SceneComponentTests
     }
 
     internal static Task<ComponentTestHost> StartAsync(string? assetRoot = null, string sceneId = "public",
-        IConfigurationGenerationSource? generations = null)
+        IConfigurationGenerationSource? generations = null, bool responseCompression = false)
     {
         var root = assetRoot ?? FindFixture();
         return ComponentTestHost.StartAsync(builder =>
@@ -83,6 +83,13 @@ public sealed class SceneComponentTests
                 ["Scenes:Datasets:1:AccessPolicy:AllowAnonymous"] = "false"
             });
             builder.Services.AddScene(builder.Configuration);
+            // Scene asset revalidation calls IETagService directly. Production registers it with observability.
+            builder.Services.AddETags();
+            if (responseCompression)
+            {
+                builder.Services.AddResponseCompression(options =>
+                    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>());
+            }
             if (generations is not null)
             {
                 builder.Services.AddSingleton(generations);
@@ -90,34 +97,16 @@ public sealed class SceneComponentTests
             builder.Services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
             builder.Services.Configure<OutputCacheTtlOptions>(_ => { });
             OutputCachingRegistration.ConfigureOutputCaching(builder.Services, builder.Configuration);
-            // The supported production disabled licensing mode, without test entitlements.
-            builder.Services.AddSingleton<DisabledLicenseService>();
-            builder.Services.AddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
-            builder.Services.AddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
-            builder.Services.AddApiKeyAuthentication(builder.Configuration);
-            builder.Services.Configure<ApiKeyAuthenticationOptions>(options =>
-            {
-                options.EnvironmentName = "Production";
-                options.AdminPassword = "Component-Scene-Only-8!Yq";
-            });
+            AddProductionLicensingAndAuthentication(builder.Services, builder.Configuration);
         }, app =>
         {
             app.UseGlobalExceptionHandling();
             app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
-            app.Use(static (context, next) =>
+            if (responseCompression)
             {
-                context.Response.OnStarting(static state =>
-                {
-                    var response = ((HttpContext)state).Response;
-                    if (response.Headers.ContainsKey("Age"))
-                    {
-                        response.Headers[OutputCacheHitHeader] = "1";
-                    }
-
-                    return Task.CompletedTask;
-                }, context);
-                return next(context);
-            });
+                app.UseResponseCompression();
+            }
+            MarkOutputCacheHits(app);
             app.UseAuthentication();
             app.UseAuthorization();
             app.UseWhen(context => OutputCachingRegistration.HasLiveOutputCacheEntitlements(context.RequestServices),
@@ -125,6 +114,36 @@ public sealed class SceneComponentTests
             app.MapSceneEndpoints();
         });
     }
+
+    // The supported production disabled licensing mode, without test entitlements.
+    private static void AddProductionLicensingAndAuthentication(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton<DisabledLicenseService>();
+        services.AddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
+        services.AddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
+        services.AddApiKeyAuthentication(configuration);
+        services.Configure<ApiKeyAuthenticationOptions>(options =>
+        {
+            options.EnvironmentName = "Production";
+            options.AdminPassword = "Component-Scene-Only-8!Yq";
+        });
+    }
+
+    private static void MarkOutputCacheHits(IApplicationBuilder app)
+        => app.Use(static (context, next) =>
+        {
+            context.Response.OnStarting(static state =>
+            {
+                var response = ((HttpContext)state).Response;
+                if (response.Headers.ContainsKey("Age"))
+                {
+                    response.Headers[OutputCacheHitHeader] = "1";
+                }
+
+                return Task.CompletedTask;
+            }, context);
+            return next(context);
+        });
 
     private static string FindFixture()
     {

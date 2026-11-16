@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace Honua.Protocols.Scene;
 
 // The signature binds the scene id rather than each asset path, because one Cesium session requests thousands of tiles under that scene.
-internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
+internal sealed class SceneAccessEnvelopeService
 {
     private static readonly IReadOnlyList<string> AllowedMethods = new[] { "GET", "HEAD" };
 

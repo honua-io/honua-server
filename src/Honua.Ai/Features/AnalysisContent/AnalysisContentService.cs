@@ -36,7 +36,7 @@ internal sealed partial class AnalysisContentService(
     IEnumerable<IExecutionLogStore> logStores,
     TimeProvider timeProvider,
     ILogger<AnalysisContentService> logger,
-    ILayerAccessAuthorizer layerAccessAuthorizer) : IAnalysisContentService
+    ILayerAccessAuthorizer layerAccessAuthorizer)
 {
     private const int DefaultPreviewLimit = 25;
     private const int MaxPreviewLimit = 200;
