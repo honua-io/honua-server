@@ -68,7 +68,7 @@ its source build does not qualify this packaged terminal journey.
 ## 2. Establish least privilege and server discovery
 
 Give the proposer profile only the required target permissions. Approval requires
-one authorized human in the original Server's verified interactive OIDC session;
+one authorized human in the original Server's verified interactive browser session (password or OIDC);
 the requester may approve. API keys and ordinary bearer tokens cannot approve.
 Keep the private human session and review capability out of model context.
 See [human operation approval](../../guides/secure/authentication.md#human-operation-approval).
