@@ -26,6 +26,7 @@ using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using FilterExpressionHelpers = Honua.Infrastructure.Helpers.FilterExpressionHelpers;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 using Proto = Geospatial.V1;
 
