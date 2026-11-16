@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Core.Exceptions;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -152,7 +153,20 @@ internal sealed class PostgresUniversalProgressStore(JobStoreDatabase database) 
         where TProgress : class, IOperationProgress
     {
         var payloads = await ReadColumnAsync("payload", operationType, cancellationToken).ConfigureAwait(false);
-        return payloads.Select(OperationProgressSerializer.Deserialize).OfType<TProgress>().ToList();
+        return payloads.Select(DeserializeReadable).OfType<TProgress>().ToList();
+    }
+
+    // One unreadable export record must not hide every other active operation; reading that record by id still refuses it.
+    private static IOperationProgress? DeserializeReadable(string payload)
+    {
+        try
+        {
+            return OperationProgressSerializer.Deserialize(payload);
+        }
+        catch (InvalidPersistedExportProgressException)
+        {
+            return null;
+        }
     }
 
     public Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
