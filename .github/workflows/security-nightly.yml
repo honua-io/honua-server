@@ -871,8 +871,26 @@ jobs:
             const open = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', per_page: 100 });
             for (const f of findings) {
               const title = `[release image] ${f.release} ${f.platform}: ${f.VulnerabilityID} in ${f.PkgName}`;
-              if (open.some(issue => issue.title === title)) continue;
-              open.push({ title });
+              const existing = open.find(issue => issue.title === title && !issue.pull_request);
+              if (existing) {
+                if (f.Severity !== 'CRITICAL') continue;
+                const severity = existing.body?.match(/^Advisory: .* \((HIGH|CRITICAL)\)$/m)?.[1];
+                if (severity === 'CRITICAL') continue;
+                const detected = new Date(existing.created_at);
+                const previous = existing.body?.match(/^Fix due by: (\d{4}-\d{2}-\d{2})\b/m);
+                if (!severity || !Number.isFinite(detected.getTime()) || !previous) {
+                  throw new Error('Existing private finding lacks severity, detection date or deadline');
+                }
+                detected.setUTCDate(detected.getUTCDate() + 7);
+                const deadline = [previous[1], detected.toISOString().slice(0, 10)].sort()[0];
+                const body = existing.body
+                  .replace(/^(Advisory: .*)\(HIGH\)$/m, '$1(CRITICAL)')
+                  .replace(/^Fix due by: \d{4}-\d{2}-\d{2}/m, `Fix due by: ${deadline}`)
+                  + `\nSeverity escalated by: ${run}`;
+                await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+                existing.body = body;
+                continue;
+              }
               const body = [
                 `Release: ${f.release}`, `Image: ${f.image}`, `Platform: ${f.platform}`,
                 `Advisory: ${f.VulnerabilityID} (${f.Severity})`,
@@ -881,7 +899,8 @@ jobs:
                 `Detected by: ${run}`, '',
                 'Close by shipping a patch release (docs/internal/security/security-patch-releases.md) or by recording a reasoned not_affected decision in eng/security/vex-statements.json.',
               ].join('\n');
-              await github.rest.issues.create({ owner, repo, title, body });
+              const { data: issue } = await github.rest.issues.create({ owner, repo, title, body });
+              open.push(issue);
             }
       - name: Open a public maintenance issue without finding detail
         if: steps.report.outputs.needing_patch != '0' && env.HAS_FINDINGS_BRIDGE != 'true'
