@@ -182,30 +182,7 @@ public sealed class OgcFeaturesEditGateTests
                 Feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty.Add("color", color)),
             };
 
-            var resource = Resource();
-            var group = resource.ContingentValueGroups[0];
-            resource = resource with
-            {
-                ContingentValueGroups =
-                [
-                    group with
-                    {
-                        ContingentValues =
-                        [
-                            .. group.ContingentValues,
-                            new MetadataV2ContingentValue
-                            {
-                                Id = 2,
-                                Values = new Dictionary<string, MetadataV2ContingentFieldValue>(StringComparer.OrdinalIgnoreCase)
-                                {
-                                    ["color"] = new() { Type = "code", Code = JsonElement.Parse("\"blue\"") },
-                                    ["size"] = new() { Type = "null" },
-                                },
-                            },
-                        ],
-                    },
-                ],
-            };
+            var resource = ResourceWithNullSize();
             var result = await CreateHandlers(writer, reader).Crud.ExecuteEditAsync(
                 Context(hooks), 7, resource, request, CancellationToken.None);
 
@@ -221,6 +198,34 @@ public sealed class OgcFeaturesEditGateTests
                 writer.LastBatch!.Value.Updates.Should().ContainSingle().Which.Attributes.Should().NotContainKey("size");
             }
         }
+    }
+
+    private static MetadataV2Object ResourceWithNullSize()
+    {
+        var resource = Resource();
+        var group = resource.ContingentValueGroups[0];
+        return resource with
+        {
+            ContingentValueGroups =
+            [
+                group with
+                {
+                    ContingentValues =
+                    [
+                        .. group.ContingentValues,
+                        new MetadataV2ContingentValue
+                        {
+                            Id = 2,
+                            Values = new Dictionary<string, MetadataV2ContingentFieldValue>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["color"] = new() { Type = "code", Code = JsonElement.Parse("\"blue\"") },
+                                ["size"] = new() { Type = "null" },
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
     }
 
     private static async Task<Executed[]> ExecuteBothAsync(OgcFeaturesEditRequest request, RecordingHooks hooks)

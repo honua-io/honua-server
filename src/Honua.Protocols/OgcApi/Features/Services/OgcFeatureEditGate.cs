@@ -94,21 +94,26 @@ internal static class OgcFeatureEditGate
                 return null;
             }
 
-            var attributes = new Dictionary<string, object?>(snapshot.Attributes, StringComparer.OrdinalIgnoreCase);
-            foreach (var name in update.ExplicitAttributeRemovals.IsDefault ? [] : update.ExplicitAttributeRemovals)
-            {
-                attributes.Remove(name);
-            }
-
-            foreach (var (name, value) in update.Attributes)
-            {
-                attributes[name] = value;
-            }
-
-            effective[update.Id] = attributes;
+            effective[update.Id] = MergeEffectiveAttributes(update, snapshot);
         }
 
         return effective;
+    }
+
+    private static IReadOnlyDictionary<string, object?> MergeEffectiveAttributes(Feature update, Feature snapshot)
+    {
+        var attributes = new Dictionary<string, object?>(snapshot.Attributes, StringComparer.OrdinalIgnoreCase);
+        foreach (var name in update.ExplicitAttributeRemovals.IsDefault ? [] : update.ExplicitAttributeRemovals)
+        {
+            attributes.Remove(name);
+        }
+
+        foreach (var (name, value) in update.Attributes)
+        {
+            attributes[name] = value;
+        }
+
+        return attributes;
     }
 
     internal static Task RunAfterAsync(Target target, FeatureEditBatch batch, FeatureEditResult result)

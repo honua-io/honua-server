@@ -38,12 +38,7 @@ internal sealed partial class HonuaFeatureService
         FeatureEditBatch batch,
         IReadOnlyDictionary<long, Feature> storedRows)
     {
-        // Every update is validated against its stored snapshot. Reject repeated targets rather
-        // than letting independently valid partial updates combine into an invalid stored row.
-        if (batch.Updates.Select(static feature => feature.Id).Distinct().Count() != batch.Updates.Length)
-        {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "An edit batch cannot update the same feature more than once."));
-        }
+        ValidateUniqueUpdateTargets(batch);
 
         var httpContext = call.Context.GetHttpContext();
         var hooks = httpContext.RequestServices?.GetService<IFeatureEditHooks>() ?? NoOpFeatureEditHooks.Instance;
@@ -75,6 +70,17 @@ internal sealed partial class HonuaFeatureService
             }),
         ];
         return new EditGate(batch, bounded) { Hooks = hooks, Scope = scope };
+    }
+
+    private static void ValidateUniqueUpdateTargets(FeatureEditBatch batch)
+    {
+        // Every update is validated against its stored snapshot. Reject repeated targets rather
+        // than letting independently valid partial updates combine into an invalid stored row.
+        if (batch.Updates.Select(static feature => feature.Id).Distinct().Count() != batch.Updates.Length)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "An edit batch cannot update the same feature more than once."));
+        }
+
     }
 
     // A partial update is checked as the stored row with the update's values applied.
