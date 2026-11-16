@@ -1058,14 +1058,7 @@ internal static partial class ServiceCollectionExtensions
         // Register the read-only journal/physical-schema guard and migration runner. Both
         // canonical numbered roots flow through this runner and its public.schema_versions
         // journal; the guard rejects divergence instead of repairing it from a store path.
-        services.AddSingleton(coreSchemaMigrations);
-        services.AddSingleton(serviceProvider =>
-            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
-                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
-                configuration,
-                (connectionString, cancellationToken) => CreateMigrationServiceConnectionAsync(serviceProvider, connectionString, cancellationToken)));
-        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
-            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
+        AddCoreSchemaGuard(services, configuration, coreSchemaMigrations);
 
         // Register migration runner for schema upgrades
         services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();
@@ -1088,6 +1081,19 @@ internal static partial class ServiceCollectionExtensions
                 (connectionString, cancellationToken) => CreateMigrationServiceConnectionAsync(provider, connectionString, cancellationToken)));
 
         return services;
+    }
+
+    private static void AddCoreSchemaGuard(
+        IServiceCollection services, IConfiguration configuration, PostgresCoreSchemaMigrationManifest coreSchemaMigrations)
+    {
+        services.AddSingleton(coreSchemaMigrations);
+        services.AddSingleton(serviceProvider =>
+            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
+                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
+                configuration,
+                (connectionString, cancellationToken) => CreateMigrationServiceConnectionAsync(serviceProvider, connectionString, cancellationToken)));
+        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
+            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
     }
 
     private static async ValueTask<NpgsqlConnection> CreateMigrationServiceConnectionAsync(
