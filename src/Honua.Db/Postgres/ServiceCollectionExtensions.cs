@@ -88,7 +88,7 @@ namespace Honua.Db.Postgres;
 /// <summary>
 /// Dependency injection extensions for PostgreSQL services
 /// </summary>
-internal static class ServiceCollectionExtensions
+internal static partial class ServiceCollectionExtensions
 {
     /// <summary>
     /// Add PostgreSQL services including feature store and health checking
@@ -307,10 +307,7 @@ internal static class ServiceCollectionExtensions
             new PostgresOpsHealthRollupStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
-        services.AddScoped<IOpsExternalEventStore>(serviceProvider =>
-            new PostgresOpsExternalEventStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
+        AddOpsIncidentServices(services, configuration);
         services.AddScoped<IOpsAutonomyPolicyStore>(serviceProvider =>
             new PostgresOpsAutonomyPolicyStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
