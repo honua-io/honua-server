@@ -13,6 +13,8 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 
 public sealed class StreamingGeoJsonReaderTests
 {
+    private const string FirstFeaturePrefix = """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":{"n":1}}""";
+
     [Theory]
     [InlineData("created_at")]
     [InlineData("CREATED_AT")]
@@ -198,6 +200,44 @@ public sealed class StreamingGeoJsonReaderTests
         };
 
         await act.Should().ThrowAsync<JsonException>();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ReadFeaturesAsync_FeatureLimit_StopsBeforeUnreadTruncatedFeature()
+    {
+        var bytes = Encoding.UTF8.GetBytes(FirstFeaturePrefix + ",{\"type\":\"Feature\",\"properties\":");
+        await using var stream = new FragmentedStream(bytes, FirstFeaturePrefix.Length);
+        var reader = new StreamingGeoJsonReader(new ImportLimits { MaxFeaturesPerFile = 1 });
+        var features = new List<NetTopologySuite.Features.IFeature>();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await foreach (var feature in reader.ReadFeaturesAsync(stream, timeout.Token))
+        {
+            features.Add(feature);
+        }
+
+        features.Should().ContainSingle();
+        stream.BytesRead.Should().Be(FirstFeaturePrefix.Length);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ReadFeaturesAsync_ConsumerStops_DoesNotReadTruncatedRemainder()
+    {
+        var bytes = Encoding.UTF8.GetBytes(FirstFeaturePrefix + ",{\"type\":\"Feature\",\"properties\":");
+        await using var stream = new FragmentedStream(bytes, 1);
+        var reader = new StreamingGeoJsonReader();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await foreach (var _ in reader.ReadFeaturesAsync(stream, timeout.Token))
+        {
+            break;
+        }
+
+        stream.BytesRead.Should().Be(FirstFeaturePrefix.Length);
     }
 
     private sealed class EofGuardedStream(byte[] bytes, int chunkSize) : MemoryStream(bytes)
