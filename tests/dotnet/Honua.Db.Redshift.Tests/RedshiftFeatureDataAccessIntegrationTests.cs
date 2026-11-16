@@ -17,21 +17,6 @@ using Testcontainers.PostgreSql;
 
 namespace Honua.Db.Redshift.Tests;
 
-/// <summary>
-/// Gated PostGIS stand-in tests for the Redshift Npgsql data-access path.
-/// </summary>
-/// <remarks>
-/// <para>There is no official Amazon Redshift Testcontainer image. Because Redshift speaks the
-/// PostgreSQL wire protocol and the Redshift SQL emitted for non-spatial reads, COUNT, object-id
-/// listings, and the extent (<c>ST_AsBinary</c>, <c>ST_XMin</c>/<c>ST_YMin</c>/<c>ST_XMax</c>/
-/// <c>ST_YMax</c>) is also valid against a PostGIS-enabled PostgreSQL server, this suite uses a
-/// PostGIS Testcontainer purely as a wire-compatible stand-in to exercise the Npgsql connection
-/// factory and data-access materialization. It does NOT prove Redshift-specific spatial semantics
-/// — that requires a real Redshift cluster.</para>
-/// <para>The suite is doubly gated: the <c>Category=RedshiftStandIn</c> trait keeps it out of the default
-/// PR run, and <c>HONUA_TEST_REDSHIFT=1</c> must be set so a stray category filter does not start
-/// Docker on machines without it. To run: <c>HONUA_TEST_REDSHIFT=1 dotnet test --filter Category=RedshiftStandIn</c>.</para>
-/// </remarks>
 [Trait("Category", "RedshiftStandIn")]
 [Trait("Evidence", "PostGISWireCompatibility")]
 public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
@@ -241,10 +226,6 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
         => StatisticsParcels.CreateBinding(provider, connection: null);
 }
 
-/// <summary>
-/// Live sentinel tests that prove the configured connection reaches Amazon Redshift and executes
-/// Redshift spatial functions. These tests are separate from the PostGIS wire stand-in evidence.
-/// </summary>
 [Trait("Category", "RedshiftLive")]
 [Trait("Evidence", "RealWarehouse")]
 public sealed class RedshiftLiveIntegrationTests

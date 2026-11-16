@@ -12,11 +12,6 @@ using Xunit;
 
 namespace Honua.Db.Postgres.Security.Tests;
 
-/// <summary>
-/// Tests for <see cref="SecureConnectionResolver"/> verifying that SSL/TLS
-/// enforcement rejects plaintext-fallback SSL modes and that secret-reference
-/// resolution rejects host/port mismatches against the registered connection.
-/// </summary>
 public sealed class SecureConnectionResolverSslModeTests
 {
     [Trait("Tier", "Fast")]

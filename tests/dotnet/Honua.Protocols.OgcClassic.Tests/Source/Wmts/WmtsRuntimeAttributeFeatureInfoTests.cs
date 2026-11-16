@@ -14,9 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// Verifies WMTS responses for CLR attribute values returned by data providers.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wmts10)]
 public sealed class WmtsRuntimeAttributeFeatureInfoTests : IAsyncLifetime

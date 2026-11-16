@@ -190,7 +190,7 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         }
         else
         {
-            // honua-server#4401: without this, `pdal translate` writes the LAS with its DEFAULT
+            // Without this, `pdal translate` writes the LAS with its DEFAULT
             // scale of 0.01 rather than the source's, silently quantising the decompressed cloud.
             // For a geographic source that is 0.01 degrees — roughly 1.1 km of horizontal error on
             // a verbatim "decompress only" conversion. Forwarding scale and offset preserves

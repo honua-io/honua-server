@@ -72,7 +72,7 @@ internal static class KmlFormatReader
         // ReadElementContentAsStringAsync consumes the element's end tag and leaves the reader ON
         // the following node. Calling ReadAsync again would then step over that node, and the node
         // after a Placemark's <name>/<description> is very often the geometry itself — which was
-        // silently dropped, yielding a feature with no geometry at all (honua-server#4419). Reuse
+        // silently dropped, yielding a feature with no geometry at all. Reuse
         // the already-positioned node instead of advancing past it.
         var reuseCurrentNode = false;
         while (reuseCurrentNode || await reader.ReadAsync())

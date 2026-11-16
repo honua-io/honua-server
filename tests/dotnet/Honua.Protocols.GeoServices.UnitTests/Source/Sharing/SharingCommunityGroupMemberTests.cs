@@ -19,9 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Sharing;
 
-/// <summary>
-/// A public group's member roster is visible only to its owner, its members, or an administrator.
-/// </summary>
 public sealed class SharingCommunityGroupMemberTests
 {
     [UnitTest]

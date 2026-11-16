@@ -10,11 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Fake-client contract for release-image convergence. The
-/// <c>Category=ReleaseCellHook</c> facts are the hook honua-release eval #1164 runs
-/// against a real cell through this same product executor. These tests do not call AWS.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class ReleaseImageConvergenceTests
 {

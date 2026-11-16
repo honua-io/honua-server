@@ -569,8 +569,8 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         }
 
         // Bound the attacker-controlled OUTPUT grid before gdal_grid allocates a
-        // width×height surface, closing the output-allocation OOM vector (#2782).
-        // Reuses the same caps the input dimension guard applies (#2766).
+        // width×height surface, closing the output-allocation OOM vector.
+        // Reuses the same caps the input dimension guard applies.
         if (width.HasValue && height.HasValue
             && !GdalOutputGridGuard.TryAdmit(width.Value, height.Value, options, out failure))
         {

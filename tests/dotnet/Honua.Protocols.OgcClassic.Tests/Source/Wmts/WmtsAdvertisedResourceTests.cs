@@ -100,6 +100,7 @@ public sealed class WmtsAdvertisedResourceTests : IAsyncLifetime
                 : service).ToArray()
         };
         var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        var baseline = (await provider.GetCurrentAsync()).Graph;
         provider.SetGraph(graph, schema: _fixture.CurrentSchema);
         provider.ActivateAfterNextRead(graph with
         {
@@ -123,7 +124,16 @@ public sealed class WmtsAdvertisedResourceTests : IAsyncLifetime
         }
         finally
         {
-            provider.SetGraph(original, schema: _fixture.CurrentSchema);
+            RestoreAfterActivation(provider, original, baseline);
         }
+    }
+
+    // The activation lands on whichever reader comes next, which on the shared host can be
+    // the baseline (read above outside a request), so restore both for later cases.
+    private void RestoreAfterActivation(TestMetadataV2GraphProvider provider, MetadataV2Graph original, MetadataV2Graph baseline)
+    {
+        provider.ClearPendingActivation();
+        provider.SetGraph(original, schema: _fixture.CurrentSchema);
+        provider.SetGraph(baseline);
     }
 }

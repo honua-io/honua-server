@@ -16,39 +16,14 @@ public class ZarrTileRendererTests
 {
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-    /// <summary>Edge length of the square fixture grid.</summary>
     private const int GridSize = 8;
 
-    /// <summary><see cref="Sample"/> at (0, 0) — the low end of both display ramps.</summary>
     private const double SampleMin = 0;
 
-    /// <summary><see cref="Sample"/> at (7, 7) — the high end of both display ramps.</summary>
     private const double SampleMax = 77;
 
-    /// <summary>The fixture's cell value at storage row <paramref name="row"/>, column <paramref name="col"/>.</summary>
-    /// <remarks>
-    /// Asymmetric on purpose: <c>Sample(r, c) != Sample(c, r)</c> whenever <c>r != c</c>, so a
-    /// renderer that swapped the X/Y strides renders a visibly different image. The former
-    /// <c>r + c</c> fixture was invariant under transposition on a square grid, which made the
-    /// spatial mapping unassertable.
-    /// <para>
-    /// The ramp is evaluated in <see cref="float"/> rather than widening an <see cref="int"/>
-    /// product, so no integer multiplication is converted to floating point. Every value the
-    /// fixture produces (<c>0</c>..<c>77</c>, both operands bounded by <see cref="GridSize"/>) is
-    /// exactly representable, so the grid is unchanged.
-    /// </para>
-    /// </remarks>
     private static float Sample(int row, int col) => (row * 10f) + col;
 
-    /// <summary>
-    /// The rendered tile's pixels, not just its framing (honua-server#4395).
-    /// </summary>
-    /// <remarks>
-    /// This test asserted the PNG signature and the IHDR dimensions, so a renderer that emitted a
-    /// correctly-sized blank or garbled tile passed. The no-colormap path auto-ramps grayscale over
-    /// the slice's finite range, so every pixel's grey level is computable from the fixture:
-    /// <c>round(Sample(r, c) / 77 * 255)</c>.
-    /// </remarks>
     [Trait("Tier", "Fast")]
     [Fact]
     public async Task Render_GeoreferencedSlice_ProducesGrayscalePixelsMatchingTheCellValues()
@@ -117,10 +92,6 @@ public class ZarrTileRendererTests
             value => (ExpectedGray(value), ExpectedGray(value), ExpectedGray(value), (byte)255));
     }
 
-    /// <summary>
-    /// A boxed float32 fill is not a <see cref="double"/>, so the tile path must convert it
-    /// before rendering. Otherwise the sentinel is stretched as opaque data.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public void Render_BoxedFloatFill_IsTransparentAndExcludedFromTheRamp()
@@ -165,10 +136,6 @@ public class ZarrTileRendererTests
         image.Pixel(1, 1).Should().Be(((byte)255, (byte)255, (byte)255, (byte)255));
     }
 
-    /// <summary>
-    /// An int64 fill past the exact double range must stay transparent, and the
-    /// neighbouring integer that rounds to the same double must stay opaque.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Fact]
     public void Render_LossyInt64Fill_MasksOnlyTheExactSentinel()
@@ -213,17 +180,6 @@ public class ZarrTileRendererTests
         image.Pixel(1, 1).Should().Be(((byte)0, (byte)0, (byte)0, (byte)255));
     }
 
-    /// <summary>
-    /// Decodes a <see cref="GridSize"/>-square render and asserts every pixel against the value its
-    /// own source cell carries, returning the decoded image for any further assertions.
-    /// </summary>
-    /// <remarks>
-    /// Comparing by coordinate — rather than as an unordered multiset — is what pins the spatial
-    /// mapping: a multiset comparison passes for a transposed or vertically flipped render, and the
-    /// old symmetric-corner anchors could not tell those apart either. Asserting the whole RGBA
-    /// quadruple additionally covers opacity for every pixel, so a regression that writes plausible
-    /// colours while leaving most of the tile transparent cannot stay green.
-    /// </remarks>
     private static MiniPngDecoder.DecodedImage AssertPixelGrid(
         byte[] png,
         Func<float, (byte R, byte G, byte B, byte A)> expected)
@@ -251,7 +207,6 @@ public class ZarrTileRendererTests
         return image;
     }
 
-    /// <summary>Grayscale ramp over the fixture's <see cref="SampleMin"/>..<see cref="SampleMax"/> range.</summary>
     private static byte ExpectedGray(double cellValue)
         => (byte)Math.Clamp((int)Math.Round((cellValue - SampleMin) / (SampleMax - SampleMin) * 255.0), 0, 255);
 

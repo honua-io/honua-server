@@ -6,12 +6,6 @@ using Honua.Core.Features.ControlPlane;
 
 namespace Honua.Core.Tests.Features.ControlPlane;
 
-/// <summary>
-/// Pins the on-disk qualification receipt contract read by
-/// <c>scripts/qualification/gp-lifecycle-harness.sh</c>. The barrier ships inside the
-/// trimmed/native-AOT worker, so its receipts are written through a source-generated
-/// serializer; these tests prove that swap did not move a single JSON property name.
-/// </summary>
 public class ExecutionQualificationBarrierTests : IDisposable
 {
     private readonly string _root = Path.Join(Path.GetTempPath(), $"honua-barrier-{Guid.NewGuid():N}");

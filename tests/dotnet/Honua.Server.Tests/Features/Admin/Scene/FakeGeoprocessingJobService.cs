@@ -10,14 +10,6 @@ using Honua.Server.Features.Admin.Scene;
 
 namespace Honua.Server.Tests.Features.Admin.Scene;
 
-/// <summary>
-/// In-memory <see cref="IGeoprocessingJobService"/> double for the point-cloud
-/// decompression dispatch tests (#1854). Captures the submitted plan and the
-/// authorization request, then drives <see cref="GetJobAsync"/> through a scripted
-/// status sequence (the last scripted status is sticky; an empty sequence stays
-/// <see cref="ExecutionJobStatus.Running"/> forever to exercise the timeout). The
-/// result package surfaces a single configurable artifact URI.
-/// </summary>
 internal sealed class FakeGeoprocessingJobService : IGeoprocessingJobService
 {
 
@@ -37,16 +29,12 @@ internal sealed class FakeGeoprocessingJobService : IGeoprocessingJobService
         _artifactUri = artifactUri;
     }
 
-    /// <summary>The plan captured at submit time, for assertions.</summary>
     public AnalysisPlan? SubmittedPlan { get; private set; }
 
-    /// <summary>The (resource, operation) the dispatcher authorized against.</summary>
     public (OperatorResourceType Resource, OperatorOperation Operation)? AuthorizedFor { get; private set; }
 
-    /// <summary>Number of <see cref="GetJobAsync"/> polls.</summary>
     public int GetJobCalls { get; private set; }
 
-    /// <summary>When set, <see cref="SubmitJobAsync"/> throws it (simulating a runtime failure).</summary>
     public Exception? SubmitException { get; set; }
 
     public Task EnsureCallerAuthorizedAsync(

@@ -3,21 +3,8 @@
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Resolves repository-relative file paths from a test's runtime working directory by
-/// walking upward to the <c>Honua.sln</c> marker. New tests that need to load seed
-/// SQL, fixtures, or other repo-relative assets should use this helper instead of
-/// duplicating the ancestor walk inline.
-/// </summary>
 public static class RepositoryPaths
 {
-    /// <summary>
-    /// Returns the absolute path of <paramref name="segments"/> resolved against the
-    /// repository root (the directory containing <c>Honua.sln</c>).
-    /// </summary>
-    /// <exception cref="FileNotFoundException">
-    /// Thrown when the repository root cannot be located from <see cref="AppContext.BaseDirectory"/>.
-    /// </exception>
     public static string Resolve(params string[] segments)
     {
         var root = FindRepositoryRoot()

@@ -18,28 +18,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
-/// <summary>
-/// #4423: HTTP-level authorization proof for the VersionManagementServer lifecycle handlers.
-/// <para>
-/// Every VMS route is <c>.AllowAnonymous()</c> at the framework level, so the handler-internal
-/// ownership policy is the only control. Before this file, <c>VersionAccessPolicyTests</c> proved
-/// <c>VersionAccessPolicy.CanManageVersion</c> in isolation and every VMS endpoint test ran
-/// under the F1 development-authentication bypass, which returns an <c>admin</c> principal before
-/// any credential is read. Under that bypass <c>isAdmin</c> is always <see langword="true"/>, so
-/// the non-owner denial branches (BH3-002/003/004, BH6-001) were never executed through
-/// <c>HandleDelete</c>, <c>HandleAlter</c>, <c>HandleReconcile</c>, <c>HandlePost</c> or
-/// <c>HandleInspectConflicts</c>, and nothing proved those handlers call the policy at all.
-/// </para>
-/// <para>
-/// These tests run with <c>HONUA_DEV_AUTH=false</c> and two genuinely non-admin portal
-/// credentials that differ only in principal name. Both hold the service-scoped data-editor role,
-/// so both clear the service write gate — the positive control below proves that by having the
-/// non-owner successfully create and manage a version of its own. What the non-owner cannot do is
-/// touch a version it does not own, and the assertions go past the status: after every denied
-/// attempt the owner re-reads the version and finds its name, access, description and status
-/// unchanged, i.e. the denial produced no mutation.
-/// </para>
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.VersionManagementServer)]
 public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
@@ -47,7 +25,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     private const string ServiceBase =
         "/rest/services/" + WebAppFixture.TestServiceId + "/VersionManagementServer";
 
-    /// <summary>The service-scoped data-editor role (<c>RbacOptions.DataEditorServicePrefix</c>).</summary>
     private const string EditorRole = "data-editor:" + WebAppFixture.TestServiceId;
 
     // The data-editor role for the renamed branch-versioning publication.
@@ -58,7 +35,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 
     private const string Referer = "https://vms-authorization-proof.example/";
 
-    /// <summary>Esri's <c>TokenRequired</c> error code, returned to an unauthenticated caller.</summary>
     private const int GeoServicesTokenRequired = 499;
 
     private readonly WebAppFixture _fixture = new();
@@ -84,10 +60,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// A non-owner, non-admin, service-write-authorized principal is refused by all five
-    /// lifecycle handlers, and the owner's version is unchanged afterwards.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete")]
@@ -180,10 +152,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             "a denied delete/reconcile/post must leave the version active");
     }
 
-    /// <summary>
-    /// A private version is not disclosed to a non-owner by the list or info surfaces, and the
-    /// owner still sees it — the visibility half of the same policy.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions")]
@@ -318,13 +286,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         return document.RootElement.GetProperty("count").GetInt32();
     }
 
-    /// <summary>
-    /// #5036: a read session follows the read rule, not the lifecycle rule. A client starts one on
-    /// DEFAULT to open the workspace and on each version it creates or switches to, so a non-owner,
-    /// non-admin reader opens and closes read sessions on DEFAULT and on another owner's public
-    /// version, while another owner's private version stays undisclosed (404, no acknowledgement).
-    /// Edit sessions are not part of that exchange and stay owner-or-admin only.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
@@ -401,10 +362,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// With the development bypass off, an unauthenticated caller reaches no VMS lifecycle
-    /// operation and learns nothing about the versions that exist.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]

@@ -12,11 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// CRS TRANSFORMATION CORRECTNESS TESTS
-/// Focused testing of coordinate reference system transformations and axis order handling.
-/// Tests critical PostgresCrsRegistry functionality and real-world coordinate scenarios.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreSpatial")]
 public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
@@ -48,12 +43,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
 
     #region CRS84 vs EPSG:4326 AXIS ORDER VERIFICATION
 
-    /// <summary>
-    /// CRITICAL: Verifies CRS84 (longitude,latitude) vs EPSG:4326 axis order consistency
-    /// Tests real-world locations to ensure coordinates aren't swapped
-    /// CRS84: Always longitude,latitude (East,North)
-    /// EPSG:4326: Context-dependent, but should be consistent with CRS84 in web contexts
-    /// </summary>
     [Theory]
     [InlineData("NYC")]
     [InlineData("London")]
@@ -125,10 +114,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests multiple CRS identifier formats for the same coordinate system
-    /// Verifies different ways of specifying EPSG:4326 return consistent results
-    /// </summary>
     [Theory]
     [InlineData("EPSG:4326")]
     [InlineData("4326")]
@@ -161,10 +146,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
 
     #region COORDINATE TRANSFORMATION PRECISION TESTS
 
-    /// <summary>
-    /// Tests coordinate transformation precision with high-accuracy coordinates
-    /// Verifies transformations don't introduce excessive precision loss
-    /// </summary>
     [Theory]
     [InlineData(-122.419416667, 37.774929167)] // San Francisco with sub-meter precision
     [InlineData(2.294481111, 48.858370833)]    // Eiffel Tower with high precision
@@ -210,10 +191,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests transformation chain accuracy: WGS84 -> Web Mercator -> WGS84
-    /// Verifies roundtrip transformations don't accumulate excessive error
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -261,10 +238,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
 
     #region POLAR REGION TRANSFORMATION TESTS
 
-    /// <summary>
-    /// Tests coordinate transformations in polar regions where Web Mercator breaks down
-    /// Verifies server handles areas beyond Web Mercator projection limits
-    /// </summary>
     [Theory]
     [InlineData(0, 85.06)]        // Just beyond Web Mercator north limit
     [InlineData(0, -85.06)]       // Just beyond Web Mercator south limit
@@ -305,10 +278,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests transformation of coordinates exactly at Web Mercator limits
-    /// Verifies boundary condition handling at ±85.051129° latitude
-    /// </summary>
     [Theory]
     [InlineData(0, 85.051129)]    // Exact Web Mercator north limit
     [InlineData(0, -85.051129)]   // Exact Web Mercator south limit
@@ -342,10 +311,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
 
     #region ANTIMERIDIAN TRANSFORMATION TESTS
 
-    /// <summary>
-    /// Tests coordinate transformations across the International Date Line
-    /// Verifies antimeridian-crossing coordinates transform correctly
-    /// </summary>
     [Theory]
     [InlineData(179.5, 0)]     // Just west of antimeridian
     [InlineData(-179.5, 0)]    // Just east of antimeridian
@@ -398,10 +363,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Tests bounding box transformation across antimeridian
-    /// Verifies antimeridian-crossing rectangles transform without topology errors
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -434,10 +395,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
 
     #region DATUM TRANSFORMATION TESTS
 
-    /// <summary>
-    /// Tests different datum handling in geographic coordinate systems
-    /// Verifies server correctly differentiates between different geographic CRS
-    /// </summary>
     [Theory]
     [InlineData("EPSG:4326", "WGS84")]
     [InlineData("EPSG:4269", "NAD83")]
@@ -478,10 +435,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
 
     #region ERROR HANDLING TESTS
 
-    /// <summary>
-    /// Tests server response to invalid or unsupported SRID codes
-    /// Verifies graceful error handling for bad CRS identifiers
-    /// </summary>
     [Theory]
     [InlineData("EPSG:99999")]    // Non-existent EPSG code
     [InlineData("INVALID:123")]   // Invalid CRS format
@@ -510,10 +463,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         ((int)response.StatusCode).Should().BeLessThan(500);
     }
 
-    /// <summary>
-    /// Tests server response to coordinate values outside valid ranges
-    /// Verifies validation of extreme coordinate values
-    /// </summary>
     [Theory]
     [InlineData("999,0")]        // Longitude > 180
     [InlineData("0,999")]        // Latitude > 90

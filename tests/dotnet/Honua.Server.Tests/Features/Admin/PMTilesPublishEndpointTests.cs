@@ -173,18 +173,6 @@ public sealed class PMTilesPublishEndpointTests(DatabaseFixtureAdapter database)
         bytes[..7].Should().BeEquivalentTo("PMTiles"u8.ToArray(), "PMTiles archive header should appear at offset 0");
     }
 
-    /// <summary>
-    /// Range coverage for an <em>interior</em> tile window, not the seven-byte magic prefix
-    /// (honua-server#4397).
-    /// </summary>
-    /// <remarks>
-    /// The existing 206 test requests bytes 0-6 and asserts they spell "PMTiles", which proves the
-    /// route honours <c>Range</c> but says nothing about whether a range landing on real tile data
-    /// returns the right bytes — the thing every PMTiles client actually does. This walks the
-    /// served archive's header and root directory to compute one tile's absolute byte window, then
-    /// asks for exactly that window over HTTP and compares the returned bytes with that tile's
-    /// bytes in the whole-archive download.
-    /// </remarks>
     [IntegrationTest]
     [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
     public async Task PMTilesProxy_InteriorTileRange_ReturnsExactlyThatTilesBytes()
@@ -236,11 +224,6 @@ public sealed class PMTilesPublishEndpointTests(DatabaseFixtureAdapter database)
         payload.Should().NotBeEmpty();
     }
 
-    /// <summary>
-    /// The archive the proxy serves must be the archive on disk, byte for byte — otherwise a
-    /// client that range-reads it computes offsets against something the server never sent
-    /// (honua-server#4397).
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
     public async Task PMTilesProxy_ServedArchive_IsReadableAsAWholePMTilesArchive()

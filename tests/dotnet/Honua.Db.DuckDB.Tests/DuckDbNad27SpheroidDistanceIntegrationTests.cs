@@ -11,10 +11,6 @@ using Testcontainers.PostgreSql;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Compares a CONUS NAD27 point pair measured by the shipped DuckDB transform with the
-/// same shift on the PostGIS spheroid. Skipped unless <c>HONUA_TEST_POSTGRES=1</c>.
-/// </summary>
 public sealed class DuckDbNad27SpheroidDistanceIntegrationTests
 {
     private const string Left = "POINT(-100 40)";

@@ -13,30 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// Route-inventory authorization guard. Enumerates every <see cref="RouteEndpoint"/> the
-/// running host registers and classifies it by its endpoint authorization metadata:
-/// <list type="bullet">
-/// <item><c>authorized</c>: carries <see cref="IAuthorizeData"/>, an <see cref="AuthorizationPolicy"/>
-/// or <see cref="IAuthorizationRequirementData"/> and no <see cref="IAllowAnonymous"/>.</item>
-/// <item><c>anonymous</c>: carries <see cref="IAllowAnonymous"/> (explicitly public).</item>
-/// <item><c>none</c>: carries no authorization metadata at all.</item>
-/// </list>
-/// The host registers no fallback authorization policy, so a <c>none</c> route is reachable by
-/// any caller unless its handler, an endpoint filter or the shared access-policy pipeline denies
-/// it. Every <c>anonymous</c> and <c>none</c> route must therefore be listed in the committed
-/// <c>route-authorization-allowlist.txt</c>, one per line, so a new unprotected route fails the
-/// PR that adds it and its review diff names the route.
-/// </summary>
-/// <remarks>
-/// The inventory is the union of a Poll-mode (on-prem) host and an Event-mode (cloud) host, because the
-/// control-plane event and scheduled-tick routes are mapped only under <c>ControlPlane:TriggerMode=Event</c>.
-/// The check is exact in both directions: an unlisted unprotected route fails, and a listed
-/// route that is no longer deployed or now carries authorization metadata fails as stale.
-/// Regenerate the file after an intended change with
-/// <c>HONUA_UPDATE_ROUTE_AUTHZ_ALLOWLIST=1 dotnet test --filter RouteAuthorizationInventoryGuardTests</c>
-/// and review the diff.
-/// </remarks>
 [Collection("Database")]
 public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
 {
@@ -47,39 +23,25 @@ public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
     private const string AnonymousClass = "anonymous";
     private const string NoneClass = "none";
 
-    /// <summary>A route only the <c>ControlPlane:TriggerMode=Event</c> host maps; proves that host really runs in Event mode.</summary>
     private const string EventModeSentinelRoute = "/internal/control-plane/scheduled-tick";
 
-    /// <summary>
-    /// Event-mode routes the runtime inventory cannot see (see
-    /// <see cref="EventModeControlPlaneMappingSection_RegistersOnlyTheReviewedRoutes"/>). They are part of
-    /// the expected allow-list content so the stale check keeps them.
-    /// </summary>
     private static readonly string[] StaticallyReviewedEventModeRoutes =
     [
         "anonymous POST /internal/control-plane/backstop/sweep",
         "anonymous POST /internal/control-plane/events/batch-job-state-change",
     ];
 
-    /// <summary>Default host: <c>ControlPlane:TriggerMode=Poll</c> (on-prem).</summary>
     private readonly WebAppFixture _fixture = new();
 
-    /// <summary>
-    /// Cloud host: <c>ControlPlane:TriggerMode=Event</c>. <c>MapControlPlaneEventEndpoints</c> and
-    /// <c>MapScheduledTickEndpoints</c> register routes only in this mode, so the inventory is the union
-    /// of both supported deployment shapes.
-    /// </summary>
     private readonly WebAppFixture _eventModeFixture = new WebAppFixture()
         .ConfigureWebHost(builder => builder.UseSetting("ControlPlane:TriggerMode", "Event"));
 
-    /// <inheritdoc />
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
         await _eventModeFixture.InitializeAsync();
     }
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         await _eventModeFixture.DisposeAsync();
@@ -171,14 +133,6 @@ public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// <c>MapControlPlaneEventEndpoints</c> maps its routes only when <c>ControlPlane:TriggerMode=Event</c>
-    /// <b>and</b> the connected-Redis control-plane reconcile graph is composed (it reads
-    /// <c>IOptions&lt;ControlPlaneTriggerOptions&gt;</c>, bound only on that path in <c>Program.cs</c>), so even
-    /// the Event-mode test host (no Redis) cannot inventory them at runtime. Until a Redis-backed host is
-    /// added, pin that mapping section to an explicit route list: a new route there fails here and must
-    /// be reviewed and added both to this list and to the allow-list.
-    /// </summary>
     [Fact]
     [Trait("Category", "Architecture")]
     public void EventModeControlPlaneMappingSection_RegistersOnlyTheReviewedRoutes()
@@ -216,9 +170,6 @@ public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
         return directory!.FullName;
     }
 
-    /// <summary>
-    /// Classifies every deployed route endpoint by its authorization metadata.
-    /// </summary>
     internal static IReadOnlyList<RouteAuthorizationEntry> ClassifyDeployedRoutes(IServiceProvider services)
     {
         var entries = new HashSet<RouteAuthorizationEntry>();
@@ -288,10 +239,6 @@ public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
     private static string[] ReadAllowListLines()
         => [.. File.ReadAllLines(AllowListPath()).Where(IsEntry).Select(line => line.Trim())];
 
-    /// <summary>
-    /// Rewrites the source-tree allow-list from the live inventory, keeping the file header and any
-    /// comment lines (such as <c># UNVERIFIED</c> markers) that sit directly above a surviving entry.
-    /// </summary>
     private static void WriteAllowList(IEnumerable<string> lines)
     {
         var target = Path.Join(RepositoryRoot(), "tests", "dotnet", "Honua.Server.Tests", "Features", "Security", AllowListFileName);
@@ -329,13 +276,8 @@ public sealed class RouteAuthorizationInventoryGuardTests : IAsyncLifetime
         File.WriteAllLines(target, output);
     }
 
-    /// <summary>
-    /// One deployed route (method + raw pattern), its authorization classification, the policies it names and
-    /// the first request content type it accepts (routing answers 415 before authorization otherwise).
-    /// </summary>
     internal sealed record RouteAuthorizationEntry(string Method, string Pattern, string Classification, string Policies, string? AcceptsContentType)
     {
-        /// <summary>The allow-list line for this entry: <c>&lt;class&gt; &lt;METHOD&gt; &lt;route&gt;</c>.</summary>
         public string AllowListLine => $"{Classification} {Method} {Pattern}";
     }
 }

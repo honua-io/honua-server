@@ -12,12 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// Integration tests for the dynamic WMTS time dimension introduced for ticket #379.
-/// Verifies that opt-in Metadata V2 temporal configuration causes the layer
-/// to advertise a continuous time dimension in the capabilities document and that
-/// non-time-aware layers do not.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wmts10)]
 public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime

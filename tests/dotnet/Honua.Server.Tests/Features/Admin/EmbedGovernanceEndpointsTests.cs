@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Server.Features.Admin.EmbedGovernance.Models;
 using Honua.Infrastructure.Models;
+using Honua.Server.Tests.Features.Console;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -14,11 +15,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for embed governance: key lifecycle, scoped policy
-/// evaluation, CORS/domain enforcement, rate limiting, analytics ingestion, and
-/// usage aggregation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApiKeyManagement)]
@@ -45,7 +41,8 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            });
+            })
+            .UseProcessLocalConsoleState();
     }
 
     public async Task InitializeAsync()

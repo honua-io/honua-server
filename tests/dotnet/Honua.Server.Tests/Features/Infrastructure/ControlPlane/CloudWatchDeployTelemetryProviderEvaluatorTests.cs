@@ -13,10 +13,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Verifies the CloudWatch deploy telemetry provider end-to-end through the multi-provider
-/// dispatcher with a faked CloudWatch metric client (no live AWS account required).
-/// </summary>
 public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
 {
     private const string ErrorRateExpression = "errors / requests";
@@ -667,7 +663,6 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
 
         public int LastPeriodSeconds { get; private set; }
 
-        /// <summary>Raw responses read through the production response reader instead of a canned value.</summary>
         public Dictionary<string, GetMetricDataResponse> ResponseOverrides { get; } = new(StringComparer.Ordinal);
 
         public Task<CloudWatchSignalReading> GetExpressionReadingAsync(

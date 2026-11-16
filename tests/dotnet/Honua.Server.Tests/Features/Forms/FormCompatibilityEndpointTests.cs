@@ -62,10 +62,6 @@ public sealed class FormCompatibilityEndpointTests : IAsyncLifetime
         manifest.MigrationSignals.Should().Contain(s => s.Code == "versionUnknown");
     }
 
-    /// <summary>
-    /// Publishes a form package directly through the shared store so the test is
-    /// independent of the target service advertising edit capabilities.
-    /// </summary>
     private async Task<FormPackageVersion> PublishPackageAsync(FormPackageDocument package)
     {
         using var scope = _fixture.Services.CreateScope();

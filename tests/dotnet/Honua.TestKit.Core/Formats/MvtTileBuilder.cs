@@ -5,29 +5,10 @@ using System.Text;
 
 namespace Honua.TestKit.Formats;
 
-/// <summary>
-/// Builds well-formed Mapbox Vector Tile 2.1 payloads for tests that need a tile job to carry a
-/// real tile rather than four arbitrary bytes (honua-server#4421).
-/// </summary>
-/// <remarks>
-/// Tile-job suites stubbed their providers with <c>[0x01, 0x02, 0x03, 0x04]</c>,
-/// <c>Encoding.ASCII.GetBytes("RASTER-TILE-BYTES")</c> and similar, so every "published archive"
-/// they validated held payloads that no client could render. Substituting a real tile costs one
-/// call here and lets the same assertions decode what came back out — which is the difference
-/// between proving an archive has the right shape and proving it carries tiles.
-/// </remarks>
 public static class MvtTileBuilder
 {
-    /// <summary>Default vector tile extent.</summary>
     public const int DefaultExtent = 4096;
 
-    /// <summary>
-    /// Builds a single-layer tile holding one point feature per supplied coordinate, each carrying
-    /// a <c>name</c> attribute.
-    /// </summary>
-    /// <param name="layerName">Layer name to encode.</param>
-    /// <param name="points">Tile-space coordinates and their <c>name</c> attribute values.</param>
-    /// <param name="extent">Tile extent; defaults to <see cref="DefaultExtent"/>.</param>
     public static byte[] PointLayer(
         string layerName,
         IReadOnlyList<(int X, int Y, string Name)> points,
@@ -96,10 +77,6 @@ public static class MvtTileBuilder
         return tile.ToArray();
     }
 
-    /// <summary>
-    /// A canonical single-feature tile: layer <c>layer</c>, one point named <c>probe</c> at the
-    /// tile's centre. Use where a test needs "a valid tile" and does not care which one.
-    /// </summary>
     public static byte[] Canonical()
         => PointLayer("layer", [(DefaultExtent / 2, DefaultExtent / 2, "probe")]);
 

@@ -18,11 +18,6 @@ using NpgsqlTypes;
 
 namespace Honua.Server.Tests.Features.Mobile.FieldCollection;
 
-/// <summary>
-/// Integration coverage for the FieldCollection mobile sync endpoints (#894).
-/// Exercises the four endpoints (generation, sync-cursor, pull, push) consumed
-/// by <c>honua-mobile</c> FieldCollection offline sync.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Features)]
@@ -1032,10 +1027,6 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
     };
 }
 
-/// <summary>
-/// Verifies FieldCollection disconnected sync is licensed separately from
-/// basic online form collection (#1592).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Features)]
@@ -1096,10 +1087,6 @@ public sealed class FieldCollectionSyncLicenseGateTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies that the four FieldCollection sync endpoints reject anonymous traffic
-/// when API-key authentication is enforced.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]

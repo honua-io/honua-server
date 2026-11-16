@@ -10,11 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Unit tests for the SLD parser and SLD↔MapLibre converters. These verify
-/// supported-subset conversion fidelity, diagnostic emission, and security
-/// rejection of unsafe XML — independent of the HTTP layer.
-/// </summary>
 [Trait("Component", "Admin")]
 public sealed class SldConversionTests
 {

@@ -13,9 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Integration tests for the STAC queryables endpoints (Filter Extension).
-/// </summary>
 [Protocol(TestProtocols.Stac)]
 [Collection("Database")]
 public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
@@ -107,11 +104,6 @@ public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
     }
 }
 
-/// <summary>
-/// BH-S-01 regression: GET /stac/collections/{id}/queryables must enforce the same
-/// resource access policy as GET /stac/collections/{id}. An unauthenticated caller
-/// must not be able to read the field schema (names/types) of a private collection.
-/// </summary>
 [Protocol(TestProtocols.Stac)]
 [Collection("Database")]
 public sealed class StacQueryablesAuthorizationTests : IAsyncLifetime

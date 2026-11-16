@@ -13,10 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.API;
 
-/// <summary>
-/// Verifies that EndpointRegistry stays in sync with actually deployed endpoints.
-/// Prevents drift where new endpoints are added to the app but not tracked in the registry.
-/// </summary>
 [Collection("Database")]
 public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 {
@@ -35,10 +31,6 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// Endpoints deployed in the application that are intentionally excluded from the registry.
-    /// These are infrastructure/internal endpoints that don't need integration test coverage tracking.
-    /// </summary>
     private static readonly HashSet<string> _excludedExactPatterns = new(StringComparer.OrdinalIgnoreCase)
     {
         // ASP.NET infrastructure
@@ -584,11 +576,6 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         throw new DirectoryNotFoundException("Could not locate tests/dotnet/Honua.Server.Tests from the test execution directory.");
     }
 
-    /// <summary>
-    /// Catalogued integration and component sources whose actual HTTP requests
-    /// back EndpointRegistry entries. Unit and architecture sources cannot provide
-    /// integration evidence merely by containing route strings.
-    /// </summary>
     private static List<string> FindIntegrationTestSourceRoots()
     {
         var serverTests = FindServerTestSourceRoot();

@@ -27,7 +27,7 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
     {
         // A connection string the driver cannot parse is a configuration fault, not a database fault.
         // The driver's message repeats the offending text, which includes the password, so only the
-        // exception type is reported (honua-server#6495: a generated password that begins with '='
+        // exception type is reported (for example, a generated password that begins with '='
         // reads as "Password==..." and fails here).
         try
         {
@@ -53,7 +53,7 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
 
             // A fresh database (for example the customer-install pgrouting image) ships the PostGIS
             // packages but has not run CREATE EXTENSION yet. The preflight runs before migrations,
-            // so create it here when the role is allowed to (honua-server#6488). A role without the
+            // so create it here when the role is allowed to. A role without the
             // privilege falls through to the incompatible-database refusal below.
             if (!extensions.Any(e => string.Equals(e.Name, "postgis", StringComparison.OrdinalIgnoreCase))
                 && await TryCreatePostGisExtensionAsync(connection, cancellationToken).ConfigureAwait(false))
@@ -125,7 +125,7 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         // (permissions, unexpected catalog shape) stays Incompatible.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // honua-server#5916: name the cause class. Only incompatible-database is fatal; a
+            // Name the cause class. Only incompatible-database is fatal; a
             // connection that could not be borrowed, a refused endpoint, rejected credentials or any
             // other availability failure degrades startup instead of reporting an incompatible database.
             var causeClass = PostgresPreflightFailureClassifier.Classify(ex);

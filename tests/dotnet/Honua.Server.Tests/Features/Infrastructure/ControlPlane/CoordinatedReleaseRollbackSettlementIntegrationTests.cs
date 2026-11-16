@@ -20,10 +20,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-// Child-settlement evidence for coordinated release rollback. The container step is the production
-// CoordinatedContainerStepExecutor over the production deploy service and deploy reconciler. The
-// provider is a scripted pair of replicas behind one traffic switch. The loopback servers return body
-// markers, so the receipt proves which revision is serving when the parent becomes terminal.
 public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOutputHelper output)
 {
     private const string TargetId = "coordinated-local";

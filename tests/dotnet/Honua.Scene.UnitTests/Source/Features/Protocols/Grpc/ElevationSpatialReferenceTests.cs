@@ -23,9 +23,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// gRPC elevation resolves a spatial reference in feature-query order and rejects one it cannot.
-/// </summary>
 public sealed class ElevationSpatialReferenceTests
 {
     [UnitTest]

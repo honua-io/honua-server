@@ -12,9 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-// The reconciler promotes a healthy rollout on the backend's own health gate when no telemetry backend
-// is configured (the local Compose default). Cloud targets still require the telemetry gate, and the
-// explicit manual gate never auto-promotes.
 public sealed class DeployWorkflowReconcilerPromotionGateTests
 {
     [UnitTest]

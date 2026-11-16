@@ -18,13 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Integration tests for the RFC 9728 OAuth 2.0 Protected Resource Metadata document
-/// published for the <c>/mcp</c> resource (honua-server#2849). Asserts the document shape
-/// against the RFC, the well-known URI construction rule, and the capability-honesty
-/// posture that the surface is absent — not empty — with no authorization server
-/// configured.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.GetMetadata)]

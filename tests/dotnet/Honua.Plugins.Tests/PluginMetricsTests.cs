@@ -56,13 +56,6 @@ public sealed class PluginMetricsTests : IClassFixture<PluginMetricsListenerFixt
             measurement.Plugin == pluginId && measurement.Extension == "compute");
     }
 
-    /// <summary>
-    /// Regression test for #3734: the assertion above depends only on a per-invocation unique
-    /// <c>plugin_id</c>, so it must hold even when many <see cref="PluginMetrics.Measure"/> calls
-    /// race concurrently on the shared static <see cref="PluginMetrics.InstrumentMeter"/>
-    /// instruments. The class fixture deliberately keeps one listener alive for the complete test
-    /// class so unrelated listener disposal cannot interrupt these assertions.
-    /// </summary>
     [Fact]
     public async Task Measure_EmitsInvocationAndDuration_WithPluginTags_UnderConcurrentLoad()
     {

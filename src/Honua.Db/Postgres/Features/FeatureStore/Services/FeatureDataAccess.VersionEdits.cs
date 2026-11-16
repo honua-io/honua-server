@@ -15,14 +15,14 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureDataAccess
 {
-    // Branch-versioning overlay writes (#1272 Track B, ADR-0051). A non-DEFAULT edit batch routes the
+    // Branch-versioning overlay writes (ADR-0051). A non-DEFAULT edit batch routes the
     // INSERT/UPDATE/DELETE to honua.version_edits inside one transaction, sets the transaction-scoped
     // honua.gdb_version GUC, and captures the DEFAULT base image on the version's first touch of an
     // (layer_id, objectid). DEFAULT data (`features`) is never touched by this path; the DEFAULT write
     // path is left completely unchanged (byte-identical) and never reaches this file.
     //
     // The overlay's BEFORE trigger (049_CreateVersionEdits.sql) records each mutation into
-    // honua.feature_changes tagged with the producing version so reconcile/post (Slice 2) have a tagged
+    // honua.feature_changes tagged with the producing version so reconcile/post have a tagged
     // version delta even though DEFAULT was never written.
 
     private const string VersionEditsTableName = "honua.version_edits";

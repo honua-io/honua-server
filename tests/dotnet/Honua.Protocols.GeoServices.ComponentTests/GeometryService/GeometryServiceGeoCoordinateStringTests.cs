@@ -12,10 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// Covers the GeometryServer toGeoCoordinateString / fromGeoCoordinateString
-/// operations (MGRS / USNG grid reference conversion).
-/// </summary>
 [Protocol(TestProtocols.GeometryService)]
 [Collection("Database.GeoServicesRaster")]
 public sealed class GeometryServiceGeoCoordinateStringTests

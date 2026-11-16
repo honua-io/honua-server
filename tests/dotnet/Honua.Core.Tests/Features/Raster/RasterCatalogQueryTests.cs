@@ -9,12 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Raster;
 
-/// <summary>
-/// Contract tests for the neutral raster-catalog query abstraction (#2666): validated spatial
-/// predicate / CRS / paging input, and the reference in-memory evaluation that is the declared
-/// bounded fallback and the oracle the PostGIS pushdown must match (envelope-intersects, identity,
-/// temporal newest-batch, natural ordering, paging, count, aggregate extent).
-/// </summary>
 public sealed class RasterCatalogQueryTests
 {
     [UnitTest]

@@ -178,13 +178,6 @@
       "description": "HTTP response caching with tag-based invalidation."
     },
     {
-      "key": "caching.redis",
-      "displayName": "Redis Distributed Cache",
-      "category": "Caching",
-      "edition": "Pro",
-      "description": "Redis-backed distributed cache for multi-node deployments."
-    },
-    {
       "key": "channels.aws-sns",
       "displayName": "AWS SNS Delivery",
       "category": "Channels",
@@ -444,14 +437,14 @@
       "displayName": "Durable Job Runtime",
       "category": "Jobs",
       "edition": "Community",
-      "description": "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime itself is Community; durable persistence across restarts and nodes requires Redis, which caching.redis gates."
+      "description": "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime is Community and persists jobs in the PostgreSQL system database, so they survive restarts and move between nodes."
     },
     {
       "key": "operations.proposals",
       "displayName": "Governed Operation Proposals",
       "category": "ControlPlane",
       "edition": "Community",
-      "description": "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane itself is Community; proposals persist in the Redis-backed durable store, so a host without Redis (or without the caching.redis entitlement) advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt."
+      "description": "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane is Community and persists proposals in the PostgreSQL system database; a host without one advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt."
     },
     {
       "key": "ops.health",

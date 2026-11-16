@@ -42,7 +42,7 @@ internal static partial class ScenePointCloudIngestEndpoints
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/pointcloud", HandleIngestPointCloud)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("IngestPointCloudScene")
             .WithSummary("Ingest a LAS point cloud into a servable 3D Tiles point tileset (Enterprise).")
             .Accepts<IFormFile>("multipart/form-data")

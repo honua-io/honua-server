@@ -93,7 +93,7 @@ public sealed class ServingLatencyAggregator
                 OverwrittenSampleCount = Math.Max(0, retained.TotalRecorded - _samplesPerProtocol),
                 OldestRetainedSampleAgeSeconds = Math.Max(0, (double)(now - retained.OldestTimestamp) / Stopwatch.Frequency),
                 NewestRetainedSampleAgeSeconds = Math.Max(0, (double)(now - retained.NewestTimestamp) / Stopwatch.Frequency),
-                // Mergeable distribution sketch (#2809): lets cluster-wide percentiles be recomputed from
+                // Mergeable distribution sketch: lets cluster-wide percentiles be recomputed from
                 // summed per-replica distributions instead of a mean of percentiles that hides a sick replica.
                 Distribution = LatencyDistribution.FromDurations(durations),
             });

@@ -16,36 +16,12 @@ using Xunit;
 
 namespace Honua.Core.Tests.Raster.ZarrParser;
 
-/// <summary>
-/// Reads the committed curated Zarr cube through the server's own reader (honua-server#4395).
-/// </summary>
-/// <remarks>
-/// <para>
-/// <c>CuratedCorpusTests.ZarrAsset_IsARealTwoSliceFloat32Cube</c> proves the fixture is a valid
-/// two-slice Float32 cube — but it does so with its own <c>BitConverter</c> decode and never
-/// touches <c>ZarrMetadataExtractor</c>, <c>ZarrSubsetReader</c> or the renderer. The fixture and
-/// the reader were therefore each proven alone and never together, which is exactly the gap where
-/// a reader that misinterprets chunk layout, dtype endianness, dimension order or the fill value
-/// survives.
-/// </para>
-/// <para>
-/// The expected values here are the same ones the corpus test asserts independently, so this is a
-/// cross-check between two decoders, not a snapshot of the reader's own output.
-/// </para>
-/// </remarks>
 public sealed class CuratedZarrCorpusReaderTests
 {
     private const string Bucket = "curated";
     private const string GroupRoot = "sea-surface-temperature.zarr";
     private const string Variable = "temperature";
 
-    /// <summary>
-    /// The array is addressed directly rather than discovered from the group. The curated cube is
-    /// CF-conventional (<c>Conventions: CF-1.8</c>, <c>_ARRAY_DIMENSIONS</c>) and carries neither
-    /// a Honua-specific <c>variables</c> attribute nor a consolidated <c>.zmetadata</c>, which are
-    /// the only two things <c>ZarrMetadataExtractor.ResolveVariables</c> reads. Pinned by
-    /// <see cref="CuratedGroupRoot_HasNoDiscoverableVariables_SoTheArrayMustBeAddressedDirectly"/>.
-    /// </summary>
     private const string ArrayRoot = GroupRoot + "/" + Variable;
 
     [UnitTest]
@@ -84,11 +60,6 @@ public sealed class CuratedZarrCorpusReaderTests
         ReadSingle(subset.Data, 23).Should().Be(24f, "last cell of the second time slice");
     }
 
-    /// <summary>
-    /// A single time slice must come back as that slice, not as the head of the flattened cube.
-    /// This is the read a datacube tile request performs, and the case that catches a reader
-    /// which ignores the leading dimension's offset.
-    /// </summary>
     [UnitTest]
     public async Task CuratedCube_SecondTimeSlice_ReadsThatSliceNotTheFirst()
     {
@@ -132,20 +103,6 @@ public sealed class CuratedZarrCorpusReaderTests
             "a reader that ignored the time offset would return the FIRST slice");
     }
 
-    /// <summary>
-    /// Pins why the tests above address the array directly: a CF-conventional Zarr group is not
-    /// enough for the extractor to find its variables (honua-server#4395).
-    /// </summary>
-    /// <remarks>
-    /// <c>ZarrMetadataExtractor.ResolveVariables</c> discovers variables only from a
-    /// <c>variables</c> array in the group's <c>.zattrs</c> or from a consolidated
-    /// <c>.zmetadata</c>. The curated cube — which is what ordinary CF/xarray-written Zarr looks
-    /// like — has neither, so opening it at the group root falls through to the
-    /// "root is itself a single array" path and fails looking for a <c>.zarray</c> that is one
-    /// level down. This test records the current behaviour rather than endorsing it; whether the
-    /// extractor should also enumerate child groups is a product question, and the PR that added
-    /// this test raises it.
-    /// </remarks>
     [UnitTest]
     public async Task CuratedGroupRoot_HasNoDiscoverableVariables_SoTheArrayMustBeAddressedDirectly()
     {
@@ -160,10 +117,6 @@ public sealed class CuratedZarrCorpusReaderTests
         metadata.Arrays.Should().ContainSingle();
     }
 
-    /// <summary>
-    /// Loads the digest-verified corpus objects into a range reader under the keys a Zarr store
-    /// uses, so the extractor walks the same layout it would in object storage.
-    /// </summary>
     private static (InMemoryZarrRangeReader Reader, byte[] Chunk) BuildReader()
     {
         var corpus = CuratedCorpus.Load();

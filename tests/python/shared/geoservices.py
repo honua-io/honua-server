@@ -70,3 +70,10 @@ def assert_geoservices_error(
     )
     if body_codes is not None:
         assert error.get("code") in body_codes, error
+
+
+# The durable job queue may claim, run or finish a GP job before submitJob returns, so an
+# accepted submission reports any of these states, not only esriJobSubmitted.
+ACCEPTED_SUBMIT_JOB_STATUSES = frozenset(
+    {"esriJobSubmitted", "esriJobWaiting", "esriJobExecuting", "esriJobSucceeded"}
+)

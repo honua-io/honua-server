@@ -30,9 +30,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin.Jobs;
 
-/// <summary>
-/// Integration tests for Console job observability endpoints (#1170).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
