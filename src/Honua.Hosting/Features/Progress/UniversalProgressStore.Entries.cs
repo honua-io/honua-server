@@ -10,25 +10,25 @@ namespace Honua.Migration;
 
 internal sealed partial class UniversalProgressStore
 {
-    private readonly ConcurrentDictionary<string, FallbackProgress> _fallbackStore = new();
+    private readonly ConcurrentDictionary<string, ProgressEntry> _entries = new();
 
-    private sealed class FallbackProgress(IOperationProgress progress, DateTime expiresAt)
+    private sealed class ProgressEntry(IOperationProgress progress, DateTime expiresAt)
     {
         public IOperationProgress Progress { get; } = progress;
         public DateTime ExpiresAt { get; } = expiresAt;
     }
 
-    private FallbackProgress? GetFallbackEntry(string key)
+    private ProgressEntry? GetEntry(string key)
     {
-        CleanupFallbackPeriodically();
-        while (_fallbackStore.TryGetValue(key, out var current))
+        CleanupPeriodically();
+        while (_entries.TryGetValue(key, out var current))
         {
             if (current.ExpiresAt > DateTime.UtcNow)
             {
                 return current;
             }
 
-            if (RemoveFallbackSnapshot(new(key, current)))
+            if (RemoveSnapshot(new(key, current)))
             {
                 return null;
             }
@@ -37,11 +37,11 @@ internal sealed partial class UniversalProgressStore
         return null;
     }
 
-    private ProgressCompareAndSetResult TryReplaceProgressInFallback(
+    private ProgressCompareAndSetResult TryReplaceProgress(
         OperationProgressWrite write, IOperationProgress? expected, TimeSpan ttl)
     {
         var key = $"{KeyPrefix}{write.OperationId}";
-        var current = GetFallbackEntry(key);
+        var current = GetEntry(key);
         if (current is null && expected is not null)
         {
             return ProgressCompareAndSetResult.NotFound;
@@ -52,27 +52,27 @@ internal sealed partial class UniversalProgressStore
             return ProgressCompareAndSetResult.StatusMismatch(current.Progress);
         }
 
-        var replacement = new FallbackProgress(write.Progress, DateTime.UtcNow.Add(ttl));
+        var replacement = new ProgressEntry(write.Progress, DateTime.UtcNow.Add(ttl));
         var updated = current is null
-            ? _fallbackStore.TryAdd(key, replacement)
-            : _fallbackStore.TryUpdate(key, replacement, current);
+            ? _entries.TryAdd(key, replacement)
+            : _entries.TryUpdate(key, replacement, current);
         if (updated)
         {
-            EnforceFallbackCapacity();
+            EnforceCapacity();
             return ProgressCompareAndSetResult.Updated;
         }
 
-        current = GetFallbackEntry(key);
+        current = GetEntry(key);
         return current is null ? ProgressCompareAndSetResult.NotFound : ProgressCompareAndSetResult.StatusMismatch(current.Progress);
     }
 
-    private ProgressCompareAndSetResult TrySetProgressInFallback(
+    private ProgressCompareAndSetResult TrySetProgress(
         OperationProgressWrite write, OperationStatus expectedStatus, TimeSpan ttl)
     {
         var key = $"{KeyPrefix}{write.OperationId}";
         while (true)
         {
-            var current = GetFallbackEntry(key);
+            var current = GetEntry(key);
             if (current is null)
             {
                 return ProgressCompareAndSetResult.NotFound;
@@ -83,74 +83,74 @@ internal sealed partial class UniversalProgressStore
                 return ProgressCompareAndSetResult.StatusMismatch(current.Progress);
             }
 
-            if (_fallbackStore.TryUpdate(key, new FallbackProgress(write.Progress, DateTime.UtcNow.Add(ttl)), current))
+            if (_entries.TryUpdate(key, new ProgressEntry(write.Progress, DateTime.UtcNow.Add(ttl)), current))
             {
-                EnforceFallbackCapacity();
+                EnforceCapacity();
                 return ProgressCompareAndSetResult.Updated;
             }
         }
     }
 
-    private void CleanupFallbackPeriodically()
+    private void CleanupPeriodically()
     {
         var nowTick = Environment.TickCount64;
         var last = Interlocked.Read(ref _lastCleanupTick);
-        if (nowTick - last < (long)_fallbackCleanupInterval.TotalMilliseconds
+        if (nowTick - last < (long)_cleanupInterval.TotalMilliseconds
             || Interlocked.CompareExchange(ref _lastCleanupTick, nowTick, last) != last)
         {
             return;
         }
 
-        SweepFallback();
+        Sweep();
     }
 
-    private void EnforceFallbackCapacity()
+    private void EnforceCapacity()
     {
-        if (_fallbackStore.Count <= MaxFallbackEntries)
+        if (_entries.Count <= MaxEntries)
         {
-            CleanupFallbackPeriodically();
+            CleanupPeriodically();
             return;
         }
 
         Interlocked.Exchange(ref _lastCleanupTick, Environment.TickCount64);
-        SweepFallback();
+        Sweep();
     }
 
-    private void SweepFallback()
+    private void Sweep()
     {
         var now = DateTime.UtcNow;
-        foreach (var entry in _fallbackStore.Where(entry => entry.Value.ExpiresAt <= now))
+        foreach (var entry in _entries.Where(entry => entry.Value.ExpiresAt <= now))
         {
-            RemoveFallbackSnapshot(entry);
+            RemoveSnapshot(entry);
         }
 
-        var overflow = _fallbackStore.Count - MaxFallbackEntries;
+        var overflow = _entries.Count - MaxEntries;
         if (overflow > 0)
         {
-            foreach (var entry in _fallbackStore.OrderBy(entry => entry.Value.ExpiresAt).Take(overflow))
+            foreach (var entry in _entries.OrderBy(entry => entry.Value.ExpiresAt).Take(overflow))
             {
-                RemoveFallbackSnapshot(entry);
+                RemoveSnapshot(entry);
             }
         }
     }
 
-    private bool RemoveFallbackSnapshot(KeyValuePair<string, FallbackProgress> entry)
-        => ((ICollection<KeyValuePair<string, FallbackProgress>>)_fallbackStore).Remove(entry);
+    private bool RemoveSnapshot(KeyValuePair<string, ProgressEntry> entry)
+        => ((ICollection<KeyValuePair<string, ProgressEntry>>)_entries).Remove(entry);
 
-    private void CacheFallback(string operationId, IOperationProgress progress, TimeSpan ttl)
+    private void Store(string operationId, IOperationProgress progress, TimeSpan ttl)
     {
-        _fallbackStore[$"{KeyPrefix}{operationId}"] = new FallbackProgress(progress, DateTime.UtcNow.Add(ttl));
-        EnforceFallbackCapacity();
+        _entries[$"{KeyPrefix}{operationId}"] = new ProgressEntry(progress, DateTime.UtcNow.Add(ttl));
+        EnforceCapacity();
     }
 
-    private void RemoveFallbackEntry(string key)
-        => _fallbackStore.TryRemove(key, out _);
+    private void RemoveEntry(string key)
+        => _entries.TryRemove(key, out _);
 
-    private List<string> GetActiveOperationIdsFromFallback(OperationType? operationType)
+    private List<string> GetActiveOperationIds(OperationType? operationType)
     {
-        CleanupFallbackPeriodically();
+        CleanupPeriodically();
         var now = DateTime.UtcNow;
-        return _fallbackStore
+        return _entries
             .Where(entry => entry.Key.StartsWith(KeyPrefix, StringComparison.Ordinal) && entry.Value.ExpiresAt > now)
             .Where(entry => operationType == null || entry.Value.Progress.Type == operationType)
             .Select(entry => entry.Key[KeyPrefix.Length..])

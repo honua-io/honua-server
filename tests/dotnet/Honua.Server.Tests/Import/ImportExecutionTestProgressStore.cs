@@ -6,13 +6,12 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Migration;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Import;
 
 internal sealed class ImportExecutionTestProgressStore(IExecutionJobStore jobs) : IUniversalProgressStore
 {
-    private readonly UniversalProgressStore _inner = new(null, NullLogger<UniversalProgressStore>.Instance);
+    private readonly UniversalProgressStore _inner = new();
 
     public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null,
         CancellationToken cancellationToken = default)
