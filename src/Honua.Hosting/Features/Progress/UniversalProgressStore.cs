@@ -22,11 +22,7 @@ using Honua.Infrastructure.Progress;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Process-local progress store for a host without a system database (unit-level hosts and
-/// tests). A host with a system database registers <c>PostgresUniversalProgressStore</c>, the
-/// only shared progress store; this one never claims cross-node visibility.
-/// </summary>
+// Process-local: hosts with a system database register PostgresUniversalProgressStore, the only shared progress store.
 internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 {
     private const string KeyPrefix = "universal:progress:";
