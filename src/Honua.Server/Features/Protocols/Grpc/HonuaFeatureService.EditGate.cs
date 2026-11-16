@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Protocols.Grpc;
@@ -56,14 +57,14 @@ internal sealed partial class HonuaFeatureService
         {
             throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
-                BoundEditValidationMessage(rejections[0].Message, "Invalid feature data.")));
+                ErrorMessageSanitizer.Sanitize(rejections[0].Message, "Invalid feature data.")));
         }
 
         IReadOnlyList<FeatureEditHookRejection> bounded =
         [
             .. rejections.Select(static rejection => rejection with
             {
-                Message = BoundEditValidationMessage(rejection.Message, "Invalid feature data."),
+                Message = ErrorMessageSanitizer.Sanitize(rejection.Message, "Invalid feature data."),
             }),
         ];
         return new EditGate(batch, bounded) { Hooks = hooks, Scope = scope };

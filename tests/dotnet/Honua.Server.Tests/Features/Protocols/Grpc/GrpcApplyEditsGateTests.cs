@@ -98,6 +98,34 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
         _hooks.AfterBatches.Should().ContainSingle().Which.Creates.Select(Name).Should().Equal("first", "last");
     }
 
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task PluginRejection_WithOperationalDetails_ReturnsSafeFallback(bool rollback)
+    {
+        _hooks.RejectionMessage = "Npgsql provider diagnostic";
+        var harness = Harness();
+        var request = PartialRequest(adds: [Shirt("red", "S", RecordingHooks.BlockedName)]);
+        request.RollbackOnFailure = rollback;
+
+        if (rollback)
+        {
+            var exception = await CallAsync(harness, request);
+            exception!.StatusCode.Should().Be(StatusCode.InvalidArgument);
+            exception.Status.Detail.Should().Be("Invalid feature data.");
+        }
+        else
+        {
+            var response = await harness.Service.ApplyEdits(request, Context(harness));
+            response.AddResults.Should().ContainSingle().Which.Success.Should().BeFalse();
+            response.AddResults[0].Error.Message.Should().Be("Invalid feature data.");
+        }
+
+        _written.SelectMany(static batch => batch.Creates).Should().BeEmpty();
+        _hooks.AfterBatches.SelectMany(static batch => batch.Creates).Should().BeEmpty();
+    }
+
     [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task AfterHooks_SeeOnlyTheCommittedRows()
@@ -272,6 +300,8 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
 
         public bool HasHooks => true;
 
+        public string RejectionMessage { get; set; } = "rejected by plugin";
+
         public Task<IReadOnlyList<FeatureEditHookRejection>> RunBeforeAsync(
             FeatureEditHookScope scope,
             FeatureEditBatch batch,
@@ -282,7 +312,7 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
             [
                 .. FeatureEditRows.Enumerate(batch)
                     .Where(static row => row.Feature is { } feature && Name(feature) == BlockedName)
-                    .Select(static row => new FeatureEditHookRejection(row.Kind, row.Index, "rejected by plugin")),
+                    .Select(row => new FeatureEditHookRejection(row.Kind, row.Index, RejectionMessage)),
             ];
             return Task.FromResult(rejections);
         }
