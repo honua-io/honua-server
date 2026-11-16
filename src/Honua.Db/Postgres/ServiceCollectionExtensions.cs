@@ -1086,6 +1086,33 @@ internal static partial class ServiceCollectionExtensions
         return services;
     }
 
+    private static void AddAttachmentUploadServices(
+        IServiceCollection services, IConfiguration configuration, PostgresSchemaConfiguration schemaConfiguration)
+    {
+        services.AddScoped<PostgresAttachmentMaintenance>(serviceProvider =>
+            new PostgresAttachmentMaintenance(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+        if (!Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsEventHandler(configuration))
+        {
+            services.AddHostedService<PostgresAttachmentMaintenanceService>();
+        }
+        services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IAttachmentNativeMetadataStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IAttachmentUploadSessionStore>(serviceProvider =>
+            new PostgresAttachmentUploadSessionStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+        services.AddScoped<IAttachmentMutationStore>(serviceProvider =>
+            new PostgresAttachmentMutationStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+
+    }
+
     private static int ParsePositiveIntOrDefault(string? value, int defaultValue)
     {
         return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0

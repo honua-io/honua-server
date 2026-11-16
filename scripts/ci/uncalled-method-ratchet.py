@@ -49,51 +49,90 @@ def tracked_files(root: Path) -> list[str]:
     return [path for path in result.stdout.split("\0") if path.endswith(TEXT_SUFFIXES) and not path.startswith(EXCLUDED_PREFIXES)]
 
 
+def quoted_literal_end(text: str, start: int, quote: str) -> int:
+    index = start + 1
+    while index < len(text) and text[index] != quote:
+        index += 2 if text[index] == '\\' else 1
+    return index + 1
+
+
+def verbatim_literal_end(text: str, start: int) -> int:
+    index = start + 1
+    while index < len(text):
+        if text[index] == '"':
+            if text.startswith('""', index):
+                index += 2
+                continue
+            break
+        index += 1
+    return index + 1
+
+
+def interpolated_literal_end(text: str, start: int) -> int:
+    index, depth = start + 1, 0
+    while index < len(text):
+        character = text[index]
+        if character == '\\':
+            index += 2
+            continue
+        if depth == 0 and (text.startswith('{{', index) or text.startswith('}}', index)):
+            index += 2
+            continue
+        if character == '{':
+            depth += 1
+        elif character == '}' and depth:
+            depth -= 1
+        if character == '"' and depth == 0:
+            break
+        index += 1
+    return index + 1
+
+
+def string_literal_end(text: str, start: int) -> int | None:
+    quote_index = start
+    while quote_index < len(text) and text[quote_index] in '$@':
+        quote_index += 1
+    if quote_index == len(text) or text[quote_index] != '"':
+        return None
+    prefix = text[start:quote_index]
+    if text.startswith('"""', quote_index):
+        quote_count = 3
+        while text.startswith('"', quote_index + quote_count):
+            quote_count += 1
+        end = text.find('"' * quote_count, quote_index + quote_count)
+        return len(text) if end == -1 else end + quote_count
+    if '@' in prefix:
+        return verbatim_literal_end(text, quote_index)
+    if '$' in prefix:
+        return interpolated_literal_end(text, quote_index)
+    return quoted_literal_end(text, quote_index, '"')
+
+
 def strip_comments(s: str) -> str:
-    """Remove C# comments, leaving string and char literals (regular, verbatim, interpolated, raw) intact."""
+    """Remove C# comments, leaving string and char literals intact."""
     out, i, n = [], 0, len(s)
     while i < n:
         c = s[i]
         if s.startswith('//', i):
-            j = s.find('\n', i); i = n if j == -1 else j; continue
+            j = s.find('\n', i)
+            i = n if j == -1 else j
+            continue
         if s.startswith('/*', i):
-            j = s.find('*/', i + 2); i = n if j == -1 else j + 2; out.append(' '); continue
+            j = s.find('*/', i + 2)
+            i = n if j == -1 else j + 2
+            out.append(' ')
+            continue
+        end = None
         if c == "'":
-            j = i + 1
-            while j < n and s[j] != "'":
-                j += 2 if s[j] == '\\' else 1
-            out.append(s[i:j + 1]); i = j + 1; continue
-        if c in '$@' or c == '"':
-            k = i
-            while k < n and s[k] in '$@': k += 1
-            if k < n and s[k] == '"':
-                prefix = s[i:k]
-                if s.startswith('"""', k):
-                    q = 3
-                    while s.startswith('"', k + q): q += 1
-                    end = s.find('"' * q, k + q); end = n if end == -1 else end + q
-                elif '@' in prefix:
-                    j = k + 1
-                    while j < n:
-                        if s[j] == '"':
-                            if s.startswith('""', j): j += 2; continue
-                            break
-                        j += 1
-                    end = j + 1
-                else:
-                    j = k + 1; depth = 0
-                    while j < n:
-                        ch = s[j]
-                        if ch == '\\': j += 2; continue
-                        if '$' in prefix:
-                            if depth == 0 and (s.startswith('{{', j) or s.startswith('}}', j)): j += 2; continue
-                            if ch == '{': depth += 1
-                            elif ch == '}' and depth: depth -= 1
-                        if ch == '"' and depth == 0: break
-                        j += 1
-                    end = j + 1
-                out.append(s[i:end]); i = end; continue
-        out.append(c); i += 1
+            end = quoted_literal_end(s, i, "'")
+        elif c in '$@"':
+            end = string_literal_end(s, i)
+        if end is not None:
+            out.append(s[i:end])
+            i = end
+            continue
+        out.append(c)
+        i += 1
     return ''.join(out)
 
 
