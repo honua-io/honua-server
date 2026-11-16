@@ -203,7 +203,7 @@ internal sealed class PublishResultTool : IMcpTool
             throw new GeoprocessingPreconditionFailedException(
                 $"Artifact '{artifact.ArtifactId}' is not a materialized publishable table "
                 + $"(missing '{MetadataKeys.ConnectionId}'/'{MetadataKeys.Schema}'/'{MetadataKeys.Table}' coordinates); "
-                + "it cannot be promoted to a hosted layer.");
+                + "it cannot be promoted to a Layer.");
         }
 
         return (connectionId, schema, table);
