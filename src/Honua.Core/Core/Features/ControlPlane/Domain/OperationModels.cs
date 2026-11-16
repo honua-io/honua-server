@@ -254,7 +254,11 @@ public enum ExecutionJobKind
     LayerPublish,
 
     // Asynchronous admin layer export (CSV, Shapefile, GeoPackage) above the synchronous threshold.
-    Export
+    Export,
+
+    GeoservicesImport,
+
+    GeoServerImport
 }
 
 /// <summary>

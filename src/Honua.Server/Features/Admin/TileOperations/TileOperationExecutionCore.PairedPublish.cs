@@ -205,8 +205,11 @@ internal sealed partial class TileOperationExecutionCore
             .Add("jobId", jobId)
             .Add("layerId", context.Source.StorageLayerId.ToString(CultureInfo.InvariantCulture));
 
+        // The paired operation tag keeps these archives out of the generic PMTiles range proxy, which
+        // serves only "publish" objects and cannot apply the publication read policy.
         await context.Store.PutOnceAsync(pmtilesKey, artifacts.Archive, PmtilesPublicationArtifact.MediaTypeValue,
-            PMTilesProxySourceResolver.StampPublishMetadata(tags.Add("operation", "publish"), context.Source.Published),
+            PMTilesProxySourceResolver.StampPublishMetadata(
+                tags.Add("operation", TileCacheExecutionSpecBuilder.PairedPublishOperation), context.Source.Published),
             cancellationToken).ConfigureAwait(false);
         using (var parquet = new MemoryStream(artifacts.Parquet, writable: false))
         {

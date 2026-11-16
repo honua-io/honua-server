@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Mobile.FieldCollection;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Domain;
 using Honua.Infrastructure.Authentication;
@@ -278,7 +279,7 @@ internal static class FieldCollectionSyncEndpoints
         [FromBody] FieldCollectionPushRequestModel? body,
         [FromServices] IFieldCollectionSyncStore store,
         [FromServices] ILoggerFactory loggerFactory,
-        [FromServices] IFieldCollectionAutomationTrigger? automationTrigger = null)
+        [FromServices] FieldCollectionAutomationTrigger? automationTrigger = null)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("FieldCollectionSync.Push");
         activity?.SetTag("honua.protocol", ProtocolTag);

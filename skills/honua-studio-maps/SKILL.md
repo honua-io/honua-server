@@ -31,8 +31,8 @@ catalog layers with `honua_list_layers` and `honua_describe_layer` first.
    `honua_studio_get_version` and render the saved map in Console.
 6. Share only the saved version and requested audience. Use
    `honua_studio_propose_publication` with the exact item, version, hash, route
-   and visibility, following the server's schema. A human with an interactive OIDC session handles
-   any required approval in Console. Verify the final published version and audience.
+   and visibility, following the server's schema. A human with an interactive browser session
+   (password or OIDC) handles any required approval in Console. Verify the final published version and audience.
 
 Map sharing and source service permissions are separate. Do not make services
 public to make a team map render. If the intended audience cannot access a

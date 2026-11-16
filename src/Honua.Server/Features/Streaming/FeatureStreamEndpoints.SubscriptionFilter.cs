@@ -19,7 +19,7 @@ namespace Honua.Server.Features.Streaming;
 internal static partial class FeatureStreamEndpoints
 {
     private readonly record struct SubscriptionParseResult(
-        IStreamSubscriptionFilter? Filter,
+        StreamSubscriptionFilter? Filter,
         bool HasSubscription,
         FeatureStreamSubscriptionMode Mode,
         IResult? Error)

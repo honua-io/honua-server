@@ -33,4 +33,10 @@ public interface IUniversalProgressStore
         where TProgress : class, IOperationProgress;
 }
 
-public sealed record OperationProgressWrite(string OperationId, IOperationProgress Progress, TimeSpan? Ttl = null);
+public sealed record OperationProgressWrite(string OperationId, IOperationProgress Progress, TimeSpan? Ttl = null)
+{
+    // The store must lock and validate this execution attempt in the same transaction as the write.
+    public ProgressExecutionFence? ExecutionFence { get; init; }
+}
+
+public sealed record ProgressExecutionFence(string WorkerId, int AttemptCount);

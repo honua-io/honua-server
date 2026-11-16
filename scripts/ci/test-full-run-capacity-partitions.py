@@ -32,7 +32,9 @@ def verify(original, children, estimates):
     # A child keeps its parent's rank until a full run measures it (fixtures/measured-dispatch-ranks.json);
     # a contract may instead record an estimate from the parent's TRX. Estimates may not shrink the parent's cost.
     assert set(estimates) <= {child["name"] for child in children}, "Estimated rank for a foreign shard."
-    assert not estimates or sum(estimates.values()) >= original["dispatch_rank"], "Estimates shrink the parent."
+    # The bound holds while every child is estimated; a measured child replaces its estimate (see expected_rank).
+    fully_estimated = set(estimates) == {child["name"] for child in children}
+    assert not fully_estimated or sum(estimates.values()) >= original["dispatch_rank"], "Estimates shrink the parent."
     for child in children:
         expected = expected_rank(child["name"], original["dispatch_rank"], estimates)
         assert child["dispatch_rank"] == expected, f"Dispatch rank differs from its measurement: {child['name']}"
@@ -85,6 +87,10 @@ print(f"measured-ranks=ok shards={check_measured_ranks(CONFIG)}")
 
 for field in ("artifact_suffix", "log_name", "shard_name"):
     assert len({shard[field] for shard in CONFIG["shards"]}) == len(CONFIG["shards"]), field
+# A full run puts every shard in one server-tests matrix, and GitHub rejects larger matrices.
+GITHUB_MATRIX_JOB_LIMIT = 256
+assert len(CONFIG["shards"]) <= GITHUB_MATRIX_JOB_LIMIT, (
+    f"{len(CONFIG['shards'])} shards exceed GitHub's {GITHUB_MATRIX_JOB_LIMIT}-job matrix limit")
 
 # The fixed-name operator-eval-report upload fails without eval-report.json, so exactly one
 # shard uploads it and that shard runs the harness test that writes the report.

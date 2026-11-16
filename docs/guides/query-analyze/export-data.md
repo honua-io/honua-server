@@ -21,7 +21,7 @@ Which formats are available depends on the surface: OGC API Features items serve
 
 2. Check which encoded formats your layer advertises, then export GeoParquet or GeoArrow from the FeatureServer query endpoint. Any `where`/`outFields`/geometry filter from [query features](query-features.md) applies:
 
-   Open `/rest/services/{service}/FeatureServer/0?f=json` and inspect the response's `supportedQueryFormats`. To download encoded data, open `/rest/services/{service}/FeatureServer/0/query?where=1%3D1&outFields=*&f=parquet` or the same URL with `f=arrow`.
+   Open `/rest/services/{service}/FeatureServer/{layerId}?f=json` and inspect the response's `supportedQueryFormats`. To download encoded data, open `/rest/services/{service}/FeatureServer/{layerId}/query?where=1%3D1&outFields=*&f=parquet` or the same URL with `f=arrow`.
 
    GeoParquet output follows GeoParquet 1.1.0 (XY and XYZ geometries; `returnM=true` is rejected). The Arrow output is an IPC stream (`application/vnd.apache.arrow.stream`) with GeoArrow metadata.
 
@@ -29,7 +29,7 @@ Which formats are available depends on the surface: OGC API Features items serve
 
    ```python
    import io, urllib.request, geopandas as gpd
-   url = "http://localhost:8080/rest/services/my_service/FeatureServer/0/query?where=1%3D1&outFields=*&f=parquet"
+   url = "http://localhost:8080/rest/services/my_service/FeatureServer/1/query?where=1%3D1&outFields=*&f=parquet"
    gdf = gpd.read_parquet(io.BytesIO(urllib.request.urlopen(url).read()))
    ```
 
@@ -37,7 +37,7 @@ Which formats are available depends on the surface: OGC API Features items serve
 
 4. Export FlatGeobuf the same way (PostGIS-backed layers):
 
-   Open `/rest/services/{service}/FeatureServer/0/query?where=1%3D1&f=fgb` at the deployment origin and save the response as `layer.fgb`.
+   Open `/rest/services/{service}/FeatureServer/{layerId}/query?where=1%3D1&f=fgb` at the deployment origin and save the response as `layer.fgb`.
 
 5. Use the admin bulk export for Shapefile or GeoPackage. It accepts optional `where`, `bbox`, `outFields`, and `outSR` parameters:
 
@@ -53,7 +53,7 @@ Which formats are available depends on the surface: OGC API Features items serve
 
 ## Verify
 
-Save `/rest/services/{service}/FeatureServer/0/query?where=1%3D1&resultRecordCount=5&f=parquet` as `sample.parquet`, then inspect it:
+Save `/rest/services/{service}/FeatureServer/{layerId}/query?where=1%3D1&resultRecordCount=5&f=parquet` as `sample.parquet`, then inspect it:
 
 ```bash
 python -c "import geopandas; print(geopandas.read_parquet('sample.parquet').shape)"
