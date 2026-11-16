@@ -9,11 +9,6 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Unit tests for the Z/M (3D/measured) read-path SQL generation (#1877 Part A): a query that asks to
-/// preserve Z/M must read extended WKB (ST_AsEWKB) so the higher ordinates survive to the converter;
-/// the default read stays 2D OGC WKB (ST_AsBinary), byte-identical to the historical behavior.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderZMTests
 {

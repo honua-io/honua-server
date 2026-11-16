@@ -13,9 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Contract tests for the first process migration evidence slice.
-/// </summary>
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class ProcessMigrationEvidenceClassifierTests
 {

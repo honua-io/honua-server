@@ -10,14 +10,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// RFC 9110 §9.3.2 regression tests (#3389): before the shared HEAD middleware landed, the
-/// server answered <c>HEAD</c> with 404 or 405 on every route that mapped only <c>GET</c>
-/// (<c>/healthz/*</c>, <c>/ogc/features*</c>, <c>/wfs</c>, <c>/stac</c>, <c>/rest/services</c>,
-/// <c>/api/v1/admin/*</c>). That broke GDAL/vsicurl, OWSLib, link checkers and proxies, and it
-/// stalled the client-interop nightly whose compose healthcheck probes <c>/healthz/ready</c>
-/// with <c>wget --spider</c> (a real HEAD).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class HeadMethodEndpointTests : IAsyncLifetime
@@ -28,10 +20,6 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// Asserts the HEAD response is byte-for-byte the GET response minus the body: same status,
-    /// same content type, and a <c>Content-Length</c> equal to the number of bytes GET returned.
-    /// </summary>
     private async Task AssertHeadMatchesGetAsync(string path)
     {
         var client = _fixture.CreateClient();
@@ -124,10 +112,6 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     public async Task Head_GeoServicesCatalog_MatchesGetStatusWithEmptyBodyAndContentLength()
         => await AssertHeadMatchesGetAsync("/rest/services?f=json");
 
-    /// <summary>
-    /// A HEAD request must not be able to reach a POST-only route: routing still fails on the
-    /// method, so the genuine 405 is preserved.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Head_PostOnlyRoute_Returns405MethodNotAllowed()
@@ -148,10 +132,6 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
             "HEAD is only answered where GET is; a POST-only route must still refuse it");
     }
 
-    /// <summary>
-    /// Calculate performs a bulk update and is POST-only (#6100), so HEAD (like GET) must be
-    /// refused by routing before the handler runs.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Head_CalculateRoute_MatchesGetMethodRefusalWithoutBody()
@@ -234,11 +214,6 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         ("/sharing/rest/oauth2/callback", ["GET"])
     ];
 
-    /// <summary>
-    /// GeoServices keeps legacy GET aliases for several operations that mutate state or create
-    /// work. Its OAuth GET flow also persists or consumes single-use state. HEAD probes must
-    /// never inherit those GET semantics and invoke their handlers.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Head_MutatingGetRoutes_Return405MethodNotAllowed()
@@ -258,10 +233,6 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Only HEAD changes: <c>HealthEndpoints.NonGetMethods</c> -&gt; <c>HandleGetMethodNotAllowed</c>
-    /// must keep answering 405 for the mutating methods.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task NonGetMethods_OnGetOnlyRoute_StillReturn405MethodNotAllowed()
@@ -280,9 +251,6 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// An unknown path is still a 404 for HEAD — the rewrite must not turn a miss into a match.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Head_UnknownPath_Returns404NotFound()

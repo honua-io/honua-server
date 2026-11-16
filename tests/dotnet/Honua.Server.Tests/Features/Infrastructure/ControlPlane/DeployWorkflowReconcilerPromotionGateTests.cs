@@ -11,12 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Promotion-gate coverage for the on-prem/air-gapped fix (#2543). Proves the reconciler can promote
-/// a healthy rollout on the backend's own health gate when no telemetry backend is configured
-/// (self-hosted rolling default), that cloud targets still require the telemetry gate, and that the
-/// explicit <c>manual</c> gate never auto-promotes.
-/// </summary>
 public sealed class DeployWorkflowReconcilerPromotionGateTests
 {
     [Fact]

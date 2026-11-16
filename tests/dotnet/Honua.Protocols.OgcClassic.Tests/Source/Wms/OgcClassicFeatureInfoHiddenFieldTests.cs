@@ -13,10 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Provides an isolated database-backed application whose layer 0 marks <c>category</c>
-/// as publisher-hidden.
-/// </summary>
 public sealed class OgcClassicFeatureInfoHiddenFieldFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
@@ -36,10 +32,6 @@ public sealed class OgcClassicFeatureInfoHiddenFieldFixture : IAsyncLifetime
     public Task DisposeAsync() => App.DisposeAsync();
 }
 
-/// <summary>
-/// WMS and WMTS GetFeatureInfo omit publisher-hidden fields in every info format, and WMS
-/// FILTER cannot reference them, matching WFS (#6098).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
 public sealed class OgcClassicFeatureInfoHiddenFieldTests(OgcClassicFeatureInfoHiddenFieldFixture fixture)

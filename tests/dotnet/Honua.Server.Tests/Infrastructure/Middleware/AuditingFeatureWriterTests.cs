@@ -13,11 +13,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Unit tests for <see cref="AuditingFeatureWriter"/> — the shared edit-pipeline
-/// decorator that emits destructive-write audit events for every protocol
-/// adapter (#507).
-/// </summary>
 public sealed class AuditingFeatureWriterTests
 {
     private readonly CapturingAuditLog _auditLog = new();

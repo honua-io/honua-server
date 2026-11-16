@@ -10,9 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Security;
 
-/// <summary>
-/// Unit tests for the operator policy that governs request-supplied secret references.
-/// </summary>
 public sealed class RequestSecretReferenceResolverTests
 {
     private const string SecretValue = "resolved-value";

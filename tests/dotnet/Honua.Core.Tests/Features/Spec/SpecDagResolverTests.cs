@@ -6,11 +6,6 @@ using Honua.Core.Features.Spec.Services;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Covers the structural diagnostics surfaced by <see cref="SpecDagResolver"/>:
-/// topological ordering, duplicate ids, unresolved references, and cycle
-/// detection.
-/// </summary>
 public class SpecDagResolverTests
 {
     [Trait("Tier", "Fast")]

@@ -13,10 +13,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// A layer published from an existing PostGIS table keeps its rows in that table.
-/// WFS and WMS must read those rows through the storage binding instead of honua.features.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs20)]
 public sealed class WfsWmsStorageBoundReadTests : IAsyncLifetime

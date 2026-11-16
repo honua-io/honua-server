@@ -14,12 +14,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// FileGDB source-CRS resolution (#6114). The fixture is a single point feature class written by
-/// GDAL's OpenFileGDB driver with <c>-a_srs EPSG:2227</c>; the stored spatial reference is ESRI
-/// WKT1 (<c>PROJCS["NAD_1983_StatePlane_California_III_FIPS_0403_Feet",...]</c>) with no
-/// AUTHORITY node, exactly as ArcGIS writes it, and the coordinates are State Plane feet.
-/// </summary>
 public sealed class FileGdbSourceSridTests
 {
     private const string StatePlaneName = "NAD_1983_StatePlane_California_III_FIPS_0403_Feet";
@@ -92,10 +86,6 @@ public sealed class FileGdbSourceSridTests
             new NoopPerformanceMonitor(),
             NullLogger<StreamingFileImportService>.Instance);
 
-    /// <summary>
-    /// Stands in for the Postgres-backed detector: resolves the State Plane WKT the way the
-    /// spatial_ref_sys / ESRI-name lookup would, and records every .prj/WKT input it sees.
-    /// </summary>
     private sealed class StatePlaneCrsDetectionService : ICrsDetectionService
     {
         public List<string> PrjInputs { get; } = [];

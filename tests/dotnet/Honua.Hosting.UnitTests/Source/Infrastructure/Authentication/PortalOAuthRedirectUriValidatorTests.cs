@@ -8,10 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for the ArcGIS OAuth2 bridge redirect_uri allow-list (#1484), the
-/// open-redirect mitigation guarding <c>/sharing/rest/oauth2/authorize</c>.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
 public sealed class PortalOAuthRedirectUriValidatorTests

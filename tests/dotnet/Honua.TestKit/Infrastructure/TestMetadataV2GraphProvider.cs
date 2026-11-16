@@ -10,29 +10,6 @@ using Honua.Infrastructure.Middleware;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// In-memory <see cref="IMetadataV2GraphProvider"/> for tests.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Parallel-isolation contract (#1359): the shared test server is process-wide singleton
-/// state, so a single mutable graph snapshot would let two schema-isolated tests running
-/// concurrently in the same assembly clobber each other's metadata. To make the shared
-/// server safe to run under parallel xUnit collections, this provider partitions the graph
-/// <b>by database schema</b>.
-/// </para>
-/// <para>
-/// Reads (<see cref="GetCurrentAsync"/>) resolve the per-request schema from the ambient
-/// <see cref="SchemaContext"/> that <c>TestSchemaMiddleware</c> populates from the
-/// <c>X-Honua-Test-Schema</c> header, so a request issued by test A only ever sees graph
-/// mutations that test A applied to its own schema. Writes from the fixture
-/// (<see cref="SetGraph(MetadataV2Graph, string?, string?)"/>) target an explicit schema key
-/// supplied by the owning <c>WebAppFixture</c>. When no schema is in scope (isolated-mode
-/// fixtures that build their own server, or tests that never send the header) the provider
-/// falls back to a shared baseline partition — those callers already get a dedicated server
-/// instance, so the baseline is private to them.
-/// </para>
-/// </remarks>
 public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
 {
     private const string BaselineSchemaKey = "<baseline>";
@@ -52,10 +29,6 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
         _history[RevisionKey(BaselineSchemaKey, graph.Revision)] = _baseline;
     }
 
-    /// <summary>
-    /// Replaces the snapshot for the supplied schema partition. When <paramref name="schema"/>
-    /// is null the ambient request schema is used, falling back to the shared baseline.
-    /// </summary>
     public void SetGraph(MetadataV2Graph graph, string? etag = null, string? schema = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
@@ -90,22 +63,12 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
 
     public void ClearPendingActivation() => Volatile.Write(ref _activateAfterNextRead, null);
 
-    /// <summary>
-    /// Replaces the current graph immediately after the next current-snapshot read returns.
-    /// Tests use this to reproduce metadata activation races deterministically.
-    /// </summary>
     public void ActivateAfterNextRead(MetadataV2Graph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
         Volatile.Write(ref _activateAfterNextRead, graph);
     }
 
-    /// <summary>
-    /// Returns the snapshot for an explicit schema partition (or the shared baseline when
-    /// <paramref name="schema"/> resolves to no partition). Fixture mutation helpers use this
-    /// to read-modify-write a test's own partition without depending on an ambient request
-    /// schema being in scope.
-    /// </summary>
     internal MetadataV2GraphSnapshot GetCurrentForSchema(string? schema)
     {
         var key = ResolveSchemaKey(schema);
@@ -217,11 +180,6 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
     }
 }
 
-/// <summary>
-/// Fluent builder for Metadata v2 graphs used in tests. Provides the minimum boilerplate
-/// to assemble well-formed graphs with resources, services, publications, and storage
-/// bindings without writing JSON.
-/// </summary>
 public sealed class TestMetadataV2GraphBuilder
 {
     private long _revision = 1;

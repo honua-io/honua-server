@@ -7,10 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Prevents a Studio MCP tool from loading a lifecycle draft outside the
-/// centralized load-then-owner-authorize boundary (#3412).
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class StudioMcpOwnershipAuthorizationGuardTests
 {

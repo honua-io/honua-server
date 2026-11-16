@@ -14,16 +14,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols;
 
-/// <summary>
-/// Regression coverage for honua-server#3392 (client-certification case
-/// <c>NB-GPD-SCH-01</c>): a declared schema field whose name is not a bare SQL
-/// identifier — the STAC EO extension's <c>eo:cloud_cover</c> is the canonical
-/// case — was advertised by <c>/queryables</c>, the CSV header and the
-/// GeoServices <c>fields</c> array, was filterable through CQL2, and was returned
-/// by WFS 2.0, yet was silently absent from every OGC API Features
-/// <c>properties</c> object and every GeoServices <c>attributes</c> object, and
-/// was emitted as an empty CSV cell.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]

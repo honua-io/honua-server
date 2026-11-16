@@ -28,20 +28,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #1015 slice 2: GeoServer data-source application and feature data copy.
-///
-/// Slice 1 (PR #1095) added idempotent catalog persistence of workspace and
-/// layer-group entries. Slice 2 extends that to:
-/// 1. Persist a deterministic record in <c>honua.migration_data_sources</c> for
-///    each in-scope data store on the manifest. Each datastore produces a
-///    create / already-applied / manual-review step result.
-/// 2. Copy feature data from a source PostGIS table into <c>honua_data.&lt;layer&gt;</c>
-///    when the source lives in the same Postgres instance, before publishing
-///    the catalog layer. Idempotent re-apply does not duplicate rows.
-/// 3. Respect the workspace-scope guard from issue #1098 / PR #1100 so a
-///    manifest cannot cause cross-workspace mutations.
-/// </summary>
 public sealed class GeoServerImportServiceDataSourceApplyTests
 {
     [Fact]
@@ -307,12 +293,6 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             }
         }
 
-        /// <summary>
-        /// Apply the honua.services + honua.migration_data_sources schema we
-        /// need without running the full 029_ migration runner. Tests are
-        /// schema-isolated, so the honua.services table is shared across the
-        /// container but the per-test source table lives in an isolated schema.
-        /// </summary>
         private async Task SetUpHonuaCatalogAsync(string schemaName)
         {
             // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global
@@ -367,12 +347,6 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
                 """);
         }
 
-        /// <summary>
-        /// Seed the source roads table in the isolated schema. The GeoServer
-        /// fixture's PostGIS datastore declares schema=public; we override that
-        /// via the override schema/table the service resolves so the copy reads
-        /// from our isolated schema.
-        /// </summary>
         private async Task SetUpSourceRoadsTableAsync(string schemaName)
         {
             await using var conn = await fixture.GetConnectionAsync(schemaName);
@@ -391,11 +365,6 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             await cmd.ExecuteNonQueryAsync();
         }
 
-        /// <summary>
-        /// Build a GeoServer import service whose connection provider uses the
-        /// Testcontainers connection string and a recording publisher that does
-        /// not need a fully-migrated honua.layers schema.
-        /// </summary>
         private static GeoServerImportService CreateServiceForFixture(
             HttpMessageHandler handler,
             string connectionString,
@@ -655,12 +624,6 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             => Task.FromResult<IReadOnlyList<MaterializedFeatureRefreshResult>>([]);
     }
 
-    /// <summary>
-    /// For the Testcontainers integration test, redirects layer-publish calls to
-    /// a no-op (we exercise the data-source apply and feature-copy paths, not
-    /// the full honua.layers publisher). The publisher returns success so the
-    /// step result is "applied".
-    /// </summary>
     private sealed class SchemaRedirectingLayerPublisher : ILayerPublishingService
     {
         private readonly string _schemaOverride;

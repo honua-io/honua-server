@@ -30,10 +30,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// An actual Studio MCP publication creates the canonical deployment read by a new
-/// MCP request, and a rebuilt host reads the same row from PostgreSQL.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime

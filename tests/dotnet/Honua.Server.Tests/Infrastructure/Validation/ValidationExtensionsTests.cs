@@ -7,10 +7,6 @@ using Honua.Infrastructure.Validation;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
 
-/// <summary>
-/// Unit tests for ValidationExtensions ensuring validation extension methods
-/// work correctly across different scenarios.
-/// </summary>
 public class ValidationExtensionsTests
 {
     [Theory]

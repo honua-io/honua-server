@@ -788,10 +788,6 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         return schemaLocation;
     }
 
-    /// <summary>
-    /// Dereferences the GML payload's <c>xsi:noNamespaceSchemaLocation</c> through the test client
-    /// and validates the payload against the schema it returns.
-    /// </summary>
     private async Task<Uri> AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(string content)
     {
         var schemaLocation = ReadGmlSchemaLocation(content);

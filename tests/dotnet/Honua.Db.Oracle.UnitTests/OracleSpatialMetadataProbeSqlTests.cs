@@ -5,13 +5,6 @@ using Honua.Db.Oracle.Features.FeatureStore.Services;
 
 namespace Honua.Db.Oracle.Tests;
 
-/// <summary>
-/// Verifies the catalog-probe SQL text emitted by <see cref="OracleSpatialMetadataProbe"/>.
-/// Identifiers are compared against the configured (case-preserving) value because
-/// <c>ALL_TAB_COLUMNS</c> stores quoted mixed-case names with their exact case. Folding
-/// the parameter through <c>UPPER()</c> would silently miss valid <c>SDO_GEOMETRY</c>
-/// columns on tables created with quoted lower- or mixed-case names.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class OracleSpatialMetadataProbeSqlTests
 {

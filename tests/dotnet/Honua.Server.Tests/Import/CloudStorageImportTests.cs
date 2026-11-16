@@ -12,10 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Tests for URL-based import workflows targeting S3 and Azure Blob cloud storage hosts.
-/// Uses StubHttpClientFactory to mock HTTP responses from cloud URLs.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

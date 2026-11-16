@@ -10,10 +10,6 @@ using Testcontainers.MySql;
 
 namespace Honua.Db.MySql.Tests;
 
-/// <summary>
-/// Proves MySQL 8 <c>ST_Distance</c> on EPSG:4326 agrees with the WGS 84 spheroid.
-/// The oracle lengths are the ImageServer Vincenty inverse for the same point pairs.
-/// </summary>
 [Trait("Category", "MySql")]
 public sealed class MySqlGeodesicDistanceIntegrationTests
 {

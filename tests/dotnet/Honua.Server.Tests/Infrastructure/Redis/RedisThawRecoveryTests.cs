@@ -15,11 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Redis;
 
-/// <summary>
-/// A thawed Lambda sandbox tears down its Redis connections under the first commands it sends,
-/// which fail with the completed-reader pipe fault (honua-server#6753). These cases simulate that
-/// fault on the shared post-idle probe and on the progress-store read paths.
-/// </summary>
 [Collection("Unit")]
 public sealed class RedisThawRecoveryTests
 {
@@ -183,7 +178,6 @@ public sealed class RedisThawRecoveryTests
         }
     }
 
-    /// <summary>A memory cache whose next reads fail like a torn StackExchange.Redis pipe.</summary>
     private sealed class CompletedReaderOnceCache : IDistributedCache
     {
         private readonly MemoryDistributedCache _inner = new(Options.Create(new MemoryDistributedCacheOptions()));
@@ -225,7 +219,6 @@ public sealed class RedisThawRecoveryTests
         }
     }
 
-    /// <summary>A clock whose monotonic and wall-clock readings advance independently.</summary>
     private sealed class SplitClock : TimeProvider
     {
         private long _timestamp;

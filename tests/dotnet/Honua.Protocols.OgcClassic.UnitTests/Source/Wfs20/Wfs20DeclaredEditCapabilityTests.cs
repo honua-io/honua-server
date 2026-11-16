@@ -36,10 +36,6 @@ using Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
 namespace Honua.Protocols.OgcClassic.UnitTests.Wfs20;
 
-/// <summary>
-/// SEC-5: WFS-T Transaction honours the publication's declared edit capabilities and the
-/// per-field editability contract, the same way FeatureServer and OGC API Features do.
-/// </summary>
 [Protocol(TestProtocols.Wfs20)]
 public sealed class Wfs20DeclaredEditCapabilityTests
 {

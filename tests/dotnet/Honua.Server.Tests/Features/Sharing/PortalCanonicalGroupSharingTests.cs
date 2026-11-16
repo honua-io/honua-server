@@ -25,7 +25,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>Exercises real group sharing against persisted FeatureServer data and canonical denial paths.</summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]

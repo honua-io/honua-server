@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// In-memory proof that restriction replacement keeps the secret and can clear a list.
-/// </summary>
 public sealed class AdminApiKeyRestrictionUpdateTests
 {
     [UnitTest]

@@ -8,12 +8,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Unit tests (no database) for the pure <see cref="LocationAllocationSolver"/> used
-/// by the location-allocation solve (#1874). Exercises the minimize-impedance and
-/// maximize-coverage and bounded minimize-facilities objectives over a fixed
-/// impedance matrix.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class LocationAllocationSolverTests
 {

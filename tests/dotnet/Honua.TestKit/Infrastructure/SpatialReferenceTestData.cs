@@ -6,9 +6,6 @@ using Honua.TestKit.Seeding;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Helper methods for seeding and inspecting SRID-focused test data.
-/// </summary>
 public static class SpatialReferenceTestData
 {
     public static Task SeedLayersAsync(PostgresFixture fixture, string schemaName)

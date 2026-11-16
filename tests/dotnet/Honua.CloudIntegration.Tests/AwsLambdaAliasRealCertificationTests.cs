@@ -8,35 +8,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Real-AWS certification lane (#2164) — the Lambda alias-flip cell. Certifies the alias
-/// read → flip → restore SDK path that <see cref="AwsLambdaGitOpsDeployBackend"/>'s cutover and
-/// rollback rides, at the NARROWEST real-SDK level, through the PRODUCTION seam
-/// (<see cref="AwsSdkLambdaAliasClient"/> — the same <c>UpdateAlias</c>/<c>GetAlias</c> client the
-/// backend is wired with in production).
-///
-/// CONSERVATIVE-BY-DESIGN (documented rationale): a faithful full-backend deploy certification would
-/// need a published deploy artifact + telemetry connection + a distinct target function version to
-/// flip between, which mutates a production-relevant function and needs standing rollout
-/// infrastructure. Instead this cell targets ONLY the dedicated certification-stack function and
-/// performs a NO-OP flip: read the alias's current <c>FunctionVersion</c> and routing weights, then
-/// <c>UpdateAlias</c> the alias to that SAME version AND its EXISTING weights (exercising the exact
-/// production <c>UpdateAliasAsync</c> control-plane call — the alias-flip primitive both cutover and
-/// rollback are built on), and RESTORE the original version + weights in a guaranteed <c>finally</c>.
-/// Preserving the existing weights on the flip is load-bearing: the production seam sends an
-/// <c>AliasRoutingConfiguration</c> whose empty weight map CLEARS any <c>AdditionalVersionWeights</c>,
-/// so flipping with a null/empty weight map would drop a live weighted (canary) routing config — a
-/// kill between that flip and the restore would then lose the routing permanently. It never changes
-/// which version serves traffic nor the traffic split, so it certifies the alias-flip control-plane
-/// mechanics without a deploy artifact and without risk to a production-relevant function. The
-/// weighted-cutover and rollback-decision mechanics themselves stay covered by the ECS/ALB live
-/// certification cells, including the rollback-failure path in
-/// <see cref="AwsEcsAlbRollbackFailureRealCertificationTests"/>.
-///
-/// Alias updates are in-place mutations of a standing resource, not created resources, so there is
-/// nothing to tag or reap; correctness is the guaranteed restore. OFF unless
-/// <see cref="RealAwsCertificationFixture.LambdaAliasConfigured"/>; skips otherwise.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.RealAwsCertification)]
 public sealed class AwsLambdaAliasRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
 {

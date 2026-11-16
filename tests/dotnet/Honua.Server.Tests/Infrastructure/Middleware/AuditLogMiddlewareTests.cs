@@ -14,11 +14,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// End-to-end integration tests proving the audit middleware emits events for
-/// admin mutations, authentication, and authorization outcomes purely from route
-/// metadata, without per-endpoint audit calls (#507).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

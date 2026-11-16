@@ -17,11 +17,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for <see cref="ImageServerAnalyzeHandler"/>. Verifies that the
-/// internal raster-function analysis helper validates a raster function chain
-/// document and returns the planned execution metadata.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerAnalyzeHandlerTests
 {

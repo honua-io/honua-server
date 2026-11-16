@@ -16,18 +16,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Exercises the non-WebMercator gridset tile path (#2665) end-to-end against real PostGIS: the
-/// bounds-based <see cref="PostgresRasterStore.GetImageTileAsync(int, long, RasterTileWindow, RasterFormat, System.Threading.CancellationToken)"/>
-/// / <see cref="PostgresRasterStore.GetMosaicImageTileAsync(int, long[], RasterMergeStrategy, RasterTileWindow, RasterFormat, System.Threading.CancellationToken)"/>
-/// overloads that render a WorldCRS84Quad (EPSG:4326) tile. The endpoint tests
-/// (<c>ImageServerWmtsMatrixSetTests</c>) mock <c>IRasterStore</c>, so they never run this SQL;
-/// this test seeds a real raster in EPSG:3857 — a DIFFERENT SRID than the 4326 gridset — so the
-/// <c>ST_Transform</c>-into-gridset-SRID reprojection is genuinely executed, then asserts real,
-/// correctly-placed pixels come back (not just "no exception"). The tile window is computed from
-/// the one canonical <see cref="ITileMatrixSetRegistry"/> / <see cref="GridGeometry"/> so the test
-/// drives the exact geometry the production tile handler uses.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture fixture)
 {
