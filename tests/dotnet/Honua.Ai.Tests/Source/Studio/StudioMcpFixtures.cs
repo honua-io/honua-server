@@ -16,9 +16,14 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 internal static class StudioMcpFixtures
 {
+    private const string CompositionTenantId = "public";
+
     // These suites exercise composition and persistence. Agent approval has separate suites.
     internal static WebAppFixture CreateCompositionFixture() => new WebAppFixture()
-        .ConfigureWebHost(builder => builder.UseSetting("Licensing:DevGrantEdition", "Pro"))
+        .ConfigureWebHost(builder => builder
+            .UseSetting("Licensing:DevGrantEdition", "Pro")
+            .UseSetting("MultiTenancy:Enabled", "false")
+            .UseSetting("MultiTenancy:DefaultTenantId", CompositionTenantId))
         .ConfigureServices(services =>
         {
             services.RemoveAll<IStudioPackageStore>();
@@ -59,7 +64,7 @@ internal static class StudioMcpFixtures
             {
                 TenantId = tenantId,
                 PrincipalId = principalId,
-                Enabled = tenantId is null && principalId == WebAppFixture.DevelopmentBypassActorId,
+                Enabled = tenantId == CompositionTenantId && principalId == WebAppFixture.DevelopmentBypassActorId,
                 AllowedOperationIds = [StudioDraftMutationContext.UpdateOperationId],
                 MaximumBlastRadius = OperationBlastRadiusClass.ResourceScope,
                 MaximumSideEffect = OperationSideEffectClass.MutatesMetadata,
