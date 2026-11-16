@@ -20,41 +20,22 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
-public sealed class ODataAdvancedFeaturesTests : IClassFixture<ODataAdvancedFeaturesTests.ReadOnlyProHost>, IAsyncLifetime
+public sealed class ODataAdvancedFeaturesTests : IClassFixture<ODataProHost>, IAsyncLifetime
 {
     private const int TestLayerId = 0;
 
     private readonly HttpClient _client;
     private WebAppFixture? _mutableFixture;
 
-    public ODataAdvancedFeaturesTests(ReadOnlyProHost host) => _client = host.Fixture.Client;
+    public ODataAdvancedFeaturesTests(ODataProHost host) => _client = host.Fixture.Client;
 
     public Task InitializeAsync() => Task.CompletedTask;
 
     public Task DisposeAsync() => _mutableFixture?.DisposeAsync() ?? Task.CompletedTask;
 
-    // All segments are relative literal path fragments (not user input), so none can be
-    // rooted and silently drop earlier arguments.
-    private static WebAppFixture CreateProFixture()
-        => new WebAppFixture().WithTestLicense(HonuaEdition.Pro).UseSeed(Path.Join("tests", "seed", "odata.yaml"));
-
-    // Cases that send writes or batches own a private host and schema.
+    // Cases that change data or send writes own a private host and schema.
     private async Task<WebAppFixture> StartMutableFixtureAsync()
-    {
-        _mutableFixture = CreateProFixture();
-        await _mutableFixture.InitializeAsync();
-        return _mutableFixture;
-    }
-
-    // Read-only cases share one seeded Pro host for the class instead of building one per case.
-    public sealed class ReadOnlyProHost : IAsyncLifetime
-    {
-        public WebAppFixture Fixture { get; } = CreateProFixture();
-
-        public Task InitializeAsync() => Fixture.InitializeAsync();
-
-        public Task DisposeAsync() => Fixture.DisposeAsync();
-    }
+        => _mutableFixture = await ODataProHost.StartPrivateAsync();
 
     #region Batch Operations Tests
 
