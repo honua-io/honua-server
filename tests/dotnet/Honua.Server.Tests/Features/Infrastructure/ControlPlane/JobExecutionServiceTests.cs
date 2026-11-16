@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// cancelled between claim and worker startup.
 /// </summary>
 [Collection("ControlPlaneTransitionTelemetry")]
-public sealed class JobExecutionServiceTests
+public sealed partial class JobExecutionServiceTests
 {
     [UnitTest]
     public async Task ProcessJob_RunningTransitionCasConflict_RequeuesUnstartedClaimImmediately()

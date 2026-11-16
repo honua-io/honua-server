@@ -144,6 +144,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                     // indices can bind several independently pinned objects. Stage each
                     // source through a conditional GDAL read inside the worker so every
                     // object gets its own If-Match check and no payload enters the web job.
+                    using var remoteInputScope = GdalRemoteInputScope.Trust(rasterInput.ReferencedPath);
                     var stageArgs = new List<string> { "-of", "GTiff" };
                     rasterInput.AddReadPin(stageArgs);
                     stageArgs.Add(rasterInput.ReferencedPath!);

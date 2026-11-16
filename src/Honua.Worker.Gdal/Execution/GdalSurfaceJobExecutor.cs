@@ -120,6 +120,7 @@ internal sealed partial class GdalSurfaceJobExecutor(
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
             }
 
+            using var remoteInputScope = GdalRemoteInputScope.Trust(sourceInput.ReferencedPath);
             var inputPath = await sourceInput
                 .PreparePathAsync(workspace, "input.tif", cancellationToken)
                 .ConfigureAwait(false);

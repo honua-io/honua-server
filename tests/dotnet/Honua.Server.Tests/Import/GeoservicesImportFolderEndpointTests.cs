@@ -92,23 +92,20 @@ public sealed class GeoservicesImportFolderEndpointTests
         var response = await fixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", body);
         response.StatusCode.Should().Be(expected, await response.Content.ReadAsStringAsync());
         captured.Task.IsCompleted.Should().BeFalse();
-        await jobs.JobQueue.DidNotReceive().EnqueueAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await jobs.DidNotReceive().SubmitAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<GeoservicesImportProgress>(), Arg.Any<CancellationToken>());
     }
 
     private static (IDistributedImportJobManager, TaskCompletionSource<GeoservicesImportRequest>) CaptureJobs()
     {
         var captured = new TaskCompletionSource<GeoservicesImportRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
         var jobs = Substitute.For<IDistributedImportJobManager>();
-        var requests = Substitute.For<IDistributedProgressStore<GeoservicesImportRequest>>();
         var progress = Substitute.For<IDistributedProgressStore<GeoservicesImportProgress>>();
-        jobs.RequestStore.Returns(requests);
         jobs.ProgressStore.Returns(progress);
-        jobs.JobQueue.Returns(Substitute.For<IDistributedJobQueueService>());
         jobs.LeaderElection.Returns(Substitute.For<IDistributedLeaderElection>());
-        requests.SetProgressAsync(Arg.Any<string>(), Arg.Any<GeoservicesImportRequest>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+        jobs.SubmitAsync(Arg.Any<GeoservicesImportRequest>(), Arg.Any<GeoservicesImportProgress>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                captured.TrySetResult(call.ArgAt<GeoservicesImportRequest>(1));
+                captured.TrySetResult(call.ArgAt<GeoservicesImportRequest>(0));
                 return Task.CompletedTask;
             });
         return (jobs, captured);

@@ -189,7 +189,7 @@ internal static partial class SceneEndpoints
             // would surface that exception during parameter binding before
             // the catch could intercept it.
             var envelopeService = context.RequestServices
-                .GetRequiredService<ISceneAccessEnvelopeService>();
+                .GetRequiredService<SceneAccessEnvelopeService>();
             envelope = envelopeService.Issue(scene.Id);
         }
         catch (InvalidOperationException ex)
@@ -411,7 +411,7 @@ internal static partial class SceneEndpoints
                         // Resolving inside this try block keeps verifier
                         // configuration state from escaping as a server error.
                         var envelopeService = context.RequestServices
-                            .GetRequiredService<ISceneAccessEnvelopeService>();
+                            .GetRequiredService<SceneAccessEnvelopeService>();
                         validation = envelopeService.Validate(rawToken, scene.Id);
                     }
                     catch (InvalidOperationException ex)
