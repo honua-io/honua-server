@@ -182,6 +182,12 @@ public static partial class OidcAuthenticationExtensions
                     }
                 }
 
+                // Explicit credentials must be validated independently of an ambient browser session.
+                if (context.Request.Headers.ContainsKey("X-API-Key") || !string.IsNullOrEmpty(authHeader))
+                {
+                    return AuthenticationExtensions.ApiKeyScheme;
+                }
+
                 if (context.Request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName))
                 {
                     return AdminSessionScheme;

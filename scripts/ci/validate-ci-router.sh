@@ -489,10 +489,6 @@ assert_exact_shards \
   "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs" \
   '["Migration","Migration Source Imports"]'
 assert_exact_shards \
-  "import-coordination-outage-recovery-owner" \
-  "tests/dotnet/Honua.Server.Tests/Import/ImportCoordinationOutageRecoveryTests.cs" \
-  '["Migration","Migration Source Imports"]'
-assert_exact_shards \
   "headroom-split-cloud-streaming-import" \
   "tests/dotnet/Honua.Server.Tests/Import/StreamingImportTests.cs" \
   '["Cloud and Streaming Import","File and Raster Import"]'
@@ -1645,7 +1641,7 @@ assert_descriptor \
   "Caching File Storage Styling and Infrastructure"
 assert_descriptor \
   "core-caching-targeted-to-split-child" \
-  "src/Honua.Core/Core/Features/Caching/MetadataCacheState.cs" \
+  "src/Honua.Core/Core/Features/Caching/CacheOptions.cs" \
   "targeted" \
   "false" \
   "Caching File Storage Styling and Infrastructure"
@@ -1832,21 +1828,17 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration Source Imports" \
   --assert-owner \
-    "Honua.Server.Tests.Import.ImportCoordinationOutageRecoveryTests" \
+    "Honua.Server.Tests.Import.ImportJobExecutorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Migration Source Imports" \
+    "File and Raster Import 1" \
   --assert-owner \
     "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration 1" \
   --assert-owner \
-    "Honua.Server.Tests.Import.ImportCancellationMonitorTests" \
+    "Honua.Server.Tests.Import.ImportExecutionJobQueueTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import 1" \
-  --assert-owner \
-    "Honua.Server.Tests.Import.ImportCoordinatorRecoveryTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import 2" \
+    "Migration 3" \
   --assert-owner \
     "Honua.Server.Tests.Import.StreamingImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -2099,10 +2091,6 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "Honua.Server.Tests.Import.ImportValidationErrorMessageTests" \
     "tests/dotnet/Honua.Import.UnitTests/Honua.Import.UnitTests.csproj" \
     "Runtime Units" \
-  --assert-owner \
-    "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Cloud and Streaming Import 2" \
   `# The FileImport clause '~Honua.Server.Tests.Import.EmulatorCloudStorage' was` \
   `# dangling: the classes in EmulatorCloudStorageImportTests.cs are named` \
   `# EmulatorAwsS3CloudStorageImportTests / EmulatorAzureBlobCloudStorageImportTests,` \
