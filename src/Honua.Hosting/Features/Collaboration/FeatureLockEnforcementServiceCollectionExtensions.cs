@@ -24,9 +24,7 @@ public static class FeatureLockEnforcementServiceCollectionExtensions
         }
 
         services.AddHttpContextAccessor();
-        // The lease store MUST be a singleton shared with the /feature-locks endpoints; a
-        // second instance here would enforce against an always-empty store and silently do
-        // nothing. TryAdd keeps whichever registration ran first — they name the same types.
+        // Preserve the provider store shared with the lock endpoints; standalone hosts use the fallback.
         services.TryAddSingleton<IFeatureLockService, InMemoryFeatureLockService>();
         services.TryAddSingleton<IFeatureEditGuard, FeatureEditGuard>();
         services.Remove(innerDescriptor);

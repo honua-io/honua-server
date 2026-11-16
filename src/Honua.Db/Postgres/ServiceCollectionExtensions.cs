@@ -12,6 +12,7 @@ using Honua.Core.Features.Attachments.Services;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -483,6 +484,11 @@ internal static partial class ServiceCollectionExtensions
             new Features.Publishing.PostgresPublishedServiceStore(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 configuration["Database:Schema"]));
+        services.AddSingleton<IFeatureLockService>(serviceProvider =>
+            new Features.Collaboration.FeatureLocks.PostgresFeatureLockService(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                configuration["Database:Schema"]));
+
         services.AddSingleton<IDeploymentStore>(serviceProvider =>
             new Features.Publishing.PostgresDeploymentStore(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
