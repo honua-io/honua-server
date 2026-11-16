@@ -30,4 +30,6 @@ src/Honua.Hosting/Features/Events/ChangeLogOnlyFeatureChangeEventPublisher.cs
 src/Honua.Hosting/Features/Events/RedisLeaseCoordinator.cs
 src/Honua.Hosting/Features/Rendering/MapLibreExpressionParser.cs
 src/Honua.Scene/Conversion/I3sAttributeSchemaBuilder.cs
+src/Honua.Scene/Conversion/I3sSceneLayerReader.cs
+src/Honua.Scene/Conversion/I3sToTilesetConverter.cs
 src/Honua.Server/Features/Console/Services/ConfigCatalogDiscoveryRegistryStore.cs
