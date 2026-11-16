@@ -163,15 +163,18 @@ internal static partial class VectorTileServerEndpoints
             var spriteUrl = BuildSpriteBaseUrl(context, service.Metadata.Name);
             var glyphsUrl = BuildGlyphsTemplateUrl(context, service.Metadata.Name);
             var serviceUrl = BuildServiceUrl(context, service.Metadata.Name);
-            var styleJson = VectorTileStyleComposer.Compose(
-                storedMapLibreJson,
-                service.EffectivePublicName,
-                StyleSourceId,
-                tileUrl,
-                geometryType,
-                spriteUrl,
-                glyphsUrl,
-                serviceUrl);
+            var styleJson = VectorTileStyleComposer.Compose(new VectorTileStyleOptions
+            {
+                StoredMapLibreJson = storedMapLibreJson,
+                ServiceName = service.EffectivePublicName,
+                SourceId = StyleSourceId,
+                TileUrl = tileUrl,
+                GeometryType = geometryType,
+                SpriteUrl = spriteUrl,
+                GlyphsUrl = glyphsUrl,
+                ServiceUrl = serviceUrl,
+                TileLimits = StyleUrlContext.From(context).TileLimits
+            });
 
             stopwatch.Stop();
             scope.SetSuccess(1);
