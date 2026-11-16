@@ -1,7 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schema": "honua.ci.native-image-impact-policy/v1",
-  "mode": "observe",
   "roots": {
     "serving": "src/Honua.Server/Honua.Server.csproj",
     "worker": "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"

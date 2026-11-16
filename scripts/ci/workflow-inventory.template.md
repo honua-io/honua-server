@@ -444,19 +444,13 @@ Expected effect: the workflow fires only on pull requests that touch an
 image-defining file. The baseline sample does not break its 40 serving-impacted
 heads down by trigger class, so the ~785 completed-build runner-minutes per day
 is the **ceiling** on the saving, not a prediction of it; AC#7's post-change
-30-run comparison must measure the realised figure. Note also that the
-observation receipt's cohorts invert: managed-source heads now report
-`serving_candidate_only`, because the graph-derived candidate would re-add the
-per-push builds this change removes. Promoting that candidate router as written
-would undo the narrowing, so its promotion criteria need restating before any
-enforcement decision.
+30-run comparison must measure the realised figure. The graph-derived candidate router was retired under #7880 after it
+showed no routing savings; it would have re-added managed-source PR builds.
 
-Exact-input build reuse (follow-on #3) is still worth doing — it is what would
-recover the remaining repeat-push cost on the GDAL worker lane, whose Trivy
-verdict depends on the vulnerability database at scan time and is never
-reusable. The observation receipt already carries per-image content digests over
-the merge tree the images are actually built from, so reuse eligibility is
-measured before anything is enforced; see `native-image-impact-routing.md`.
+Exact-input verification reuse remains available for the serving-image variants,
+using content digests from the authoritative workflow itself; see
+`serving-image-content-addressed-skip.md`. The GDAL worker's Trivy verdict depends
+on the vulnerability database at scan time and is never reusable.
 
 #### Post-change Serving trigger measurement (2026-08-28)
 
@@ -509,7 +503,6 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `native-image-impact-observe.yml` | Native Image Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only comparison of graph-derived image inputs with legacy path triggers. The Serving/GDAL image workflows stay authoritative in observe mode. |
 | `server-test-prebuild-observe.yml` | Server Test Prebuild Observation | `workflow_run` [Review Gate Attestation] (`branches-ignore: trunk`), `workflow_dispatch` | Trusted default-branch read-only shadow producer for #3226. Only `pull_request_target` Review Gate runs are usable, and those are the only ones whose run record carries a PR head branch — hence the `branches-ignore` filter, which drops the `issue_comment`/bridge runs that used to materialise as skipped runs. |
 | `server-test-prebuild-parity.yml` | Server Test Prebuild Parity Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only post-verification shadow: does one already-ready exact prebuild produce the same bounded proof results as an independent restore/build? Publishes no status. |
 | `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
@@ -630,6 +623,7 @@ candidate context.
 
 | Workflow file | Retired | Why |
 |---|---|---|
+| `native-image-impact-observe.yml` | 2026-11-16 (#7880) | Disabled observation-only router with no measured narrowing benefit. Last run 42570078484 was 9 Nov; zero runs since 13 Nov before retirement (0 runner-minutes saved from an already disabled workflow). Report generation, observer fixtures and its promotion policy were removed; image-input validation and content digests remain in the authoritative serving-image workflow. No active required gate moved or removed. |
 | `pr-gate-impact-observe.yml` | 2026-11-16 (#7880) | Disabled on GitHub since 9 Nov; observe-only docs-only routing classification. The docs-only fast path it measured is enforced through `scripts/ci/docs-only-diff.sh`. Its classifier (`classify-pr-gate-impact.py`) and validator (`validate-pr-gate-impact.sh`) went with it. |
 | `impact-routing-evidence-ledger.yml` | 2026-11-16 (#7880) | Counted observer receipts toward a seven-day promotion bar that disabled observers could no longer reach. `audit-impact-routing-evidence.py`, the promotion and tombstone policies and `impact-routing-evidence.md` went with it. The run-catalog helpers the affected-shard audit uses stay in `collect-impact-routing-runs.py`, without its receipt download path. |
 | `claude-review.yml` | 2026-11-15 (simplify A4) | Disabled on GitHub since the 11-11 review-path ruling; independent review now comes from the lanes and the Codex connector. Its helpers (`claude-review-body.js`, `claude-review-dedupe.js`, `review-catchup.js`) went with it. `review-gate-evidence.js` still grades a Claude bot review if one is posted. |
@@ -934,7 +928,7 @@ revocation: a human or drain lane owns any manually armed dependency PR.
 If mergeability becomes clean between the live query and enable mutation, only
 GitHub's specific clean-status response ends neutrally; other API errors fail.
 
-PR Gate and native-image impact observers record `source-run-draft-admission` when the latest `PR Gate / Runner select` and `PR Gate / Build and tests` outcomes at or before the source attempt were both skipped (a partial rerun keeps earlier outcomes); these attempts emit no promotion receipt. Ready-run failures remain observable.
+Trusted PR-run consumers retain `source-run-draft-admission` classification for intentional draft-only runs; ready-run failures remain observable.
 
 ## Admin authentication capacity split (12 November 2026)
 

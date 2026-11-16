@@ -55,7 +55,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Alpha/Beta Pilot Readiness Checklist](pilot-readiness-checklist.md) — validation gates, evidence packet, and go/no-go rules for quality-sweep pilot readiness
 - [LLM Architecture Review](development/llm-review-setup.md) — automated PR review
 - [Affected shard families in PR Gate](../ci/affected-shards-in-pr-gate.md), [review-first PR Gate](../ci/review-first-pr-gate.md), [timing-aware shard scheduling](../ci/shard-timing-planning.md)
-- [Native-image impact routing](../ci/native-image-impact-routing.md), [serving-image content-addressed skip](../ci/serving-image-content-addressed-skip.md), [nightly GDAL worker publication](../ci/gp-worker-publication.md), [semantic source inventory pilot](../ci/source-inventory-pilot.md)
+- [serving-image content-addressed skip](../ci/serving-image-content-addressed-skip.md), [nightly GDAL worker publication](../ci/gp-worker-publication.md), [semantic source inventory pilot](../ci/source-inventory-pilot.md)
 
 ## Roadmaps
 

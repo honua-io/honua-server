@@ -301,14 +301,12 @@ heads, because the serving closure covers 27 of 33 `src/**` projects and every
 managed change selects all three serving variants. Re-push churn does: 60% of
 serving-impacted heads and 71% of worker-impacted heads repeat an input set
 already built on the same pull request, against a median 140-minute serving
-build. The router therefore stays in observe mode and the promotion savings gate
-accepts either narrowing/avoidance or exact-input build reuse, with the
-observation receipt (`.../v3`) binding one content digest per image class over
-the merge tree the images are actually built from, so reuse eligibility is
-measured before anything is enforced. The ledger names the substantiated
-mechanism, because a reuse-only sample does not authorize promoting the router.
-Vulnerability scanning is never reused. See
-`docs/internal/ci/native-image-impact-routing.md`.
+build. The observation-only router and ledger were retired under #7880;
+their measurements did not justify promoting path routing. Per-variant v3 content
+digests remain in the authoritative serving-image workflow for exact-input reuse,
+with an independent promotion audit and rollback contract. Vulnerability scanning
+is never reused. See
+`docs/internal/ci/serving-image-content-addressed-skip.md`.
 
 The JavaScript SDK follows honua-sdk-js#1286. One immutable build feeds
 independent SDK, MCP, and browser jobs. Browser coverage is split by owned
@@ -433,8 +431,8 @@ The complete checkpoint and decision are also recorded on
    required 20 countable samples across 149 train runs (23 live batch-CI
    dispatches, all without a failing selected server shard), so cancellation
    stays disabled and `TRAIN_EARLY_FAILURE_MODE` remains `observe`.
-6. Promote native-image evidence reuse under #3204 after its impact ledger
-   passes. Path-based routing narrowing measured zero savings on this
+6. Promote native-image evidence reuse under #3204 only after the authoritative
+   serving-image leg audit and replay pass the content-addressed skip contract. Path-based routing narrowing measured zero savings on this
    repository and is not a promotion candidate on its own.
 7. Do not pursue docs-only PR Gate routing. #3235 was closed as not planned on
    2026-08-17 UTC: the impact-routing evidence audit (retired with its ledger under #7880)

@@ -233,7 +233,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Validating server-test archive entry checks..."
   run_fixture scripts/ci/validate-server-test-archive.test.py "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
 
-  echo "Validating native-image impact observation contract..."
+  echo "Validating native-image content-address inputs contract..."
   run_fixture scripts/ci/trusted-pr-workflow-run.test.js node --test scripts/ci/trusted-pr-workflow-run.test.js
   run_fixture scripts/ci/trusted-pr-workflow-run-draft-admission.test.js node --test scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
   run_fixture scripts/ci/native-image-impact.py "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
