@@ -38,8 +38,6 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
 
     // Request routing fields and the preview flag are read from the arguments directly.
     private static readonly string[] RoutingArgumentNames = ["dryRun", "connectionId", "serviceName"];
-    private const int MaxReportedUnknownArguments = 10;
-    private const int MaxReportedArgumentNameLength = 64;
 
     private readonly OperationDescriptor _descriptor;
     private readonly string _catalogVersion;
@@ -533,23 +531,11 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         var unknown = supplied.EnumerateObject()
             .Select(property => property.Name)
             .Where(name => !_acceptedArgumentNames.Contains(name))
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
             .ToArray();
-        if (unknown.Length == 0)
+        if (unknown.Length > 0)
         {
-            return;
+            throw McpDeclaredArgumentGuard.Refusal(Name, unknown);
         }
-
-        var reported = unknown
-            .Take(MaxReportedUnknownArguments)
-            .Select(name => name.Length > MaxReportedArgumentNameLength ? name[..MaxReportedArgumentNameLength] + "..." : name);
-        var more = unknown.Length > MaxReportedUnknownArguments
-            ? $" and {unknown.Length - MaxReportedUnknownArguments} more"
-            : string.Empty;
-        throw new GeoprocessingValidationException(
-            $"Tool '{Name}' does not accept argument(s): {string.Join(", ", reported)}{more}. "
-            + "Use only the properties in the tool's input schema.");
     }
 
     private Dictionary<string, string?> ReadParameters(JsonElement? arguments)

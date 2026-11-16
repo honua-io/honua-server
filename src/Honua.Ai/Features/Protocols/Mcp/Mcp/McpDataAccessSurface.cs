@@ -679,6 +679,7 @@ internal sealed partial class McpDataAccessSurface
         var invocationStarted = false;
         try
         {
+            McpDeclaredArgumentGuard.EnsureDeclared(tool, parameters.Arguments);
             httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
             httpContext.Items[ProposalEvidenceVerifier.InvokingToolItemKey] = tool.Name;
             if (tool is IEvidenceBoundProposalTool)
