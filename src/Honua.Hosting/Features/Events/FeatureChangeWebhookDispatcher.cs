@@ -9,6 +9,9 @@ namespace Honua.Infrastructure.Events;
 
 // One task across the cluster delivers: the lease holder. Without a lease store the process is the
 // only deliverer. Delivery is at least once: the cursor is written after the webhook accepts an event.
+// A failed pass (5xx, 429, transport) is retried with a growing delay so a down receiver is not
+// called every second. An event the receiver rejects (4xx other than 429) is logged and skipped,
+// because resending it cannot succeed and it would block every later event; replay recovers it.
 internal sealed partial class FeatureChangeWebhookDispatcher(
     IFeatureChangeEventStore store,
     IStreamCursorStore cursors,
@@ -20,6 +23,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
     internal const string StreamName = "feature-change-webhook";
     private const int BatchSize = 100;
     private static readonly TimeSpan IdlePollInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan FailedPassMaxDelay = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DispatchLeaseDuration = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan LeaseRenewalInterval = TimeSpan.FromSeconds(1);
     private readonly IFeatureChangeEventStore _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -30,6 +34,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
     private readonly LeaseHolder? _lease = leases is null ? null : new LeaseHolder(leases, StreamName, DispatchLeaseDuration);
     private int _invalidConfigurationLogged;
     private int _unsafeWebhookUrlLogged;
+    private int _consecutiveFailedPasses;
 
     // Null until read under the lease; cleared when the lease is lost, because another holder may have moved it.
     private long? _deliveredCursor;
@@ -44,7 +49,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
                 {
                     if (!await RunPassAsync(stoppingToken).ConfigureAwait(false))
                     {
-                        await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                        await Task.Delay(ComputeFailedPassDelay(_consecutiveFailedPasses), stoppingToken).ConfigureAwait(false);
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -135,6 +140,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         if (!heldBefore)
         {
             _deliveredCursor = null;
+            _consecutiveFailedPasses = 0;
         }
 
         return true;
@@ -166,14 +172,45 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         foreach (var featureEvent in pending)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!await DeliverWithRetryAsync(featureEvent, validation.Uri, cancellationToken).ConfigureAwait(false) ||
-                !await TryAdvanceCursorAsync(featureEvent.Cursor, cancellationToken).ConfigureAwait(false))
+            if (!await DeliverAndAdvanceAsync(featureEvent, validation.Uri, cancellationToken).ConfigureAwait(false))
             {
                 return false;
             }
         }
 
         return pending.Count > 0;
+    }
+
+    // A rejected event is skipped like a delivered one; a failed event stays at the head for the next pass.
+    private async Task<bool> DeliverAndAdvanceAsync(FeatureChangeEvent featureEvent, Uri webhookUri, CancellationToken cancellationToken)
+    {
+        var outcome = await DeliverWithRetryAsync(featureEvent, webhookUri, cancellationToken).ConfigureAwait(false);
+        if (outcome == WebhookDeliveryOutcome.Failed)
+        {
+            _consecutiveFailedPasses++;
+            return false;
+        }
+
+        if (outcome == WebhookDeliveryOutcome.Rejected)
+        {
+            LogEventRejected(_logger, featureEvent.EventId, featureEvent.Cursor);
+        }
+
+        _consecutiveFailedPasses = 0;
+        return await TryAdvanceCursorAsync(featureEvent.Cursor, cancellationToken).ConfigureAwait(false);
+    }
+
+    // 1 s while idle or after the first failure, then doubling per consecutive failed pass up to 5 minutes.
+    internal static TimeSpan ComputeFailedPassDelay(int consecutiveFailedPasses)
+    {
+        if (consecutiveFailedPasses <= 1)
+        {
+            return IdlePollInterval;
+        }
+
+        var exponent = Math.Min(consecutiveFailedPasses - 1, 16);
+        var delay = TimeSpan.FromTicks(IdlePollInterval.Ticks << exponent);
+        return delay < FailedPassMaxDelay ? delay : FailedPassMaxDelay;
     }
 
     // A first start begins at the head, so enabling the webhook never replays history.
@@ -220,7 +257,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         }
     }
 
-    private async Task<bool> DeliverWithRetryAsync(FeatureChangeEvent featureEvent, Uri webhookUri, CancellationToken cancellationToken)
+    private async Task<WebhookDeliveryOutcome> DeliverWithRetryAsync(FeatureChangeEvent featureEvent, Uri webhookUri, CancellationToken cancellationToken)
     {
         var destinationValidation = await FeatureChangeWebhookUrlValidation
             .ValidateAsync(webhookUri.AbsoluteUri, cancellationToken)
@@ -228,7 +265,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         if (!destinationValidation.IsValid || destinationValidation.Uri == null)
         {
             LogWebhookUrlRejectedOnce(destinationValidation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
-            return false;
+            return WebhookDeliveryOutcome.Failed;
         }
 
         var payload = JsonSerializer.Serialize(featureEvent, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent);
@@ -278,6 +315,9 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
 
     [LoggerMessage(EventId = 9108, Level = LogLevel.Warning, Message = "Feature change webhook dispatch loop failed; retrying.")]
     private static partial void LogDispatcherLoopFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9109, Level = LogLevel.Warning, Message = "Feature change webhook receiver rejected event {FeatureEventId} at cursor {Cursor}; it is skipped and can be re-read from the feature-events replay endpoint.")]
+    private static partial void LogEventRejected(ILogger logger, string featureEventId, long cursor);
 
     [LoggerMessage(EventId = 9105, Level = LogLevel.Warning, Message = "Feature change webhook delivery is disabled because the configured URL is unsafe: {Reason}")]
     private static partial void LogWebhookUrlRejected(ILogger logger, string reason);

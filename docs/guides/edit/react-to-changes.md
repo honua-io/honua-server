@@ -25,7 +25,7 @@ FeatureChangeEvents__Webhook__Secret=$WEBHOOK_HMAC_SECRET
 FeatureChangeEvents__Webhook__MaxAttempts=5
 ```
 
-The URL must be HTTPS, carry no embedded credentials, and resolve to a public address — private/loopback targets are rejected at startup. Retries use exponential backoff (`InitialBackoffMs`/`MaxBackoffMs`/`RequestTimeoutSeconds` tune it).
+The URL must be HTTPS, carry no embedded credentials, and resolve to a public address — private/loopback targets are rejected at startup. Retries use exponential backoff (`InitialBackoffMs`/`MaxBackoffMs`/`RequestTimeoutSeconds` tune it). Events go out in order. If an event still fails after the last attempt with a server error, `408`, `429`, a redirect (redirects are never followed) or a connection error, the server keeps it and tries again, waiting twice as long after each failed round, up to 5 minutes. If your endpoint answers with any other `4xx`, the server logs the event id (warning `9109`) and moves on to the next event. Re-read skipped events from `GET /api/v1/admin/feature-events/replay`.
 
 ### 2. Verify webhook signatures in your receiver
 

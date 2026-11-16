@@ -32,7 +32,10 @@ internal static partial class WebhookDeliveryHelper
     internal static string ComputeSignature(string secret, string timestamp, string payload)
         => WebhookSignatureHelper.ComputeSignature(secret, timestamp, payload);
 
-    internal static async Task<bool> DeliverWithRetryAsync(
+    // Rejected means the receiver refused the request with a 4xx other than 408 or 429, which a resend
+    // cannot change. Everything else that is not a success (5xx, 408, 429, a redirect, which is never
+    // followed, or a transport error) is Failed, so the caller keeps the event.
+    internal static async Task<WebhookDeliveryOutcome> DeliverWithRetryAsync(
         WebhookDeliveryRequest request,
         IHttpClientFactory httpClientFactory,
         ILogger logger,
@@ -65,14 +68,20 @@ internal static partial class WebhookDeliveryHelper
                 if (response.IsSuccessStatusCode)
                 {
                     LogDeliverySucceeded(logger, request.EventId, response.StatusCode);
-                    return true;
+                    return WebhookDeliveryOutcome.Delivered;
                 }
 
-                var isRetryable = (int)response.StatusCode >= 500 || response.StatusCode == System.Net.HttpStatusCode.TooManyRequests;
-                LogDeliveryFailed(logger, request.EventId, attempt, (int)response.StatusCode, isRetryable);
-                if (!isRetryable || attempt == maxAttempts)
+                var status = (int)response.StatusCode;
+                var isRetryable = status >= 500 || status is 408 or 429;
+                LogDeliveryFailed(logger, request.EventId, attempt, status, isRetryable);
+                if (!isRetryable)
                 {
-                    return false;
+                    return status is >= 400 and < 500 ? WebhookDeliveryOutcome.Rejected : WebhookDeliveryOutcome.Failed;
+                }
+
+                if (attempt == maxAttempts)
+                {
+                    return WebhookDeliveryOutcome.Failed;
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -87,7 +96,7 @@ internal static partial class WebhookDeliveryHelper
                 LogDeliveryException(logger, request.EventId, attempt, ex);
                 if (attempt == maxAttempts)
                 {
-                    return false;
+                    return WebhookDeliveryOutcome.Failed;
                 }
             }
 
@@ -95,7 +104,7 @@ internal static partial class WebhookDeliveryHelper
             await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken).ConfigureAwait(false);
         }
 
-        return false;
+        return WebhookDeliveryOutcome.Failed;
     }
 
     internal static int ComputeBackoffDelayMilliseconds(WebhookDeliveryRequest request, int attempt)
@@ -167,14 +176,21 @@ internal static partial class WebhookDeliveryHelper
         }
     }
 
-    [LoggerMessage(EventId = 9001, Level = LogLevel.Debug, Message = "Webhook delivery succeeded for event {EventId} with status {StatusCode}.")]
-    private static partial void LogDeliverySucceeded(ILogger logger, string eventId, System.Net.HttpStatusCode statusCode);
+    [LoggerMessage(EventId = 9001, Level = LogLevel.Debug, Message = "Webhook delivery succeeded for event {FeatureEventId} with status {StatusCode}.")]
+    private static partial void LogDeliverySucceeded(ILogger logger, string featureEventId, System.Net.HttpStatusCode statusCode);
 
-    [LoggerMessage(EventId = 9002, Level = LogLevel.Warning, Message = "Webhook delivery failed for event {EventId} on attempt {Attempt} with status {StatusCode}. Retryable={Retryable}.")]
-    private static partial void LogDeliveryFailed(ILogger logger, string eventId, int attempt, int statusCode, bool retryable);
+    [LoggerMessage(EventId = 9002, Level = LogLevel.Warning, Message = "Webhook delivery failed for event {FeatureEventId} on attempt {Attempt} with status {StatusCode}. Retryable={Retryable}.")]
+    private static partial void LogDeliveryFailed(ILogger logger, string featureEventId, int attempt, int statusCode, bool retryable);
 
-    [LoggerMessage(EventId = 9003, Level = LogLevel.Warning, Message = "Webhook delivery threw for event {EventId} on attempt {Attempt}.")]
-    private static partial void LogDeliveryException(ILogger logger, string eventId, int attempt, Exception exception);
+    [LoggerMessage(EventId = 9003, Level = LogLevel.Warning, Message = "Webhook delivery threw for event {FeatureEventId} on attempt {Attempt}.")]
+    private static partial void LogDeliveryException(ILogger logger, string featureEventId, int attempt, Exception exception);
+}
+
+internal enum WebhookDeliveryOutcome
+{
+    Delivered,
+    Rejected,
+    Failed
 }
 
 internal readonly record struct WebhookDeliveryRequest
