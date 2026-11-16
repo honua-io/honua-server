@@ -1,0 +1,28 @@
+name: Disabled workflow check
+
+# A workflow disabled on GitHub must not stay in the tree (scripts/ci/check-disabled-workflows.py).
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Disabled workflow check
+    if: github.repository == 'honua-io/honua-server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fail on a disabled workflow left in the tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/ci/check-disabled-workflows.py --repo "$REPOSITORY"
