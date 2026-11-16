@@ -144,7 +144,7 @@ internal sealed partial class GeoprocessingOutputArtifactSweeper(
         }
 
         // Never delete a registered object. COG-catalog rows are permanent while job
-        // records expire from Redis, so the durable retention hold written at
+        // records expire, so the durable retention hold written at
         // registration — not the job record — is what keeps a registered object alive.
         if (await store.HasRetentionHoldAsync(staged.ObjectKey, cancellationToken).ConfigureAwait(false))
         {
