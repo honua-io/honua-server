@@ -725,6 +725,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.DeleteContent_RemovesItem",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetSearchAndDelete_PreservesReadOnlyIdentity",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_PublishedIdentity_DoesNotCreateMutableContentRows"
       ],
       "proof_ledger_surface": "console-content-rbac",
@@ -5603,6 +5604,12 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.ListContent_WithItemTypeFilter_AppliesFilter",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_CollectionPublicationWithoutExplicitPath_OmitsUnresolvedLayerUrl",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetAcrossAccessTiers_UsesMostPublicAuthorizedExposure",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetFilterAndDetail_ReturnCanonicalDatasetMetadata",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetIdCollision_PreservesServiceAndLayerIdentity",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetKinds_UseTheCanonicalKind",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetSearchAndDelete_PreservesReadOnlyIdentity",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetWithMultipleServices_ListsOneDataset",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DuplicateGraphIdentities_UsesFirstItemWithoutFailing",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DuplicatePublicationAcrossServices_DoesNotExposeRestrictedIdentity",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphLifecycle_TracksPublishRepublishDisableAndDelete",
@@ -5611,7 +5618,10 @@
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_PublishedIdentity_DoesNotCreateMutableContentRows",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_ResourceWithMultipleProtocols_ListsItsPrimaryPublicationOnce",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_RestrictedResource_ExcludesLayerAndServiceFromTotalsAndSearch",
-        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership"
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_RetiredContentKind_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_UnclassifiedObject_DoesNotListAsDataset",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_UnreadableDatasetIdentity_CannotBeShadowedByAuthoredContent"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -5626,6 +5636,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.SearchContent_FindsByTerm",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetSearchAndDelete_PreservesReadOnlyIdentity",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_RestrictedResource_ExcludesLayerAndServiceFromTotalsAndSearch"
       ],
       "proof_ledger_surface": "console-content-rbac",
@@ -5642,10 +5653,12 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.CreateThenGetContentItem_ProducesComputedActions",
         "Honua.Server.Tests.Features.Console.ConsoleStateTwoTaskEndpointTests.ContentCreatedOnTaskA_IsServedByTaskB_AndTheSessionReportsSharedDurableState",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetFilterAndDetail_ReturnCanonicalDatasetMetadata",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DuplicatePublicationAcrossServices_DoesNotExposeRestrictedIdentity",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphLifecycle_TracksPublishRepublishDisableAndDelete",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_MixedResourceAccess_CountsOnlyReadableLayers",
-        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership"
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_UnreadableDatasetIdentity_CannotBeShadowedByAuthoredContent"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -17170,6 +17183,8 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_WithInvalidSalt_RejectsOtherwiseValidLegacyKey",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpiredKey_IsRejected_AndPermissionsDefaultToAdminWildcard",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation",
@@ -17214,6 +17229,7 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_ReturnsNewPlaintextAndInvalidatesOldKey",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation"
       ],
