@@ -12,10 +12,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// A timeout or database fault talking to the API-key store must not throw and must not lock
-/// out the bootstrap admin password.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -71,8 +67,8 @@ public sealed class ApiKeyStoreOutageTests
     [UnitTest]
     public async Task DatabaseOutage_BreakGlassPasswordStillAuthenticates_OnHeaderAndPortalPaths()
     {
-        // The PostgreSQL registry (#6487) fails with a DbException, which must degrade exactly
-        // like a store timeout.
+        // The PostgreSQL registry fails with a DbException, which must degrade exactly like a
+        // store timeout.
         var store = UnavailableStore(new Npgsql.NpgsqlException("database unavailable"));
 
         var bootstrap = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
