@@ -102,7 +102,7 @@ public sealed partial class RowLevelSecurityEndpointsTests
             client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.UserHeader, "rls-user");
             client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.CategoryHeader, "test");
             using var response = await client.GetAsync(
-                $"/rest/services/{Honua.TestKit.Infrastructure.WebAppFixture.TestServiceId}/FeatureServer/{Honua.TestKit.Infrastructure.WebAppFixture.TestLayerId}/query?where=1%3D1&outFields=*&f=json");
+                $"/rest/services/{Honua.TestKit.WebAppFixture.TestServiceId}/FeatureServer/{Honua.TestKit.WebAppFixture.TestLayerId}/query?where=1%3D1&outFields=*&f=json");
 
             response.IsSuccessStatusCode.Should().BeFalse();
         }

@@ -185,6 +185,9 @@ public sealed record OperationAuditInfo
 
     public string? ApprovedBy { get; init; }
 
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DeployHumanApproval? DeployHumanApproval { get; init; }
+
     public string? RequestFingerprint { get; init; }
 
     public string? ApprovalPolicyRef { get; init; }
@@ -235,6 +238,9 @@ public sealed record DeployOperationSpec
     public CanaryRampSpec? CanaryRamp { get; init; }
 
     public DateTimeOffset? TrafficExposedAt { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ManualPromotionPending { get; init; }
 
     public DeployProtectionState? Protection { get; init; }
 }

@@ -35,7 +35,7 @@ internal sealed partial class DeployWorkflowService
         return operation;
     }
 
-    private async Task<string> VerifyManualApprovalAsync(
+    private async Task<DeployHumanApproval> VerifyManualApprovalAsync(
         WorkflowOperationRecord operation, string action, string? actor, CancellationToken cancellationToken)
     {
         if (_humanApprovalAuthority is null || string.IsNullOrWhiteSpace(actor))

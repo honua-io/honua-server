@@ -607,11 +607,13 @@ internal sealed partial class DeployWorkflowService
             return operation;
         }
 
+        DeployHumanApproval? manualApproval = null;
         if (approvedProposal is null && (operation.Deploy.RequiresApproval
             || operation.Deploy.TargetKind == DeployTargetKind.LocalCompose
             || operation.Status == WorkflowOperationStatus.AwaitingApproval))
         {
-            requestedBy = await VerifyManualApprovalAsync(operation, "submit", requestedBy, cancellationToken).ConfigureAwait(false);
+            manualApproval = await VerifyManualApprovalAsync(operation, "submit", requestedBy, cancellationToken).ConfigureAwait(false);
+            requestedBy = manualApproval.ActorId;
         }
 
         if (operation.BlockingReasons.Count > 0)
@@ -646,7 +648,10 @@ internal sealed partial class DeployWorkflowService
                 $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
         }
 
-        var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason);
+        var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason) with
+        {
+            DeployHumanApproval = manualApproval ?? operation.Audit.DeployHumanApproval
+        };
         if (approvedProposal is not null || operation.Deploy.RequiresApproval || operation.Status == WorkflowOperationStatus.AwaitingApproval)
             audit = audit with { ApprovedBy = requestedBy };
         if (operation.Deploy.TargetKind == DeployTargetKind.LocalCompose)
@@ -799,7 +804,9 @@ internal sealed partial class DeployWorkflowService
             return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, preconditionDetail);
         }
 
-        requestedBy = await VerifyManualApprovalAsync(operation, "promote", requestedBy, cancellationToken).ConfigureAwait(false);
+        var approval = await VerifyManualApprovalAsync(operation, "promote", requestedBy, cancellationToken).ConfigureAwait(false);
+        requestedBy = approval.ActorId;
+        operation = operation with { Audit = operation.Audit with { DeployHumanApproval = approval } };
 
         var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);
         var backend = target == null ? null : ResolveBackend(target);
@@ -851,6 +858,17 @@ internal sealed partial class DeployWorkflowService
             return new DeployPromotionResult(DeployPromotionOutcome.Promoted, saved, null);
         }
 
+        var pending = operation with
+        {
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Manual promotion submitted; awaiting provider observation.",
+            Audit = MergePromotionAudit(operation.Audit, requestedBy, reason),
+            Deploy = operation.Deploy with { ManualPromotionPending = true }
+        };
+        if (!await _workflowStore.TrySetAsync(pending, cancellationToken: cancellationToken).ConfigureAwait(false))
+            throw new ResourceConflictException("Deploy operation changed while promotion was being authorized.");
+        operation = pending with { Version = operation.Version + 1 };
+
         DeployObservation observation;
         try
         {
@@ -877,11 +895,12 @@ internal sealed partial class DeployWorkflowService
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Manual promotion failed at the deploy backend.",
                 ErrorMessage = $"Manual promotion failed ({ex.GetType().Name}).",
-                Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
+                Audit = operation.Audit
             };
 
-            await _workflowStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
-            return new DeployPromotionResult(DeployPromotionOutcome.Promoted, failed, null);
+            await _workflowStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var savedFailure = await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            return new DeployPromotionResult(DeployPromotionOutcome.Promoted, savedFailure, null);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -906,9 +925,10 @@ internal sealed partial class DeployWorkflowService
                 CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
                     ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
                     : operation.Deploy.CurrentRevision,
-                TrafficExposedAt = operation.Deploy.TrafficExposedAt
+                TrafficExposedAt = operation.Deploy.TrafficExposedAt,
+                ManualPromotionPending = false
             },
-            Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
+            Audit = operation.Audit
         };
 
         // A manual promote bypasses the reconcile loop (it drives the backend
@@ -917,7 +937,8 @@ internal sealed partial class DeployWorkflowService
         // terminal Succeeded with no recovery window at all.
         updated = DeployWorkflowReconciler.BeginPostActivationObservationIfPromoted(updated);
 
-        await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await _workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        updated = await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false) ?? updated;
         Log.DeployManuallyPromoted(
             _logger,
             operation.OperationId,
@@ -937,7 +958,9 @@ internal sealed partial class DeployWorkflowService
                ICheckpointedDeployBackend.CutoverPhase);
 
     private static string? DescribePromotionPrecondition(WorkflowOperationRecord operation)
-        => operation.Status switch
+        => operation.Deploy?.ManualPromotionPending == true
+            ? "The previous manual promotion must be observed before another promotion can be requested."
+            : operation.Status switch
         {
             WorkflowOperationStatus.Reconciling when operation.Deploy?.Protection != null =>
                 "The deploy operation has already been promoted.",

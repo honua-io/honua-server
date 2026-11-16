@@ -188,4 +188,90 @@ public sealed partial class DeployWorkflowServiceTests
         (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.AwaitingApproval);
     }
 
+    [UnitTest]
+    public async Task PromoteAsync_ProviderCancellation_PreservesDurableApproval()
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var human = await host.CreateHumanAsync();
+        var store = new TestWorkflowOperationStore();
+        WorkflowOperationRecord? providerOperation = null;
+        var backend = new StagedDeployBackend
+        {
+            PromotionObserved = operation =>
+            {
+                providerOperation = operation;
+                throw new OperationCanceledException();
+            }
+        };
+        var operation = CreateOperationRecord(WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+        operation = (await store.GetAsync(operation.OperationId))!;
+        host.DeployReviewRequest(human, operation, "promote");
+        var review = await host.Authority.OpenDeployReviewAsync(operation, "promote", host.Context);
+        host.DeployApproveRequest(human, operation, "promote", review);
+        var actor = OperationHumanApprovalTestHost.Approval(human).ApprovedBy;
+        var service = CreateService(store, backend, humanApprovalAuthority: host.Authority);
+        var promote = () => service.PromoteAsync(operation.OperationId, actor, "Reviewed");
+
+        await promote.Should().ThrowAsync<OperationCanceledException>();
+
+        var saved = (await store.GetAsync(operation.OperationId))!;
+        saved.Version.Should().BeGreaterThan(operation.Version);
+        saved.Audit.ApprovedBy.Should().Be(actor);
+        providerOperation!.Version.Should().Be(saved.Version);
+        providerOperation.Audit.ApprovedBy.Should().Be(actor);
+        saved.Audit.DeployHumanApproval.Should().NotBeNull();
+        saved.Audit.DeployHumanApproval!.ActorId.Should().Be(actor);
+        saved.Audit.DeployHumanApproval.SessionReference.Should().NotBeNullOrWhiteSpace();
+        saved.Audit.DeployHumanApproval.CapabilityReference.Should().NotBeNullOrWhiteSpace();
+        saved.Audit.DeployHumanApproval.WorkflowVersion.Should().Be(operation.Version);
+        saved.Deploy!.ManualPromotionPending.Should().BeTrue();
+        (await promote()).Outcome.Should().Be(DeployPromotionOutcome.PreconditionFailed);
+        saved.Audit.DeployHumanApproval.Action.Should().Be("promote");
+        backend.PromoteCount.Should().Be(1);
+
+        await CreateReconciler(store, backend).ReconcileWorkflowOperationAsync(operation.OperationId);
+
+        var observed = (await store.GetAsync(operation.OperationId))!;
+        observed.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        observed.Deploy!.ManualPromotionPending.Should().BeFalse();
+        observed.Audit.DeployHumanApproval.Should().Be(saved.Audit.DeployHumanApproval);
+        backend.PromoteCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task PromoteAsync_ConcurrentRollback_PreservesNewerIntent()
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var human = await host.CreateHumanAsync();
+        var store = new TestWorkflowOperationStore();
+        var backend = new StagedDeployBackend
+        {
+            PromotionObserved = async pending =>
+            {
+                (await store.TrySetAsync(pending with
+                {
+                    Status = WorkflowOperationStatus.RollbackRequested,
+                    UpdatedAt = pending.UpdatedAt.AddSeconds(1)
+                })).Should().BeTrue();
+            }
+        };
+        var operation = CreateOperationRecord(WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+        operation = (await store.GetAsync(operation.OperationId))!;
+        host.DeployReviewRequest(human, operation, "promote");
+        var review = await host.Authority.OpenDeployReviewAsync(operation, "promote", host.Context);
+        host.DeployApproveRequest(human, operation, "promote", review);
+        var actor = OperationHumanApprovalTestHost.Approval(human).ApprovedBy;
+
+        var result = await CreateService(store, backend, humanApprovalAuthority: host.Authority)
+            .PromoteAsync(operation.OperationId, actor, "Reviewed");
+
+        backend.PromoteCount.Should().Be(1);
+        result.Operation!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        var saved = (await store.GetAsync(operation.OperationId))!;
+        saved.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        saved.Audit.DeployHumanApproval!.ActorId.Should().Be(actor);
+    }
+
 }

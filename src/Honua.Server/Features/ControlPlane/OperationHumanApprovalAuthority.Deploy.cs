@@ -30,12 +30,25 @@ internal sealed partial class OperationHumanApprovalAuthority
         };
     }
 
-    public async Task<string> VerifyDeployAsync(
+    public async Task<DeployHumanApproval> VerifyDeployAsync(
         WorkflowOperationRecord operation, string action,
         OperationProposalApprovalContext approval, CancellationToken cancellationToken)
     {
-        var verified = await VerifyCapabilityAsync(DeployTarget(operation, action), approval, cancellationToken).ConfigureAwait(false);
-        return verified.ActorId;
+        var target = DeployTarget(operation, action);
+        var verified = await VerifyCapabilityAsync(target, approval, cancellationToken).ConfigureAwait(false);
+        return new DeployHumanApproval
+        {
+            WorkflowId = operation.OperationId,
+            WorkflowVersion = operation.Version,
+            Action = action,
+            TenantId = target.TenantId,
+            ActorId = verified.ActorId,
+            Channel = verified.Channel,
+            SessionReference = verified.SessionReference,
+            CapabilityReference = verified.CapabilityReference,
+            PlanHash = target.BindingDigest,
+            ApprovedAt = verified.ApprovedAt
+        };
     }
 
     private HumanApprovalTarget DeployTarget(WorkflowOperationRecord operation, string action)

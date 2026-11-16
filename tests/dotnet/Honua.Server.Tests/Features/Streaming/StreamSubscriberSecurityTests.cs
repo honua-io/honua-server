@@ -338,7 +338,43 @@ public sealed class StreamSubscriberSecurityTests
         filter.Matches(CreateEnvelope("west"), null, PropertiesJson).Should().BeFalse();
     }
 
-    private static FilterExpression UnsupportedPolicy()
+    [UnitTest]
+    public void Broadcast_PolicyBeyondStreamingDepth_DeniesDelivery()
+    {
+        FilterExpression predicate = new Literal(false, LiteralType.Boolean);
+        for (var depth = 0; depth <= InMemoryFilterEvaluator.MaxStreamingDepth; depth++)
+            predicate = new UnaryExpression(UnaryOperator.Not, predicate);
+
+        AssertOnlyRestrictedSubscriberDenied(predicate);
+    }
+
+    [UnitTheory]
+    [InlineData("OBJECTID")]
+    [InlineData("geometry")]
+    [InlineData("optional_value")]
+    public void Broadcast_PolicyRequiresUnavailableField_DeniesDelivery(string field)
+    {
+        AssertOnlyRestrictedSubscriberDenied(new UnaryExpression(UnaryOperator.IsNull, new PropertyReference(field)));
+    }
+
+    [UnitTest]
+    public void Allows_PolicyReadsExplicitNull_PreservesNullSemantics()
+    {
+        var policy = new StreamLayerReadPolicy(
+            [new UnaryExpression(UnaryOperator.IsNull, new PropertyReference("region"))],
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var security = new StreamSubscriberSecurity(new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
+            new Dictionary<(string, int), StreamLayerReadPolicy>());
+        var envelope = CreateEnvelope("west") with
+        {
+            Attributes = new Dictionary<string, JsonElement> { ["region"] = JsonSerializer.SerializeToElement<string?>(null) }
+        };
+
+        security.Allows(envelope).Should().BeTrue();
+    }
+
+    private static UnaryExpression UnsupportedPolicy()
         => new UnaryExpression(UnaryOperator.Not,
             new SpatialPredicate(SpatialOperator.Intersects, new PropertyReference("geometry"),
                 new GeometryLiteral([1, 2], 4326, "WKB")));
