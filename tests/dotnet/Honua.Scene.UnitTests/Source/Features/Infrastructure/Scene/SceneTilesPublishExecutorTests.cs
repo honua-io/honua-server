@@ -64,6 +64,39 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_OutputRootIsFile_ThrowsSafeOutputErrorBeforeRegistration()
+    {
+        BuildLayer();
+        _featureSource.Features = SamplePolygons();
+        await File.WriteAllTextAsync(_outputRoot, "blocks-directory-creation");
+        try
+        {
+            var act = () => _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+            var failure = await act.Should().ThrowAsync<SceneOutputUnwritableException>();
+            failure.Which.InnerException.Should().BeAssignableTo<IOException>();
+            failure.Which.Message.Should().NotContain(_outputRoot);
+            _registration.Records.Should().BeEmpty();
+        }
+        finally
+        {
+            File.Delete(_outputRoot);
+        }
+    }
+
+    [UnitTest]
+    public async Task Execute_SourceIoFailure_RemainsServiceUnavailable()
+    {
+        BuildLayer();
+        _featureSource.StreamFailure = new IOException("source connection failed");
+
+        var act = () => _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+
+        var failure = await act.Should().ThrowAsync<ServiceUnavailableException>();
+        failure.Which.InnerException.Should().BeSameAs(_featureSource.StreamFailure);
+        _registration.Records.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task Execute_ProducesDeterministicByteIdenticalOutput()
     {
         BuildLayer();
@@ -864,7 +897,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var act = () => _executor.RunDirectAsync(
             BuildIntent(sceneId: "promo-fail"), CancellationToken.None);
-        await act.Should().ThrowAsync<ServiceUnavailableException>();
+        await act.Should().ThrowAsync<SceneOutputUnwritableException>();
 
         // The registry insert preceded the failed promotion, but the
         // executor must call DeactivateAsync on the inserted record so

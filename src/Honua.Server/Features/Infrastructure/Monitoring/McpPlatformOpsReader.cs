@@ -72,7 +72,7 @@ internal sealed class McpPlatformOpsReader(
         ArgumentNullException.ThrowIfNull(argument);
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
-        // honua-server#4987: same redaction as the REST reads.
+        // Same redaction as the REST reads.
         var redactRecoveryGrantIdentity = DeployControlEndpoints.ShouldRedactRecoveryGrantIdentity(
             principal, _services.GetService<IOptions<TenantContextOptions>>()?.Value);
 
@@ -614,7 +614,7 @@ internal sealed class McpPlatformOpsReader(
             throw new GeoprocessingAuthorizationException(false, scope.Reason ?? "The access token scope does not authorize this mutation.");
     }
 
-    // Deployment targets are platform resources with no owning tenant (#4842).
+    // Deployment targets are platform resources with no owning tenant.
     private void EnsurePlatformDeployAuthority(ClaimsPrincipal principal, OperatorOperation operation)
     {
         if (!PlatformDeployAuthority.IsAuthorized(principal, _services.GetService<IOptions<TenantContextOptions>>()?.Value))

@@ -254,23 +254,6 @@ internal static class Wfs20Utilities
 
     public const string DefaultSrs = "EPSG:4326";
 
-    public static string? ValidateRequestParameters(IQueryCollection query, ImmutableHashSet<string> allowedParameters)
-    {
-        var service = query[ParameterNames.Service].FirstOrDefault();
-        if (!string.Equals(service, ServiceType, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"Invalid service parameter. Expected '{ServiceType}', got '{service}'";
-        }
-
-        var version = query[ParameterNames.Version].FirstOrDefault();
-        if (!string.Equals(version, Version, StringComparison.OrdinalIgnoreCase))
-        {
-            return $"Unsupported version. Expected '{Version}', got '{version}'";
-        }
-
-        return null;
-    }
-
     public static string? GetQueryValue(IQueryCollection query, string primaryName, params string[] aliases)
     {
         var value = query[primaryName].FirstOrDefault();
@@ -362,20 +345,6 @@ internal static class Wfs20Utilities
             return Array.Empty<string>();
 
         return typeNames.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    }
-
-    public static int ParseCount(string? count, int defaultValue = DefaultMaxFeatures)
-    {
-        return TryParseCount(count, out var value, defaultValue)
-            ? value
-            : defaultValue;
-    }
-
-    public static int ParseStartIndex(string? startIndex)
-    {
-        return TryParseStartIndex(startIndex, out var value)
-            ? value
-            : 0;
     }
 
     public static bool TryParseCount(string? count, out int value, int defaultValue = DefaultMaxFeatures)

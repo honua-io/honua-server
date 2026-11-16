@@ -12,47 +12,26 @@ using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.Core.Features.Licensing.Domain;
-using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
-public sealed class ODataEndpointTests : IClassFixture<ODataEndpointTests.ReadOnlyProHost>, IAsyncLifetime
+public sealed class ODataEndpointTests : IClassFixture<ODataProHost>, IAsyncLifetime
 {
     private const int TestLayerId = 0;
     private readonly HttpClient _client;
     private WebAppFixture? _mutableFixture;
 
-    public ODataEndpointTests(ReadOnlyProHost host) => _client = host.Fixture.Client;
+    public ODataEndpointTests(ODataProHost host) => _client = host.Fixture.Client;
 
     public Task InitializeAsync() => Task.CompletedTask;
 
     public Task DisposeAsync() => _mutableFixture?.DisposeAsync() ?? Task.CompletedTask;
 
-    // All segments are relative literal path fragments (not user input), so none can be
-    // rooted and silently drop earlier arguments.
-    private static WebAppFixture CreateProFixture()
-        => new WebAppFixture().WithTestLicense(HonuaEdition.Pro).UseSeed(Path.Join("tests", "seed", "odata.yaml"));
-
-    // Cases that change metadata or features own a private host and schema.
+    // Cases that change data or send writes own a private host and schema.
     private async Task<WebAppFixture> StartMutableFixtureAsync()
-    {
-        _mutableFixture = CreateProFixture();
-        await _mutableFixture.InitializeAsync();
-        return _mutableFixture;
-    }
-
-    // Read-only cases share one seeded Pro host for the class instead of building one per case.
-    public sealed class ReadOnlyProHost : IAsyncLifetime
-    {
-        public WebAppFixture Fixture { get; } = CreateProFixture();
-
-        public Task InitializeAsync() => Fixture.InitializeAsync();
-
-        public Task DisposeAsync() => Fixture.DisposeAsync();
-    }
+        => _mutableFixture = await ODataProHost.StartPrivateAsync();
 
     [IntegrationTheory]
     [InlineData("query", false)]

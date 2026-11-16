@@ -266,7 +266,7 @@ internal static class GrpcConversionHelpers
             Length = field.Length ?? 0,
             Nullable = field.Nullable,
             // Same display-name precedence as GeoServices REST field metadata
-            // (FeatureServerUtilities.V2 / QueryFormatters), honua-server#5330.
+            // (FeatureServerUtilities.V2 / QueryFormatters).
             Alias = field.Alias ?? field.Title ?? field.Name
         };
     }

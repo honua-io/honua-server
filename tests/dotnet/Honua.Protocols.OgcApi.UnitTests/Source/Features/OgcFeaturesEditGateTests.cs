@@ -268,8 +268,7 @@ public sealed partial class OgcFeaturesEditGateTests
         var geometry = new OgcFeaturesGeometryServices(
             Substitute.For<IGeometryService>(),
             Substitute.For<ICoordinateTransformService>(),
-            Options.Create(new LimitsOptions()),
-            NullLogger<OgcFeaturesGeometryServices>.Instance);
+            Options.Create(new LimitsOptions()));
         var adapter = new OgcFeaturesEditParameterAdapter(NullLogger<OgcFeaturesEditParameterAdapter>.Instance);
         var processor = new EditProcessor(NullLogger<EditProcessor>.Instance);
         var validator = new FeatureMutationValidator(Substitute.For<IGeometryValidator>());

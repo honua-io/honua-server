@@ -202,24 +202,22 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
                 // client not to attempt a range request."
                 //
                 // This is load-bearing, not decorative. GDAL's /vsicurl decides whether to
-                // read a resource in ranged chunks from what a HEAD reveals: before HEAD was
-                // supported it could not learn a Content-Length and fell back to a single
-                // streaming GET, but a HEAD that advertises a length and stays silent about
-                // ranges reads to /vsicurl as "ranges are available". Honua answers a Range
-                // request with a full 200 and no Content-Range, so every chunk /vsicurl asked
-                // for came back as the whole document at the wrong offset and the dataset
-                // failed to open outright — DuckDB Spatial's ST_Read over a plain items URL
-                // regressed from green to "Could not open GDAL dataset" the moment HEAD
-                // started working (honua-server#3389). Declaring `none` restores the
-                // streaming read.
+                // read a resource in ranged chunks from what a HEAD reveals: without a
+                // Content-Length it falls back to a single streaming GET, but a HEAD that
+                // advertises a length and stays silent about ranges reads to /vsicurl as
+                // "ranges are available". Honua answers a Range request with a full 200 and no
+                // Content-Range, so every chunk /vsicurl asks for comes back as the whole
+                // document at the wrong offset and the dataset fails to open: DuckDB Spatial's
+                // ST_Read over a plain items URL reports "Could not open GDAL dataset".
+                // Declaring `none` keeps the streaming read.
                 //
                 // Stamped whenever the response is silent about ranges, NOT only when this
                 // middleware synthesized the length. The handlers that serve a whole buffer
                 // through `Results.File(byte[])` -- WCS GetCoverage, OGC Maps, ImageServer
                 // exportImage -- set their own Content-Length and never set Accept-Ranges, so
-                // gating on a synthesized length left exactly the Content-Length-plus-no-range
-                // shape described above in place for the binary raster responses /vsicurl is
-                // most likely to probe (review finding on honua-server#3489). An endpoint that
+                // gating on a synthesized length would leave exactly the
+                // Content-Length-plus-no-range shape described above in place for the binary
+                // raster responses /vsicurl is most likely to probe. An endpoint that
                 // genuinely serves ranges (the PMTiles range proxy, scene assets) sets its own
                 // Accept-Ranges, and the ContainsKey guard below preserves that value.
                 if (!context.Response.Headers.ContainsKey(HeaderNames.AcceptRanges))

@@ -7,24 +7,6 @@ namespace Honua.Protocols.SensorThings.Services;
 
 internal static class StaProjection
 {
-    public static JsonObject ProjectEntitySet(JsonObject entitySet, IReadOnlyList<string> members)
-    {
-        ArgumentNullException.ThrowIfNull(entitySet);
-
-        if (entitySet["value"] is JsonArray value)
-        {
-            for (var i = 0; i < value.Count; i++)
-            {
-                if (value[i] is JsonObject entity)
-                {
-                    value[i] = ProjectEntity(entity, members);
-                }
-            }
-        }
-
-        return entitySet;
-    }
-
     public static JsonObject ProjectEntity(JsonObject entity, IReadOnlyList<string> members)
     {
         ArgumentNullException.ThrowIfNull(entity);

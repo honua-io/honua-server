@@ -12,7 +12,7 @@ using StackExchange.Redis;
 
 namespace Honua.TestKit;
 
-internal static class NoRedisJobHost
+internal static class PostgresJobHost
 {
     private const string RedisConnectionStringKey = "ConnectionStrings:redis";
     private const string AspireRedisConnectionStringKey = "Aspire:StackExchange:Redis:ConnectionString";
@@ -28,10 +28,10 @@ internal static class NoRedisJobHost
     {
         await fixture.InitializeAsync();
         await fixture.Postgres.DataSource.ClearJobSubstrateAsync();
-        AssertJobsRunWithoutRedis(fixture);
+        AssertPostgresJobs(fixture);
     }
 
-    public static void AssertJobsRunWithoutRedis(WebAppFixture fixture)
+    public static void AssertPostgresJobs(WebAppFixture fixture)
     {
         var configuration = fixture.GetService<IConfiguration>();
         configuration.GetConnectionString("redis").Should().BeNullOrEmpty();

@@ -67,7 +67,7 @@ internal static class ImportExportTileOperationsRegistration
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobExecutor, GeoservicesImportJobExecutor>());
         var hostPollingLoops = ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration);
 
-        // Footprint-driven batch import orchestration (#1253). The orchestrator
+        // Footprint-driven batch import orchestration. The orchestrator
         // composes the per-layer Geoservices import pipeline into an ordered,
         // resumable batch run; the background service advances active batches
         // under the shared import leader election.
@@ -82,7 +82,7 @@ internal static class ImportExportTileOperationsRegistration
             sp.GetService<IExecutionJobStore>(), sp.GetService<IJobQueue>()));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobExecutor, GeoServerImportJobExecutor>());
 
-        // Migration performance evidence store (#1033 slice 5).
+        // Migration performance evidence store.
         // Surface the source-generated JsonTypeInfo so the Postgres store can round-trip the artifact
         // JSON without reflection. The in-memory store is registered as the fallback so dev / test
         // profiles without a Postgres infrastructure still serve the admin/SDK endpoints.
@@ -92,7 +92,7 @@ internal static class ImportExportTileOperationsRegistration
         services.TryAddScoped<IMigrationPerformanceEvidenceStore>(sp =>
             sp.GetRequiredService<InMemoryMigrationPerformanceEvidenceStore>());
 
-        // Migration-run checkpoint store (#2459, ADR-0060). Durable, cross-request resume
+        // Migration-run checkpoint store (ADR-0060). Durable, cross-request resume
         // state must not live on a compute node's local disk. The in-memory store is the
         // default so stores-less dev/test profiles still resolve the dependency; it is a
         // process-wide singleton (a per-scope instance would silently drop checkpoints
@@ -136,8 +136,8 @@ internal static class ImportExportTileOperationsRegistration
             services.AddHostedService<TileCacheWarmingHostedService>();
         }
 
-        // Scheduled tile-cache expiry/invalidation (#1837): the time-based complement to the
-        // per-tileset Cache-Control TTL (#1794). Disabled unless TileCacheExpiry:Enabled is set.
+        // Scheduled tile-cache expiry/invalidation: the time-based complement to the
+        // per-tileset Cache-Control TTL. Disabled unless TileCacheExpiry:Enabled is set.
         services.Configure<TileCacheExpiryOptions>(
             configuration.GetSection(TileCacheExpiryOptions.SectionName));
 

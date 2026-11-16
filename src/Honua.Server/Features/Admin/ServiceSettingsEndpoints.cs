@@ -213,7 +213,7 @@ internal static partial class ServiceSettingsEndpoints
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
-        // GAP (#1035 cutover 72/N): the legacy MapServer settings block (max image
+        // GAP: the legacy MapServer settings block (max image
         // width/height, default DPI, transparent flag, max features per layer) does not
         // have a typed V2 home for the full shape yet. Until a V2 MapServer extension
         // lands the endpoint refuses the operation honestly rather than silently
@@ -297,7 +297,7 @@ internal static partial class ServiceSettingsEndpoints
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
-        // GAP (#1035 cutover 72/N): the v1 admin path exposed a service-scope time-info
+        // GAP: the v1 admin path exposed a service-scope time-info
         // editor that was actually applied to every layer on the service. In the V2
         // graph temporal metadata lives on MetadataV2Object.Temporal — there is no
         // service-level slot. Rather than silently fan-out across resources (which
@@ -539,7 +539,7 @@ internal static partial class ServiceSettingsEndpoints
                 AllowedRoles = accessPolicy.AllowedRoles,
                 AllowedWriteRoles = accessPolicy.AllowedWriteRoles
             } : null,
-            // GAP (#1035 cutover 72/N): V2 has no service-scope TimeInfo; the v1 path
+            // GAP: V2 has no service-scope TimeInfo; the v1 path
             // surfaced a service-level TimeInfo block here, and the matching update
             // handler now refuses the write. Mirror that here by always returning null.
             TimeInfo = null,

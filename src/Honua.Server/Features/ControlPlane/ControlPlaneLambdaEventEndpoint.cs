@@ -103,7 +103,7 @@ internal static partial class ControlPlaneLambdaEventEndpoint
         // A degraded start (database unreachable, or the schema behind this build before the
         // migration task ran) cannot do the control-plane work. Answer a typed not-ready 503 so the
         // invocation fails and EventBridge/Scheduler retries it, instead of running the handler
-        // against a database it cannot use (honua-server#5916).
+        // against a database it cannot use.
         if (ControlPlaneNotReadyGuard.TryRefuse(context, degradedStartup) is { } notReady)
         {
             LogNotReady(logger, context.Response.Headers[ReadinessReasonCodes.HeaderName].ToString());

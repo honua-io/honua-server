@@ -19,11 +19,11 @@ internal static class MetadataReleaseOperationEndpoints
     public static void MapMetadataReleaseOperationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata/releases")
-            // T5 (#2341): representative group-level capability gate wiring. The
+            // T5: representative group-level capability gate wiring. The
             // shared CapabilityGateEndpointFilter short-circuits with 404 when the
             // gated descriptor resolves experimental-disabled; publication.metadata-release
             // is Implemented today, so this is behaviour-neutral. Attaching the gate to
-            // the deferred-feature groups is deferred to T10 (#2346).
+            // the deferred-feature groups is deferred to T10.
             .WithCapabilityGate("publication.metadata-release")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)

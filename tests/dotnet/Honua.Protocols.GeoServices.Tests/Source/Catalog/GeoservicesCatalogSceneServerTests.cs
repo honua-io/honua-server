@@ -21,6 +21,7 @@ public sealed class GeoservicesCatalogSceneServerTests
 {
     private const string SceneId = "catalog-scene";
     private const string SceneName = "Catalog Scene";
+    private const string AdminPassword = "catalog-scene-test-key";
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -93,6 +94,39 @@ public sealed class GeoservicesCatalogSceneServerTests
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_ProtectedScene_NamedOnlyForCallerWhoMayReadIt()
+    {
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            await ResetSceneRegistryAsync(fixture);
+            await RegisterSceneAsync(fixture, SceneVisibility.Protected);
+            using var administrator = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            using var anonymous = await fixture.Client.GetAsync("/rest/services?f=json");
+            using var authorized = await administrator.GetAsync("/rest/services?f=json");
+
+            (await anonymous.Content.ReadAsStringAsync()).Should().NotContain(SceneName).And.NotContain(SceneId);
+            authorized.Be200Ok();
+            (await authorized.Content.ReadAsStringAsync()).Should().Contain(SceneName);
+        }
+        finally
+        {
+            await ResetSceneRegistryAsync(fixture);
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
@@ -152,7 +186,9 @@ public sealed class GeoservicesCatalogSceneServerTests
         }
     }
 
-    private static async Task RegisterSceneAsync(WebAppFixture fixture)
+    private enum SceneVisibility { Public, Protected }
+
+    private static async Task RegisterSceneAsync(WebAppFixture fixture, SceneVisibility visibility = SceneVisibility.Public)
     {
         var registration = fixture.GetService<ISceneRegistrationService>();
         await registration.RegisterAsync(new SceneDatasetRecord
@@ -164,7 +200,8 @@ public sealed class GeoservicesCatalogSceneServerTests
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
             CachePolicy = SceneCachePolicy.Default,
-            IsPublic = true,
+            IsPublic = visibility == SceneVisibility.Public,
+            RequiresAuth = visibility == SceneVisibility.Protected,
             Status = SceneDatasetStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
             CreatedBy = "test",

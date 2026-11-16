@@ -279,6 +279,10 @@ accepted unauthenticated STA ingestion must explicitly set
 `SensorThings__AllowAnonymousWritesDangerously=true`; use that only behind a
 trusted ingress or disposable test boundary.
 
+SensorThings read routes (`GET /sta/v1.1/**`) now require a signed-in caller by
+default. Deployments that publish sensing data to anonymous clients must set
+`SensorThings__AllowAnonymousReads=true`.
+
 ## Steps
 
 1. Preflight against the running instance. The deploy API reports database compatibility, migration state, and coordinated-deploy readiness.
@@ -378,7 +382,7 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 | `POST /api/v1/admin/deploy/operations/{operationId}/rollback` | Roll the operation back |
 | `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all server deployments in one call |
 
-Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), plus GitOps passthrough variants. `AzureContainerApps` and `AzureFunctions` are not target kinds: the server refuses to start while a `ControlPlane__DeployTargets__*__TargetKind` entry names one, so remove such entries before upgrading. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
+Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), plus GitOps passthrough variants. `AzureContainerApps`, `AzureFunctions` and `SelfHostedRolling` are not target kinds: the server refuses to start while a `ControlPlane__DeployTargets__*__TargetKind` entry names one, so remove such entries before upgrading. The server does not read `ControlPlane__SelfHosted__*` settings; remove them too. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
 
 ### Converge the whole platform release in one call
 
@@ -472,21 +476,6 @@ The substitution never applies to `telemetry.error_rate.query`, because an empty
 
 Warmup and bake windows start when the backend first reports the candidate serving traffic, not when the operation was created. That exposure time is stored on the operation, so a control-plane restart or lease hand-off resumes the same window rather than restarting it. There is no path on which missing data promotes a rollout: before exposure it holds until the exposure deadline, and after exposure it holds until warmup plus the evidence grace, then rolls back.
 
-The self-hosted rolling backend (`honua-yarp-rolling`) stages the candidate as a standby replica that serves no traffic until the proxy swaps to it, so its exposure starts at the cutover. Before the cutover, only the checks that need no candidate traffic run: the backend's standby health gate, plus `telemetry.healthz.url` and the golden query when you set them. Probe URLs must be public HTTPS endpoints, so they cannot address the standby replica on its host port. Point them at a public HTTPS route that reaches the standby, or rely on the backend's own standby health gate. Those checks are bounded by `telemetry.exposure_deadline_seconds`: a standby that has not passed them by the deadline is rolled back without being activated, even if it becomes ready later. Error-rate, latency, and sample-floor metrics are evaluated from the cutover, inside the post-activation observation window below.
-
-### Replica environment and files (self-hosted rolling)
-
-The self-hosted rolling backend launches each replica itself, so anything the image needs at startup has to travel on the deploy operation's parameters:
-
-| Parameter | Effect |
-|---|---|
-| `env.<NAME>` | Sets environment variable `<NAME>` in the replica container to the parameter's value. |
-| `mount.<container-path>` | Mounts the host file or directory named by the parameter's value at `<container-path>` in the replica container, read-only. |
-
-A mount whose host path is missing or empty blocks the plan, so you read the reason instead of watching the standby exit at startup and the rollout fail at the exposure deadline as a health failure.
-
-Reach for `mount.` when the image needs a *file*. A server with a configured database outside Development and Test stores the operation key ring there and refuses to start until `Operations:SecretChannel:KeyRingCertificatePath` names a PKCS#12 certificate with a private key, which is exactly such a file. Mount the directory holding it, then point the setting at the in-container path: `mount./etc/honua/keyring` = `/srv/honua/keyring` on the host, with `env.Operations__SecretChannel__KeyRingCertificatePath` = `/etc/honua/keyring/operation-keyring.pfx` and `env.Operations__SecretChannel__KeyRingCertificatePassword` set alongside it.
-
 ## Promotion requirements
 
 A rollout does not auto-promote (cut over to the new revision) until its **promotion gate** is satisfied. The gate is chosen with the `deployment.promotion_gate` parameter and defaults by target kind. This is independent of the automatic-rollback signals above — rollback still fires on a telemetry breach or an unhealthy probe regardless of the promotion gate.
@@ -494,12 +483,12 @@ A rollout does not auto-promote (cut over to the new revision) until its **promo
 | Gate (`deployment.promotion_gate`) | Default for | What must pass to promote | Telemetry backend required? |
 |---|---|---|---|
 | `telemetry` | all cloud backends (ECS/ALB, Lambda, Argo Rollouts) | The configured metrics gate (`telemetry.connection` + error-rate/latency thresholds) must clear after warmup. | Yes — a reachable Prometheus/CloudWatch connection. |
-| `health` | `honua-yarp-rolling` (self-hosted rolling, on-prem/air-gapped) | The backend's own health gate. The rolling backend health-probes the new standby replica locally and cuts over once it is healthy. A metrics gate is optional; if `telemetry.connection` is also set its rollback signals and waits still apply. | No. |
+| `health` | `honua-compose` (installed Compose project) | The backend's own health gate. For Compose, that is the executor's configured probe URLs. | No. |
 | `manual` | — (opt-in) | Nothing automatic. The rollout bakes and holds until an operator calls the promote endpoint. | No. |
 
 Notes:
 
-- **On-prem / air-gapped:** the self-hosted rolling backend defaults to the `health` gate, so a cutover needs **no** external telemetry backend — the standby replica's `/healthz/ready` is the gate. You do not need a cloud-style Prometheus for the promotion to complete.
+- **Installed Compose project:** the Compose backend defaults to the `health` gate, so a promotion needs **no** external telemetry backend.
 - **Using a private/on-prem Prometheus for the telemetry gate:** the outbound URL guard rejects private/loopback endpoints by default (SSRF hardening). To point a telemetry connection at an on-prem Prometheus (for example `http://prometheus.internal:9090` or a `10.x`/`192.168.x` address), set `AllowPrivateNetworks: true` on that `ControlPlane__TelemetryConnections` entry. This is a per-connection opt-in; the default posture (HTTPS-only, no private destinations) is unchanged for every other connection. Only enable it for a trusted endpoint inside your own network.
 - **Manual promotion (escape hatch):** `POST /api/v1/admin/deploy/operations/{operationId}/promote` forces the cutover on a rollout parked in `Reconciling` (or `Submitted`). It requires admin authorization, records the operator on the audit trail, and returns `409 Conflict` with a reason when the operation cannot be promoted (not yet submitted, already promoted, rolling back, or terminal). Use it when a gate never clears (for example a metrics connection is down) or when you deliberately run the `manual` gate.
 
@@ -528,10 +517,7 @@ operation stays in `observing`. It commits once the gate passes, and it rolls ba
 
 `protection.policyDigest` is a hash of the promotion/telemetry/rollback parameters in effect when the
 candidate was activated, so drifting that configuration mid-window is detectable; `protection.reasonCode`
-carries a bounded, operator-safe code for the current phase. The self-hosted rolling backend
-(`honua-yarp-rolling`) is the concrete case this protects: the previous replica is kept running
-(not stopped at cutover) until the window's `expired` finalize step retires it, so a candidate that
-fails moments after cutover still has something to recover to.
+carries a bounded, operator-safe code for the current phase.
 
 ## Rollback
 
@@ -670,10 +656,8 @@ The functional query is not inferred. Configure it on the deploy operation's par
 
 | Parameter | Used by | Purpose |
 |---|---|---|
-| `rollback.functional_query.path` | Self-hosted rolling (`honua-yarp-rolling`) | Path probed on the restored replica's host port, for example `/golden`. Without it, the backend checks the body of its health probe. |
-| `rollback.functional_query.expected_contains` or `rollback.functional_query.expected_sha256` | Self-hosted rolling | Required: text the correct answer contains, such as a marker only the prior revision returns, or the exact SHA-256 of the body. |
-| `rollback.functional_query.forbidden_contains` | Self-hosted rolling | Optional: text the answer must not contain. On its own it does not configure the query. |
-| `telemetry.golden_query.url` with `telemetry.golden_query.expected_contains` or `expected_sha256` (and optionally `forbidden_contains`) | Cloud backends; also the candidate correctness gate | Public HTTPS query and expectations. When set, these expectations take precedence over the `rollback.functional_query.*` ones and must also hold for the restored prior revision. |
+| `telemetry.golden_query.url` with `telemetry.golden_query.expected_contains` or `expected_sha256` (and optionally `forbidden_contains`) | Cloud backends; also the candidate correctness gate | Public HTTPS query and expectations. They must also hold for the restored prior revision. |
+| `rollback.functional_query.expected_contains`, `rollback.functional_query.expected_sha256`, `rollback.functional_query.forbidden_contains` | Cloud backends | Rollback-only expectations for the `telemetry.golden_query.url` query. Each is read only when the matching `telemetry.golden_query.*` expectation is not set. |
 
 An expectation the correct answer cannot meet, such as the same text as both expected and forbidden, makes every rollback fail. The rollback window is `deployment.rollback.observation_timeout_seconds` (default 300, at most 1800). If proof does not arrive in time, the operation does not report a restore. It becomes `Failed` with `rollback.functional_query_failed` when the functional query got a wrong answer, an error envelope or no answer from the restored target. It becomes `ManualInterventionRequired` with `rollback.functional_query_unproven` when no functional query was configured or attempted, or with `rollback.readiness_unproven` when no restored endpoint was healthy. A serving revision that is not the prior one is `ManualInterventionRequired` with `rollback.identity_mismatch` at once.
 
@@ -693,7 +677,7 @@ Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: tru
 
 - **New pods never ready after upgrade** — check logs for migration failure; roll back the image (migrations that already applied are additive by policy, so the old version still runs).
 - **Preflight reports pending migrations you didn't expect** — the image tag is newer than intended, or a prior out-of-band migration run was skipped; reconcile via `GET /api/v1/admin/observability/migrations` before proceeding.
-- **Deploy operation stuck in `Reconciling`** — the platform hasn't converged (ECS draining, Argo mid-ramp) or telemetry hasn't accumulated minimum samples; check `GET .../operations/{operationId}` for the specific pending gate. If the promotion gate can never clear (a `telemetry`-gated target whose metrics connection is unreachable, or a `manual`-gated rollout), force the cutover with `POST .../operations/{operationId}/promote`. On-prem rolling targets promote on the health gate by default and need no telemetry backend — see [Promotion requirements](#promotion-requirements).
+- **Deploy operation stuck in `Reconciling`** — the platform hasn't converged (ECS draining, Argo mid-ramp) or telemetry hasn't accumulated minimum samples; check `GET .../operations/{operationId}` for the specific pending gate. If the promotion gate can never clear (a `telemetry`-gated target whose metrics connection is unreachable, or a `manual`-gated rollout), force the cutover with `POST .../operations/{operationId}/promote`. Installed Compose targets (`honua-compose`) promote on the health gate by default and need no telemetry backend — see [Promotion requirements](#promotion-requirements).
 - **Rollback returns `ManualInterventionRequired`** — read the reason in the operation's current phase. With no captured previous revision, re-point the alias/weights/slot manually through the cloud console or CLI. With `rollback.functional_query_unproven`, traffic may already be back on the prior revision but nothing proved it answers correctly: verify it yourself, and set the functional query parameters in [Rollback completion proof](#rollback-completion-proof) on later deploys.
 - **Rollback stays `RollbackRequested`** — routing converged but the restored target has not passed the [completion proof](#rollback-completion-proof) yet; it settles when the proof passes or the rollback window ends.
 

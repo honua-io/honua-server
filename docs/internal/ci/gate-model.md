@@ -1155,8 +1155,9 @@ Derived Artifact Normalization runs on pull requests only when its own recipe
 can change: the producer workflow, the .NET setup action, the envelope builder,
 every generator input the envelope pins (`GENERATOR_INPUTS` in
 `scripts/ci/normalization-envelope.py`) and the three projections. Its consumer
-is observe-only since feature PRs stopped committing these projections (14 Nov),
-so an envelope for an ordinary source change produced no result anyone used.
+remains observe-only. Source PRs carry their regenerated projections; the required
+architecture job verifies submitted output directly, so an envelope for an
+ordinary source change does not publish or repair its branch.
 That generation still runs: PR Gate's architecture job regenerates the same
 projections and reports drift on every ready PR, ci.yml's foundation job does
 the same on affected trunk and twice-daily full runs, and the nightly
@@ -1641,9 +1642,9 @@ cancel superseded PR runs through their per-PR concurrency groups.
 Normalization consumer admission reads the exact producer attempt before joining
 its per-PR cancellation group. Only a successful envelope-packaging job admits
 validation; late same-SHA metadata or draft skips cannot cancel useful work.
-Publication of generated documents stays with the trunk producer: feature PRs
-keep envelope validation and drift reporting, and the consumer stays in observe
-mode. Trusted admission cancels only consumers of older producer generations
+Generated-only publication stays with the trunk producer. Feature PRs commit
+regeneration with their source changes and retain envelope validation and drift
+reporting; the consumer stays in observe mode. Trusted admission cancels only consumers of older producer generations
 associated with that PR; delayed old completions cannot cancel newer work. Only
 admission has Actions write permission for cancellation. Validation retains
 read-only Actions, Contents and Pull requests permissions, and its existing
@@ -1950,3 +1951,86 @@ in `scripts/ci/native-image-impact.py` for authoritative serving-image verificat
 No required check or nightly/release/deploy verification moved. Content-addressed
 skip promotion still requires an audit of authoritative serving-image run evidence;
 the retired observer cannot supply it.
+
+### OData error-handling and advanced-feature host lifetime
+
+`ODataErrorHandlingTests` and `ODataAdvancedFeaturesTests` build their Pro-licensed,
+`odata.yaml`-seeded application once per class through a `ReadOnlyProHost` class
+fixture, as `ODataEndpointTests` does. Read-only GET cases use that host's client.
+Every case that sends a POST, PATCH or `$batch`, inserts features or reads the
+database still builds, seeds and disposes a private Pro host; cases that already
+built their own host are unchanged. Assertions and case counts are unchanged.
+
+Paired build-host runs of both classes on trunk f0483ffc72 passed the same 109
+cases (53 error-handling, 56 advanced) with no skips. VSTest execution fell from
+30m11s to 4m22s and the TRX interval from 1812.9 to 324.0 seconds on a heavily
+loaded host. Full run 43709972683 spent 336 seconds of per-case fixture time in the
+two classes; about two thirds of their cases now share the host, so the expected CI
+saving is roughly 220 seconds. Full CI job savings are unmeasured.
+All cases remain in their existing OData shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### I3S scene server host lifetime
+
+`I3sSceneServerEndpointTests` builds its enterprise and community applications, the
+authenticated client and the two database-backed scene registrations once per class
+through the `SceneHosts` class fixture instead of for every case. Every case only
+reads, and the scene registry rows the cases see are the same rows each case used
+to register after its hosts seeded. Test bodies and assertions are unchanged.
+
+Paired build-host runs of the class on trunk f52d27ce02 passed the same 35 cases with
+no skips. VSTest execution fell from 18m37s to 6s and the TRX interval from 1118.1 to
+77.6 seconds on a heavily loaded host. Full run 43709972683 spent 222 seconds of
+per-case fixture time in this class (6.3 seconds per case), the expected CI saving.
+Full CI job savings are unmeasured.
+All cases remain in the Scene I3S Resources 2 shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### Spatial analytics REST host lifetime
+
+`SpatialAnalyticsRestTests` builds its Pro-licensed application once per class
+through a `ReadOnlyProHost` class fixture. The clusters, density, buffer-aggregate
+and spatial-join query cases only read, so they use that host's client; the three
+cases that seed extra rows still build, seed and dispose a private Pro host.
+Assertions and case counts are unchanged.
+
+Paired build-host runs of the class on trunk 0afc7ba8ba passed the same 47 cases
+with no skips. VSTest execution fell from 4m41s to 20s, saving 261 seconds (4.35
+runner-minutes), and the TRX interval from 302.5 to 41.5 seconds, with one test
+process each. Full run 43709972683 spent 174 seconds of per-case fixture time in
+this class. Full CI job savings are unmeasured.
+All cases remain in their existing Server Features Analytics Studio Export and
+Reporting shard on selected PR runs and twice-daily full trunk runs. This changes no
+runner count, required check name, required aggregate dependency, workflow or shard
+definition.
+
+## Generated projections alongside source changes
+
+The required generated-file ownership check admits protected outputs alongside
+source inputs that force the architecture gate. It compares the candidate's
+validator, policy, PR workflow, classifiers, fast-test selector, regeneration
+wrapper and architecture action with trusted trunk blobs. Older branches must
+adopt the repair before mixing source and
+output; changing or removing verification remains blocked. Generated-only PRs
+still require the canonical producer's exact commit/tree artifact proof.
+
+Before strict regeneration, the existing architecture job removes submitted
+protected outputs so only freshly produced bytes and modes can pass. Unproduced
+additions cannot survive the checkout, and symlink parents fail closed.
+After regeneration, the job checks every protected
+path submitted by the PR against its committed bytes and executable mode. Added
+and deleted outputs are included, and symlinks fail. The MCP roster retains its
+existing drift contract: its valid source SHA and UTC generation timestamp can
+differ between local and CI generation; every other byte and the file mode must
+match freshly generated output. No other projection receives that normalization.
+It requires the PR merge
+checkout and uses its target parent; unreadable Git state fails closed. Output
+that the PR did not change retains advisory drift reporting. No job, required
+context or aggregate dependency is added or removed.
+
+The repair itself lands without protected generated output because the old
+trusted checker cannot admit its own replacement. Its authored workflow inventory
+template changes here; the existing trunk generator publishes that projection
+afterward. Subsequent source PRs can carry their generated inventory normally.

@@ -29,10 +29,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 428,
-      "provingTestCount": 1860,
+      "entryCount": 430,
+      "provingTestCount": 1885,
       "maturity": {
-        "implemented": 425,
+        "implemented": 427,
         "experimental": 3
       },
       "noSurface": null,
@@ -491,28 +491,6 @@
       "geobench": []
     },
     {
-      "key": "caching.redis",
-      "displayName": "Redis Distributed Cache",
-      "category": "Caching",
-      "edition": "Pro",
-      "status": null,
-      "entryCount": 0,
-      "provingTestCount": 0,
-      "maturity": {},
-      "noSurface": {
-        "capability": "caching.redis",
-        "reasonCode": "config-flag",
-        "reason": "Redis distributed cache is a deployment configuration setting, not a distinct route.",
-        "category": "Caching",
-        "edition": "Pro"
-      },
-      "cite": [],
-      "parity": [],
-      "geoservicesAssess": [],
-      "interop": [],
-      "geobench": []
-    },
-    {
       "key": "channels.aws-sns",
       "displayName": "AWS SNS Delivery",
       "category": "Channels",
@@ -711,7 +689,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 56,
+      "provingTestCount": 57,
       "maturity": {
         "implemented": 2
       },
@@ -1056,10 +1034,10 @@
       "category": "Identity",
       "edition": "Pro",
       "status": null,
-      "entryCount": 7,
-      "provingTestCount": 36,
+      "entryCount": 9,
+      "provingTestCount": 40,
       "maturity": {
-        "implemented": 7
+        "implemented": 9
       },
       "noSurface": null,
       "cite": [],
@@ -1177,7 +1155,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 79,
-      "provingTestCount": 291,
+      "provingTestCount": 293,
       "maturity": {
         "implemented": 79
       },
@@ -1623,7 +1601,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 3,
-      "provingTestCount": 4,
+      "provingTestCount": 15,
       "maturity": {
         "deferred": 3
       },
@@ -1695,7 +1673,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 602,
+      "provingTestCount": 606,
       "maturity": {
         "implemented": 49
       },
@@ -1794,7 +1772,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 48,
-      "provingTestCount": 147,
+      "provingTestCount": 155,
       "maturity": {
         "implemented": 48
       },
@@ -1845,7 +1823,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 448,
+      "provingTestCount": 456,
       "maturity": {
         "implemented": 45,
         "preview": 2
@@ -1912,7 +1890,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 134,
+      "provingTestCount": 135,
       "maturity": {
         "implemented": 21
       },
@@ -1936,7 +1914,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 9,
-      "provingTestCount": 42,
+      "provingTestCount": 43,
       "maturity": {
         "implemented": 9
       },
@@ -2095,7 +2073,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 356,
+      "provingTestCount": 364,
       "maturity": {
         "implemented": 19
       },
@@ -2217,7 +2195,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 13,
-      "provingTestCount": 78,
+      "provingTestCount": 79,
       "maturity": {
         "implemented": 13
       },
@@ -2253,7 +2231,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 64,
-      "provingTestCount": 237,
+      "provingTestCount": 250,
       "maturity": {
         "preview": 64
       },
@@ -2289,7 +2267,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 11,
-      "provingTestCount": 103,
+      "provingTestCount": 110,
       "maturity": {
         "implemented": 11
       },
@@ -2345,7 +2323,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 159,
+      "provingTestCount": 162,
       "maturity": {
         "implemented": 2
       },
@@ -2623,7 +2601,7 @@
       "edition": "Pro",
       "status": "experimental",
       "entryCount": 7,
-      "provingTestCount": 146,
+      "provingTestCount": 150,
       "maturity": {
         "experimental": 7
       },
@@ -2681,7 +2659,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 8,
-      "provingTestCount": 70,
+      "provingTestCount": 71,
       "maturity": {
         "implemented": 8
       },
@@ -2739,7 +2717,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 6,
-      "provingTestCount": 18,
+      "provingTestCount": 24,
       "maturity": {
         "implemented": 6
       },
@@ -2757,7 +2735,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 8,
+      "provingTestCount": 9,
       "maturity": {
         "implemented": 2
       },

@@ -66,7 +66,7 @@ internal static class I3sSceneServiceBuilder
                 SpatialReference = spatialReference,
             };
 
-        // #1812: advertise the I3S layerType + store profile the dataset's source
+        // Advertise the I3S layerType + store profile the dataset's source
         // kind maps to (3DObject / Building / PointCloud) instead of a hardcoded
         // 3DObject.
         var layerType = I3sLayerTypeMap.ToLayerType(datasetType);
@@ -80,7 +80,7 @@ internal static class I3sSceneServiceBuilder
             NormalReferenceFrame = "east-north-up",
         };
 
-        // #1809: once the layer's tileset projects to fetchable node pages, the
+        // Once the layer's tileset projects to fetchable node pages, the
         // layer advertises nodePages so a conformant client traverses the
         // layer through nodepages/{n}. When no node pages are available (e.g. a
         // config-registry scene with no loadable tileset) the store stays a

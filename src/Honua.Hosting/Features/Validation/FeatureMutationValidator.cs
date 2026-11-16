@@ -405,7 +405,7 @@ internal static class MetadataV2AttributeValidation
             // Enforce the binding even for older schemas that mark its field editable.
             // On insert this validator still accepts supplied values. GeoServices
             // applyEdits drops those client values and stamps server-owned GlobalID
-            // and editor-tracking fields before validation (#6134).
+            // and editor-tracking fields before validation.
             if (isUpdate && AttributeMutationPolicy.IsReadOnlyOnUpdate(resource, field))
             {
                 errors.Add($"Field '{field.Name}' is not editable.");
