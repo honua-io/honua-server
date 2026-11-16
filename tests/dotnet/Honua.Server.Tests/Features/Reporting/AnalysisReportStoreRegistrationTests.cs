@@ -16,7 +16,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Reporting;
 
 [Protocol(TestProtocols.Infrastructure)]
-[Operation(Operations.Security)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class AnalysisReportStoreRegistrationTests
 {
     [UnitTest]

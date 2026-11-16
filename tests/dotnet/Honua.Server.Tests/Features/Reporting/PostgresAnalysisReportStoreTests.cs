@@ -27,7 +27,7 @@ public sealed class PostgresAnalysisReportStoreTests(DatabaseFixtureAdapter data
     {
         await database.CreateSchemaUnderLockAsync(_schema);
         await using var stream = typeof(PostgresAnalysisReportStore).Assembly.GetManifestResourceStream(
-            "Honua.Server.Migrations.177_CreateAnalysisReports.sql")
+            "Honua.Server.Migrations.207_CreateAnalysisReports.sql")
             ?? throw new InvalidOperationException("Analysis report migration is missing.");
         using var reader = new StreamReader(stream);
         await database.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync())
@@ -79,6 +79,21 @@ public sealed class PostgresAnalysisReportStoreTests(DatabaseFixtureAdapter data
     }
 
     [IntegrationTest]
+    public async Task TryGetAsync_BodyThisBuildCannotRead_IsAMissAndStoreOverwritesIt()
+    {
+        var store = Store();
+        var report = Report("other-build");
+        await store.StoreAsync(report, CancellationToken.None);
+        await using var command = database.DataSource.CreateCommand(
+            $"UPDATE \"{_schema}\".analysis_reports SET body = '{{\"sections\":[{{\"kind\":\"unknown\"}}]}}'::json");
+        await command.ExecuteNonQueryAsync();
+        (await store.TryGetAsync(report.JobId, report.ReportContractVersion, CancellationToken.None)).Should().BeNull();
+        await store.StoreAsync(report, CancellationToken.None);
+        (await Store().TryGetAsync(report.JobId, report.ReportContractVersion, CancellationToken.None))
+            .Should().BeEquivalentTo(report, options => options.RespectingRuntimeTypes());
+    }
+
+    [IntegrationTest]
     public async Task StoreAsync_ConcurrentNodes_RespectSharedCapacity()
     {
         var first = Store(2);
@@ -112,7 +127,7 @@ public sealed class PostgresAnalysisReportStoreTests(DatabaseFixtureAdapter data
         Sections =
         [
             new HeadingSection { Text = "Heading", Level = 2 },
-            new ParagraphSection { Text = "Quoted \"text\"" },
+            new ParagraphSection { Text = "Quoted \"text\" with a \u0000 control character" },
             new KeyMetricSection { Label = "Area", Value = "12.5", Unit = "m2", SpatialReference = "EPSG:4326" },
             new TableSection { Caption = "Table", Columns = ["value"], Rows = [["one"]], TruncatedRowCount = 2 },
             new ChartSection { ChartKind = ReportChartKind.Bar, Categories = ["one"], Series = [new ChartSeries { Name = "count", Values = [1.5] }] },

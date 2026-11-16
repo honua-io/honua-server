@@ -35,11 +35,22 @@ internal sealed class PostgresAnalysisReportStore(
             command.Parameters.AddWithValue("job", jobId);
             command.Parameters.AddWithValue("version", contractVersion);
             var body = await command.ExecuteScalarAsync(token).ConfigureAwait(false);
-            return body is string json
-                ? JsonSerializer.Deserialize(json, ReportingJsonContext.Default.AnalysisReport)
-                    ?? throw new JsonException("Analysis report is missing.")
-                : null;
+            return body is string json ? TryDeserialize(json) : null;
         }, StatementRepeat.SafeToRepeat, cancellationToken);
+    }
+
+    // The table is shared by every task, so during a rolling deploy it can hold a body written by
+    // another build. A body this build cannot read is a miss: the service rebuilds and overwrites it.
+    private static AnalysisReport? TryDeserialize(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(json, ReportingJsonContext.Default.AnalysisReport);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     public Task StoreAsync(AnalysisReport report, CancellationToken cancellationToken)
@@ -66,12 +77,12 @@ internal sealed class PostgresAnalysisReportStore(
                 """, connection, transaction);
             command.Parameters.AddWithValue("job", report.JobId);
             command.Parameters.AddWithValue("version", report.ReportContractVersion);
-            command.Parameters.AddWithValue("body", NpgsqlDbType.Jsonb, body);
+            command.Parameters.AddWithValue("body", NpgsqlDbType.Json, body);
             command.Parameters.AddWithValue("ttl", _ttl);
             command.Parameters.AddWithValue("capacity", _capacity);
             await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
             await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
-        }, StatementRepeat.NotAfterSend, cancellationToken);
+        }, StatementRepeat.SafeToRepeat, cancellationToken);
     }
 
     public Task RemoveAsync(string jobId, CancellationToken cancellationToken)
@@ -82,6 +93,6 @@ internal sealed class PostgresAnalysisReportStore(
             await using var command = new NpgsqlCommand($"DELETE FROM {_table} WHERE job_id = @job", connection);
             command.Parameters.AddWithValue("job", jobId);
             await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-        }, StatementRepeat.NotAfterSend, cancellationToken);
+        }, StatementRepeat.SafeToRepeat, cancellationToken);
     }
 }

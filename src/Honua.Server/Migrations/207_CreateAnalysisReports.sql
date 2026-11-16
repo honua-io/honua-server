@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.analysis_reports (
     job_id TEXT COLLATE "C" NOT NULL,
     contract_version TEXT COLLATE "C" NOT NULL,
-    body JSONB NOT NULL,
+    body JSON NOT NULL,
     stored_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (job_id, contract_version)
