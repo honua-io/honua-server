@@ -37,6 +37,22 @@ MANIFEST_MEDIA_TYPES = {
     "application/vnd.docker.distribution.manifest.v2+json",
 }
 
+IMAGE_CONFIG_MEDIA_TYPES = {
+    "application/vnd.oci.image.config.v1+json",
+    "application/vnd.docker.container.image.v1+json",
+}
+IMAGE_LAYER_MEDIA_TYPES = {
+    "application/vnd.oci.image.layer.v1.tar",
+    "application/vnd.oci.image.layer.v1.tar+gzip",
+    "application/vnd.oci.image.layer.v1.tar+zstd",
+    "application/vnd.oci.image.layer.nondistributable.v1.tar",
+    "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip",
+    "application/vnd.oci.image.layer.nondistributable.v1.tar+zstd",
+    "application/vnd.docker.image.rootfs.diff.tar",
+    "application/vnd.docker.image.rootfs.diff.tar.gzip",
+    "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip",
+}
+
 
 def _load_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -175,7 +191,7 @@ def report(verdicts, expected_keys, today):
         for finding in v["blockingFindings"]:
             days = DEADLINE_DAYS.get(finding["Severity"], 30)
             findings.append({**finding, "release": v["release"], "image": v["image"],
-                             "platform": v["platform"],
+                             "platform": v["platform"], "firstDetected": today.isoformat(),
                              "dueBy": (today + datetime.timedelta(days=days)).isoformat()})
     suppressed = sum(len(v["suppressedFindings"]) for v in verdicts)
     # The public summary carries counts only: never vulnerability ids, packages or images.
@@ -202,15 +218,31 @@ def platform_manifest(index, platform):
     return digest
 
 
+def _validate_image_descriptor(descriptor, allowed_types):
+    _require(isinstance(descriptor, dict), "Image descriptor must be an object")
+    _require(isinstance(descriptor.get("mediaType"), str) and descriptor["mediaType"] in allowed_types,
+             "Unsupported image descriptor media type")
+    digest = descriptor.get("digest")
+    _require(isinstance(digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", digest),
+             "Image descriptor must have a SHA-256 digest")
+    size = descriptor.get("size")
+    _require(type(size) is int and size >= 0, "Image descriptor size must be a nonnegative integer")
+
+
 def assert_single_manifest(manifest):
-    _require(manifest.get("mediaType") in MANIFEST_MEDIA_TYPES,
+    _require(isinstance(manifest, dict), "Target manifest must be an object")
+    _require(type(manifest.get("schemaVersion")) is int and manifest["schemaVersion"] == 2,
+             "Target manifest schemaVersion must be 2")
+    _require(isinstance(manifest.get("mediaType"), str) and manifest["mediaType"] in MANIFEST_MEDIA_TYPES,
              "Target must be a single image manifest, not an index carrying attestations")
     _require("manifests" not in manifest, "Target must not reference other manifests")
-    _require(not manifest.get("subject"), "Target must not be an attestation or referrer")
-    for layer in manifest.get("layers", []):
-        media_type = str(layer.get("mediaType", ""))
-        _require("in-toto" not in media_type and "attestation" not in media_type,
-                 "Target carries an attestation layer")
+    _require("subject" not in manifest and "artifactType" not in manifest,
+             "Target must not be an artifact or referrer")
+    _validate_image_descriptor(manifest.get("config"), IMAGE_CONFIG_MEDIA_TYPES)
+    layers = manifest.get("layers")
+    _require(isinstance(layers, list), "Target image layers must be a list")
+    for layer in layers:
+        _validate_image_descriptor(layer, IMAGE_LAYER_MEDIA_TYPES)
     return True
 
 

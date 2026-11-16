@@ -25,6 +25,9 @@ on:
       - '.github/workflows/store-image-size.yml'
   workflow_dispatch:
   workflow_call:
+    secrets:
+      HONUA_PR_GATE_WAKE_ROLE_ARN:
+        required: false
 
 permissions:
   contents: read
