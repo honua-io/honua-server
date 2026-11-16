@@ -50,7 +50,7 @@ public sealed class FeatureEditGateTests
         var check = new FeatureEditCheck(
             Resource(),
             batch,
-            static row => Row("stored", "L").Attributes.SetItems(row.Feature!.Attributes));
+            static row => Row("stored", "L").Attributes.SetItems(row.Feature!.Value.Attributes));
 
         var rejections = await FeatureEditGate.CheckAsync(hooks, Scope, check, CancellationToken.None);
 

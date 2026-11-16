@@ -92,7 +92,7 @@ internal sealed partial class PluginFeatureEditHooks(
     private static EditHookFeature ToHookFeature(FeatureEditRow row, FeatureEditHookScope scope, long? createdObjectId)
     {
         var objectId = row.Kind == FeatureEditOperationKind.Create ? createdObjectId : row.ObjectId;
-        var stored = objectId is { } key && scope.StoredRows is { } rows && rows.TryGetValue(key, out var found) ? found : null;
+        Feature? stored = objectId is { } key && scope.StoredRows is { } rows && rows.TryGetValue(key, out var found) ? found : null;
         var feature = row.Feature ?? stored ?? Feature.Create(objectId ?? 0, geometry: null);
         return new EditHookFeature(Kind(row.Kind), row.Index, objectId, objectId is { } id ? feature with { Id = id } : feature);
     }
