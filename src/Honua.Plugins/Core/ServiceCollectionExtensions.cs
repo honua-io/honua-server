@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Features.Edit;
 using Honua.Plugins.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +37,10 @@ public static class ServiceCollectionExtensions
         // FeatureServerEditsDependencies — is itself scoped, and the validators/hooks it
         // aggregates are singletons (safe to consume from a scoped service).
         services.TryAddScoped<IPluginEditPipeline, PluginEditPipeline>();
+
+        // Replace, not TryAdd: edit protocols register the no-op hooks so they work without
+        // plugins, and the plugin hooks must win whichever registration runs first.
+        services.Replace(ServiceDescriptor.Scoped<IFeatureEditHooks, PluginFeatureEditHooks>());
 
         // Computed-field pipeline is read-path only and consumes singleton providers + the
         // singleton license service, so it can be a singleton.

@@ -26,6 +26,8 @@ conformance matrix so a regression fails CI.
 | Contingent values — any/wildcard | `any` field accepts any value | Wildcard accepted | Supported |
 | Contingent values — null / coded / range | Type-specific match | Null/code/range honored over per-field domains | Supported |
 | Contingent values — partial update | Full effective row validated | Existing + changed values merged before validation | Supported |
+| Contingent values — OGC API Features and gRPC edits | Same rules on every edit surface | POST, PUT, PATCH (merged row) and batch items, and gRPC `ApplyEdits` (stored row merged into partial updates), are validated before the write | Supported |
+| Plugin edit hooks — OGC API Features and gRPC edits | Validators and edit hooks cannot be bypassed by protocol | Before-hooks run before the write and can reject rows; after-hooks see committed rows only and cannot fail the edit | Supported |
 | Attribute rules — immediate vs batch | Immediate inline; batch deferred | Immediate pass inline; batch pass explicit | Supported |
 | Attribute rules — triggeringEvents | Fire only on configured events | insert/update/delete gating | Supported |
 | Attribute rules — exclusion | Matching edit excluded/aborted | Exclusion (inverse-of-constraint) aborts with error | Supported |
@@ -69,6 +71,12 @@ never by parsing the message.
   — `Upper`, `Lower`, `Trim`, `Text`, `Concatenate`, `Round`, `Floor`, `Ceil`, `Abs`,
   `IsEmpty` — plus `+` string concatenation). Expressions outside the subset are routed out of
   scope (skipped with a logged warning), never failing the edit. Full Arcade parity is a non-goal.
+- Contingent values and plugin edit hooks run on GeoServices `applyEdits`, OGC API Features and
+  gRPC `ApplyEdits`. WFS-T transactions and OData writes do not run them yet.
+- An OGC API Features edit fails as a whole when one row is rejected. A gRPC `ApplyEdits` call
+  with `rollback_on_failure` fails with `INVALID_ARGUMENT`; without it, only the rejected rows
+  report a failure and the other rows are written. An idempotent replay returns the stored
+  result and does not run the hooks again.
 - Owner-based edit policy compares the row's owner field against the authenticated principal
   name; it is independent of (and composes with) AccessPolicy/RBAC write authorization, which is
   still enforced first in the shared edit pipeline.
@@ -81,6 +89,7 @@ never by parsing the message.
 
 ## Status summary
 
-- **Supported:** owner policies (#2132), contingent values (#2133), attribute-rule depth (#2134).
+- **Supported:** owner policies (#2132), contingent values (#2133), attribute-rule depth (#2134),
+  contingent values and plugin edit hooks on OGC API Features and gRPC edits (#7855).
 - **Partial / deferred to #2135:** VersionManagementServer `conflictDetection=byAttribute`,
   `withPost` auto-post, and the `resolveConflicts` accepted-resolution echo.

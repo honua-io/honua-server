@@ -130,7 +130,8 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 new OgcFeaturesEditRequest
                 {
                     Operation = OgcFeaturesEditOperation.Create,
-                    Feature = feature
+                    Feature = feature,
+                    ServiceName = layerValidation.Service?.Metadata.Name
                 },
                 cancellationToken);
             var createResult = editResult.CreateResults.FirstOrDefault();
@@ -304,7 +305,8 @@ internal sealed partial class OgcFeaturesCrudHandler(
                     Operation = OgcFeaturesEditOperation.Delete,
                     ObjectId = objectId,
                     IfMatch = ifMatch,
-                    ExpectedStateToken = expectedStateToken
+                    ExpectedStateToken = expectedStateToken,
+                    ServiceName = layerValidation.Service?.Metadata.Name
                 },
                 cancellationToken);
             var deleteResult = editResult.DeleteResults.FirstOrDefault();
@@ -413,22 +415,17 @@ internal sealed partial class OgcFeaturesCrudHandler(
             throw new ValidationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
-        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+        var gateTarget = new OgcFeatureEditGate.Target(context, layerId, resource, request.ServiceName);
+        var (editBatch, ended) = await OgcFeatureEditGate.PrepareAsync(
+            gateTarget,
             _featureReader,
-            layerId,
-            resource.OwnerEditPolicy,
-            editBatch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+            _editProcessor.ToFeatureEditBatch(optimizedEdit, resource),
             cancellationToken).ConfigureAwait(false);
-        if (!prepared.IsAllowed)
+        if (ended is { } stopped)
         {
-            return OwnerEditPolicyFieldAccess.DeniedEditResult(
-                editBatch,
-                prepared.DenialReason ?? "Edit not permitted.");
+            return stopped;
         }
 
-        editBatch = prepared.Batch;
         // Geometry-change semantics mirror the OGC Features Transaction batch handler:
         // a row is considered to have changed geometry when the request feature carries
         // non-null WKB. Delete operations default to false. Without this, an attribute-
@@ -451,6 +448,17 @@ internal sealed partial class OgcFeaturesCrudHandler(
             layerSrid: resource.ReadSrid(),
             geometryChanged: geometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        var result = await WriteAsync(layerId, editBatch, outboxScopeData, cancellationToken).ConfigureAwait(false);
+        await OgcFeatureEditGate.RunAfterAsync(gateTarget, editBatch, result).ConfigureAwait(false);
+        return result;
+    }
+
+    private async Task<FeatureEditResult> WriteAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScopeData? outboxScopeData,
+        CancellationToken cancellationToken)
+    {
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }

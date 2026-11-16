@@ -349,7 +349,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // false. Captured before stored geometry is merged into omitted update fields,
         // or an attribute-only update would over-report as a geometry change.
         var requestBatch = editBatch;
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(requestBatch);
 
         // RLS / permanent-filter enforcement runs only on the read path; the edit SQL
         // filters by (layer_id, objectid) with no row-level predicate. So every update/delete
@@ -359,7 +358,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
         // The same read supplies stored geometry for a partial update. Omitted attributes
         // are merged from the locked row by the writer, not from this snapshot.
-        editBatch = await EnsureEditTargetsVisibleAsync(
+        (editBatch, var storedRows) = await EnsureEditTargetsVisibleAsync(
             layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
 
         var grpcHttpContext = context.GetHttpContext()
@@ -382,6 +381,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
 
         editBatch = ownerPrepared.Batch;
+        var gate = await CheckEditGateAsync(new EditCall(request, layer, context), editBatch, storedRows)
+            .ConfigureAwait(false);
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(gate.Without(requestBatch));
 
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,
@@ -406,13 +408,13 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             {
                 keyedApplication = await _featureWriter.ApplyEditsAsync(
                     layer.StorageLayerId,
-                    editBatch,
+                    gate.Written,
                     new FeatureEditIdempotencyReceipt
                     {
                         Scope = keyedEdit.Scope,
                         ExpiresAt = _editReceipts.ResponseExpiresAt,
                         Payload = staged => GrpcApplyEditsReceipts.EncodeReceipt(
-                            StampResultGlobalIds(globalIds, GrpcConversionHelpers.ToProtoApplyEditsResponse(staged))),
+                            StampResultGlobalIds(globalIds, GrpcConversionHelpers.ToProtoApplyEditsResponse(gate.Merge(staged)))),
                     },
                     context.CancellationToken).ConfigureAwait(false);
                 result = keyedApplication.Value.Result;
@@ -421,7 +423,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             {
                 result = await _featureWriter.ApplyEditsAsync(
                     layer.StorageLayerId,
-                    editBatch,
+                    gate.Written,
                     context.CancellationToken).ConfigureAwait(false);
             }
         }
@@ -433,7 +435,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             throw;
         }
 
-        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+        var reported = gate.Merge(result);
+        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(reported);
         StampResultGlobalIds(globalIds, response);
 
         // A receipt committed under this key replaces this attempt's result, and no change
@@ -450,8 +453,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             request.LayerId,
             layer,
             requestBatch,
-            result,
+            reported,
             context).ConfigureAwait(false);
+        await gate.RunAfterAsync(result).ConfigureAwait(false);
 
         return response;
 
@@ -518,18 +522,18 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 return validated.MoveToImmutable();
             }
         }
+    }
 
-        static string BoundEditValidationMessage(string? message, string fallback)
+    private static string BoundEditValidationMessage(string? message, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(message))
         {
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                return fallback;
-            }
-
-            var singleLine = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
-            const int maxLength = 240;
-            return singleLine.Length <= maxLength ? singleLine : singleLine[..maxLength];
+            return fallback;
         }
+
+        var singleLine = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        const int maxLength = 240;
+        return singleLine.Length <= maxLength ? singleLine : singleLine[..maxLength];
     }
 
     // Records this attempt on this node before any later step can fail, so a retry here
@@ -662,14 +666,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     }
 
     // A row hidden by row-level security is rejected rather than edited, because the edit statement has no row-level predicate.
-    private async Task<FeatureEditBatch> EnsureEditTargetsVisibleAsync(
+    private async Task<(FeatureEditBatch Batch, IReadOnlyDictionary<long, Feature> Stored)> EnsureEditTargetsVisibleAsync(
         int storageLayerId,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken)
     {
         if (editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
         {
-            return editBatch;
+            return (editBatch, ImmutableDictionary<long, Feature>.Empty);
         }
 
         // Collect distinct target objectids across updates and deletes; a single hidden/missing
@@ -709,7 +713,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         if (editBatch.Updates.IsDefaultOrEmpty)
         {
-            return editBatch;
+            return (editBatch, storedById);
         }
 
         var mergedUpdates = ImmutableArray.CreateBuilder<Feature>(editBatch.Updates.Length);
@@ -747,12 +751,12 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
         }
 
-        return editBatch with
+        return (editBatch with
         {
             Updates = mergedUpdates.MoveToImmutable(),
             // Count is not known up front, so this builder cannot use MoveToImmutable.
             Preconditions = preconditions.ToImmutable()
-        };
+        }, storedById);
     }
 
     // Omitted geometry keeps the stored geometry because there is no protobuf signal for clearing it, and omitted attributes are merged from the locked row.

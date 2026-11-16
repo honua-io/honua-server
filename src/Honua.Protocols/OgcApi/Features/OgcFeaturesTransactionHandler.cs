@@ -186,6 +186,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     {
                         Operation = OgcFeaturesEditOperation.Batch,
                         RollbackOnFailure = true,
+                        ServiceName = layerValidation.Service?.Metadata.Name,
                         BatchOperations = preparedBatch.PreparedOperations
                             .Select(static operation => new OgcFeaturesBatchEditOperation
                             {
@@ -544,7 +545,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         Feature = feature,
                         ObjectId = objectId,
                         IfMatch = ifMatch,
-                        ExpectedStateToken = expectedStateToken
+                        ExpectedStateToken = expectedStateToken,
+                        ServiceName = layerValidation.Service?.Metadata.Name
                     },
                     cancellationToken,
                     geometryChangedOverride: geometryChangedForReplace);
@@ -931,7 +933,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         ObjectId = objectId,
                         IfMatch = ifMatch,
                         ClearAllProperties = patchRequest.HasProperties && patchRequest.Properties is null,
-                        ExpectedStateToken = expectedStateToken
+                        ExpectedStateToken = expectedStateToken,
+                        ServiceName = layerValidation.Service?.Metadata.Name
                     },
                     cancellationToken,
                     geometryChangedOverride: patchRequest.HasGeometry);
@@ -1076,22 +1079,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
-        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+        var gateTarget = new OgcFeatureEditGate.Target(context, layerId, resource, request.ServiceName);
+        var (editBatch, ended) = await OgcFeatureEditGate.PrepareAsync(
+            gateTarget,
             _featureReader,
-            layerId,
-            resource.OwnerEditPolicy,
-            editBatch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+            _editProcessor.ToFeatureEditBatch(optimizedEdit, resource),
             cancellationToken).ConfigureAwait(false);
-        if (!prepared.IsAllowed)
+        if (ended is { } stopped)
         {
-            return OwnerEditPolicyFieldAccess.DeniedEditResult(
-                editBatch,
-                prepared.DenialReason ?? "Edit not permitted.");
+            return stopped;
         }
 
-        editBatch = prepared.Batch;
         // Per-row geometry-change semantics: a single-op caller (PATCH, single-op
         // Replace) passes geometryChangedOverride so the attribute-only or replace-of-
         // null cases are tracked precisely without inferring from the merged feature's
@@ -1125,6 +1123,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             geometryChanged: geometryChanged,
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        var result = await WriteAsync(layerId, editBatch, outboxScopeData, cancellationToken).ConfigureAwait(false);
+        await OgcFeatureEditGate.RunAfterAsync(gateTarget, editBatch, result).ConfigureAwait(false);
+        return result;
+    }
+
+    private async Task<FeatureEditResult> WriteAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScopeData? outboxScopeData,
+        CancellationToken cancellationToken)
+    {
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
         return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }

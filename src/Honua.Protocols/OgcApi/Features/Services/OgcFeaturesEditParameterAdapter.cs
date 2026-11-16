@@ -51,6 +51,9 @@ internal readonly record struct OgcFeaturesEditRequest
 
     public bool ClearAllProperties { get; init; }
 
+    // The service the collection was addressed through, as plugin edit hooks see it.
+    public string? ServiceName { get; init; }
+
     /// <summary>
     /// Canonical <see cref="FeatureStateToken"/> computed from the snapshot the handler
     /// validated the If-Match precondition against. When set (single-feature Replace,
