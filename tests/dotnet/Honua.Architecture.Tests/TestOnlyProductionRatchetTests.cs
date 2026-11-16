@@ -7,14 +7,7 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ratchet for production files under <c>src/</c> whose types only tests use.
-/// </summary>
-/// <remarks>
-/// <c>scripts/ci/test-only-production-ratchet.py</c> lists them. The committed baseline may only
-/// shrink: a new file fails the set check, and adding a baseline line fails the parent check.
-/// Delete the code with its tests, or give it a production caller, then delete its line.
-/// </remarks>
+// The baseline of src/ files whose types only tests use may only shrink.
 [Trait("Category", "Architecture")]
 public sealed class TestOnlyProductionRatchetTests
 {

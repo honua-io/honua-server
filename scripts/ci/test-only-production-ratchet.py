@@ -10,7 +10,7 @@ nameof, a route string or reflection by name still counts as a use. Partial type
 are grouped across files.
 
 The architecture test commits the output as a baseline and refuses both a new
-path and a baseline line the scanner no longer finds. Shrink the baseline by
+path and a baseline line the scanner does not report. Shrink the baseline by
 deleting the code (and its tests) or by giving it a production caller.
 
 Usage:
@@ -62,11 +62,7 @@ def read(root: Path, path: str) -> str:
     return COMMENT.sub(" ", text) if path.endswith(CODE_SUFFIXES) else text
 
 
-def scan(root: Path, files: list[str]) -> list[str]:
-    production = [f for f in files if f.endswith(PRODUCTION_SUFFIXES) and not is_test(f) and not f.startswith("docs/")]
-    tests = [f for f in files if f.endswith(TEST_SUFFIXES) and is_test(f)]
-    sources = [f for f in files if f.startswith("src/") and f.endswith(".cs") and not is_test(f)]
-
+def declarations(root: Path, sources: list[str]) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     types_by_file: dict[str, set[str]] = {}
     extensions_by_file: dict[str, set[str]] = {}
     for path in sources:
@@ -75,15 +71,25 @@ def scan(root: Path, files: list[str]) -> list[str]:
         if names:
             types_by_file[path] = names
             extensions_by_file[path] = set(EXTENSION.findall(text))
+    return types_by_file, extensions_by_file
 
-    production_index: dict[str, set[str]] = defaultdict(set)
-    for path in production:
+
+def word_index(root: Path, paths: list[str]) -> dict[str, set[str]]:
+    index: dict[str, set[str]] = defaultdict(set)
+    for path in paths:
         for word in set(WORD.findall(read(root, path))):
-            production_index[word].add(path)
-    test_words: set[str] = set()
-    for path in tests:
-        test_words.update(WORD.findall(read(root, path)))
+            index[word].add(path)
+    return index
 
+
+def scan(root: Path, files: list[str]) -> list[str]:
+    production = [f for f in files if f.endswith(PRODUCTION_SUFFIXES) and not is_test(f) and not f.startswith("docs/")]
+    tests = [f for f in files if f.endswith(TEST_SUFFIXES) and is_test(f)]
+    sources = [f for f in files if f.startswith("src/") and f.endswith(".cs") and not is_test(f)]
+
+    types_by_file, extensions_by_file = declarations(root, sources)
+    production_index = word_index(root, production)
+    test_words = word_index(root, tests)
     declared_in: dict[str, set[str]] = defaultdict(set)
     for path, names in types_by_file.items():
         for name in names:
