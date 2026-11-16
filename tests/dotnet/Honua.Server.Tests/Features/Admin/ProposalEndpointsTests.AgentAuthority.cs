@@ -44,7 +44,9 @@ public sealed partial class ProposalEndpointsTests
         using var agent = await CreateKeyClientAsync("authority-agent", AgentKeyPermissions);
         using var changed = await agent.PutAsJsonAsync(AuthorityUrl, ceiling with { Enabled = false });
         await AssertAgentApprovalRefusalAsync(changed, "make this change in Console", "operator.agent.access-grants");
-        using var removed = await agent.DeleteAsync(AuthorityUrl + $"?principalId={ceiling.PrincipalId}&tenantId=public");
+        // Literal route: the endpoint-registry drift scan matches same-method requests by source path.
+        using var removed = await agent.DeleteAsync(
+            $"/api/v1/admin/agent-authority?principalId={ceiling.PrincipalId}&tenantId=public");
         await AssertAgentApprovalRefusalAsync(removed, "make this change in Console", "operator.agent.access-grants");
         var stored = await _client.GetFromJsonAsync<AgentAuthorityCeiling>(
             AuthorityUrl + $"?principalId={ceiling.PrincipalId}&tenantId=public");
