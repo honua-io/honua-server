@@ -9,6 +9,7 @@ using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -32,6 +33,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithProductionJobSubstrate()
         .ConfigureServices(services =>
         {
             // Same in-memory Studio store StudioPackageEndpointsTests uses: this suite exercises

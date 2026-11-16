@@ -7,6 +7,7 @@ using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -22,6 +23,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
         """;
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithProductionJobSubstrate()
         .ConfigureServices(services =>
         {
             services.RemoveAll<IStudioPackageStore>();
