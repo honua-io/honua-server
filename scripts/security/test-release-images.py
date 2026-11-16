@@ -179,9 +179,51 @@ class AttestationFreeCopy(unittest.TestCase):
         with self.assertRaises(ValueError):
             ri.platform_manifest(self.INDEX, "linux/arm64")
 
+    @staticmethod
+    def descriptor(media_type):
+        return {"mediaType": media_type, "digest": "sha256:" + "3" * 64, "size": 123}
+
+    def image_manifest(self):
+        return {"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "config": self.descriptor("application/vnd.oci.image.config.v1+json"),
+                "layers": [self.descriptor("application/vnd.oci.image.layer.v1.tar+gzip")]}
+
+    def test_recognized_container_image_encodings_are_accepted(self):
+        for media_type in ("application/vnd.oci.image.layer.v1.tar", "application/vnd.oci.image.layer.v1.tar+gzip",
+                           "application/vnd.oci.image.layer.v1.tar+zstd",
+                           "application/vnd.docker.image.rootfs.diff.tar.gzip",
+                           "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip"):
+            image = self.image_manifest()
+            image["layers"][0]["mediaType"] = media_type
+            self.assertTrue(ri.assert_single_manifest(image))
+        image = self.image_manifest()
+        image["mediaType"] = "application/vnd.docker.distribution.manifest.v2+json"
+        image["config"]["mediaType"] = "application/vnd.docker.container.image.v1+json"
+        image["layers"] = []
+        self.assertTrue(ri.assert_single_manifest(image))
+
+    def test_artifacts_and_malformed_image_envelopes_are_rejected(self):
+        image = self.image_manifest()
+        bad = [None, [], {}, dict(image, schemaVersion=1), dict(image, schemaVersion=2.0),
+               dict(image, mediaType={}), dict(image, config=None),
+               dict(image, layers=None), dict(image, layers=[None]),
+               dict(image, subject={}), dict(image, artifactType="application/example"),
+               dict(image, config=self.descriptor("application/vnd.example.config.v1+json")),
+               dict(image, layers=[self.descriptor("application/json")])]
+        for field, value in (("digest", "sha256:bad"), ("size", -1), ("size", True),
+                             ("size", "123"), ("mediaType", {}), ("mediaType", "application/vnd.in-toto+json")):
+            layer = self.descriptor("application/vnd.oci.image.layer.v1.tar")
+            layer[field] = value
+            bad.append(dict(image, layers=[layer]))
+        for manifest in bad:
+            with self.subTest(manifest=manifest), self.assertRaises(ValueError):
+                ri.assert_single_manifest(manifest)
+
     def test_target_must_be_a_single_manifest_without_attestations(self):
         manifest = {"mediaType": "application/vnd.oci.image.manifest.v1+json",
-                    "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"}]}
+                    "schemaVersion": 2,
+                    "config": self.descriptor("application/vnd.oci.image.config.v1+json"),
+                    "layers": [self.descriptor("application/vnd.oci.image.layer.v1.tar+gzip")]}
         self.assertTrue(ri.assert_single_manifest(manifest))
         attested = copy.deepcopy(manifest)
         attested["layers"].append({"mediaType": "application/vnd.in-toto+json"})
