@@ -10,10 +10,11 @@ namespace Honua.Hosting.UnitTests;
 public sealed class RetainedWebSocketCloseTests
 {
     [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task ClientAndPolicyClose_Overlap_EmitOneTerminalFrame(bool policyFirst)
+    [InlineData(WebSocketCloseStatus.PolicyViolation)]
+    [InlineData(WebSocketCloseStatus.NormalClosure)]
+    public async Task ClientAndPolicyClose_Overlap_EmitOneTerminalFrame(WebSocketCloseStatus firstStatus)
     {
+        var policyFirst = firstStatus == WebSocketCloseStatus.PolicyViolation;
         using var inner = new PausedCloseSocket();
         using var socket = new LiveStreamAuthorizationFilter.RetainedWebSocket(inner);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
