@@ -58,5 +58,5 @@ internal static partial class OgcResponseFormatter
 
 internal readonly record struct CsvResponseOptions(
     string[] FieldNames,
-    CancellationToken CancellationToken = default,
-    string? IdentifierFieldName = null);
+    string? IdentifierFieldName = null,
+    CancellationToken CancellationToken = default);

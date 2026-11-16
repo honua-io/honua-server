@@ -35,8 +35,8 @@ internal sealed partial class OgcFeaturesQueryHandler
     {
         return new StreamingCsvItemsResult(
             token => StreamCsvFeaturesAsync(store, query, token),
-            new CsvResponseOptions(ResolveCsvFieldNames(query.Resource, query.ProjectedProperties), cancellationToken,
-                query.Resource.FindPrimaryIdField()?.Name),
+            new CsvResponseOptions(ResolveCsvFieldNames(query.Resource, query.ProjectedProperties),
+                query.Resource.FindPrimaryIdField()?.Name, cancellationToken),
             query.CrsUri);
     }
 
