@@ -113,7 +113,9 @@ public sealed class Wfs20CanonicalServiceWriteTests
     public async Task HandleTransactionAsync_AnonymousWriteOnlyOnCanonicalService_IsRejected()
     {
         var (status, writer) = await ExecuteAsync(
-            CreateProvider(canonicalPolicy: AnonymousWrites, secondaryPolicy: null), Anonymous());
+            // Keep the addressed type discoverable so this reaches its write-policy check.
+            CreateProvider(canonicalPolicy: AnonymousWrites, secondaryPolicy: new AccessPolicy { AllowAnonymous = true }),
+            Anonymous());
 
         status.Should().Be(StatusCodes.Status401Unauthorized);
         writer.ReceivedCalls().Should().BeEmpty();
