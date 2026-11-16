@@ -20,7 +20,7 @@ public static class ValidationServiceExtensions
         services.AddSingleton<IRouteParameterValidator, RouteParameterValidator>();
         services.AddSingleton<IAccessPolicyEvaluator>(_ => new AccessPolicyEvaluator());
 
-        // Principal-based per-layer authorization seam (honua-server#3046). Shared by the
+        // Principal-based per-layer authorization seam. Shared by the
         // geoprocessing submit pipeline so a job that reads a catalog layer is gated by the
         // same decision the synchronous query surfaces apply. Needs the ambient request
         // accessor to reach the request scope (and its tenant rail) from a singleton.

@@ -93,7 +93,7 @@ internal sealed class WorkspaceResource : IMcpResource
         }
 
         // Load first, then authorize with the workspace's owner or scope. A denial is
-        // not_found so a caller cannot probe which workspace ids exist (honua-server#5629).
+        // not_found so a caller cannot probe which workspace ids exist.
         try
         {
             await _jobService

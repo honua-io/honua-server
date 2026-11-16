@@ -171,7 +171,7 @@ internal static class McpToolSchemas
     // The geospatial-mcp create_map_package / create_app_package schemas mark NO
     // field required and set additionalProperties:true, so a standard-conformant
     // client composes a map/app from any subset of the composition selectors. The
-    // live schemas mirror that exactly. Since ADR-0076 (#3255) they no longer
+    // live schemas mirror that exactly. Under ADR-0076 they do not
     // publish the Honua prompt/provider/model extension inputs: draft creation is
     // deterministic, so there is nothing for a prompt to drive. sourceBindings
     // items stay open (as in the standard) because the canonical SourceBinding

@@ -160,7 +160,7 @@ internal sealed partial class ClientCertificateEnforcementMiddleware(
         }
 
         // Classify the admin surface independently of how the API version segment is
-        // spelled (#6106). Admin groups are mapped as /api/v{version:apiVersion}/admin and
+        // spelled. Admin groups are mapped as /api/v{version:apiVersion}/admin and
         // URL-segment versioning accepts /api/v1/admin, /api/v1.0/admin, ... so a literal
         // prefix match alone let /api/v1.0/admin skip RequiredForAdmin entirely. The
         // matched endpoint's route template is authoritative when routing has already run;

@@ -230,7 +230,7 @@ internal sealed class OidcClaimsTransformation(
             transformedClaims.Add(CanonicalSecurityActor.CreateStampedClaim("auth_type", scheme));
         }
 
-        // Apply custom mappings (Enterprise identity.claims-mapping only, #2997)
+        // Apply custom mappings (Enterprise identity.claims-mapping only)
         if (claimsMappingEntitled)
         {
             foreach (var mapping in _options.ClaimsMapping.CustomMappings)

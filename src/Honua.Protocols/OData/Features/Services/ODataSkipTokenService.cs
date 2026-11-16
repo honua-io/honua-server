@@ -45,7 +45,7 @@ internal static class ODataSkipTokenService
         // request carries no $filter/$orderby. A bare integer has no embedded fingerprint, so
         // accepting it for a filtered/ordered query lets a token minted for one query be reused
         // as a raw offset against a different one — defeating the cross-query-reuse guard the
-        // opaque tokens enforce (#1989). When a filter or orderby is present, require the
+        // opaque tokens enforce. When a filter or orderby is present, require the
         // fingerprinted opaque token.
         if (int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var legacyOffset))
         {

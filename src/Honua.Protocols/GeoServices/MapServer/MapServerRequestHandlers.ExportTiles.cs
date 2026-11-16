@@ -64,7 +64,7 @@ internal static partial class MapServerEndpoints
 
         // Report the TRUE tile count (not the maxTiles-bounded build size) so the estimate stays
         // meaningful even when the request exceeds the transfer limit; the bounded build only ever
-        // exists to keep the allocation from OOM-ing the host (#2065).
+        // exists to keep the allocation from OOM-ing the host.
         var estimatedSizeBytes = checked(plan!.TotalTileCount * ExportTilesTileSizeBytesEstimate);
         var response = new ExportTilesEstimateResponse
         {
@@ -653,7 +653,7 @@ internal static partial class MapServerEndpoints
         var maxLon = bounds[2];
         var maxLat = bounds[3];
         // Pre-size to the bounded cap, never the (potentially enormous) full grid, so the
-        // build itself can never allocate more than maxTiles coordinates (#2065).
+        // build itself can never allocate more than maxTiles coordinates.
         var coordinates = new List<ExportTileCoordinate>(Math.Max(0, maxTiles));
 
         foreach (var z in levels)

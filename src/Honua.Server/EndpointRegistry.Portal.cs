@@ -19,11 +19,11 @@ public static partial class EndpointRegistry
         new("GET", "/rest/admin/{folderName}/{serviceName}.{serviceType}"),
         new("POST", "/rest/admin/{folderName}/{serviceName}.{serviceType}"),
 
-        // ArcGIS Portal Sharing token issuance (#1241).
+        // ArcGIS Portal Sharing token issuance.
         new("POST", "/sharing/rest/generateToken"),
         new("GET", "/sharing/rest/generateToken"),
 
-        // ArcGIS Portal Sharing read surface (#1243).
+        // ArcGIS Portal Sharing read surface.
         new("GET", "/sharing/rest"),
         new("GET", "/sharing/rest/info"),
         new("GET", "/sharing/rest/portals/self"),
@@ -35,7 +35,7 @@ public static partial class EndpointRegistry
         new("GET", "/sharing/rest/content/items/{id}"),
         new("GET", "/sharing/rest/content/items/{id}/data"),
 
-        // ArcGIS Portal OAuth2 named-user bridge (#1242).
+        // ArcGIS Portal OAuth2 named-user bridge.
         new("GET", "/sharing/rest/oauth2/authorize"),
         new("GET", "/sharing/rest/oauth2/callback"),
         new("POST", "/sharing/rest/oauth2/token"),
@@ -43,13 +43,13 @@ public static partial class EndpointRegistry
         new("POST", "/sharing/rest/oauth2/userinfo"),
         // GET /sharing/rest/oauth2/token removed (BH7-001): RFC 6749 §4.1.3 requires POST-only token exchange; GET exposed credentials in URLs/logs (CWE-598).
 
-        // OAuth2 RFC 7662 token introspection (#1890).
+        // OAuth2 RFC 7662 token introspection.
         new("POST", "/sharing/rest/oauth2/introspect"),
 
-        // OAuth2 RFC 7009 per-token revocation (#2155).
+        // OAuth2 RFC 7009 per-token revocation.
         new("POST", "/sharing/rest/oauth2/revoke"),
 
-        // ArcGIS Portal community group + item sharing surface (#1868).
+        // ArcGIS Portal community group + item sharing surface.
         new("POST", "/sharing/rest/community/createGroup"),
         new("GET", "/sharing/rest/community/groups/{groupId}"),
         new("GET", "/sharing/rest/content/groups/{groupId}"),

@@ -9,10 +9,10 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> NetworkAnalystEndpoints =>
     [
-        // NAServer minimal mobile routing compatibility (#366)
+        // NAServer minimal mobile routing compatibility
         new("GET", "/rest/services/{serviceId}/NAServer/Route/solve"),
         new("POST", "/rest/services/{serviceId}/NAServer/Route/solve"),
-        // Bounded synchronous ready-to-use tool alias (#5192).
+        // Bounded synchronous ready-to-use tool alias.
         new("GET", "/rest/services/{serviceId}/NAServer/FindRoutes/execute"),
         new("POST", "/rest/services/{serviceId}/NAServer/FindRoutes/execute"),
         new("GET", "/rest/services/{serviceId}/NAServer/GenerateServiceAreas/execute"),
@@ -28,7 +28,7 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix"),
         new("POST", "/rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation"),
         // NAServer service and analysis-layer resources read by ArcGIS Pro / arcpy.nax
-        // before they bind a stand-alone routing service (#5035)
+        // before they bind a stand-alone routing service
         new("GET", "/rest/services/{serviceId}/NAServer"),
         new("POST", "/rest/services/{serviceId}/NAServer"),
         new("GET", "/rest/services/{serviceId}/NAServer/{layerName}"),

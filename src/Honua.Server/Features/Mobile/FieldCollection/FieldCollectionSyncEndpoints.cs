@@ -383,7 +383,7 @@ internal static class FieldCollectionSyncEndpoints
             FieldCollectionSyncLog.PushRejected(logger, response.ChangeId, response.RejectionReason ?? string.Empty);
         }
 
-        // Server-side Workflows companion (#2121): fan out online actions only for
+        // Server-side Workflows companion: fan out online actions only for
         // durably applied changes. Best-effort — the trigger swallows its own
         // failures so automation never affects the push outcome returned above.
         if (automationTrigger is not null

@@ -34,7 +34,7 @@ internal static class ProcessMigrationEvidenceClassifier
             "conversion.feature-project",
             "generalization.simplify-layer",
             "generalization.dissolve",
-            // Async batch enrichment (#2283): a managed-NTS vector op over the shared
+            // Async batch enrichment: a managed-NTS vector op over the shared
             // spatial-join computation, projected through OGC API Processes so the
             // sync /api/enrich over-limit path has a first-class async counterpart.
             "enrichment.enrich",

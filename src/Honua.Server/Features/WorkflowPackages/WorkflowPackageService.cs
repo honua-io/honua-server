@@ -236,7 +236,7 @@ internal sealed class WorkflowPackageService(
             throw new WorkflowPackageValidationException(eligibility);
         }
 
-        // #2798: evaluate the mutating-process execution tier against the REQUESTING
+        // Evaluate the mutating-process execution tier against the REQUESTING
         // principal at publication creation. Scheduled (cron/event) runs of this
         // publication later execute under a synthesized orchestrator principal that
         // bypasses the operator evaluator, so authoring time is the only point where a
@@ -289,7 +289,7 @@ internal sealed class WorkflowPackageService(
             // skipped write would return a WorkflowPublication carrying a WorkflowDefinitionId and
             // an Active status for a definition that nothing would ever fire. Refuse up front
             // with the capability-unavailable receipt instead, the same contract geoprocessing
-            // submission and the proposal control plane use (honua-server#3585, honua-release#202).
+            // submission and the proposal control plane use.
             if (workflowDefinitionStore is null)
             {
                 WorkflowPackageLog.SchedulePublicationRefusedWithoutDurableStore(
@@ -325,7 +325,7 @@ internal sealed class WorkflowPackageService(
             // run would either inherit admin visibility or, after the fail-closed change, be
             // refused outright (honua-server#3068 review). The capture — including the
             // managed-membership marker that lets a later triggered run fail closed
-            // (honua-server#3081) — is delegated to the author-security-context capturer, which
+            // — is delegated to the author-security-context capturer, which
             // owns the RBAC/tenant/membership collaborators the capture needs.
             var capturer = authorSecurityContextCapturer ?? new WorkflowAuthorSecurityContextCapturer();
             scheduleDefinition = definition with

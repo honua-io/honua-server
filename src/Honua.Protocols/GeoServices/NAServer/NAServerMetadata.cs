@@ -179,7 +179,7 @@ internal static class NAServerMetadata
                 document["outputPolygons"] = "esriNAOutputPolygonSimplified";
                 document["outputLines"] = "esriNAOutputLineNone";
                 // Polygons are cumulative disks (FromBreak 0, ToBreak = the break),
-                // not rings split at each break (#6026).
+                // not rings split at each break.
                 document["splitPolygonsAtBreaks"] = false;
                 document["overlapPolygons"] = true;
                 document["mergeSimilarPolygonRanges"] = false;

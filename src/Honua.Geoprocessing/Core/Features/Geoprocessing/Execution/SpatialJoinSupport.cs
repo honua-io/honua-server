@@ -70,7 +70,7 @@ internal static class SpatialJoinSupport
                 // predicates mostly fail evaluate up to targets x dataset pairs while charging
                 // the match budget almost nothing — so neither the budget nor the loop itself
                 // bounded the work, and a dismissed job kept a worker busy because nothing
-                // observed cancellation between targets (honua-server#3075).
+                // observed cancellation between targets.
                 cancellationToken.ThrowIfCancellationRequested();
                 budget?.ChargeCandidate();
 

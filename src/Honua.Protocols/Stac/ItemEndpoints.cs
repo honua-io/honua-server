@@ -112,7 +112,7 @@ internal static class ItemEndpoints
             // Reject limit < 1 with 400 to match the canonical POST /search surface
             // (SearchEndpoints), which 400s on limit < 1. Previously this path silently
             // clamped limit=0 up to 1 while search rejected it — an inconsistent contract
-            // across the two STAC item-listing surfaces (#1988).
+            // across the two STAC item-listing surfaces.
             if (limit is < 1)
             {
                 StacTelemetry.SetFailed(activity, "invalid_limit");

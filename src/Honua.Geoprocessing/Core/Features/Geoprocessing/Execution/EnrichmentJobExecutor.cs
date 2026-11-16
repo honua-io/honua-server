@@ -63,7 +63,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         _serviceScopeFactory = serviceScopeFactory;
         _options = options;
         _logger = logger;
-        // Same per-geometry vertex ceiling the layer-sourced executors charge (#4629): a
+        // Same per-geometry vertex ceiling the layer-sourced executors charge: a
         // feature-count cap alone does not bound a single deliberately oversized geometry.
         var limits = limitsOptions?.Value ?? new LimitsOptions();
         _maxVerticesPerGeometry = limits.Geometry.MaxVerticesPerGeometry;
@@ -551,7 +551,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         return value;
     }
 
-    // The canonical members name both operands (honua-server#3069), so the effective
+    // The canonical members name both operands, so the effective
     // method echoed as artifact provenance is mapped back to THIS surface's wire
     // vocabulary rather than derived from the enum member name.
     private static string WireMethodName(SpatialJoinPredicate predicate)
