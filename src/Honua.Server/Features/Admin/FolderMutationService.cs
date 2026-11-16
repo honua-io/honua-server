@@ -24,17 +24,11 @@ internal static class FolderMutationService
             return new(null, null, new FolderExecutionFailure.Mutation(new(400, "Invalid namespace or unresolved tenant.")));
         var principal = execution.Principal;
         FolderReplayAuthority? replay = null;
-        if (execution.Replay is not null || principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole))
+        if (execution.Replay is not null || execution.OperationReplay is not null ||
+            principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole))
         {
-            if (execution.Replay is not { } admission || !ReferenceEquals(principal, admission.Principal) ||
-                admission.OperationId != execution.Command.OperationId || !MetadataV2ServicePaths.SameTenant(admission.TenantId, tenant))
-                return new(null, null, new FolderExecutionFailure.Replay());
-            replay = await FolderReplayAuthority.AuthorizeAsync(admission, services, cancellationToken).ConfigureAwait(false);
-            if (replay is null || !replay.MatchesExecution(new FolderReplayExecution
-            {
-                Command = execution.Command, ExpectedEtag = execution.ExpectedEtag ?? string.Empty,
-                Namespace = execution.Namespace, SchemaName = services.GetService<ISchemaContext>()?.CurrentSchema
-            })) return new(null, null, new FolderExecutionFailure.Replay());
+            replay = await AuthorizeReplayAsync(execution, tenant, cancellationToken).ConfigureAwait(false);
+            if (replay is null) return new(null, null, new FolderExecutionFailure.Replay());
         }
         var operatorPrincipal = replay?.OperatorPrincipal ?? principal;
         var gate = services.GetRequiredService<OperatorApprovalGate>();
@@ -79,6 +73,33 @@ internal static class FolderMutationService
             return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.From(exception)));
         }
     }
+    private static async Task<FolderReplayAuthority?> AuthorizeReplayAsync(
+        FolderMutationExecution execution, string? tenant, CancellationToken cancellationToken)
+    {
+        FolderReplayAuthority? replay;
+        if (execution.OperationReplay is { } operation)
+        {
+            if (execution.Replay is not null || operation.Request.DryRun ||
+                operation.Request.OperationId != execution.Command.OperationId ||
+                !MetadataV2ServicePaths.SameTenant(operation.Context.TenantId, tenant) ||
+                operation.Context.SchemaName != execution.Services.GetService<ISchemaContext>()?.CurrentSchema)
+                return null;
+            replay = await FolderReplayAuthority.AuthorizeOperationAsync(operation, execution.Services, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            if (execution.Replay is not { } admission || !ReferenceEquals(execution.Principal, admission.Principal) ||
+                admission.OperationId != execution.Command.OperationId || !MetadataV2ServicePaths.SameTenant(admission.TenantId, tenant))
+                return null;
+            replay = await FolderReplayAuthority.AuthorizeAsync(admission, execution.Services, cancellationToken).ConfigureAwait(false);
+        }
+        return replay is not null && replay.MatchesExecution(new FolderReplayExecution
+        {
+            Command = execution.Command, ExpectedEtag = execution.ExpectedEtag ?? string.Empty,
+            Namespace = execution.Namespace, SchemaName = execution.Services.GetService<ISchemaContext>()?.CurrentSchema
+        }) ? replay : null;
+    }
+
 }
 
 internal sealed record FolderMutationExecution
@@ -89,6 +110,7 @@ internal sealed record FolderMutationExecution
     public string? ExpectedEtag { get; init; }
     public string? Namespace { get; init; }
     public FolderReplayAdmission? Replay { get; init; }
+    public FolderOperationReplayAdmission? OperationReplay { get; init; }
     public IDictionary<object, object?>? RequestCache { get; init; }
 }
 
