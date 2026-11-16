@@ -79,7 +79,7 @@ public static partial class FeatureEditGate
             .Select(static group => group.Key)
             .ToHashSet();
 
-    private static Feature WithCalculatedFields(Feature feature, IReadOnlyDictionary<string, object?> values)
+    private static Feature WithCalculatedFields(Feature feature, ImmutableDictionary<string, object?> values)
     {
         var attributes = feature.Attributes.ToBuilder();
         var calculated = values.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
