@@ -103,8 +103,9 @@ export HONUA_API_KEY=your-admin-api-key
 
 honua services
 honua layers default
-honua query default/0 --limit 5
-honua query default/0 --count
+LAYER_ID=1  # placeholder; see below
+honua query "default/$LAYER_ID" --limit 5
+honua query "default/$LAYER_ID" --count
 ```
 
 Use the actual service and layer ID from the publish result. The same catalog entry also drives OGC API Features, GeoServices, OData, vector tiles, and the other enabled protocol adapters.

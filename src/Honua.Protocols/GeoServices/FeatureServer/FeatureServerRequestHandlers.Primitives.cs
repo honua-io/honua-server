@@ -73,9 +73,10 @@ internal static partial class FeatureServerEndpoints
         }
 
         var value = raw.ToString();
-        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || !double.IsFinite(parsed))
         {
-            error = $"{key} must be a number";
+            error = $"{key} must be a finite number";
             return false;
         }
 

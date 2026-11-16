@@ -3779,6 +3779,34 @@
       ]
     },
     {
+      "surfaceId": "paired-publication-read",
+      "displayName": "Paired publication read (PMTiles + GeoParquet)",
+      "surfaceKind": "http-route",
+      "protocol": "Paired Publication HTTP",
+      "canonicalIdentifier": "/api/v1/publications/{publicationId}/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/publications/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and PairedPublishReadEndpointTests integration tests assert authentication, resource export access, read-policy refusal, current.json redirect, pinned-version allow-list and byte-range reads.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Admin/PairedPublications/PairedPublicationReadEndpoints.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/PairedPublishReadEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#4597"
+        }
+      ]
+    },
+    {
       "surfaceId": "cog-range-proxy",
       "displayName": "Published Cloud Optimized GeoTIFF range proxy",
       "surfaceKind": "http-route-family",

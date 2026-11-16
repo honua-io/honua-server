@@ -128,7 +128,7 @@ Run `GET /api/v1/admin/users/{userId}/effective-permissions` in the explorer.
 { "success": true, "data": { "userId": "…", "roles": ["editors"], "permissions": [ { "service": "parks", "layer": "*", "operation": "update" } ] } }
 ```
 
-Then confirm enforcement: an anonymous `POST .../FeatureServer/{layerIndex}/addFeatures` against the restricted service returns `401`/`403`, while a caller holding `editors` succeeds. API keys have the same introspection at `GET /api/v1/admin/api-keys/{id}/effective-permissions`.
+Then confirm enforcement: an anonymous `POST .../FeatureServer/{layerIndex}/addFeatures` against the restricted service returns a GeoServices error with code `499` in an HTTP 200 response, a signed-in caller without the grant gets HTTP `403`, and a caller holding `editors` succeeds. API keys have the same introspection at `GET /api/v1/admin/api-keys/{id}/effective-permissions`.
 
 ## Troubleshoot
 

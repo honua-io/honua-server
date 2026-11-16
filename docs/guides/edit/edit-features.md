@@ -8,7 +8,9 @@ resource: "honua://capability/editing.featureserver-edits"
 
 Insert, update, and delete features over HTTP using whichever protocol your client already speaks: GeoServices FeatureServer, OGC API Features, or OData v4.
 
-**Prerequisites:** A running Honua server with a writable PostgreSQL-backed layer (DuckDB, SQL Server, and Oracle providers are read-only) and a JavaScript project with `@arcgis/core` installed. If the layer's access policy restricts writes, configure the ArcGIS Maps SDK with a credential carrying a write grant — see [Control access](../secure/access-control.md).
+**Prerequisites:** A running Honua server with an editable PostgreSQL-backed layer (DuckDB, SQL Server, and Oracle providers are read-only) and a JavaScript project with `@arcgis/core` installed. If the layer's access policy restricts writes, configure the ArcGIS Maps SDK with a credential carrying a write grant — see [Control access](../secure/access-control.md).
+
+A layer published with the default settings is read-only (its FeatureServer metadata lists only `Query`). To accept edits, publish it into the managed feature store with `"storageMode": "managed"` and the edit capabilities, for example `"capabilities": ["Query", "Create", "Update", "Delete"]`; see [editable layers](../../reference/admin-api/connections-and-layers.md#editable-layers). The layer metadata's `capabilities` then lists `Create`, `Update` and `Delete`, and the managed store assigns the object ids.
 
 All three protocols write to the same store and emit the same change events, so pick one per client and mix freely. The worked example uses the ArcGIS Maps SDK for JavaScript, which Honua works with, against FeatureServer; the [equivalence table](#do-the-same-with-ogc-api-features-or-odata) maps each operation to the other two protocols.
 
@@ -100,10 +102,10 @@ OGC API Features takes `Content-Type: application/geo+json` bodies; a successful
 
 Query the layer and confirm your edit round-trips:
 
-Open `http://localhost:8080/rest/services/parks/FeatureServer/{layerIndex}/query?where=name%3D%27Honolulu%20Hale%27&outFields=*&f=json` in a browser, replacing `{layerIndex}` with the [layer index](../../reference/protocols/geoservices-rest.md#layer-index) used above, and compare it with the expected response:
+Open `http://localhost:8080/rest/services/parks/FeatureServer/{layerIndex}/query?where=name%3D%27Honolulu%20Hale%27&outFields=*&f=json` in a browser, replacing `{layerIndex}` with the [layer index](../../reference/protocols/geoservices-rest.md#layer-index) used above, and compare it with the expected response (the object id is the one `addFeatures` returned):
 
 ```json
-{ "features": [ { "attributes": { "OBJECTID": 1, "name": "Honolulu Hale" }, "geometry": { "x": -157.8583, "y": 21.3069 } } ] }
+{ "features": [ { "attributes": { "objectid": 70052, "name": "Honolulu Hale" }, "geometry": { "x": -157.8583, "y": 21.3069 } } ] }
 ```
 
 ## Troubleshoot
@@ -111,6 +113,7 @@ Open `http://localhost:8080/rest/services/parks/FeatureServer/{layerIndex}/query
 | Symptom | Fix |
 |---|---|
 | `401` / `403` on a write | The layer or service access policy blocks anonymous writes. Authenticate with an admin API key, a role listed in `allowedWriteRoles`, or a role holding an `insert`/`update`/`delete` grant — see [Control access](../secure/access-control.md). |
+| `Create edits are not enabled` (also `Update`/`Delete`): FeatureServer error 400, OGC API Features and OData `405` | The layer was published without edit capabilities. Publish a managed copy with `storageMode` `managed` and the edit capabilities (it gets new object ids); see [editable layers](../../reference/admin-api/connections-and-layers.md#editable-layers). |
 | `404` for the service or layer | Check the service name and layer id with `honua services` and `honua layers <service-id>`. The layer must be published and bound to a storage layer. |
 | Edits rejected on DuckDB / SQL Server / Oracle layers | Those providers are read-only in the current release. Move writable layers to the PostgreSQL provider. |
 | Geometry rejected | Vertex count and payload size are capped by `Limits__Geometry__*`; oversized or invalid geometries return a validation error naming the limit. |

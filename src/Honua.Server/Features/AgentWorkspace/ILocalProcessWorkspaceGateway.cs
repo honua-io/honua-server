@@ -8,7 +8,7 @@ internal interface ILocalProcessWorkspaceGateway
 {
     bool IsConfigured { get; }
     Task<LocalProcessProjectIdentity> GetIdentityAsync(LocalProcessWorkspaceAccess access, CancellationToken cancellationToken);
-    Task<LocalProcessProjectIdentity> BindAsync(LocalProcessWorkspaceAccess access, string projectId, CancellationToken cancellationToken);
+    Task<LocalProcessProjectIdentity> BindProjectAsync(LocalProcessWorkspaceAccess access, string projectId, CancellationToken cancellationToken);
     Task RevokeAsync(LocalProcessWorkspaceAccess access, CancellationToken cancellationToken);
     Task<LocalProcessProject> GetProjectAsync(LocalProcessWorkspaceAccess access, CancellationToken cancellationToken);
     Task<LocalProcessSourceFile> ReadSourceAsync(LocalProcessWorkspaceAccess access, string path, CancellationToken cancellationToken);

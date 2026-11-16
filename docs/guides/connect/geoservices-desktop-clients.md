@@ -72,8 +72,8 @@ In the desktop client, the layer should draw, the attribute table should open, a
 
 ## Troubleshoot
 
-- **"Cannot add data" / 404 on the URL**: check the service id with `honua services`. See [troubleshooting](../deploy/troubleshooting.md).
-- **Credential prompt loops or 401**: run the `PortalCompat.generateToken` example in **Token auth** above with the same account. Token issuance returns 403 over plain HTTP unless `RequireHttps` is disabled.
+- **"Cannot add data" / 404 on the URL**: check the service id with `honua services`, and use a layer id from the service's `layers` list rather than `0` (an unknown layer returns error code 404, "Service layer was not found"). See [troubleshooting](../deploy/troubleshooting.md).
+- **Credential prompt loops, 401, or error code 499**: an anonymous request to a secured service returns a JSON error with code `499` ("Unauthorized") in an HTTP 200 response, and the service list at `/rest/services` omits services the caller cannot read. To check the credentials, run the `PortalCompat.generateToken` example in **Token auth** above with the same account. Token issuance returns 403 over plain HTTP unless `RequireHttps` is disabled.
 - **`generateToken` returns 402 Payment Required**: the `identity.portal-token` entitlement is not active in your edition configuration.
 - **WCS connection fails**: the URL contains `/services/`. Use `/ogc/wcs/{serviceId}` (see **Raster coverages over WCS** above).
 - **Layer draws but some operations fail**: Honua implements broad but not total GeoServices REST parity; check the operation in the [GeoServices parity reference](../../reference/compatibility/geoservices-parity.md) before debugging further.

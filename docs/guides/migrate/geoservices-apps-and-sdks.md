@@ -29,7 +29,7 @@ honua services
 honua layers "$SERVICE_ID"
 ```
 
-The URL shape changes: a source URL like `https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer/0` becomes `$HONUA_URL/rest/services/parcels/FeatureServer/{layerIndex}`, with one service id per published Honua service and no folder segment. The source layer number is not carried over: Honua assigns the [layer index](../../reference/protocols/geoservices-rest.md#layer-index) when the layer is published, so read each layer's `id` from `$HONUA_URL/rest/services/parcels/FeatureServer?f=json` and put it in the table. Honua also answers under the `/arcgis` site-root alias ([service path prefix](../../gis/service-path-prefix.md)), but new configuration should use the root form. Build the old-URL → new-URL table for every service before touching client code.
+The URL shape changes: a source URL like `https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer/0` becomes `$HONUA_URL/rest/services/parcels/FeatureServer/{layerIndex}`, with one service id per published Honua service and no folder segment. The source layer number is not carried over: Honua assigns the [layer index](../../reference/protocols/geoservices-rest.md#layer-index) when the layer is published, so read each layer's `id` from `honua layers "$SERVICE_ID"` or `$HONUA_URL/rest/services/parcels/FeatureServer?f=json` and put it in the table. Honua also answers under the `/arcgis` site-root alias ([service path prefix](../../gis/service-path-prefix.md)), but new configuration should use the root form. Build the old-URL → new-URL table for every service before touching client code.
 
 ### 2. Point JavaScript apps at the compat layer
 

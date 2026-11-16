@@ -104,7 +104,7 @@ CQL2 JSON (same endpoint, `filter-lang=cql2-json`):
 }
 ```
 
-GeoServices (FeatureServer query):
+GeoServices (FeatureServer query; `{layerId}` is an id from the `layers` list of `FeatureServer?f=json`):
 
 ```
 GET /rest/services/hydrants/FeatureServer/{layerIndex}/query?where=status='active'
