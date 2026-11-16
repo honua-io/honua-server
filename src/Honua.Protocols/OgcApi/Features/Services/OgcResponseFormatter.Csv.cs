@@ -14,7 +14,8 @@ internal static partial class OgcResponseFormatter
         IAsyncEnumerable<GeoJsonFeature> features,
         CsvResponseOptions options)
     {
-        var (fieldNames, cancellationToken) = options;
+        var fieldNames = options.FieldNames;
+        var cancellationToken = options.CancellationToken;
         await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
         var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         await using var writer = new StreamWriter(destination, new UTF8Encoding(false), 4096, leaveOpen: true);
@@ -22,7 +23,7 @@ internal static partial class OgcResponseFormatter
         var rowsSinceFlush = 0;
         while (hasFeature)
         {
-            await writer.WriteLineAsync(BuildCsvRow(enumerator.Current, fieldNames).AsMemory(), cancellationToken);
+            await writer.WriteLineAsync(BuildCsvRow(enumerator.Current, fieldNames, options.IdentifierFieldName).AsMemory(), cancellationToken);
             if (++rowsSinceFlush >= StreamingFlushInterval)
             {
                 await writer.FlushAsync(cancellationToken);
@@ -43,14 +44,19 @@ internal static partial class OgcResponseFormatter
         return string.Join(",", fieldNames.Prepend(idHeader).Append(geometryHeader).Select(EscapeCsvField));
     }
 
-    private static string BuildCsvRow(GeoJsonFeature feature, string[] fieldNames)
+    private static string BuildCsvRow(GeoJsonFeature feature, string[] fieldNames, string? identifierFieldName)
     {
         var row = new List<string?> { feature.Id?.ToString() };
         row.AddRange(fieldNames.Select(fieldName =>
-            feature.Properties?.TryGetValue(fieldName, out var value) == true ? value?.ToString() : null));
+            feature.Properties?.TryGetValue(fieldName, out var value) == true
+                ? value?.ToString()
+                : fieldName.Equals(identifierFieldName, StringComparison.OrdinalIgnoreCase) ? feature.Id?.ToString() : null));
         row.Add(BuildCsvGeometryValue(feature.Geometry));
         return string.Join(",", row.Select(EscapeCsvField));
     }
 }
 
-internal readonly record struct CsvResponseOptions(string[] FieldNames, CancellationToken CancellationToken = default);
+internal readonly record struct CsvResponseOptions(
+    string[] FieldNames,
+    CancellationToken CancellationToken = default,
+    string? IdentifierFieldName = null);
