@@ -46,16 +46,22 @@ public sealed class RetiredCacheDependencyTests
     }
 
     [Theory]
-    [InlineData("class C { IConnectionMultiplexer cache; }", true)]
-    [InlineData("#if NET11_0_OR_GREATER\nclass C { IConnectionMultiplexer cache; }\n#endif", true)]
-    [InlineData("#if false\n#if OPTIONAL\nclass C { IConnectionMultiplexer cache; }\n#endif\n#endif", true)]
-    [InlineData("#if true\nclass C {}\n#else\nclass C { IConnectionMultiplexer cache; }\n#endif", true)]
-    [InlineData("#if OPTIONAL\nclass C { @IConnectionMultiplexer cache; }\n#endif", true)]
-    [InlineData("// IConnectionMultiplexer\nclass C { string Name = \"IConnectionMultiplexer\"; }", false)]
-    [InlineData("#if OPTIONAL\n// IConnectionMultiplexer\nclass C { string Name = \"IConnectionMultiplexer\"; }\n#endif", false)]
-    public void ConnectionGuard_ConditionalSource_InspectsIdentifiersOnly(string source, bool expected)
+    [InlineData("class C { IConnectionMultiplexer cache; }")]
+    [InlineData("#if NET11_0_OR_GREATER\nclass C { IConnectionMultiplexer cache; }\n#endif")]
+    [InlineData("#if false\n#if OPTIONAL\nclass C { IConnectionMultiplexer cache; }\n#endif\n#endif")]
+    [InlineData("#if true\nclass C {}\n#else\nclass C { IConnectionMultiplexer cache; }\n#endif")]
+    [InlineData("#if OPTIONAL\nclass C { @IConnectionMultiplexer cache; }\n#endif")]
+    public void ConnectionGuard_ConditionalIdentifier_IsRejected(string source)
     {
-        UsesRetiredConnectionMultiplexer(source).Should().Be(expected);
+        UsesRetiredConnectionMultiplexer(source).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("// IConnectionMultiplexer\nclass C { string Name = \"IConnectionMultiplexer\"; }")]
+    [InlineData("#if OPTIONAL\n// IConnectionMultiplexer\nclass C { string Name = \"IConnectionMultiplexer\"; }\n#endif")]
+    public void ConnectionGuard_CommentsAndStrings_AreAllowed(string source)
+    {
+        UsesRetiredConnectionMultiplexer(source).Should().BeFalse();
     }
 
     private static bool UsesRetiredConnectionMultiplexer(string source)
