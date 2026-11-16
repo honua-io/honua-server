@@ -50,7 +50,7 @@ run_store_crash_case() {
   local before_inventory after_inventory before_sha content ready
   local package_before package_after outage_evidence='null' write_failure_record='null' outage_started
   local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
-  local -x HONUA_GP_WORKER_REDIS=terminal-proxy:6379
+  local -x HONUA_GP_WORKER_POSTGRES_HOST=terminal-proxy
   compose --profile crash-boundaries up -d --wait terminal-proxy >/dev/null || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
   if [[ "$target" == terminal-committed-registration-pending && "$disruption" == worker ]]; then
@@ -77,8 +77,8 @@ run_store_crash_case() {
   done
   ready="$(barrier_record "$job" "$target")"
   [[ "$ready" != null ]] || { scenario_fail "requested crash fence was never observed"; return 1; }
-  before_record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
-  package_before="$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:gp-result:$job")"
+  before_record="$(gp_job_record "$job")"
+  package_before="$(gp_package_exists "$job")"
   before_inventory=""; before_sha=""
   if [[ "$target" == native-process-started ]]; then
     [[ "$(object_file_count "$job")" == 0 ]] || {
@@ -110,7 +110,7 @@ run_store_crash_case() {
     compose kill -s SIGKILL worker >/dev/null || return 1
   else
     record_disruption store "$target" hide-marker-and-bytes
-    # Hide both the marker and the actual bytes; no synthetic Redis outage.
+    # Hide both the marker and the actual bytes; no synthetic PostgreSQL outage.
     outage_root="$object_root/.qualification-outage-$job"
     mkdir "$outage_root" || return 1
     local outage_failed=0
@@ -140,8 +140,8 @@ run_store_crash_case() {
   done
   # Resume without qualification fences/proxy for natural recovery. These local
   # exports never alter the caller's original environment.
-  HONUA_GP_QUALIFICATION_BARRIER_ROOT="" HONUA_GP_WORKER_REDIS=redis:6379
-  compose restart server server-peer redis postgres >/dev/null || return 1
+  HONUA_GP_QUALIFICATION_BARRIER_ROOT="" HONUA_GP_WORKER_POSTGRES_HOST=postgres
+  compose restart server server-peer postgres >/dev/null || return 1
   wait_ready && wait_peer_ready || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
   record_disruption "$disruption" "$target" recovered
@@ -158,7 +158,7 @@ run_store_crash_case() {
   else
     [[ "$before_sha" == "$after_sha" ]] || { scenario_fail "recovered bytes differ from durable pre-crash bytes"; return 1; }
   fi
-  after_record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
+  after_record="$(gp_job_record "$job")"
   [[ "$(jq '.artifactReferences | length' <<<"$after_record")" == 1 ]] || {
     scenario_fail "recovery did not converge to exactly one externally visible artifact"; return 1; }
   if [[ "$target" == native-process-started ]]; then
@@ -167,7 +167,7 @@ run_store_crash_case() {
   fi
   after_inventory="$(find "$object_root/gp/outputs/$job" -type f -exec sha256sum {} \; | LC_ALL=C sort)"
   auth_curl "$peer_url/ogc/processes/jobs/$job/results" > "$receipt_root/.$scenario.descriptor.json" || return 1
-  package_after="$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:gp-result:$job")"
+  package_after="$(gp_package_exists "$job")"
   [[ "$package_after" == 1 ]] || { scenario_fail "normal read did not recover result-package registration"; return 1; }
   jq -n --argjson fence "$ready" --argjson before "$before_record" --argjson after "$after_record" \
     --arg before_inventory "$before_inventory" --arg after_inventory "$after_inventory" \
@@ -198,7 +198,7 @@ observe_store_write_retry() {
   local deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-180})) record
   local failure_log="$receipt_root/$scenario-write-failure.log"
   while (( SECONDS < deadline )); do
-    record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")" || return 1
+    record="$(gp_job_record "$job")" || return 1
     if jq -e --argjson before "$before_record" '
       (.status == 0 or .status == "queued") and .attemptCount >= $before.attemptCount
       and .nextRetryAt != null and (.artifactReferences | length) == 0

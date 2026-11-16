@@ -24,14 +24,23 @@ class TerminalRecoveryTests(unittest.TestCase):
 
     def test_fence_requires_matching_durable_success_and_withheld_success_reply(self):
         terminal = {"operationId": "job-1", "status": 3, "claimedBy": "worker-1",
-                    "version": 5, "artifactReferences": ["descriptor"]}
+                    "version": 5, "updatedAt": "2026-11-16T12:00:00Z",
+                    "claimedAt": "2026-11-16T11:55:00.123456+00:00",
+                    "completedAt": "2026-11-16T12:00:00Z", "artifactReferences": ["descriptor"]}
         fence = {"operationId": "job-1", "workerId": "worker-1",
-                 "barrier": "terminal-committed-registration-pending", "redis_reply": ":1",
-                 "reply_forwarded": False, "terminal_record": terminal}
-        variants = [({}, True), ({"reply_forwarded": True}, False), ({"redis_reply": ":0"}, False),
+                 "barrier": "terminal-committed-registration-pending", "postgres_command_tag": "UPDATE 1",
+                 "postgres_transaction_status": "I", "reply_forwarded": False,
+                 "terminal_record": {**terminal, "version": 4,
+                                     "claimedAt": "2026-11-16T13:55:00.1234560+02:00",
+                                     "updatedAt": "2026-11-16T11:59:59.999999Z",
+                                     "completedAt": "2026-11-16T11:59:59.999999Z"}}
+        variants = [({}, True), ({"reply_forwarded": True}, False), ({"postgres_command_tag": "UPDATE 0"}, False),
+                    ({"postgres_transaction_status": "T"}, False),
                     ({"operationId": "other"}, False), ({"workerId": "other"}, False),
                     ({"terminal_record": {**terminal, "version": 6}}, False),
-                    ({"terminal_record": {**terminal, "status": 2}}, False)]
+                    ({"terminal_record": {**terminal, "status": 2}}, False),
+                    ({"terminal_record": {**fence["terminal_record"], "claimedAt": "2026-11-16T11:54:00Z"}}, False),
+                    ({"terminal_record": {**fence["terminal_record"], "extraMetadata": "changed"}}, False)]
         for mutation, expected in variants:
             with self.subTest(mutation=mutation):
                 script = functions(RECOVERY, "terminal_assert_fence") + r'''

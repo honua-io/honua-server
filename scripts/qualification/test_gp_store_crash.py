@@ -46,13 +46,13 @@ run_output_write_failure || result=$?
 set -uo pipefail
 scenario_name=output-write-failure; scenario_finding=""; scenario_cleanup_failure=""
 runtime_taint=""; scenario_evidence_file="$PWD/evidence"; native_payload='{}'
-unset HONUA_GP_QUALIFICATION_BARRIER_ROOT HONUA_GP_WORKER_REDIS
+unset HONUA_GP_QUALIFICATION_BARRIER_ROOT HONUA_GP_WORKER_POSTGRES_HOST
 if [[ "$INITIAL" == custom ]]; then
-  export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/caller HONUA_GP_WORKER_REDIS=caller:6379
+  export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/caller HONUA_GP_WORKER_POSTGRES_HOST=caller
 fi
 environment_state() {
   printf '%s\n' "${HONUA_GP_QUALIFICATION_BARRIER_ROOT+x}:${HONUA_GP_QUALIFICATION_BARRIER_ROOT-}" \
-    "${HONUA_GP_WORKER_REDIS+x}:${HONUA_GP_WORKER_REDIS-}"
+    "${HONUA_GP_WORKER_POSTGRES_HOST+x}:${HONUA_GP_WORKER_POSTGRES_HOST-}"
 }
 environment_state > before
 compose() {
@@ -219,6 +219,7 @@ compose() {
   fi
   echo "$fixture_record"
 }
+gp_job_record() { echo "$fixture_record"; }
 object_file_count() { echo 0; }
 record_attempt() { echo "$1" > attempt; }
 record_transition() { echo "$1" > transition; }
