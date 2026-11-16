@@ -362,7 +362,8 @@ def test_unlinked_page_fails_until_linked_or_named(stack) -> None:
     assert_that(code == 1, "a page linked from nowhere, even by itself, must fail")
     assert_that("docs/internal/orphan.md is linked from no page" in err, err)
     assert_that("docs/guides/deploy/index.md" in err and "monitoring.md is linked" not in err, err)
-    write(root, "docs/README.md", "Home. Mentions my-orphan.md and scripts/orphan.md only.\n")
+    write(root, "docs/README.md", "Home. Mentions my-orphan.md, scripts/orphan.md, orphan.mdx, "
+          "orphan.md.bak and docs/internal/orphan.md/child only.\n")
     write(root, "scripts/check.py", "PAGE = 'docs/internal/orphan.md'\n")
     tracked(root)
     code, _, err = run_with_reachability(root, "--skip-manifest")

@@ -479,7 +479,8 @@ def named_elsewhere(repo_root, files, page_paths):
     for page, relative_page in page_paths.items():
         name = os.path.basename(page)
         forms = [page, relative_page] + ([name] if name not in ("README.md", "index.md") else [])
-        pattern = re.compile("|".join(r"(?<![\w./-])" + re.escape(form) for form in forms))
+        pattern = re.compile("|".join(
+            r"(?<![\w./-])" + re.escape(form) + r"(?![\w/-]|\.[\w./-])" for form in forms))
         if any(path != page and pattern.search(text) for path, text in texts):
             named.add(page)
     return named
