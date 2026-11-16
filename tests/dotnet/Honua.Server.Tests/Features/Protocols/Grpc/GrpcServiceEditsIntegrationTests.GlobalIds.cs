@@ -55,9 +55,10 @@ public sealed partial class GrpcServiceEditsIntegrationTests
         {
             await _fixture.UpdateV2ResourceAsync(layerId, resource => resource with
             {
-                Editing = (resource.Editing ?? new MetadataV2ResourceEditing()) with { GlobalIdField = "globalid" },
+                Editing = (resource.Editing ?? new MetadataV2ObjectEditing()) with { GlobalIdField = "globalid" },
                 SchemaFields = [.. resource.SchemaFields, new MetadataV2Field { Name = "globalid", Type = MetadataV2FieldType.Uuid, Nullable = true }]
             });
+            await GrpcGlobalIdIndex.ProvisionAsync(_fixture, "globalid", layerId);
         }
     }
 }
