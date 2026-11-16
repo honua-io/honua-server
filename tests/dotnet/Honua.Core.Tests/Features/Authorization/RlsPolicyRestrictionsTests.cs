@@ -61,6 +61,9 @@ public sealed class RlsPolicyRestrictionsTests
     [InlineData("""{"type":"Polygon","coordinates":[[[0,91],[2,0],[2,2],[0,91]]]}""")]
     [InlineData("""{"type":"Polygon","coordinates":[[["0",0],[2,0],[2,2],["0",0]]]}""")]
     [InlineData("""{"type":"Polygon","crs":{},"coordinates":[[[0,0],[2,0],[2,2],[0,0]]]}""")]
+    [InlineData("""{"type":"Polygon","coordinates":[[[0,0],[2,2],[0,2],[2,0],[0,0]]]}""")]
+    [InlineData("""{"type":"Polygon","coordinates":[[[0,0],[2,0],[2,2],[0,2],[0,0]],[[3,3],[4,3],[4,4],[3,3]]]}""")]
+    [InlineData("""{"type":"MultiPolygon","coordinates":[[[[0,0],[2,0],[2,2],[0,2],[0,0]]],[[[1,1],[3,1],[3,3],[1,3],[1,1]]]]}""")]
     public void Parse_InvalidArea_RejectsConfiguration(string area)
     {
         var action = () => RlsPolicyRestrictions.Parse(_filters, null, area, "shape");

@@ -4,10 +4,11 @@
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Queries.Filters;
+using NetTopologySuite.IO;
 
 namespace Honua.Core.Features.Authorization.Services;
 
-public static class RlsPolicyRestrictions
+internal static class RlsPolicyRestrictions
 {
     private const int MaximumFilterLength = 4096;
     private const int MaximumAreaLength = 65536;
@@ -66,7 +67,14 @@ public static class RlsPolicyRestrictions
                 writer.WriteEndObject();
             }
 
-            return RequireExpression(filters.Parse(FilterLanguage.Cql2Json, Encoding.UTF8.GetString(stream.ToArray())));
+            var expression = RequireExpression(filters.Parse(FilterLanguage.Cql2Json, Encoding.UTF8.GetString(stream.ToArray())));
+            if (expression is not SpatialPredicate { Right: GeometryLiteral literal } ||
+                !new WKBReader().Read(literal.Wkb).IsValid)
+            {
+                throw new ArgumentException("The configured policy area must have valid polygon topology.", nameof(areaGeometry));
+            }
+
+            return expression;
         }
         catch (JsonException ex)
         {

@@ -69,6 +69,7 @@ public sealed partial class RowLevelSecurityEndpointsTests
     [InlineData("name =", null)]
     [InlineData(null, "{}")]
     [InlineData(null, "{\"type\":\"Point\",\"coordinates\":[0,0]}")]
+    [InlineData(null, """{"type":"Polygon","coordinates":[[[0,0],[2,2],[0,2],[2,0],[0,0]]]}""")]
     [Endpoint("POST /api/v1/admin/rls-policies")]
     public async Task RlsPolicy_InvalidRestrictions_RejectsCreation(string? filter, string? area)
     {
@@ -80,6 +81,35 @@ public sealed partial class RowLevelSecurityEndpointsTests
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task RlsPolicy_PersistedInvalidArea_RefusesQuery()
+    {
+        using var admin = CreateAdminClient();
+        var policyId = await CreatePolicyAsync(admin);
+        try
+        {
+            (await QueryObjectIdsByCategoryAsync("test")).Should().NotBeEmpty();
+            await _fixture.Postgres.ExecuteAsync($$"""
+                UPDATE honua.rbac_rls_policies
+                SET area_geometry = '{"type":"Polygon","coordinates":[[[0,0],[2,2],[0,2],[2,0],[0,0]]]}'
+                WHERE policy_id = '{{policyId}}';
+                """);
+            using var client = _fixture.CreateClient();
+            client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.UserHeader, "rls-user");
+            client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.CategoryHeader, "test");
+            using var response = await client.GetAsync(
+                $"/rest/services/{Honua.TestKit.Infrastructure.WebAppFixture.TestServiceId}/FeatureServer/{Honua.TestKit.Infrastructure.WebAppFixture.TestLayerId}/query?where=1%3D1&outFields=*&f=json");
+
+            response.IsSuccessStatusCode.Should().BeFalse();
+        }
+        finally
+        {
+            await admin.DeleteAsync($"/api/v1/admin/rls-policies/{policyId}");
+        }
     }
 
     private Task SeedPolicyBoundaryRowsAsync() => _fixture.Postgres.ExecuteAsync($$"""
