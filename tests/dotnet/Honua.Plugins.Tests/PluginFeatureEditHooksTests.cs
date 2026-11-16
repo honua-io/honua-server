@@ -20,7 +20,7 @@ namespace Honua.Plugins.Tests;
 
 public sealed class PluginFeatureEditHooksTests
 {
-    private static readonly FeatureEditHookScope Scope = new("parcels", 3, "Parcels", "alice", "trace-1");
+    private static readonly FeatureEditHookScope Scope = new("parcels", 3) { LayerName = "Parcels", UserName = "alice", TraceId = "trace-1" };
 
     [UnitTest]
     public async Task RunBefore_MapsEveryRow_AndRejectionsBackToTheirBatchRows()
@@ -126,7 +126,7 @@ public sealed class PluginFeatureEditHooksTests
             createResults: [EditOperationResult.Success(101), EditOperationResult.Failure("write failed")],
             deleteResults: [EditOperationResult.Success(12)]);
 
-        await Hooks(pipeline).RunAfterAsync(Scope, batch, result, CancellationToken.None);
+        await Hooks(pipeline).RunAfterAsync(Scope, new FeatureEditOutcome(batch, result), CancellationToken.None);
 
         var features = pipeline.AfterContexts.Should().ContainSingle().Subject.Features;
         features.Select(static feature => (feature.Kind, feature.ObjectId, feature.Feature.Id))
@@ -142,8 +142,7 @@ public sealed class PluginFeatureEditHooksTests
 
         await Hooks(pipeline).RunAfterAsync(
             Scope,
-            batch,
-            FeatureEditResult.Rollback(createResults: [EditOperationResult.Success(5)]),
+            new FeatureEditOutcome(batch, FeatureEditResult.Rollback(createResults: [EditOperationResult.Success(5)])),
             CancellationToken.None);
 
         pipeline.AfterContexts.Should().BeEmpty();
@@ -156,7 +155,7 @@ public sealed class PluginFeatureEditHooksTests
         var batch = FeatureEditBatch.Create(deletes: [12]);
         var result = FeatureEditResult.Success(0, 0, 1, deleteResults: [EditOperationResult.Success(12)]);
 
-        var act = () => Hooks(pipeline).RunAfterAsync(Scope, batch, result, CancellationToken.None);
+        var act = () => Hooks(pipeline).RunAfterAsync(Scope, new FeatureEditOutcome(batch, result), CancellationToken.None);
 
         await act.Should().NotThrowAsync();
         pipeline.AfterContexts.Should().ContainSingle();

@@ -1082,10 +1082,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var gateTarget = new OgcFeatureEditGate.Target(context, layerId, resource, request);
+        var gateTarget = new OgcFeatureEditGate.Target(context, resource, request) { LayerId = layerId, Reader = _featureReader };
         var (editBatch, ended) = await OgcFeatureEditGate.PrepareAsync(
             gateTarget,
-            _featureReader,
             _editProcessor.ToFeatureEditBatch(optimizedEdit, resource),
             cancellationToken).ConfigureAwait(false);
         if (ended is { } stopped)
@@ -1126,19 +1125,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             geometryChanged: geometryChanged,
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        var result = await WriteAsync(layerId, editBatch, outboxScopeData, cancellationToken).ConfigureAwait(false);
+        FeatureEditResult result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData))
+        {
+            result = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        }
+
         await OgcFeatureEditGate.RunAfterAsync(gateTarget, editBatch, result).ConfigureAwait(false);
         return result;
-    }
-
-    private async Task<FeatureEditResult> WriteAsync(
-        int layerId,
-        FeatureEditBatch editBatch,
-        Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScopeData? outboxScopeData,
-        CancellationToken cancellationToken)
-    {
-        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
-        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

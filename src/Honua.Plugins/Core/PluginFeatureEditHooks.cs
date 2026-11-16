@@ -46,13 +46,11 @@ internal sealed partial class PluginFeatureEditHooks(
             .ToList();
     }
 
-    public async Task RunAfterAsync(
-        FeatureEditHookScope scope,
-        FeatureEditBatch batch,
-        FeatureEditResult result,
-        CancellationToken cancellationToken)
+    public async Task RunAfterAsync(FeatureEditHookScope scope, FeatureEditOutcome outcome, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(outcome);
+        var (batch, result) = outcome;
         if (!pipeline.HasPlugins)
         {
             return;

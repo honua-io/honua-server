@@ -164,12 +164,9 @@ public sealed class OgcFeaturesEditGateScenarioTests : IAsyncLifetime
             return Task.FromResult(rejections);
         }
 
-        public Task RunAfterAsync(
-            FeatureEditHookScope scope,
-            FeatureEditBatch batch,
-            FeatureEditResult result,
-            CancellationToken cancellationToken)
+        public Task RunAfterAsync(FeatureEditHookScope scope, FeatureEditOutcome outcome, CancellationToken cancellationToken)
         {
+            var (batch, result) = outcome;
             foreach (var row in FeatureEditRows.Enumerate(batch).Where(candidate => FeatureEditRows.IsCommitted(result, candidate)))
             {
                 if (row.Kind == FeatureEditOperationKind.Create && FeatureEditRows.ResultOf(result, row)?.ObjectId is { } id)

@@ -36,8 +36,8 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
     {
         var harness = Harness();
 
-        var add = await CallAsync(harness, Request(rollback: true, adds: [Shirt("red", "L")]));
-        var update = await CallAsync(harness, Request(rollback: true, updates: [Update(size: "L")]));
+        var add = await CallAsync(harness, RollbackRequest(adds: [Shirt("red", "L")]));
+        var update = await CallAsync(harness, RollbackRequest(updates: [Update(size: "L")]));
 
         foreach (var exception in new[] { add, update })
         {
@@ -56,7 +56,7 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
         var harness = Harness();
 
         var response = await harness.Service.ApplyEdits(
-            Request(rollback: true, updates: [Update(size: "S")]),
+            RollbackRequest(updates: [Update(size: "S")]),
             Context(harness));
 
         response.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue(
@@ -72,7 +72,7 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
     {
         var exception = await CallAsync(
             Harness(),
-            Request(rollback: true, adds: [Shirt("red", "S"), Shirt("red", "S", RecordingHooks.BlockedName)]));
+            RollbackRequest(adds: [Shirt("red", "S"), Shirt("red", "S", RecordingHooks.BlockedName)]));
 
         exception!.StatusCode.Should().Be(StatusCode.InvalidArgument);
         exception.Status.Detail.Should().Be("rejected by plugin");
@@ -85,8 +85,7 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
     public async Task Rejections_WithoutRollback_FailOnlyTheirRows()
     {
         var harness = Harness();
-        var request = Request(
-            rollback: false,
+        var request = PartialRequest(
             adds: [Shirt("red", "S", "first"), Shirt("red", "S", RecordingHooks.BlockedName), Shirt("red", "L", "invalid"), Shirt("red", "S", "last")]);
 
         var response = await harness.Service.ApplyEdits(request, Context(harness));
@@ -103,10 +102,11 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
     public async Task AfterHooks_SeeOnlyTheCommittedRows()
     {
-        var harness = Harness(failSecondCreate: true);
+        _failedCreateIndex = 1;
+        var harness = Harness();
 
         await harness.Service.ApplyEdits(
-            Request(rollback: false, adds: [Shirt("red", "S", "kept"), Shirt("red", "S", "failed")]),
+            PartialRequest(adds: [Shirt("red", "S", "kept"), Shirt("red", "S", "failed")]),
             Context(harness));
 
         var (batch, result) = _hooks.AfterCalls.Should().ContainSingle().Subject;
@@ -121,7 +121,7 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
     public async Task KeyedReplay_DoesNotRunTheHooksAgain()
     {
         var harness = Harness();
-        var request = Request(rollback: true, adds: [Shirt("red", "S")]);
+        var request = RollbackRequest(adds: [Shirt("red", "S")]);
         request.IdempotencyKey = "gate-retry";
 
         var first = await harness.Service.ApplyEdits(request, Context(harness));
@@ -133,13 +133,16 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
         _hooks.AfterBatches.Should().ContainSingle();
     }
 
-    private GrpcApplyEditsIdempotencyTests.ServiceHarness Harness(bool failSecondCreate = false)
+    private int? _failedCreateIndex;
+
+    private GrpcApplyEditsIdempotencyTests.ServiceHarness Harness()
         => new(
             _receipts,
-            StoredRowReader(),
-            RecordingWriter(failSecondCreate),
-            ShirtResource(),
-            services => services.AddSingleton<IFeatureEditHooks>(_hooks));
+            new GrpcApplyEditsIdempotencyTests.ServiceHarness.HarnessParts(StoredRowReader(), RecordingWriter())
+            {
+                Resource = ShirtResource(),
+                ConfigureServices = services => services.AddSingleton<IFeatureEditHooks>(_hooks),
+            });
 
     private static ServerCallContext Context(GrpcApplyEditsIdempotencyTests.ServiceHarness harness)
         => harness.Context(GrpcApplyEditsIdempotencyTests.Subject("editor", issuer: "https://issuer-a.example"), tenantId: null);
@@ -157,12 +160,16 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
         }
     }
 
-    private static Proto.ApplyEditsRequest Request(
-        bool rollback,
-        Proto.Feature[]? adds = null,
-        Proto.Feature[]? updates = null)
+    private static Proto.ApplyEditsRequest RollbackRequest(Proto.Feature[]? adds = null, Proto.Feature[]? updates = null)
     {
-        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0, RollbackOnFailure = rollback };
+        var request = PartialRequest(adds, updates);
+        request.RollbackOnFailure = true;
+        return request;
+    }
+
+    private static Proto.ApplyEditsRequest PartialRequest(Proto.Feature[]? adds = null, Proto.Feature[]? updates = null)
+    {
+        var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
         request.Adds.AddRange(adds ?? []);
         request.Updates.AddRange(updates ?? []);
         return request;
@@ -194,12 +201,12 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
         return reader;
     }
 
-    private IFeatureWriter RecordingWriter(bool failSecondCreate)
+    private IFeatureWriter RecordingWriter()
     {
         FeatureEditResult Write(FeatureEditBatch batch)
         {
             _written.Add(batch);
-            var creates = batch.Creates.Select((_, index) => failSecondCreate && index == 1
+            var creates = batch.Creates.Select((_, index) => index == _failedCreateIndex
                 ? EditOperationResult.Failure("write failed")
                 : EditOperationResult.Success(500 + index));
             var updates = batch.Updates.Select(static update => EditOperationResult.Success(update.Id));
@@ -280,12 +287,9 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
             return Task.FromResult(rejections);
         }
 
-        public Task RunAfterAsync(
-            FeatureEditHookScope scope,
-            FeatureEditBatch batch,
-            FeatureEditResult result,
-            CancellationToken cancellationToken)
+        public Task RunAfterAsync(FeatureEditHookScope scope, FeatureEditOutcome outcome, CancellationToken cancellationToken)
         {
+            var (batch, result) = outcome;
             AfterCalls.Add((batch, result));
             return Task.CompletedTask;
         }

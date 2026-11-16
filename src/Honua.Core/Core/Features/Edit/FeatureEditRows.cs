@@ -7,15 +7,19 @@ using Honua.Core.Features.FeatureStore.Domain;
 namespace Honua.Core.Features.Edit;
 
 // Index counts rows of the same kind, matching the per-kind result arrays of FeatureEditResult.
-public readonly record struct FeatureEditRow(FeatureEditOperationKind Kind, int Index, Feature? Feature, long? ObjectId);
+public readonly record struct FeatureEditRow(FeatureEditOperationKind Kind, int Index)
+{
+    public Feature? Feature { get; init; }
+
+    public long? ObjectId { get; init; }
+}
 
 public static class FeatureEditRows
 {
     // Ordered operations win over the split lists, as they do for the writer.
     public static IReadOnlyList<FeatureEditRow> Enumerate(FeatureEditBatch batch)
     {
-        var rows = new List<FeatureEditRow>(batch.TotalOperations);
-        var counts = new int[3];
+        var rows = new RowList(batch.TotalOperations);
         if (!batch.Operations.IsDefaultOrEmpty)
         {
             foreach (var operation in batch.Operations)
@@ -23,20 +27,20 @@ public static class FeatureEditRows
                 var objectId = operation.Kind == FeatureEditOperationKind.Create
                     ? null
                     : operation.ObjectId ?? operation.Feature?.Id;
-                rows.Add(Row(operation.Kind, counts, operation.Feature, objectId));
+                rows.Add(operation.Kind, operation.Feature, objectId);
             }
 
-            return rows;
+            return rows.Rows;
         }
 
-        AddFeatures(rows, counts, FeatureEditOperationKind.Create, batch.Creates);
-        AddFeatures(rows, counts, FeatureEditOperationKind.Update, batch.Updates);
+        rows.AddFeatures(FeatureEditOperationKind.Create, batch.Creates);
+        rows.AddFeatures(FeatureEditOperationKind.Update, batch.Updates);
         foreach (var objectId in batch.Deletes.IsDefault ? ImmutableArray<long>.Empty : batch.Deletes)
         {
-            rows.Add(Row(FeatureEditOperationKind.Delete, counts, feature: null, objectId));
+            rows.Add(FeatureEditOperationKind.Delete, feature: null, objectId);
         }
 
-        return rows;
+        return rows.Rows;
     }
 
     public static EditOperationResult? ResultOf(FeatureEditResult result, FeatureEditRow row)
@@ -53,18 +57,22 @@ public static class FeatureEditRows
     public static bool IsCommitted(FeatureEditResult result, FeatureEditRow row)
         => !result.WasRolledBack && ResultOf(result, row) is { IsSuccess: true };
 
-    private static void AddFeatures(
-        List<FeatureEditRow> rows,
-        int[] counts,
-        FeatureEditOperationKind kind,
-        ImmutableArray<Feature> features)
+    // Numbers each row within its kind as it is added.
+    private sealed class RowList(int capacity)
     {
-        foreach (var feature in features.IsDefault ? ImmutableArray<Feature>.Empty : features)
+        private readonly int[] _counts = new int[3];
+
+        public List<FeatureEditRow> Rows { get; } = new(capacity);
+
+        public void Add(FeatureEditOperationKind kind, Feature? feature, long? objectId)
+            => Rows.Add(new FeatureEditRow(kind, _counts[(int)kind]++) { Feature = feature, ObjectId = objectId });
+
+        public void AddFeatures(FeatureEditOperationKind kind, ImmutableArray<Feature> features)
         {
-            rows.Add(Row(kind, counts, feature, kind == FeatureEditOperationKind.Create ? null : feature.Id));
+            foreach (var feature in features.IsDefault ? ImmutableArray<Feature>.Empty : features)
+            {
+                Add(kind, feature, kind == FeatureEditOperationKind.Create ? null : feature.Id);
+            }
         }
     }
-
-    private static FeatureEditRow Row(FeatureEditOperationKind kind, int[] counts, Feature? feature, long? objectId)
-        => new(kind, counts[(int)kind]++, feature, objectId);
 }

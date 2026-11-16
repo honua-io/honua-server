@@ -7,13 +7,19 @@ namespace Honua.Core.Features.Edit;
 
 // StoredRows holds the rows as stored before the edit, by object id, where the protocol has read them;
 // a delete hook sees the stored row instead of an empty feature.
-public sealed record FeatureEditHookScope(
-    string ServiceId,
-    int LayerId,
-    string? LayerName,
-    string? UserName,
-    string? TraceId,
-    IReadOnlyDictionary<long, Feature>? StoredRows = null);
+public sealed record FeatureEditHookScope(string ServiceId, int LayerId)
+{
+    public string? LayerName { get; init; }
+
+    public string? UserName { get; init; }
+
+    public string? TraceId { get; init; }
+
+    public IReadOnlyDictionary<long, Feature>? StoredRows { get; init; }
+}
+
+// A write and what it returned, as the after-hooks receive it.
+public sealed record FeatureEditOutcome(FeatureEditBatch Batch, FeatureEditResult Result);
 
 // Index counts rows of the same kind in batch order, which is how FeatureEditResult orders its per-kind results.
 // A hook that reports a row the batch does not contain must throw: dropping it would let the row be written.
@@ -30,11 +36,7 @@ public interface IFeatureEditHooks
         CancellationToken cancellationToken);
 
     // Sees only the rows the result reports as committed, and never throws: the edit has already committed.
-    Task RunAfterAsync(
-        FeatureEditHookScope scope,
-        FeatureEditBatch batch,
-        FeatureEditResult result,
-        CancellationToken cancellationToken);
+    Task RunAfterAsync(FeatureEditHookScope scope, FeatureEditOutcome outcome, CancellationToken cancellationToken);
 }
 
 public sealed class NoOpFeatureEditHooks : IFeatureEditHooks
@@ -49,10 +51,6 @@ public sealed class NoOpFeatureEditHooks : IFeatureEditHooks
         CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<FeatureEditHookRejection>>([]);
 
-    public Task RunAfterAsync(
-        FeatureEditHookScope scope,
-        FeatureEditBatch batch,
-        FeatureEditResult result,
-        CancellationToken cancellationToken)
+    public Task RunAfterAsync(FeatureEditHookScope scope, FeatureEditOutcome outcome, CancellationToken cancellationToken)
         => Task.CompletedTask;
 }

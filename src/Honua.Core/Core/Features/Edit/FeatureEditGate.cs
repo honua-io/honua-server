@@ -8,10 +8,10 @@ using Honua.Core.Features.Metadata.Domain.V2;
 namespace Honua.Core.Features.Edit;
 
 // Without EffectiveAttributes, each row's own attributes are taken as the full row to validate.
-public sealed record FeatureEditCheck(
-    MetadataV2Object Resource,
-    FeatureEditBatch Batch,
-    Func<FeatureEditRow, IReadOnlyDictionary<string, object?>>? EffectiveAttributes = null);
+public sealed record FeatureEditCheck(MetadataV2Object Resource, FeatureEditHookScope Scope, FeatureEditBatch Batch)
+{
+    public Func<FeatureEditRow, IReadOnlyDictionary<string, object?>>? EffectiveAttributes { get; init; }
+}
 
 // The pre-write checks every edit protocol shares: contingent values on the effective row, then the plugin before-hooks.
 public static class FeatureEditGate
@@ -21,7 +21,6 @@ public static class FeatureEditGate
 
     public static async Task<IReadOnlyList<FeatureEditHookRejection>> CheckAsync(
         IFeatureEditHooks hooks,
-        FeatureEditHookScope scope,
         FeatureEditCheck check,
         CancellationToken cancellationToken)
     {
@@ -41,7 +40,7 @@ public static class FeatureEditGate
         }
 
         var hookRejections = await hooks
-            .RunBeforeAsync(scope, WithEffectiveUpdates(remaining, check.EffectiveAttributes), cancellationToken)
+            .RunBeforeAsync(check.Scope, WithEffectiveUpdates(remaining, check.EffectiveAttributes), cancellationToken)
             .ConfigureAwait(false);
         return [.. rejected, .. ToBatchIndexes(batch, rejected, hookRejections)];
     }
@@ -180,17 +179,6 @@ public static class FeatureEditGate
         }
 
         var rows = FeatureEditRows.Enumerate(batch);
-        Feature Effective(Feature feature, FeatureEditRow row)
-        {
-            var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (name, value) in effectiveAttributes(row))
-            {
-                attributes[name] = value;
-            }
-
-            return feature with { Attributes = attributes.ToImmutable() };
-        }
-
         if (!batch.Operations.IsDefaultOrEmpty)
         {
             return batch with
@@ -199,7 +187,7 @@ public static class FeatureEditGate
                 [
                     .. batch.Operations.Select((operation, position) =>
                         operation.Kind == FeatureEditOperationKind.Update && operation.Feature is { } feature
-                            ? operation with { Feature = Effective(feature, rows[position]) }
+                            ? operation with { Feature = Effective(feature, effectiveAttributes(rows[position])) }
                             : operation),
                 ],
             };
@@ -211,7 +199,21 @@ public static class FeatureEditGate
         }
 
         var updates = rows.Where(static row => row.Kind == FeatureEditOperationKind.Update).ToArray();
-        return batch with { Updates = [.. batch.Updates.Select((feature, index) => Effective(feature, updates[index]))] };
+        return batch with
+        {
+            Updates = [.. batch.Updates.Select((feature, index) => Effective(feature, effectiveAttributes(updates[index])))],
+        };
+    }
+
+    private static Feature Effective(Feature feature, IReadOnlyDictionary<string, object?> effective)
+    {
+        var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in effective)
+        {
+            attributes[name] = value;
+        }
+
+        return feature with { Attributes = attributes.ToImmutable() };
     }
 
     private static ImmutableArray<T> Keep<T>(

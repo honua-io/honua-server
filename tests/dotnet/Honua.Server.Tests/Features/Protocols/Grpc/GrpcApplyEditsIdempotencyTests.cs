@@ -477,19 +477,27 @@ public sealed class GrpcApplyEditsIdempotencyTests
         {
             Service = CreateService(
                 store,
-                Substitute.For<IFeatureReader>(),
-                ScriptedWriter(_writeCount, new ScriptedWrites(editResult, throwAfterWrite, commitReceipt)));
+                new HarnessParts(
+                    Substitute.For<IFeatureReader>(),
+                    ScriptedWriter(_writeCount, new ScriptedWrites(editResult, throwAfterWrite, commitReceipt))));
         }
 
-        public ServiceHarness(
-            GrpcApplyEditsReceipts store,
-            IFeatureReader reader,
-            IFeatureWriter writer,
-            MetadataV2Object? resource = null,
-            Action<IServiceCollection>? configureServices = null)
+        public ServiceHarness(GrpcApplyEditsReceipts store, IFeatureReader reader, IFeatureWriter writer)
+            : this(store, new HarnessParts(reader, writer))
         {
-            Service = CreateService(store, reader, writer, resource);
-            _configureServices = configureServices;
+        }
+
+        public ServiceHarness(GrpcApplyEditsReceipts store, HarnessParts parts)
+        {
+            Service = CreateService(store, parts);
+            _configureServices = parts.ConfigureServices;
+        }
+
+        internal sealed record HarnessParts(IFeatureReader Reader, IFeatureWriter Writer)
+        {
+            public MetadataV2Object? Resource { get; init; }
+
+            public Action<IServiceCollection>? ConfigureServices { get; init; }
         }
 
         public HonuaFeatureService Service { get; }
@@ -548,12 +556,10 @@ public sealed class GrpcApplyEditsIdempotencyTests
             return writer;
         }
 
-        private static HonuaFeatureService CreateService(
-            GrpcApplyEditsReceipts store,
-            IFeatureReader reader,
-            IFeatureWriter writer,
-            MetadataV2Object? resource = null)
+        private static HonuaFeatureService CreateService(GrpcApplyEditsReceipts store, HarnessParts parts)
         {
+            var (reader, writer) = parts;
+            var resource = parts.Resource;
             var resourceValidator = Substitute.For<IResourceValidator>();
             resourceValidator
                 .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())

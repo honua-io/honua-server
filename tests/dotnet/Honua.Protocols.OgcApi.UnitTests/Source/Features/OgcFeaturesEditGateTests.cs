@@ -290,12 +290,9 @@ public sealed class OgcFeaturesEditGateTests
             return Task.FromResult(rejections);
         }
 
-        public Task RunAfterAsync(
-            FeatureEditHookScope scope,
-            FeatureEditBatch batch,
-            FeatureEditResult result,
-            CancellationToken cancellationToken)
+        public Task RunAfterAsync(FeatureEditHookScope scope, FeatureEditOutcome outcome, CancellationToken cancellationToken)
         {
+            var (batch, result) = outcome;
             AfterCalls.Add((batch, result));
             return Task.CompletedTask;
         }

@@ -13,7 +13,7 @@ namespace Honua.Core.Tests.Features.Edit;
 
 public sealed class FeatureEditGateTests
 {
-    private static readonly FeatureEditHookScope Scope = new("svc", 1, "layer", "alice", "trace");
+    private static readonly FeatureEditHookScope Scope = new("svc", 1) { LayerName = "layer", UserName = "alice", TraceId = "trace" };
 
     [UnitTest]
     public async Task CheckAsync_RollbackBatchWithContingentFailure_DoesNotCallTheHooks()
@@ -21,7 +21,7 @@ public sealed class FeatureEditGateTests
         var hooks = new RejectingHooks("blocked");
         var batch = FeatureEditBatch.Create(creates: [Row("ok", "S"), Row("bad", "L")], rollbackOnFailure: true);
 
-        var rejections = await FeatureEditGate.CheckAsync(hooks, Scope, new FeatureEditCheck(Resource(), batch), CancellationToken.None);
+        var rejections = await FeatureEditGate.CheckAsync(hooks, new FeatureEditCheck(Resource(), Scope, batch), CancellationToken.None);
 
         rejections.Should().ContainSingle().Which.Index.Should().Be(1);
         hooks.Seen.Should().BeEmpty();
@@ -33,7 +33,7 @@ public sealed class FeatureEditGateTests
         var hooks = new RejectingHooks("blocked");
         var batch = FeatureEditBatch.Create(creates: [Row("ok", "S"), Row("bad", "L"), Row("blocked", "S"), Row("last", "S")]);
 
-        var rejections = await FeatureEditGate.CheckAsync(hooks, Scope, new FeatureEditCheck(Resource(), batch), CancellationToken.None);
+        var rejections = await FeatureEditGate.CheckAsync(hooks, new FeatureEditCheck(Resource(), Scope, batch), CancellationToken.None);
 
         hooks.Seen.Should().ContainSingle().Which.Creates.Select(Name).Should().Equal("ok", "blocked", "last");
         rejections.Select(static rejection => (rejection.Index, rejection.Message)).Should().Equal(
@@ -47,12 +47,12 @@ public sealed class FeatureEditGateTests
         var hooks = new RejectingHooks("stored");
         var partial = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty.Add("size", "S"));
         var batch = FeatureEditBatch.Create(updates: [partial]);
-        var check = new FeatureEditCheck(
-            Resource(),
-            batch,
-            static row => Row("stored", "L").Attributes.SetItems(row.Feature!.Value.Attributes));
+        var check = new FeatureEditCheck(Resource(), Scope, batch)
+        {
+            EffectiveAttributes = static row => Row("stored", "L").Attributes.SetItems(row.Feature!.Value.Attributes),
+        };
 
-        var rejections = await FeatureEditGate.CheckAsync(hooks, Scope, check, CancellationToken.None);
+        var rejections = await FeatureEditGate.CheckAsync(hooks, check, CancellationToken.None);
 
         rejections.Should().ContainSingle().Which.Message.Should().Be("blocked");
         var seen = hooks.Seen.Should().ContainSingle().Which.Updates.Should().ContainSingle().Subject;
@@ -67,7 +67,7 @@ public sealed class FeatureEditGateTests
         var hooks = new FixedHooks(new FeatureEditHookRejection(FeatureEditOperationKind.Create, 5, "lost"));
         var batch = FeatureEditBatch.Create(creates: [Row("ok", "S"), Row("bad", "L")]);
 
-        var act = () => FeatureEditGate.CheckAsync(hooks, Scope, new FeatureEditCheck(Resource(), batch), CancellationToken.None);
+        var act = () => FeatureEditGate.CheckAsync(hooks, new FeatureEditCheck(Resource(), Scope, batch), CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -172,11 +172,7 @@ public sealed class FeatureEditGateTests
             CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<FeatureEditHookRejection>>([rejection]);
 
-        public Task RunAfterAsync(
-            FeatureEditHookScope scope,
-            FeatureEditBatch batch,
-            FeatureEditResult result,
-            CancellationToken cancellationToken)
+        public Task RunAfterAsync(FeatureEditHookScope scope, FeatureEditOutcome outcome, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
@@ -201,11 +197,7 @@ public sealed class FeatureEditGateTests
             return Task.FromResult(rejections);
         }
 
-        public Task RunAfterAsync(
-            FeatureEditHookScope scope,
-            FeatureEditBatch batch,
-            FeatureEditResult result,
-            CancellationToken cancellationToken)
+        public Task RunAfterAsync(FeatureEditHookScope scope, FeatureEditOutcome outcome, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 }

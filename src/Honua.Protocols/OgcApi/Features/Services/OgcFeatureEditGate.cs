@@ -17,17 +17,21 @@ namespace Honua.Protocols.Ogc.Api.Features.Services;
 internal static class OgcFeatureEditGate
 {
     // LayerId is the storage layer the write goes to; hooks are told the published layer in Request.
-    internal readonly record struct Target(HttpContext Context, int LayerId, MetadataV2Object Resource, OgcFeaturesEditRequest Request);
+    internal readonly record struct Target(HttpContext Context, MetadataV2Object Resource, OgcFeaturesEditRequest Request)
+    {
+        public required int LayerId { get; init; }
+
+        public required IFeatureReader Reader { get; init; }
+    }
 
     // Ended is the result that stops the edit before the write; any rejection fails the whole request.
     internal static async Task<(FeatureEditBatch Batch, FeatureEditResult? Ended)> PrepareAsync(
         Target target,
-        IFeatureReader reader,
         FeatureEditBatch batch,
         CancellationToken cancellationToken)
     {
         var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            reader,
+            target.Reader,
             target.LayerId,
             target.Resource.OwnerEditPolicy,
             batch,
@@ -40,8 +44,7 @@ internal static class OgcFeatureEditGate
 
         var rejections = await FeatureEditGate.CheckAsync(
             ResolveHooks(target.Context),
-            Scope(target),
-            new FeatureEditCheck(target.Resource, prepared.Batch),
+            new FeatureEditCheck(target.Resource, Scope(target), prepared.Batch),
             cancellationToken).ConfigureAwait(false);
         return (prepared.Batch, rejections.Count == 0 ? null : FeatureEditGate.RejectedResult(prepared.Batch, Safe(rejections)));
     }
@@ -50,7 +53,7 @@ internal static class OgcFeatureEditGate
     {
         var hooks = ResolveHooks(target.Context);
         return hooks.HasHooks
-            ? hooks.RunAfterAsync(Scope(target), batch, result, CancellationToken.None)
+            ? hooks.RunAfterAsync(Scope(target), new FeatureEditOutcome(batch, result), CancellationToken.None)
             : Task.CompletedTask;
     }
 
@@ -58,15 +61,15 @@ internal static class OgcFeatureEditGate
         => context.RequestServices?.GetService<IFeatureEditHooks>() ?? NoOpFeatureEditHooks.Instance;
 
     private static FeatureEditHookScope Scope(Target target)
-        => new(
-            target.Request.ServiceName ?? target.Resource.Metadata.Id,
-            target.Request.PublicLayerId ?? target.LayerId,
-            target.Resource.Metadata.Name,
-            target.Context.User?.Identity?.Name,
-            target.Context.TraceIdentifier,
-            target.Request is { StoredFeature: { } stored, ObjectId: { } objectId }
+        => new(target.Request.ServiceName ?? target.Resource.Metadata.Id, target.Request.PublicLayerId ?? target.LayerId)
+        {
+            LayerName = target.Resource.Metadata.Name,
+            UserName = target.Context.User?.Identity?.Name,
+            TraceId = target.Context.TraceIdentifier,
+            StoredRows = target.Request is { StoredFeature: { } stored, ObjectId: { } objectId }
                 ? new Dictionary<long, Feature> { [objectId] = stored }
-                : null);
+                : null,
+        };
 
     private static IReadOnlyList<FeatureEditHookRejection> Safe(IReadOnlyList<FeatureEditHookRejection> rejections)
         => [.. rejections.Select(static rejection => rejection with
