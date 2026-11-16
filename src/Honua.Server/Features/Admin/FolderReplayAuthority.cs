@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Policy;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
@@ -22,6 +23,8 @@ internal sealed record FolderReplayAdmission
     public required string OperationInstanceId { get; init; }
     public string? TenantId { get; init; }
 }
+
+internal sealed record FolderOperationReplayAdmission(OperationRequest Request, OperationPolicyContext Context);
 
 internal sealed class FolderReplayAuthority
 {
@@ -60,6 +63,29 @@ internal sealed class FolderReplayAuthority
         return await verifier.VerifyAsync(admission.ProposalId, admission.OperationInstanceId,
             proposal.SealedPlanHash ?? string.Empty, cancellationToken).ConfigureAwait(false)
             ? new FolderReplayAuthority(principal, proposal) : null;
+    }
+
+    internal static async Task<FolderReplayAuthority?> AuthorizeOperationAsync(
+        FolderOperationReplayAdmission admission, IServiceProvider services, CancellationToken cancellationToken = default)
+    {
+        var context = admission.Context;
+        if (!FolderOperationCredential.IsFolderMutation(admission.Request.OperationId) ||
+            string.IsNullOrWhiteSpace(context.ApprovedProposalId) ||
+            string.IsNullOrWhiteSpace(context.OperationInstanceId) ||
+            string.IsNullOrWhiteSpace(context.PrincipalId) || string.IsNullOrWhiteSpace(context.ApprovedPlanHash))
+            return null;
+        var proposal = await services.GetRequiredService<IOperationProposalStore>()
+            .GetAsync(context.ApprovedProposalId, cancellationToken).ConfigureAwait(false);
+        if (proposal is null || proposal.ProposalId != context.ApprovedProposalId ||
+            proposal.OperationId != admission.Request.OperationId || proposal.RequestedBy != context.PrincipalId ||
+            proposal.SealedPlanHash != context.ApprovedPlanHash ||
+            !MetadataV2ServicePaths.SameTenant(proposal.TenantId, context.TenantId)) return null;
+        if (!await services.GetRequiredService<IOperationApprovalReplayVerifier>()
+            .VerifyAsync(proposal.ProposalId, context.OperationInstanceId, context.ApprovedPlanHash, cancellationToken)
+            .ConfigureAwait(false)) return null;
+        var identity = new ClaimsIdentity("ApprovedFolderOperation");
+        identity.AddClaim(new Claim(ClaimTypes.Name, proposal.RequestedBy));
+        return new FolderReplayAuthority(new ClaimsPrincipal(identity), proposal);
     }
 
     internal bool MatchesExecution(FolderReplayExecution execution)
