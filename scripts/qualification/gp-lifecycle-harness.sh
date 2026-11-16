@@ -58,7 +58,6 @@ case "${lane}" in
       mcp-cancel-native-process-started idempotency retry timeout-cooperative timeout-ignoring \
       restart-worker-accepted restart-worker-running restart-worker-terminal restart-worker-results-read \
       restart-server-accepted restart-server-running restart-server-terminal restart-server-results-read \
-      restart-redis-accepted restart-redis-running restart-redis-terminal restart-redis-results-read \
       restart-postgres-accepted restart-postgres-running restart-postgres-terminal restart-postgres-results-read \
       duplicate-delivery cleanup)
     ;;
@@ -158,6 +157,8 @@ require_digest() {
 }
 
 compose() { docker compose --project-name "${project_name}" -f "${compose_file}" "$@"; }
+
+source "${repo_root}/scripts/qualification/gp-postgres.sh"
 
 # The topology file is the single source of truth for the store contract: the
 # provisioner is driven from the same declarations the containers bind, so a
@@ -512,9 +513,15 @@ cancel_barrier_job() {
     }
   fi
 
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
-  pending="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "$job" || true)"
-  claimed_score="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:claimed "$job" || true)"
+  record="$(gp_job_record "$job")"
+  pending="$(gp_sql --set=job="$job" <<'SQL'
+SELECT queue_visible_at FROM honua.execution_jobs WHERE operation_id=:'job';
+SQL
+)"
+  claimed_score="$(gp_sql --set=job="$job" <<'SQL'
+SELECT claimed_by FROM honua.execution_jobs WHERE operation_id=:'job';
+SQL
+)"
   after_objects="$(object_file_count "$job")"
   [[ "$after_objects" == 0 ]] || {
     scenario_fail "cancelled job retained staged objects after retention cleanup"
@@ -532,7 +539,7 @@ cancel_barrier_job() {
     --argjson record "$record" --arg pending "$pending" --arg claimed "$claimed_score" \
     --argjson objects_after "$after_objects" \
     --argjson transitions "$(jq -s '.' "$scenario_transition_file")" \
-    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,output:$output,terminal_fence:$terminal,artifact_references:($record.artifactReferences // []),timeout_source:null,cancellation_source:$cancel_source,cancellation_responses:{first_http:$response_one,second_http:$response_two,mcp_acknowledgement:$mcp_ack},signal_observed_at:($signal.observedAt // null),child_process:{pid:$observed_child_pid,worker_container:$observed_worker,exit_observed:($child_alive|not)},terminal_history:$transitions,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},result_visibility:{after_terminal:$result_code_after,late:$result_code_late},object_inventory:{after_retention_cleanup:$objects_after}}')"
+    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,output:$output,terminal_fence:$terminal,artifact_references:($record.artifactReferences // []),timeout_source:null,cancellation_source:$cancel_source,cancellation_responses:{first_http:$response_one,second_http:$response_two,mcp_acknowledgement:$mcp_ack},signal_observed_at:($signal.observedAt // null),child_process:{pid:$observed_child_pid,worker_container:$observed_worker,exit_observed:($child_alive|not)},terminal_history:$transitions,attempt_count:($record.attemptCount // null),queue_membership:{queue_visible_at:(if $pending=="" then null else $pending end),claimed_by:(if $claimed=="" then null else $claimed end)},result_visibility:{after_terminal:$result_code_after,late:$result_code_late},object_inventory:{after_retention_cleanup:$objects_after}}')"
   write_receipt "$scenario_name" pass "" "$job" "$state"
 }
 
@@ -881,26 +888,59 @@ run_async_baseline() {
 }
 
 run_duplicate_delivery() {
-  local scenario=duplicate-delivery job score terminal state digest record attempts deadline
-  # Two consumers are required: re-deliver after the first has claimed and begun executing.
-  compose up -d --scale worker=2 worker >/dev/null
-  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { write_receipt "${scenario}" fail "submission failed"; return 1; }
-  wait_running "${job}" || { write_receipt "${scenario}" fail "job did not reach running before redelivery" "${job}"; return 1; }
-  score="$(date +%s%3N)"
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:pending "${score}" "${job}" >/dev/null
-  deadline=$((SECONDS + 30)); attempts=0
+  local result=0 cleanup_result=0 job="" state="" digest=""
+  run_duplicate_delivery_case || result=$?
+  compose up -d --force-recreate --scale worker=1 worker >/dev/null || cleanup_result=$?
+  if (( cleanup_result != 0 )); then
+    runtime_taint="duplicate-delivery topology restoration failed"
+    scenario_fail "$runtime_taint"
+    return 1
+  fi
+  (( result == 0 )) || return "$result"
+  write_receipt duplicate-delivery pass "two consumers; running claim remained exclusive; attempt_count=1" "$job" "$state" "$digest"
+}
+
+run_duplicate_delivery_case() {
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+  local terminal record owner deadline boundary process_ready
+  compose up -d --force-recreate --scale worker=2 worker >/dev/null || return 1
+  [[ "$(compose ps --status running -q worker | wc -l | tr -d ' ')" == 2 ]] || {
+    scenario_fail "two running consumers were not observed"; return 1;
+  }
+  job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
+  wait_barrier "$job" claimed || return 1
+  release_barrier "$job" claimed
+  wait_barrier "$job" native-process-started || return 1
+  record="$(gp_job_record "$job")" || return 1
+  owner="$(jq -er '.claimedBy | select(length > 0)' <<<"$record")" || return 1
+  process_ready="$(barrier_record "$job" native-process-started)"
+  jq -e --arg owner "$owner" '.workerId == $owner and (.childProcessId | type == "number" and . > 0)' <<<"$process_ready" >/dev/null || {
+    scenario_fail "native process barrier did not identify the claimed worker and child"; return 1;
+  }
+  # A real running native process holds the row while both consumers poll the queue.
+  deadline=$((SECONDS + 30))
   while (( SECONDS < deadline )); do
-    record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:${job}")"
-    attempts="$(jq -r '.attemptCount // 0' <<<"${record}")"
-    (( attempts >= 2 )) && break
-    sleep 0.1
+    record="$(gp_job_record "$job")" || return 1
+    jq -e --arg owner "$owner" '.status == 2 and .attemptCount == 1 and .claimedBy == $owner' <<<"$record" >/dev/null || {
+      scenario_fail "running job was reclaimed by a competing consumer"; return 1;
+    }
+    record_attempt 1
+    sleep 0.2
   done
-  (( attempts >= 2 )) || { write_receipt "${scenario}" fail "FINDING: redelivery was not claimed" "${job}"; return 1; }
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: duplicate delivery lost job" "${job}"; return 1; }
-  state="$(jq -r '.status' <<<"${terminal}")"
-  digest="$(result_digest "${job}" 2>/dev/null || true)"
-  [[ "${state}" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: duplicate delivery produced invalid terminal/output" "${job}" "${state}" "${digest}"; return 1; }
-  write_receipt "${scenario}" pass "" "${job}" "${state}" "${digest}"
+  [[ "$(compose ps --status running -q worker | wc -l | tr -d ' ')" == 2 ]] || {
+    scenario_fail "competing consumer did not remain running during exclusivity observation"; return 1;
+  }
+  for boundary in native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
+    wait_barrier "$job" "$boundary" || return 1
+    release_barrier "$job" "$boundary"
+  done
+  terminal="$(wait_terminal "$job")" || return 1
+  state="$(jq -r '.status' <<<"$terminal")"
+  digest="$(result_digest "$job" 2>/dev/null || true)"
+  record="$(gp_job_record "$job")" || return 1
+  [[ "$state" == successful && -n "$digest" ]] && jq -e '.attemptCount == 1' <<<"$record" >/dev/null || {
+    scenario_fail "exclusive delivery produced invalid terminal/output or extra attempts"; return 1;
+  }
 }
 
 run_cancel_barrier() {
@@ -1005,7 +1045,7 @@ run_timeout_case() {
   request_at="$(now)"
   job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
   object_count_before="$(object_file_count "$job")"
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
+  record="$(gp_job_record "$job")"
   jq -e '.timeoutPolicy.maxDuration != null' <<<"$record" >/dev/null || {
     scenario_fail "supported workload timeout was not persisted on the submitted job"
     return 1
@@ -1079,9 +1119,15 @@ run_timeout_case() {
     scenario_fail "timed-out job retained staged objects after retention cleanup"
     return 1
   }
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
-  pending="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "$job" || true)"
-  claimed_score="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:claimed "$job" || true)"
+  record="$(gp_job_record "$job")"
+  pending="$(gp_sql --set=job="$job" <<'SQL'
+SELECT queue_visible_at FROM honua.execution_jobs WHERE operation_id=:'job';
+SQL
+)"
+  claimed_score="$(gp_sql --set=job="$job" <<'SQL'
+SELECT claimed_by FROM honua.execution_jobs WHERE operation_id=:'job';
+SQL
+)"
   set_scenario_evidence "$(jq -n \
     --arg request_at "$request_at" --arg behavior "$behavior" \
     --arg retry_code "$retry_code" --arg result_code "$result_code" \
@@ -1091,7 +1137,7 @@ run_timeout_case() {
     --arg pending "$pending" --arg claimed "$claimed_score" \
     --argjson before "$object_count_before" --argjson after "$object_count_after" \
     --argjson child_alive "$child_alive" --argjson failed_terminal_count "$failed_terminal_count" \
-    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,artifact_references:($record.artifactReferences // []),timeout_source:"supported workload policy batch.timeout_seconds",cancellation_source:(if $behavior|startswith("native production executor ignores") then "OGC DELETE via peer" else null end),signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,terminal_failure_count:$failed_terminal_count,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},retry_race_http:$retry_code,result_visibility:{after_terminal:$result_code},object_inventory:{before:$before,after_retention_cleanup:$after}}')"
+    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,artifact_references:($record.artifactReferences // []),timeout_source:"supported workload policy batch.timeout_seconds",cancellation_source:(if $behavior|startswith("native production executor ignores") then "OGC DELETE via peer" else null end),signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,terminal_failure_count:$failed_terminal_count,attempt_count:($record.attemptCount // null),queue_membership:{queue_visible_at:(if $pending=="" then null else $pending end),claimed_by:(if $claimed=="" then null else $claimed end)},retry_race_http:$retry_code,result_visibility:{after_terminal:$result_code},object_inventory:{before:$before,after_retention_cleanup:$after}}')"
 }
 
 run_timeout_cooperative() {
@@ -1130,14 +1176,31 @@ run_disruption() {
 }
 
 run_poison_job() {
-  local scenario=poison-job poison="poison-$(date +%s%N)" job terminal digest
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:pending 0 "${poison}" >/dev/null
-  job="$(submit_async)" || { write_receipt "${scenario}" fail "valid submission failed"; return 1; }
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: poison blocked queue progress" "${job}"; return 1; }
-  digest="$(result_digest "${job}" 2>/dev/null || true)"
-  [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: poison affected valid job" "${job}"; return 1; }
-  [[ -z "$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "${poison}")" ]] || { write_receipt "${scenario}" fail "FINDING: poison was not removed" "${job}"; return 1; }
-  write_receipt "${scenario}" pass "" "${job}" successful "${digest}"
+  local scenario=poison-job job terminal digest rejection
+  compose stop worker >/dev/null || return 1
+  job="$(submit_async)" || { compose start worker >/dev/null; return 1; }
+  # Native queue membership cannot exist independently of a job. Prove malformed
+  # membership is rejected by the real table constraint, without committing it.
+  rejection="$(gp_sql --set=job="$job" --set=VERBOSITY=verbose 2>&1 <<'SQL'
+BEGIN;
+UPDATE honua.execution_jobs SET queue_visible_at=clock_timestamp(), queue_priority=NULL
+WHERE operation_id=:'job';
+ROLLBACK;
+SQL
+)" && {
+    compose start worker >/dev/null
+    write_receipt "$scenario" fail "FINDING: malformed queue membership was accepted" "$job"; return 1;
+  }
+  compose start worker >/dev/null || return 1
+  [[ "$rejection" == *23514* ]] || {
+    write_receipt "$scenario" fail "FINDING: malformed queue test failed without a CHECK violation" "$job"; return 1;
+  }
+  terminal="$(wait_terminal "$job")" || { write_receipt "$scenario" fail "FINDING: rejected poison blocked queue progress" "$job"; return 1; }
+  digest="$(result_digest "$job" 2>/dev/null || true)"
+  [[ "$(jq -r .status <<<"$terminal")" == successful && -n "$digest" ]] || {
+    write_receipt "$scenario" fail "FINDING: rejected poison affected valid job" "$job"; return 1;
+  }
+  write_receipt "$scenario" pass "malformed membership rejected with SQLSTATE 23514" "$job" successful "$digest"
 }
 
 run_stale_lease() {
@@ -1146,8 +1209,7 @@ run_stale_lease() {
 }
 
 run_output_write_failure() {
-  # Release native execution into an actual unavailable staged store. Stopping Redis
-  # cannot establish output-store durability, even if a job later succeeds.
+  # Release native execution into an actual unavailable staged store.
   source "${repo_root}/scripts/qualification/gp-store-crash.sh"
   run_store_crash_boundary native-process-started store
 }
@@ -1156,31 +1218,56 @@ run_backlog() {
   local scenario=queue-backlog count="${HONUA_GP_BACKLOG_JOBS:-20}" depth job terminal digest; local -a jobs=()
   compose stop worker >/dev/null
   for ((i=0;i<count;i++)); do jobs+=("$(submit_async gdal.ogr2ogr "${native_payload}")") || { compose start worker >/dev/null; return 1; }; done
-  depth="$(compose exec -T redis redis-cli --raw ZCARD controlplane:jobqueue:pending)"; compose start worker >/dev/null
+  depth="$(gp_sql <<'SQL'
+SELECT count(*) FROM honua.execution_jobs WHERE status='Queued' AND queue_visible_at<=clock_timestamp();
+SQL
+)"; compose start worker >/dev/null
   (( depth >= count )) || { write_receipt "${scenario}" fail "FINDING: expected backlog ${count}, saw ${depth}"; return 1; }
   for job in "${jobs[@]}"; do terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: backlog did not drain" "${job}"; return 1; }; digest="$(result_digest "${job}" 2>/dev/null || true)"; [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: backlog output missing" "${job}"; return 1; }; done
   write_receipt "${scenario}" pass "peak_depth=${depth};submitted=${count}" "${job}" successful "${digest}"
 }
 
 run_ttl_cleanup() {
-  local scenario=ttl-cleanup job
-  job="$(submit_async)"; wait_terminal "${job}" >/dev/null || return 1; result_digest "${job}" >/dev/null || return 1
-  compose exec -T redis redis-cli PEXPIRE "controlplane:job:${job}" 250 >/dev/null; sleep 1
-  [[ "$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:${job}")" == 0 ]] || { write_receipt "${scenario}" fail "FINDING: expired record remains" "${job}"; return 1; }
-  write_receipt "${scenario}" pass "" "${job}" expired
+  local scenario=ttl-cleanup job remaining deadline
+  job="$(submit_async)" || return 1
+  wait_terminal "$job" >/dev/null || return 1
+  result_digest "$job" >/dev/null || return 1
+  gp_sql --set=job="$job" <<'SQL' >/dev/null || return 1
+UPDATE honua.execution_jobs SET expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=:'job';
+SQL
+  deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-180}))
+  while (( SECONDS < deadline )); do
+    # Read physical membership: an expiry-filtered read would not prove sweeping.
+    remaining="$(gp_sql --set=job="$job" <<'SQL'
+SELECT count(*) FROM honua.execution_jobs WHERE operation_id=:'job';
+SQL
+)" || return 1
+    [[ "$remaining" == 0 ]] && { write_receipt "$scenario" pass "physical row removed by retention sweeper" "$job" expired; return 0; }
+    sleep 1
+  done
+  write_receipt "$scenario" fail "FINDING: expired physical record remains after sweeper deadline" "$job"
+  return 1
 }
 
 run_retry_exhaustion() {
-  local scenario=retry-exhaustion job record terminal state
-  compose stop worker >/dev/null; job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; return 1; }
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:${job}")"
-  record="$(jq -c '.retryPolicy.maxAttempts=1 | .attemptCount=1 | .status="running" | .claimedBy="dead-worker" | .claimedAt="2000-01-01T00:00:00+00:00" | .lastHeartbeatAt="2000-01-01T00:00:00+00:00"' <<<"${record}")"
-  printf '%s' "${record}" | compose exec -T redis redis-cli -x SET "controlplane:job:${job}" KEEPTTL >/dev/null
-  compose exec -T redis redis-cli ZREM controlplane:jobqueue:pending "${job}" >/dev/null
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:claimed 0 "${job}" >/dev/null; compose start worker >/dev/null
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: exhausted retry never terminated" "${job}"; return 1; }
-  state="$(jq -r .status <<<"${terminal}")"; [[ "${state}" == failed ]] || { write_receipt "${scenario}" fail "FINDING: exhausted retry executed again" "${job}" "${state}"; return 1; }
-  write_receipt "${scenario}" pass "" "${job}" "${state}"
+  local scenario=retry-exhaustion job terminal state
+  compose stop worker >/dev/null || return 1
+  job="$(submit_async gdal.ogr2ogr "$native_payload")" || { compose start worker >/dev/null; return 1; }
+  gp_sql --set=job="$job" <<'SQL' >/dev/null || { compose start worker >/dev/null; return 1; }
+UPDATE honua.execution_jobs SET version=version+1,
+  record=jsonb_set(record::jsonb, '{retryPolicy,maxAttempts}', '1')::json,
+  attempt_count=1, status='Running', claimed_by='dead-worker',
+  claimed_at='2000-01-01T00:00:00Z', last_heartbeat_at='2000-01-01T00:00:00Z',
+  updated_at=clock_timestamp(), queue_visible_at=NULL, queue_priority=NULL
+WHERE operation_id=:'job';
+SQL
+  compose start worker >/dev/null || return 1
+  terminal="$(wait_terminal "$job")" || { write_receipt "$scenario" fail "FINDING: exhausted retry never terminated" "$job"; return 1; }
+  state="$(jq -r .status <<<"$terminal")"
+  [[ "$state" == failed ]] && jq -e '.attemptCount == 1' <<<"$(gp_job_record "$job")" >/dev/null || {
+    write_receipt "$scenario" fail "FINDING: exhausted retry executed again" "$job" "$state"; return 1;
+  }
+  write_receipt "$scenario" pass "" "$job" "$state"
 }
 
 run_output_size_cap() {
@@ -1423,7 +1510,7 @@ else
       run_scenario retry run_retry || failures=$((failures + 1))
       run_scenario timeout-cooperative run_timeout_cooperative || failures=$((failures + 1))
       run_scenario timeout-ignoring run_timeout_ignoring || failures=$((failures + 1))
-      for component in worker server redis postgres; do
+      for component in worker server postgres; do
         for boundary in accepted running terminal results-read; do
           run_scenario "restart-${component}-${boundary}" run_disruption "${component}" "${boundary}" || failures=$((failures + 1))
         done
