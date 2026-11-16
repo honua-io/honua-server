@@ -437,7 +437,7 @@ public static partial class GpCustomProjectScaffolder
         builder.Append("  source: process\n");
         if (language == GpProjectLanguage.Dotnet)
         {
-            builder.Append("  build: tests/SummaryTool.Tests/SummaryTool.Tests.csproj\n  assemblyDir: process/bin/Debug/net10.0\n  harnessDll: tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll\n");
+            builder.Append("  build: tests/SummaryTool.Tests/SummaryTool.Tests.csproj\n  assemblyDir: process/bin/Debug/net11.0\n  harnessDll: tests/SummaryTool.Tests/bin/Debug/net11.0/Honua.CustomCode.Harness.dll\n");
         }
 
         builder.Append("  fixtures:\n    params: fixtures/params.json\n    inputs:\n      features: fixtures/input.geojson\n  expected: expected\n");

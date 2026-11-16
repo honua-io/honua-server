@@ -16,7 +16,7 @@ common .NET geo stack + the Honua .NET SDK baked into the NuGet cache.
 
 - **Base:** `ghcr.io/osgeo/gdal:ubuntu-full-3.12.4` (pinned) — the full GDAL driver set
   for tools that shell out to or P/Invoke GDAL.
-- Added: the **.NET 10 SDK** (pinned channel), `git`, `ca-certificates`.
+- Added: the **.NET 11 SDK** (pinned channel), `git`, `ca-certificates`.
 - Pre-warmed NuGet cache (no per-job restore for the common case): **NetTopologySuite**,
   `NetTopologySuite.IO.GeoJSON`, **`Honua.Sdk`** (the .NET SDK umbrella), and the **GDAL
   C# bindings** (`MaxRev.Gdal.Core` + `MaxRev.Gdal.LinuxRuntime.Minimal`).

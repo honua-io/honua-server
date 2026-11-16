@@ -90,7 +90,7 @@ public sealed class GpEnvironmentProbe
         _integrationStack = new Lazy<bool>(static () =>
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")) ||
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HONUA_BASE_URL")));
-        _dotnetSdk = new Lazy<bool>(HasDotnet10Sdk);
+        _dotnetSdk = new Lazy<bool>(HasDotnet11Sdk);
     }
 
     public GpEnvironmentProbe(bool hostGdalAvailable, bool? workerImageAvailable, bool pythonAvailable, bool integrationStackConfigured, string workerImage = "honua-worker-etl",
@@ -156,12 +156,12 @@ public sealed class GpEnvironmentProbe
         return false;
     }
 
-    internal static bool SdkListIncludesNet10(string sdkList)
+    internal static bool SdkListIncludesNet11(string sdkList)
     {
         foreach (var raw in sdkList.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var version = raw.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-            if (version is not null && version.Split('.')[0] == "10")
+            if (version is not null && version.Split('.')[0] == "11")
             {
                 return true;
             }
@@ -170,7 +170,7 @@ public sealed class GpEnvironmentProbe
         return false;
     }
 
-    private static bool HasDotnet10Sdk()
+    private static bool HasDotnet11Sdk()
     {
         if (!OnPath("dotnet"))
         {
@@ -213,7 +213,7 @@ public sealed class GpEnvironmentProbe
                 return false;
             }
 
-            return SdkListIncludesNet10(stdout);
+            return SdkListIncludesNet11(stdout);
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
         {

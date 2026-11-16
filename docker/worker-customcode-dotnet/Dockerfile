@@ -22,7 +22,7 @@
 
 # --- build stage: publish the harness + warm the NuGet cache + sanity-build sample ---
 # Pinned .NET SDK (do NOT use a floating tag).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0.404-resolute@sha256:f685dd6b5a970778b53cead9a11cf54206c4b4fc3c97e4424a59b8bff9aa43d7
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
@@ -62,7 +62,7 @@ RUN mkdir -p /tmp/gdalprobe \
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
@@ -100,7 +100,7 @@ RUN cd /tmp/gdalprobe && dotnet run -c Release -p:NuGetAudit=false
 ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af330034ae0c3ada30deb1cfdaecf37585f96ed0924f1d1dfb7
 FROM ${GDAL_BASE_IMAGE} AS runtime
 
-ARG DOTNET_SDK_CHANNEL=10.0
+ARG DOTNET_SDK_CHANNEL=11.0
 # Pin the geo + SDK package versions so the warm cache matches the harness solution.
 ARG NETTOPOLOGYSUITE_VERSION=2.6.0
 ARG HONUA_SDK_DOTNET_VERSION=1.11.1
@@ -148,7 +148,7 @@ RUN mkdir -p /tmp/warm \
  && cat > /tmp/warm/warm.csproj <<EOF
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
