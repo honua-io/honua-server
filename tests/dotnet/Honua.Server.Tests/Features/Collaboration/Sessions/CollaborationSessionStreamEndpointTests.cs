@@ -18,13 +18,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
-/// <summary>
-/// Integration coverage for the authenticated WebSocket collaboration session transport
-/// (honua-server#971/#2999): v1 envelope handshake (status + snapshot), cross-participant
-/// presence fan-out, cursor control frames, and fail-closed authorization for unauthorized joins.
-/// The SDK-facing contract assertions (envelope version, monotonic sequences, operation echo,
-/// checkpointing) live in <c>CollaborationLiveCoEditingTests</c>.
-/// </summary>
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Streaming)]
 public sealed class CollaborationSessionStreamEndpointTests

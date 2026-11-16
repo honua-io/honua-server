@@ -11,9 +11,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Contract tests for reference-based raster sources carried by durable GP jobs.
-/// </summary>
 public sealed class RasterSourceContractTests
 {
     public static TheoryData<RasterSourceDescriptor> DescriptorCases =>

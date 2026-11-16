@@ -3,14 +3,6 @@
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Locates the NVIDIA construction demo fixture directory
-/// (<c>tests/fixtures/scenes/nvidia-construction</c>) by walking up from the
-/// test runner's base directory to the repo root. The fixture backs both the
-/// 3D structure scene (<see cref="MainSceneId"/>) and the observation pins
-/// layer (<see cref="ObsSceneId"/>); they share <c>AssetRoot</c> and differ
-/// only in <c>TilesetFileName</c>.
-/// </summary>
 internal static class NvidiaConstructionFixturePaths
 {
     public const string MainSceneId = "nvidia-construction";

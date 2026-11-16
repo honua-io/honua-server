@@ -27,13 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Enforces that every MCP tool and resource terminates unauthenticated
-/// requests with <see cref="GeoprocessingAuthorizationException"/> before any
-/// domain delegation. These tests guard the authentication gate that
-/// <see cref="McpErrorMapper"/> translates into the <c>unauthenticated</c>
-/// error envelope for operators.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpAuthorizationTests
 {

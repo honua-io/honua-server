@@ -9,14 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit coverage for the headless <c>honua gp plan</c> dry-run path (GP Devkit
-/// P5, issue #2126): proves the planner validates a process's params against the
-/// typed catalog schema and the shared DAG structural gate WITHOUT executing,
-/// and that the size/cost estimate warns before submit when an output is likely
-/// to blow the <see cref="GeoprocessingExecutorOptions.MaxArtifactBytes"/> cap.
-/// Fully offline — no Redis, no job store, no executor invocation.
-/// </summary>
 public sealed class GpPlanTests
 {
     private const long DefaultCap = 50L * 1024L * 1024L;

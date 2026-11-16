@@ -18,11 +18,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Control-plane event Lambdas share the server image but their Npgsql pool is capped at 2
-/// and released when the invocation ends. The database polling loops that the API host keeps
-/// must not be hosted there (honua-server#6515).
-/// </summary>
 public sealed class ControlPlaneEventHandlerDatabasePollingTests
 {
     [UnitTest]

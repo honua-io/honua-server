@@ -19,9 +19,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for ImageServer parameter validation: format variations, geometry parsing, valid parameters.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerParameterValidationTests : IClassFixture<ImageServerParameterFixture>
@@ -610,7 +607,6 @@ public class ImageServerParameterValidationTests : IClassFixture<ImageServerPara
     }
 }
 
-/// <summary>Authenticated ImageServer host with a restricted raster resource.</summary>
 public sealed class ImageServerParameterFixture : IAsyncLifetime
 {
     private const string EntitledRole = "imagery-reader";

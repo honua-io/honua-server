@@ -18,10 +18,6 @@ using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Admin configuration documentation masks credential-bearing current values the same way
-/// discovery does, and still shows public URLs (honua-server#6025).
-/// </summary>
 public sealed class ConfigurationDocumentationCredentialTests
 {
     private const string TokenWebhook = "https://hooks.example.com/events?token=super-secret";

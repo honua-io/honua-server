@@ -8,11 +8,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Unit tests (no database) for <see cref="RoutingCostUnitConverter"/>, the single
-/// declared contract that maps the topology's raw pgRouting cost weight onto the
-/// travel-time minutes the routing request/response surface speaks in (#2008).
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class RoutingCostUnitConverterTests
 {

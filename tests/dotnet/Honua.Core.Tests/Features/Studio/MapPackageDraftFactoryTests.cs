@@ -8,13 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Unit tests for <see cref="MapPackageDraftFactory"/>, the deterministic
-/// replacement for the retired prompt-driven map generation family (ADR-0076,
-/// honua-server#3255). They pin the three things the ADR and the retained
-/// knowledge record make load-bearing: determinism, the map extent/CRS
-/// conventions, and the server's ownership of the format/status discriminators.
-/// </summary>
 public sealed class MapPackageDraftFactoryTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
@@ -304,13 +297,11 @@ public sealed class MapPackageDraftFactoryTests
     private static string Serialize(MapPackage package) =>
         JsonSerializer.Serialize(package, PackagingJsonContext.Default.MapPackage);
 
-    /// <summary>Pinned identifier generator so a draft is reproducible byte for byte.</summary>
     private sealed class StubIdentifierGenerator : IDraftIdentifierGenerator
     {
         public string NewIdentifier(string prefix) => prefix + "_fixed0001";
     }
 
-    /// <summary>Pinned clock.</summary>
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;

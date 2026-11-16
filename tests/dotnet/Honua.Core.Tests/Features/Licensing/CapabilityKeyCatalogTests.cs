@@ -7,11 +7,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Core.Tests.Features.Licensing;
 
-/// <summary>
-/// Unit tests for <see cref="CapabilityKeyCatalog"/> (issue #2893): the
-/// canonical customer-facing capability vocabulary that extends
-/// <see cref="FeatureCatalog"/> with Community-tier capability keys.
-/// </summary>
 public sealed class CapabilityKeyCatalogTests
 {
     private static readonly Regex KeyFormat = new(

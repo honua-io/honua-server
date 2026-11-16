@@ -17,15 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Delegation tests for the Studio draft lifecycle and composition MCP tools
-/// (honua-server#3002) against the real <see cref="IStudioPackageLifecycleService"/>
-/// backed by <c>InMemoryStudioPackageStore</c> (mirrors
-/// <c>StudioPackageLifecycleServiceTests</c>'s DI setup). Proves the tools
-/// delegate to — and do not duplicate — the canonical lifecycle service: every
-/// mutation observed through <c>honua_studio_get_draft</c> is the same state
-/// the lifecycle service itself would report.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioMcpToolDelegationTests
 {

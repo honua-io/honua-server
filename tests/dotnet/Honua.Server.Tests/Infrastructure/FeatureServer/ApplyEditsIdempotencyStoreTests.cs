@@ -10,12 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.FeatureServer;
 
-/// <summary>
-/// Concurrency regression tests for <see cref="DistributedApplyEditsIdempotencyStore.TryReserveAsync"/>
-/// (BH5-001): two concurrent applyEdits requests carrying the same Idempotency-Key must not both
-/// proceed to execute the edit — only one reservation wins; the other returns false so the handler
-/// can immediately 409 without executing.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.ApplyEdits)]
@@ -30,11 +24,6 @@ public sealed class ApplyEditsIdempotencyStoreTests
 
     // ─── TryReserveAsync concurrency ───────────────────────────────────────────
 
-    /// <summary>
-    /// BH5-001 regression: fire N concurrent TryReserveAsync calls for the same scope.
-    /// The in-process fallback uses <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}.TryAdd"/>
-    /// which is natively atomic; exactly one caller must win the reservation.
-    /// </summary>
     [UnitTest]
     public async Task TryReserveAsync_ConcurrentSameScope_ExactlyOneWins()
     {

@@ -11,9 +11,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-/// <summary>
-/// Unit tests for <see cref="BypassOutputCacheOnNoStoreResponsePolicy"/>.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class BypassOutputCacheOnNoStoreResponsePolicyTests
 {

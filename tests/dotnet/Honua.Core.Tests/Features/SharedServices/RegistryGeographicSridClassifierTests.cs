@@ -9,11 +9,6 @@ using Moq;
 
 namespace Honua.Core.Tests.Features.SharedServices;
 
-/// <summary>
-/// Pins the registry-backed geographic-SRID classification seam (#2794): the registry is
-/// authoritative when it answers, and the static <see cref="GeographicSridClassifier"/> allowlist is
-/// the fallback when no registry is configured or the SRID is unknown to it.
-/// </summary>
 public sealed class RegistryGeographicSridClassifierTests
 {
     private const string EpsgUri = "http://www.opengis.net/def/crs/EPSG/0/";

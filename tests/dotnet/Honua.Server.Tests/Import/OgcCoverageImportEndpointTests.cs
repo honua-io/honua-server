@@ -9,9 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for OGC coverage import endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

@@ -6,13 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// honua-server#5633: admin operation lists, WFS stored queries, ArcGIS migration evidence,
-/// and STAC ids+CQL2 property bags used parameterless System.Text.Json overloads. Those
-/// throw when JsonSerializerIsReflectionEnabledByDefault is false, which is how both the
-/// AOT and JIT images run. The xUnit host leaves reflection on, so this child process is
-/// the regression.
-/// </summary>
 public sealed class ReflectionDisabledAotJsonProbeTests
 {
     [UnitTest]

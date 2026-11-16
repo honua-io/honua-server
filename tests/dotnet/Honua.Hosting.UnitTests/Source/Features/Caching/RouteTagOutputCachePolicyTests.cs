@@ -10,9 +10,6 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Server.Tests.Features.Caching;
 
-/// <summary>
-/// Unit tests for <see cref="RouteTagOutputCachePolicy"/>.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class RouteTagOutputCachePolicyTests
 {
@@ -67,9 +64,6 @@ public sealed class RouteTagOutputCachePolicyTests
     }
 }
 
-/// <summary>
-/// Scene tileset and asset caches must not split on the request host (#5218).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class IgnoreRequestHostOutputCachePolicyTests
 {

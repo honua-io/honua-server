@@ -15,34 +15,6 @@ using Xunit;
 
 namespace Honua.Db.Oracle.Tests;
 
-/// <summary>
-/// Real-database lane for the Oracle provider (honua-server#2947). Every other test in this
-/// project (<c>OracleFeatureQueryBuilderTests</c>, <c>OracleFeatureDataAccessWkbTests</c>,
-/// <c>OracleProviderResolutionTests</c>, <c>OracleSpatialGuardTests</c>,
-/// <c>OracleSpatialMetadataProbeSqlTests</c>) exercises the provider against
-/// <c>ThrowingConnectionFactory</c>/<c>RecordingConnectionFactory</c> fakes — none of it has
-/// ever executed against a real Oracle instance. This class does, via Testcontainers
-/// <c>gvenzl/oracle-free</c>, proving connection open, query build+execute, and WKB/geometry
-/// decode against a live <c>SDO_GEOMETRY</c> table.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Gated by <c>HONUA_TEST_ORACLE=1</c> so the default <c>dotnet test</c> run (this project is
-/// unconditionally invoked, unfiltered, by the PR gate's "Additional fast unit-only projects"
-/// step in <c>ci.yml</c>) stays fast and does not spin up a Docker container: the fixture only
-/// starts the container when the env var is set, and every test method additionally carries a
-/// <see cref="RequiredOracleEnvironmentFactAttribute"/> so an absent prerequisite is an explicit
-/// skip in the run summary rather than a silent no-op or a hard failure. The dedicated
-/// <c>provider-http-smoke.yml</c> nightly/dispatch workflow sets the env var to actually run
-/// this lane.
-/// </para>
-/// <para>
-/// Oracle remains experimental (see docs/reference/configuration/data-sources/oracle.md) — this
-/// lane is promotion groundwork only, per #2947's acceptance criteria. It is NOT wired into the
-/// provider-http-smoke suite (<c>Honua.ProviderSmoke.Tests</c>), which only covers DuckDB/MySql/
-/// SQL Server.
-/// </para>
-/// </remarks>
 [Trait("Category", "Oracle")]
 public sealed class OracleRealDatabaseIntegrationTests : IAsyncLifetime
 {
@@ -211,11 +183,6 @@ public sealed class OracleRealDatabaseIntegrationTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Minimal real <see cref="IOracleConnectionFactory"/> that always opens the
-    /// Testcontainers connection string directly, bypassing secure-connection resolution
-    /// (out of scope for this provider-layer smoke lane).
-    /// </summary>
     private sealed class RealOracleConnectionFactory(string connectionString) : IOracleConnectionFactory
     {
         public async Task<OracleConnection> OpenAsync(DataConnection? dataConnection, CancellationToken cancellationToken)
@@ -227,12 +194,6 @@ public sealed class OracleRealDatabaseIntegrationTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Skips the decorated fact unless <c>HONUA_TEST_ORACLE=1</c> is set. Local to this project
-/// (rather than reusing <c>Honua.TestKit.Attributes.RequiredEnvironmentFactAttribute</c>) so
-/// <c>Honua.Oracle.Tests</c> does not take on a new project reference for one attribute; the
-/// behavior mirrors it exactly — see honua-server#2947.
-/// </summary>
 [AttributeUsage(AttributeTargets.Method)]
 internal sealed class RequiredOracleEnvironmentFactAttribute : FactAttribute
 {

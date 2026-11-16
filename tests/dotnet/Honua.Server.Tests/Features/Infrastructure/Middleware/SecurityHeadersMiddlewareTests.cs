@@ -10,11 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 
-/// <summary>
-/// Unit tests for the SecurityHeadersMiddleware audit-fix surface (#1144):
-/// validates default header set on HTTPS, HSTS gating on HTTP, and CSP override
-/// via <see cref="SecurityHeadersOptions"/>.
-/// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "Security")]
 [Trait("Feature", "SecurityHeaders")]

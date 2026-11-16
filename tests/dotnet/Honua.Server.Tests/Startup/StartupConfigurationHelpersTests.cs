@@ -9,8 +9,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Startup;
 
-// Resolved secret references must survive the security-configuration source reordering that runs
-// before the host is built.
 public sealed class StartupConfigurationHelpersTests
 {
     [Fact]

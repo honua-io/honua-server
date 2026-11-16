@@ -5,9 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Guards the Native AOT compatibility and retry contract for the Azure Functions image.
-/// </summary>
 public sealed class FunctionsAotDockerfileTests
 {
     [ArchitectureTest]

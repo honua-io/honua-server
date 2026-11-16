@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Unit coverage for <see cref="FeatureEditBatch"/>, <see cref="FeatureEditOperation"/>,
-/// <see cref="FeatureEditResult"/>, and <see cref="EditOperationResult"/>. These
-/// govern GeoServices applyEdits rollback semantics and per-row reporting —
-/// drift here changes externally visible JSON output (#1144).
-/// </summary>
 public sealed class FeatureEditBatchTests
 {
     private static Feature SampleFeature(long id) => Feature.Create(id, geometry: null);

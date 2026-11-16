@@ -17,11 +17,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// The portal credential verifier uses catalog order and the selected provider's
-/// issuer and audience. A token from another configured authority is not accepted
-/// for a broker flow that started at a different provider.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

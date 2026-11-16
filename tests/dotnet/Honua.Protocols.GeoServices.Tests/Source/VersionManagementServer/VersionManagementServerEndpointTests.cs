@@ -16,12 +16,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
-/// <summary>
-/// Integration coverage for the GeoServices VersionManagementServer branch-versioning protocol
-/// slice (#1272, ADR-0051). Exercises every endpoint end-to-end against PostGIS with the Enterprise
-/// branch-versioning entitlement active, and verifies the full create → edit (gdbVersion) → query
-/// (gdbVersion sees the edit, DEFAULT unaffected) → reconcile → post → DEFAULT-reflects flow.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.VersionManagementServer)]
 public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
@@ -92,13 +86,6 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         doc.RootElement.GetProperty("capabilities").ValueKind.Should().Be(JsonValueKind.Object);
     }
 
-    /// <summary>
-    /// #5036: the exchange a native client issues to open the feature service as a branch-versioned
-    /// workspace, in order: service info, the DEFAULT version resource named by
-    /// <c>defaultVersionGuid</c> (POSTed, braces stripped, upper case), a read session on DEFAULT,
-    /// then <c>versionInfos</c>. Each step must answer the GeoServices shape, or the client
-    /// reports the workspace as the wrong type before it creates or lists a version.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
@@ -187,10 +174,6 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// #5036: <c>versionInfos</c> honours the contract's <c>ownerFilter</c> on GET and POST. DEFAULT
-    /// belongs to <c>sde</c>, so it is listed only when the filter is absent or names that owner.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versionInfos")]

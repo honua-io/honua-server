@@ -10,11 +10,6 @@ using Polly.CircuitBreaker;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Tests for per-data-source Polly resilience policies for database connections.
-/// Validates retry behavior, callback threading via Context, and isolation of
-/// circuit-breaker state across distinct <see cref="NpgsqlDataSource"/> instances.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class ResiliencePoliciesTests
 {

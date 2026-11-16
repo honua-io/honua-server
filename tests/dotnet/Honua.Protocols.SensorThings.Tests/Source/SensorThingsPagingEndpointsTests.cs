@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>HTTP regressions for QGIS count requests and SensorThings continuation links.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsPagingEndpointsTests : IAsyncLifetime

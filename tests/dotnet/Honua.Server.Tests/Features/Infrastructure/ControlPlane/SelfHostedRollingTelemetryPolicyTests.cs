@@ -7,12 +7,6 @@ using Honua.ControlPlane;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Verifies the <see cref="DeployTargetKind.SelfHostedRolling"/> arm of the deploy telemetry policy
-/// preset resolver (#2460). The self-hosted rolling target maps to the health-probe-capable
-/// <c>honua-http</c> preset; without the arm the resolver would return no preset and the gate would
-/// never be evaluated for a self-hosted deploy.
-/// </summary>
 public sealed class SelfHostedRollingTelemetryPolicyTests
 {
     [Fact]

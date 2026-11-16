@@ -14,11 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Verifies Console RBAC evaluator decisions across the 7 Console verbs and the
-/// route entitlement surface. The evaluator is server-authored, so these tests
-/// guard the canonical decision matrix.
-/// </summary>
 public class ConsoleActionEvaluatorTests
 {
     private static readonly IOptions<RbacOptions> RbacOpts = Options.Create(new RbacOptions());

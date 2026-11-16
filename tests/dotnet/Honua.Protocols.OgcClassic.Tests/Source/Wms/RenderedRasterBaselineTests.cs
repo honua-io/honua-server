@@ -13,9 +13,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Pixel baselines for the shared rendered-map pipeline.
-/// </summary>
 [Collection("Database")]
 public sealed class RenderedRasterBaselineTests : IAsyncLifetime
 {

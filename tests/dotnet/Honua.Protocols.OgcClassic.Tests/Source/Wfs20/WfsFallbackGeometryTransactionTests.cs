@@ -19,9 +19,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Exercises the advertised geometry property with attribute-only schema metadata.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs10)]
 [Protocol(TestProtocols.Wfs20)]

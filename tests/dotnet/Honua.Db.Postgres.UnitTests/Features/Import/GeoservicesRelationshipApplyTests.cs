@@ -19,13 +19,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Verifies the manifest-to-apply-request translation in
-/// <see cref="GeoservicesImportService.ApplyRelationshipsAsync"/> (issue #1256).
-/// The actual persistence is exercised by the writer integration tests; here we
-/// mock the catalog writer and assert that the apply step routes the right
-/// Honua layer ids, foreign-key fields, and skip outcomes through it.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesRelationshipApplyTests
 {
@@ -213,12 +206,6 @@ public sealed class GeoservicesRelationshipApplyTests
         writer.VerifyNoOtherCalls();
     }
 
-    /// <summary>
-    /// Issue #4600 (acceptance criterion 2): a relationship this slice cannot recreate must produce
-    /// an <em>explicit</em> incomplete-migration signal, never a silent omission. It is still not
-    /// written to the catalog — the writer is never called — but it now leaves a deferred outcome
-    /// the fidelity gate can block on.
-    /// </summary>
     [Fact]
     public async Task ApplyRelationshipsAsync_ManualReviewClassification_IsDeferredNotSilentlyDropped()
     {
