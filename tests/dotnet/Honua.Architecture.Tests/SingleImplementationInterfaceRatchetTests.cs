@@ -70,13 +70,10 @@ public sealed partial class SingleImplementationInterfaceRatchetTests
                 Add(interfaces, match.Groups[1].Value, file);
             }
 
-            foreach (var (type, baseName) in BaseListEntries(code))
+            foreach (var (type, baseName) in BaseListEntries(code).Where(entry => entry.Type != entry.Base))
             {
-                if (type != baseName)
-                {
-                    Add(implementations, baseName, type + "|" + file);
-                    implementationFiles[type + "|" + file] = file;
-                }
+                Add(implementations, baseName, type + "|" + file);
+                implementationFiles[type + "|" + file] = file;
             }
         }
 
