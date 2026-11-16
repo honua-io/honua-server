@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 [Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class PostgresUniversalProgressStoreTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
+public sealed partial class PostgresUniversalProgressStoreTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
     public async Task GetProgressAsync_OnASecondStore_ReturnsTheSnapshotLastWritten()

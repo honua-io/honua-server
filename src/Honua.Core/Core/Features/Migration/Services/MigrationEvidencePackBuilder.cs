@@ -30,9 +30,9 @@ public static class MigrationEvidencePackBuilder
 
         var resolvedOptions = options ?? new MigrationEvidencePackBuilderOptions();
 
-        var redactedSource = RedactSource(inputs.ApplyExecution.Source);
-        var redactedInventory = inputs.Inventory with { Source = RedactSource(inputs.Inventory.Source) };
-        var redactedManifest = inputs.Manifest with { Source = RedactSource(inputs.Manifest.Source) };
+        var redactedSource = MigrationSourceUrls.RedactSource(inputs.ApplyExecution.Source);
+        var redactedInventory = inputs.Inventory with { Source = MigrationSourceUrls.RedactSource(inputs.Inventory.Source) };
+        var redactedManifest = inputs.Manifest with { Source = MigrationSourceUrls.RedactSource(inputs.Manifest.Source) };
 
         var workspaceScope = BuildWorkspaceScope(inputs.RequestedWorkspaceNames);
         var stages = BuildStages(inputs.ApplyExecution);
@@ -75,42 +75,6 @@ public static class MigrationEvidencePackBuilder
         var payload = JsonSerializer.SerializeToUtf8Bytes(bundle, MigrationEvidencePackJsonContext.Default.MigrationEvidencePackBundle);
         var hash = SHA256.HashData(payload);
         return $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}";
-    }
-
-    private static MigrationSourceIdentity RedactSource(MigrationSourceIdentity source)
-    {
-        return new MigrationSourceIdentity
-        {
-            DisplayName = source.DisplayName,
-            BaseUrl = RedactUrl(source.BaseUrl),
-            Product = source.Product,
-            Version = source.Version,
-            Build = source.Build,
-            ServiceType = source.ServiceType
-        };
-    }
-
-    private static string RedactUrl(string baseUrl)
-    {
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            return baseUrl;
-        }
-
-        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        {
-            return baseUrl;
-        }
-
-        var builder = new UriBuilder(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty,
-            Query = string.Empty,
-            Fragment = string.Empty
-        };
-
-        return builder.Uri.AbsoluteUri;
     }
 
     private static MigrationEvidencePackWorkspaceScope BuildWorkspaceScope(IReadOnlyCollection<string>? requestedWorkspaceNames)

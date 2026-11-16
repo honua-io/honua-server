@@ -116,6 +116,13 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
             return new AlertLifecycleTransition { Lifecycle = replayed, Intent = existing, Replayed = true };
         }
 
+        var refusal = await ReadSuppressionRefusalAsync(command, transaction, cancellationToken).ConfigureAwait(false);
+        if (refusal is not null)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new AlertLifecycleTransition { RefusalReason = refusal };
+        }
+
         var lifecycle = await MutateAsync(connection, transaction, command, cancellationToken).ConfigureAwait(false);
         if (lifecycle is null)
         {
@@ -169,7 +176,10 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
         INSERT INTO {_lifecycleTable} (
             event_id, lifecycle_status, suppressed_until, suppressed_by, note, updated_at)
         SELECT @event_id, @status, @suppressed_until, @suppressed_by, @note, @updated_at
-        WHERE EXISTS (SELECT 1 FROM {_eventsTable} WHERE event_id = @event_id)
+        WHERE EXISTS (
+            SELECT 1 FROM {_eventsTable} WHERE event_id = @event_id AND severity <> 'critical' FOR NO KEY UPDATE)
+            AND @suppressed_until > @updated_at
+            AND @suppressed_until <= @updated_at + INTERVAL '168 hours'
         ON CONFLICT (event_id) DO UPDATE SET
             lifecycle_status = EXCLUDED.lifecycle_status,
             acknowledged_at  = NULL,
@@ -182,6 +192,36 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
             updated_at       = EXCLUDED.updated_at
         RETURNING {LifecycleProjection}
         """;
+
+    private async Task<string?> ReadSuppressionRefusalAsync(
+        AlertLifecycleCommand command,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (command.Action != AlertLifecycleAction.Suppress)
+        {
+            return null;
+        }
+
+        await using var query = new NpgsqlCommand(
+            $"SELECT severity FROM {_eventsTable} WHERE event_id = @event_id FOR NO KEY UPDATE",
+            transaction.Connection, transaction);
+        query.Parameters.AddWithValue("event_id", command.EventId);
+        var severity = await query.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (severity is null or DBNull)
+        {
+            return null;
+        }
+        if (severity is "critical")
+        {
+            return "Critical alerts cannot be snoozed.";
+        }
+        if (command.SuppressUntil <= command.OccurredAt || command.SuppressUntil > command.OccurredAt.AddDays(7))
+        {
+            return "'suppressUntil' must be in the future and no more than seven days after the action.";
+        }
+        return null;
+    }
 
     private string ResolveSql() => $"""
         INSERT INTO {_lifecycleTable} (

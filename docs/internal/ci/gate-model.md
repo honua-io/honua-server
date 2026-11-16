@@ -1,6 +1,8 @@
 # CI Gate Model
 
-A source path needs at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a change leaves a path with only over-budget owners. Paths that already have no budgeted owner are listed in `scripts/ci/fixtures/pr-owner-coverage-debt.json`; remove an entry only after a measured owner lands. The guard does not claim complete PR coverage.
+Every source path has at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a path's owners are all over budget.
+
+#7678 split the nine over-budget shards that were still the only owners of 61 source paths (Admin Catalog and Configuration, Admin Network and Jobs, Admin Platform and Connections, OData Mutations and Batch, Miscellaneous 1 and 2, Cloud and Streaming Import, SensorThings, gRPC Protocol and Scene) into 28 children from the TRX class spans of full run `43580101834`. Classes longer than a child's 5.5-minute share are cut at method boundaries, and classes with no shard time in that run (Tier Fast or Slow) stay in the last child, which also owns future tests. Child ranks are estimates in `full-run-capacity-contracts.json` until the next passing full run measures them. Miscellaneous children continue that family's numbering (3 to 8).
 
 Server Features Streaming Snapshot and Conformance selects the snapshot and conformance classes. The deleted cursor-durability class is omitted from that shard, its parent and the miscellaneous residual filters.
 
@@ -660,6 +662,7 @@ These workflows run on schedule and can be dispatched manually:
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `release-please.yml` (SDK repos only) | Push | Version automation |
+| `disabled-workflow-check.yml` | Weekly schedule | Fails while a workflow disabled on GitHub is still in the tree, unless an active workflow calls it or a dated entry names the ticket that decides it |
 
 ## Attesting reviewers
 
@@ -734,6 +737,28 @@ Receipts have scope `archived-customer-journey`, distinguish `candidate` from
 `customerJourneyComplete` becomes true only after both complete installations
 and their cleanup pass. A prospective PR receipt cannot qualify a shipped archive;
 release verification needs a recorded pass from the published candidate.
+
+Command output stays withheld; a failed command reports its operation, exit
+code and fixed signal labels. Compose prints `pull access denied` for an image
+the package builds locally (`LOCALLY_BUILT_IMAGES`: the PostGIS datum-grid image)
+before building it, so that line does not count when a build line follows it;
+denials of any other image, including official Docker Hub images Docker names
+without a path, still count. `localBuildStarted` says whether a build started.
+When initialization or the health read fails, the receipt also records the
+Compose version and each service's name, state, health and exit code (60-second
+reads, only short identifier-like values), and teardown still runs.
+
+### GP Scoped Key Contract
+
+`gp-scoped-key-contract.yml` runs one job per test project (6 jobs). Each job
+builds its project once and runs every case with `--no-build`, its own filter,
+its own TRX and the same execution proof: every source-derived method and theory
+row, required class and named method must run and pass
+(`scripts/ci/gp-scoped-key-contract.py`). Cases that never used PostgreSQL keep
+an empty `HONUA_TEST_DB_URL`. Before this, 8 of 13 jobs each compiled
+Honua.Server.Tests for one filter: run 43759686692 spent about 5,950 job-seconds,
+4,000 of them in those 8 jobs, mostly compiling. A failing case no longer stops
+the others; the job fails after all of them run.
 
 ### Check registration
 
@@ -1015,24 +1040,33 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (14 Nov 2026): every `dispatch_rank` with a passing job is the
+Measured ranks (16 Nov 2026): every `dispatch_rank` with a passing job is the
 median passing job duration of full trunk runs 43348507021, 43471044721,
-43540829683, 43564575677, 43580101834 and 43612492209. A run counts for a shard
-only when that shard's filter at the run's head equals the current filter, so
-re-split children are never ranked by their predecessor. 159 of 164 shards are
-measured (1 to 6 samples, median 3); `scripts/ci/fixtures/measured-dispatch-ranks.json`
+43540829683, 43564575677, 43580101834, 43612492209, 43661416329, 43703260559,
+43709972683 and 43726623779. The four newest runs were cancelled before they
+finished: only 43709972683 has passing shard jobs, so seven runs supply samples. A run counts for a shard only when
+that shard's filter at the run's head equals the current filter, so re-split
+children are never ranked by their predecessor. 171 of 219 shards are measured
+(1 to 7 samples, median 2); `scripts/ci/fixtures/measured-dispatch-ranks.json`
 records the values and runs, and `test-full-run-capacity-partitions.py` fails when
 a rank drifts from it. Split-contract tests require each child to carry its
-measured rank, else its contract estimate, else its parent's rank. Unmeasured:
-Operator Eval Harness 2 and STAC Protocol 2 and 4 (cancelled in 43612492209) keep
-their parent's rank; the two Packages and Temporal children carry estimates. Ranks
-sum to 1,603 runner-minutes (was 1,818.5); 98 of 164 shards fit the 10-minute PR
-shard budget (was 84 of 163). Many unsplit shards measured slower than on 11 Nov
-(for example Core Endpoint Mutations 9.8 to 14.5): 20 shards, the replaced Packages
-and Temporal parent among them, leave the budget and 34, most of them split
-children, enter it. Of 794 shard source paths, 666 now have an owner that fits the
-budget (was 583): 140 gained one and 57 lost their last one, all owned by 15 shards
-now above 10 minutes, whose split is tracked in #7678.
+measured rank, else its contract estimate, else its parent's rank. A measured
+child's estimate is removed from its contract, and the rule that estimates may
+not add up to less than the parent applies only while every child of a split is
+still estimated: measured children of the 15 Nov splits ran in 2.5 to 8.6 minutes,
+well under their estimates. Of the 48 unmeasured shards, 44 keep a contract
+estimate: 16 are a still-unmeasured child of an earlier split and 28 are children of the
+nine shards split in #7678, which no full run has executed yet. STAC Protocol 4 (no passing job yet) keeps its parent's
+13.6. Three changed their filter after the newest run and so leave the record,
+keeping their previous rank until a run measures the new filter: Server Features
+Streaming Snapshot and Conformance (#7820), and Admin Layer Publishing and Admin
+Runtime Operations (renamed publishing test method, 49518429d9). Ranks sum to
+1,644.0 runner-minutes (was 1,894.8); 189 of 219 shards fit the 10-minute PR
+shard budget (was 178). Run 43709972683 is the only sample for 41 shards and ran
+at a median 0.63 times the duration of the older runs on the 56 shards they share,
+for a cause not yet identified. A single-sample rank between 6.5 and 9.3 minutes
+may therefore prove over 10 on the next full run; the cost is a PR shard of about
+12 minutes, not lost coverage, and the next refresh settles it. The 14 Nov refresh is superseded.
 
 ### Standalone tooling in affected producer builds
 
@@ -1093,11 +1127,28 @@ runs and twice-daily full runs. That job already participates in CI Gate; no
 required check name or aggregate dependency changes. The runtime URL scan still
 runs and fails the trunk gate when a source/config link breaks.
 
-Derived Artifact Normalization watches .NET generator/proving-test code and
-client compatibility receipts instead of every test language, and GIS data
-instead of GIS prose. Runtime source, generator scripts, CITE status and all
-existing build/setup inputs remain covered. Its producer/consumer security
-boundary and deterministic replay are unchanged.
+Derived Artifact Normalization runs on pull requests only when its own recipe
+can change: the producer workflow, the .NET setup action, the envelope builder,
+every generator input the envelope pins (`GENERATOR_INPUTS` in
+`scripts/ci/normalization-envelope.py`) and the three projections. Its consumer
+is observe-only since feature PRs stopped committing these projections (14 Nov),
+so an envelope for an ordinary source change produced no result anyone used.
+That generation still runs: PR Gate's architecture job regenerates the same
+projections and reports drift on every ready PR, ci.yml's foundation job does
+the same on affected trunk and twice-daily full runs, and the nightly
+generated-files-on-trunk writer publishes them. `validate-optional-pr-inputs.py`
+fails if a pinned generator input stops admitting the producer. The
+producer/consumer security boundary and deterministic replay are unchanged.
+
+The review-first and router validators project the workflow inventory into a
+scratch file (or compare it with `--check`) instead of rewriting the tracked
+page. The page is trunk-published and may lag the workflow YAML; a rewrite left
+the PR Gate checkout dirty, and the later private-feed restore proof, which
+requires an unchanged tracked checkout, failed on any PR touching its inputs.
+Among the `scripts/ci/*.sh` entry points only `regenerate-generated-files.sh`
+rewrites the page, and `generate-workflow-inventory.test.py` enforces that. The
+doc-link steps in ci.yml (after the router validators) and Docs Link Gate
+regenerate it on purpose so links are checked against this head's projection.
 
 ## Server test fixture lifetimes
 
@@ -1536,17 +1587,25 @@ This change adds no runners or jobs: one lifecycle runner before and after.
 Live after-change readiness diagnostics and elapsed time await a new failure;
 no lifecycle rerun or runtime savings are claimed from unit validation.
 
+The manual rc.1 upgrade and return each run migrate-only after stopping rc.1
+and before candidate startup. The harness explicitly selects Gate, clears prior
+approval, and accepts exit 5 only for annotated contracts on its reviewed script
+allowlist with matching SHA-256 bytes. Migration 183 removes optional indexes;
+future contracts require a separate review. The exact returned nonce authorizes
+one retry, which must exit 0 with a verified schema. Unknown contracts, changed
+SQL, malformed summaries and failed verification stop the journey. This adds no
+jobs or runners (one lifecycle runner before and after). Run 43729796698's manual
+journey reported one pass and one failure in 349 seconds before this repair.
+Refusals name the script, refusal code and exit code, never raw output, and the
+checks raise explicitly so `python -O` cannot strip them.
+
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
 
-GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
-workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
-reconciles PR and managed-workflow start events using trusted default-branch code.
-It cancels only active managed Code Quality runs for the same PR whose SHA differs
-from the live PR head, rechecking that head before each cancellation. Current-head
-coverage, trunk scans, required checks and other PRs remain protected. The helper
-checks out no PR code and grants only Actions write, contents read and PR read.
+GitHub-managed Code Quality is switched off for this repository, so there is no
+managed analysis to supersede and no helper workflow for it; `codeql.yml` is the
+only CodeQL analysis of C# (Roslyn analyzers still run as errors in the build).
 CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
-already cancel superseded PR runs through their existing per-PR concurrency groups.
+cancel superseded PR runs through their per-PR concurrency groups.
 
 Normalization consumer admission reads the exact producer attempt before joining
 its per-PR cancellation group. Only a successful envelope-packaging job admits
@@ -1567,7 +1626,8 @@ CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
 `advisory-runner-select.yml` before allocating compute. Same-repository PRs use
 trusted base scripts and the existing OIDC role to read the build-host instance
 and heartbeat. A heartbeat no older than 90 seconds must match the current
-instance and advertise an idle heavy runner. Otherwise the job uses its existing
+instance and advertise more than two idle heavy runners: two stay free for
+required PR Gate jobs. Otherwise the job uses its existing
 hosted label. Missing configuration, credentials, read failures and selector
 failure all fall back to hosted compute. This selector never wakes or resizes
 the host; AWS retries and step timeouts are bounded. The current role trusts PR
