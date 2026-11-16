@@ -711,7 +711,6 @@ public sealed class ODataAdvancedFeaturesTests : IClassFixture<ODataAdvancedFeat
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithNonAtomicCreate_PublishesSingleMutationEvent()
     {
-        var fixture = await StartMutableFixtureAsync();
         var publisher = new RecordingFeatureChangeEventPublisher();
         // All segments are relative literal path fragments (not user input), so none can be
         // rooted and silently drop earlier arguments.

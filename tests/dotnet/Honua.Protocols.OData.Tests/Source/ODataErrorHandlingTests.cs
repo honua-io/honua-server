@@ -495,12 +495,13 @@ public sealed class ODataErrorHandlingTests : IClassFixture<ODataErrorHandlingTe
     [Endpoint("PATCH /odata/Features({layerId},{objectId}) with invalid JSON")]
     public async Task Update_InvalidJson_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         using var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},1)")
         {
             Content = new StringContent("{ invalid json }", Encoding.UTF8, "application/json")
         };
 
-        var response = await _client.SendAsync(message);
+        var response = await fixture.Client.SendAsync(message);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -923,7 +924,6 @@ public sealed class ODataErrorHandlingTests : IClassFixture<ODataErrorHandlingTe
     [Endpoint("POST /odata/$batch with mixed access")]
     public async Task Batch_MixedAccess_ReturnsPerItemResponses()
     {
-        var fixture = await StartMutableFixtureAsync();
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
                 alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["alpha-reader"]),
