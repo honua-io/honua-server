@@ -3,12 +3,12 @@
 
 using Honua.Infrastructure.Events;
 
-namespace Honua.Server.Tests.Features.Streaming;
+namespace Honua.TestKit.Infrastructure;
 
 // An in-process change log for unit tests. Cursors increase like change-log generations, with an
 // optional gap before each append; trimming past MaxRetained moves the resumable window forward.
 internal sealed class FakeFeatureChangeEventStore(int maxRetained = int.MaxValue)
-    : IFeatureChangeEventStore, IFeatureChangeEventStoreHealth
+    : IFeatureChangeEventStore, IFeatureChangeEventStoreHealth, IFeatureChangeEventPublisher
 {
     private readonly Lock _gate = new();
     private readonly List<FeatureChangeEvent> _events = [];
@@ -46,6 +46,16 @@ internal sealed class FakeFeatureChangeEventStore(int maxRetained = int.MaxValue
             Trim();
             return appended;
         }
+    }
+
+    public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+        => PublishStrictAsync(request, cancellationToken);
+
+    public Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Append(request);
+        return Task.CompletedTask;
     }
 
     public Task<long> GetCurrentCursorAsync(CancellationToken cancellationToken = default)

@@ -19,6 +19,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Operations;
@@ -123,6 +124,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IAuditLog, PersistedTestAuditLog>();
             }
             UseInMemoryAuthenticationState(services);
+            UseInMemoryFeatureEvents(services);
             RemoveDurableOperationHostedServices(services);
             services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });
@@ -146,6 +148,17 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["FileStorage:LocalStorage:CreateDirectoryIfNotExists"] = "true"
             });
         });
+    }
+
+    private static void UseInMemoryFeatureEvents(IServiceCollection services)
+    {
+        services.RemoveAll<IFeatureChangeEventStore>();
+        services.RemoveAll<IFeatureChangeEventStoreHealth>();
+        services.RemoveAll<IFeatureChangeEventPublisher>();
+        services.AddSingleton<FakeFeatureChangeEventStore>();
+        services.AddSingleton<IFeatureChangeEventStore>(provider => provider.GetRequiredService<FakeFeatureChangeEventStore>());
+        services.AddSingleton<IFeatureChangeEventStoreHealth>(provider => provider.GetRequiredService<FakeFeatureChangeEventStore>());
+        services.AddSingleton<IFeatureChangeEventPublisher>(provider => provider.GetRequiredService<FakeFeatureChangeEventStore>());
     }
 
     // Authentication state belongs to this database-free host, including when

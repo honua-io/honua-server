@@ -7,7 +7,6 @@ using FluentAssertions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Events;
-using Honua.Server.Tests.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
