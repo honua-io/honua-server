@@ -538,6 +538,19 @@ internal sealed class Short
 '''
 
 
+def static_helper_array_self_test(scalar_method: Method) -> str | None:
+    for array_type in ("string[]", "string[,]", "string[][]"):
+        array_sample = STATIC_HELPER_SAMPLE.replace("Trim(string value)", f"Trim({array_type} value)")
+        array, _ = extract_methods("src/Array.cs", array_sample)
+        if array[0].types != array_type or is_pair(scalar_method, array[0]):
+            return "self-test: array parameter ranks were lost or paired with a scalar"
+        if array[0].endpoint(disambiguate=False) != "src/Array.cs::Trim(string)":
+            return "array parameter ranks changed persisted baseline identifiers"
+    if parameter_types("[NotNull] [Other] string[] value") != "string[]":
+        return "self-test: parameter attributes were not removed independently of array ranks"
+    return None
+
+
 def static_helper_self_test(long_method: Method) -> str | None:
     """Return the failure message for the static-helper tier, or None when it behaves."""
     one, _ = extract_methods("src/C.cs", STATIC_HELPER_SAMPLE)
@@ -557,15 +570,6 @@ def static_helper_self_test(long_method: Method) -> str | None:
     retyped, _ = extract_methods("src/F.cs", retyped_sample)
     if is_pair(one[0], retyped[0]):
         return "self-test: short static helpers with different parameter types paired"
-    for array_type in ("string[]", "string[,]", "string[][]"):
-        array_sample = STATIC_HELPER_SAMPLE.replace("Trim(string value)", f"Trim({array_type} value)")
-        array, _ = extract_methods("src/Array.cs", array_sample)
-        if array[0].types != array_type or is_pair(one[0], array[0]):
-            return "self-test: array parameter ranks were lost or paired with a scalar"
-        if array[0].endpoint(False) != "src/Array.cs::Trim(string)":
-            return "array parameter ranks changed persisted baseline identifiers"
-    if parameter_types("[NotNull] [Other] string[] value") != "string[]":
-        return "self-test: parameter attributes were not removed independently of array ranks"
     region_sample = STATIC_HELPER_SAMPLE.replace("    private string Label", "    #region static helpers\n    private string Label")
     region, _ = extract_methods("src/G.cs", region_sample)
     if [method.name for method in region] != ["Trim"]:
@@ -580,7 +584,7 @@ def static_helper_self_test(long_method: Method) -> str | None:
     field, _ = extract_methods("src/H.cs", field_sample)
     if [method.name for method in field] != ["Trim"]:
         return "self-test: a static field initializer was taken for a static helper"
-    return None
+    return static_helper_array_self_test(one[0])
 
 
 def self_test() -> int:
