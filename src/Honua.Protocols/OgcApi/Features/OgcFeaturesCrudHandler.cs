@@ -124,7 +124,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 new OgcFeaturesEditRequest
                 {
                     Operation = OgcFeaturesEditOperation.Create,
-                    Feature = feature
+                    Feature = feature,
+                    ServiceName = layerValidation.Service?.Metadata.Name,
+                    PublicLayerId = publication.LayerIndex
                 },
                 cancellationToken);
             var createResult = editResult.CreateResults.FirstOrDefault();
@@ -295,7 +297,10 @@ internal sealed partial class OgcFeaturesCrudHandler(
                     Operation = OgcFeaturesEditOperation.Delete,
                     ObjectId = objectId,
                     IfMatch = ifMatch,
-                    ExpectedStateToken = expectedStateToken
+                    ExpectedStateToken = expectedStateToken,
+                    ServiceName = layerValidation.Service?.Metadata.Name,
+                    PublicLayerId = publication.LayerIndex,
+                    StoredFeature = existing
                 },
                 cancellationToken);
             var deleteResult = editResult.DeleteResults.FirstOrDefault();
@@ -398,22 +403,16 @@ internal sealed partial class OgcFeaturesCrudHandler(
             throw new ValidationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
-        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            _featureReader,
-            layerId,
-            resource.OwnerEditPolicy,
-            editBatch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+        var gateTarget = new OgcFeatureEditGate.Target(context, resource, request) { LayerId = layerId, Reader = _featureReader };
+        var (editBatch, ended) = await OgcFeatureEditGate.PrepareAsync(
+            gateTarget,
+            _editProcessor.ToFeatureEditBatch(optimizedEdit, resource),
             cancellationToken).ConfigureAwait(false);
-        if (!prepared.IsAllowed)
+        if (ended is { } stopped)
         {
-            return OwnerEditPolicyFieldAccess.DeniedEditResult(
-                editBatch,
-                prepared.DenialReason ?? "Edit not permitted.");
+            return stopped;
         }
 
-        editBatch = prepared.Batch;
         // Geometry-change semantics mirror the OGC Features Transaction batch handler:
         // a row is considered to have changed geometry when the request feature carries
         // non-null WKB. Delete operations default to false. Without this, an attribute-
@@ -436,8 +435,14 @@ internal sealed partial class OgcFeaturesCrudHandler(
             layerSrid: resource.ReadSrid(),
             geometryChanged: geometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
-        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        FeatureEditResult result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData))
+        {
+            result = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        }
+
+        await OgcFeatureEditGate.RunAfterAsync(gateTarget, editBatch, result).ConfigureAwait(false);
+        return result;
     }
 
     internal static IResult MapDeleteFailure(HttpContext context, EditOperationResult deleteResult, string featureId)
@@ -457,13 +462,22 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 string.IsNullOrWhiteSpace(deleteResult.ErrorMessage) ? "Edit not permitted." : deleteResult.ErrorMessage);
         }
 
+        if (deleteResult.ErrorCode == FeatureEditGate.RejectedErrorCode)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                string.IsNullOrWhiteSpace(deleteResult.ErrorMessage) ? "The delete was rejected." : deleteResult.ErrorMessage);
+        }
+
         return IsNotFound(deleteResult)
             ? StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.")
             : StandardErrorHelpers.CreateInternalServerError(context, deleteResult.ErrorMessage ?? "An error occurred while deleting the feature.");
     }
 
+    // A rule or plugin rejection is never "not found", whatever its wording.
     private static bool IsNotFound(EditOperationResult result)
-        => !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
+        => result.ErrorCode != FeatureEditGate.RejectedErrorCode &&
+           !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
            result.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase);
 
     private static partial class Log

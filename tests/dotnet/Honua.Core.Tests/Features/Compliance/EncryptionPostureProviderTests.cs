@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
-/// <summary>
-/// Unit tests for <see cref="InMemoryEncryptionPostureProvider"/> — covers the
-/// "encryption-at-rest keys can be rotated without downtime" acceptance criterion.
-/// </summary>
 public sealed class EncryptionPostureProviderTests
 {
     [Trait("Tier", "Fast")]

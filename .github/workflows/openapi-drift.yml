@@ -33,10 +33,18 @@ concurrency:
 jobs:
   drift-check:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

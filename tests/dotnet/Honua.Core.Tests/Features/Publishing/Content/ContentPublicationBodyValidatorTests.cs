@@ -11,12 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Publishing.Content;
 
-/// <summary>
-/// Unit tests for the publish-time chart-spec rules on <c>ContentPublicationBodyValidator</c>: a chart
-/// panel must declare a Vega-Lite spec (<c>publication.panel.chartSpec.vegaLite</c>) and, conversely, a
-/// non-chart panel must not carry a chart spec at all
-/// (<c>publication.panel.chartSpec.notAllowed</c>, honua-server#3263).
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ContentPublicationBodyValidatorTests
 {

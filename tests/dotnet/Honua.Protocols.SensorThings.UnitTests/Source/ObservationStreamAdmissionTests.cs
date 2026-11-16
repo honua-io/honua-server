@@ -9,10 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// Admission caps for the observation stream (#4198): one principal or tenant must never be
-/// able to pin the node-wide session budget and lock every other subscriber out.
-/// </summary>
 public sealed class ObservationStreamAdmissionTests
 {
     private static readonly ObservationStreamScope TenantA = new("tenant-a", "schema_a");

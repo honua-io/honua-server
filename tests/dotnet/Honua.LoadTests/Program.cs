@@ -265,16 +265,6 @@ internal static class Program
         return value as IEnumerable;
     }
 
-    /// <summary>
-    /// Writes the run's aggregate and per-scenario statistics as JSON.
-    /// </summary>
-    /// <remarks>
-    /// The HTML/CSV reports NBomber writes are for humans. The capacity-soak receipt producer
-    /// (<c>scripts/soak/</c>) needs the same numbers as data, and it must never silently substitute
-    /// a default for a figure it could not read: any statistic missing from the stats object is
-    /// emitted as JSON <c>null</c> so the consumer fails closed on it rather than publishing a
-    /// receipt built on a zero that never happened.
-    /// </remarks>
     private static void WriteStatsSummary(object stats, string path, string profile, string baseUrl)
     {
         var builder = new System.Text.StringBuilder();
@@ -499,12 +489,6 @@ internal sealed class LoadTestOptions
     public double? MaxFailureRate { get; private set; }
     public string? StatsOut { get; private set; }
 
-    /// <summary>
-    /// Report formats NBomber renders at the end of the run. HTML and CSV are the default because
-    /// they are what a human reads after a nightly. An hour-long soak produces millions of data
-    /// points, and rendering them all is neither free nor needed by an automated consumer: the
-    /// capacity-soak producer reads <c>--stats-out</c> instead and asks for a cheaper set here.
-    /// </summary>
     public ReportFormat[] ReportFormats { get; private set; } = new[] { ReportFormat.Html, ReportFormat.Csv };
     public bool PrintProfile { get; private set; }
     public bool ShowHelp { get; private set; }

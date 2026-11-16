@@ -40,7 +40,7 @@ def setUpModule() -> None:
 
 class NativeImageImpactTests(unittest.TestCase):
     def test_input_classes_cover_managed_rootfs_and_embedded_changes(self) -> None:
-        serving = {"serving_generic", "serving_lambda", "serving_functions"}
+        serving = {"serving_generic", "serving_lambda"}
         cases = [
             ("src/Honua.Protocols/OData/Features/Query.cs", serving),
             ("src/Honua.Server/Program.cs", serving),
@@ -49,7 +49,6 @@ class NativeImageImpactTests(unittest.TestCase):
             ("Dockerfile", {"serving_generic"}),
             ("docker/Dockerfile.aot", {"serving_generic"}),
             ("docker/Dockerfile.lambda.aot", {"serving_lambda"}),
-            ("docker/cloud/azure-functions/host.json", {"serving_functions"}),
             ("docker/worker-gdal/Dockerfile", {"worker"}),
             (".trivyignore", {"worker"}),
             ("docs/gis/data/feature-catalog.json", serving),
@@ -223,7 +222,7 @@ class PolicyDriftTests(unittest.TestCase):
 
     def test_variant_pattern_claimed_by_two_variants_fails_closed(self) -> None:
         broken = json.loads(json.dumps(POLICY))
-        broken["serving_variant_patterns"]["functions"] = ["docker/Dockerfile.aot"]
+        broken["serving_variant_patterns"]["lambda"] = ["docker/Dockerfile.aot"]
         with self.assertRaises(MODULE.PolicyError):
             MODULE.validate_policy(ROOT, broken)
 

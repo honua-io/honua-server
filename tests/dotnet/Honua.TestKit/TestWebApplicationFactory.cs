@@ -20,6 +20,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Operations;
@@ -34,18 +35,11 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// WebApplicationFactory configured for the test environment without Aspire wiring.
-/// </summary>
 public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
     private readonly string _environmentName;
 
-    /// <summary>
-    /// Creates the default Test-environment factory. This explicit parameterless constructor
-    /// is required by xUnit when the factory is used as an <c>IClassFixture&lt;T&gt;</c>.
-    /// </summary>
     public TestWebApplicationFactory()
         : this("Test")
     {
@@ -57,7 +51,6 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         _environmentName = environmentName;
     }
 
-    /// <summary>Creates a factory whose early Program startup observes the requested environment.</summary>
     public static TestWebApplicationFactory CreateForEnvironment(string environmentName)
         => new(environmentName);
 
@@ -124,6 +117,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IAuditLog, PersistedTestAuditLog>();
             }
             UseInMemoryAuthenticationState(services);
+            UseInMemoryFeatureEvents(services);
             // The connection string names no live database, so feature leases stay in process as well.
             services.RemoveAll<IFeatureLockService>();
             services.AddSingleton<IFeatureLockService>(provider => new InMemoryFeatureLockService(provider.GetService<TimeProvider>()));
@@ -150,6 +144,17 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["FileStorage:LocalStorage:CreateDirectoryIfNotExists"] = "true"
             });
         });
+    }
+
+    private static void UseInMemoryFeatureEvents(IServiceCollection services)
+    {
+        services.RemoveAll<IFeatureChangeEventStore>();
+        services.RemoveAll<IFeatureChangeEventStoreHealth>();
+        services.RemoveAll<IFeatureChangeEventPublisher>();
+        services.AddSingleton<FakeFeatureChangeEventStore>();
+        services.AddSingleton<IFeatureChangeEventStore>(provider => provider.GetRequiredService<FakeFeatureChangeEventStore>());
+        services.AddSingleton<IFeatureChangeEventStoreHealth>(provider => provider.GetRequiredService<FakeFeatureChangeEventStore>());
+        services.AddSingleton<IFeatureChangeEventPublisher>(provider => provider.GetRequiredService<FakeFeatureChangeEventStore>());
     }
 
     // Authentication state belongs to this database-free host, including when
@@ -406,13 +411,6 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             => Task.FromResult(_replicas.TryRemove(replicaId, out _));
     }
 
-    /// <summary>
-    /// In-memory <see cref="IReplicaRepository"/> double that reports
-    /// <see cref="IReplicaRepository.SupportsReplicaPersistence"/> as <c>true</c> so the offline
-    /// replica sync surface is treated as supported (mirroring a Postgres-backed deployment) while
-    /// keeping all state in process. Replaces the host's Postgres-backed repository, which cannot be
-    /// constructed without a real database connection provider.
-    /// </summary>
     private sealed class InMemoryReplicaRepository : IReplicaRepository
     {
         private readonly ConcurrentDictionary<string, ReplicaRecord> _records = new(StringComparer.OrdinalIgnoreCase);

@@ -1101,7 +1101,16 @@ The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Ga
 
 Capability Impact Comparison was retired after being disabled in repository
 settings; its workflow has been removed. Capability Matrix Aggregation and
-OpenAPI Contract Governance retain their generator/contract input filters.
+OpenAPI Contract Governance retain their generator/contract input filters. The
+operation-capability completeness, registry resolution and authored artifact
+checks run in PR Gate's existing architecture job after canonical feature
+catalog regeneration. Capability Matrix Aggregation retains these checks for
+scheduled/manual audits of committed trunk projections. New authored routes
+therefore use the catalog generated from the same head, while missing joins
+and stale authored operation-capability artifacts still fail. No additional
+build, runner or required check is added. Both Server Fast and governance
+jobs already regenerate admin parity exports, including the MCP manifest,
+before the strict Server.Tests projection checks.
 
 GeoArrow and GeoParquet interop run on pull requests only for files whose names
 contain GeoArrow or Parquet (sources, tests, CRS resources, test data), the few
@@ -1331,9 +1340,16 @@ router full-coverage escalation, API failure or a larger bound
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
 before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
-Admitted affected runs use two concurrent server shards. Even matrix indices
-use the `honua-heavy` pool, so a run usually holds one heavy runner and at most
-two; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today.
+Admitted affected runs use two concurrent server shards. All trusted indices
+use the configured `honua-heavy` pool, so a run holds at most two heavy runners;
+side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today. Full server
+matrices retain their 16-job limit. A single pool prevents admitted hosted shards
+waiting for capacity from exhausting that limit while heavy runners remain idle.
+Full run 43709972683 had 13 waiting hosted shards plus three executing shards at
+14:17 UTC on 15 Nov, blocking admission of 58 queued heavy shards. The measured
+heavy runner listen-to-next-job gaps were 579 s, 673 s and 869 s for runners 6, 5
+and 3 respectively. These are before-change observations; live after-change
+measurements remain pending. Fork guards and configured/hosted fallback remain.
 An active PR Gate does not defer or cancel an affected run. With up to ten open
 PRs a PR Gate is almost always active: from 05:52 to 17:02 UTC on 14 Nov 2026 the
 former PR-activity rule admitted 0 of 32 dispatches, leaving trunk with only the
@@ -1620,6 +1636,31 @@ installation-token and compare-and-swap mutation controls.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
 
+## Lightweight workflow routing and compatibility
+
+The lightweight workflow callers use the same fork-guarded `HONUA_LIGHT_RUNNER`
+JSON selector and `ubuntu-latest` fallback as PR Gate control jobs. This includes
+Repository hygiene, Clean code, Runner label lint, Review Gate Attestation,
+Review Event Bridge and OpenAPI drift/governance.
+Reusable workflow pins must include the shared selector support. Each local
+shell job exports `TMPDIR`, `TEMP` and `TMP` from `RUNNER_TEMP` before checkout.
+The variable remains an operator availability switch for newly admitted jobs.
+
+OpenAPI governance admits changes to `scripts/ci/lib/python-resolve.sh`, the
+shared Python resolver sourced by its contract validator. A helper-only change
+therefore runs the consuming PR check under the existing non-draft condition.
+
+Docs Link Gate can run a newer workflow against an older PR head. When that head
+predates both the workflow-inventory generator and its template, it validates the
+existing documentation with the complete link and concept suite. A partial
+inventory generator/template pair or a failing generator remains an error. This
+compatibility path adds no jobs and preserves all documentation assertions.
+
+Older PR bases that lack the retired-cache policy load it from fetched trusted
+trunk. The explicit base/head diff is still checked, head-supplied policy cannot
+replace it, and a missing or incomplete trusted policy fails the required
+hygiene job.
+
 ### Advisory image and CodeQL runner selection
 
 CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
@@ -1821,6 +1862,52 @@ Its one-process test execution fell from 458 to 363 seconds, saving 95 seconds
 376.298 seconds. The other three classes are unchanged. This overlaps the
 class measurement and is not added to it. Complete CI-job setup and build
 duration remain unmeasured.
+
+### OData endpoint read-only host lifetime
+
+`ODataEndpointTests` builds its Pro-licensed, `odata.yaml`-seeded application once
+per class through the `ReadOnlyProHost` class fixture. The read-only GET cases use
+that host's client and schema. The theory that changes the metadata graph and
+inserts a feature still builds, seeds and disposes a private Pro host per case.
+Assertions, endpoint attributes and case counts are unchanged.
+
+Paired build-host runs of the class on trunk 47eb3bc9ba passed the same 65 cases
+with no skips. VSTest execution fell from 16m16s to 48s and the TRX interval from
+977.6 to 73.5 seconds. The build host was heavily loaded, so each private Pro host
+cost about 15 seconds there; full run 43709972683 spent 183 seconds of per-case
+fixture time in this class (2.8 seconds per case), which is the expected CI saving.
+Full CI job savings are unmeasured.
+All cases remain in the OData Core Endpoints shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### OData, OGC classic and STAC collection host lifetime
+
+The OData, OGC classic and STAC test assemblies serialize their database-backed
+classes in a `Database` collection that previously had no definition, so nothing
+held the reference-counted shared default host between cases. Each assembly now
+defines that collection with a collection-scoped default `WebAppFixture`, so
+default-configuration cases reuse the shared host instead of rebuilding it. The
+definition keeps default parallelization, so scheduling is unchanged. Existing
+per-case and per-class fixtures and their schemas are unchanged; classes with
+private configuration keep their hosts. The WMTS advertised-resource case now also
+clears any unconsumed graph activation, which could otherwise reach a later case.
+The collection fixture starts the shared host even when a filter selects only
+private-host classes, which costs one startup in that case.
+
+With this change on trunk 47eb3bc9ba, build-host runs of the three complete
+projects passed every case with no skips: OGC classic 592 (19m15s VSTest), STAC
+149 (5m29s) and OData 512 (36m27s). The OGC classic project without this change did not
+finish within 111 minutes of execution on the same, heavily loaded host, so no
+paired whole-project time is claimed. As an estimate from unpaired data, per-case
+fixture time in the affected default-host classes was 2.1 to 3.5 seconds in full
+run 43709972683 and 0.1 to 0.5 seconds in the build-host run, while private-host
+classes stayed near 3.4 seconds; across those 18 classes that is about 639
+seconds (10.7 runner-minutes) of fixture time per full run. Full CI job savings
+are unmeasured.
+All cases remain in their existing shards on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
 
 ## Review-first report collection retired
 

@@ -9,9 +9,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Unit tests for GeometryConverter service
-/// </summary>
 public class GeometryConverterTests
 {
     private readonly GeometryConverter _converter = new();

@@ -8,37 +8,12 @@ using Honua.TestKit;
 
 namespace Honua.Server.Tests.Features.Certification;
 
-/// <summary>
-/// Keeps <c>certification/cite-protocol-requirements.v1.json</c> honest about which OGC CITE lanes
-/// can actually produce a receipt (honua-server#4425).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The ledger declared <c>serve.ogc-api-records</c> (and EDR, Coverages, Maps, Styles,
-/// SensorThings) as <c>maturity: "supported"</c> with a <c>canonical_client: "OGC CITE"</c>, a
-/// named <c>client_lane</c> and <c>required_tier: "nightly"</c> — while no such workflow, Docker
-/// composition or runner existed. Section 14 of the quality contract requires that public
-/// compliance claims equal the receipts, and a declared lane that does not exist must not be
-/// counted as evidence.
-/// </para>
-/// <para>
-/// The authority for "can this row produce a receipt" is not a hand-maintained list: it is
-/// <c>SUITE_BY_SURFACE</c> in
-/// <c>scripts/conformance/cite/build_protocol_certification_fragment.py</c>, the map the fragment
-/// builder actually consults. A surface missing from it is emitted as a <c>skip</c> with
-/// "No current CITE suite maps truthfully to this governed operation", no matter what compositions
-/// exist on disk. This test parses that map out of the builder and requires the ledger to agree, so
-/// wiring a new lane fails here until the ledger claims it, and dropping one fails here until the
-/// ledger stops.
-/// </para>
-/// </remarks>
 [Trait("Tier", "Fast")]
 public sealed partial class CiteProtocolRequirementsLedgerTests
 {
     private static readonly JsonDocument Ledger = JsonDocument.Parse(
         File.ReadAllBytes(RepositoryPaths.Resolve("certification", "cite-protocol-requirements.v1.json")));
 
-    /// <summary>Surfaces the certification fragment builder can map onto a CITE suite.</summary>
     private static readonly HashSet<string> ExecutableSurfaces = ReadExecutableSurfaces();
 
     private static IEnumerable<JsonElement> CiteRequirements
@@ -115,9 +90,6 @@ public sealed partial class CiteProtocolRequirementsLedgerTests
         }
     }
 
-    /// <summary>
-    /// Parses <c>SUITE_BY_SURFACE = { "surface": "suite", ... }</c> out of the fragment builder.
-    /// </summary>
     private static HashSet<string> ReadExecutableSurfaces()
     {
         var builder = File.ReadAllText(RepositoryPaths.Resolve(

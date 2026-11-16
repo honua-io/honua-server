@@ -15,14 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Two in-process server instances sharing one session store, standing in for
-/// replicas behind a non-sticky router (AWS Lambda; honua-release run
-/// 38099175519, journey stage 1.5, diagnosed in honua-release#531). A session
-/// negotiated on instance A, including its workflow view, must be honoured on
-/// instance B, or refused with HTTP 404, never silently downgraded to the
-/// session-less default view.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpSessionAcrossInstancesTests : IAsyncLifetime

@@ -16,11 +16,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// The control-plane event-handler Lambdas (reconcile, backstop, scheduled tick) release their
-/// pooled database connections at the end of every invocation so a frozen instance holds none
-/// (honua-release e2e-cloud-aws run 38125145738 exhausted the cell's RDS from the tick Lambda).
-/// </summary>
 public sealed class ControlPlaneLambdaConnectionReleaseTests
 {
     private static IConfiguration Configuration(string? handler = null, string? option = null)

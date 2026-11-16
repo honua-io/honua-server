@@ -7,10 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// A catastrophic catalog LIKE times out as <see cref="ImageServerCatalogFilterException"/>,
-/// which the catalog query handler maps to HTTP 400 instead of an unhandled 500.
-/// </summary>
 public sealed class ImageServerCatalogLikeTimeoutTests
 {
     [UnitTest]

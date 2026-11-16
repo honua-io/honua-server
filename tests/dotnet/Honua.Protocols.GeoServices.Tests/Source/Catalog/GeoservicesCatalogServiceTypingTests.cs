@@ -18,15 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
-/// <summary>
-/// Regression tests for honua-server#1853 — the Esri REST Services Directory
-/// (<c>GET /rest/services</c>) must type each service from the Esri protocols it
-/// actually exposes: vector feature services as <c>FeatureServer</c>, raster/coverage
-/// services as <c>ImageServer</c> (or <c>MapServer</c> for rendered-map services),
-/// geoprocessing services as <c>GPServer</c>, and
-/// a service reachable under multiple Esri types once per type — instead of flattening
-/// everything to <c>FeatureServer</c>.
-/// </summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.GeoservicesCatalog)]
 public sealed class GeoservicesCatalogServiceTypingTests

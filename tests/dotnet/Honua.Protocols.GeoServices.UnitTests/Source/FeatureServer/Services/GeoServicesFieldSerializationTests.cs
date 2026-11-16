@@ -20,11 +20,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Esri GeoServices f=json serialization-compatibility regression tests:
-/// (1) esriFieldTypeString fields must report a positive <c>length</c>;
-/// (2) esriFieldTypeDate values must serialize as epoch-millisecond integers (not ISO strings).
-/// </summary>
 public sealed class GeoServicesFieldSerializationTests
 {
     private const int DefaultStringLength = 256;

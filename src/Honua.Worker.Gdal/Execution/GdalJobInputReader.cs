@@ -258,7 +258,7 @@ internal static class GdalJobInputReader
         }
 
         // Refuse a content-sniffed VRT/XML indirection blob or an embedded /vsi
-        // reference before it is ever materialized and opened by GDAL (#2765).
+        // reference before it is ever materialized and opened by GDAL.
         if (!GdalUntrustedInputGuard.IsAdmissible(bytes, out var guardReason))
         {
             error = $"input '{name}' rejected: {guardReason}";

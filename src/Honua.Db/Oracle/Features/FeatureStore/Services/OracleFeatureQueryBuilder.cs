@@ -444,7 +444,7 @@ internal static partial class OracleFeatureQueryBuilder
                 $"SDO_RELATE(SDO_GEOM.SDO_MBR({geomCol}), {filterExpr}, 'mask=ANYINTERACT') = 'TRUE'",
             // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
             // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
-            // filter geometry to match the canonical PostGIS reference (#2068). SDO_RELATE masks
+            // filter geometry to match the canonical PostGIS reference. SDO_RELATE masks
             // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
             // the filter geometry must be the first operand. Reversing inverts the relationship and
             // returns the wrong (typically empty) result set.

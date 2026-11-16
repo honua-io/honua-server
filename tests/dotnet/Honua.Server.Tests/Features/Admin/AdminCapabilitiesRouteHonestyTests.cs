@@ -13,13 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Capability-honesty guard (#2807): every manifest feature flag advertised by
-/// <c>GET /api/v1/admin/capabilities</c> must correspond to whether a matching route is actually
-/// registered in the deployed <see cref="EndpointDataSource"/>. This prevents recurrence of the
-/// defect where the handshake advertised removed manifest apply/dry-run/prune endpoints (deleted in
-/// the #1035 cutover), which would send SDKs that branch on the flags into a 404.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
@@ -31,12 +24,6 @@ public sealed class AdminCapabilitiesRouteHonestyTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// Maps each advertised manifest capability flag to a predicate that reports whether a
-    /// route implementing it is actually registered. The advertised value must equal the
-    /// route-existence reality in both directions: advertise <c>true</c> only when the route
-    /// exists, and if the route is (re)introduced the flag must be flipped to match.
-    /// </summary>
     private static readonly IReadOnlyDictionary<string, Func<HashSet<string>, bool>> _manifestFlagRouteMatchers =
         new Dictionary<string, Func<HashSet<string>, bool>>(StringComparer.Ordinal)
         {

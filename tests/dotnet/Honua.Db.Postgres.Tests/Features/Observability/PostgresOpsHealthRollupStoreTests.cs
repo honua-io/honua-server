@@ -13,11 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Observability;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresOpsHealthRollupStore"/> (#2553): the write/upsert,
-/// downsample, prune, and read paths against an isolated per-test schema mirroring migrations 077
-/// and 085.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
 {

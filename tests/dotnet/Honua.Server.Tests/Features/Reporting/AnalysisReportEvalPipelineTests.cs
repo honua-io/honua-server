@@ -11,15 +11,6 @@ using Honua.TestKit.Eval;
 
 namespace Honua.Server.Tests.Features.Reporting;
 
-/// <summary>
-/// Covers the "#734 eval harness consumes this pipeline" acceptance criterion.
-/// Uses the same scenario the end-to-end harness loads
-/// (<c>analysis-buffer-places</c>) and asserts that a result package matching
-/// its expected artifact shape round-trips through the reporting pipeline.
-/// The existing eval runner explicitly skips <c>GetJobResult</c> pending the
-/// execution engine; this test is the thin-slice replacement that gates the
-/// reporting pipeline against the scenario contract until that stage is wired.
-/// </summary>
 [Protocol(TestProtocols.OperatorEval)]
 public sealed class AnalysisReportEvalPipelineTests
 {

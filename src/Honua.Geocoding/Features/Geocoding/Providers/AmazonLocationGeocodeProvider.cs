@@ -53,7 +53,7 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         SupportsReverseGeocode: true,
         SupportsSuggest: true,
         SupportsBatch: false, // AWS Location Service doesn't have native batch support
-        SupportsStructuredInput: true, // Mapped: AWS Location v1 has no structured fields, so structured components are composed into the Text query (#2149)
+        SupportsStructuredInput: true, // Mapped: AWS Location v1 has no structured fields, so structured components are composed into the Text query
         SupportsBiasing: true)
     {
         SupportedSpatialReferences = [4326], // AWS Location returns WGS84 coordinates
@@ -89,7 +89,7 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
         {
             // AWS Location v1 SearchPlaceIndexForText accepts only a single Text field, so structured
             // components are composed into a normalized, comma-delimited query (graceful mapping)
-            // rather than dropped or producing a malformed request (#2149).
+            // rather than dropped or producing a malformed request.
             var searchText = ComposeStructuredText(request.StructuredAddress) ?? request.Query;
 
             var searchRequest = new SearchPlaceIndexForTextRequest
@@ -110,7 +110,7 @@ internal sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDisp
 
             // Add a bias position. An explicit proximity-bias location wins; otherwise fall back
             // to the centre of the search bounds. Amazon Location weights nearby results higher
-            // when BiasPosition is supplied (proximity bias, #2148).
+            // when BiasPosition is supplied.
             if (request.BiasLocation != null)
             {
                 searchRequest.BiasPosition = [request.BiasLocation.X, request.BiasLocation.Y];

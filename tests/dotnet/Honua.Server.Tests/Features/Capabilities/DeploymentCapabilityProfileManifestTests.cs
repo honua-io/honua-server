@@ -19,10 +19,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-/// <summary>
-/// A configured deployment profile removes routes and must not still advertise those
-/// capabilities as available (honua-server#4545).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]

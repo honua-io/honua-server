@@ -16,9 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// SRV-OGC-013: gRPC elevation refuses a layer whose service does not enable Elevation.
-/// </summary>
 public sealed class ElevationAccessGuardTests
 {
     [UnitTest]

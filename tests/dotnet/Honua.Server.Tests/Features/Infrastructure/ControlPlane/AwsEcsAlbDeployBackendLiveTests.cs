@@ -9,14 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Live validation that exercises the AWS ECS/ALB deploy backend against a real
-/// AWS environment provisioned by Terraform. Each test requires the full set of
-/// HONUA_LIVE_ECS_ALB_* environment variables; missing values cause the test to
-/// skip rather than fail. The active path runs the production
-/// <see cref="AwsSdkAlbClient"/> and <see cref="AwsSdkEcsClient"/> against the
-/// configured cluster, listener rule, target groups, and task definition.
-/// </summary>
 public sealed class AwsEcsAlbDeployBackendLiveTests
 {
     private const string RegionEnv = "HONUA_LIVE_ECS_ALB_REGION";

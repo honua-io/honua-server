@@ -18,7 +18,7 @@ database.
 
 **Deploying to a cloud account instead?** That path is
 [honua-iac](https://github.com/honua-io/honua-iac) — public Terraform modules for
-ECS/Fargate, Lambda, Azure Container Apps, Azure Functions, EKS and AKS. See
+ECS/Fargate, Lambda, EKS and AKS. See
 [Deploy on AWS and Azure](cloud-deployments.md) to pick a pattern, then
 [the operator deployment guide](https://github.com/honua-io/honua-iac/blob/trunk/docs/operator-deployment.md) to stand it up.
 Nothing below applies to those; they do not use Compose.

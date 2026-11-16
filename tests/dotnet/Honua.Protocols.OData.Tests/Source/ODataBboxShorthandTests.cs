@@ -11,11 +11,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Verifies the OData <c>bbox</c> spatial shorthand maps to a canonical envelope spatial
-/// filter so viewport windowing does not require a verbose geo.intersects WKT polygon
-/// (issue #1621). Cities reference odata.yaml seed coordinates.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataBboxShorthandTests : IAsyncLifetime

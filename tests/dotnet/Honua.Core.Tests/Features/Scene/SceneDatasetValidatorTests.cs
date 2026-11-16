@@ -7,10 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene;
 
-/// <summary>
-/// Unit tests covering the pure shape/syntax validators used during scene
-/// dataset registration.
-/// </summary>
 public class SceneDatasetValidatorTests
 {
     [Trait("Tier", "Fast")]

@@ -108,6 +108,17 @@ internal sealed class ManualTimeProvider : TimeProvider
         return timer;
     }
 
+    public int WaitingTimers
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _timers.Count;
+            }
+        }
+    }
+
     public async Task TimerIsWaiting()
     {
         Task created;

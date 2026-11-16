@@ -10,11 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Temporal;
 
-/// <summary>
-/// Unit tests for the progress-store-backed job status of <see cref="InProcessTemporalCorrectiveJobSink"/>
-/// (honua-server#1593): the returned job id resolves to Queued/Processing/terminal states, and terminal
-/// transitions use compare-and-set so they never clobber a terminal state another writer recorded.
-/// </summary>
 public sealed class InProcessTemporalCorrectiveJobSinkTests
 {
     private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(10);
@@ -127,10 +122,6 @@ public sealed class InProcessTemporalCorrectiveJobSinkTests
         throw new TimeoutException($"Job '{jobId}' did not reach status '{status}' within {WaitTimeout}.");
     }
 
-    /// <summary>
-    /// In-memory <see cref="IUniversalProgressStore"/> with atomic compare-and-set that records the first
-    /// rejected conditional write so tests can await the sink's conflict handling deterministically.
-    /// </summary>
     private sealed class RecordingProgressStore : IUniversalProgressStore
     {
         private readonly ConcurrentDictionary<string, IOperationProgress> _entries = new(StringComparer.Ordinal);

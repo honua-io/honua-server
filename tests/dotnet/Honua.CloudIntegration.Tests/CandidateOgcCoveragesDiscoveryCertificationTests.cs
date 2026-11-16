@@ -12,29 +12,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Exact-candidate replay of OGC API Coverages discovery identity (honua-server#4564). Boots the published
-/// server image named by <c>HONUA_CANDIDATE_IMAGE</c> in <c>Production</c> against a real PostGIS, registers
-/// one public and one protected raster layer in the V1 catalog, and serves them through the server's own
-/// canonical V1-to-Metadata-v2 compilation. That compilation emits a feature resource
-/// (<c>res-layer-N</c>) and a raster resource (<c>res-image-layer-N</c>) sharing storage layer <c>N</c>, each
-/// on a service that enables OGC API Coverages: the shape that made discovery advertise <c>2400</c> twice.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The expected identities are fixed by the fixture, not read back from the server: anonymous discovery lists
-/// exactly <c>2400</c>, an administrator sees <c>2400</c> and <c>2401</c> once each, every advertised self
-/// link resolves to the same identity and title, and the protected collection and its coverage answer 401
-/// anonymously and 200 with the administrator key.
-/// </para>
-/// <para>
-/// Run it with <c>HONUA_CANDIDATE_IMAGE</c> set to the manifest-pinned image; it <c>[SkippableFact]</c>-skips
-/// without it or without Docker. Pointing it at an image built before #4567 (for example
-/// <c>ghcr.io/honua-io/honua-server:nightly-aot-9f855c0</c>) fails the unique-identity assertion, which is
-/// the negative control for the replay. A JSON receipt is written to <c>HONUA_CANDIDATE_RECEIPT_DIR</c> when
-/// it is set, and to the test output otherwise.
-/// </para>
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
 public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
 {
@@ -50,10 +27,6 @@ public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
     private const string PublicTitle = "Public Gradient";
     private const string ProtectedTitle = "Protected Gradient";
 
-    /// <summary>
-    /// V1 catalog rows only; no Metadata v2 snapshot is written, so the server serves its own compilation of
-    /// this catalog. Both layers share the <c>features</c> table and carry a 4x4 two-band Float32 raster.
-    /// </summary>
     private const string V1CatalogFixtureSql =
         """
         INSERT INTO honua.services (service_name, description, srid, supported_formats, capabilities, service_extent, metadata)
@@ -230,10 +203,6 @@ public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
         }
     }
 
-    /// <summary>
-    /// Asserts discovery lists exactly <paramref name="expected"/> once each and that every advertised self link
-    /// resolves to the same identity and title. Returns the advertised identifiers in response order.
-    /// </summary>
     private static async Task<string[]> AssertDiscoveryAsync(HttpClient client, string baseUrl, IReadOnlyDictionary<string, string> expected)
     {
         using var document = await GetJsonAsync(client, $"{baseUrl}/ogc/coverages/collections", HttpStatusCode.OK);

@@ -58,7 +58,10 @@ internal sealed record DiscoveryMetadataTarget(
     private static DiscoveryPublicationImpact[] Impact(MetadataV2GraphSnapshot snapshot,
         IEnumerable<MetadataV2Layer> publications) => publications.Select(publication => new DiscoveryPublicationImpact(
             publication.Metadata.Id, snapshot.Index.ServicesById[publication.ServiceId].Metadata.Name,
-            ReadPublicationIdentifier(publication))).ToArray();
+            ReadPublicationIdentifier(publication))
+        {
+            PreviewStorageLayerId = snapshot.IsRoutable(publication) ? snapshot.ResolveStorageLayerId(publication) : null
+        }).ToArray();
 
     private static string ReadPublicationIdentifier(MetadataV2Layer publication)
     {

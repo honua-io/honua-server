@@ -11,13 +11,8 @@ namespace Honua.Migration;
 // All worker writes must participate in the same conditional transitions as
 // cancellation. A separate read before an unconditional write loses cancellation.
 internal sealed class GeoServerImportProgressStore(IUniversalProgressStore store)
-    : IDistributedProgressStore<GeoServerImportProgress>, IProgressStoreRecovery
+    : IDistributedProgressStore<GeoServerImportProgress>
 {
-    public Task ProbeRecoveryAsync(CancellationToken cancellationToken = default)
-        => store is IProgressStoreRecovery recovery
-            ? recovery.ProbeRecoveryAsync(cancellationToken)
-            : Task.CompletedTask;
-
     public async Task SetProgressAsync(string jobId, GeoServerImportProgress progress,
         TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {

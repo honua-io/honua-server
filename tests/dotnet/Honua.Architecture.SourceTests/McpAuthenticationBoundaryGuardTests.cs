@@ -6,43 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Architecture guard for the MCP control-plane authority boundary (#3430).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Two invariants are load-bearing for the 2026.1 terminal gate and both are
-/// invisible to ordinary behavioural tests once they regress silently:
-/// </para>
-/// <list type="number">
-/// <item>
-/// <description>
-/// A presented <c>/mcp</c> bearer credential is validated — and an invalid one
-/// rejected — before tenant resolution, tenant schema routing, tenant status
-/// enforcement, and the shared rate limiter observe the request. Moving
-/// <c>UseMcpBearerAuthentication</c> behind <c>UseHonuaTenantContext</c> again
-/// re-opens the split security context described in the issue: a valid OAuth
-/// call executing against a default/null tenant.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// A live MCP session is keyed by the framework-owned canonical actor
-/// (issuer-qualified OIDC subject, or the immutable API-key id), the effective
-/// tenant, the OAuth scope ceiling, and a one-way fingerprint of the exact
-/// validated credential. Dropping any of those components lets the same
-/// <c>sub</c> from two issuers, or the same actor in two tenants, resume, read,
-/// or terminate each other's sessions.
-/// </description>
-/// </item>
-/// </list>
-/// <para>
-/// These are source-shape guards rather than behavioural assertions on purpose:
-/// the behaviour is already covered by the MCP bearer/session suites, and what
-/// this test adds is a fail-loud tripwire on the <em>structure</em> those suites
-/// depend on. A deliberate change here must update the guard and say why.
-/// </para>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class McpAuthenticationBoundaryGuardTests
 {

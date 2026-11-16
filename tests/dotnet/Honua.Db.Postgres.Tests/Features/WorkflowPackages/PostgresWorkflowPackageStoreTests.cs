@@ -14,10 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.WorkflowPackages;
 
-/// <summary>
-/// Drives <see cref="PostgresWorkflowPackageStore"/> against PostGIS. A second store
-/// instance is a peer; a third, created after the writer is dropped, is a restart.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresWorkflowPackageStoreTests(PostgresFixture fixture)
 {

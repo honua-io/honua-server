@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Whitelist checks reject undefined numeric enum values that
-/// <c>JsonStringEnumConverter</c> would otherwise admit during deserialization.
-/// </summary>
 public class ConsoleEnumParserTests
 {
     [UnitTest]

@@ -10,11 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Opt-in deployed-environment proof for the evidence-posture outage gate (#3475). The harness owns
-/// the two control URLs; Honua never exposes a production outage-control route. Both controls must be
-/// idempotent and return success only after the selected telemetry backend reaches the requested state.
-/// </summary>
 public sealed class EvidencePostureLiveTests
 {
     private const string BaseUrlEnv = "HONUA_LIVE_EVIDENCE_BASE_URL";
