@@ -25,7 +25,7 @@ internal sealed record FeatureLockMutationRequest
     public int LeaseSeconds { get; init; } = 120;
 
     // Canonical form on the way in, so a lease claimed with the URL casing the caller
-    // happened to use still matches the key every write path evaluates (#4402).
+    // happened to use still matches the key every write path evaluates.
     public FeatureRef ToFeatureRef() => FeatureRef.Canonical(ServiceName, LayerId, FeatureId);
 
     public LockHolder ToHolder(ClaimsPrincipal? principal) =>

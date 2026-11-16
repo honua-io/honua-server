@@ -88,7 +88,7 @@ internal static partial class OgcProcessesLog
     [LoggerMessage(8170, LogLevel.Warning, "OGC Processes execution rejected by admission: Outcome={Outcome}, Dimension={Dimension}, Policy={PolicyRef}")]
     public static partial void ExecutionRejectedByAdmission(ILogger logger, string outcome, string dimension, string policyRef);
 
-    // 8180-8189: Staged output artifacts (#3089)
+    // 8180-8189: Staged output artifacts
     [LoggerMessage(8180, LogLevel.Warning, "OGC Processes staged artifact store unavailable for job {JobId}, artifact index {ArtifactIndex}")]
     public static partial void ArtifactStoreUnavailable(ILogger logger, string jobId, int artifactIndex);
 }

@@ -19,5 +19,7 @@ public static class SceneGenerationErrorCodes
 
     public const string SceneRegistrationConflict = "SCENE_REGISTRATION_CONFLICT";
 
+    public const string OutputUnwritable = "SCENE_OUTPUT_UNWRITABLE";
+
     public const string OptionsInvalid = "SCENE_OPTIONS_INVALID";
 }

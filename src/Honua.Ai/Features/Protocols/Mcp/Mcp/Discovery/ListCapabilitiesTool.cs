@@ -83,7 +83,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         var surface = httpContext.RequestServices.GetService<McpDataAccessSurface>();
         if (surface is not null)
         {
-            // The unified capability registry (ADR-0058 B2, #2334) is the source of
+            // The unified capability registry (ADR-0058 B2) is the source of
             // truth for the /mcp catalog roster: when present it governs which
             // tools/resources are advertised, while the live handlers still supply
             // the LLM-grade descriptions and read/write hints the wire carries. A
@@ -105,7 +105,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
             output.NextToolCursor = nextToolCursor;
             output.ToolCount = output.Tools.Count;
 
-            // honua-server#3428: advertise the server-authored workflow discovery
+            // Advertise the server-authored workflow discovery
             // views alongside the full catalog, projected from the same live
             // roster. This is the discovery half of the negotiation contract — the
             // client learns the view names, revisions, and digests from the server
@@ -196,7 +196,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
             // so in a conformant host this filter drops nothing. A tool projected
             // from the canonical operation catalog is bound through its operation
             // descriptor (the same rule McpRegistryCompositionValidator applies), so
-            // the published set is reported rather than silently dropped (#3363).
+            // the published set is reported rather than silently dropped.
             if (registryToolNames is not null
                 && !registryToolNames.Contains(tool.Name)
                 && tool is not PublishedOperationTool)

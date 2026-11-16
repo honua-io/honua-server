@@ -94,7 +94,7 @@ internal sealed class ClientCredentialsFederationService(
         }
         catch (JsonException)
         {
-            // A 2xx body that is not a token document is a federation miss (#6166).
+            // A 2xx body that is not a token document is a federation miss.
             return null;
         }
         catch (HttpRequestException)

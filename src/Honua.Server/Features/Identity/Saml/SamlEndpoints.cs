@@ -36,7 +36,7 @@ internal static partial class SamlEndpoints
             .WithTags("Identity", "SAML")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .AllowAnonymous()
-            // #2978: SAML SP authentication is an Enterprise entitlement (FeatureCatalog
+            // SAML SP authentication is an Enterprise entitlement (FeatureCatalog
             // .SamlAuthenticationKey; ADR-0024 Identity Governance tier). Gated at the group
             // so /metadata is covered too — an unlicensed deployment must not advertise an
             // SSO surface it cannot serve.

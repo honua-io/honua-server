@@ -160,7 +160,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
 
         // Esri spec: the field definitions for the returned attributes are carried
         // once at the response top level. Build them from the related layer schema
-        // using the same field projection the main query response uses (#1431).
+        // using the same field projection the main query response uses.
         var relatedFields = QueryFormatter.BuildQueryFields(
             relatedResource,
             outFields.HasValue && outFields.Value.Length > 0 ? outFields.Value.ToArray() : null,

@@ -44,7 +44,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
     private readonly ILogger<OgcFeaturesCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const string OgcFeaturesProtocolName = "OgcFeatures";
 
-    // Open-protocol feature mutations are Community (#1591): no entitlement gate here. The
+    // Open-protocol feature mutations are Community: no entitlement gate here. The
     // Pro editing gate applies only to the Esri GeoServices FeatureServer write surface.
 
     public async Task<IResult> HandleCreateFeatureAsync(
@@ -259,7 +259,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var objectId = resolvedFeature.Value.ObjectId;
             var existing = resolvedFeature.Value.Feature;
 
-            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // Collaborative-editing lease enforcement: a feature another editor
             // holds a lease on cannot be deleted out from under them, on this surface as
             // much as on GeoServices applyEdits.
             if (await OgcFeatureLockGuard.RejectIfLockedAsync(

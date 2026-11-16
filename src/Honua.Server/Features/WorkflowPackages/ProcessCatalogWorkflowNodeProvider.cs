@@ -25,7 +25,7 @@ internal sealed class ProcessCatalogWorkflowNodeProvider(IProcessCatalog process
         // Advertise a process as a graph node ONLY on the workflow entry point it declares.
         // Protocol-only operations reach their owning synchronous endpoint and have no
         // dispatcher executor, so offering them to a graph author advertises a node that
-        // can never run (#4409).
+        // can never run.
         var nodes = processCatalog
             .ListProcesses()
             .Where(ProcessExecutionCapabilityCatalog.IsWorkflowComposable)

@@ -60,7 +60,7 @@ internal static class CollaborationCheckpointEndpoints
         // save path writes to, and that path caps the field at
         // SaveStudioContentVersionRequest.ChangeNote's [StringLength(1000)]. Enforcing the
         // identical bound here keeps this from being an alternate admission route that places
-        // request-sized notes in immutable storage (honua-server#2999 review). Checked before
+        // request-sized notes in immutable storage. Checked before
         // any draft read or mutation so an oversized note costs nothing.
         if (request.ChangeNote is { Length: > MaxChangeNoteLength })
         {
@@ -84,8 +84,8 @@ internal static class CollaborationCheckpointEndpoints
         // A distributed deployment routes an append and its checkpoint to arbitrary nodes, but
         // a process-local op log only replays operations accepted by THIS node — a replay here
         // could silently omit accepted edits and mint an incomplete immutable version. Fail
-        // closed with an honest error until the op log is backed by a replica-shared store
-        // (honua-server#2999); do not fake durability.
+        // closed with an honest error until the op log is backed by a replica-shared store;
+        // do not fake durability.
         if (!operationLog.CanProveReplayContinuity)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
@@ -99,8 +99,8 @@ internal static class CollaborationCheckpointEndpoints
         // prove it observed every accepted edit. A process-local log loses acknowledged
         // operations on restart and a post-restart replay is indistinguishable from a session
         // that never appended anything — the checkpoint would return 201 for a version that
-        // silently drops those edits. Refuse honestly instead of faking durability
-        // (honua-server#2999 review). Live co-editing itself stays available: appends and the
+        // silently drops those edits. Refuse honestly instead of faking durability.
+        // Live co-editing itself stays available: appends and the
         // stream are explicitly resumable and tell a reconnecting client to resync.
         if (!operationLog.CanProveRestartContinuity)
         {
@@ -278,7 +278,7 @@ internal static class CollaborationCheckpointEndpoints
             // otherwise be versioned instead — and because MarkCheckpointed still advanced the
             // cursor below, the replayed operations would be permanently skipped by every later
             // checkpoint. Failing closed here leaves the cursor unadvanced, so a retry replays the
-            // same operations onto the current draft (honua-server#2999 review).
+            // same operations onto the current draft.
             var version = await lifecycle.SaveDraftAsCheckpointVersionAsync(
                     draftId,
                     BuildChangeNote(request.ChangeNote, supersededOperation),
