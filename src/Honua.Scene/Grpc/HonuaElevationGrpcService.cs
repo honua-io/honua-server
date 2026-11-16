@@ -94,8 +94,8 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
 
         try
         {
-            // layer_id is authoritative; request.DatasetId is advisory/echo-only
-            // (see the class remarks) and is deliberately not used to resolve.
+            // Intentional divergence: the elevation service is keyed by layer index, so layer_id
+            // is authoritative; request.DatasetId is echo-only and is not used to resolve.
             var result = await _elevationService
                 .QueryPointAsync(request.LayerId, x, y, srid, mergeStrategy, context.CancellationToken)
                 .ConfigureAwait(false);
@@ -166,8 +166,8 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
 
         try
         {
-            // layer_id is authoritative; request.DatasetId is advisory/echo-only
-            // (see the class remarks) and is deliberately not used to resolve.
+            // Intentional divergence: the elevation service is keyed by layer index, so layer_id
+            // is authoritative; request.DatasetId is echo-only and is not used to resolve.
             var result = await _elevationService
                 .QueryProfileAsync(request.LayerId, ElevationProfileWkb.Write(lineString), srid, samplingOptions, mergeStrategy, context.CancellationToken)
                 .ConfigureAwait(false);

@@ -32,7 +32,7 @@ public sealed class LibraryProjectXmlDocTests
     ];
 
     [ArchitectureTest]
-    public void LibraryProjects_HaveNoXmlDocComments()
+    public void SourceFiles_UnderLibraryRoots_HaveNoXmlDocComments()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var offending = XmlDocFreeRoots
