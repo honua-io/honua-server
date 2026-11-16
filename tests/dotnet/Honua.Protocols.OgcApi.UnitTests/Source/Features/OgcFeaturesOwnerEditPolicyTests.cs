@@ -375,7 +375,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         {
             QueryCount++;
-            if (query.OutFields.SequenceEqual(["owner"]))
+            if (query.OutFields is { } fields && fields.SequenceEqual(["owner"]))
             {
                 OwnerQueryCount++;
             }
