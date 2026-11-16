@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
 using System.Text;
@@ -41,7 +41,7 @@ public sealed class LocalProcessWorkspaceGatewayTests
         using var handler = new Handler(_ => throw new InvalidOperationException("Must not send."));
         using var client = new HttpClient(handler);
         await Assert.ThrowsAsync<LocalProcessWorkspaceException>(() =>
-            Create(client).BindAsync(Access with { ActorId = "human" }, "project", CancellationToken.None));
+            Create(client).BindProjectAsync(Access with { ActorId = "human" }, "project", CancellationToken.None));
         Assert.Equal(0, handler.Calls);
     }
 

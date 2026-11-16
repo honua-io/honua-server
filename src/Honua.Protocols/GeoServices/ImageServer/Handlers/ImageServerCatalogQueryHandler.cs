@@ -203,23 +203,23 @@ internal sealed class ImageServerCatalogQueryHandler
         query = new ImageServerCatalogQuery();
         error = null;
 
-        var format = GetString(values, "f");
+        var format = ImageServerRequestValues.GetString(values, "f");
         if (!IsSupportedFormat(format))
         {
             error = "Only JSON format is supported. Use f=json or f=pjson.";
             return false;
         }
 
-        var where = GetString(values, "where");
+        var where = ImageServerRequestValues.GetString(values, "where");
         if (where is { Length: > 2000 })
         {
             error = "where clause exceeds the maximum length of 2000 characters.";
             return false;
         }
 
-        var objectIds = ParseObjectIds(GetString(values, "objectIds"));
+        var objectIds = ParseObjectIds(ImageServerRequestValues.GetString(values, "objectIds"));
 
-        var outSr = GetString(values, "outSR");
+        var outSr = ImageServerRequestValues.GetString(values, "outSR");
         int? outputSrid = null;
         if (!string.IsNullOrWhiteSpace(outSr))
         {
@@ -231,7 +231,7 @@ internal sealed class ImageServerCatalogQueryHandler
             }
         }
 
-        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var time, out var timeStart, out var timeError))
+        if (!ImageServerMosaicHelpers.TryParseTime(ImageServerRequestValues.GetString(values, "time"), out var time, out var timeStart, out var timeError))
         {
             error = timeError;
             return false;
@@ -242,7 +242,7 @@ internal sealed class ImageServerCatalogQueryHandler
             return false;
         }
 
-        if (!TryParseInt(GetString(values, "resultOffset"), out var offset, defaultValue: 0))
+        if (!TryParseInt(ImageServerRequestValues.GetString(values, "resultOffset"), out var offset, defaultValue: 0))
         {
             error = "resultOffset must be a non-negative integer.";
             return false;
@@ -253,7 +253,7 @@ internal sealed class ImageServerCatalogQueryHandler
             return false;
         }
 
-        if (!TryParseInt(GetString(values, "resultRecordCount"), out var limit, defaultValue: DefaultRecordCount))
+        if (!TryParseInt(ImageServerRequestValues.GetString(values, "resultRecordCount"), out var limit, defaultValue: DefaultRecordCount))
         {
             error = "resultRecordCount must be a positive integer.";
             return false;
@@ -269,17 +269,17 @@ internal sealed class ImageServerCatalogQueryHandler
             limit = MaxRecordCount;
         }
 
-        var returnGeometry = ParseBool(GetString(values, "returnGeometry"), defaultValue: true);
-        var returnIdsOnly = ParseBool(GetString(values, "returnIdsOnly"), defaultValue: false);
-        var returnCountOnly = ParseBool(GetString(values, "returnCountOnly"), defaultValue: false);
-        var returnExtentOnly = ParseBool(GetString(values, "returnExtentOnly"), defaultValue: false);
+        var returnGeometry = ParseBool(ImageServerRequestValues.GetString(values, "returnGeometry"), defaultValue: true);
+        var returnIdsOnly = ParseBool(ImageServerRequestValues.GetString(values, "returnIdsOnly"), defaultValue: false);
+        var returnCountOnly = ParseBool(ImageServerRequestValues.GetString(values, "returnCountOnly"), defaultValue: false);
+        var returnExtentOnly = ParseBool(ImageServerRequestValues.GetString(values, "returnExtentOnly"), defaultValue: false);
 
-        if (!TryParseOrderByFields(GetString(values, "orderByFields"), out var orderBy, out error))
+        if (!TryParseOrderByFields(ImageServerRequestValues.GetString(values, "orderByFields"), out var orderBy, out error))
         {
             return false;
         }
 
-        if (!TryParseOutFields(GetString(values, "outFields"), out var outFields, out error))
+        if (!TryParseOutFields(ImageServerRequestValues.GetString(values, "outFields"), out var outFields, out error))
         {
             return false;
         }
@@ -313,21 +313,21 @@ internal sealed class ImageServerCatalogQueryHandler
         spatialFilter = null;
         error = null;
 
-        var geometry = GetString(values, "geometry");
+        var geometry = ImageServerRequestValues.GetString(values, "geometry");
         if (string.IsNullOrWhiteSpace(geometry))
         {
             // geometryType/inSR/spatialRel without a geometry are no-ops, mirroring ArcGIS.
             return true;
         }
 
-        var geometryType = GetString(values, "geometryType");
+        var geometryType = ImageServerRequestValues.GetString(values, "geometryType");
         if (!string.IsNullOrWhiteSpace(geometryType) && !IsSupportedSpatialFilterGeometryType(geometryType))
         {
             error = $"Unsupported geometryType '{geometryType}'. Supported: esriGeometryEnvelope, esriGeometryPolygon, esriGeometryPoint, esriGeometryMultipoint, esriGeometryPolyline.";
             return false;
         }
 
-        var spatialRelRaw = GetString(values, "spatialRel");
+        var spatialRelRaw = ImageServerRequestValues.GetString(values, "spatialRel");
         if (!IsSupportedSpatialRelationship(spatialRelRaw, out var spatialRelError))
         {
             error = spatialRelError;
@@ -341,7 +341,7 @@ internal sealed class ImageServerCatalogQueryHandler
             return false;
         }
 
-        var inSrRaw = GetString(values, "inSR");
+        var inSrRaw = ImageServerRequestValues.GetString(values, "inSR");
         int? inSrid = null;
         if (!string.IsNullOrWhiteSpace(inSrRaw))
         {
@@ -824,7 +824,4 @@ internal sealed class ImageServerCatalogQueryHandler
         return value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
                value.Equals("1", StringComparison.OrdinalIgnoreCase);
     }
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 }

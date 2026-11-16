@@ -455,6 +455,8 @@ none GET /api/scenes/{sceneId}
 # UNVERIFIED src/Honua.Protocols/Scene/SceneDiscoveryEndpoints.cs - no access check; protected and (with includeDisabled) inactive scenes are listed to anonymous callers
 none GET /api/scenes/{sceneId}/resolve
 none GET /api/styles/{publicationId}.json
+none GET /api/v1/publications/{publicationId}/current.json
+none GET /api/v1/publications/{publicationId}/{version}/{fileName}
 none GET /api/v1/rasters/cog/{*artifactId}
 none GET /api/v1/tiles/pmtiles/{*artifactId}
 none GET /api/v{version:apiVersion}/datacubes/{layerId:int}/tiles/{tileMatrixSetId}/{z:int}/{x:int}/{y:int}
@@ -744,6 +746,8 @@ none GET /tiles/{layerId:int}/h3/{z:int}/{x:int}/{y:int}.mvt
 none GET /tiles/{layerId:int}/tile.json
 none GET /tiles/{layerId:int}/{z:int}/{x:int}/{y:int}.mvt
 none GET /wfs
+none HEAD /api/v1/publications/{publicationId}/current.json
+none HEAD /api/v1/publications/{publicationId}/{version}/{fileName}
 none HEAD /api/v1/rasters/cog/{*artifactId}
 none HEAD /api/v1/tiles/pmtiles/{*artifactId}
 none HEAD /scenes/{sceneId}/tileset.json

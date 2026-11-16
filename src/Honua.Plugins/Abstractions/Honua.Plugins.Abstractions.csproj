@@ -17,7 +17,7 @@
     <None Include="..\..\..\README.md" Pack="true" PackagePath="\" />
 
     <!--
-      Public, AOT-safe plugin SDK contract surface (issue #347). Third-party plugin
+      Public, AOT-safe plugin SDK contract surface. Third-party plugin
       authors reference THIS assembly only. Keep it dependency-minimal: it references
       Honua.Core.Abstractions purely for the canonical Feature type and takes no
       dependency on the heavy data-layer/host assemblies.

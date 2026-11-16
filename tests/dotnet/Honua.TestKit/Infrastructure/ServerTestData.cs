@@ -13,7 +13,15 @@ namespace Honua.TestKit.Infrastructure;
 public static class ServerTestData
 {
     private static readonly string[] _fixtureAttachmentMigrations =
-        ["002_CreateAttachmentsTable.sql", "125_AddImportedAttachmentIdentity.sql"];
+    [
+        "002_CreateAttachmentsTable.sql",
+        "125_AddImportedAttachmentIdentity.sql",
+        "181_CreateAttachmentUploadSessions.sql",
+        "182_CreateAttachmentNativeMetadata.sql",
+        "204_CreateAttachmentUploadCleanupLedger.sql",
+        "205_AddAttachmentPublicationScope.sql",
+        "206_CreateAttachmentCleanupRetries.sql",
+    ];
 
     private static readonly string[] _rasterSchemaMigrations =
     [

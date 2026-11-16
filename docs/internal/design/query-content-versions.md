@@ -55,7 +55,7 @@ honest "version history isn't available on this server yet" state — it is not 
 | Domain model | `AnalysisContentItem` / `AnalysisContentVersion` / `SavedQueryContent` · `…/Domain/AnalysisContentContracts.cs` | Wire payloads verbatim |
 | Postgres + in-memory stores | `PostgresAnalysisContentStore`, `InMemoryAnalysisContentStore` | No store change required for the list endpoint |
 | Endpoint group | `AnalysisContentEndpoints.MapAnalysisContentEndpoints` · `Honua.Ai/Features/AnalysisContent` | Add the `GET …/versions` (and `…/diff`) routes alongside the existing ones |
-| Service seam | `IAnalysisContentService` (`AnalysisContentService.cs`) | Add `ListVersionsAsync` + (optional) `DiffVersionsAsync` passthroughs |
+| Service seam | `AnalysisContentService` (`AnalysisContentService.cs`) | Add `ListVersionsAsync` + (optional) `DiffVersionsAsync` passthroughs |
 | JSON source-gen | `AnalysisContentApiJsonContext` | Add the new list/diff response DTOs |
 | Error mapping | `TryMapException` in `AnalysisContentEndpoints` (maps validation→400, not-found→404, conflict→409, store-unavailable→503) | Reuse unchanged |
 | Field-validation errors | `FieldValidationError` + `ProblemDetailsHelpers.CreateValidationProblem` | Reuse for bad version refs |
@@ -198,7 +198,7 @@ Response (`SavedQueryVersionDiffResponse`):
 
 ## 6. Build order (suggested)
 
-1. **Service passthrough.** Add `ListVersionsAsync(itemId, ct)` to `IAnalysisContentService` /
+1. **Service passthrough.** Add `ListVersionsAsync(itemId, ct)` to
    `AnalysisContentService` delegating to `IAnalysisContentStore.ListVersionsAsync` and projecting the
    compact `summary`. (No store change.)
 2. **Map `GET …/versions`** in `AnalysisContentEndpoints` next to the existing version routes; add

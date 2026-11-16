@@ -14,20 +14,22 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
+using Honua.Core.Features.Raster.Services;
+
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
 internal sealed class ImageServerComputeClassStatisticsHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
-    private readonly IRasterClassStatisticsAnalyzer _analyzer;
+    private readonly RasterClassStatisticsAnalyzer _analyzer;
     private readonly ImageServerClassStatisticsOptions _options;
     private readonly ILogger<ImageServerComputeClassStatisticsHandler> _logger;
 
     public ImageServerComputeClassStatisticsHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
-        IRasterClassStatisticsAnalyzer analyzer,
+        RasterClassStatisticsAnalyzer analyzer,
         IOptions<ImageServerClassStatisticsOptions> options,
         ILogger<ImageServerComputeClassStatisticsHandler> logger)
     {
@@ -63,7 +65,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
             // math) would change the sampled values, so reject it explicitly rather than silently
             // reporting a rendered signature. A multidimensional slice selection is likewise not
             // supported by this operation.
-            if (!string.IsNullOrWhiteSpace(GetString(values, "renderingRule")))
+            if (!string.IsNullOrWhiteSpace(ImageServerRequestValues.GetString(values, "renderingRule")))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, "renderingRule not supported");
                 return StandardErrorHelpers.CreateNotImplemented(
@@ -71,7 +73,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
                     "renderingRule is not supported for computeClassStatistics; signatures are computed on source pixels.");
             }
 
-            if (!string.IsNullOrWhiteSpace(GetString(values, "multidimensionalDefinition")))
+            if (!string.IsNullOrWhiteSpace(ImageServerRequestValues.GetString(values, "multidimensionalDefinition")))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, "multidimensionalDefinition not supported");
                 return StandardErrorHelpers.CreateNotImplemented(
@@ -79,9 +81,9 @@ internal sealed class ImageServerComputeClassStatisticsHandler
                     "multidimensionalDefinition is not supported for computeClassStatistics.");
             }
 
-            var requestSrid = ImageServerGeometryHelpers.TryParseSrid(GetString(values, "sr"));
+            var requestSrid = ImageServerGeometryHelpers.TryParseSrid(ImageServerRequestValues.GetString(values, "sr"));
             if (!ImageServerClassDescriptions.TryParse(
-                    GetString(values, "classDescriptions") ?? string.Empty, requestSrid, out var parsedClasses, out var classesError))
+                    ImageServerRequestValues.GetString(values, "classDescriptions") ?? string.Empty, requestSrid, out var parsedClasses, out var classesError))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, classesError ?? "Invalid classDescriptions");
                 return StandardErrorHelpers.CreateBadRequest(context, classesError ?? "Invalid classDescriptions.");
@@ -95,19 +97,19 @@ internal sealed class ImageServerComputeClassStatisticsHandler
                     $"classDescriptions contains {parsedClasses.Count} classes, exceeding the limit of {_options.MaxClasses}.");
             }
 
-            if (!ImageServerCatalogIdParser.TryParseBandIds(GetString(values, "bandIds"), out var bands, out var bandIdsError))
+            if (!ImageServerCatalogIdParser.TryParseBandIds(ImageServerRequestValues.GetString(values, "bandIds"), out var bands, out var bandIdsError))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, bandIdsError ?? "Invalid bandIds");
                 return StandardErrorHelpers.CreateBadRequest(context, bandIdsError ?? "Invalid bandIds.");
             }
 
-            if (!ImageServerCatalogIdParser.TryParseRasterIds(GetString(values, "rasterIds"), out var requestedRasterIds, out var rasterIdsError))
+            if (!ImageServerCatalogIdParser.TryParseRasterIds(ImageServerRequestValues.GetString(values, "rasterIds"), out var requestedRasterIds, out var rasterIdsError))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, rasterIdsError ?? "Invalid rasterIds");
                 return StandardErrorHelpers.CreateBadRequest(context, rasterIdsError ?? "Invalid rasterIds.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(ImageServerRequestValues.GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, timeError ?? "Invalid time");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
@@ -152,7 +154,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
                 rasterIds = selected.Select(r => r.Id).ToArray();
             }
 
-            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, ImageServerRequestValues.GetString(values, "mosaicRule"));
 
             var request = new RasterClassStatisticsRequest
             {
@@ -236,7 +238,4 @@ internal sealed class ImageServerComputeClassStatisticsHandler
         };
     }
 
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 }

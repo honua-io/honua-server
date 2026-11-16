@@ -100,6 +100,7 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
             // GdalRasterOutputDriverAdmission allowlist (never user-supplied), so
             // neither can be rooted and silently discard workspace.
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
+            using var remoteInputScope = GdalRemoteInputScope.Trust(sourceInput.ReferencedPath);
             var outputPath = Path.Join(workspace, $"output.{format.Extension}");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a

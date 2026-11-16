@@ -19,13 +19,13 @@ namespace Honua.Db.Postgres.Features.Migration;
 /// <summary>
 /// Service for importing data from ArcGIS Server services into PostGIS.
 /// </summary>
-internal sealed partial class GeoservicesImportService : IGeoservicesImportService
+internal sealed partial class GeoservicesImportService : IGeoservicesImportService, IGeoservicesImportCommitRecovery
 {
     private readonly GeoServicesRestClient _restClient;
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly PostgresSessionLockConnections _sessionLockConnections;
     private readonly ICrsRegistry _crsRegistry;
-    private readonly IGeoServicesConstructCapabilityRegistry _constructCapabilityRegistry;
+    private readonly GeoServicesConstructCapabilityRegistry _constructCapabilityRegistry;
     private readonly IAttachmentStore? _attachmentStore;
     private readonly IMigrationCatalogWriter? _catalogWriter;
     private readonly GeoservicesLayerPublicationService _layerPublicationService;
@@ -36,7 +36,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         GeoServicesRestClient restClient,
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
-        IGeoServicesConstructCapabilityRegistry constructCapabilityRegistry,
+        GeoServicesConstructCapabilityRegistry constructCapabilityRegistry,
         ILogger<GeoservicesImportService> logger,
         GeoservicesLayerPublicationService layerPublicationService,
         IAttachmentStore? attachmentStore = null,
