@@ -65,10 +65,13 @@ incompatible migrations. CODEOWNERS designates the founder as the reviewer for b
 
 The frozen reader baseline is `eng/schema/schema-reader-baseline.v1.json`.
 Every migration, including each newly added script, must also be hash-pinned in
-`eng/schema/schema-migration-hashes.v1.json`; extend that ledger when adding an
-expand migration. Keep existing hashes and script names immutable. A new ledger
-entry does not extend the frozen reader baseline or exempt a script from contract
-checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
+`eng/schema/migration-hashes/<migration-path>.sha256`, mirroring the SQL path
+from the repository root (for example,
+`eng/schema/migration-hashes/src/Honua.Server/Migrations/146_AddX.sql.sha256`).
+Add a new pin file alongside each new expand migration; existing pin files do not
+need editing. Keep existing hashes and script names immutable. A new pin does not
+extend the frozen reader baseline or exempt a script from contract checks. Hashes
+are uppercase SHA-256 over UTF-8 SQL with LF line endings.
 From rc.2, a migration carrying `honua:reader-incompatible` or classified as
 contract by the reader fails CI unless its exact name and hash match the release boundary.
 Every migration numbered above that boundary (server 145, raster 008) must declare `expand` and be accepted
@@ -179,6 +182,19 @@ unsupported: restore the pre-upgrade database backup and its matching applicatio
 image. Rollbacks to rc.2 or later retain the supported application-only path. Do not
 remove the migration journal entry or reintroduce cascading replacement to bypass
 that boundary.
+
+### Optional feature indexes removed in rc.2
+
+`183_RemoveUnusedFeatureIndexes.sql` drops eight `features` indexes that no
+generated query uses. It is a reviewed contract migration: a fresh install never
+builds those indexes, and an existing database applies the drop only with its
+one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce. When you upgrade an rc.1
+database, stop the rc.1 server, run migrate-only with the rc.2 image (it exits `5`
+and names `183_RemoveUnusedFeatureIndexes.sql`), review it, re-run with the nonce,
+then start rc.2; see [Deploy with Docker Compose — Upgrade &
+Rollback](docker-compose.md#upgrade--rollback). An rc.1 image does not qualify the
+migration, so rollback to rc.1 after it applies is by restoring the pre-upgrade
+database backup.
 
 ### Configuration binding correction
 

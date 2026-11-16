@@ -353,6 +353,10 @@ for the prior decision; it is not an active rollout or rollback path.
 
 ### Historical hosted shadow checkpoint (2026-08-14)
 
+This shadow was retired on 2026-11-16 under #7880: its observer had been disabled since
+9 November and no parity run reached a comparison. The checkpoint below is
+historical evidence, not an active rollout path.
+
 The first opportunistic prebuild candidate passed its bounded hosted A/B and is
 enabled only as a read-only producer-availability observer. It is not
 verification authority and it does not change branch protection, shard
@@ -437,7 +441,7 @@ The complete checkpoint and decision are also recorded on
    passes. Path-based routing narrowing measured zero savings on this
    repository and is not a promotion candidate on its own.
 7. Do not pursue docs-only PR Gate routing. #3235 was closed as not planned on
-   2026-08-17 UTC: the audit in `docs/internal/ci/impact-routing-evidence.md`
+   2026-08-17 UTC: the impact-routing evidence audit (retired with its ledger under #7880)
    found 2 docs-only heads against a required cohort of 20, for a route worth
    about 2.5% of gate runs, and found seven internal documents whose content a
    gate step asserts. The classifier excludes those documents and a drift guard
