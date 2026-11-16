@@ -21,6 +21,11 @@ internal static class GPServerJobWait
 {
     private static readonly TimeSpan StallTolerance = TimeSpan.FromSeconds(30);
 
+    // The durable worker may claim, run or finish a job before submitJob returns, so an accepted
+    // submission reports any of these states, not only esriJobSubmitted.
+    public static readonly string[] AcceptedSubmitStatuses =
+        ["esriJobSubmitted", "esriJobWaiting", "esriJobExecuting", "esriJobSucceeded"];
+
     // HTTP timeout for one request: one tolerated stall plus headroom.
     public static readonly TimeSpan RequestTimeout = StallTolerance + TimeSpan.FromSeconds(15);
 
