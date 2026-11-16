@@ -1071,9 +1071,8 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_MultiFieldGroupBy_AmbiguousValues_ProducesSeparateGroups()
     {
-        // BuildGroupKey previously used string.Join("", parts) with no
-        // separator, so {"San","Jose"} and {"Sa","nJose"} both produced key "SanJose" and
-        // were dissolved into the same geometry/group. With the fix they must dissolve separately.
+        // Distinct multi-field values such as {"San","Jose"} and {"Sa","nJose"}
+        // must produce separate groups even when concatenating their fields yields the same text.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId,
         [
             new DagSourceFeature

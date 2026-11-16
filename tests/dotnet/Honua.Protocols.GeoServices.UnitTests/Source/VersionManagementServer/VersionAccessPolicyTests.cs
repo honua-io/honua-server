@@ -203,11 +203,8 @@ public sealed class VersionAccessPolicyTests
     [UnitTest]
     public void CanManageVersion_ProtectedVersion_NonOwnerNonAdmin_CannotInspectConflicts()
     {
-        // HandleInspectConflicts previously only gated CanManageVersion on
-        // Private versions; Protected versions bypassed the check, exposing full conflict
-        // before/after attribute and geometry payloads to any query-authorized caller. The fix
-        // widens the condition to `Private or Protected`. This test pins the policy the fixed
-        // endpoint now applies for Protected versions: a non-owner, non-admin must be blocked.
+        // Protected version conflict payloads require management permission;
+        // a non-owner, non-admin caller must be blocked.
         var version = MakeVersion("alice", VersionAccess.Protected);
 
         VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(

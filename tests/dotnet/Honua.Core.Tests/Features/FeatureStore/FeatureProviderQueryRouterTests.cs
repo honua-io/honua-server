@@ -41,7 +41,7 @@ public sealed partial class FeatureProviderQueryRouterTests
     [Fact]
     public async Task ResolveReaderAsync_EmitsSpanTaggedWithServiceResourcePublicationAndProvider()
     {
-        // this hot path previously emitted no telemetry at all.
+        // Reader resolution emits telemetry with its service and provider context.
         var connectionId = Guid.NewGuid();
         var reader = new Mock<IFeatureReader>(MockBehavior.Strict).Object;
         var provider = CreateProvider(DataProviderNames.DuckDb, FeatureProviderCapabilities.ReadOnlyAnalytical, reader);

@@ -156,8 +156,7 @@ public sealed class EditProcessorPreconditionTests
     [UnitTest]
     public void ToFeatureEditBatch_EmitsActivitySpan()
     {
-        // the feature-write pipeline (validate/optimize/convert) previously emitted no
-        // telemetry span at all.
+        // Feature-write validation, optimization and conversion emit a telemetry span.
         var activities = new List<Activity>();
         using var listener = new ActivityListener
         {

@@ -2956,11 +2956,7 @@ public sealed partial class Wfs20EndpointsTests
             "an unparseable FES 2.0 filter must produce 400, not 500");
     }
 
-    // a WFS-T Delete with an empty <fes:Filter/> element previously caused a
-    // TOCTOU: the filter was non-null but produced zero children, which (after the
-    // has-only-ResourceId check passed) was forwarded as an empty SQL WHERE clause,
-    // potentially deleting all rows in the type.  After the fix an empty filter is
-    // treated as null, which triggers the server's null-guard and returns 400.
+    // Reject an empty WFS-T Delete filter with 400 to prevent an unbounded delete.
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]
