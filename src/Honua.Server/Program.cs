@@ -1679,6 +1679,10 @@ app.UseWhen(
     });
 #endif
 
+// An agent changes admin and Console state only through the operations API or MCP. Runs after
+// the lineage attestation and the audit log, so a refusal is audited.
+app.UseMiddleware<Honua.Server.Features.Admin.AgentRouteAdmissionMiddleware>();
+
 // Runs after every credential type is hydrated and before tenant and schema resolution.
 app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
 
@@ -1994,7 +1998,8 @@ app.MapServerFeatureEndpoints();
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
-    .RequireAdminAuthorization();
+    .RequireAdminAuthorization()
+    .WithRouteAgentRule("/PlanSpec", "Changes nothing.");
 if (CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "scene.catalog"))
 {
     app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
