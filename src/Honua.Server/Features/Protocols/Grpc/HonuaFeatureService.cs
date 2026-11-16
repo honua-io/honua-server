@@ -1288,13 +1288,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     {
         var httpContext = context.GetHttpContext();
 
-        // Writes through a secondary publication also need the canonical service's grant,
-        // as on the REST and OGC API Features write paths.
-        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
-            httpContext,
-            new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot),
-            context.CancellationToken).ConfigureAwait(false);
-
         var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
             httpContext,
             layer.Resource,
@@ -1304,17 +1297,12 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         ThrowIfAccessDenied(decision);
 
-        if (canonical is { } target)
-        {
-            var canonicalDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-                httpContext,
-                layer.Resource,
-                target.Service,
-                operation,
-                context.CancellationToken).ConfigureAwait(false);
-
-            ThrowIfAccessDenied(canonicalDecision);
-        }
+        var canonicalDecision = await LayerValidationHelpers.EvaluateCanonicalServiceWriteAccessAsync(
+            httpContext,
+            new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot),
+            operation,
+            context.CancellationToken).ConfigureAwait(false);
+        ThrowIfAccessDenied(canonicalDecision);
     }
 
     // An edit kind the publication omits is rejected.

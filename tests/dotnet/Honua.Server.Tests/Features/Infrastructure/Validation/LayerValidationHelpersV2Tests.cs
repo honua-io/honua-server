@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
@@ -247,7 +248,39 @@ public sealed class LayerValidationHelpersV2Tests
         canonical.Should().BeNull("a resource without a primary publication has no canonical service to enforce");
     }
 
-    private static (HttpContext Context, MetadataV2Graph Graph) BuildCanonicalContext()
+    [Theory]
+    [InlineData(false, null, false, true)]
+    [InlineData(false, "reader", false, false)]
+    [InlineData(false, "editor", true, false)]
+    [InlineData(true, null, true, false)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task EvaluateCanonicalServiceWriteAccess_UsesCanonicalPolicy(
+        bool allowAnonymous, string? role, bool allowed, bool requiresAuthentication)
+    {
+        var (context, graph) = BuildCanonicalContext(new AccessPolicy
+        {
+            AllowAnonymousWrite = allowAnonymous,
+            AllowedWriteRoles = ["editor"]
+        });
+        if (role is not null)
+        {
+            context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "Test"));
+        }
+
+        var secondary = graph.Publications.Single(publication => publication.Metadata.Id == "pub-secondary");
+        var decision = await LayerValidationHelpers.EvaluateCanonicalServiceWriteAccessAsync(
+            context,
+            new LayerValidationHelpers.CanonicalWriteSource(secondary, graph.Resources[0]),
+            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Insert,
+            CancellationToken.None);
+
+        decision.IsAllowed.Should().Be(allowed);
+        decision.RequiresAuthentication.Should().Be(requiresAuthentication);
+    }
+
+    private static (HttpContext Context, MetadataV2Graph Graph) BuildCanonicalContext(AccessPolicy? canonicalPolicy = null)
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddService("svc-primary", "primary-service", protocols: [ServiceProtocols.OgcFeatures])
@@ -268,7 +301,15 @@ public sealed class LayerValidationHelpersV2Tests
                 serviceLocalId: "shared")
             .Build();
 
+        graph = graph with
+        {
+            Services = graph.Services.Select(service => service.Metadata.Id == "svc-primary"
+                ? service with { AccessPolicy = canonicalPolicy }
+                : service).ToImmutableArray()
+        };
+
         var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.User = new ClaimsPrincipal(new ClaimsIdentity());

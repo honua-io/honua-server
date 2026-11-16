@@ -1216,25 +1216,20 @@ internal sealed partial class Wfs20Handler
             return layerValidation.ErrorResult;
         }
 
-        if (!IsAnonymousWriteAllowed(context, layerValidation.Resource!, layerValidation.Service))
+        // Every action uses its specific operation, including anonymously writable publications.
+        var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context,
+            layerValidation.Resource!,
+            layerValidation.Service,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+        if (rbacError != null)
         {
-            // Per-operation authorization (BH3-001/BH3-014): each WFS-T action type is gated on its
-            // specific operation so an insert-only grantee cannot Update/Delete via a Transaction and
-            // vice-versa. Replace maps to Update since it modifies an existing feature.
-            var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                layerValidation.Resource!,
-                layerValidation.Service,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-            if (rbacError != null)
-            {
-                return rbacError;
-            }
+            return rbacError;
         }
 
-        var canonicalError = await RequireCanonicalTransactionWriteAccessAsync(
-            context, (layerValidation, operation), cancellationToken).ConfigureAwait(false);
+        var canonicalError = await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
+            context, layerValidation, operation, cancellationToken).ConfigureAwait(false);
         if (canonicalError != null)
         {
             return canonicalError;
@@ -1255,34 +1250,6 @@ internal sealed partial class Wfs20Handler
                 "Transaction");
     }
 
-
-    private static async Task<IResult?> RequireCanonicalTransactionWriteAccessAsync(
-        HttpContext context,
-        (LayerValidationHelpers.MetadataV2ValidationResult Validation, AuthorizationOperation Operation) write,
-        CancellationToken cancellationToken)
-    {
-        var (validation, operation) = write;
-        // Writes through a secondary publication also need the canonical service's grant, as on
-        // OGC API Features and single-entity OData writes. The canonical service is judged on its
-        // own policy: anonymous writes on the secondary service do not open the shared resource.
-        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
-            context,
-            new LayerValidationHelpers.CanonicalWriteSource(
-                validation.Publication!, validation.Resource!, validation.Snapshot),
-            cancellationToken).ConfigureAwait(false);
-        if (canonical is { } target &&
-            !IsAnonymousWriteAllowed(context, validation.Resource!, target.Service))
-        {
-            return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                validation.Resource!,
-                target.Service,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        return null;
-    }
 
     // The STAC collection publication that publishing writes beside a layer's feature publication
     // was the advertised feature type, so clients hold its name. A Transaction through it is bound

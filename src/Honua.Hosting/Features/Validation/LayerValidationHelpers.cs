@@ -1063,29 +1063,26 @@ internal static partial class LayerValidationHelpers
             return null;
         }
 
-        var canonical = await ResolveCanonicalWriteServiceAsync(
+        var decision = await EvaluateCanonicalServiceWriteAccessAsync(
             context,
             new CanonicalWriteSource(validation.Publication, validation.Resource, validation.Snapshot),
+            operation,
             cancellationToken).ConfigureAwait(false);
-        if (canonical is not { } target)
-        {
-            return null;
-        }
+        return AccessPolicyHelpers.CreateAccessDeniedResult(context, decision);
+    }
 
-        // Re-evaluate data-editor authorization against the canonical service, preserving
-        // the per-operation narrowing (BH3-001/BH3-014) when the caller supplied an operation.
-        return operation is { } op
-            ? await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                validation.Resource,
-                target.Service,
-                op,
-                cancellationToken).ConfigureAwait(false)
-            : await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                validation.Resource,
-                target.Service,
-                cancellationToken).ConfigureAwait(false);
+    // Every protocol uses the same canonical write decision and translates it to its own errors.
+    internal static async Task<AccessDecision> EvaluateCanonicalServiceWriteAccessAsync(
+        HttpContext context,
+        CanonicalWriteSource source,
+        AuthorizationOperation? operation,
+        CancellationToken cancellationToken)
+    {
+        var canonical = await ResolveCanonicalWriteServiceAsync(context, source, cancellationToken).ConfigureAwait(false);
+        return canonical is { } target
+            ? await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+                context, source.Resource, target.Service, operation, cancellationToken).ConfigureAwait(false)
+            : AccessDecision.Allowed();
     }
 
     // The canonical service whose data-editor grant a write through a non-primary publication must also hold.
