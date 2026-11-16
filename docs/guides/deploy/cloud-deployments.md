@@ -32,7 +32,7 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 
 > **2026.1 rc.2 deployment scope:** Lambda and Kubernetes/Helm are not certified
 > in this release candidate. The supported production deployment is AWS ECS
-> Fargate with RDS PostGIS, ElastiCache, and Console in S3/CloudFront.
+> Fargate with RDS PostGIS and Console in S3/CloudFront. Redis is not required.
 > Docker Compose remains the local evaluation path, not a certified production target.
 
 | Pattern | 2026.1 tier | Best for | Image family | Rollout mechanism | honua-iac module |
@@ -80,7 +80,7 @@ promotion moves. The exact digest is in the release's `customer-install-manifest
 ## Pattern by team size
 
 - **Dev/test (1–5 people)**: single host with [Docker Compose](docker-compose.md); no HA, local volumes.
-- **Production, single region (5–50)**: managed Postgres with backups, Redis (required for durable jobs/queued imports/workflows), one container service from the table above, edge TLS and rate limiting.
+- **Production, single region (5–50)**: managed Postgres with backups for data and durable control-plane state, ECS/Fargate, edge TLS and rate limiting. Configure the shared operation key ring described below.
 - **Enterprise (50+)**: multi-region or active/standby, database replication and failover, global load balancing/WAF, centralized logging and alerting. Honua replicas stay stateless in every tier — scale-out is adding replicas.
 
 ## Serve Honua on your own domain
@@ -273,7 +273,7 @@ A batch worker cannot read the API instance's local disk, so this path needs sha
 - `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on that bucket for the API function's role, and the same for the Batch job role (`gp_batch_data_bucket_enabled` and `gp_batch_data_bucket_arn` in the `aws-serverless` module);
 - Redis (`ConnectionStrings__redis`) on both, as GP jobs already require.
 
-Without Redis, without a Batch workload, or with host-local file storage, the API function refuses background imports with `503 Background import service not available` before it stages anything. The `import.background` capability reports `runner: unavailable` with `reasonCode` `durable-runner-required` or `shared-file-storage-required`. Imports below the background threshold still run synchronously. On ECS and other long-lived hosts with Redis, background imports run as durable jobs on the servers' own job workers (`runner: in-process`); without Redis they run in the server that accepted the upload.
+Without Redis, without a Batch workload, or with host-local file storage, the API function refuses background imports with `503 Background import service not available` before it stages anything. The `import.background` capability reports `runner: unavailable` with `reasonCode` `durable-runner-required` or `shared-file-storage-required`. Imports below the background threshold still run synchronously. On ECS, background imports use the shared PostgreSQL job store and the servers' own job workers (`runner: in-process`). Configure the system database and shared operation key ring; Redis is not required. With multiple tasks, staged files must also be accessible to the task that executes the import.
 
 ### Budget database connections on Lambda
 
@@ -327,19 +327,9 @@ See [Connection poolers and proxies](../../reference/configuration/data-sources/
 
 ## Ops control plane and batch-compute backends
 
-**Redis is a hard dependency for the ops control plane.** Durable jobs, queued imports, deploy workflows, and the operation gateway are all backed by Redis (ElastiCache / Azure Cache for Redis). Without it these surfaces fail closed — job/import/workflow endpoints return `503` rather than silently running node-local work — and the ops-findings recommended-action gateway reports a degraded, unavailable state. Provision Redis for any environment that runs jobs, imports, workflows, or the deploy control plane; single-host dev/test via Docker Compose is the only tier where you can skip it.
+**ECS uses PostgreSQL for durable control-plane state.** Configure `ConnectionStrings__DefaultConnection` for every serving task. Durable execution jobs, queued imports, leases, deploy workflows and operation proposals share the system database; Redis is not required. Use the same `Database__Schema` when overriding the default system schema. Back up and restore this database together with the operation key-ring material described above. Database availability and its backup/failover policy determine the durability of this state.
 
-**Managed Redis is supported: AWS ElastiCache, Amazon MemoryDB and Azure Cache for Redis.** Honua needs Redis to be reachable and working. A particular persistence policy is not required (owner ruling, 2026-10-10). On ECS and Lambda, point `ConnectionStrings__redis` at the ElastiCache or MemoryDB endpoint, with TLS and auth as the cluster requires.
-
-**Durability is a property of your Redis deployment.** Choose it to match how much acknowledged job and proposal state you can afford to lose:
-
-| Service | Durability you can rely on |
-|---|---|
-| Amazon MemoryDB | A durable Multi-AZ transaction log; acknowledged writes survive node failure |
-| ElastiCache (Redis OSS / Valkey) | Replication with Multi-AZ failover plus optional snapshots; Redis 7 offers no AOF, so the last writes before a failure can be lost |
-| Self-managed Redis | `appendonly yes`, `appendfsync everysec` (or `always`), `maxmemory-policy noeviction` |
-
-On **serverless** substrates a frozen or torn-down process keeps no state of its own, so Redis is the only home for acknowledged job and proposal state. Choose MemoryDB, or accept ElastiCache's replication-and-snapshot durability knowingly.
+**Share the operation key ring across tasks and workers.** Outside Development and Test, a configured system database requires `Operations__SecretChannel__KeyRingCertificatePath` (with the PKCS#12 file mounted), `Operations__SecretChannel__KeyRingCertificatePkcs12`, or `Operations__SecretChannel__KeyRingSecret`. Use the same configured material on the serving tasks and Batch workers, and retain it for the lifetime of the database. See the production key-ring guidance above before changing or restoring it. Shared job state does not make host-local files accessible to another task: use shared file storage for staged uploads and job outputs.
 
 **The local batch-compute backends are single-host only.** The in-process `local` backend and the child-process `honua-local-process` pool track launched jobs in an in-process registry that cannot survive a host restart or be observed from another node. They are the zero-dependency executors for single-host / air-gapped deployments; they **cannot** work on:
 
@@ -348,7 +338,7 @@ On **serverless** substrates a frozen or torn-down process keeps no state of its
 
 On those substrates, route geoprocessing/import workloads to a remote batch backend (`honua-aws-batch`, Azure Batch, or a Kubernetes Job) instead. Declare the substrate so the server can fail closed rather than churn: set `ControlPlane:Substrate:Profile` to `MultiNode` or `Serverless` (serverless runtimes are also auto-detected from `AWS_LAMBDA_FUNCTION_NAME` / `FUNCTIONS_WORKER_RUNTIME` / `K_SERVICE`), and `ControlPlane:Substrate:SharedWorkDir=true` if a multi-node deployment provides shared storage. When a local backend is registered on an incompatible substrate, the server raises a persistent Critical ops finding (`local-backend-substrate-incompatible`, visible via `GET /monitoring/health/comprehensive` and the ops-findings feed) instead of silently re-queuing doomed jobs.
 
-**The remote batch worker runs a worker-only profile.** Every remote backend (AWS Batch, Azure Batch, a Kubernetes Job, the local process pool) launches the same server image for one job and passes `HONUA_OPERATION_ID`, `HONUA_JOB_KIND`, `HONUA_WORKLOAD_NAME`, `HONUA_EXECUTION_ATTEMPT` and `HONUA_CONTRACT_VERSION`. Workload `env.*` parameters cannot override these. When `HONUA_OPERATION_ID` is set, the process starts as a single-job execution worker. It claims only the launched attempt in the shared Redis job store, runs its executor, records the result or the typed failure there, and exits. It serves no HTTP and runs no migrations. It never submits jobs to a batch backend, runs the control-plane reconcilers or scheduled background services, or starts the proposal gateway. Give the worker the same database, `ConnectionStrings__redis` and operation key-ring certificate as the server. It refuses to start without Redis, because it could not report the job. It does not need `batch:SubmitJob`. On a Kubernetes Job, give the worker those credentials through Secret references; see [Geoprocessing on Kubernetes Jobs](kubernetes.md#geoprocessing-on-kubernetes-jobs).
+**The remote batch worker runs a worker-only profile.** Every remote backend (AWS Batch, Azure Batch, a Kubernetes Job, the local process pool) launches the same server image for one job and passes `HONUA_OPERATION_ID`, `HONUA_JOB_KIND`, `HONUA_WORKLOAD_NAME`, `HONUA_EXECUTION_ATTEMPT` and `HONUA_CONTRACT_VERSION`. Workload `env.*` parameters cannot override these. When `HONUA_OPERATION_ID` is set, the process starts as a single-job execution worker. It claims only the launched attempt in the shared PostgreSQL job store, runs its executor, records the result or the typed failure there, and exits. It serves no HTTP and runs no migrations. It never submits jobs to a batch backend, runs the control-plane reconcilers or scheduled background services, or starts the proposal gateway. Give the worker the same system database (`ConnectionStrings__DefaultConnection` and, if configured, `Database__Schema`) and operation key-ring material as the server. It refuses to start without a composed durable job store; configure the system database so it can claim the job and report its outcome. It does not need `batch:SubmitJob`. On a Kubernetes Job, give the worker those credentials through Secret references; see [Geoprocessing on Kubernetes Jobs](kubernetes.md#geoprocessing-on-kubernetes-jobs).
 
 ## Verify
 
@@ -361,7 +351,7 @@ against a deployed environment.
 ## Troubleshoot
 
 - **Serverless cold starts time out** — use the `-aot` image variants and confirm `HONUA_SKIP_MIGRATIONS=true`; migrations during cold start are the usual culprit.
-- **Job/import endpoints return `503`** — durable jobs, queued imports, and workflows require Redis (ElastiCache / Azure Cache for Redis); serverless patterns without Redis don't host them.
+- **Job/import endpoints return `503`** — on ECS, check the system PostgreSQL connection, shared operation key-ring configuration and required shared file storage. Redis is not required for these services.
 - **Admin calls return 401** — confirm the secret store value actually reaches the container env as `HONUA_ADMIN_PASSWORD` and requests send it in the `X-API-Key` header.
 
 ## Next steps
