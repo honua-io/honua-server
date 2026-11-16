@@ -128,15 +128,9 @@ update restrictions while keeping the same key.
 
 Credential expiry denies authentication while preserving the managed key's
 metadata, so administrators can still inspect its expired or revoked status.
-Redis retains this metadata for 3,650 days after expiry, or after the latest
-registry write when there is no future expiry. Internal approval replay
-credentials remain short-lived and are removed at their credential expiry.
-
-After upgrading an existing Redis registry, older records retain their original
-Redis expiry until they are rewritten by successful authentication, rotation, or
-revocation. Rotate or revoke these keys before their original expiry to retain
-their metadata. Records already removed by Redis cannot be recovered by this
-change; create a replacement key if access is still needed.
+Managed keys are stored in the system PostgreSQL database; their metadata is not
+automatically deleted on expiry. Internal approval replay credentials remain
+short-lived and are removed by the expired-row cleanup after credential expiry.
 
 An empty permissions array is normalized to `admin:*` for legacy compatibility and
 therefore grants full admin access; do not use it for CI. Grant only the operations
