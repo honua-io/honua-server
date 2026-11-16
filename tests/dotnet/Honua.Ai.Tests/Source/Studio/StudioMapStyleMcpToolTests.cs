@@ -2,14 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Studio.Abstractions;
-using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Extensions;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -22,13 +17,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
          "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}
         """;
 
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .WithProductionJobSubstrate()
-        .ConfigureServices(services =>
-        {
-            services.RemoveAll<IStudioPackageStore>();
-            services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-        });
+    private readonly WebAppFixture _fixture = StudioMcpTestFixture.Create();
 
     private StudioMcpHttpClient _mcp = null!;
 

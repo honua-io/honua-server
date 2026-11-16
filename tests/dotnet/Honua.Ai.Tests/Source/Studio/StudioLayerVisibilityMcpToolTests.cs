@@ -3,15 +3,10 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
-using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Extensions;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -32,15 +27,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .WithProductionJobSubstrate()
-        .ConfigureServices(services =>
-        {
-            // Same in-memory Studio store StudioPackageEndpointsTests uses: this suite exercises
-            // the HTTP write/read round trip, not the Postgres store's persistence.
-            services.RemoveAll<IStudioPackageStore>();
-            services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-        });
+    private readonly WebAppFixture _fixture = StudioMcpTestFixture.Create();
 
     private StudioMcpHttpClient _mcp = null!;
 
