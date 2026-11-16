@@ -41,6 +41,17 @@ Clients that read either property should stop reading it and regenerate from the
 current admin contract. There is no replacement, because no fallback or reconnect
 interval remains to report.
 
+## Cache server diagnostics withdrawn
+
+The cache runs in process memory on every node, so there is no external cache server
+left to inspect. The admin operation that reported that server's connection metrics is
+removed with no replacement and now returns `404`. `OpsCacheHealthResponse` drops its
+server information, and `OpsCacheStatisticsResponse` drops its server database size and
+memory properties. The other properties keep their names and meaning.
+
+Clients that call the removed operation or read those properties should stop and
+regenerate from the current admin contract.
+
 ## Tile cache inventory and license capacity withdrawn
 
 Generated tiles are no longer tracked in a shared index, and Honua does not meter
