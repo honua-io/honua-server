@@ -14,6 +14,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -30,6 +31,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithProductionJobSubstrate()
         .ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
@@ -85,8 +87,9 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         var created = await aliceMcp.CallToolRawAsync(
             "honua_studio_create_draft",
             $$"""{"packageKey":"owner-parity-map","family":"{{family}}","schemaVersion":"1.0"}""");
-        var draftId = created.GetProperty("structuredContent").GetProperty("draftId").GetGuid();
-        created.GetProperty("structuredContent").GetProperty("ownerId").GetString()
+        var createdDraft = await ApproveMutationAsync(created);
+        var draftId = createdDraft.GetProperty("draftId").GetGuid();
+        createdDraft.GetProperty("ownerId").GetString()
             .Should().Be(aliceOwnerId);
 
         // The owner succeeds through both adapters.
@@ -132,8 +135,23 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         var aliceMcpUpdate = await aliceMcp.CallToolRawAsync(
             "honua_studio_update_draft",
             $$"""{"draftId":"{{draftId:D}}","generation":1,"packageKey":"owner-parity-map-v2","schemaVersion":"1.0"}""");
-        aliceMcpUpdate.GetProperty("structuredContent").GetProperty("ownerId").GetString()
+        var updatedDraft = await ApproveMutationAsync(aliceMcpUpdate);
+        updatedDraft.GetProperty("ownerId").GetString()
             .Should().Be(aliceOwnerId);
+    }
+
+    private async Task<JsonElement> ApproveMutationAsync(JsonElement result)
+    {
+        var failed = result.TryGetProperty("isError", out var isError) && isError.GetBoolean();
+        failed.Should().BeFalse();
+        var proposal = result.GetProperty("structuredContent");
+        proposal.GetProperty("status").GetString().Should().Be("RequiresApproval");
+        var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(
+            _fixture, proposal.GetProperty("proposalId").GetString()!);
+        handle.GetProperty("status").GetString().Should().Be("Completed");
+        using var payload = JsonDocument.Parse(
+            handle.GetProperty("result").GetProperty("details").GetProperty("payload").GetString()!);
+        return payload.RootElement.Clone();
     }
 
     [IntegrationTest]

@@ -276,7 +276,8 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
                 _fixture, proposal.GetProperty("proposalId").GetString()!);
             handle.GetProperty("status").GetString().Should().Be("Completed");
             handle.GetProperty("metadataRevision").GetInt64().Should().Be(42);
-            await AssertSingleActuationAsync();
+            // Approval executes once; reading the durable handle refreshes metadata once more.
+            await AssertSingleActuationAsync(metadataReadbacks: 2);
             return;
         }
 
@@ -296,11 +297,11 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
         _jobService.ClearReceivedCalls();
     }
 
-    private async Task AssertSingleActuationAsync()
+    private async Task AssertSingleActuationAsync(int metadataReadbacks = 1)
     {
         await _publishing.Received(1).PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        await _graphProvider.Received(1).GetCurrentAsync(Arg.Any<CancellationToken>());
+        await _graphProvider.Received(metadataReadbacks).GetCurrentAsync(Arg.Any<CancellationToken>());
     }
 
     private async Task AssertZeroActuationAsync()
