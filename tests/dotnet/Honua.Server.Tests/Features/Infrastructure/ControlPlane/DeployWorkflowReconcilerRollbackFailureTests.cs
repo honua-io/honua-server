@@ -48,7 +48,7 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
         // retry" message on a TRANSIENT provider error. The reconciler must NOT escalate on the first
         // blip — it retries on a bounded budget. But a rollback that transiently fails on EVERY cycle
         // is genuinely stuck: once the budget is exhausted the reconciler must escalate to a terminal
-        // manual-intervention state rather than looping forever..
+        // manual-intervention state rather than looping forever.
         var store = new InMemoryWorkflowOperationStore();
         var backend = new FailingRollbackBackend(
             rollbackStatus: WorkflowOperationStatus.Reconciling,

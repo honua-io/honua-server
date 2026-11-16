@@ -930,8 +930,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         // The cap is set equal to the page size, so it is reached exactly when a page ends and
         // no row is visibly dropped inside the page. That branch used to exit without clearing
         // 'complete', so snapshot-end advertised an authoritative baseline while ids beyond the
-        // first page were never read — a client would discard valid features outside it (invalid initial envelope
-        // review). Any truncation must report complete=false.
+        // first page were never read — a client would discard valid features outside it.
+        // Any truncation must report complete=false.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var fixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>

@@ -860,8 +860,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // raster.map-algebra's 'expression' is format-constrained (an allow-listed band
         // expression), not an undeclared discriminator: no rule branches on its value and
         // dataType/noData are optional on every branch. Treating the format rejection as a
-        // token domain downgraded this ordinary mapping to 'partially-translated' (unsupported token
-        // review).
+        // token domain downgraded this ordinary mapping to 'partially-translated'.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """

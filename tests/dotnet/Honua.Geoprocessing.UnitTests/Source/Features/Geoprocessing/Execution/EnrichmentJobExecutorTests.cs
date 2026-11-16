@@ -230,7 +230,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_InlineSourceWithWhereFilter_FailsInsteadOfIgnoringTheFilter()
     {
-        // Codex P2: 'where' windows the source.honua-layer read; the inline
+        // 'where' windows the source.honua-layer read; the inline
         // branch parses the staged FeatureCollection verbatim and never applies it. Silently
         // accepting it enriched EVERY staged feature while the caller believed a filter was
         // in force. The catalog documents 'where' as layer-source-only, so the executor
