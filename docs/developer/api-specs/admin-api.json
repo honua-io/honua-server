@@ -3748,6 +3748,27 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "connectionId",
+            "in": "query",
+            "required": false,
+            "description": "Connection UUID; supply with storageLayerId to select services exposing that storage layer. Filtering happens before pagination.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "storageLayerId",
+            "in": "query",
+            "required": false,
+            "description": "Nonnegative storage layer ID; supply with connectionId. Both filters must have exactly one value.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
           }
         ],
         "responses": {

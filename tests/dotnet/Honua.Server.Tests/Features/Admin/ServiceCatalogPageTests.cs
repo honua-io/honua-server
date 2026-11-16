@@ -103,6 +103,107 @@ public sealed class ServiceCatalogPageTests
         service.EnabledProtocols.Should().BeEquivalentTo(["FeatureServer", "MapServer"]);
     }
 
+    [UnitTest]
+    public void LayerScope_FiltersBeforePaging_AndKeepsEveryServiceExposure()
+    {
+        const string connection = "11111111-1111-1111-1111-111111111111";
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("target", "target")
+            .AddResource("other", "other")
+            .AddStorageBinding("target-binding", "target", "public.target", connectionId: connection, storageLayerId: 0)
+            .AddStorageBinding("other-binding", "other", "public.other", connectionId: "22222222-2222-2222-2222-222222222222", storageLayerId: 0)
+            .AddService("unrelated", "a-unrelated")
+            .AddService("first", "b-first")
+            .AddService("second", "c-second")
+            .AddPublication("other-pub", "unrelated", "other")
+            .AddPublication("first-pub", "first", "target")
+            .AddPublication("second-pub", "second", "target")
+            .Build();
+        var values = new Microsoft.AspNetCore.Http.QueryCollection(
+            Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery($"connectionId={connection}&storageLayerId=0&pageSize=1&page=2"));
+        AdminListQueryParser.TryParse(values, out var query, out var error).Should().BeTrue(error);
+
+        var page = ServiceCatalogPage.Create(Snapshot(graph), query);
+
+        page.Total.Should().Be(2);
+        page.Items.Should().ContainSingle(item => item.ServiceName == "c-second");
+    }
+
+    [UnitTheory]
+    [InlineData("service")]
+    [InlineData("publication")]
+    [InlineData("resource")]
+    [InlineData("binding")]
+    public void LayerScope_DoesNotMatchHiddenTenantEntities(string hidden)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("target", "target")
+            .AddStorageBinding("binding", "target", "public.target", connectionId: "11111111-1111-1111-1111-111111111111", storageLayerId: 0)
+            .AddService("service", "target")
+            .AddPublication("publication", "service", "target")
+            .Build();
+        graph = graph with
+        {
+            Services = graph.Services.Select(value => hidden == "service" ? value with { Metadata = value.Metadata with { Tenant = "private" } } : value).ToArray(),
+            Publications = graph.Publications.Select(value => hidden == "publication" ? value with { Metadata = value.Metadata with { Tenant = "private" } } : value).ToArray(),
+            Resources = graph.Resources.Select(value => hidden == "resource" ? value with { Metadata = value.Metadata with { Tenant = "private" } } : value).ToArray(),
+            StorageBindings = graph.StorageBindings.Select(value => hidden == "binding" ? value with { Metadata = value.Metadata with { Tenant = "private" } } : value).ToArray(),
+        };
+        var query = new AdminListQuery(1, 100, null)
+        {
+            ConnectionId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            StorageLayerId = 0,
+        };
+
+        ServiceCatalogPage.Create(Snapshot(graph), query).Total.Should().Be(0);
+        ServiceCatalogPage.Create(Snapshot(graph), query, "private").Total.Should().Be(1);
+    }
+
+    [UnitTest]
+    public void LayerScope_PreservesProtocolEntriesForTheSameLogicalService()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("target", "target")
+            .AddResource("other", "other")
+            .AddStorageBinding("binding", "target", "public.target", connectionId: "11111111-1111-1111-1111-111111111111", storageLayerId: 0)
+            .AddService("features", "shared", protocols: ["FeatureServer"])
+            .AddService("maps", "shared", protocols: ["MapServer"])
+            .AddPublication("target-pub", "features", "target")
+            .AddPublication("other-pub", "maps", "other")
+            .Build();
+        var page = ServiceCatalogPage.Create(Snapshot(graph), new AdminListQuery(1, 100, null)
+        {
+            ConnectionId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            StorageLayerId = 0,
+        });
+
+        var service = page.Items.Should().ContainSingle().Subject;
+        service.EnabledProtocols.Should().BeEquivalentTo(["FeatureServer", "MapServer"]);
+        service.LayerCount.Should().Be(2);
+    }
+
+    [UnitTheory]
+    [InlineData("11111111-1111-1111-1111-111111111111", 1)]
+    [InlineData("22222222-2222-2222-2222-222222222222", 0)]
+    [InlineData(null, 0)]
+    public void LayerScope_ManagedStorageRequiresTheResolvedOwner(string? owner, int expectedTotal)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("target", "target")
+            .AddStorageBinding("binding", "target", "public.target", storageLayerId: 0)
+            .AddService("service", "target")
+            .AddPublication("publication", "service", "target")
+            .Build();
+        var query = new AdminListQuery(1, 100, null)
+        {
+            ConnectionId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            StorageLayerId = 0,
+            ManagedConnectionId = owner is null ? null : Guid.Parse(owner),
+        };
+
+        ServiceCatalogPage.Create(Snapshot(graph), query).Total.Should().Be(expectedTotal);
+    }
+
     private static MetadataV2GraphSnapshot Catalog(int count)
     {
         var builder = new TestMetadataV2GraphBuilder().AddResource("res-1", "resource");
