@@ -1629,6 +1629,31 @@ installation-token and compare-and-swap mutation controls.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
 
+## Lightweight workflow routing and compatibility
+
+The lightweight workflow callers use the same fork-guarded `HONUA_LIGHT_RUNNER`
+JSON selector and `ubuntu-latest` fallback as PR Gate control jobs. This includes
+Repository hygiene, Clean code, Runner label lint, Review Gate Attestation,
+Review Event Bridge and OpenAPI drift/governance.
+Reusable workflow pins must include the shared selector support. Each local
+shell job exports `TMPDIR`, `TEMP` and `TMP` from `RUNNER_TEMP` before checkout.
+The variable remains an operator availability switch for newly admitted jobs.
+
+OpenAPI governance admits changes to `scripts/ci/lib/python-resolve.sh`, the
+shared Python resolver sourced by its contract validator. A helper-only change
+therefore runs the consuming PR check under the existing non-draft condition.
+
+Docs Link Gate can run a newer workflow against an older PR head. When that head
+predates both the workflow-inventory generator and its template, it validates the
+existing documentation with the complete link and concept suite. A partial
+inventory generator/template pair or a failing generator remains an error. This
+compatibility path adds no jobs and preserves all documentation assertions.
+
+Older PR bases that lack the retired-cache policy load it from fetched trusted
+trunk. The explicit base/head diff is still checked, head-supplied policy cannot
+replace it, and a missing or incomplete trusted policy fails the required
+hygiene job.
+
 ### Advisory image and CodeQL runner selection
 
 CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
