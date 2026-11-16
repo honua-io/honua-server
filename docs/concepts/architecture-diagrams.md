@@ -260,7 +260,7 @@ sequenceDiagram
     participant Store as IFeatureStore
     participant PG as PostgreSQL
 
-    Client->>EP: GET /FeatureServer/0/query?where=...
+    Client->>EP: GET /FeatureServer/{layerIndex}/query?where=...
     EP->>Parser: Parse HTTP request
     Parser-->>EP: QueryRequest
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Blocking vulnerability gate for v* tag image releases. Fails on HIGH/CRITICAL
-# findings that have an upstream fix; unfixed findings are ignored by design, which
-# is looser than the release-bundle container scan (that one also blocks on unfixed).
-# Exceptions come only from .trivyignore-release in the tagged commit.
+# Blocking vulnerability gate for v* tag image releases and for the nightly Compose
+# executor that the customer quickstart pins. Fails on HIGH/CRITICAL findings that have
+# an upstream fix; unfixed findings are ignored by design, which is looser than the
+# release-bundle container scan (that one also blocks on unfixed). Exceptions come only
+# from .trivyignore-release in the commit being published.
 #
 # Usage: TRIVY_IMAGE=<pinned trivy image> trivy-release-gate.sh <image@sha256:digest>
 # The image is pulled into the local Docker daemon and scanned there, so the scan

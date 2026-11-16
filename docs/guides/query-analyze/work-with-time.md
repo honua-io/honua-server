@@ -36,13 +36,13 @@ Temporal behavior is opt-in: a layer advertises a time dimension only after you 
 
 > Open `/rest/services/{service}/FeatureServer/{layerId}?f=json`, `/rest/services/{service}/FeatureServer/{layerId}/temporalExtent?f=json` in a browser.
 
-   `temporalExtent` returns `min`/`max` as ISO 8601 plus `minEpochMs`/`maxEpochMs`; it is 404 for layers that are not time-aware.
+   `temporalExtent` returns `min`/`max` as ISO 8601 plus `minEpochMs`/`maxEpochMs`; for layers that are not time-aware it returns an error with code 404.
 
 3. Filter queries by time. GeoServices takes `time=start,end`; OGC API Features takes `datetime=start/end`:
 
 > Open `/rest/services/{service}/FeatureServer/{layerId}/query?where=1%3D1&time=2024-01-01T00:00:00Z,2024-12-31T23:59:59Z&f=json`, `/ogc/features/collections/my_layer/items?datetime=2024-01-01T00:00:00Z/2024-12-31T23:59:59Z` in a browser.
 
-   A bare instant filters to that moment; bounds are inclusive; reversed ranges are rejected with 400.
+   A bare instant filters to that moment; bounds are inclusive; reversed ranges are rejected with code 400.
 
 4. Render time slices over WMS with the standard `TIME` parameter. GetCapabilities advertises `<Dimension name="time">` with the layer's live extent:
 
@@ -69,8 +69,10 @@ Expected (trimmed):
 
 ## Troubleshoot
 
-- **404 from `temporalExtent`** — the layer is not time-aware: no `timeInfo` configured, or the configured field does not resolve to a `Date`/`DateTime` column.
-- **400 on `query?time=`** — same cause as above, or a reversed range (`start > end`).
+GeoServices REST endpoints (`/rest/services/...`) report errors as HTTP 200 with an `error` object whose `code` carries the status; OGC API Features returns the status itself.
+
+- **Code 404 from `temporalExtent`** — the layer is not time-aware: no `timeInfo` configured, or the configured field does not resolve to a `Date`/`DateTime` column.
+- **Code 400 on `query?time=`** — same cause as above, or a reversed range (`start > end`).
 - **WMS `InvalidDimensionValue` / WMTS `InvalidParameterValue`** — `TIME` was sent to a layer that does not advertise a time dimension; configure `timeInfo` first.
 - **402 on `?time=` tiles or `queryDateBins`** — these need the Pro `temporal.time-series-tiles` / `temporal.histogram` entitlements.
 - **501 from `PUT /api/v1/admin/services/{serviceName}/timeinfo`** — the service-level endpoint is intentionally not supported; use the per-layer metadata endpoint shown in step 1. See [troubleshooting](../deploy/troubleshooting.md).

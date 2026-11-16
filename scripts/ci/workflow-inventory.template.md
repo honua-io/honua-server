@@ -233,9 +233,7 @@ required jobs. `PR Gate / Build and tests`, the four `PR Gate / Fast and
 architecture (<group>)` jobs, `PR Gate / Format`, `PR Gate / Analyzers`, `PR Gate / Analyzers (tests)` and
 `PR Gate / Affected shards (select)` still run and conclude success themselves,
 and so do the `PR Gate` and `PR Gate / Affected shards` aggregates. There is no
-`paths` filter, because a skipped required check blocks merge. The observe-only
-`docs-only` class of `scripts/ci/classify-pr-gate-impact.py` is a separate,
-narrower measurement and is unchanged.
+`paths` filter, because a skipped required check blocks merge.
 
 **What counts as docs-only** is defined once, in `scripts/ci/docs-only-diff.sh`
 (its header is the full contract). To see why a documentation change ran the
@@ -511,13 +509,11 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `pr-gate-impact-observe.yml` | PR Gate Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Trusted default-branch, read-only classification of the exact gate-time diff. Retains bounded docs-only/full receipts and validates PR Gate build metadata plus exact payload artifact identity without downloading or executing the payload. |
 | `native-image-impact-observe.yml` | Native Image Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only comparison of graph-derived image inputs with legacy path triggers. The Serving/GDAL image workflows stay authoritative in observe mode. |
 | `server-test-prebuild-observe.yml` | Server Test Prebuild Observation | `workflow_run` [Review Gate Attestation] (`branches-ignore: trunk`), `workflow_dispatch` | Trusted default-branch read-only shadow producer for #3226. Only `pull_request_target` Review Gate runs are usable, and those are the only ones whose run record carries a PR head branch — hence the `branches-ignore` filter, which drops the `issue_comment`/bridge runs that used to materialise as skipped runs. |
 | `server-test-prebuild-parity.yml` | Server Test Prebuild Parity Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only post-verification shadow: does one already-ready exact prebuild produce the same bounded proof results as an independent restore/build? Publishes no status. |
 | `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
 | `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
-| `impact-routing-evidence-ledger.yml` | Impact Routing Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of attempt-bound PR Gate and native-image impact receipts; reconciles native decisions with successful exact-head Serving/GDAL image outcomes. |
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
 
@@ -634,6 +630,8 @@ candidate context.
 
 | Workflow file | Retired | Why |
 |---|---|---|
+| `pr-gate-impact-observe.yml` | 2026-11-16 (#7880) | Disabled on GitHub since 9 Nov; observe-only docs-only routing classification. The docs-only fast path it measured is enforced through `scripts/ci/docs-only-diff.sh`. Its classifier (`classify-pr-gate-impact.py`) and validator (`validate-pr-gate-impact.sh`) went with it. |
+| `impact-routing-evidence-ledger.yml` | 2026-11-16 (#7880) | Counted observer receipts toward a seven-day promotion bar that disabled observers could no longer reach. `audit-impact-routing-evidence.py`, the promotion and tombstone policies and `impact-routing-evidence.md` went with it. The run-catalog helpers the affected-shard audit uses stay in `collect-impact-routing-runs.py`, without its receipt download path. |
 | `claude-review.yml` | 2026-11-15 (simplify A4) | Disabled on GitHub since the 11-11 review-path ruling; independent review now comes from the lanes and the Codex connector. Its helpers (`claude-review-body.js`, `claude-review-dedupe.js`, `review-catchup.js`) went with it. `review-gate-evidence.js` still grades a Claude bot review if one is posted. |
 | `merge-train.yml` | 2026-11-15 (simplify A4) | Disabled on GitHub; GitHub ruleset auto-merge is the only landing path. `scripts/ci/merge-train/` and its fixtures went with it, and `scripts/ci/validate-single-merge-authority.sh` now rejects any repository merge authority, this workflow included. ADR-0055 is superseded. |
 | `merge-train-rerun-recovery.yml` | 2026-11-15 (simplify A4) | Disabled companion of `merge-train.yml`; resumed a train batch after a green CI rerun. |
@@ -705,19 +703,6 @@ Five composite actions were added to `.github/actions/` for shared CI setup and 
 `cite-conformance.yml` and `cite-tiles-conformance.yml` now call `cite-conformance-common.yml`, matching the single-suite CITE wrappers for GML, GeoPackage, KML, WMS, and WMTS.
 
 **Rationale**: Features and Tiles used the same checkout/build/run/parse/upload/fail skeleton as the reusable CITE workflow. Keeping only suite-specific inputs in the dispatcher files reduces drift in cache scopes, artifact upload behavior, and failure handling.
-
-### Semantic inventory pilot placement
-
-The optional #6051 metadata observation runs in `ci.yml`'s managed `build`
-producer after normal managed compilation and pristine test-output publication.
-The Architecture collector's existing generated coverage references materialize
-OData units, Scene components and GDAL outputs there, together with their project
-reference metadata. The complete collector still gates the downstream foundation
-server consumer. The pilot adds only its small tool build; no additional inspected
-project build or dependency artifact transport is introduced. Fixture regressions
-fail the producer; real-project metadata observation remains advisory and its
-reports are retained separately as `source-inventory-pilot-<attempt>`.
-
 
 ### Grouped unit and component shards
 
