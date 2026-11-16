@@ -327,6 +327,15 @@ public sealed class WebAppFixture : IAsyncLifetime
     public void UpdateV2ResourceName(int layerIndex, string newName)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceName(this, layerIndex, newName);
 
+    // Sets one extension key (for example "wms" or "wmts") on the resource published at layerIndex.
+    public void SetV2ResourceExtension(int layerIndex, string key, string extensionJson)
+    {
+        using var document = JsonDocument.Parse(extensionJson);
+        Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.SetResourceExtension(
+            this, layerIndex, new(key, document.RootElement.Clone()));
+    }
+
+
     public void UpdateV2ServiceMetadata(
         string serviceName,
         IReadOnlyList<string>? enabledProtocols = null,

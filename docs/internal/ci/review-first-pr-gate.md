@@ -38,69 +38,27 @@ trusted exact-head review decision.
 | `observe` | Admission and current eager verification | Publishes exact-head admission; records `observe` without an Actions mutation | Not created by review-first |
 | `enforce` | Admission only; intentionally fails at `Await exact-head review` | Publishes exact-head admission and reruns the exact failed job once | Runs expensive verification |
 
-Rollout begins in `observe`. After at least 20 representative PR heads have
-immutable current-policy receipts, the evidence ledger is integrity-clean, and
-the #3216 invariants are verified, a human may propose switching both values to
-`enforce` in one reviewed commit. The ledger never performs that switch. Collect
-at least 30 post-change heads before judging the latency and runner-minute target
-from #3213.
+The experiment remains in `observe`; it was not promoted to `enforce`.
+The unused PR Gate enforcement structure is tracked separately under #7880.
+Retiring report collection does not authorize a mode change or change either
+required context.
 
-## Promotion evidence ledger
+## Retired promotion evidence ledger
 
-Every successful `observe` decision now emits a bounded
-`honua.review-first-observation/v1` artifact from the trusted Review Gate run.
-The receipt contains the exact PR/head, the complete bounded PR Gate run and job
-inputs used by the production dispatcher, the selected admission run, the
-decision, the shared final full review/state/head/label and admission
-revalidations, and a digest of all policy inputs. It records `mutation: none`.
-Duplicate review events can emit duplicate receipts, but each exact head counts
-once.
+The final successful daily audit on 2026-11-15,
+[run 43752404798](https://github.com/honua-io/honua-server/actions/runs/43752404798),
+recommended `observe-more`: 5 distinct current-policy heads and PRs against the
+20-head minimum, 151 non-current-policy receipts, and 1,724 successful Review
+Gate runs without receipts. The integrity count was zero, but the sample was
+insufficient. Observation latency was 44.22 minutes at p50 and 59.60 at p90.
+These are collection latencies, not measured PR cycle-time improvements.
 
-`Review-first Evidence Ledger` runs on the default branch daily or on manual
-request. It downloads only artifacts attached to successful canonical Review
-Gate runs, validates artifact/run identity and bounds, replays every receipt
-through `evaluateReviewFirstDispatch`, separates changed policy digests into a
-new cohort, and retains JSON plus Markdown for 30 days. It has only
-`actions: read` and `contents: read`; its output is either `observe-more` or
-`eligible-for-human-promotion-review`. It cannot publish a status, rerun a job,
-change a label, change mode, trigger the train, or merge. The report shows both
-distinct exact heads and distinct pull requests so a human can judge whether the
-cohort is representative rather than accepting a burst of updates to one PR.
-Workflow-run discovery divides the rolling window into 24-hour ranges, combines
-and deduplicates their results, and fails closed if any partition reaches 1,000
-runs. This avoids GitHub's 1,000-result cap on workflow-run searches that use a
-`created` filter. Every observation uses the stable exact artifact name
-`review-first-observation-v1`, so artifact discovery can ask GitHub for only that
-name rather than scanning the repository's unrelated artifacts. It reads one
-paginated repository artifact catalog and joins artifacts to trusted run IDs
-locally; it never makes one artifact-list request per run. The promotion policy
-uses a three-day rolling collection window and caps the worst case at 30
-run-query pages, 50 repository-artifact pages, and 300 receipt downloads:
-380 requests within the unchanged 650-request policy ceiling, with at
-least 620 requests reserved below the `GITHUB_TOKEN` limit of 1,000 per
-repository per hour. The 50-page catalog bound (5,000 artifacts) keeps at least
-2x headroom over the 1,601-artifact retained catalog observed in #5363. Every page must report the same total, IDs must be unique,
-the complete count must fit the page bound, and the selected receipt count must
-fit the download bound. Any inconsistency or exhausted bound fails closed.
-
-The three-day collection window addresses the observed #5364 download-budget
-failure without sampling an incomplete window or granting a stronger credential.
-A successful default-branch collection remains required. On 2026-10-13 the catalog held 181
-unexpired receipts created in three days, versus 437 in seven days and 1,187 in
-30 days. Every indexed receipt in the configured window is still required;
-growth beyond 300 fails collection rather than silently dropping the tail.
-The minimum remains 20 distinct current-policy heads with zero integrity
-failures. Changing the policy digest starts a new measurement cohort, so old
-receipts cannot make the new cohort ready. The collection window does not
-shorten the 30-day artifact/report retention or alter release qualification.
-
-The pre-ledger audit found seven conservative API-derived candidates among 53
-distinct heads. Those remain useful supporting evidence, but they are not
-countable receipts: GitHub's historical PR association reflects the PR's current
-head, and the combined commit-status endpoint exposes only the newest state.
-Promotion therefore counts only the contemporaneous trusted receipts. Audits of
-status history must use the paginated plural `/commits/{sha}/statuses` endpoint;
-the singular combined-status response is not historical evidence.
+The daily workflow, its promotion policy, report collector, and producer
+artifacts are retired. The single audit job ran from 19:26:14Z to 19:28:50Z,
+156 seconds (2.60 runner-minutes). Retirement removes one scheduled job per day;
+no PR jobs are removed and producer artifact overhead was not separately
+measured. Historical artifacts remain governed by their existing retention.
+The production review decision and all final state revalidation remain active.
 
 ## Trust boundary
 
@@ -117,11 +75,6 @@ the singular combined-status response is not historical evidence.
   no checkout credential, and executes no PR-authored code. That SHA identifies
   the trusted default-branch workflow policy for the event. It has no manual
   dispatch path that can select a PR ref.
-- Observation artifacts are evidence, not authority. Their stable artifact name,
-  producer workflow, run, attempt, event, producer policy SHA, receipt PR/head
-  identity, policy digest, bounded snapshot, and replayed decision must all
-  agree. Malformed or contradictory evidence fails the ledger's integrity gate
-  and can never recommend promotion.
 - Exact-head review, unresolved threads, draft/hold/escalation state, pagination,
   workflow identity, event type, head SHA, PR association, run identity, run
   attempt, admission receipt, wait receipt, and skipped expensive steps all fail
@@ -134,7 +87,7 @@ the singular combined-status response is not historical evidence.
   exact-head PR Gate runs, commit/PR association, selected run jobs, and the
   production decision. A dismissed review, newly unresolved thread, truncated
   query, hold, changed head, or canonical-run change fails closed. No awaited
-  summary write occurs between the final joint snapshot and the receipt/rerun.
+  summary write occurs between the final joint snapshot and the rerun.
   Normal PR Gate concurrency cancels the residual race if the head moves after
   those reads.
 - Resolving a thread has no GitHub Actions event. An operator re-attests with
@@ -150,8 +103,7 @@ the singular combined-status response is not historical evidence.
 Review, comment, status, and workflow completion events can all re-evaluate the
 same head. Every event first resolves exactly one PR number, including fork
 workflow completions, and trusted evaluations serialize on that PR number.
-Repeated clean events may retain repeated observation artifacts, but the ledger
-deduplicates by exact head and fails closed if one head maps to multiple PRs.
+Repeated clean observe events report their decisions without retaining artifacts.
 Once GitHub accepts the rerun,
 the workflow's `run_attempt` becomes greater than one and every later event is a
 no-op. A duplicate API rejection is ignored only after a fresh run read proves
@@ -172,7 +124,7 @@ the result, and there are two moments where that can stop being true:
    with `cancel-in-progress: false`, deliberately, so it can queue behind other
    events for minutes, and the pull request can *close* inside that queue.
    `attest` therefore re-reads the pull request as its first step — before the
-   checkout, the policy digest, and the bounded GraphQL snapshot — and sheds a
+   checkout and the bounded GraphQL snapshot — and sheds a
    subject that closed while it waited. Measured on trunk before this check
    existed, 27 of 63 sampled `attest` failures (43%) were
    `pull request is not open`: the whole trusted job spent to stamp a red

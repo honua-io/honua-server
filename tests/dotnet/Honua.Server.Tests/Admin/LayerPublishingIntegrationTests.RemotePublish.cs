@@ -17,19 +17,16 @@ using Honua.Infrastructure.MultiTenancy;
 using Honua.Migration;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Infrastructure.Progress;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 using ProgressStatus = Honua.Core.Features.Infrastructure.Domain.OperationStatus;
-using StackExchange.Redis;
-using Testcontainers.Redis;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -93,15 +90,12 @@ public sealed partial class LayerPublishingIntegrationTests
         // The shared fixture seeds one row; exceed the one-row async admission threshold.
         await InsertPostGisFeatureAsync("Remote worker feature", 200, 2, 2);
         (await GetSourceRowCountAsync()).Should().Be(2);
-        await using var redis = new RedisBuilder("redis:7.2-alpine").Build();
-        await redis.StartAsync();
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.GetConnectionString());
         await using var jobSubstrate = await PostgresJobSubstrateHarness.CreateAsync(_fixture.Postgres, nameof(LayerPublishingIntegrationTests));
         var jobs = jobSubstrate.JobStore;
-        using var acceptingCache = new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redis.GetConnectionString() }));
-        using var workerCache = new RedisCache(Options.Create(new RedisCacheOptions { Configuration = redis.GetConnectionString() }));
-        var acceptingProgress = new UniversalProgressStore(acceptingCache, NullLogger<UniversalProgressStore>.Instance, multiplexer);
-        var workerProgress = new UniversalProgressStore(workerCache, NullLogger<UniversalProgressStore>.Instance, multiplexer);
+        // Each node has its own progress store over the one system database.
+        var progressDatabase = _fixture.GetService<JobStoreDatabase>();
+        var acceptingProgress = new PostgresUniversalProgressStore(progressDatabase);
+        var workerProgress = new PostgresUniversalProgressStore(progressDatabase);
         var backend = NSubstitute.Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns("honua-aws-batch");
         backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);

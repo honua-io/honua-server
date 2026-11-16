@@ -243,8 +243,7 @@ public static partial class Extensions
                         options.RecordException = false;
                     })
                     .AddHttpClientInstrumentation()
-                    .AddNpgsql()
-                    .AddRedisInstrumentation();
+                    .AddNpgsql();
 
                 if (ShouldAddSpanSanitizer(tracingOptions))
                 {

@@ -355,17 +355,5 @@ public sealed class Wfs20DeclaredEditCapabilityTests
     }
 
     private static Wfs20Handler CreateHandler(IMetadataV2GraphProvider provider, IFeatureWriter writer)
-    {
-        var reader = CreateReader();
-        var queryServices = new Wfs20QueryServices(
-            reader,
-            Substitute.For<IGmlFeatureStore>(),
-            provider,
-            Substitute.For<IFilterExpressionService>(),
-            new Wfs20QueryParameterAdapter(NullLogger<Wfs20QueryParameterAdapter>.Instance),
-            new QueryProcessor(Substitute.For<IFilterExpressionTranslator>(), reader, NullLogger<QueryProcessor>.Instance, provider),
-            Options.Create(new Wfs20Options()),
-            Substitute.For<IConfiguration>());
-        return Wfs20HandlerTestFactory.Create(queryServices, writer);
-    }
+        => Wfs20WriteTestHandler.Create(provider, writer, CreateReader());
 }
