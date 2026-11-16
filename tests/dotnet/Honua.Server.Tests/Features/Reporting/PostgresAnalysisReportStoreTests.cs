@@ -37,6 +37,8 @@ public sealed class PostgresAnalysisReportStoreTests(DatabaseFixtureAdapter data
     public Task DisposeAsync() => database.DropSchemaAsync(_schema);
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}")]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}/render")]
     public async Task StoreAsync_RecreatedPool_RoundTripsAllSectionTypes()
     {
         var report = Report("job|one");
@@ -51,6 +53,8 @@ public sealed class PostgresAnalysisReportStoreTests(DatabaseFixtureAdapter data
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}")]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}/render")]
     public async Task RemoveAsync_FromAnotherNode_InvalidatesEveryVersionOnlyForThatJob()
     {
         var first = Store();
@@ -64,6 +68,8 @@ public sealed class PostgresAnalysisReportStoreTests(DatabaseFixtureAdapter data
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}")]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}/render")]
     public async Task TryGetAsync_ExpiredReport_IsAMissAndReplacementRefreshesExpiry()
     {
         var store = Store();
@@ -79,6 +85,8 @@ public sealed class PostgresAnalysisReportStoreTests(DatabaseFixtureAdapter data
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}")]
+    [Endpoint("GET /api/v1/analysis/reports/{jobId}/render")]
     public async Task StoreAsync_ConcurrentNodes_RespectSharedCapacity()
     {
         var first = Store(2);
