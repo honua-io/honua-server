@@ -39,6 +39,7 @@ public sealed class FolderOperationResponseTests
         response.Status.Should().Be(context.Response.StatusCode);
         if (string.IsNullOrEmpty(httpBody)) response.Payload.Should().BeEmpty();
         else JsonNode.DeepEquals(JsonNode.Parse(response.Payload), JsonNode.Parse(httpBody))
-            .Should().BeTrue("MCP must retain the HTTP refusal contract");
+            .Should().BeTrue("MCP must retain the HTTP refusal contract; native: {0}; HTTP: {1}",
+                response.Payload, httpBody);
     }
 }
