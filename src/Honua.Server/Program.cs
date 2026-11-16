@@ -602,8 +602,8 @@ else
 {
     // No system database: compose the fail-closed proposal placeholder so the
     // governed admin catalogs (AddOperationsToolset gates them on a proposal store) still
-    // register and advertise their honua_admin_* tools. Without it the full MCP catalog silently
-    // lost exactly the 20 AdminApiOperationCatalog tools on hosts without one (2026.1 rc.3, J1/S1).
+    // register and advertise their honua_admin_* tools; without it the MCP catalog would omit the
+    // AdminApiOperationCatalog tools on hosts without a system database.
     // IOperationGateway is deliberately NOT registered: approval-gated calls then refuse through
     // the existing typed capability-unavailable paths (approval bridge, ProposalEndpoints,
     // McpPlatformOpsReader), and direct-execute operations run unchanged. The durable runtime
