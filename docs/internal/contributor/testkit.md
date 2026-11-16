@@ -757,5 +757,5 @@ every certification test skips, which is the correct local/PR outcome.
 ## Environment Requirements
 
 - Docker (for Testcontainers)
-- .NET 10 SDK
+- .NET 11 SDK matching the version and roll-forward policy in [`global.json`](../../../global.json)
 - 200+ max connections in PostgreSQL (configured automatically)
