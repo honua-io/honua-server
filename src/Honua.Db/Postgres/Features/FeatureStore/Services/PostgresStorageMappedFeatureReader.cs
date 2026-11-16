@@ -1429,7 +1429,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             {
                 var inField = inMatch.Groups["field"].Value;
                 var inColumn = ResolveWhereColumnExpression(inField, sql);
-                var placeholders = SplitValueTokens(inMatch.Groups["values"].Value)
+                var placeholders = LegacyWhereClauseParser.SplitValueTokens(inMatch.Groups["values"].Value)
                     .Select(valueToken => AddWhereValueParameter(inField, valueToken, forceText: false, sql));
                 parameterizedExpressions.Add($"{inColumn} IN ({string.Join(", ", placeholders)})");
                 continue;
@@ -2049,40 +2049,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         return parts;
-    }
-
-    private static List<string> SplitValueTokens(string values)
-    {
-        var tokens = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
-
-        for (var index = 0; index < values.Length; index++)
-        {
-            var value = values[index];
-            if (value == '\'' && inQuotes && index + 1 < values.Length && values[index + 1] == '\'')
-            {
-                current.Append("''");
-                index++;
-            }
-            else if (value == '\'')
-            {
-                inQuotes = !inQuotes;
-                current.Append(value);
-            }
-            else if (value == ',' && !inQuotes)
-            {
-                tokens.Add(current.ToString().Trim());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(value);
-            }
-        }
-
-        tokens.Add(current.ToString().Trim());
-        return tokens;
     }
 
     private static bool IsAndTokenAt(string whereClause, int index)
