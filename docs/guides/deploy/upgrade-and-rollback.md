@@ -65,10 +65,13 @@ incompatible migrations. CODEOWNERS designates the founder as the reviewer for b
 
 The frozen reader baseline is `eng/schema/schema-reader-baseline.v1.json`.
 Every migration, including each newly added script, must also be hash-pinned in
-`eng/schema/schema-migration-hashes.v1.json`; extend that ledger when adding an
-expand migration. Keep existing hashes and script names immutable. A new ledger
-entry does not extend the frozen reader baseline or exempt a script from contract
-checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
+`eng/schema/migration-hashes/<migration-path>.sha256`, mirroring the SQL path
+from the repository root (for example,
+`eng/schema/migration-hashes/src/Honua.Server/Migrations/146_AddX.sql.sha256`).
+Add a new pin file alongside each new expand migration; existing pin files do not
+need editing. Keep existing hashes and script names immutable. A new pin does not
+extend the frozen reader baseline or exempt a script from contract checks. Hashes
+are uppercase SHA-256 over UTF-8 SQL with LF line endings.
 From rc.2, a migration carrying `honua:reader-incompatible` or classified as
 contract by the reader fails CI unless its exact name and hash match the release boundary.
 Every migration numbered above that boundary (server 145, raster 008) must declare `expand` and be accepted
