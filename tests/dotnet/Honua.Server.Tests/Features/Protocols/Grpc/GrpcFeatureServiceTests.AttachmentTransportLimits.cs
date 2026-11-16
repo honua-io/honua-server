@@ -18,10 +18,9 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 public sealed partial class GrpcFeatureServiceTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(524160)]
     [InlineData(1048576)]
-    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/BeginAttachmentUpload")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/BeginAttachmentUpload")]
     public async Task BeginAttachmentUpload_ReducedReceiveLimit_ClampsNewAndResumedSessions(int storedChunkBytes)
