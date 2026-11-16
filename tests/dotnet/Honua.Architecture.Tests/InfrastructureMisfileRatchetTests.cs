@@ -38,7 +38,7 @@ public sealed class InfrastructureMisfileRatchetTests
     [ArchitectureTest]
     public void RelocatedSubAreas_ShouldNotReappearUnder_Infrastructure()
     {
-        var serverAssembly = typeof(Honua.Server.Startup.LicensingRegistration).Assembly;
+        var serverAssembly = ArchitectureTestHelpers.ServerAssembly;
 
         var allTypes = ArchitectureTestHelpers.GetTypesSafely(serverAssembly).ToList();
 
@@ -63,7 +63,7 @@ public sealed class InfrastructureMisfileRatchetTests
     [ArchitectureTest]
     public void RelocatedSubAreas_ShouldExistAt_NewLocation()
     {
-        var serverAssembly = typeof(Honua.Server.Startup.LicensingRegistration).Assembly;
+        var serverAssembly = ArchitectureTestHelpers.ServerAssembly;
 
         var allTypes = ArchitectureTestHelpers.GetTypesSafely(serverAssembly).ToList();
 

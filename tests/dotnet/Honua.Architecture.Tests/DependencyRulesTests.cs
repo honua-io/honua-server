@@ -65,7 +65,7 @@ public sealed class DependencyRulesTests
     [ArchitectureTest]
     public void Server_ShouldNotUseControllers()
     {
-        var serverAssembly = typeof(Honua.Server.Startup.LicensingRegistration).Assembly;
+        var serverAssembly = ArchitectureTestHelpers.ServerAssembly;
 
         var controllerTypes = serverAssembly
             .GetTypes()
@@ -113,7 +113,7 @@ public sealed class DependencyRulesTests
     [ArchitectureTest]
     public void ClassicOgcProtocols_ShouldNotDependOn_GeoServicesProtocols()
     {
-        var serverAssembly = typeof(Honua.Server.Startup.LicensingRegistration).Assembly;
+        var serverAssembly = ArchitectureTestHelpers.ServerAssembly;
 
         var result = Types.InAssembly(serverAssembly)
             .That()
