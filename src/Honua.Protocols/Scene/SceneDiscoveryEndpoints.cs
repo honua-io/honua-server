@@ -186,7 +186,7 @@ internal static partial class SceneDiscoveryEndpoints
 
         try
         {
-            var (scene, denied) = await ResolveReadableSceneAsync(sceneId, context, registry, cancellationToken)
+            var (scene, denied) = await ResolveReadableSceneAsync(sceneId, context, registry)
                 .ConfigureAwait(false);
             if (denied is not null)
             {
@@ -221,7 +221,7 @@ internal static partial class SceneDiscoveryEndpoints
 
         try
         {
-            var (scene, denied) = await ResolveReadableSceneAsync(sceneId, context, registry, cancellationToken)
+            var (scene, denied) = await ResolveReadableSceneAsync(sceneId, context, registry)
                 .ConfigureAwait(false);
             if (denied is not null)
             {
@@ -248,10 +248,9 @@ internal static partial class SceneDiscoveryEndpoints
     private static async Task<(ResolvedScene? Scene, IResult? Denied)> ResolveReadableSceneAsync(
         string sceneId,
         HttpContext context,
-        ISceneDatasetRegistry registry,
-        CancellationToken cancellationToken)
+        ISceneDatasetRegistry registry)
     {
-        var scene = await ResolveSceneForDiscoveryAsync(sceneId, context, registry, cancellationToken).ConfigureAwait(false);
+        var scene = await ResolveSceneForDiscoveryAsync(sceneId, context, registry, context.RequestAborted).ConfigureAwait(false);
         return scene is { } resolved
             ? (resolved, RequireReadAccess(context, resolved))
             : (null, StandardErrorHelpers.CreateNotFound(context, "Scene was not found."));
