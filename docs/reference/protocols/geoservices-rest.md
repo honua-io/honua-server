@@ -77,6 +77,8 @@ Registered but **not implemented** (return a spec-shaped not-implemented error):
 
 > Open `https://server.example.com/rest/services/roads/FeatureServer?f=json` in a browser, take a layer `id`, then open `https://server.example.com/rest/services/roads/FeatureServer/{id}/query?where=1%3D1&outFields=*&resultRecordCount=10&f=json`.
 
+### Editing from the SDK
+
 Use the `@honua/sdk-js` FeatureLayer client and call `applyEdits({ adds: [{ geometry: { x: -122.4, y: 37.8 }, attributes: { name: "New point" } }] })`.
 
 ## MapServer

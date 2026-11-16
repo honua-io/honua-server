@@ -52,9 +52,13 @@ Reuse the token on any `/rest/services/*` request as `?token=<opaque>`, `Authori
 The same URLs work in native GeoServices REST client SDKs, for example a JavaScript feature layer:
 
 ```js
-// layerIndex: the layer's id from http://localhost:8080/rest/services/my-service/FeatureServer?f=json
+const service = "http://localhost:8080/rest/services/my-service/FeatureServer";
+// The layer id is assigned at publish; read it from the service document.
+const { layers } = await (await fetch(`${service}?f=json`)).json();
+const layerIndex = layers[0].id;
+
 const layer = new FeatureLayer({
-  url: `http://localhost:8080/rest/services/my-service/FeatureServer/${layerIndex}`
+  url: `${service}/${layerIndex}`
 });
 ```
 

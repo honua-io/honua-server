@@ -497,7 +497,8 @@ print(json.dumps(result["features"], indent=2))
 python publish-quickstart.py
 ```
 
-The first line is the service name and layer id. Two features follow, with their
+The first line is the service name and the layer's storage id, which the SDK
+and the admin API use. Two features follow, with their
 geometry, in EPSG:4326.
 
 `admin.discover_tables(connection.connection_id)` lists what else is in that
@@ -509,7 +510,8 @@ one publish — OGC API Features at `/ogc/features/collections`, GeoServices RES
 `/rest/services/quickstart/FeatureServer`, plus WMS, WFS, vector tiles and the
 rest. The GeoServices service document lists each layer with its `id`; the layer
 URL is `/rest/services/quickstart/FeatureServer/{id}`. Read the id from that
-document: it is assigned at publish and is not always `0`. `admin.list_services()` and `admin.get_capabilities()` report what this
+document: it is assigned at publish, is not always `0`, and is not always the
+storage id the script printed. `admin.list_services()` and `admin.get_capabilities()` report what this
 deployment actually exposes, rather than what the list above assumes.
 
 ## Approved operations and recovery

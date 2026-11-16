@@ -81,15 +81,19 @@ def fetch_json(url: str, key: str) -> dict:
 def verify_geoservices_layer(base: str, key: str, fetch=fetch_json) -> int:
     """The quickstart's GeoServices URL resolves with the id its service document lists."""
     service = f"{base}/rest/services/quickstart/FeatureServer"
-    layers = fetch(service + "?f=json", key).get("layers") or []
-    if len(layers) != 1 or isinstance(layers[0].get("id"), bool) or not isinstance(layers[0].get("id"), int):
-        raise ValueError("Quickstart service document does not list exactly one layer id")
-    layer_id = layers[0]["id"]
-    layer = fetch(f"{service}/{layer_id}?f=json", key)
-    if "error" in layer or layer.get("id") != layer_id:
-        raise ValueError(f"Quickstart GeoServices layer URL FeatureServer/{layer_id} does not resolve")
-    query = fetch(f"{service}/{layer_id}/query?where=1%3D1&outFields=id,name&outSR=4326&f=json", key)
-    verify_features(query.get("features") or [])
+    try:
+        layers = fetch(service + "?f=json", key)["layers"]
+        (layer_id,) = [layer["id"] for layer in layers]
+        if type(layer_id) is not int:
+            raise ValueError("layer id is not an integer")
+        layer = fetch(f"{service}/{layer_id}?f=json", key)
+        if "error" in layer or layer["id"] != layer_id:
+            raise ValueError(f"FeatureServer/{layer_id} does not resolve")
+        query = fetch(f"{service}/{layer_id}/query?where=1%3D1&outFields=id,name&outSR=4326&f=json", key)
+        verify_features(query["features"])
+    except (KeyError, TypeError, AttributeError, ValueError) as error:
+        # A malformed answer is a failed proof with a reason, not a traceback.
+        raise ValueError(f"Quickstart GeoServices layer URL: {error!r}") from error
     return layer_id
 
 

@@ -23,9 +23,13 @@ import Graphic from "@arcgis/core/Graphic.js";
 import Point from "@arcgis/core/geometry/Point.js";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer.js";
 
-// layerIndex: the layer's id from http://localhost:8080/rest/services/parks/FeatureServer?f=json
+const service = "http://localhost:8080/rest/services/parks/FeatureServer";
+// The layer id is assigned at publish; read it from the service document.
+const { layers } = await (await fetch(`${service}?f=json`)).json();
+const layerIndex = layers[0].id;
+
 const layer = new FeatureLayer({
-  url: `http://localhost:8080/rest/services/parks/FeatureServer/${layerIndex}`,
+  url: `${service}/${layerIndex}`,
 });
 await layer.load();
 const objectIdField = layer.objectIdField;
@@ -96,7 +100,7 @@ OGC API Features takes `Content-Type: application/geo+json` bodies; a successful
 
 Query the layer and confirm your edit round-trips:
 
-Open `http://localhost:8080/rest/services/parks/FeatureServer/{layerIndex}/query?where=name%3D%27Honolulu%20Hale%27&outFields=*&f=json` in a browser, with the same [layer index](../../reference/protocols/geoservices-rest.md#layer-index) as above, and compare it with the expected response:
+Open `http://localhost:8080/rest/services/parks/FeatureServer/{layerIndex}/query?where=name%3D%27Honolulu%20Hale%27&outFields=*&f=json` in a browser, replacing `{layerIndex}` with the [layer index](../../reference/protocols/geoservices-rest.md#layer-index) used above, and compare it with the expected response:
 
 ```json
 { "features": [ { "attributes": { "OBJECTID": 1, "name": "Honolulu Hale" }, "geometry": { "x": -157.8583, "y": 21.3069 } } ] }

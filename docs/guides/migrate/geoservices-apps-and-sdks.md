@@ -42,8 +42,8 @@ The `@honua/sdk-js/client-compat` subpath ships compatibility wrappers (`Feature
 ```js
 import { FeatureLayerCompat } from "@honua/sdk-js/client-compat";
 
+const layerIndex = 1; // this layer's id on Honua, from your old-URL → new-URL table
 const layer = new FeatureLayerCompat({
-  // layerIndex: the layer's id from the old-URL → new-URL table
   url: `http://localhost:8080/rest/services/parcels/FeatureServer/${layerIndex}`,
   outFields: ["*"],
   definitionExpression: "STATUS = 'ACTIVE'",
