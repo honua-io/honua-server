@@ -21,6 +21,42 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class FolderMutationServiceTests
 {
     [UnitTest]
+    public async Task ExecuteAsync_DuplicateDeliveryWithOriginalEtag_DoesNotSaveTwice()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "operator")], "test"));
+        var authorization = Substitute.For<IOperatorAuthorizationEvaluator>();
+        authorization.EvaluateAsync(principal, Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Allowed()));
+        var approvals = Substitute.For<IOperatorApprovalEvaluator>();
+        approvals.Evaluate(principal, Arg.Any<OperatorAuthorizationRequest>()).Returns(ApprovalRequirement.NotRequired());
+        var current = new MetadataV2GraphSnapshot(new MetadataV2Graph(), "before", DateTimeOffset.UtcNow);
+        var store = Substitute.For<IMetadataV2GraphStore>();
+        store.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(_ => current);
+        store.SaveAsync(Arg.Any<MetadataV2Graph>(), "before", Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            current = new MetadataV2GraphSnapshot(call.Arg<MetadataV2Graph>(), "after", DateTimeOffset.UtcNow);
+            return Task.FromResult(current);
+        });
+        await using var services = new ServiceCollection().AddSingleton(store)
+            .AddSingleton(new OperatorApprovalGate(authorization, approvals, NullLogger<OperatorApprovalGate>.Instance)).BuildServiceProvider();
+        var execution = new FolderMutationExecution
+        {
+            Services = services, Principal = principal,
+            Command = new FolderMutationCommand.Create("survey", default), ExpectedEtag = "before"
+        };
+
+        var first = await FolderMutationService.ExecuteAsync(execution);
+        var duplicate = await FolderMutationService.ExecuteAsync(execution);
+
+        first.Failure.Should().BeNull();
+        first.Saved!.Etag.Should().Be("after");
+        duplicate.Failure.Should().BeOfType<FolderExecutionFailure.Mutation>()
+            .Which.Refusal.Should().Be(FolderMutationFailure.SnapshotChanged);
+        current.Graph.Folders.Should().ContainSingle(folder => folder.Metadata.Name == "survey");
+        await store.Received(1).SaveAsync(Arg.Any<MetadataV2Graph>(), "before", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_ApprovedRoleWithoutDurableReplay_RefusesBeforeCatalogRead()
     {
         var store = Substitute.For<IMetadataV2GraphStore>();
