@@ -45,9 +45,8 @@ Experimental. Feature streams need PostgreSQL: every node, including the one
 that made a change, delivers committed changes from the PostgreSQL event log.
 Delivery across several nodes, and multi-replica map collaboration, use the
 cross-node PostgreSQL provider, selected by `Realtime:Provider=postgres` or by
-`auto` with `Deployment:Mode=MultiNode`; a Redis add-on is not required. All
-four cloud-native formats and the whole GA process catalog retain their release
-scope. `Licensing__DevGrantEdition` remains a development-only
+`auto` with `Deployment:Mode=MultiNode`. All four cloud-native formats and the
+whole GA process catalog retain their release scope. `Licensing__DevGrantEdition` remains a development-only
 override and is refused in Production, including when Mode is Disabled.
 
 Disabled mode also sets the default guardrail posture, because the guardrail ladder
@@ -86,7 +85,7 @@ Edition entitlement and release maturity are separate axes: paying for a capabil
 | Capability | Edition | 2026.1 boundary |
 |---|---|---|
 | Core branch versioning | Pro | Preview; existing experimental runtime opt-in still applies |
-| Realtime feature streams | Pro | Experimental; delivered from the PostgreSQL event log. Several nodes need `Realtime:Provider=postgres`, or `auto` with `Deployment:Mode=MultiNode`; a Redis add-on is not required |
+| Realtime feature streams | Pro | Experimental; delivered from the PostgreSQL event log. Several nodes need `Realtime:Provider=postgres`, or `auto` with `Deployment:Mode=MultiNode` |
 | Map collaboration sessions | Community | Experimental; multi-replica sessions need the same PostgreSQL event log and cross-node provider, and otherwise refuse edits and turn off presence |
 | Organisational approval and policy controls | Enterprise | Paid governance around the core versioning/operation workflow |
 | Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers | Community | 3D remains Experimental; this does not expand the supported release surface |
