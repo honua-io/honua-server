@@ -25,6 +25,13 @@ internal interface IAdminHttpOperationDefinition
     OperationClass OperationClass { get; }
 }
 
+internal static class AdminOperationEndpointExtensions
+{
+    public static RouteHandlerBuilder WithAdminOperation(
+        this RouteHandlerBuilder endpoint, IAdminHttpOperationDefinition definition)
+        => endpoint.WithName(definition.OpenApiOperationId).WithMetadata(definition);
+}
+
 internal sealed record AdminOperationApprovalMapping(
     IOperationDescriptor Descriptor, OperationRequest Request, OperationPolicyContext PolicyContext)
 {

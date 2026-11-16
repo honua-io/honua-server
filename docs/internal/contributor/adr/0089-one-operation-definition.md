@@ -73,6 +73,14 @@ the catalog snapshot version, which covers the whole published catalog. Adding a
 revision requires an explicit persisted-contract migration and backward-reader
 proof; do not silently change the meaning of existing operation instances.
 
+The current `OperationCatalog.ComputeVersion` hashes operation/provider identity
+pairs. A schema, policy or executor change can leave that version unchanged. It is
+not the semantic definition revision required here. Existing proposal evidence
+also seals the MCP tool name and canonical input schema using a fixed V1 evidence
+projection; preserve that verification contract when introducing a new revision.
+The operation instance's row version remains its concurrency token, not a substitute
+for a definition revision.
+
 ### Approval is derived policy, not a shortcut
 
 Retain ADR 0062's mechanical autonomy scoring and ADR 0064's fail-closed treatment
@@ -161,6 +169,23 @@ including 221 non-GET operations. Of those, 67 match the four existing admin
 catalogs and 154 do not. These are transport counts, not counts of unsupported
 mutations: a POST may be read-only, and a definition may be provided outside those
 four catalogs. The complete bidirectional inventory remains a migration gate.
+These counts are the initial baseline; integrated trunk `ac9ba90bfd` contains
+437 operations and 223 non-GET operations. Record the source revision with each
+inventory so newly added routes cannot disappear behind an earlier count.
+
+Resolve unmatched routes against all five descriptor providers:
+`ServerOperationDescriptorProvider`, `StagedImportOperationDescriptorProvider`,
+`AdminApiOperationDescriptorProvider`, `AdminConnectImportOperationDescriptorProvider`
+and `AdminAccessOperationDescriptorProvider`. The server provider includes
+`AdminOperateOperationCatalog`, Studio operations, AI admission and control-plane
+rollback. Configuration deployment-target/job registries are not descriptor
+providers. Compatibility-only descriptors for legacy operation classes do not
+establish coverage for concrete routes with distinct inputs and handlers.
+
+Provider registration alone does not prove an operation can execute: an unavailable
+proposal store can satisfy the admin providers' registration condition. Check the
+actual executor and approval dependencies as well as descriptor membership. Keep
+the explicit AI-admission self-governance exclusions when deriving MCP exposure.
 
 Classify by the handler and application service before excluding a route:
 
