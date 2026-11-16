@@ -63,7 +63,7 @@ public sealed partial class PairedPublishEndpointTests
             Reservation = new()
             {
                 Key = new(_publicationId, version), ServiceId = source.Service.EffectivePublicName,
-                LayerIndex = source.Publication.LayerIndex, MetadataRevision = snapshot.Revision,
+                LayerIndex = source.Publication.LayerIndex!.Value, MetadataRevision = snapshot.Revision,
                 DestinationBucket = "public", DestinationBaseUrl = "https://data.example", CdnDistributionId = "cdn"
             },
             State = PublicPublicationState.Ready, PurgeIds = []

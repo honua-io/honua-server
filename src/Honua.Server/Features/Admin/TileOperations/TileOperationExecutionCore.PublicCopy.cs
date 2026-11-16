@@ -21,9 +21,13 @@ internal sealed partial class TileOperationExecutionCore
         var guard = services.GetRequiredService<PublicPublicationSourceGuard>();
         var provider = services.GetRequiredService<IMetadataV2GraphProvider>();
         var source = context.Source;
+        if (source.Published.Publication.LayerIndex is not int layerIndex)
+        {
+            return;
+        }
         var run = context.Run;
         var identity = new PublicPublicationSourceIdentity(source.Published, source.MetadataRevision,
-            source.Published.Publication.LayerIndex);
+            layerIndex);
         if (!await guard.IsCurrentAndEligibleAsync(identity, cancellationToken).ConfigureAwait(false))
         {
             return;
@@ -34,7 +38,7 @@ internal sealed partial class TileOperationExecutionCore
             {
                 Key = new(run.PublicationId, run.Version),
                 ServiceId = source.Published.Service.EffectivePublicName,
-                LayerIndex = source.Published.Publication.LayerIndex,
+                LayerIndex = layerIndex,
                 MetadataRevision = source.MetadataRevision,
                 DestinationBucket = target.Bucket,
                 DestinationBaseUrl = target.BaseUrl,
