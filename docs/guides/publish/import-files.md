@@ -27,7 +27,7 @@ The admin import API accepts a single file per request, streams it into PostGIS,
 
 In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/admin/import/formats`.
 
-Returns the live extension list for your build (`.geojson`, `.json`, `.zip`, `.gpkg`, `.gpx`, `.kml`, `.kmz`, `.wkt`, `.csv`, `.fgb`, `.gdb.zip`, `.parquet`, `.geoparquet`).
+Returns the live extension list for your build (`.geojson`, `.json`, `.esrijson`, `.zip`, `.gpkg`, `.gpx`, `.kml`, `.kmz`, `.gml`, `.wkt`, `.wkb`, `.csv`, `.fgb`, `.gdb.zip`, `.parquet`, `.geoparquet`).
 
 ### 2. Preview before importing (optional)
 
@@ -45,6 +45,8 @@ Run `POST /api/v1/admin/import/upload` with these form values:
 | `tableName` | `parcels` |
 | `targetSrid` | `4326` |
 | `overwriteExisting` | `true` |
+
+Without `overwriteExisting`, an import whose `tableName` already names an imported table appends its rows to that table; set it to `true` to replace the table's contents.
 
 Optional form fields: `sourceSrid` (when CRS auto-detection fails), `sourceLayer` (the feature layer to import from a multi-layer GeoPackage), `targetSchema`, `forceBackground`. `targetSchema` must be a configured operational schema: the default (`honua_data`, set by `Database__DefaultOperationalSchema`), `public`, or a schema listed in `Database__OperationalSchemas__0`, `Database__OperationalSchemas__1`, and so on. Any other schema, and always the server metadata schema (`honua`) and PostgreSQL system schemas, returns `400 Bad Request`. Files above the background-job threshold (see `GET /api/v1/admin/import/limits`) return `202 Accepted` with a `jobId` instead of a synchronous result.
 
@@ -68,10 +70,12 @@ The server that accepts the upload stages the file in its configured file storag
 
 | Deployment | Runner | `runner` |
 |---|---|---|
-| Redis on, with a batch workload (AWS Batch on `aws-serverless`) | The import becomes a durable execution job. A batch worker downloads the staged file from file storage and imports it. | `batch` |
-| Redis on, long-lived servers (ECS, EKS, Compose) | The import becomes a durable execution job. Any server replica's job worker runs it. | `in-process` |
-| Redis off, long-lived server | The server that accepted the upload runs the import. | `in-process` |
-| Lambda without a batch runner (Redis off, or no batch workload) | A background import is refused with `503 Background import service not available` before anything is staged. Imports below the background threshold still run synchronously. | n/a |
+| Durable job store, with a batch workload (AWS Batch on `aws-serverless`) | The import becomes a durable execution job. A batch worker downloads the staged file from file storage and imports it. | `batch` |
+| Durable job store, long-lived servers (ECS, EKS, Compose) | The import becomes a durable execution job. Any server replica's job worker runs it. | `in-process` |
+| No durable job store, long-lived server | The server that accepted the upload runs the import. | `in-process` |
+| Lambda without a batch runner (no durable job store, or no batch workload) | A background import is refused with `503 Background import service not available` before anything is staged. Imports below the background threshold still run synchronously. | n/a |
+
+The durable job store and its queue are tables in the server's system PostgreSQL database, so a server configured with that database has them; no other service is needed.
 
 A Lambda instance is frozen as soon as it returns a response, so it never runs a background import itself. A batch runner needs shared file storage (`FileStorage__Provider=AwsS3` or `AzureBlob`): a worker on another machine cannot read the API host's local disk. `GET /api/v1/capabilities/manifest` reports the runner this deployment uses as the `import.background` capability.
 
@@ -147,11 +151,14 @@ and the published layer's primary identifier can be different fields.
 | Format | Extension | Notes |
 | --- | --- | --- |
 | GeoJSON | `.geojson`, `.json` | Assumed WGS 84 per the GeoJSON spec. |
+| Esri JSON | `.esrijson` | An ArcGIS feature set (attributes and Esri geometry). CRS read from `spatialReference.wkid`; without it, `sourceSrid` is required. |
 | Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf`/`.shx`/`.prj`; a raw `.shp` upload is rejected. CRS read from `.prj`, including ESRI-style projected definitions with no EPSG code (State Plane, national grids, Transverse Mercator, Lambert and Albers projections), which are matched to the EPSG CRS with the same projection parameters, unit and datum. A definition whose datum is not recognised is not matched; supply `sourceSrid`. |
 | GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. A GeoPackage with several feature layers needs `sourceLayer` set to one layer's table name; without it the import fails with a message listing the layers. |
 | GPX | `.gpx` | WGS 84 by definition. |
 | KML / KMZ | `.kml`, `.kmz` | WGS 84 by definition. |
-| WKT | `.wkt` | No embedded CRS; provide `sourceSrid` if not WGS 84. |
+| GML | `.gml` | Supply `sourceSrid` when the import reports `import.source_srid_required`. |
+| WKT | `.wkt` | No embedded CRS; `sourceSrid` is required. |
+| WKB | `.wkb` | One or more concatenated Well-Known Binary geometries, without attributes. No embedded CRS; `sourceSrid` is required. |
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. The delimiter (comma, semicolon, tab or pipe) is detected; in a semicolon-separated file, decimal-comma coordinates such as `11,575490` are read as decimals. |
 | FlatGeobuf | `.fgb` | Upload directly, no archive. CRS read from the header; if absent, `sourceSrid` is required or the import is rejected. |
 | FileGDB | `.gdb.zip` | Zip exactly one `.gdb` directory with its internal files intact (do not flatten). SRID detected from geodatabase metadata when present. One target table per request — per-layer selection is not exposed. Domains, relationship classes, subtypes, topology rules, and network datasets are detected but not imported; they surface in `warnings`. |
@@ -185,11 +192,12 @@ When the server cannot detect a source CRS and no `sourceSrid` was supplied, the
 
 ## Troubleshoot
 
-- **`Shapefile uploads must be a .zip containing .shp and .dbf files.`** — zip the full shapefile sidecar set instead of uploading `.shp` alone.
-- **`Unsupported file format`** — the extension is not in your build's `GET /formats` list; convert to a supported format.
+- **`Shapefile uploads must be a .zip containing .shp and .dbf files.`** (preview) — zip the full shapefile sidecar set instead of uploading `.shp` alone.
+- **`Unsupported file format`** or **`File extension '…' is not allowed`** (preview) — the extension is not in your build's `GET /formats` list; convert to a supported format.
+- **`Multipart import request is invalid.`** (upload) — the upload endpoint gives this one answer for a raw `.shp`, an unsupported extension and a malformed form. Run the same file through `POST /api/v1/admin/import/preview` to see which it is.
 - **Import fails with `import.source_srid_required`** — the file carries no CRS information, or its projected `.prj` matches no EPSG CRS (or several); re-run with `sourceSrid` set to the EPSG code of the source data.
-- **A GeoJSON feature has `"geometry": null`** — the feature is imported without geometry and the result carries an `import.geometry_missing` warning with its feature index. A feature with no `geometry` member at all is still rejected.
-- **`Background import service not available` (503)** — the file exceeds the synchronous size limit (or `forceBackground` was set) and this host has no runner for background imports: a Lambda host without Redis and a batch workload, or a host without an import job service. Check `GET /api/v1/admin/import/limits` and the `import.background` capability in `GET /api/v1/capabilities/manifest`; its `reasonCode` is `durable-runner-required` or `shared-file-storage-required`.
+- **A GeoJSON feature has `"geometry": null`** — the feature is imported without geometry and the result's `validationErrors` array carries an `import.geometry_missing` entry with the feature's 1-based `featureIndex`; `warnings` stays empty. A feature with no `geometry` member at all is still rejected.
+- **`Background import service not available` (503)** — the file exceeds the synchronous size limit (or `forceBackground` was set) and this host has no runner for background imports: a Lambda host without a durable job store and a batch workload, or a host without an import job service. Check `GET /api/v1/admin/import/limits` and the `import.background` capability in `GET /api/v1/capabilities/manifest`; its `reasonCode` is `durable-runner-required` or `shared-file-storage-required`.
 - **FileGDB import succeeds but data looks incomplete** — check the `warnings` array; advanced geodatabase constructs are not preserved.
 
 More help: [troubleshooting](../deploy/troubleshooting.md).
@@ -247,7 +255,8 @@ that choice.
 
 The Admin preview includes `coordinateSystem` with detected-source provenance, an optional
 registry name, the effective source and planned storage SRID, and whether an override is
-required. The authenticated read-only coordinate-system lookup accepts a code, an EPSG
+required. The authenticated read-only coordinate-system lookup,
+`GET /api/v1/admin/coordinate-systems`, accepts a code, an EPSG
 identifier or literal name text through `q` (1–128 trimmed characters), with `limit` from
 1 to 50 (default 20). Registry entries include `code`, `name`, `unit` and `area`; unavailable
 registry metadata is null. The MCP `honua_ingest_dataset` tool accepts the same optional
