@@ -30,24 +30,22 @@ internal sealed class ChangeTrackerGenerationProbe(IServiceScopeFactory scopeFac
             return null;
         }
 
-        var layerIds = watchedLayerIds as int[] ?? watchedLayerIds.ToArray();
-        var changes = await tracker
-            .GetChangesSinceAsync(sinceGeneration, layerIds, cancellationToken)
+        var currentGeneration = await tracker
+            .GetCurrentGenerationAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (changes.Count == 0)
+        if (currentGeneration <= sinceGeneration)
         {
             return null;
         }
 
-        var maxGeneration = sinceGeneration;
-        // Not a simple .Where(): this is a running-max fold (each iteration may update
-        // maxGeneration using the previous iteration's value), not a filter/projection.
-        foreach (var change in (changes).Where(change => change.Generation > maxGeneration))
-        {
-            maxGeneration = change.Generation;
-        }
+        var layerIds = watchedLayerIds as int[] ?? watchedLayerIds.ToArray();
+        var changes = await tracker
+            .GetChangesInWindowAsync(
+                sinceGeneration, currentGeneration, layerIds,
+                excludeOriginReplicaId: null, cancellationToken)
+            .ConfigureAwait(false);
 
+        var maxGeneration = changes.Select(change => change.Generation).DefaultIfEmpty(sinceGeneration).Max();
         return maxGeneration > sinceGeneration ? maxGeneration : null;
     }
 }
