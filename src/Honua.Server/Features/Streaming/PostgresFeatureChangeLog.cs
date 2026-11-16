@@ -142,12 +142,16 @@ internal sealed class PostgresFeatureChangeLog(
                 await using var command = new NpgsqlCommand(
                     $"""
                     SELECT
-                        (SELECT min(generation) FROM {_changes}),
-                        (SELECT generation FROM {_changes} WHERE version_id IS NULL
+                        (SELECT min(generation) FROM {_changes} WHERE generation <= @head),
+                        (SELECT generation FROM {_changes} WHERE version_id IS NULL AND generation <= @head
                          ORDER BY generation DESC OFFSET @max_events LIMIT 1),
-                        (SELECT max(generation) FROM {_changes} WHERE version_id IS NULL AND changed_at < @since)
+                        (SELECT max(generation) FROM {_changes}
+                         WHERE version_id IS NULL AND generation <= @head AND changed_at < @since)
                     """,
                     connection);
+                // The window is measured against the published head, never past it, so a generation
+                // the horizon still holds back cannot push a published one out of the resumable window.
+                command.Parameters.Add(new NpgsqlParameter("head", NpgsqlDbType.Bigint) { Value = head });
                 command.Parameters.Add(new NpgsqlParameter("max_events", NpgsqlDbType.Integer) { Value = limits.CursorRetentionLimit });
                 command.Parameters.Add(new NpgsqlParameter("since", NpgsqlDbType.TimestampTz) { Value = now - retention });
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
