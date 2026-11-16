@@ -1329,7 +1329,7 @@ internal static class ImageServerEndpoints
     // public Esri ImageServer: conf.json yields the extent/
     // spatialReference/… service info, not a tile-cache schema). The ArcGIS
     // Maps SDK for .NET native runtime reads this while loading an
-    // ImageServiceRaster; honua previously 404'd here, so LoadAsync failed with
+    // ImageServiceRaster; a 404 here makes LoadAsync fail with
     // "could not read configuration data". Serve the service descriptor (always
     // JSON, the runtime does not send f=json) so the dynamic load proceeds.
     private static async Task<IResult> GetTileCacheConf(

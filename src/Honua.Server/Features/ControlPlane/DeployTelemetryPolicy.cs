@@ -442,8 +442,8 @@ internal sealed record DeployTelemetryPolicy
             GpBatchPolicyName or "serverless-gp" => (CreateGpBatchPreset(parameters), null),
             "aws-alb-canary" => (CreateAwsAlbCanaryPreset(parameters), null),
             "aws-lambda-canary" => (CreateAwsLambdaCanaryPreset(parameters), null),
-            // An unsupported preset is rejected even alongside explicit query overrides: silently
-            // ignoring the name the operator asked for is exactly the #4617 failure mode.
+            // An unsupported preset is rejected even alongside explicit query overrides rather than
+            // silently ignoring the name the operator asked for.
             _ => (null, $"Deploy telemetry policy '{policyName}' is not supported.")
         };
     }

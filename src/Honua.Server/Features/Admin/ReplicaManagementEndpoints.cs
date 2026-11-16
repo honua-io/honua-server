@@ -28,10 +28,10 @@ internal static class ReplicaManagementEndpoints
     public static void MapReplicaManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceId}/replicas")
-            // Promoted to GA in #2430 — no capability gate. The Pro entitlement that the experimental
-            // gate used to stand in front of is NOT implied by admin authorization, so every handler
-            // enforces it explicitly below: promoting the capability must not hand Community-edition
-            // admins a surface the GeoServices and FieldCollection sync paths already charge for.
+            // GA: no capability gate. The Pro entitlement is NOT implied by admin authorization, so
+            // every handler enforces it explicitly below: an ungated surface must not hand
+            // Community-edition admins what the GeoServices and FieldCollection sync paths already
+            // charge for.
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Replicas")

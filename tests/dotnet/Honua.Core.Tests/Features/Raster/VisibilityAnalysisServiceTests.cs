@@ -295,7 +295,7 @@ public sealed class VisibilityAnalysisServiceTests
     [UnitTest]
     public void DestinationPoint_DueEast_IncreasesLongitude()
     {
-        var (lon, lat) = VisibilityAnalysisService.DestinationPoint(0, 0, azimuthDegrees: 90, distanceMeters: 111_320);
+        var (lon, lat) = RasterAnalysisGeometry.DestinationPoint((0, 0), azimuthDegrees: 90, distanceMeters: 111_320);
 
         lon.Should().BeApproximately(1.0, 0.02);
         lat.Should().BeApproximately(0.0, 0.001);
@@ -304,7 +304,7 @@ public sealed class VisibilityAnalysisServiceTests
     [UnitTest]
     public void DestinationPoint_DueNorth_IncreasesLatitude()
     {
-        var (lon, lat) = VisibilityAnalysisService.DestinationPoint(0, 0, azimuthDegrees: 0, distanceMeters: 111_320);
+        var (lon, lat) = RasterAnalysisGeometry.DestinationPoint((0, 0), azimuthDegrees: 0, distanceMeters: 111_320);
 
         lat.Should().BeApproximately(1.0, 0.02);
         lon.Should().BeApproximately(0.0, 0.001);

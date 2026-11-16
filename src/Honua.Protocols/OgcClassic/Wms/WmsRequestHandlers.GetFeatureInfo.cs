@@ -176,11 +176,11 @@ internal static partial class WmsRequestHandlers
                 .GroupBy(item => item.StorageLayerId)
                 .ToDictionary(group => group.Key, group => group.First().Filter);
 
-        // Apply the TIME dimension to identify, mirroring GetMap. Previously GetFeatureInfo
-        // ignored TIME entirely, so on a time-enabled layer GetMap showed the selected instant
-        // but identify returned features across all times (and an invalid TIME was silently
-        // accepted instead of InvalidDimensionValue). Parsed against queryLayers so
-        // each queried layer gets its own temporal filter slot.
+        // Apply the TIME dimension to identify, mirroring GetMap. Ignoring TIME here would
+        // make identify on a time-enabled layer return features across all times while GetMap
+        // shows the selected instant (and would silently accept an invalid TIME instead of
+        // raising InvalidDimensionValue). Parsed against queryLayers so each queried layer
+        // gets its own temporal filter slot.
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var temporalResult = await TryResolveWmsLayerTemporalFiltersAsync(
             context,

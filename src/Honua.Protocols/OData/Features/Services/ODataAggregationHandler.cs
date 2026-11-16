@@ -49,10 +49,10 @@ internal sealed class ODataAggregationHandler
 
         // $apply is a transformation pipeline: segments separated by a top-level '/' are applied
         // left to right (e.g. filter(...)/groupby(...)). Leading filter(...) transforms refine the
-        // underlying query before the terminal aggregate/groupby/compute runs. Previously only a
-        // single transform was parsed, so on a pipeline the filter() regex greedily swallowed the
-        // remaining segments and produced a broken filter — 400ing extent-scoped aggregation such
-        // as filter(geo.intersects(...))/groupby(...).
+        // underlying query before the terminal aggregate/groupby/compute runs. Parsing only a
+        // single transform would let the filter() regex greedily swallow the remaining segments
+        // and produce a broken filter — 400ing extent-scoped aggregation such as
+        // filter(geo.intersects(...))/groupby(...).
         var segments = SplitApplyTransforms(applyExpression);
 
         // Build the query, starting from the $filter query option (composes with $apply).

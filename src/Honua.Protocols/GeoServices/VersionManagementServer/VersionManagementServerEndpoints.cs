@@ -631,7 +631,7 @@ public static class VersionManagementServerEndpoints
             var hasConflicts = !result.Conflicts.IsDefaultOrEmpty && result.Conflicts.Length > 0;
 
             // withPost=true posts the version in the same operation after a clean reconcile (Esri
-            // conformance; #2135). When conflicts remain it is a no-op-with-conflicts response: the
+            // conformance). When conflicts remain it is a no-op-with-conflicts response: the
             // reconcile conflicts are returned and nothing is posted.
             var posted = false;
             var appliedChanges = 0;

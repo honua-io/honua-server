@@ -33,14 +33,4 @@ public static class MetadataServiceCollectionExtensions
             static sp => sp.GetRequiredService<MetadataV2GraphSnapshotCache>());
         return services;
     }
-
-    public static IServiceCollection AddFileMetadataV2Graph(this IServiceCollection services, string graphPath)
-    {
-        ArgumentNullException.ThrowIfNull(graphPath);
-        services.AddSingleton<IMetadataV2GraphProvider>(sp =>
-            new FileMetadataV2GraphProvider(
-                graphPath,
-                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FileMetadataV2GraphProvider>>()));
-        return services;
-    }
 }

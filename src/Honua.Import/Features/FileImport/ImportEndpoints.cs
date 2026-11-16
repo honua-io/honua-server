@@ -713,7 +713,7 @@ internal static partial class ImportEndpoints
                     return;
                 }
 
-                // #2459 / ADR-0060: a background import is consumed by a worker in a later
+                // ADR-0060: a background import is consumed by a worker in a later
                 // request, possibly on a different node. Its staged input must live in the
                 // shared object store (ICloudFileStorage), never on this node's local temp
                 // disk. cloudFileId is null only when no file storage is configured; refuse
@@ -1363,7 +1363,7 @@ internal static partial class ImportEndpoints
            bool.TryParse(value, out var parsed) &&
            parsed;
 
-    // #2459 / ADR-0060: the staging directory is strictly WITHIN-REQUEST scratch. A staged
+    // ADR-0060: the staging directory is strictly WITHIN-REQUEST scratch. A staged
     // file is consumed and deleted inside the same HTTP request: the synchronous import path
     // reads it directly and the finally block deletes it, while the background path first
     // copies it into the shared object store (ICloudFileStorage) and hands the worker a

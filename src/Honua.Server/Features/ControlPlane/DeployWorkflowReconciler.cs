@@ -226,8 +226,8 @@ internal sealed partial class DeployWorkflowReconciler(
                     // promotion; only a triggered rollback or the window's own deadline may end it
                     // (below), never the backend's routine "nothing left to observe" verdict. Without
                     // this, a backend whose ObserveAsync simply re-reports Succeeded once cutover is
-                    // done would terminate the operation before the window elapses, exactly the
-                    // "terminal operations stop reconciling after success" bug this closes. Scoped to the
+                    // done would end the operation before the window elapses, and it would stop being
+                    // reconciled while the window is still open. Scoped to the
                     // PREVIOUSLY-persisted status being Reconciling (not, say, RollbackRequested from an
                     // out-of-band rollback such as DeployWorkflowService.RequestRollbackAsync): once a
                     // rollback is already underway this must never mask its real settlement status.
@@ -555,8 +555,7 @@ internal sealed partial class DeployWorkflowReconciler(
         //     retry" message on a throttle or other transient AWS error. The rollback did not take,
         //     but the next reconcile cycle can re-drive it. A single throttle must NOT abort self-
         //     healing. Retry on a bounded budget (RollbackRetryBudget attempts), then escalate so a
-        //     persistently-failing rollback still pages loudly rather than looping forever (the
-        //     original #2161 bug).
+        //     persistently-failing rollback still pages loudly rather than looping forever.
         //
         // Progress statuses (RollbackRequested/RolledBack) fall through to the success path below.
         var rollbackTerminallyFailed = rollbackObservation.Status
@@ -968,8 +967,8 @@ internal sealed partial class DeployWorkflowReconciler(
             int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var budget) &&
             budget > 0)
         {
-            // Clamp so a misconfiguration can never re-create the unbounded-retry loop the original
-            // #2161 escalation fixed — a persistently-failing rollback always escalates eventually.
+            // Clamp so a misconfiguration can never create an unbounded retry loop — a
+            // persistently-failing rollback always escalates eventually.
             return Math.Min(budget, MaximumRollbackRetryBudget);
         }
 

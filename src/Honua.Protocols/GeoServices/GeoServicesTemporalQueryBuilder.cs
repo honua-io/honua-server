@@ -79,10 +79,9 @@ internal static class GeoServicesTemporalQueryBuilder
             // Honua's temporal-animation contract (docs/gis/temporal-animation-api.md,
             // "Empty-range and non-time-aware behavior") deliberately REJECTS a non-empty
             // time= filter against a layer that is not time-enabled, rather than silently
-            // ignoring it (or, as an earlier bug did, falling back to an arbitrary date
-            // field). Surface a 400 so clients learn the layer has no temporal dimension.
-            // (This is an intentional, documented divergence from Esri's lenient "ignore
-            // time" behavior — see issue #1444.)
+            // ignoring it or falling back to an arbitrary date field. Surface a 400 so
+            // clients learn the layer has no temporal dimension. (This is an intentional,
+            // documented divergence from Esri's lenient "ignore time" behavior.)
             throw new ArgumentException(
                 "The time parameter is not supported: this layer is not time-aware (no timeInfo / temporal fields).");
         }

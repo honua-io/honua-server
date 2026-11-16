@@ -66,7 +66,7 @@ internal static class SavedMapOperationDraftApplier
         {
             // Keep this switch and IsCheckpointable in lockstep: the append endpoint rejects
             // any kind this applier cannot express, so an unsupported kind can never enter a
-            // checkpointable log (honua-server#2999 review).
+            // checkpointable log.
             SavedMapOperationKind.SetViewport => ApplyBody(current, operation, ApplySetViewport),
             SavedMapOperationKind.SetLayerVisibility => ApplyBody(current, operation, ApplySetLayerVisibility),
             SavedMapOperationKind.ReorderLayers => ApplyBody(current, operation, ApplyReorderLayers),
@@ -164,7 +164,7 @@ internal static class SavedMapOperationDraftApplier
         // absent from the composition is a genuine state conflict (the layer was removed by
         // another pending or direct draft update) and an id requested twice has no single
         // ordering. Silently dropping either would mark the operation's cursor persisted while
-        // the edit was not applied (honua-server#2999 review).
+        // the edit was not applied.
         foreach (var id in order)
         {
             if (byId.Remove(id, out var layer))
@@ -199,8 +199,8 @@ internal static class SavedMapOperationDraftApplier
             styleElement.ValueKind != JsonValueKind.Null)
         {
             // Lockstep with SavedMapOperationPayloadValidator: a present, non-null styleRef must
-            // be a string. Treating any other JSON kind as null (the previous behavior) turned
-            // malformed input into a silent style CLEAR (honua-server#2999 review).
+            // be a string. Treating any other JSON kind as null would turn malformed input into a
+            // silent style CLEAR.
             if (styleElement.ValueKind != JsonValueKind.String)
             {
                 throw new SavedMapCheckpointPayloadException(
@@ -245,7 +245,7 @@ internal static class SavedMapOperationDraftApplier
         //
         // ReplaceComposition, not WriteBody: the projection serializes with WhenWritingNull, so a
         // replacement omitting "view" would leave the STORED viewport in place and the wholesale
-        // replacement would not be wholesale (honua-server#2999 review).
+        // replacement would not be wholesale.
         var normalizedReplacement = replacement with
         {
             Layers = replacement.Layers ?? [],

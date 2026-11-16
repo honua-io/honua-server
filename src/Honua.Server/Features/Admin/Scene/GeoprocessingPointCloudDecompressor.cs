@@ -229,21 +229,4 @@ internal sealed class PointCloudDecompressionOptions
     public TimeSpan Timeout { get; set; } = TimeSpan.FromMinutes(5);
 
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
-
-    internal static TimeSpan ParseDuration(string? raw, TimeSpan fallback)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return fallback;
-        }
-        if (TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out var span) && span > TimeSpan.Zero)
-        {
-            return span;
-        }
-        if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) && seconds > 0)
-        {
-            return TimeSpan.FromSeconds(seconds);
-        }
-        return fallback;
-    }
 }

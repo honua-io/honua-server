@@ -72,8 +72,8 @@ internal static class McpRegistryCompositionValidator
         // codeql[cs/linq/missed-where]: awaits the live tool list and records problems for undescribed tools
         foreach (var tool in await surface.GetAllToolsAsync(cancellationToken).ConfigureAwait(false))
         {
-            // A tool projected from the canonical operation catalog (#2483,
-            // Mcp:PublishOperations) is bound through its operation descriptor, which
+            // A tool projected from the canonical operation catalog
+            // (Mcp:PublishOperations) is bound through its operation descriptor, which
             // is that family's single source of truth; the registry cannot enumerate
             // the runtime catalog statically. Every other runtime tool source still
             // needs a registry descriptor.

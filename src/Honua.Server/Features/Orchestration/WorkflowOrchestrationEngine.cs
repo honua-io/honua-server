@@ -88,7 +88,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // cursor, so a legacy definition would reclaim the same occurrence and log a failure on
         // every poll, forever. This is a permanent property of the stored definition — only
         // republishing changes it — and that is the exception both loops already treat as
-        // permanent (honua-server#3068 review).
+        // permanent.
         var snapshot = definition.AuthorSecurityContext ?? throw new WorkflowDefinitionValidationException(
                 $"Workflow '{definition.WorkflowId}' was published before its author's row/field "
                 + "security identity was recorded, so a triggered run cannot reconstruct it. "

@@ -94,8 +94,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             // Discount a violation ONLY when it is demonstrated to vary with the fabricated
             // discriminator's value. Discounting every non-Required parameter was too broad: it
             // also swallowed unconditional requirements, so surface.slope mapping `units` but
-            // no source at all was downgraded to partially-translated instead of unsupported
-            // (honua-server#2145 review).
+            // no source at all was downgraded to partially-translated instead of unsupported.
             if (fabricatedDiscriminators.Count > 0
                 && VariesWithFabricatedBranch(definition, inputs, fabricatedDiscriminators, violation))
             {
@@ -158,8 +157,8 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
         // discriminator's value can actually change whether it is required. Returning EVERY
         // candidate downgraded mappings the submit path accepts: surface.slope mapping both
         // `source` and `units` had `layerId`/`rasterId` reported, even though `source` already
-        // satisfies their exactly-one group and no value of `units` makes them required
-        // (honua-server#2145 review). Report only the candidates whose requiredness some
+        // satisfies their exactly-one group and no value of `units` makes them required.
+        // Report only the candidates whose requiredness some
         // substitution demonstrably turns on.
         if (!IsBranchSpaceEnumerable(definition, supplied, baseInputs))
         {
@@ -168,8 +167,7 @@ internal sealed class ProcessConditionalInputProbe : IProcessConditionalInputPro
             // their silence proves nothing. What CAN be proven is coverage: a candidate that a
             // supplied parameter already satisfies is not waiting on any branch. surface.slope
             // mapping `source` and `units` had layerId/rasterId reported even though `source`
-            // satisfies their exactly-one group under every value of `units`
-            // (honua-server#2145 review).
+            // satisfies their exactly-one group under every value of `units`.
             return [.. candidates.Where(candidate =>
                 !IsCoveredByASuppliedParameter(definition, supplied, baseInputs, candidate))];
         }

@@ -227,12 +227,12 @@ internal static class FeatureRegistrationExtensions
         services.AddTemporalHistory();
         services.AddAnalysisReporting(configuration);
         services.AddCapabilityManifest(configuration);
-        // #2343 (T7): register the capability-gate OpenAPI document transformer into
-        // the AddOpenApi pipeline so operations gated on a disabled-experimental
+        // Register the capability-gate OpenAPI document transformer into the
+        // AddOpenApi pipeline so operations gated on a disabled-experimental
         // capability are pruned from the generated OpenAPI document, keeping the
-        // published contract in agreement with the runtime gate (T5). No-op until an
-        // experimental capability is flipped off-by-default (T10). Depends on
-        // the ICapabilityRegistry registered by AddCapabilityManifest above.
+        // published contract in agreement with the runtime gate. Has no effect
+        // unless an experimental capability is off by default. Depends on the
+        // ICapabilityRegistry registered by AddCapabilityManifest above.
         services.AddCapabilityGatedOpenApi();
         services.AddPackageReview();
 #if !HONUA_EXCLUDE_MCP
@@ -245,13 +245,13 @@ internal static class FeatureRegistrationExtensions
         services.AddEnhancedAdminServices();
         services.AddMetadataReleaseServices();
         // RBAC-aware ArcGIS Portal item projector consumed by the Portal/Sharing
-        // REST read surface (#1371 → #1243).
+        // REST read surface.
         services.AddPortalItemProjection();
         services.AddStudioPackageLifecycle(configuration);
         services.TryAddScoped<Honua.Infrastructure.Security.StudioEndpointAuthorization>();
         // Server-side deliverable export: render a Studio map/dashboard/report content version to a
         // shareable PDF/PNG. Reuses the SkiaSharp raster/font surface (the headless Lambda
-        // fontconfig/freetype infra from #1728) and the canonical Studio lifecycle store; PDFs are
+        // fontconfig/freetype infra) and the canonical Studio lifecycle store; PDFs are
         // composed via SkiaSharp's SKDocument (no new PDF dependency).
         // Scoped (not Singleton): the exporter consumes the scoped IStudioPackageLifecycleService,
         // so a singleton registration is a captive dependency that fails DI scope validation at

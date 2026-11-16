@@ -282,9 +282,9 @@ internal sealed class CapabilityManifestService(
             //
             // Read through the SAME normalizer the streaming capability surface uses, rather
             // than the raw InformationalVersion: with SourceLink or SemVer build metadata
-            // (`1.0.0+<sha>`) the two documents advertised different serverVersion values for
-            // one running server, and this one mixed immutable build identity back into the
-            // field the change documents as mutable (honua-server#3038 review).
+            // (`1.0.0+<sha>`) the raw value would differ between the two documents for one
+            // running server and mix immutable build identity back into a field documented as
+            // mutable.
             ServerVersion = identity.ReleaseVersion,
             ApiVersion = "v1",
             MetadataApiVersion = MetadataV2Constants.ApiVersion,

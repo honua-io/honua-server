@@ -1404,13 +1404,13 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             var versions = await service.ListVersionsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
 
-            // PR #3018 review, round 6, item 1: version.OwnerId is an immutable snapshot of
-            // the draft owner that created that specific version and may differ from the
-            // content item's owner. Authorizing once against the item would therefore expose
-            // another owner's unpublished version in a mixed-owner history. Apply the exact
-            // same owner-or-published check as HandleGetVersion to every returned version.
-            // Preserve the previous fail-closed response when no version is visible, while
-            // returning only the authorized subset when the history contains a mix.
+            // version.OwnerId is an immutable snapshot of the draft owner that created that
+            // specific version and may differ from the content item's owner. Authorizing
+            // once against the item would therefore expose another owner's unpublished
+            // version in a mixed-owner history. Apply the exact same owner-or-published
+            // check as HandleGetVersion to every returned version. Keep the fail-closed
+            // response when no version is visible, while returning only the authorized
+            // subset when the history contains a mix.
             var visibleVersions = new List<StudioContentVersion>(versions.Count);
             IResult? firstDenial = null;
             foreach (var version in versions)
@@ -1509,13 +1509,13 @@ internal static class StudioPackageEndpoints
 
         try
         {
-            // PR #3018 review, round 5, item 2: both requested versions must be individually
-            // authorized. A version's OwnerId only snapshots who created *that* version (for
-            // example the draft owner at save-as-version time) and can diverge from another
-            // version under the same item id -- a caller who owns leftVersionId cannot be
-            // assumed to also be entitled to read an arbitrary rightVersionId. Comparisons are
-            // never treated as publicly readable, even when one side is the
-            // published version, since the diff itself can expose unpublished draft content.
+            // Both requested versions must be individually authorized. A version's OwnerId
+            // only snapshots who created *that* version (for example the draft owner at
+            // save-as-version time) and can diverge from another version under the same item
+            // id -- a caller who owns leftVersionId cannot be assumed to also be entitled to
+            // read an arbitrary rightVersionId. Comparisons are never treated as publicly
+            // readable, even when one side is the published version, since the diff itself can
+            // expose unpublished draft content.
             var left = await service.GetVersionAsync(itemId, request.LeftVersionId, context.RequestAborted).ConfigureAwait(false);
             if (left is null)
             {
@@ -1602,13 +1602,13 @@ internal static class StudioPackageEndpoints
                     "Studio content version was not found.").ConfigureAwait(false);
             }
 
-            // PR #3018 review, round 5, item 1: publish-request moves the ITEM's
-            // PublishedVersionId pointer, so authorization must be against the item's immutable
-            // owner_id -- not targetVersion.OwnerId, which only snapshots who created that
-            // particular version and can diverge from the item's recorded owner (for example a
-            // version saved from a draft reopened by someone else). Authorizing on the version's
-            // owner would let a caller who merely owns the target version (plus an "own"-sentinel
-            // publish grant) move the published pointer of an item someone else actually owns.
+            // Publish-request moves the ITEM's PublishedVersionId pointer, so authorization must
+            // be against the item's immutable owner_id -- not targetVersion.OwnerId, which only
+            // snapshots who created that particular version and can diverge from the item's
+            // recorded owner (for example a version saved from a draft reopened by someone else).
+            // Authorizing on the version's owner would let a caller who merely owns the target
+            // version (plus an "own"-sentinel publish grant) move the published pointer of an
+            // item someone else actually owns.
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
@@ -1833,11 +1833,11 @@ internal static class StudioPackageEndpoints
                     "Studio content version was not found.").ConfigureAwait(false);
             }
 
-            // PR #3018 review, round 5, item 1: rollback moves the ITEM's current/published
-            // pointer (see request.Target), so authorization must be against the item's
-            // immutable owner_id -- not targetVersion.OwnerId, which only snapshots who created
-            // that particular version and can diverge from the item's recorded owner. See the
-            // identical rationale on HandleCreatePublishRequest.
+            // Rollback moves the ITEM's current/published pointer (see request.Target), so
+            // authorization must be against the item's immutable owner_id -- not
+            // targetVersion.OwnerId, which only snapshots who created that particular version
+            // and can diverge from the item's recorded owner. See the identical rationale on
+            // HandleCreatePublishRequest.
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {

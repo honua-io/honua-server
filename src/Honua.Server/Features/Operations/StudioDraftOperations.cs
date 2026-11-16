@@ -455,7 +455,7 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             throw new InvalidOperationException("The supplied content hash does not match the saved Studio version.");
         }
 
-        // honua-server#3980 follow-up: the intent must be rejected HERE, before policy routing.
+        // The intent must be rejected HERE, before policy routing.
         // OperationDispatcher stops after ValidateAsync whenever the decision is not Allow, so an
         // Enterprise policy rule that puts this operation behind approval never reaches
         // CreatePublicationRequestAsync -- the downstream authority on intent validity -- and an

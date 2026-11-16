@@ -514,8 +514,8 @@ internal sealed partial class ReplicaConflictResolutionService
         }
 
         // The lease gates EVERY resume, not just the ones that re-dispatch a write. "Same operator,
-        // same action" cannot distinguish a crashed attempt from one still in flight, and a no-write
-        // plan used to skip straight to finalization: a retry arriving while the first request was
+        // same action" cannot distinguish a crashed attempt from one still in flight. If a no-write
+        // plan skipped straight to finalization, a retry arriving while the first request was
         // still inside its staleness probe would audit and report Applied, and the original — finding a
         // post-conflict edit — would then release the same timestamp-bound claim back to Pending,
         // leaving a resolution reported as applied against a conflict that is reviewable again.

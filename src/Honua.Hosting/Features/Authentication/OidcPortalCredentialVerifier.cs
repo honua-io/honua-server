@@ -140,7 +140,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             .ToArray();
 
         // Carry the transformation's provenance marker so the issued token knows whether its
-        // roles depend on an entitlement that can expire (honua-server#2997 review).
+        // roles depend on an entitlement that can expire.
         var rolesMappingMarker = principal.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType);
         var rolesRequireClaimsMapping = rolesMappingMarker is not null;
         var rolesDependOnlyOnRoleClaimSelection = string.Equals(
@@ -157,7 +157,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
 
         // Same provenance question for the tenant: a CustomMappings entry can synthesize it,
         // and a mapping-derived tenant that outlives the entitlement authorizes another
-        // tenant's data (honua-server#2997 review).
+        // tenant's data.
         var tenantMappingMarker = principal.FindFirst(
             OidcClaimsTransformation.TenantFromClaimsMappingClaimType);
         var markerNamesKnownClaimType = tenantMappingMarker?.Value is TenantIdClaimType or AzureTenantClaimType;

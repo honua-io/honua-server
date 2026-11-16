@@ -314,8 +314,7 @@ internal sealed class WorkflowPackageService(
                 cancellationToken).ConfigureAwait(false);
 
             // Persist the publishing human's per-layer authorization with the definition. This
-            // stamps the enrichment source/dataset pins that later dispatch must enforce
-            // (#3043 review).
+            // stamps the enrichment source/dataset pins that later dispatch must enforce.
             definition = await BindRequesterLayerAuthorizationAsync(definition, principal, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -323,7 +322,7 @@ internal sealed class WorkflowPackageService(
             // real principal is in hand for a scheduled workflow. Cron and event ticks create
             // runs under the synthesized orchestrator identity (role=admin), so without this the
             // run would either inherit admin visibility or, after the fail-closed change, be
-            // refused outright (honua-server#3068 review). The capture — including the
+            // refused outright. The capture — including the
             // managed-membership marker that lets a later triggered run fail closed
             // — is delegated to the author-security-context capturer, which
             // owns the RBAC/tenant/membership collaborators the capture needs.

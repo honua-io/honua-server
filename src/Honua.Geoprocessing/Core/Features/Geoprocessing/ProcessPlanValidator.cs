@@ -203,7 +203,7 @@ internal static partial class ProcessPlanValidator
                 // workflow's stored plan legitimately carries this input. It is deliberately not
                 // a catalog parameter -- it is server-owned, not caller-supplied -- and catalog
                 // validation runs BEFORE the gate, so rejecting it here would fail every
-                // correctly pinned workflow step (#3043 review).
+                // correctly pinned workflow step.
                 //
                 // Admitting it is not a forgery hole: GeoprocessingLayerAccessGuard strips any
                 // caller-supplied value before writing the layer it actually authorized, so a
@@ -729,7 +729,7 @@ internal static partial class ProcessPlanValidator
     // this parameter, so validation accepts precisely what execution runs. Note the
     // deliberately similar SpatialFilterPredicateValues elsewhere in this file is the
     // transform.spatial-filter set (intersects/within only) and is NOT applicable
-    // here (#3043 review).
+    // here.
     private static readonly HashSet<string> EnrichmentPredicateValues =
         new(ProcessValueDomains.EnrichmentPredicate, StringComparer.OrdinalIgnoreCase);
 
@@ -767,7 +767,7 @@ internal static partial class ProcessPlanValidator
         // catalog as layer-source-only. EnrichmentJobExecutor's inline branch parses the
         // staged FeatureCollection verbatim and applies neither, so accepting the
         // combination silently enriched every staged feature — an over-broad result the
-        // caller never asked for. Refuse it at submission instead (#3043 review).
+        // caller never asked for. Refuse it at submission instead.
         if (hasInline)
         {
             RejectLayerOnlySourceFilter(step, "where", violations);
@@ -777,7 +777,7 @@ internal static partial class ProcessPlanValidator
         {
             // Without this, a malformed bbox cleared the generic text-type check, queued a
             // job, and only failed deep inside the provider read as a generic source-read
-            // error instead of an actionable parameter violation (#3043 review).
+            // error instead of an actionable parameter violation.
             ValidateBboxSyntax(step, bboxRaw, violations);
         }
 
@@ -794,7 +794,7 @@ internal static partial class ProcessPlanValidator
         // 'method' genuinely takes precedence, as the published contract says and as the
         // wantsDistance computation below already assumes. Validating it unconditionally rejected
         // plans the executor would have run happily, and made an async submission fail where the
-        // equivalent synchronous POST /api/enrich request succeeded (#3043 review).
+        // equivalent synchronous POST /api/enrich request succeeded.
         if (!hasMethod
             && step.Inputs.TryGetValue("predicate", out var predicateRaw)
             && !string.IsNullOrWhiteSpace(predicateRaw)
@@ -846,11 +846,11 @@ internal static partial class ProcessPlanValidator
 
         // The catalog advertises 'aggregates' as "join methods only", and the executor's
         // nearest branch returns straight after AnnotateNearest without ever consulting
-        // plan.Stats — so this combination used to succeed while silently omitting every
+        // plan.Stats — so this combination would succeed while silently omitting every
         // requested statistic. Aggregates summarise a MATCH SET; nearest-neighbor produces a
         // single closest feature per target and has no set to summarise, so there is nothing
         // meaningful to compute here. Refuse at submission rather than queue a job whose
-        // output cannot carry what the request asked for (#3043 review).
+        // output cannot carry what the request asked for.
         if (hasMethod && EnrichmentNearestMethodValues.Contains(methodRaw!.Trim()))
         {
             violations.Add(new GeoprocessingValidationFailure
@@ -927,11 +927,10 @@ internal static partial class ProcessPlanValidator
         // let bbox=NaN,0,1,1 clear submission and reach BuildSpatialFilter, which builds an
         // envelope from those ordinates and then either fails deep in the provider path as a
         // generic read error or produces a filter the caller never asked for. Every ordinate
-        // must be finite to be a coordinate at all (#3043 review).
+        // must be finite to be a coordinate at all.
         // RemoveEmptyEntries would silently drop a MISSING ordinate, so `0,,1,2,3` collapsed to
         // four values, passed, and the source parser then read it as `0,1,2,3` — a different
-        // window than the caller supplied. Split without it so a blank ordinate is a rejection
-        // (honua-server#3043 review).
+        // window than the caller supplied. Split without it so a blank ordinate is a rejection.
         var parts = bbox.Split(',', StringSplitOptions.TrimEntries);
         var ok = parts.Length == 4
             && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate)
@@ -1146,8 +1145,7 @@ internal static partial class ProcessPlanValidator
             // Absent 'op' is only legal in expression mode: ComputedFieldTransformExecutor
             // infers op=expression when 'expression' is supplied and otherwise throws
             // "missing required input 'op'". Returning silently let a mapping of input+target
-            // alone be certified as translated when it can never run
-            // (honua-server#2145 review).
+            // alone be certified as translated when it can never run.
             if (!hasExpression)
             {
                 violations.Add(new GeoprocessingValidationFailure
@@ -1757,7 +1755,7 @@ internal static partial class ProcessPlanValidator
         // 'layerId' or 'rasterId'. A plan that supplies NONE of the three
         // would route to the worker with no readable input and fail there, so the
         // catalog rejects it at submit-time validation instead. (The base required
-        // loop no longer enforces 'source' because it is now optional.)
+        // loop does not enforce 'source' because it is optional.)
         var hasSource = (step.Inputs.TryGetValue("source", out var source) && !string.IsNullOrWhiteSpace(source))
             || step.RasterSources?.ContainsKey("source") == true;
         var hasLayerId = step.Inputs.TryGetValue("layerId", out var layerId) && !string.IsNullOrWhiteSpace(layerId);

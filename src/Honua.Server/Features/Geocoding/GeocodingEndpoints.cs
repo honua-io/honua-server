@@ -149,7 +149,7 @@ internal static class GeocodingEndpoints
     // Applied directly to the geocodeAddresses routes (GET/POST scoped + GET alias) rather than
     // a shared MapGroup, since findAddressCandidates/reverseGeocode/suggest and GeocodeServer
     // metadata/discovery stay ungated (Community) on this same route builder. Mirrors the
-    // #2978 SAML/SCIM enforcement pattern.
+    // SAML/SCIM enforcement pattern.
     private static ValueTask<object?> RequireBatchGeocodingEntitlement(
         EndpointFilterInvocationContext invocationContext,
         EndpointFilterDelegate next)

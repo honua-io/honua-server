@@ -285,7 +285,7 @@ internal static partial class FeatureStreamEndpoints
                 // mention — they did not change — so resuming from its cursor leaves the client
                 // permanently missing them. Withholding the id keeps Last-Event-ID at its
                 // pre-snapshot value, so the reconnect takes another snapshot instead of a
-                // delta tail (honua-server#3038 review).
+                // delta tail.
                 frame.Complete ? frame.Cursor : null,
                 cancellationToken).ConfigureAwait(false);
             await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -421,7 +421,7 @@ internal static partial class FeatureStreamEndpoints
         // leaving update is filtered out. The client keeps the stale baseline feature with no
         // event that could ever correct it. Refuse the combination rather than advertise a
         // baseline the deltas cannot keep true; delivering it needs transition semantics the
-        // event pipeline does not carry (honua-server#3038 review).
+        // event pipeline does not carry.
         return scoped.HasValueDependentPredicate
             ? "snapshot subscriptions cannot be combined with row-level security, bbox, attribute, or temporal filters: a feature that leaves the filter after an update produces no delta, so the baseline could not be kept convergent. Use mode=delta with the filter, or mode=snapshot scoped by service/layer only."
             : null;
@@ -445,7 +445,7 @@ internal static partial class FeatureStreamEndpoints
 
         // A reconnect whose cursor remains inside the retained event window takes the delta-only
         // replay path and never reads the feature store. Do not let a temporary feature-read
-        // outage block a resume the event store can satisfy by itself (#3206 review).
+        // outage block a resume the event store can satisfy by itself.
         // A position from another cursor epoch cannot be resumed, so it takes a fresh snapshot.
         var cursor = FeatureStreamCursor.Parse(
             context.Request.Query["cursor"].ToString(),
@@ -763,7 +763,7 @@ internal static partial class FeatureStreamEndpoints
         // can be stale, and the delta replay silently starts at the NEW oldest cursor instead
         // of failing — so the client converges on a baseline that is missing changes while
         // snapshot-end tells it complete: true. Re-reading the retained floor here is the only
-        // point where the gap is observable (honua-server#3038 review).
+        // point where the gap is observable.
         //
         // Reported as incomplete rather than raised: the callers already treat an incomplete
         // baseline as non-resumable and end the stream so the client reconnects and takes a

@@ -476,7 +476,7 @@ internal static partial class FeatureServerEndpoints
             F = GetValueString(values, "f") ?? "json",
             FormatSpecified = values.ContainsKey("f"),
             // arcgis 2.4.x serializes query(time_filter=) to the "timeFilter" query
-            // parameter; accept it as an alias of "time" (explicit "time" wins). #1775
+            // parameter; accept it as an alias of "time" (explicit "time" wins).
             Time = GetValueString(values, "time") ?? GetValueString(values, "timeFilter"),
             TimeRelation = GetValueString(values, "timeRelation"),
             ReturnGeometry = returnGeometry,
