@@ -18,15 +18,11 @@ internal static partial class ObservationStreamEndpoints
         long? datastreamId)
     {
         using var socket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
-        using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(
-            context.RequestAborted, session.DisconnectToken);
-        using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(
-            context.RequestAborted, session.DisconnectToken);
-        using var receiveCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
-        var receiveTask = ReceiveUntilCloseAsync(socket, sendCts, writeCts, receiveCts.Token);
+        using var cancellation = new WebSocketDeliveryCancellation(context, session);
+        var receiveTask = ReceiveUntilCloseAsync(socket, cancellation);
         try
         {
-            await SendObservationFramesUntilEndedAsync(SendFramesAsync(), sendCts.Token).ConfigureAwait(false);
+            await SendObservationFramesUntilEndedAsync(SendFramesAsync(), cancellation.Delivery.Token).ConfigureAwait(false);
 
             // Finish delivery before acknowledging Close; the authorization wrapper serializes terminal writes.
             if (socket.State == WebSocketState.CloseReceived)
@@ -41,7 +37,7 @@ internal static partial class ObservationStreamEndpoints
         finally
         {
             // Cancelling a pending receive can abort the socket, so do it after terminal writes.
-            receiveCts.Cancel();
+            cancellation.Receive.Cancel();
             await receiveTask.ConfigureAwait(false);
         }
 
@@ -50,8 +46,8 @@ internal static partial class ObservationStreamEndpoints
             await SendSocketAsync(socket,
                 JsonSerializer.Serialize(ObservationStreamStatus.Connected(datastreamId),
                     ObservationStreamJsonContext.Default.ObservationStreamStatus),
-                writeCts.Token).ConfigureAwait(false);
-            await SendObservationFramesAsync(socket, session, sendCts.Token, writeCts.Token).ConfigureAwait(false);
+                cancellation.Write.Token).ConfigureAwait(false);
+            await SendObservationFramesAsync(socket, session, cancellation).ConfigureAwait(false);
         }
     }
 
@@ -77,9 +73,9 @@ internal static partial class ObservationStreamEndpoints
     }
 
     private static async Task ReceiveUntilCloseAsync(
-        WebSocket socket, CancellationTokenSource sendCts, CancellationTokenSource writeCts,
-        CancellationToken cancellationToken)
+        WebSocket socket, WebSocketDeliveryCancellation cancellation)
     {
+        var cancellationToken = cancellation.Receive.Token;
         // Client data is unused; discard it in bounded chunks while still processing control frames.
         var buffer = new byte[256];
         try
@@ -104,8 +100,8 @@ internal static partial class ObservationStreamEndpoints
         {
             // Stop reads immediately, but let an active transport write finish before Close.
             // Cancelling that write immediately would abort a managed WebSocket.
-            sendCts.Cancel();
-            writeCts.CancelAfter(CloseWriteBudget);
+            cancellation.Delivery.Cancel();
+            cancellation.Write.CancelAfter(CloseWriteBudget);
         }
     }
 
@@ -131,8 +127,10 @@ internal static partial class ObservationStreamEndpoints
     }
 
     private static async Task SendObservationFramesAsync(
-        WebSocket socket, ObservationStreamSession session, CancellationToken ct, CancellationToken writeToken)
+        WebSocket socket, ObservationStreamSession session, WebSocketDeliveryCancellation cancellation)
     {
+        var ct = cancellation.Delivery.Token;
+        var writeToken = cancellation.Write.Token;
         while (!ct.IsCancellationRequested && socket.State == WebSocketState.Open)
         {
             using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -162,6 +160,22 @@ internal static partial class ObservationStreamEndpoints
                 await SendSocketAsync(socket, message.Json, writeToken).ConfigureAwait(false);
                 if (frame is RealtimeDelivery.Reset) return;
             }
+        }
+    }
+
+    private sealed class WebSocketDeliveryCancellation(HttpContext context, ObservationStreamSession session) : IDisposable
+    {
+        internal CancellationTokenSource Delivery { get; } = CancellationTokenSource.CreateLinkedTokenSource(
+            context.RequestAborted, session.DisconnectToken);
+        internal CancellationTokenSource Write { get; } = CancellationTokenSource.CreateLinkedTokenSource(
+            context.RequestAborted, session.DisconnectToken);
+        internal CancellationTokenSource Receive { get; } = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+
+        public void Dispose()
+        {
+            Receive.Dispose();
+            Write.Dispose();
+            Delivery.Dispose();
         }
     }
 }

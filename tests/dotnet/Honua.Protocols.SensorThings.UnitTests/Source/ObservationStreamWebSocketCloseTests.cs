@@ -15,10 +15,11 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 public sealed class ObservationStreamWebSocketCloseTests
 {
     [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task ClientClose_DuringBlockedWrite_FinishesOrAbortsWithinDeadline(bool writeCompletes)
+    [InlineData(WebSocketState.Closed)]
+    [InlineData(WebSocketState.Aborted)]
+    public async Task ClientClose_DuringBlockedWrite_FinishesOrAbortsWithinDeadline(WebSocketState expectedState)
     {
+        var writeCompletes = expectedState == WebSocketState.Closed;
         var provider = Substitute.For<IRealtimeFanoutProvider>();
         provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(Substitute.For<IRealtimeSubscription>());
         await using var manager = new ObservationStreamSessionManager(
