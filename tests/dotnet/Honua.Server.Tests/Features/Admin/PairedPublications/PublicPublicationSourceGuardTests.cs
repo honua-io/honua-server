@@ -102,14 +102,8 @@ public sealed class PublicPublicationSourceGuardTests
         var result = await new PublicPublicationAdvertisement(journal.Object, Guard(graph), target)
             .ResolveAsync(new(key, new(source, 7, 0), "descriptor.json"), default);
 
-        if (change == "ready")
-        {
-            result.Should().Be(new Uri("https://data.example/data/publications/publication/v1/descriptor.json"));
-        }
-        else
-        {
-            result.Should().BeNull();
-        }
+        result.Should().Be(change == "ready"
+            ? new Uri("https://data.example/data/publications/publication/v1/descriptor.json") : null);
     }
 
     private static PublicPublicationReservation Reservation(
