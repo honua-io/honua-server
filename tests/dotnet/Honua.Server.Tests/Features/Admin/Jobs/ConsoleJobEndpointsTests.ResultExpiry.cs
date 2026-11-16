@@ -191,9 +191,11 @@ public sealed partial class ConsoleJobEndpointsTests
         return storage;
     }
 
-    private sealed class RetentionTestClock : TimeProvider
+    internal sealed class RetentionTestClock : TimeProvider
     {
         public DateTimeOffset UtcNow { get; set; } = DateTimeOffset.UtcNow;
+
+        public void Reset() => UtcNow = DateTimeOffset.UtcNow;
         public override DateTimeOffset GetUtcNow() => UtcNow;
     }
 }

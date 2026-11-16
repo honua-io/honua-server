@@ -3,7 +3,7 @@
   "schemaRef": "tools/supported_operation_kinds.result.schema.json",
   "validates": "inputs",
   "inputs": {
-    "supportedKinds": ["AdminConfigChange", "Deploy", "MetadataRelease"]
+    "supportedKinds": ["AdminConfigChange", "Deploy", "Geoprocess", "MetadataRelease"]
   },
   "expected": "tool_result",
   "canonicalRefs": ["IOperationExecutorCatalog"]

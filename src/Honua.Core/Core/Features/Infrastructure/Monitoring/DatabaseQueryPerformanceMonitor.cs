@@ -8,15 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-public interface IDatabaseQueryPerformanceMonitor
-{
-    IQueryExecutionContext StartQueryExecution(string queryType, string correlationId);
-
-    QueryPerformanceStatistics GetStatistics();
-
-    IReadOnlyList<SlowQueryRecord> GetRecentSlowQueries(int maxCount = 100);
-}
-
 public interface IQueryExecutionContext : IDisposable
 {
     void Complete(bool success, long? rowCount = null, IDictionary<string, object>? additionalMetrics = null);
@@ -94,7 +85,7 @@ public sealed record SlowQueryRecord
     public string? ExceptionMessage { get; init; }
 }
 
-internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPerformanceMonitor, IDisposable
+public sealed partial class DatabaseQueryPerformanceMonitor : IDisposable
 {
     private readonly ILogger<DatabaseQueryPerformanceMonitor> _logger;
     private readonly QueryPerformanceMonitoringOptions _options;

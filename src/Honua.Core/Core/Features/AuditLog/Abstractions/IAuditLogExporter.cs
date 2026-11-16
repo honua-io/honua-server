@@ -18,6 +18,8 @@ public sealed record AuditExportFilter
 
     public string? Actor { get; init; }
 
+    public string? ActorAgent { get; init; }
+
     public string? ResourceType { get; init; }
 
     public string? Action { get; init; }

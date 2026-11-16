@@ -103,7 +103,7 @@ internal static class CacheOperationsEndpoints
 
     private static async Task<IResult> HandleGetCacheStatistics(
         [FromServices] ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider,
-        [FromServices] ICacheStorageMetricsProvider storageMetricsProvider,
+        [FromServices] InMemoryCacheService storageMetricsProvider,
         HttpContext context,
         ILogger<CacheOperationsEndpointsLog> logger)
     {

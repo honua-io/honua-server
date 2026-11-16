@@ -12,7 +12,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 from flake_quarantine import exclude_filter, load_snapshot, merge_retry, read_cases
-from shard_processes import descendant_pids
+from shard_processes import descendant_pids, kill_descendants
 
 
 def terminate_test(child, signum):
@@ -30,12 +30,12 @@ def terminate_test(child, signum):
             os.kill(pid, signum)
     with suppress(subprocess.TimeoutExpired):
         child.wait(timeout=0.5)
-    # A test can fork after the snapshot, while TERM escalation is pending.
-    with suppress(ProcessLookupError):
-        os.killpg(child.pid, signal.SIGKILL)
-    for pid in descendants:
+    try:
+        kill_descendants(*descendants)
+    finally:
+        # A test can fork after the snapshot, while TERM escalation is pending; sweep its group too.
         with suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGKILL)
+            os.killpg(child.pid, signal.SIGKILL)
 
 
 def call_test(command):
@@ -83,6 +83,10 @@ def snapshot_filter(command, project):
     entries = load_snapshot(path)
     expression = command[command.index('--filter') + 1] if '--filter' in command else ''
     expression = exclude_filter(expression, entries, project)
+    evidence = {'project': project, 'effective_filter': expression,
+                'exclusions': [{key: entry[key] for key in ('test', 'issue', 'expires_at')}
+                               for entry in entries if entry['project'] == project]}
+    print('HONUA_QUARANTINE_FILTER ' + json.dumps(evidence, sort_keys=True), flush=True)
     if '--filter' in command:
         return replace_option(command, '--filter', expression)
     return [*command, '--filter', expression] if expression else command
