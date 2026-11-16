@@ -27,11 +27,11 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/commands/{commandId}"),
         new("GET", "/api/v1/agent/workspaces/{workspaceId}/processes/local/runs/{runId}/artifacts/{**path}"),
 
-        // v1 Studio package lifecycle endpoints (#1180)
+        // v1 Studio package lifecycle endpoints
         new("GET", "/api/v1/studio/package-families"),
         new("GET", "/api/v1/studio/session"),
         new("POST", "/api/v1/studio/package-drafts"),
-        // v1 Studio content-item and draft enumeration endpoints (#3003)
+        // v1 Studio content-item and draft enumeration endpoints
         new("GET", "/api/v1/studio/content-items"),
         new("GET", "/api/v1/studio/package-drafts"),
         new("GET", "/api/v1/studio/package-drafts/{draftId}"),
@@ -47,22 +47,22 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}"),
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
-        // Studio published-route resolver: serves an Active publication's activeUrl (#4907).
+        // Studio published-route resolver: serves an Active publication's activeUrl.
         new("GET", "/api/v1/studio/published/{*route}"),
-        // Deterministic map/app package draft creation (#1180; re-founded by ADR-0076 #3255).
+        // Deterministic map/app package draft creation (ADR-0076).
         new("POST", "/api/v1/studio/app-packages/generate"),
         new("POST", "/api/v1/studio/map-packages/generate"),
         // Studio deliverable export: render a map/dashboard/report content item to PDF/PNG.
         new("POST", "/api/v1/studio/{kind}/{id}/export"),
 
-        // v1 Studio map collaboration: comment threads + activity feed (#1278, slice 1)
+        // v1 Studio map collaboration: comment threads + activity feed
         new("GET", "/api/v1/console/maps/{mapId}/collab/comments"),
         new("POST", "/api/v1/console/maps/{mapId}/collab/comments"),
         new("POST", "/api/v1/console/maps/{mapId}/collab/comments/{threadId}/replies"),
         new("POST", "/api/v1/console/maps/{mapId}/collab/comments/{threadId}/resolve"),
         new("GET", "/api/v1/console/maps/{mapId}/collab/activity"),
 
-        // v1 content publication registry for Studio-generated artifacts (#1183, list #3357)
+        // v1 content publication registry for Studio-generated artifacts, including the list
         new("POST", "/api/v1/console/publications"),
         new("GET", "/api/v1/console/publications"),
         new("GET", "/api/v1/console/publications/{publicationId}"),
@@ -71,7 +71,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/console/publications/{publicationId}/rollback"),
         new("PATCH", "/api/v1/console/publications/{publicationId}/policy"),
 
-        // Provider-agnostic Studio AI proxy adapters (#3000): Bedrock/Anthropic/OpenAI-compatible
+        // Provider-agnostic Studio AI proxy adapters: Bedrock/Anthropic/OpenAI-compatible
         // behind one streaming chat contract, plus capability discovery.
         new("GET", "/api/v1/studio/ai/capabilities"),
         new("POST", "/api/v1/studio/ai/chat"),

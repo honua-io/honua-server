@@ -257,9 +257,9 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
 
         // Evaluate both layer gates against the REQUESTING principal before workflow dispatch
         // switches to the synthesized orchestrator identity. The generic catalog gate covers
-        // every declared LayerId parameter and its read/write operation (#3046); the enrichment
+        // every declared LayerId parameter and its read/write operation; the enrichment
         // guard additionally resolves the indirect dataset layer and returns source/dataset
-        // pins that close the publication-to-dispatch TOCTOU window (#2283/#3043).
+        // pins that close the publication-to-dispatch TOCTOU window.
         await _authorizer.EnsurePlanLayerAccessAsync(principal, plan, _processCatalog, cancellationToken)
             .ConfigureAwait(false);
 
@@ -306,7 +306,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         // Surface the direct-submit execution reality (multi-step, sync-only/non-dispatchable
         // process ids, ignored non-Geoprocess step kinds) so the read-only pre-flight reports
         // the same limitations the submit path enforces rather than optimistically returning
-        // isExecutable=true for a plan that would be rejected or silently under-execute (#2806).
+        // isExecutable=true for a plan that would be rejected or silently under-execute.
         var (submitViolations, submitWarnings) = DirectSubmitPlanValidator.Evaluate(plan, _processCatalog);
         violations.AddRange(submitViolations);
         warnings.AddRange(submitWarnings);
@@ -372,7 +372,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         var sideEffects = DeriveSideEffects(plan);
 
         // No duration model exists yet, so do NOT fabricate estimatedDurationSeconds=0 as a
-        // fact (#2806). Flag the estimate as unavailable and disclose it in plain language via
+        // fact. Flag the estimate as unavailable and disclose it in plain language via
         // sideEffects so a caller does not read the placeholder 0 as an "instant" prediction.
         sideEffects.Add(
             "No duration estimate is available: the dry-run path does not model runtime cost, "
@@ -587,7 +587,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         CancellationToken cancellationToken = default)
     {
         // Resolve the submitter's row/field security identity once, before any gate can
-        // divert the submission onto the approval lane (#3068). The approval lane persists
+        // divert the submission onto the approval lane. The approval lane persists
         // it on the proposal, so a job resumed hours later still resolves the ORIGINAL
         // submitter's RLS predicate and field mask rather than the identity-only principal
         // the resume path reconstructs from Audit.RequestedBy.
@@ -624,8 +624,8 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
 
         // Centralize submit-path authorization here so every adapter (GPServer,
         // OGC Processes, MCP, and the AnalysisContent run/rerun paths) is gated
-        // through the shared pipeline rather than relying on caller discipline
-        // (#2263). Adapters that already call EnsureCallerAuthorizedAsync before
+        // through the shared pipeline rather than relying on caller discipline.
+        // Adapters that already call EnsureCallerAuthorizedAsync before
         // submit stay correct — this evaluation is idempotent and never
         // double-fails an authorized caller.
         if (gpExecution is null)
@@ -698,7 +698,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         // the catalog validator.
         if (isCustomCode)
         {
-            // #2752: a custom-code submission runs operator-supplied code and therefore
+            // A custom-code submission runs operator-supplied code and therefore
             // requires a dedicated, higher-privilege authorization ON TOP OF the baseline
             // Process.Execute gate above. Without this, any Process.Execute caller could
             // submit allowlisted custom code under the default OrgAllowlist/SignedOnly
@@ -733,7 +733,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         // submissions, which skip catalog validation. Nothing else asserts that a custom-code
         // plan carries no executable mutating Geoprocess step, so running this for both
         // branches closes the gap where a mutating catalog step smuggled onto a custom-code
-        // submission would never face the ExecuteMutatingProcess gate (#2798).
+        // submission would never face the ExecuteMutatingProcess gate.
         // Runs on the resume lane too, against the restored submitter identity: an approved
         // proposal must not retain update/delete authority that was withdrawn while it waited
         // (honua-server#3046 review).
@@ -748,7 +748,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
                     cancellationToken).ConfigureAwait(false);
             }
 
-            // Generic per-layer authorization for every declared catalog-layer parameter (#3046).
+            // Generic per-layer authorization for every declared catalog-layer parameter.
             // This runs before a durable record is created and is re-evaluated on approval resume
             // against the restored submitter snapshot, so a revoked grant or rebound numeric id
             // cannot inherit the proposal-time decision.
@@ -757,7 +757,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
                 .ConfigureAwait(false);
 
             // The enrichment-specific guard additionally resolves its indirect dataset layer and
-            // stamps source/dataset pins onto the plan (#2283/#3043). On approval resume the stored
+            // stamps source/dataset pins onto the plan. On approval resume the stored
             // proposal already carries those live-requester bindings; the executor enforces them,
             // while the generic gate above still rechecks every directly declared layer reference.
             if (!resumingApproved)
@@ -814,7 +814,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
             ? CustomCodeJobContract.RuntimeProfile
             : ResolveRequiredRuntimeProfile(plan, processCatalog);
         // The job id does not depend on the selected workload. Compute it first so an
-        // incompatible image set can still acknowledge an already-accepted keyed job (#6069).
+        // incompatible image set can still acknowledge an already-accepted keyed job.
         var resolvedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey;
         var jobId = CreateJobId(resolvedKey, ownerId, resolvedSecurityContext.TenantId);
         var legacyTenantJobId = resolvedKey is not null && !resumingApproved
@@ -901,7 +901,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         // Resolve any native raster/surface step that references a registered catalog
-        // raster by layerId/rasterId to an immutable metadata-only descriptor (#2264/#3090).
+        // raster by layerId/rasterId to an immutable metadata-only descriptor.
         // The fingerprint above is computed on the caller's original (reference-carrying)
         // plan so idempotency keys map to the request, not provider metadata; the spec
         // below carries no raster payload bytes.
@@ -948,7 +948,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        // Admission partition (#3853): bound to the trusted tenant pinned on the submitter snapshot —
+        // Admission partition: bound to the trusted tenant pinned on the submitter snapshot —
         // captured from the request's tenant middleware on a live submit, restored from the durable
         // proposal or workflow record on a deferred lane — never to caller-supplied metadata.
         // Workflow-package and analysis-content runs forward caller parameters into protocol
@@ -964,7 +964,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         var priority = ResolvePriority(specParams);
 
         // Admission reads the durable active set and the record is created afterwards; the window
-        // between them is fenced cluster-wide by the admission lease (#3853) so concurrent
+        // between them is fenced cluster-wide by the admission lease so concurrent
         // submissions on any node cannot all admit against the same snapshot. The lease covers
         // only evaluate-then-create: once the record exists it is counted by every node, so the
         // progress row, queueing, and backend submission run after the lease is released.
@@ -1033,14 +1033,14 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
                     UpdatedAt = createdAt,
                     CurrentPhase = "Queued",
                     // Carry the submitting request's correlation ID and trace context across the
-                    // queue boundary so the worker's execution span links back to it (#5474).
+                    // queue boundary so the worker's execution span links back to it.
                     Audit = ControlPlaneTelemetry.WithSubmissionTraceContext(new OperationAuditInfo
                     {
                         IdempotencyKey = resolvedKey,
                         RequestedBy = ownerId,
                         RequestFingerprint = requestFingerprint,
                         CustomCodeOwnerScope = ownerScope,
-                        // Pin the submitter's row/field security identity (#3068). Submit time is the
+                        // Pin the submitter's row/field security identity. Submit time is the
                         // only moment the principal exists — the worker that later runs this job has no
                         // HttpContext — so without this capture the background read would resolve NO
                         // RLS predicate and an EMPTY field mask and hand a restricted caller
@@ -1204,7 +1204,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
 
         var jobStore = RequireJobStore();
 
-        // #2753: scope the store query to the caller for a non-admin so paging
+        // Scope the store query to the caller for a non-admin so paging
         // is not under-filled. Without this the store returns a page of up-to-`limit` jobs
         // across ALL owners and the ownership post-filter below drops the ones the caller
         // cannot read — so a caller whose jobs are outnumbered by others' could receive a
@@ -1608,10 +1608,10 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         // Park the gated plan on the approval lane. The dispatcher owns the durable
-        // proposal/gateway surface (ADR-0064, #2814): when it is available and the
+        // proposal/gateway surface (ADR-0064): when it is available and the
         // submission is not custom code it persists an AwaitingApproval proposal so the
         // plan is resumable via honua://proposals/{id}, then throws carrying the proposal
-        // id; otherwise (custom code, or no gateway on lightweight/Redis-free hosts) it
+        // id; otherwise (custom code, or no gateway on lightweight hosts) it
         // hard-fails without a proposal id. This call always throws.
         await _dispatcher.CreateApprovalProposalOrThrowAsync(
                 policyRef,
@@ -1650,7 +1650,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
                 payload.Metadata,
                 resumingApproved: true,
                 // Restore the ORIGINAL submitter's row/field security identity from the
-                // proposal (#3068). The reconstructed resume principal carries only the
+                // proposal. The reconstructed resume principal carries only the
                 // submitter's name, so re-capturing from it would pin an empty role set,
                 // match zero RLS policies, and hand back an UNRESTRICTED read. Marked
                 // inherited so a proposal persisted before the snapshot existed is REFUSED
@@ -1783,7 +1783,7 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
             // The no-registered-workload case (the default) is built through the shared
             // spec builder so the durable spec — parameter bag AND envelope — is
             // identical to the one the GP Devkit local runner produces for the same
-            // plan (issue #2180). The per-job resource profile is NOT projected here: the
+            // plan. The per-job resource profile is NOT projected here: the
             // batch.* sizing keys are meaningless to the local/Kubernetes baseline and would
             // break the local-runner spec-parity invariant.
             return GeoprocessingSpecBuilder.BuildNoWorkloadSpec(plan, specParams, requiredRuntimeProfile);

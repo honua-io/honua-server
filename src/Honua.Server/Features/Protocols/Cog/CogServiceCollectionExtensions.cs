@@ -17,14 +17,14 @@ internal static class CogServiceCollectionExtensions
         services.AddSingleton<ICogMetadataReader, CogMetadataExtractor>();
 
         // Bind the catalog raster-source guardrails (decoded-size ceiling). The resolver
-        // enforces the ceiling from its own ETag-pinned bounded header probe (#3090).
+        // enforces the ceiling from its own ETag-pinned bounded header probe.
         services.Configure<CatalogRasterSourceOptions>(
             configuration.GetSection(CatalogRasterSourceOptions.SectionName));
 
         // Register the tile resolver
         services.AddScoped<ICogTileResolver, CogTileResolver>();
 
-        // Register the geoprocessing raster-source resolver (#2264) so native
+        // Register the geoprocessing raster-source resolver so native
         // raster/surface processes can source a registered catalog raster by
         // layerId/rasterId. Singleton (the GP submit service is a singleton); it
         // opens a per-call scope to reach the scoped COG store and fails cleanly

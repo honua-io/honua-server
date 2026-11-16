@@ -147,7 +147,7 @@ public static class PortalTokenAuthenticationExtensions
 
     private static void TryAddPortalOAuthBridge(this IServiceCollection services)
     {
-        // The ArcGIS OAuth2 named-user bridge (#1242) composes the existing OIDC
+        // The ArcGIS OAuth2 named-user bridge composes the existing OIDC
         // identity core and IPortalTokenIssuer rather than introducing a parallel
         // auth subsystem (ADR-0049). The store/broker/token-service are scoped to
         // the request like the credential verifier; the store is registered as a
@@ -174,7 +174,7 @@ public static class PortalTokenAuthenticationExtensions
         services.AddHttpContextAccessor();
         services.TryAddSingleton<Honua.Core.Features.Security.Abstractions.IPortalResourceReadAuthorizer, PortalResourceReadAuthorizer>();
 
-        // Optional JWT access-token format + RFC 7662 introspection (ADR-0068, #1890)
+        // Optional JWT access-token format + RFC 7662 introspection (ADR-0068)
         // and pluggable IdP/OIDC federation for client_credentials (ADR-0053
         // Increment 3, #1889). All strictly opt-in via options; registering the
         // services unconditionally keeps the flag-off path a no-op (the services
@@ -203,7 +203,7 @@ public static class PortalTokenAuthenticationExtensions
         {
             // The Portal access/visibility projection is off-by-default so the
             // facade never exposes a discovery surface unless an operator opts in,
-            // consistent with the entitlement-gated generateToken surface (#1370).
+            // consistent with the entitlement-gated generateToken surface.
             var enabled = configuration.GetValue(
                 $"{PortalAccessProjectionConfiguration.SectionName}:Enabled",
                 defaultValue: false);

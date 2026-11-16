@@ -28,7 +28,7 @@ internal sealed partial class EdrHandler
 
     // Every output format and CRS a collection advertises (output_formats / crs). The position
     // and cube queries bind `f` and `crs` to these lists, so an unadvertised value is a 400
-    // rather than a silently CoverageJSON/CRS84 answer (#4153).
+    // rather than a silently CoverageJSON/CRS84 answer.
     private static readonly ImmutableArray<string> OutputFormats = ImmutableArray.Create(CoverageJsonFormat);
     private static readonly ImmutableArray<string> SupportedCrs = ImmutableArray.Create(Crs84Code);
 
@@ -139,7 +139,7 @@ internal sealed partial class EdrHandler
         }
 
         // coords are CRS84 lon/lat while RasterInfo.Extent is in the raster's storage CRS, so the
-        // gate compares against the CRS84-transformed extent (#4149). Every MULTIPOINT member is
+        // gate compares against the CRS84-transformed extent. Every MULTIPOINT member is
         // gated: a partial answer would be indistinguishable from a full one.
         var raster = resolution.Raster;
         var crs84Extent = await ResolveCrs84ExtentAsync(raster, cancellationToken).ConfigureAwait(false);
@@ -411,7 +411,7 @@ internal sealed partial class EdrHandler
         var outputFormats = OutputFormats;
 
         // The raster's single instant is its temporal geometry; advertising it lets clients pick a
-        // datetime that selects data instead of receiving 204 for a disjoint request (#4151).
+        // datetime that selects data instead of receiving 204 for a disjoint request.
         var rasterInstant = Iso(ResolveRasterInstant(raster));
         var temporal = new TemporalExtent
         {
@@ -421,7 +421,7 @@ internal sealed partial class EdrHandler
         var extent = new Extent { Temporal = temporal };
         if (raster.Extent is { } e)
         {
-            // The storage-CRS extent is advertised in CRS84 (#4149). If the storage CRS cannot be
+            // The storage-CRS extent is advertised in CRS84. If the storage CRS cannot be
             // transformed, the native bbox is labelled with its own EPSG CRS instead of CRS84, as
             // OGC API - Coverages does for the same layer.
             var crs84Extent = await ResolveCrs84ExtentAsync(raster, cancellationToken).ConfigureAwait(false);
@@ -506,7 +506,7 @@ internal sealed partial class EdrHandler
         // AvailableParameterNames first (see ValidateRequestedParameters), so a
         // surviving request always selects at least one offered parameter. Substituting
         // band_1 for an unmatched selection would return a different physical quantity
-        // than the client asked for (#3184).
+        // than the client asked for.
         return builder.ToImmutable();
     }
 
@@ -770,7 +770,7 @@ internal sealed partial class EdrHandler
         return values;
     }
 
-    // RasterInfo.Extent is populated in the raster's storage SRID, not CRS84 (#4149).
+    // RasterInfo.Extent is populated in the raster's storage SRID, not CRS84.
     private async Task<(double MinLon, double MinLat, double MaxLon, double MaxLat)?> ResolveCrs84ExtentAsync(
         RasterInfo raster,
         CancellationToken cancellationToken)
@@ -833,7 +833,7 @@ internal sealed partial class EdrHandler
     };
 
     // UTC RFC 3339 instant. Fractional seconds are kept (and omitted with their period when zero)
-    // so an advertised time round-trips exactly through the datetime parameter (#4151).
+    // so an advertised time round-trips exactly through the datetime parameter.
     private static string Iso(DateTimeOffset value) =>
         value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture);
 

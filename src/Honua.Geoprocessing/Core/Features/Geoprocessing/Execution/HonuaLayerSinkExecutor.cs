@@ -239,7 +239,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
             return "the destination could not be authorized: no authorization scope is available in this deployment.";
         }
 
-        // Mirrors source.honua-layer's fail-closed contract (honua-server#3068): a job with no
+        // Mirrors source.honua-layer's fail-closed contract: a job with no
         // captured submitter cannot be constrained to anyone, so it must be refused rather than
         // writing under an unconstrained identity.
         var submitter = JobSecurityScope.Current?.Submitter;

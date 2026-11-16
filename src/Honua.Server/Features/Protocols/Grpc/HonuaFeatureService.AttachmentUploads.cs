@@ -4,11 +4,9 @@
 using System.Security.Cryptography;
 using Google.Protobuf;
 using Grpc.Core;
-using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Authorization.Domain;
-using Microsoft.Extensions.Options;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
@@ -20,12 +18,12 @@ internal sealed partial class HonuaFeatureService
 
     public override async Task<Proto.BeginAttachmentUploadResponse> BeginAttachmentUpload(
         Proto.BeginAttachmentUploadRequest request, ServerCallContext context)
-        => new() { Session = ToAttachmentSession(await BeginAttachmentSessionAsync(request.Upload, "chunked", context).ConfigureAwait(false)) };
+        => new() { Session = ToAttachmentSession(await BeginAttachmentSessionAsync(request.Upload, "chunked", context).ConfigureAwait(false), context) };
 
     public override async Task<Proto.UploadAttachmentResponse> UploadAttachment(
         Proto.UploadAttachmentRequest request, ServerCallContext context)
     {
-        if (request.Content.Length > AttachmentChunkBytes || request.Upload is null ||
+        if (request.Content.Length > AttachmentPayloadLimit(context, AttachmentUnaryEnvelopeBytes) || request.Upload is null ||
             request.Upload.SizeBytes != request.Content.Length || request.Upload.Sha256.Length != SHA256.HashSizeInBytes ||
             !CryptographicOperations.FixedTimeEquals(SHA256.HashData(request.Content.Span), request.Upload.Sha256.Span))
         {
@@ -52,7 +50,7 @@ internal sealed partial class HonuaFeatureService
         ValidateAttachmentMimeType(session.Request.ContentType, context);
         return new Proto.UploadAttachmentChunkResponse
         {
-            Session = ToAttachmentSession(await AppendAttachmentChunkAsync(session, request, context).ConfigureAwait(false))
+            Session = ToAttachmentSession(await AppendAttachmentChunkAsync(session, request, context).ConfigureAwait(false), context)
         };
     }
 
@@ -80,6 +78,11 @@ internal sealed partial class HonuaFeatureService
     private async Task<AttachmentUploadSession> BeginAttachmentSessionAsync(Proto.AttachmentUpload? upload, string operation, ServerCallContext context)
     {
         ValidateAttachmentUpload(upload, context);
+        var maxChunkBytes = AttachmentPayloadLimit(context, AttachmentChunkEnvelopeBytes);
+        if (maxChunkBytes == 0)
+        {
+            throw AttachmentError(StatusCode.ResourceExhausted, "The gRPC receive limit cannot accommodate an upload chunk.");
+        }
         var target = await ResolveAttachmentParentAsync(upload!.Parent, context).ConfigureAwait(false);
         await EnsureAttachmentEditAccessAsync(target, context, AuthorizationOperation.Update).ConfigureAwait(false);
         return await AttachmentService<IAttachmentUploadSessionStore>(context).BeginAsync(new AttachmentUploadRequest
@@ -97,19 +100,20 @@ internal sealed partial class HonuaFeatureService
             ExpectedSize = upload.SizeBytes,
             Sha256 = upload.Sha256.ToByteArray(),
             ReplaceAttachmentId = upload.HasReplaceAttachmentId ? upload.ReplaceAttachmentId : null,
-            MaxChunkBytes = AttachmentChunkBytes,
+            MaxChunkBytes = maxChunkBytes,
             Lifetime = AttachmentSessionLifetime
         }, context.CancellationToken).ConfigureAwait(false);
     }
 
     private static void ValidateAttachmentUpload(Proto.AttachmentUpload? upload, ServerCallContext context)
     {
-        var limits = context.GetHttpContext().RequestServices.GetService<IOptions<LimitsOptions>>()?.Value ?? new LimitsOptions();
+        var limits = AttachmentUploadLimits(context);
         if (upload is null || upload.Parent is null || string.IsNullOrWhiteSpace(upload.Name) ||
             upload.Name.Length > 1024 || string.IsNullOrWhiteSpace(upload.ContentType) || upload.ContentType.Length > 256 ||
             string.IsNullOrWhiteSpace(upload.IdempotencyKey) || System.Text.Encoding.UTF8.GetByteCount(upload.IdempotencyKey) > 256 ||
             upload.Sha256.Length != SHA256.HashSizeInBytes || upload.SizeBytes < 0 ||
             upload.HasReplaceAttachmentId && upload.ReplaceAttachmentId <= 0 ||
+            upload.CalculateSize() > AttachmentUnaryEnvelopeBytes - 10 ||
             upload.Keywords.Count > 100 || upload.Keywords.Any(value => value.Length > 1024 || value.Contains('\0')))
         {
             throw AttachmentError(StatusCode.InvalidArgument, "Valid attachment metadata and an idempotency key are required.");
@@ -123,7 +127,7 @@ internal sealed partial class HonuaFeatureService
 
     private static void ValidateAttachmentMimeType(string contentType, ServerCallContext context)
     {
-        var limits = context.GetHttpContext().RequestServices.GetService<IOptions<LimitsOptions>>()?.Value ?? new LimitsOptions();
+        var limits = AttachmentUploadLimits(context);
         var mediaType = contentType.Split(';', 2)[0].Trim();
         var allowed = limits.Attachments.AllowedMimeTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (mediaType.Length == 0 || !allowed.Any(value => value.EndsWith("/*", StringComparison.Ordinal)
@@ -178,12 +182,12 @@ internal sealed partial class HonuaFeatureService
         }
     }
 
-    private static Proto.AttachmentUploadSession ToAttachmentSession(AttachmentUploadSession session)
+    private static Proto.AttachmentUploadSession ToAttachmentSession(AttachmentUploadSession session, ServerCallContext context)
         => new()
         {
             SessionId = session.SessionId.ToString("D"),
             ExpiresAtUtcMs = session.ExpiresAt.ToUnixTimeMilliseconds(),
             NextOffsetBytes = session.NextOffsetBytes,
-            MaxChunkBytes = session.Request.MaxChunkBytes
+            MaxChunkBytes = Math.Min(session.Request.MaxChunkBytes, AttachmentPayloadLimit(context, AttachmentChunkEnvelopeBytes))
         };
 }

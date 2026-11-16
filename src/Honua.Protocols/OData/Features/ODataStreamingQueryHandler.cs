@@ -443,7 +443,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             // $count=true for the total). The empty-page short-circuit lives in the
             // non-streaming handler, so delegate before building the canonical query: the
             // shared query validator rejects Limit <= 0 ("Limit must be greater than zero"),
-            // which would otherwise turn a spec-valid $top=0 into a 400 (#1989).
+            // which would otherwise turn a spec-valid $top=0 into a 400.
             if (pagination.Limit == 0)
             {
                 var emptyPageHandler = context.RequestServices.GetRequiredService<ODataQueryHandler>();
@@ -494,7 +494,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
 
             // Determine if we should use streaming. Base the decision on the originally
-            // requested $top, not the server page-size-clamped pagination.Limit (#1644):
+            // requested $top, not the server page-size-clamped pagination.Limit:
             // a request for a large page still streams the clamped page and emits an
             // @odata.nextLink, rather than falling back to the buffered handler.
             var requestedTop = topValue ?? pagination.Limit;
@@ -562,7 +562,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             // Set up streaming response. Leave Transfer-Encoding to the server: Kestrel chunks a body
             // without Content-Length itself, while an application-set header means the application
             // frames the chunks, so the JSON would go out unframed and a client could not tell a
-            // whole body from a cut one (#5472).
+            // whole body from a cut one.
             context.Response.ContentType = ODataUtilityService.GetODataContentType(context.Request, format);
             ODataUtilityService.SetODataHeaders(context);
             if (applyTrackChangesPreference)
@@ -750,7 +750,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 : hasMoreResults;
 
             // An ordinary collection stops once the client $top is spent and carries the remaining
-            // budget forward (#5464); change-tracking continuations keep paging by $top.
+            // budget forward; change-tracking continuations keep paging by $top.
             int? continuationTop = pagination.Limit;
             if (shouldPaginate && !trackChangesRequested && string.IsNullOrWhiteSpace(deltatoken))
             {
@@ -816,7 +816,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             // Nothing written since the last flush has reached the client. Drop it so disposing the
             // writer cannot commit a half-built collection: before the response starts that prefix
             // would precede the error body written further up, and after it the abort already marks
-            // the response as cut (#5472).
+            // the response as cut.
             writer.Reset();
             throw;
         }

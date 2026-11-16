@@ -43,7 +43,7 @@ internal sealed partial class FeatureServerQueryExecutor
         _streamingFormatter = streamingFormatter ?? throw new ArgumentNullException(nameof(streamingFormatter));
         _providerQueryRouter = providerQueryRouter;
         _metadataGraphProvider = metadataGraphProvider;
-        // Plugin computed-field projection (#1562). Optional so direct-construction tests keep
+        // Plugin computed-field projection. Optional so direct-construction tests keep
         // working; defaults to the zero-overhead no-op pipeline when no Enterprise plugin SDK is
         // present. Applied at the materialized-Feature query seam in the V2 overload below.
         _computedFieldPipeline = computedFieldPipeline ?? NoOpComputedFieldPipeline.Instance;

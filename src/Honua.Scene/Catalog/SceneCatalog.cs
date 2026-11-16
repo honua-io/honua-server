@@ -4,12 +4,17 @@
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Scene;
+using AccessPolicy = Honua.Core.Features.Security.Domain.AccessPolicy;
 
 namespace Honua.Core.Features.Scene.Catalog;
 
 public readonly record struct ResolvedScene(SceneDatasetRecord? Record, SceneDataset? Scene)
 {
     public string Id => Record?.Id ?? Scene!.Id;
+
+    public AccessPolicy? AccessPolicy => Record is { } record
+        ? SceneServingProjection.ToAccessPolicy(record)
+        : Scene!.AccessPolicy;
 }
 
 public static class SceneCatalog

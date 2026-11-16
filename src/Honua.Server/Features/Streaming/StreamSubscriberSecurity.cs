@@ -48,6 +48,37 @@ internal sealed class StreamSubscriberSecurity
         return true;
     }
 
+    // A client predicate may only read fields the subscriber can read on the event's route. A
+    // route with no current policy is not readable at all, so it counts as masked.
+    public bool MasksAny(FeatureStreamEnvelope envelope, IReadOnlyList<string> fields)
+    {
+        var policy = Volatile.Read(ref _state).Resolve(envelope);
+        return policy is null || FirstMaskedField(policy, fields) is not null;
+    }
+
+    public string? FindMaskedField(IReadOnlyList<string> fields)
+        => Volatile.Read(ref _state).ExactRoutes.Values
+            .Select(policy => FirstMaskedField(policy, fields))
+            .FirstOrDefault(static field => field is not null);
+
+    private static string? FirstMaskedField(StreamLayerReadPolicy policy, IReadOnlyList<string> fields)
+    {
+        if (policy.MaskedFields.Count == 0)
+        {
+            return null;
+        }
+
+        for (var index = 0; index < fields.Count; index++)
+        {
+            if (policy.MaskedFields.Contains(fields[index]))
+            {
+                return fields[index];
+            }
+        }
+
+        return null;
+    }
+
     public FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope)
     {
         var policy = Volatile.Read(ref _state).Resolve(envelope);

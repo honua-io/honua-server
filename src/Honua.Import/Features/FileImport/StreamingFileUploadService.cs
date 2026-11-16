@@ -17,7 +17,7 @@ internal sealed class StreamingFileUploadService : IUploadQueueMetricsProvider
 
     public UploadQueueSnapshot GetQueueSnapshot()
     {
-        // No in-process upload queue remains (#2459): depth and active counts are always zero;
+        // No in-process upload queue remains: depth and active counts are always zero;
         // the configured limits are still reported so dashboards keep their capacity context.
         return new UploadQueueSnapshot(
             0,

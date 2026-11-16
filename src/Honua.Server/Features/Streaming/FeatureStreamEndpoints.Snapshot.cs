@@ -715,7 +715,7 @@ internal static partial class FeatureStreamEndpoints
                     // the first delta after the baseline would land at what the client reads as
                     // a gap. Truncating here is the same fail-closed outcome as the feature cap,
                     // and it is the bound that keeps a baseline deliverable through a response
-                    // path that buffers (honua-server#3181).
+                    // path that buffers.
                     var measuredFrame = projection.Value.ToFrame(long.MaxValue);
                     var featureBytes = sink.MeasureFeatureBytes(measuredFrame, emitted + 1);
                     if (emittedBytes + featureBytes > options.MaxSnapshotBytes)

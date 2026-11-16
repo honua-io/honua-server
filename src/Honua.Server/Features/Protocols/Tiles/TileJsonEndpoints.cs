@@ -52,7 +52,7 @@ internal static class TileJsonEndpoints
     {
         // Tiles is not an Esri protocol surface: unlike GeoServices /rest, layer-not-found
         // must be a real HTTP 404 with a problem+json body, not a 200-wrapped GeoServices
-        // error envelope (honua-server#2945).
+        // error envelope.
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,

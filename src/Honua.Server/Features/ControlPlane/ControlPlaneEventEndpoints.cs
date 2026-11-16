@@ -25,7 +25,7 @@ internal static class ControlPlaneEventEndpoints
             return;
         }
 
-        // HANDLER-AUTHORIZED (#1144): these internal event/backstop routes enforce their own
+        // HANDLER-AUTHORIZED: these internal event/backstop routes enforce their own
         // authorization in-handler via the shared-secret X-Honua-ControlPlane-Token check
         // (see CheckAuthorization) and are reachable only from the EventBridge-invoked Lambda inside
         // the deployment trust boundary — they are not a framework-policy surface. Marked
@@ -57,7 +57,7 @@ internal static class ControlPlaneEventEndpoints
         }
 
         // A degraded start (database unreachable, or schema behind this build) answers a typed 503
-        // so the event is retried (honua-server#5916).
+        // so the event is retried.
         if (ControlPlaneNotReadyGuard.TryRefuse(httpRequest.HttpContext) is { } notReady)
         {
             return notReady;
@@ -84,7 +84,7 @@ internal static class ControlPlaneEventEndpoints
         }
 
         // A degraded start (database unreachable, or schema behind this build) answers a typed 503
-        // so the event is retried (honua-server#5916).
+        // so the event is retried.
         if (ControlPlaneNotReadyGuard.TryRefuse(httpRequest.HttpContext) is { } notReady)
         {
             return notReady;

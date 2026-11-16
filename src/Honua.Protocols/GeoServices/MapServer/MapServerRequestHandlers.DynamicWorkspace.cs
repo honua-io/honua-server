@@ -348,7 +348,7 @@ internal static partial class MapServerEndpoints
             }
 
             // This single-layer path only resolves plain table data sources. joinTable sources are
-            // resolved earlier by TryResolveSource into a structured join (#1866); dynamic query
+            // resolved earlier by TryResolveSource into a structured join; dynamic query
             // tables (raw SQL) remain deferred. Reject anything else here so a join/query table that
             // reaches this path (e.g. via a caller that does not use TryResolveSource) is not
             // silently treated as a plain table.

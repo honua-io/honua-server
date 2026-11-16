@@ -408,7 +408,7 @@ internal static partial class FeatureServerEndpoints
         activity?.SetTag("h3.resolution", resolution);
 
         // Validate layer access before checking server capabilities. /tiles is not an Esri
-        // protocol surface (honua-server#2945): layer-not-found must be a real HTTP 404 with
+        // protocol surface: layer-not-found must be a real HTTP 404 with
         // a problem+json body, not the GeoServices 200-envelope path-based classification
         // would otherwise apply to any /tiles/* route.
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(

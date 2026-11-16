@@ -71,7 +71,7 @@ internal sealed class ClarifyIntentTool : IMcpTool, IMcpInputRequiredTool
         var result = await _groundingService.GroundAsync(request, principal, cancellationToken).ConfigureAwait(false);
         var output = GroundingToolMapper.ToWire(result);
 
-        // honua-server#2484: when the calling session advertised the MCP
+        // When the calling session advertised the MCP
         // elicitation capability, project any residual clarification envelope onto
         // a native elicitation request; otherwise the envelope is left intact.
         ClarificationElicitationMapper.ProjectOntoOutput(

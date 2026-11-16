@@ -423,7 +423,7 @@ internal sealed partial class ProcessContainerRuntimeClient(ILogger<ProcessConta
             arguments.Add($"{variable.Key}={variable.Value}");
         }
 
-        // Read-only so a replica can never write back to operator-supplied material (#4617).
+        // Read-only so a replica can never write back to operator-supplied material.
         foreach (var mount in request.Mounts)
         {
             arguments.Add("-v");

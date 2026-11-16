@@ -52,7 +52,7 @@ internal sealed class ODataAggregationHandler
         // underlying query before the terminal aggregate/groupby/compute runs. Previously only a
         // single transform was parsed, so on a pipeline the filter() regex greedily swallowed the
         // remaining segments and produced a broken filter — 400ing extent-scoped aggregation such
-        // as filter(geo.intersects(...))/groupby(...) (#1636).
+        // as filter(geo.intersects(...))/groupby(...).
         var segments = SplitApplyTransforms(applyExpression);
 
         // Build the query, starting from the $filter query option (composes with $apply).

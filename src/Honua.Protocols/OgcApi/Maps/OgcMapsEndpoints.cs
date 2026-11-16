@@ -41,7 +41,7 @@ public static partial class OgcMapsEndpoints
             .WithDescription("The landing page provides links to the OGC API - Maps definition and related resources")
             .Produces<LandingPage>(StatusCodes.Status200OK, MediaTypes.Json)
             .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html);
-        // #5048: the landing page now describes the extent and CRS of the collections THIS
+        // The landing page now describes the extent and CRS of the collections THIS
         // caller may see, so it is per-principal and must not be served from the shared
         // anonymous output cache - the same reason other principal-specific surfaces opt
         // out. The response is built from the in-memory metadata graph, so it stays cheap.
@@ -500,7 +500,7 @@ public static partial class OgcMapsEndpoints
             cancellationToken: cancellationToken).ConfigureAwait(false);
         // A protected collection answers with the access-policy refusal (401/403), as the
         // Features and Tiles collection routes do, so an anonymous client learns it must
-        // authenticate instead of concluding the collection does not exist (#4991).
+        // authenticate instead of concluding the collection does not exist.
         if (!validation.IsValid && validation.ErrorResult is { } accessError && IsAccessRefusal(accessError))
         {
             return new MapsCollectionResolution(null, null, null, accessError);

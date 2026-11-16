@@ -417,7 +417,7 @@ internal static partial class MapServerEndpoints
                     }
 
                     // A join keyed on a publisher-hidden field would turn row matching into a
-                    // value oracle for that field, so hidden keys are refused (#6098).
+                    // value oracle for that field, so hidden keys are refused.
                     if (layer.Resource.IsHiddenSchemaField(join.LeftKey) ||
                         rightLayer!.Resource.IsHiddenSchemaField(join.RightKey))
                     {
