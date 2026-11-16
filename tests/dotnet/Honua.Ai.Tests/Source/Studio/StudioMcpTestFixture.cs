@@ -14,7 +14,13 @@ internal static class StudioMcpTestFixture
 {
     public static WebAppFixture Create() => new WebAppFixture()
         .WithProductionJobSubstrate()
-        .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "http://localhost"))
+        .ConfigureWebHost(builder =>
+        {
+            // Approval revalidates the stored proposer key; the development bypass would
+            // replace it with a synthetic actor that has no credential-store record.
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("Public:BaseUrl", "http://localhost");
+        })
         .ConfigureServices(services =>
         {
             services.RemoveAll<IStudioPackageStore>();
