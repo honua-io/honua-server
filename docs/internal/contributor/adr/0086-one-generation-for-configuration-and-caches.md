@@ -46,6 +46,13 @@ invalidators, timed reloads. That is what let them disagree.
 5. **Caches are observable.** Responses carry an RFC 9211 `Cache-Status` entry and the generation;
    each task exports the generation it serves as a metric; every purge is recorded with the id of
    the change that caused it.
+6. **Configuration documents retain revisions under the generation.** Every insert, update and
+   deletion records an encrypted value or deletion marker in the same transaction. Existing
+   documents receive a baseline at upgrade. Restoring a document requires the expected current
+   generation and writes a new revision; it never rewinds the generation. History queries return
+   bounded pages of revision metadata, without exposing stored credentials. Restore validates
+   the historical value with the collection's existing encryption keys and JSON contract before
+   writing it, so an unreadable revision leaves configuration unchanged.
 
 ## Consequences
 - **Retired:** the Redis-era `DistributedCacheRefreshCoordinator`, per-feature cache invalidators
