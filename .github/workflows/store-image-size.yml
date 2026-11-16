@@ -54,8 +54,8 @@ jobs:
     name: Measure ${{ matrix.profile }} (${{ matrix.compilation }})
     if: ${{ always() && !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '"ubuntu-24.04"') || 'ubuntu-latest' }}
-    # FULL 43968781378 exhausted 30m during native code generation. Match the
-    # nightly cold-AOT budget so a completed build can export its layer cache.
+    # Cold native code generation needs the nightly AOT budget to finish
+    # and export its layer cache; JIT builds retain their shorter ceiling.
     timeout-minutes: ${{ matrix.compilation == 'aot' && 180 || 30 }}
     env:
       IMAGE: honua-store-measure:${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.profile }}-${{ matrix.compilation }}
