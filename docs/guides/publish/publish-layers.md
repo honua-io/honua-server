@@ -66,7 +66,7 @@ with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as 
     print(layer)
 ```
 
-The result includes the numeric layer ID and owning service name. Optional SDK request fields include a description, geometry type, primary key, attribute allowlist, service name, and enabled state. Repeating this publication for the same source table returns a conflict; inspect the existing layer before retrying.
+The result exposes the numeric layer ID as `layer.storage_layer_id` and the owning service as `layer.service_name`. Optional SDK request fields include a description, geometry type, primary key, attribute allowlist, service name, and enabled state. Repeating this publication for the same source table returns a conflict; inspect the existing layer before retrying.
 
 The JSON API also accepts source governance fields. The published `honua-admin` 0.3.2 `PublishLayerRequest` does not expose these fields; use a client generated from [`admin-api.json`](../../developer/api-specs/admin-api.json) to submit the following payload.
 
@@ -95,9 +95,14 @@ Manage published layers through `list_layers`, `set_layer_enabled`, and `set_ser
 
 ```python
 with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as admin:
-    for layer in admin.list_layers("primary-db"):
-        print(layer)
-    admin.set_layer_enabled("primary-db", layer_id=0, enabled=True)
+    for published_layer in admin.list_layers("primary-db"):
+        print(published_layer)
+    admin.set_layer_enabled(
+        "primary-db",
+        layer_id=layer.storage_layer_id,
+        service_name=layer.service_name,
+        enabled=True,
+    )
 ```
 
 Extent refresh and several bulk catalog operations do not yet have SDK wrappers; use the generated admin client for those endpoints.
