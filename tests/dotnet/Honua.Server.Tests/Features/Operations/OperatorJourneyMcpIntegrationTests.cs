@@ -17,8 +17,8 @@ using Npgsql;
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
 /// <summary>
-/// An admin finishes the closed operator roster through MCP, each change after one human approval.
-/// A caller without the admin grant is permission_denied and creates no connection row.
+/// An admin finishes the closed operator roster through MCP. A caller without the admin grant
+/// is permission_denied and creates no connection row.
 /// </summary>
 /// <remarks>
 /// Lane A and Lane B executors compose only when a durable proposal store is already registered.
