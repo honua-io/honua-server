@@ -98,30 +98,34 @@ public sealed class GrpcApplyEditsGateTests : IDisposable
         _hooks.AfterBatches.Should().ContainSingle().Which.Creates.Select(Name).Should().Equal("first", "last");
     }
 
-    [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
+    [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
-    public async Task PluginRejection_WithOperationalDetails_ReturnsSafeFallback(bool rollback)
+    public async Task PluginRejection_WithOperationalDetailsAndRollback_ReturnsSafeFallback()
+    {
+        _hooks.RejectionMessage = "Npgsql provider diagnostic";
+        var harness = Harness();
+        var request = RollbackRequest(adds: [Shirt("red", "S", RecordingHooks.BlockedName)]);
+
+        var exception = await CallAsync(harness, request);
+
+        exception!.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        exception.Status.Detail.Should().Be("Invalid feature data.");
+        _written.Should().BeEmpty();
+        _hooks.AfterBatches.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task PluginRejection_WithOperationalDetailsWithoutRollback_ReturnsSafeFallback()
     {
         _hooks.RejectionMessage = "Npgsql provider diagnostic";
         var harness = Harness();
         var request = PartialRequest(adds: [Shirt("red", "S", RecordingHooks.BlockedName)]);
-        request.RollbackOnFailure = rollback;
 
-        if (rollback)
-        {
-            var exception = await CallAsync(harness, request);
-            exception!.StatusCode.Should().Be(StatusCode.InvalidArgument);
-            exception.Status.Detail.Should().Be("Invalid feature data.");
-        }
-        else
-        {
-            var response = await harness.Service.ApplyEdits(request, Context(harness));
-            response.AddResults.Should().ContainSingle().Which.Success.Should().BeFalse();
-            response.AddResults[0].Error.Message.Should().Be("Invalid feature data.");
-        }
+        var response = await harness.Service.ApplyEdits(request, Context(harness));
 
+        response.AddResults.Should().ContainSingle().Which.Success.Should().BeFalse();
+        response.AddResults[0].Error.Message.Should().Be("Invalid feature data.");
         _written.SelectMany(static batch => batch.Creates).Should().BeEmpty();
         _hooks.AfterBatches.SelectMany(static batch => batch.Creates).Should().BeEmpty();
     }
