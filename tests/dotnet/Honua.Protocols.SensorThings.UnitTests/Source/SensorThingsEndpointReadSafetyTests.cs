@@ -2,10 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Authentication;
 using Honua.Protocols.SensorThings;
 using Honua.Protocols.SensorThings.Services;
 using Honua.Protocols.SensorThings.Streaming;
@@ -31,7 +35,14 @@ public sealed class SensorThingsEndpointReadSafetyTests
         context.Request.Scheme = "https";
         context.Request.Host = new HostString("sensor.example.test");
         context.Request.QueryString = new QueryString(query);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "sensor-reader")], "Test"));
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("default");
+        tenant.Source.Returns(TenantContextSource.Default);
         context.RequestServices = new ServiceCollection()
+            .AddSingleton<IAccessPolicyEvaluator>(new AccessPolicyEvaluator())
+            .AddSingleton(tenant)
             .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(
                 new Dictionary<string, string?> { ["SensorThings:ConformantProfile"] = "true" }).Build())
             .BuildServiceProvider();
