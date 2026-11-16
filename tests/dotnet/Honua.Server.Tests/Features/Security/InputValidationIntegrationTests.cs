@@ -199,10 +199,6 @@ public sealed class InputValidationIntegrationTests : IClassFixture<InputValidat
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithSqlCommentTokensInsideStringLiteral_IsAllowed()
     {
-        // Over-block regression (bug hunt): "--", "/*", "*/" inside a balanced
-        // quoted literal are data (bound as parameters), not SQL comments, and must
-        // not be rejected. Real comment injection OUTSIDE a literal is still blocked
-        // (see Query_WithSqlCommentInjectionOutsideLiteral_ReturnsBadRequest).
         foreach (var where in new[]
         {
             "name = 'audit -- note'",

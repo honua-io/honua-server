@@ -601,10 +601,6 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
 
     public JobTimeoutPolicy? TimeoutPolicy { get; init; }
 
-    // -----------------------------------------------------------------------
-    // Artifact references
-    // -----------------------------------------------------------------------
-
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> CleanupArtifactReferences { get; init; } = Array.Empty<string>();

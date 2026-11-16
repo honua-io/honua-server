@@ -989,8 +989,6 @@ public sealed class OperationsToolsetTests
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
-        // Approved replays must carry an exact method/path grant; the old broad admin:write
-        // assertion described the authorization bug this test is intended to prevent.
         executionAuthority!.Record.Permissions.Should().Equal(
             AdminApiKeyPermission.CreateApprovedOperationGrant(
                 definition.Method.Method,
