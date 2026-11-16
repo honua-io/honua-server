@@ -202,15 +202,41 @@ def platform_manifest(index, platform):
     return digest
 
 
+IMAGE_FORMATS = {
+    "application/vnd.oci.image.manifest.v1+json": (
+        "application/vnd.oci.image.config.v1+json", {
+            "application/vnd.oci.image.layer.v1.tar",
+            "application/vnd.oci.image.layer.v1.tar+gzip",
+            "application/vnd.oci.image.layer.v1.tar+zstd",
+            "application/vnd.oci.image.layer.nondistributable.v1.tar",
+            "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip",
+            "application/vnd.oci.image.layer.nondistributable.v1.tar+zstd"}),
+    "application/vnd.docker.distribution.manifest.v2+json": (
+        "application/vnd.docker.container.image.v1+json", {
+            "application/vnd.docker.image.rootfs.diff.tar.gzip",
+            "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip"}),
+}
+
+
 def assert_single_manifest(manifest):
-    _require(manifest.get("mediaType") in MANIFEST_MEDIA_TYPES,
+    _require(isinstance(manifest, dict), "Target must be an image manifest object")
+    media_type = manifest.get("mediaType")
+    _require(isinstance(media_type, str) and media_type in IMAGE_FORMATS,
              "Target must be a single image manifest, not an index carrying attestations")
+    _require(type(manifest.get("schemaVersion")) is int and manifest["schemaVersion"] == 2,
+             "Target must use image manifest schema version 2")
     _require("manifests" not in manifest, "Target must not reference other manifests")
-    _require(not manifest.get("subject"), "Target must not be an attestation or referrer")
-    for layer in manifest.get("layers", []):
-        media_type = str(layer.get("mediaType", ""))
-        _require("in-toto" not in media_type and "attestation" not in media_type,
-                 "Target carries an attestation layer")
+    _require("subject" not in manifest and "artifactType" not in manifest,
+             "Target must not be an artifact or referrer")
+    config_type, layer_types = IMAGE_FORMATS[media_type]
+    config = manifest.get("config")
+    _require(isinstance(config, dict) and config.get("mediaType") == config_type,
+             "Target must carry an image configuration")
+    layers = manifest.get("layers")
+    _require(isinstance(layers, list), "Target must carry an image layer list")
+    for layer in layers:
+        _require(isinstance(layer, dict) and isinstance(layer.get("mediaType"), str)
+                 and layer["mediaType"] in layer_types, "Target carries a non-image layer")
     return True
 
 

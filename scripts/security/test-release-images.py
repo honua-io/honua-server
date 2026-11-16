@@ -181,6 +181,8 @@ class AttestationFreeCopy(unittest.TestCase):
 
     def test_target_must_be_a_single_manifest_without_attestations(self):
         manifest = {"mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "schemaVersion": 2,
+                    "config": {"mediaType": "application/vnd.oci.image.config.v1+json"},
                     "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"}]}
         self.assertTrue(ri.assert_single_manifest(manifest))
         attested = copy.deepcopy(manifest)
@@ -188,6 +190,57 @@ class AttestationFreeCopy(unittest.TestCase):
         for bad in (self.INDEX, attested, dict(manifest, subject={"digest": "sha256:" + "1" * 64})):
             with self.assertRaises(ValueError):
                 ri.assert_single_manifest(bad)
+
+    def test_accepts_supported_image_config_and_filesystem_layer_types(self):
+        formats = {
+            "application/vnd.oci.image.manifest.v1+json": (
+                "application/vnd.oci.image.config.v1+json", [
+                    "application/vnd.oci.image.layer.v1.tar",
+                    "application/vnd.oci.image.layer.v1.tar+gzip",
+                    "application/vnd.oci.image.layer.v1.tar+zstd",
+                    "application/vnd.oci.image.layer.nondistributable.v1.tar",
+                    "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip",
+                    "application/vnd.oci.image.layer.nondistributable.v1.tar+zstd"]),
+            "application/vnd.docker.distribution.manifest.v2+json": (
+                "application/vnd.docker.container.image.v1+json", [
+                    "application/vnd.docker.image.rootfs.diff.tar.gzip",
+                    "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip"])}
+        for media_type, (config_type, layer_types) in formats.items():
+            for layer_type in layer_types:
+                with self.subTest(config=config_type, layer=layer_type):
+                    self.assertTrue(ri.assert_single_manifest({
+                        "schemaVersion": 2, "mediaType": media_type,
+                        "config": {"mediaType": config_type},
+                        "layers": [{"mediaType": layer_type}]}))
+            self.assertTrue(ri.assert_single_manifest({
+                "schemaVersion": 2, "mediaType": media_type,
+                "config": {"mediaType": config_type}, "layers": []}))
+
+    def test_rejects_artifacts_referrers_and_malformed_manifests(self):
+        image = {"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                 "config": {"mediaType": "application/vnd.oci.image.config.v1+json"},
+                 "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"}]}
+        cases = [None, [], "image", {}, dict(image, schemaVersion=1),
+                 dict(image, schemaVersion=True), dict(image, config=None),
+                 dict(image, config=[]), dict(image, config={}),
+                 dict(image, config={"mediaType": "application/vnd.oci.empty.v1+json"}),
+                 dict(image, config={"mediaType": "application/vnd.cncf.helm.config.v1+json"}),
+                 dict(image, config={"mediaType": "application/vnd.docker.container.image.v1+json"}),
+                 dict(image, artifactType="application/spdx+json"),
+                 dict(image, artifactType=""), dict(image, subject={}),
+                 dict(image, subject=None), dict(image, manifests=[]),
+                 dict(image, layers=None), dict(image, layers={}),
+                 dict(image, layers=[None]), dict(image, layers=["filesystem"]),
+                 dict(image, layers=[{}])]
+        without_layers = dict(image)
+        del without_layers["layers"]
+        cases.append(without_layers)
+        for media_type in ("application/pdf", "application/spdx+json", "application/vnd.in-toto+json",
+                           "application/vnd.oci.empty.v1+json", "", None):
+            cases.append(dict(image, layers=[{"mediaType": media_type}]))
+        for case in cases:
+            with self.subTest(manifest=case), self.assertRaises(ValueError):
+                ri.assert_single_manifest(case)
 
 
 if __name__ == "__main__":
