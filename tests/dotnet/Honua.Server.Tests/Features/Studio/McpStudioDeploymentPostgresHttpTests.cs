@@ -75,6 +75,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
             // composition but leaves Database:Schema unset. Bind the production stores
             // to this fixture's retained schema before constructing MCP handlers.
             var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Missing fixture schema.");
+            ApprovedStudioDraftCall.ConfigureDurableOperationInstances(services);
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), schema));

@@ -50,6 +50,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         });
         _fixture.ConfigureServices(services =>
         {
+            ApprovedStudioDraftCall.ConfigureDurableOperationInstances(services);
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), _studioSchema));

@@ -10,17 +10,28 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Operations;
 using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Studio;
 
 internal static class ApprovedStudioDraftCall
 {
+    public static void ConfigureDurableOperationInstances(IServiceCollection services)
+    {
+        services.RemoveAll<IOperationInstanceStore>();
+        services.AddSingleton<IOperationInstanceStore>(provider =>
+            provider.GetRequiredService<PostgresOperationInstanceStore>());
+    }
+
     public static async Task<HttpClient> CreateProposerAsync(WebAppFixture fixture)
     {
         using var scope = fixture.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IOperationInstanceStore>()
+            .Should().BeOfType<PostgresOperationInstanceStore>();
         var issued = await scope.ServiceProvider.GetRequiredService<IAdminApiKeyStore>().CreateAsync(
             $"studio-setup-{Guid.NewGuid():N}", ["admin:read", "admin:write"],
             DateTimeOffset.UtcNow.AddHours(1), "studio-test", CancellationToken.None);

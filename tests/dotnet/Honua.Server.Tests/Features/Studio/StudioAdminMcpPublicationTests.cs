@@ -63,6 +63,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
             })
             .ConfigureServices(services =>
             {
+                ApprovedStudioDraftCall.ConfigureDurableOperationInstances(services);
                 services.RemoveAll<IStudioPackageStore>();
                 services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
                 services.RemoveAll<IOperatorAuthorizationEvaluator>();
