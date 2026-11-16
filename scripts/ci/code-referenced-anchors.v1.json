@@ -47,7 +47,7 @@
       "why": "SCIM ServiceProviderConfig documentationUri. Advertised on the wire to every SCIM client that discovers the endpoint."
     },
     {
-      "url": "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not",
+      "url": "https://honua.io/docs/guides/deploy/docker-compose/#durable-administration-requires-the-system-database",
       "sources": [
         "src/Honua.Core/Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
       ],

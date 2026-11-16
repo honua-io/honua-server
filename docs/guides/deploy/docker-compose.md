@@ -210,7 +210,7 @@ query through its public hostname before admitting traffic. The HTTP readback
 above verifies the REST route only; TLS/gRPC qualification must use the actual
 proxy and deployment host.
 
-## Redis is optional; PostGIS is not
+## Durable administration requires the system database
 
 PostGIS owns the catalog, layer metadata and feature data and is required. Its
 system database (`ConnectionStrings__DefaultConnection`) also holds the governed

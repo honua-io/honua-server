@@ -351,7 +351,7 @@ public sealed class RedisOffDirectPublishTests
             services.AddSingleton(styleGraphSync ?? Substitute.For<IMetadataV2StyleGraphSync>());
         }
 
-        // Mirrors the Program.cs no-Redis branch: no IConnectionMultiplexer, fail-closed proposal store.
+        // Mirrors Program.cs without a system database: fail-closed proposal store.
         services.AddSingleton<IOperationProposalStore, UnavailableOperationProposalStore>();
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns(Environments.Production);
