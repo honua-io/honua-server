@@ -119,7 +119,9 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/agent/workspaces")]
     public async Task CreateWorkspace_BrowserCookieWithoutCsrf_IsRejected()
     {
+        // Only the cookie is sent: a request that also carries a bearer is exempt from the CSRF check.
         using var owner = Client("alice", "tenant-a");
+        owner.DefaultRequestHeaders.Authorization = null;
         owner.DefaultRequestHeaders.Add("Cookie", "honua_admin_session=untrusted-browser-cookie");
         using var response = await owner.PostAsync("/api/v1/agent/workspaces", null);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
