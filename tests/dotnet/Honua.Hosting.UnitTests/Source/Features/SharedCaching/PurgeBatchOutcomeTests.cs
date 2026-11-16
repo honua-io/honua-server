@@ -38,7 +38,8 @@ public sealed class PurgeBatchOutcomeTests
         if (unsent is CdnInvalidationOutcome.Busy)
         {
             time.Advance(CdnInvalidationService.CoalescingWindow);
-            await Eventually(() => cdn.Calls.Count == 6 && time.WaitingTimers == 2);
+            // Both successful batches share the existing settle timer; the later batch adds no timer.
+            await Eventually(() => cdn.Calls.Count == 6 && time.WaitingTimers == 1);
             time.Advance(PurgeBackedDelivery.SettleDelay - CdnInvalidationService.CoalescingWindow);
         }
         else
