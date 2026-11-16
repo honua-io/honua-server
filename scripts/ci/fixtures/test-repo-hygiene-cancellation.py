@@ -51,8 +51,12 @@ class HygieneCancellationTests(unittest.TestCase):
     def test_shard_validation_uses_merge_tree_and_production_checker(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/repo-hygiene.yml').read_text())
         job = workflow['jobs']['shard-identities']
-        self.assertNotIn('ref', job['steps'][0].get('with', {}))
-        self.assertIn('python3 scripts/ci/check-shard-identities.py', job['steps'][1]['run'])
+        checkout = next(step for step in job['steps']
+                        if step.get('uses', '').startswith('actions/checkout@'))
+        validation = next(step for step in job['steps']
+                          if step.get('name') == 'Require unique shard identities')
+        self.assertNotIn('ref', checkout.get('with', {}))
+        self.assertIn('python3 scripts/ci/check-shard-identities.py', validation['run'])
         self.assertLessEqual(job['timeout-minutes'], 5)
 
 
