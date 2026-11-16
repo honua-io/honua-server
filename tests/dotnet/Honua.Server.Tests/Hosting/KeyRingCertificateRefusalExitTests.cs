@@ -6,7 +6,6 @@ using FluentAssertions;
 using Honua.Server.Hosting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Testcontainers.Redis;
 
 namespace Honua.Server.Tests.Hosting;
 
@@ -26,7 +25,7 @@ public sealed class KeyRingCertificateRefusalExitTests
 
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
-    public async Task RedisWithoutKeyRingCertificate_RefusesNamingTheSettingAndExitsWithRefusalCode()
+    public async Task SystemDatabaseWithoutKeyRingCertificate_RefusesNamingTheSettingAndExitsWithRefusalCode()
     {
         var output = await RunRefusedBootAsync(certificatePath: null);
         output.Should().Contain("Operations:SecretChannel:KeyRingCertificatePath");
@@ -36,7 +35,7 @@ public sealed class KeyRingCertificateRefusalExitTests
 
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
-    public async Task RedisWithMalformedKeyRingCertificate_RefusesWithoutAbortingTheRuntime()
+    public async Task SystemDatabaseWithMalformedKeyRingCertificate_RefusesWithoutAbortingTheRuntime()
     {
         var path = Path.Join(Path.GetTempPath(), "honua-bad-keyring-" + Guid.NewGuid().ToString("N") + ".pfx");
         await File.WriteAllBytesAsync(path, [1, 2, 3, 4, 5]);
@@ -57,9 +56,6 @@ public sealed class KeyRingCertificateRefusalExitTests
         var serverAssembly = Path.Join(serverDirectory, "Honua.Server.dll");
         File.Exists(serverAssembly).Should().BeTrue("the cached test payload contains the server runtime ({0})", serverDirectory);
 
-        await using var redis = new RedisBuilder("redis:7.2-alpine").Build();
-        await redis.StartAsync();
-
         var start = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -79,7 +75,6 @@ public sealed class KeyRingCertificateRefusalExitTests
         start.Environment["ASPNETCORE_URLS"] = "http://127.0.0.1:0";
         start.Environment["ConnectionStrings__DefaultConnection"] =
             "Host=127.0.0.1;Port=5432;Database=honua;Username=honua;Password=unused";
-        start.Environment["ConnectionStrings__redis"] = redis.GetConnectionString();
         start.Environment["DataSource__Provider"] = "postgis";
         if (certificatePath is not null)
         {

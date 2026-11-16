@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.Migration;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -113,16 +114,20 @@ public sealed class GeoservicesImportJobTests(DatabaseFixtureAdapter database)
         return document.RootElement.GetProperty("jobId").GetString()!;
     }
 
+    // Both hosts keep the execution worker unless a test removes it: the consumer must claim the job.
     private static WebAppFixture CreateHost() => new WebAppFixture()
         .WithProductionJobSubstrate()
         .WithTestLicense(HonuaEdition.Enterprise)
-        .ConfigureServices(ImportWorkerTestServices.RemoveHostedImportWorkers);
+        .ConfigureServices(services => RemoveHostedService(services, typeof(MigrationBatchBackgroundService)));
 
     private static void RemoveExecutionWorker(IServiceCollection services)
+        => RemoveHostedService(services, typeof(JobExecutionService));
+
+    private static void RemoveHostedService(IServiceCollection services, Type implementation)
     {
         foreach (var descriptor in services.Where(descriptor =>
                      descriptor.ServiceType == typeof(IHostedService) &&
-                     descriptor.ImplementationType == typeof(JobExecutionService)).ToArray())
+                     descriptor.ImplementationType == implementation).ToArray())
         {
             services.Remove(descriptor);
         }
