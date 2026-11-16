@@ -98,13 +98,13 @@ public sealed class SpatialCorrectnessUnitTests
     }
 
     [UnitTheory]
-    [InlineData(-180, -90, 180, 90)]     // Full world extent
-    [InlineData(179.999, -5, -179.999, 5)] // Near antimeridian
-    [InlineData(0, 85.05, 1, 85.051)]   // Near Web Mercator limit
+    [InlineData(new double[] { -180, -90, 180, 90 })]     // Full world extent
+    [InlineData(new double[] { 179.999, -5, -179.999, 5 })] // Near antimeridian
+    [InlineData(new double[] { 0, 85.05, 1, 85.051 })]   // Near Web Mercator limit
     [Trait("Category", "Unit")]
     [Operation(Operations.Query)]
     public void CreateEnvelopeWkb_ExtemeCoordinates_GeneratesValidWkb(
-        params double[] bounds)
+        double[] bounds)
     {
         var minX = bounds[0];
         var minY = bounds[1];
