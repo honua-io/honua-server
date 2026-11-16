@@ -10,12 +10,11 @@ change in every edition. The requesting person may make that decision; a
 second person is not required by this model. The agent cannot approve on your
 behalf, and typing “yes” in a conversation is not a recorded server approval.
 
-**Availability:** the human-session enforcement and requester-approval changes
-are awaiting integration and a matching candidate. Older deployments can still
-reject approval by the requester or accept credential types that the new model
-rejects. Upgrade the server and Console together before relying on the new
-boundary. This guide describes the target behavior, not certification of an
-older deployment.
+**Availability:** human-session enforcement and requester approval are implemented
+in source. Rely on them only after the matching server and Console versions
+have been installed and qualified together. Older deployments can still reject
+approval by the requester or accept credential types that the new model rejects.
+This guide does not certify an installed deployment.
 
 ## What an agent must have approved
 
