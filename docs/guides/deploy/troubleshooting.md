@@ -53,11 +53,21 @@ kubectl run honua-cpu-check --rm -i --restart=Never --image=busybox \
   --command -- sh -s < scripts/operations/check-cpu-baseline.sh   # on one cluster node
 ```
 
-No output means the baseline is met. Otherwise it names the missing features. By default it
-only warns; `HONUA_CPU_PREFLIGHT=enforce` makes it exit 3 (for scripted installs), and
-`HONUA_CPU_PREFLIGHT=off` skips it. In a container, pass it with `-e` (Docker) or `--env`
-(`kubectl run`). `kubectl run` checks the one node the scheduler picks: repeat it per node
-pool, pinning each run with `--overrides='{"spec":{"nodeSelector":{...}}}'`.
+Interpret the result together with the selected mode and architecture:
+
+| Result | Meaning |
+|---|---|
+| No output on x64, with checking enabled and readable CPU flags | The first CPU flags entry contains the required features |
+| Missing-feature diagnostic | The CPU flags lack the named features; the default `warn` mode exits 0, while `HONUA_CPU_PREFLIGHT=enforce` exits 3 |
+| `cannot read CPU flags` / `skipping` diagnostic | The check could not run and exits 0, even in `enforce` mode; obtain readable CPU flags before treating the machine as checked |
+| No output with `HONUA_CPU_PREFLIGHT=off` or a non-x64 architecture | The check was skipped; this does not verify CPU compatibility |
+| Exit 2 | The configured mode is invalid; use `warn`, `enforce` or `off` |
+
+Exit 0 alone is not proof that the CPU baseline was checked. In a container, pass the mode
+with `-e` (Docker) or `--env` (`kubectl run`). The script reads only the first CPU flags entry,
+so it does not establish compatibility for every vCPU when CPU features differ.
+`kubectl run` checks the one node the scheduler picks: repeat it per node pool, pinning each
+run with `--overrides='{"spec":{"nodeSelector":{...}}}'`.
 
 To fix a VM, present the host CPU or an x86-64-v2 model to the guest, then restart the VM:
 
