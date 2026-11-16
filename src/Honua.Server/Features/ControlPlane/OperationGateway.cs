@@ -645,7 +645,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             var context = authorizationScope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
             try
             {
-                plan = await FolderApprovalAuthorization.PrepareAsync(request, plan, context, cancellationToken).ConfigureAwait(false);
+                plan = await FolderApprovalAuthorization.PrepareAsync(new(request, plan, context), cancellationToken).ConfigureAwait(false);
             }
             catch (FolderProposalRefusal refusal)
             {

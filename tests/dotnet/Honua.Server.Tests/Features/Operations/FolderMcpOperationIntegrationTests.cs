@@ -127,4 +127,23 @@ public sealed partial class FolderOperationIntegrationTests
             "both MCP result channels must describe the same operation outcome");
         return structured.Clone();
     }
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/operations/")]
+    public async Task FolderOperations_Discovery_StatesWhichOperationsHaveNoSupportedRecovery()
+    {
+        using var response = await _proposer.GetAsync("/api/v1/operations/");
+        response.EnsureSuccessStatusCode();
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var operations = body.RootElement.GetProperty("data").GetProperty("operations").EnumerateArray().ToArray();
+        foreach (var operationId in new[] { "folder.list", "folder.create", "folder.update", "folder.delete", "service.move" })
+        {
+            var descriptor = operations.Should().ContainSingle(item => item.GetProperty("operationId").GetString() == operationId).Subject;
+            descriptor.TryGetProperty("compensation", out var compensation).Should().BeTrue(operationId);
+            compensation.GetProperty("availability").GetString().Should().Be(operationId == "folder.list" ? "NotApplicable" : "Unavailable");
+            if (operationId != "folder.list")
+            {
+                compensation.GetProperty("reason").GetString().Should().NotBeNullOrWhiteSpace(operationId);
+            }
+        }
+    }
 }

@@ -33,6 +33,9 @@ namespace Honua.Server.Features.Admin;
 internal sealed record FolderProposalReuseContext(
     OperationGatewayRequest Request, OperationProposalPlan Plan, TimeProvider Clock);
 
+internal sealed record FolderProposalAdmission(
+    OperationGatewayRequest Operation, OperationProposalPlan Plan, HttpContext? Context);
+
 internal static class FolderApprovalAuthorization
 {
     internal const string FreshProposalRequired = "Folder requester authorization changed or is unavailable. Submit a fresh proposal.";
@@ -41,8 +44,11 @@ internal static class FolderApprovalAuthorization
     private static readonly TimeSpan MaximumEvidenceLifetime = TimeSpan.FromDays(30);
 
     internal static async Task<OperationProposalPlan> PrepareAsync(
-        OperationGatewayRequest operation, OperationProposalPlan plan, HttpContext? context, CancellationToken cancellationToken)
+        FolderProposalAdmission admission, CancellationToken cancellationToken)
     {
+        var operation = admission.Operation;
+        var plan = admission.Plan;
+        var context = admission.Context;
         var (actor, request) = ReadRequesterRequest(operation, plan, context);
         var authenticatedContext = context!;
         var snapshot = await ReadAuthorizedSnapshotAsync(authenticatedContext, request, cancellationToken).ConfigureAwait(false);
