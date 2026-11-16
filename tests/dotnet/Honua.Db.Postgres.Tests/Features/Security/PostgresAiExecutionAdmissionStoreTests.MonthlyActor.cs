@@ -52,4 +52,25 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         (await Store().TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default))
             .Code.Should().Be("financial_monthly_actor_exceeded");
     }
+
+    [IntegrationTest]
+    public async Task MonthlyActor_SettledSpendFromPreviousCalendarMonth_IsNotCharged()
+    {
+        var policy = FinancialPolicy();
+        policy = policy with { Financial = policy.Financial! with { MonthlyActor = new() { Tokens = 15, Money = 15 } } };
+        var store = Store();
+        await InitializeAndResumeAsync(store, policy);
+        var grant = (await store.TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default)).Reservation!;
+        (await store.CommitFinancialSendAsync(grant, default)).Should().BeTrue();
+        await store.ReleaseAsync(grant, default);
+        var receipt = new AiFinancialUsage(grant.Financial!.RequestDigest, "fixture-model", "response-original", 2, 1);
+        (await Store().SettleFinancialAsync(grant, receipt, default)).Should().Be("settled");
+        // Fill this month's cap with the settled row, so only the calendar month decides the next admission.
+        await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET charged_tokens = 15, charged_money = 15");
+        (await Store().TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default))
+            .Code.Should().Be("financial_monthly_actor_exceeded");
+        await ExecuteAsync($"UPDATE \"{_schema}\".ai_financial_invocations SET reserved_at = date_trunc('month', clock_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' - INTERVAL '1 second'");
+        (await Store().TryAcquireAsync(FinancialContext(), Guid.NewGuid(), Frozen(policy), default))
+            .Granted.Should().BeTrue("settled spend from the previous UTC month does not count against the new month");
+    }
 }
