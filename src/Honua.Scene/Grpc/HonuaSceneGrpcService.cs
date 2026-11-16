@@ -15,13 +15,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Scene.Grpc;
 
-/// <summary>
-/// gRPC <c>SceneService</c> implementation (honua-server#1194 / #1195). Mirrors
-/// the public HTTP scene discovery surface (<c>/api/scenes</c>): it merges
-/// database-backed scene records (when a registration service is present) with
-/// configuration-backed hosted-tile datasets, returning the same catalog over
-/// the typed gRPC contract.
-/// </summary>
 internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneServiceBase
 {
     private readonly ISceneDatasetRegistry _registry;
@@ -183,11 +176,6 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
         return new Proto.GetSceneResponse { Scene = SceneGrpcMapping.ToSceneMetadata(scene) };
     }
 
-    /// <summary>
-    /// Tests whether a scene's advertised 2D extent intersects the request's
-    /// horizontal filter box. Scenes without an extent are treated as a match
-    /// (their footprint is unknown and cannot be excluded).
-    /// </summary>
     private static bool SceneIntersectsExtent(Proto.SceneMetadata scene, Proto.Extent filter)
     {
         var sceneExtent = scene.Extent?.Extent;
@@ -201,11 +189,6 @@ internal sealed partial class HonuaSceneGrpcService : Proto.SceneService.SceneSe
             filter.Xmin, filter.Ymin, filter.Xmax, filter.Ymax);
     }
 
-    /// <summary>
-    /// Resolves the optional <see cref="ISceneRegistrationService"/> from the
-    /// request scope. The registration service is only present on Postgres
-    /// profiles; configuration-only deployments fall back to the registry.
-    /// </summary>
     private static ISceneRegistrationService? ResolveRegistrationService(ServerCallContext context)
         => context.GetHttpContext()?.RequestServices.GetService<ISceneRegistrationService>();
 

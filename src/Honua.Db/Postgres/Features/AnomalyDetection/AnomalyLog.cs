@@ -5,10 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.AnomalyDetection;
 
-/// <summary>
-/// Structured logging for anomaly detection operations.
-/// Event ID range: 7900-7949.
-/// </summary>
 internal static partial class AnomalyLog
 {
     [LoggerMessage(

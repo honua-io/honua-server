@@ -10,36 +10,15 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>raster.reclassify</c>
-/// process: remaps source pixel values per a supplied remap table, backed by the
-/// GDAL <c>gdal_calc.py</c> CLI (#2239). This closes the reclassify gap the #2141
-/// slice explicitly deferred.
-///
-/// <para>
-/// The <c>remap</c> table is a <c>;</c>-separated list of entries, each
-/// <c>key:value</c> where the key is either a single number (<c>v</c>) or a half-open
-/// range (<c>lo..hi</c>, lower-inclusive / upper-exclusive) and the value is the
-/// output number. Unmatched pixels take the optional <c>defaultValue</c>, or the
-/// original value when omitted. Every token is parsed as a number BEFORE it is
-/// folded into the trusted nested-<c>where</c> calc expression, so no caller text
-/// reaches the <c>eval()</c>'d calc string.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
-/// <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalRasterReclassifyJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterReclassifyJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.reclassify";
 
-    /// <summary>Separator between remap entries.</summary>
     public const string EntrySeparator = ";";
 
-    /// <summary>Separator between the lower and upper bound of a range key.</summary>
     public const string RangeSeparator = "..";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -47,17 +26,13 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -174,12 +149,6 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Parses the remap table and folds it into a trusted nested-<c>where</c> NumPy
-    /// expression. Every bound and output value is parsed as a finite number, so the
-    /// resulting calc string contains only digits, the band variable <c>A</c>, and a
-    /// fixed operator/function vocabulary — no caller text survives parsing.
-    /// </summary>
     public static bool TryBuildCalc(
         string remap,
         IReadOnlyDictionary<string, string> parameters,

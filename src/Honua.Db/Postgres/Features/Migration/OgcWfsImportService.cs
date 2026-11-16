@@ -27,25 +27,13 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Imports OGC Web Feature Service (WFS) feature data into Honua PostGIS.
-/// </summary>
 internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 {
-    /// <summary>
-    /// Named <see cref="IHttpClientFactory"/> identifier for the WFS paged GetFeature client.
-    /// </summary>
     public const string HttpClientName = "ogc-wfs-import";
 
     private const string DefaultGeoJsonOutputFormat = "application/json";
     private const string SourceKind = "ogc-wfs";
 
-    /// <summary>
-    /// Safety cap on the number of pages fetched per feature type. Prevents infinite loops
-    /// against WFS 1.0/1.1 servers (and some non-conformant 2.0 servers) that ignore the
-    /// startIndex parameter and return the same first page on every request, causing
-    /// <c>hasMore</c> to remain true indefinitely and inserting unbounded duplicate rows.
-    /// </summary>
     private const int MaxPagesPerFeatureType = 10_000;
 
     private readonly IOgcServiceMigrationScanner _scanner;
@@ -74,7 +62,6 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
     }
 
-    /// <inheritdoc />
     public async Task<OgcWfsImportResult> ImportFeaturesAsync(
         OgcWfsImportRequest request,
         CancellationToken cancellationToken = default)
@@ -892,14 +879,6 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The spatial index name. A plain <c>&lt;table&gt;_geom_idx</c> is truncated to 63 bytes, which for a
-    /// long table name collides with another relation in the schema (for a 63-byte table, with the table
-    /// itself), so <c>CREATE INDEX IF NOT EXISTS</c> would silently skip the index. Table names up to 54
-    /// bytes keep <c>&lt;table&gt;_geom_idx</c> unchanged; longer ones are shortened and disambiguated by a
-    /// hash of the full name, so two targets sharing a prefix still get their own index. Staging creation
-    /// and promotion both derive the name this way.
-    /// </summary>
     internal static string BuildSpatialIndexName(string tableName)
         => PostgresDerivedRelationNames.BuildUnique(tableName, "geom_idx");
 

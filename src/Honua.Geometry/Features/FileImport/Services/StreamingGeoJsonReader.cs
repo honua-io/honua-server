@@ -20,9 +20,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// State for tracking JSON processing across chunks
-/// </summary>
 internal sealed record JsonProcessingState
 {
     public bool InFeaturesArray { get; init; }
@@ -41,10 +38,6 @@ internal sealed record GeoJsonValidationResult(int FeatureCount, IReadOnlyList<I
     public bool IsValid => !Issues.Any(issue => issue.Severity == ImportValidationSeverity.Error);
 }
 
-/// <summary>
-/// Memory-efficient streaming GeoJSON reader that processes features incrementally.
-/// Uses Utf8JsonReader for low-allocation parsing without loading the entire file into memory.
-/// </summary>
 internal sealed partial class StreamingGeoJsonReader
 {
     private readonly ImportLimits _limits;
@@ -67,10 +60,6 @@ internal sealed partial class StreamingGeoJsonReader
         _geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
     }
 
-    /// <summary>
-    /// Stream features from a GeoJSON file asynchronously.
-    /// Features are yielded one at a time to maintain constant memory usage.
-    /// </summary>
     public async IAsyncEnumerable<IFeature> ReadFeaturesAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -405,9 +394,6 @@ internal sealed partial class StreamingGeoJsonReader
         return checked((int)reader.BytesConsumed);
     }
 
-    /// <summary>
-    /// Process a chunk of JSON data synchronously to avoid ref struct issues
-    /// </summary>
     private (List<IFeature> features, JsonReaderState newState, JsonProcessingState newProcessingState, int consumed) ProcessJsonChunk(
         ReadOnlyMemory<byte> data,
         JsonReaderState jsonReaderState,
@@ -696,9 +682,6 @@ internal sealed partial class StreamingGeoJsonReader
 
     }
 
-    /// <summary>
-    /// Parse a single GeoJSON feature from a byte span.
-    /// </summary>
     private Feature? ParseFeature(ReadOnlyMemory<byte> featureJson)
     {
         try
@@ -752,9 +735,6 @@ internal sealed partial class StreamingGeoJsonReader
         }
     }
 
-    /// <summary>
-    /// Parse a GeoJSON geometry element into a NetTopologySuite Geometry.
-    /// </summary>
     private NtsGeometry? ParseGeometry(JsonElement geometryElement)
     {
         if (geometryElement.ValueKind == JsonValueKind.Null)

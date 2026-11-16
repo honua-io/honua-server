@@ -10,23 +10,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>raster.resample</c>
-/// process: changes a raster's cell size using the requested resampling
-/// algorithm, backed by the GDAL <c>gdalwarp -tr</c> CLI.
-///
-/// Reads a base64-encoded GeoTIFF from the canonical <c>source</c> input and a
-/// target cell size from <c>cellSize</c> (optionally a distinct vertical size via
-/// <c>cellSizeY</c>), warps in an isolated scratch workspace, and publishes the
-/// resampled GeoTIFF as a canonical data-URI artifact. Runs only inside the GDAL
-/// worker image — <see cref="AcceptedRuntimeProfiles"/> is <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalRasterResampleJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterResampleJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "raster.resample";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -50,17 +38,13 @@ internal sealed partial class GdalRasterResampleJobExecutor(
             ["lanczos"] = "lanczos",
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

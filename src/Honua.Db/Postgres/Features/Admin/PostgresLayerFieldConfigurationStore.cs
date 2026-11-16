@@ -13,9 +13,6 @@ using NpgsqlTypes;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Admin;
 
-/// <summary>
-/// PostgreSQL store for operator-managed layer field configuration.
-/// </summary>
 internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigurationStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -27,7 +24,6 @@ internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigur
         _fieldsTable = Infrastructure.SchemaSearchPath.QualifyTable("layer_fields", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<LayerFieldConfiguration>> GetFieldConfigurationsAsync(
         int layerId,
         CancellationToken cancellationToken = default)
@@ -36,7 +32,6 @@ internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigur
         return await GetFieldConfigurationsAsync(connection, layerId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<LayerFieldConfiguration>> UpdateFieldConfigurationsAsync(
         int layerId,
         IReadOnlyList<LayerFieldConfigurationUpdate> updates,

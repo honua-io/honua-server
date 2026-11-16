@@ -30,9 +30,6 @@ internal sealed record FeatureDataAccessDependencies(
     Honua.Db.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter? OutboxRepository = null,
     IFeatureAttachmentCleanup? AttachmentCleanup = null);
 
-/// <summary>
-/// Handles database data access operations for PostgreSQL feature store
-/// </summary>
 internal sealed partial class FeatureDataAccess : IFeatureDataAccess
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;

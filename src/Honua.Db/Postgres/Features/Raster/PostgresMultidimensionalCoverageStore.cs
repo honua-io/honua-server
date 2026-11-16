@@ -13,10 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
-/// <summary>
-/// PostgreSQL-based catalog store for cloud-optimized HDF5 / NetCDF4
-/// multidimensional coverage registrations.
-/// </summary>
 internal sealed class PostgresMultidimensionalCoverageStore : IMultidimensionalCoverageStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -33,7 +29,6 @@ internal sealed class PostgresMultidimensionalCoverageStore : IMultidimensionalC
         _tableName = SchemaSearchPath.QualifyTable("multidim_coverage_catalog", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<MultidimensionalCoverageRegistration?> GetAsync(long id, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -55,7 +50,6 @@ internal sealed class PostgresMultidimensionalCoverageStore : IMultidimensionalC
         return ReadRegistration(reader);
     }
 
-    /// <inheritdoc />
     public async Task<MultidimensionalCoverageRegistration> RegisterAsync(
         MultidimensionalCoverageRegistrationRequest request,
         CancellationToken cancellationToken = default)
@@ -109,7 +103,6 @@ internal sealed class PostgresMultidimensionalCoverageStore : IMultidimensionalC
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> UnregisterAsync(long id, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -121,7 +114,6 @@ internal sealed class PostgresMultidimensionalCoverageStore : IMultidimensionalC
         return rows > 0;
     }
 
-    /// <inheritdoc />
     public async Task<MultidimensionalCoverageRegistration[]> ListByLayerAsync(
         int layerId,
         CancellationToken cancellationToken = default)
@@ -147,7 +139,6 @@ internal sealed class PostgresMultidimensionalCoverageStore : IMultidimensionalC
         return results.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task UpdateMetadataAsync(
         long id,
         MultidimensionalCoverageMetadata metadata,

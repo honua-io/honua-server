@@ -10,11 +10,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
-/// <summary>
-/// Projects only the two historical attachment scripts onto their resolved
-/// physical authority. Embedded bytes and journal identities remain unchanged.
-/// Other scripts retain their original contents and options.
-/// </summary>
 internal sealed class AttachmentSchemaScriptProvider(IScriptProvider source, string physicalSchema, Assembly contractAssembly, PostgresAttachmentMigrationContract contract) : IScriptProvider
 {
     private readonly string _quotedSchema = SchemaSearchPath.ValidateAndQuote(physicalSchema);

@@ -5,62 +5,21 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Scene.Assets;
 
-/// <summary>
-/// Result of resolving a scene asset path to a concrete file under the scene's asset root.
-/// </summary>
 internal readonly record struct ResolvedSceneAsset(FileInfo File, string ContentType);
 
-/// <summary>
-/// Reasons a scene asset path cannot be resolved.
-/// </summary>
 internal enum SceneAssetResolutionError
 {
-    /// <summary>The path resolved successfully.</summary>
     None,
 
-    /// <summary>
-    /// The path was empty, contained traversal segments, an absolute path,
-    /// a UNC prefix, or otherwise rejected before file I/O. Returned as
-    /// <c>400 Bad Request</c> rather than <c>404</c> so traversal probes
-    /// cannot use response status to fingerprint the layout.
-    /// </summary>
     InvalidPath,
 
-    /// <summary>
-    /// The path canonicalized to a location outside <see cref="SceneDataset.AssetRoot"/>.
-    /// </summary>
     OutsideRoot,
 
-    /// <summary>
-    /// The resolved path does not exist on disk.
-    /// </summary>
     NotFound
 }
 
-/// <summary>
-/// Canonicalizes an asset path under a scene's <see cref="SceneDataset.AssetRoot"/>
-/// and rejects anything that escapes the root or contains traversal hints.
-/// </summary>
-/// <remarks>
-/// Cesium resolves nested tileset and content URIs relative to the
-/// <c>tileset.json</c> URL, so every well-behaved request will arrive with a
-/// forward-slash relative path. This resolver enforces that contract. It is the
-/// single shared implementation consumed by the HTTP/I3S scene adapters
-/// (Honua.Protocols.Scene) and the gRPC scene/tile services so the path-safety
-/// contract — including percent-encoded traversal, null bytes, drive-letter /
-/// UNC prefixes, collapsed segments, and symlink/reparse-point redirection — is
-/// enforced identically across protocols.
-/// </remarks>
 internal static class SceneAssetResolver
 {
-    /// <summary>
-    /// Resolves an asset path under the scene's asset root.
-    /// </summary>
-    /// <param name="dataset">Scene whose asset root anchors resolution.</param>
-    /// <param name="assetPath">Relative asset path from the URL.</param>
-    /// <param name="resolved">The resolved asset on success.</param>
-    /// <param name="error">The failure mode when resolution fails.</param>
-    /// <returns><c>true</c> when the asset was resolved to an existing file under the root.</returns>
     public static bool TryResolve(
         SceneDataset dataset,
         string assetPath,
@@ -71,17 +30,6 @@ internal static class SceneAssetResolver
         return TryResolve(dataset.AssetRoot, assetPath, out resolved, out error);
     }
 
-    /// <summary>
-    /// Resolves an asset path under a raw asset-root directory. This overload
-    /// serves non-<see cref="SceneDataset"/> callers (the gRPC tile service,
-    /// which carries only an asset-root string) so they share the exact same
-    /// path-safety contract as the HTTP/I3S surfaces.
-    /// </summary>
-    /// <param name="assetRoot">The canonicalized scene asset root directory.</param>
-    /// <param name="assetPath">Relative asset path to resolve under the root.</param>
-    /// <param name="resolved">The resolved asset on success.</param>
-    /// <param name="error">The failure mode when resolution fails.</param>
-    /// <returns><c>true</c> when the asset was resolved to an existing file under the root.</returns>
     public static bool TryResolve(
         string assetRoot,
         string assetPath,

@@ -12,49 +12,27 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Studio.Services;
 
-/// <inheritdoc cref="IStudioAuthorizationService" />
 public sealed class StudioAuthorizationService : IStudioAuthorizationService
 {
-    /// <summary>
-    /// Sentinel operator-grant resource id meaning "any resource the caller owns". Lets an
-    /// operator provision a single self-service grant
-    /// (<c>Service=StudioDraft, Layer=own, Operation=...</c>) that authorizes every draft/item a
-    /// non-admin principal owns, without pre-provisioning a grant per resource id. See
-    /// <see cref="OperatorResourceType.StudioDraft"/>.
-    /// </summary>
     internal const string OwnResourceSentinel = "own";
 
     private const string AdminRole = "admin";
-    /// <summary>Denial code: the flag is off, so only admins may use the Studio lifecycle surface.</summary>
     public const string EndUserModeDisabledCode = "studio_authorization/end_user_mode_disabled";
 
-    /// <summary>Denial code: the caller does not own the target resource and it is not publicly readable.</summary>
     public const string CrossUserDeniedCode = "studio_authorization/cross_user_denied";
 
-    /// <summary>
-    /// Denial code: the target resource belongs to another tenant (honua-server#4905). Answered
-    /// ahead of the admin bypass, because the platform <c>admin</c> role is tenant-scoped;
-    /// only <c>MultiTenancy:MultiTenantAdminRoles</c> reach across tenants. Surfaces as
-    /// <c>404 Not Found</c> so a tenant never learns that another tenant's id exists.
-    /// </summary>
     public const string CrossTenantDeniedCode = "studio_authorization/cross_tenant_denied";
 
-    /// <summary>Denial code: the caller is not authenticated.</summary>
     public const string AuthenticationRequiredCode = "studio_authorization/authentication_required";
 
-    /// <summary>Denial code: an elevated operation (publish-request/rollback) has no matching operator grant.</summary>
     public const string ElevatedGrantRequiredCode = "studio_authorization/elevated_grant_required";
 
-    /// <summary>Denial code: assigning a Studio resource owner requires an admin principal.</summary>
     public const string OwnerAssignmentAdminRequiredCode = "studio_authorization/owner_assignment_admin_required";
 
-    /// <summary>Denial code: the preliminary MCP operator-grant gate rejected the caller.</summary>
     public const string OperatorGrantRequiredCode = "studio_authorization/operator_grant_required";
 
-    /// <summary>Denial code: the preliminary MCP OAuth-scope gate rejected the caller.</summary>
     public const string OAuthScopeRequiredCode = "studio_authorization/oauth_scope_required";
 
-    /// <summary>Denial code: the caller's OAuth scope ceiling does not permit the Studio operation.</summary>
     public const string ScopeDeniedCode = "studio_authorization/insufficient_scope";
 
     private readonly IOperatorAuthorizationEvaluator _evaluator;
@@ -64,7 +42,6 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     private readonly ITenantContext? _tenantContext;
     private readonly IOptionsMonitor<TenantIsolationOptions>? _tenantIsolationOptions;
 
-    /// <summary>Initializes a new Studio authorization service for a host without tenant resolution.</summary>
     public StudioAuthorizationService(
         IOperatorAuthorizationEvaluator evaluator,
         IOperatorScopeAuthorizer scopeAuthorizer,
@@ -74,11 +51,6 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     {
     }
 
-    /// <summary>
-    /// Initializes a new Studio authorization service whose issuer-qualified owner keys are
-    /// bound to the request's resolved tenant, and which refuses lifecycle operations on
-    /// another tenant's content (honua-server#4905).
-    /// </summary>
     public StudioAuthorizationService(
         IOperatorAuthorizationEvaluator evaluator,
         IOperatorScopeAuthorizer scopeAuthorizer,
@@ -99,10 +71,8 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         _tenantIsolationOptions = tenantIsolationOptions;
     }
 
-    /// <inheritdoc />
     public bool IsEndUserAuthorizationEnabled => _options.CurrentValue.Enabled;
 
-    /// <inheritdoc />
     public bool IsAdmin(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -130,7 +100,6 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         return aliases.Any(alias => !string.IsNullOrWhiteSpace(alias) && principal.IsInRole(alias));
     }
 
-    /// <inheritdoc />
     public string? ResolveCallerId(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -189,7 +158,6 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         return string.IsNullOrWhiteSpace(candidate) ? null : candidate;
     }
 
-    /// <inheritdoc />
     public async Task<StudioAuthorizationDecision> AuthorizeAsync(
         ClaimsPrincipal principal,
         string? callerId,
@@ -328,12 +296,6 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             elevated: true);
     }
 
-    /// <summary>
-    /// Whether the request's resolved tenant may act on a resource recorded in
-    /// <paramref name="resourceTenantId"/>. A host that never resolves a tenant (no
-    /// <see cref="ITenantContext"/> registered) has no tenant rail to enforce and is admitted
-    /// unchanged.
-    /// </summary>
     private bool CanAccessTenant(ClaimsPrincipal principal, string? resourceTenantId)
     {
         if (_tenantContext is null)
@@ -346,10 +308,6 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             || TenantOwnership.CanAccess(resourceTenantId, _tenantContext.TenantId, options);
     }
 
-    /// <summary>
-    /// Builds the enumeration scope that keeps a listing inside the caller's tenant, or
-    /// <see langword="null"/> when no tenant scoping applies (honua-server#4905).
-    /// </summary>
     public TenantScopeFilter? CreateTenantScopeFilter(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);

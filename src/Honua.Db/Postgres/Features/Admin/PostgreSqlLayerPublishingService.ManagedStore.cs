@@ -60,15 +60,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2EditCapabilities.Editing
     ];
 
-    /// <summary>
-    /// Resolves the capability tokens declared on a published layer's feature publication.
-    /// </summary>
-    /// <param name="requested">Tokens supplied by the caller; null or empty keeps the read-only default.</param>
-    /// <param name="managedStore">Whether the layer is published into the managed feature store.</param>
-    /// <returns>Canonically cased, de-duplicated capability tokens.</returns>
-    /// <exception cref="LayerPublishingException">An unknown token, a set without Query, or an
-    /// edit token on a source-backed layer. Declaring an edit the storage cannot service would
-    /// only move the refusal from publish time to the first write (a 501).</exception>
     private static IReadOnlyList<string> ResolvePublicationCapabilities(
         IReadOnlyList<string>? requested,
         bool managedStore)
@@ -116,12 +107,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return resolved;
     }
 
-    /// <summary>
-    /// Builds the schema of a managed-store layer. The managed store assigns its own object
-    /// ids, so the identity field is the managed table's key; the source key is carried as an
-    /// ordinary nullable attribute (features created through the server do not have one)
-    /// unless it is itself named objectid, in which case the managed id replaces it.
-    /// </summary>
     private static List<LayerFieldInsert> BuildManagedLayerFields(
         List<ColumnInfo> selectedColumns,
         ColumnInfo? sourcePrimaryKeyColumn,
@@ -155,11 +140,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return fields;
     }
 
-    /// <summary>
-    /// Selects the source columns copied into the managed store's JSONB attributes: every
-    /// selected non-geometry column except a source key named objectid. Any other column that
-    /// collides with a managed-store column name is refused rather than silently dropped.
-    /// </summary>
     private static List<ColumnInfo> SelectManagedAttributeColumns(
         List<ColumnInfo> selectedColumns,
         ColumnInfo? sourcePrimaryKeyColumn,
@@ -198,11 +178,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         => sourcePrimaryKeyColumn is not null
             && string.Equals(column.Name, sourcePrimaryKeyColumn.Name, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Records the primary-key validation check for a managed-store publication. The managed
-    /// store assigns object ids, so the source key is optional and may be of any type; only a
-    /// named key that does not exist on the source table is an error.
-    /// </summary>
     private static string? ResolveManagedSourceKeyForValidation(
         List<ColumnInfo> columns,
         string? requestedPrimaryKey,
@@ -227,13 +202,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return primaryKeyName;
     }
 
-    /// <summary>
-    /// Proves the publish connection reaches the managed features table the server's own
-    /// feature writer writes. The copy runs on the publish connection while reads and edits
-    /// use the server's connection; if the two resolve different tables, the layer would
-    /// serve none of its copied rows and its edits would land elsewhere.
-    /// </summary>
-    /// <exception cref="LayerPublishingException">The connections resolve different tables.</exception>
     private sealed record ManagedStoreIdentitySnapshot(string? Value);
 
     private string ResolveManagedStoreTableName() => _configuredFeatureSchema is null
@@ -305,13 +273,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
             $"{reader.GetInt64(0)}:{reader.GetFieldValue<DateTime>(1):O}:{reader.GetInt64(2)}");
     }
 
-    /// <summary>
-    /// Physical storage a published layer is recorded against in honua.layers and bound to in
-    /// the Metadata v2 graph. <see cref="BindingSchemaName"/> is the schema the storage binding
-    /// names: the source schema for a source-backed layer; for a managed-store layer, the
-    /// schema the managed feature writer qualifies its table with, or null when the writer
-    /// uses the server connection's search path.
-    /// </summary>
     private sealed record PublishedLayerStorage(
         string Schema,
         string? BindingSchemaName,
