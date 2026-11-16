@@ -124,6 +124,42 @@ public sealed class FolderReplayAuthorizationFilterTests
         authority.Proposal.Should().BeSameAs(proposal);
     }
 
+    [UnitTheory]
+    [InlineData("valid", true)]
+    [InlineData("changed-command", false)]
+    [InlineData("explicit-null-title", false)]
+    [InlineData("changed-operation", false)]
+    [InlineData("changed-etag", false)]
+    [InlineData("changed-namespace", false)]
+    [InlineData("changed-schema", false)]
+    public async Task MatchesExecution_TypedCommandAndPreconditions_MustMatchSealedPlan(string scenario, bool matches)
+    {
+        using var services = Services(Proposal(), "public");
+        var authority = await FolderReplayAuthority.AuthorizeAsync(new FolderReplayAdmission
+        {
+            Principal = Context("valid").User,
+            OperationId = "folder.update",
+            ProposalId = "proposal",
+            OperationInstanceId = "instance",
+            TenantId = "public"
+        }, services);
+        authority.Should().NotBeNull();
+        FolderMutationCommand command = scenario switch
+        {
+            "changed-command" => new FolderMutationCommand.Update("folder", "Unapproved", default),
+            "explicit-null-title" => new FolderMutationCommand.Update("folder", "Approved", new FolderTitleChange(null)),
+            "changed-operation" => new FolderMutationCommand.Delete("folder"),
+            _ => new FolderMutationCommand.Update("folder", "Approved", default)
+        };
+        authority!.MatchesExecution(new FolderReplayExecution
+        {
+            Command = command,
+            ExpectedEtag = scenario == "changed-etag" ? "\"another\"" : "\"revision\"",
+            Namespace = scenario == "changed-namespace" ? "another" : null,
+            SchemaName = scenario == "changed-schema" ? "another" : null
+        }).Should().Be(matches);
+    }
+
     [UnitTest]
     public async Task InvokeAsync_HandlerThrows_RestoresTransportPrincipal()
     {
