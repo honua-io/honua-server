@@ -296,7 +296,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
                 // string — no host/port assertion was made, so the resolved secret is the uncontested
                 // source of truth and the check is skipped for that field. Comparing the placeholder
                 // itself against the resolved secret's real host would reject every secret-reference
-                // connection created without a declared host (honua-server#2949). When the caller DOES
+                // connection created without a declared host. When the caller DOES
                 // declare a real host/port, that declaration is a security assertion, and a disagreeing
                 // secret is tamper — same as for managed connections, where the check always applies
                 // because Host/Port are required fields.

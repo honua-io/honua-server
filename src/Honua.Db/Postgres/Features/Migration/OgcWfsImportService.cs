@@ -286,7 +286,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         // An overwrite holds a session advisory lock. On Lambda it runs on an unpooled connection,
-        // so closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        // so closing it ends the RDS Proxy-pinned session.
         await using var session = request.OverwriteExisting
             ? await _sessionLockConnections
                 .OpenAsync(lease, cancellationToken, hasCallerTransaction: lease.Transaction is not null)
