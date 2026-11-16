@@ -7,6 +7,7 @@ using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
@@ -68,7 +69,8 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
         {
             var sql = $"""
                 SELECT item_id, kind, name, title, owner_id, visibility, current_version,
-                       current_version_id, lifecycle, created_at, updated_at, created_by
+                       current_version_id, lifecycle, created_at, updated_at, created_by,
+                       tenant_id
                 FROM {_itemsTable}
                 WHERE item_id = @item_id
                 """;
@@ -284,7 +286,7 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
             var sql = $"""
                 SELECT item_id, kind, name, title, owner_id, visibility, current_version,
                        current_version_id, lifecycle, created_at, updated_at, created_by,
-                       COUNT(*) OVER () AS total_count
+                       tenant_id, COUNT(*) OVER () AS total_count
                 FROM {_itemsTable}
                 WHERE lifecycle = @lifecycle{kindFilter}
                 ORDER BY updated_at DESC, item_id ASC
@@ -311,7 +313,7 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
                     items.Add(ReadItem(reader));
-                    totalCount = reader.GetInt64(12);
+                    totalCount = reader.GetInt64(13);
                     sawRow = true;
                 }
             }
@@ -525,10 +527,10 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
         var sql = $"""
             INSERT INTO {_itemsTable}
                 (item_id, kind, name, title, owner_id, visibility, current_version,
-                 current_version_id, lifecycle, created_at, updated_at, created_by)
+                 current_version_id, lifecycle, created_at, updated_at, created_by, tenant_id)
             VALUES
                 (@item_id, @kind, @name, @title, @owner_id, @visibility, @current_version,
-                 @current_version_id, @lifecycle, @created_at, @updated_at, @created_by)
+                 @current_version_id, @lifecycle, @created_at, @updated_at, @created_by, @tenant_id)
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -537,6 +539,7 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
         command.Parameters.AddWithValue("@name", item.Name);
         command.Parameters.AddWithValue("@title", (object?)item.Title ?? DBNull.Value);
         command.Parameters.AddWithValue("@owner_id", (object?)item.OwnerId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@tenant_id", (object?)TenantOwnership.Normalize(item.TenantId) ?? DBNull.Value);
         command.Parameters.AddWithValue("@visibility", item.Visibility);
         command.Parameters.AddWithValue("@current_version", item.CurrentVersion);
         command.Parameters.AddWithValue("@current_version_id", item.CurrentVersionId);
@@ -630,6 +633,7 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
             Lifecycle = Enum.Parse<AnalysisContentLifecycle>(reader.GetString(8), ignoreCase: true),
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(9),
             UpdatedAt = reader.GetFieldValue<DateTimeOffset>(10),
-            CreatedBy = reader.IsDBNull(11) ? null : reader.GetString(11)
+            CreatedBy = reader.IsDBNull(11) ? null : reader.GetString(11),
+            TenantId = reader.IsDBNull(12) ? null : reader.GetString(12)
         };
 }
