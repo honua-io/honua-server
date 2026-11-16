@@ -36,9 +36,7 @@ internal static partial class ObservationStreamEndpoints
         }
         finally
         {
-            // Cancelling a pending receive can abort the socket, so do it after terminal writes.
-            cancellation.Receive.Cancel();
-            await receiveTask.ConfigureAwait(false);
+            await FinishReceiveAsync(socket, receiveTask, cancellation.Receive).ConfigureAwait(false);
         }
 
         async Task SendFramesAsync()
@@ -48,6 +46,31 @@ internal static partial class ObservationStreamEndpoints
                     ObservationStreamJsonContext.Default.ObservationStreamStatus),
                 cancellation.Write.Token).ConfigureAwait(false);
             await SendObservationFramesAsync(socket, session, cancellation).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task FinishReceiveAsync(WebSocket socket, Task receiveTask, CancellationTokenSource receive)
+    {
+        try
+        {
+            if (socket.State == WebSocketState.CloseSent)
+            {
+                // Keep receiving the peer's reply before cancellation can abort the handshake.
+                await receiveTask.WaitAsync(CloseWriteBudget, receive.Token).ConfigureAwait(false);
+            }
+        }
+        catch (TimeoutException)
+        {
+            // A peer that never replies cannot retain the session indefinitely.
+        }
+        catch (OperationCanceledException) when (receive.IsCancellationRequested)
+        {
+            // Request cancellation also ends the bounded handshake wait.
+        }
+        finally
+        {
+            receive.Cancel();
+            await receiveTask.ConfigureAwait(false);
         }
     }
 

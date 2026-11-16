@@ -14,6 +14,33 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
 public sealed class ObservationStreamWebSocketCloseTests
 {
+    [UnitFact]
+    public async Task PolicyClose_BeforePeerReply_PreservesReceiveUntilHandshakeCompletes()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(Substitute.For<IRealtimeSubscription>());
+        await using var manager = new ObservationStreamSessionManager(
+            NullLogger<ObservationStreamSessionManager>.Instance, provider);
+        await using var session = manager.TryCreateSession(new("WebSocket", null, new("tenant-a", null))
+        { PrincipalId = "alice" }, out _)!;
+        using var socket = new BlockedWriteSocket { PolicyCloseOnWrite = true };
+        var feature = Substitute.For<IHttpWebSocketFeature>();
+        feature.IsWebSocketRequest.Returns(true);
+        feature.AcceptAsync(Arg.Any<WebSocketAcceptContext>()).Returns(socket);
+        var context = new DefaultHttpContext();
+        context.Features.Set(feature);
+
+        var handling = ObservationStreamEndpoints.HandleWebSocketAsync(context, session, null);
+        await socket.WriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        socket.FinishWrite.TrySetResult();
+        await Assert.ThrowsAsync<TimeoutException>(() => handling.WaitAsync(TimeSpan.FromMilliseconds(100)));
+        Assert.False(socket.WasAborted);
+        socket.PeerClose.TrySetResult();
+        await handling.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(WebSocketState.Closed, socket.State);
+        Assert.False(socket.WasAborted);
+    }
+
     [UnitTheory]
     [InlineData(WebSocketState.Closed)]
     [InlineData(WebSocketState.Aborted)]
@@ -62,6 +89,7 @@ public sealed class ObservationStreamWebSocketCloseTests
         public TaskCompletionSource PeerClose { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource CloseRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public CancellationToken WriteToken { get; private set; }
+        public bool PolicyCloseOnWrite { get; init; }
         public bool WasAborted { get; private set; }
         public int CloseWrites { get; private set; }
         public WebSocketCloseStatus? AcknowledgedStatus { get; private set; }
@@ -86,8 +114,16 @@ public sealed class ObservationStreamWebSocketCloseTests
         }
         public override async Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
         {
-            await PeerClose.Task.WaitAsync(cancellationToken);
-            _state = WebSocketState.CloseReceived;
+            try
+            {
+                await PeerClose.Task.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                Abort();
+                throw;
+            }
+            _state = _state == WebSocketState.CloseSent ? WebSocketState.Closed : WebSocketState.CloseReceived;
             CloseRead.TrySetResult();
             return new WebSocketReceiveResult(0, WebSocketMessageType.Close, true, CloseStatus, CloseStatusDescription);
         }
@@ -98,6 +134,10 @@ public sealed class ObservationStreamWebSocketCloseTests
             try
             {
                 await FinishWrite.Task.WaitAsync(cancellationToken);
+                if (PolicyCloseOnWrite)
+                {
+                    _state = WebSocketState.CloseSent;
+                }
             }
             catch (OperationCanceledException)
             {
