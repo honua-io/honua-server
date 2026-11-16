@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
+import zipfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -142,6 +144,32 @@ class CredentialTests(unittest.TestCase):
             self.assertEqual(environment['MSBUILDDISABLENODEREUSE'], '1')
             self.assertTrue(call.kwargs['capture_output'])
             self.assertEqual(call.kwargs['timeout'], 150)
+
+    def test_cold_proof_consumers_target_the_supported_sdk_runtime(self):
+        self.config()
+        (self.root / 'Directory.Packages.props').write_text(
+            '<Project><ItemGroup><PackageVersion Include="' + proof.PACKAGE +
+            '" Version="4.0.0" /></ItemGroup></Project>')
+        frameworks = []
+
+        def restore(project, config, cache, credential):
+            frameworks.append(ET.parse(project).findtext('.//TargetFramework'))
+            if credential is None:
+                return subprocess.CompletedProcess([], 1, proof.FEED + ' response 401', '')
+            package = cache / 'packages' / proof.PACKAGE.lower() / '4.0.0'
+            package.mkdir(parents=True)
+            with zipfile.ZipFile(package / (proof.PACKAGE.lower() + '.4.0.0.nupkg'), 'w') as archive:
+                archive.writestr('package.nuspec', '<package><metadata><id>' + proof.PACKAGE +
+                                 '</id><version>4.0.0</version></metadata></package>')
+            return subprocess.CompletedProcess([], 0, '', '')
+
+        with patch.object(proof, 'ROOT', self.root), patch.object(proof, 'clean', return_value=True), \
+                patch.object(proof, 'restore', side_effect=restore), \
+                patch.dict(os.environ, {proof.KEY: 'synthetic-unit-credential'}), \
+                contextlib.redirect_stdout(io.StringIO()):
+            result = proof.prove()
+        self.assertTrue(result['authenticatedColdRestore'])
+        self.assertEqual(frameworks, ['net11.0', 'net11.0'])
 
     def test_proof_diagnostics_do_not_echo_raw_restore_errors(self):
         for error in (proof.ProofError('Authenticated cold restore failed; check package access and feed availability.'),
