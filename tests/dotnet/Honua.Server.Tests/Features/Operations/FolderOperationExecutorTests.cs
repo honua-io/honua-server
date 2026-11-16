@@ -20,6 +20,34 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class FolderOperationExecutorTests
 {
     [UnitTheory]
+    [InlineData("folder.create", false, 401)]
+    [InlineData("folder.delete", false, 400)]
+    [InlineData("folder.create", true, 400)]
+    public async Task SubmitAsync_InvalidAdmission_RefusesBeforeCatalogAccess(
+        string requestedOperationId, bool dryRun, int expectedStatus)
+    {
+        var catalog = Substitute.For<IMetadataV2GraphStore>();
+        var services = new ServiceCollection().AddLogging()
+            .AddSingleton(Substitute.For<IOperationProposalStore>()).AddSingleton(catalog);
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var executor = scope.ServiceProvider.GetRequiredKeyedService<IOperationExecutor>("folder.create");
+
+        var handle = await executor.SubmitAsync(new OperationRequest
+        {
+            OperationId = requestedOperationId, DryRun = dryRun,
+            Parameters = new Dictionary<string, string?> { ["name"] = "survey", ["If-Match"] = "revision" }
+        }, new OperationPolicyContext { OperationInstanceId = "instance", CorrelationId = "correlation" });
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Result!.Details["statusCode"].Should().Be(expectedStatus.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        catalog.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTheory]
     [InlineData("folder.create")]
     [InlineData("folder.update")]
     [InlineData("folder.delete")]
