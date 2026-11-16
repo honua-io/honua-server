@@ -92,8 +92,9 @@ Inspect the published target with the JavaScript SDK's `honua` CLI:
 export HONUA_BASE_URL="$HONUA_URL"
 honua services
 honua layers parcels
-honua query parcels/0 --count
-honua query parcels/0 --limit 5 --format geojson
+LAYER_ID=1  # replace with a layer id from the list above; the source layer number does not carry over
+honua query "parcels/$LAYER_ID" --count
+honua query "parcels/$LAYER_ID" --limit 5 --format geojson
 ```
 
 Compare those results with the source inventory and another source-native client. Check feature counts, schemas, extents, representative records, relationships, and metadata before cutover.
