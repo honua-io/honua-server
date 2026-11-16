@@ -89,20 +89,6 @@ public static class ZarrTileRenderer
         return PngEncoder.Encode(pixels, outputWidth, outputHeight);
     }
 
-    public static byte[] RenderRgba(
-        ZarrSubsetResult result,
-        ZarrTileSlicePlan slice,
-        int outputWidth,
-        int outputHeight,
-        double[] sampleX,
-        double[] sampleY,
-        ResamplingAlgorithm resampling,
-        RasterColormap? colormap,
-        (double Min, double Max)? stretchRange,
-        double? fillValue)
-        => RenderRgbaWithTypedFill(result, slice, outputWidth, outputHeight, sampleX, sampleY,
-            resampling, colormap, stretchRange, fillValue);
-
     public static byte[] RenderRgbaWithTypedFill(
         ZarrSubsetResult result, ZarrTileSlicePlan slice, int outputWidth, int outputHeight,
         double[] sampleX, double[] sampleY, ResamplingAlgorithm resampling, RasterColormap? colormap,

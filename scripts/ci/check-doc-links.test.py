@@ -376,6 +376,19 @@ def test_unlinked_page_fails_until_linked_or_named(stack) -> None:
     assert_that("Reachability:" in out, out)
 
 
+def test_deleted_tracked_page_is_not_an_orphan_but_links_still_fail(stack) -> None:
+    root = new_tree(stack)
+    write(root, "docs/README.md", "[Monitor](guides/deploy/monitoring.md)\n")
+    write(root, "docs/internal/retired.md", "# Retired\n")
+    tracked(root)
+    (root / "docs/internal/retired.md").unlink()
+    code, _, err = run_with_reachability(root, "--skip-manifest")
+    assert_that(code == 0, f"a tracked page removed by generation is no longer an orphan: {err}")
+    write(root, "docs/README.md", "[Monitor](guides/deploy/monitoring.md) [Retired](internal/retired.md)\n")
+    code, _, err = run_with_reachability(root, "--skip-manifest")
+    assert_that(code == 1 and "retired.md" in err, f"links to deleted pages must still fail: {err}")
+
+
 def test_links_from_files_the_gate_ignores_do_not_count(stack) -> None:
     root = new_tree(stack)
     write(root, "docs/README.md", "[Monitor](guides/deploy/monitoring.md)\n")

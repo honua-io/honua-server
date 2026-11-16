@@ -489,7 +489,7 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
-                // Grouping by a publisher-hidden field would list its distinct values (#6098).
+                // Grouping by a publisher-hidden field would list its distinct values.
                 if (resource.IsHiddenSchemaField(field))
                 {
                     error = StandardErrorHelpers.CreateBadRequest(

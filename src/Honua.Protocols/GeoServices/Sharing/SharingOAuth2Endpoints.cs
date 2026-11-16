@@ -157,8 +157,8 @@ internal static class SharingOAuth2Endpoints
         catch (ServiceUnavailableException)
         {
             // The shared store could not confirm deletion. 200 here would leave the
-            // token valid cluster-wide while telling the holder it was revoked
-            // (honua-server#6164). 503 is retryable; the body stays generic.
+            // token valid cluster-wide while telling the holder it was revoked.
+            // 503 is retryable; the body stays generic.
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,
                 "Token revocation is temporarily unavailable.",
@@ -257,7 +257,7 @@ internal static class SharingOAuth2Endpoints
             return StandardErrorHelpers.CreateBadRequest(context, "redirect_uri must be an absolute URI.");
         }
 
-        // Open-redirect mitigation (#1484): the redirect_uri must be registered in
+        // Open-redirect mitigation: the redirect_uri must be registered in
         // the per-deployment allow-list. A non-allow-listed redirect_uri is rejected
         // with a direct 400 and is NEVER redirected to (RFC 6749 Â§4.1.2.1) so the
         // bridge cannot be used to bounce an authorization code to a hostile host.
@@ -277,7 +277,7 @@ internal static class SharingOAuth2Endpoints
                 "unsupported_response_type", "Only response_type=code is supported.");
         }
 
-        // Hard PKCE requirement (#1484): when enabled, every authorization-code flow
+        // Hard PKCE requirement: when enabled, every authorization-code flow
         // must register a PKCE code_challenge up front so the matching code_verifier
         // is enforced at the token endpoint. Without this an intercepted code could
         // be redeemed by an attacker.

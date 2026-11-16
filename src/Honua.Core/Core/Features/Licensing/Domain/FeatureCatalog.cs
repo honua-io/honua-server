@@ -124,8 +124,6 @@ public static class FeatureCatalog
 
     public const string OutputCacheKey = "caching.output-cache";
 
-    public const string RedisCacheKey = "caching.redis";
-
     public const string SamlAuthenticationKey = "identity.saml";
 
     public const string ScimProvisioningKey = "identity.scim";
@@ -221,10 +219,6 @@ public static class FeatureCatalog
         // Caching — Pro
         new(OutputCacheKey, "Output Caching", Categories.Caching,
             HonuaEdition.Pro, "HTTP response caching with tag-based invalidation."),
-
-        // Caching — Pro
-        new(RedisCacheKey, "Redis Distributed Cache", Categories.Caching,
-            HonuaEdition.Pro, "Redis-backed distributed cache for multi-node deployments."),
 
         // Import — Community (one-shot file import ships in Community; see docs/features/README.md)
         new("import.file", "File Import", Categories.Import,

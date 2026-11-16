@@ -301,7 +301,7 @@ public sealed class CandidateODataDeltaCertificationTests
                 // a real deployment would; only then seed and activate the V1-to-V2 projection
                 // against the live database, which the running candidate resolves on its very next
                 // request with no restart or cache-invalidation race.
-                var candidateHostPort = LocalSubstrateDockerFixture.GetFreeTcpPort();
+                var candidateHostPort = LoopbackTcpPort.GetFree();
                 await Docker.RunCheckedAsync(
                 [
                     "run", "-d", "--name", candidateContainerName, "--network", networkName,
@@ -456,8 +456,7 @@ public sealed class CandidateODataDeltaCertificationTests
             {
                 // pg_isready over TCP, not the default local socket: the image's init phase answers
                 // on the unix socket before the final server the harness connects to is listening,
-                // and the container restarts once after initdb (see CandidateTelemetryGateCertificationTests'
-                // StartPostgresAsync in the sibling deploy-gate certification lane, same lesson).
+                // and the container restarts once after initdb.
                 var (exitCode, _, _) = await Docker.RunAsync(["exec", containerName, "pg_isready", "-h", "127.0.0.1", "-U", "honua", "-d", "honua"]);
                 if (exitCode == 0)
                 {

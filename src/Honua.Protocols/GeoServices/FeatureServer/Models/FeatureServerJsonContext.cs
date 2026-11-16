@@ -72,7 +72,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(Dictionary<string, object?>[]))]
 [JsonSerializable(typeof(JsonElement))]
 // True-curve geometry (curvePaths/curveRings): each segment/vertex is a raw JsonElement
-// so the heterogeneous [x,y]-or-{"c":...}/{"b":...} grammar round-trips losslessly (#1877).
+// so the heterogeneous [x,y]-or-{"c":...}/{"b":...} grammar round-trips losslessly.
 [JsonSerializable(typeof(JsonElement[]))]
 [JsonSerializable(typeof(JsonElement[][]), TypeInfoPropertyName = "JsonElementJaggedArray")]
 [JsonSerializable(typeof(AttachmentInfo))]
@@ -175,7 +175,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(ServiceGetEstimatesResponse))]
 [JsonSerializable(typeof(ServiceLayerEstimateInfo))]
 [JsonSerializable(typeof(ServiceLayerEstimateInfo[]))]
-// Temporal extent endpoint (#379)
+// Temporal extent endpoint
 [JsonSerializable(typeof(TemporalExtentResponse))]
 [JsonSerializable(typeof(SpatialAggregationResultResponse))]
 [JsonSerializable(typeof(SpatialAggregationIndexStateResponse))]

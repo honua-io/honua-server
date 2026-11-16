@@ -120,6 +120,9 @@ internal sealed partial class StreamingFileImportService
                 // (e.g. malformed WKT). Surfaced as a completion warning so the loss is never silent.
                 var csvGeometryDiagnostics = format == SupportedFileFormat.Csv ? new CsvGeometryDiagnostics() : null;
                 string? csvSourceIdAlias = null;
+                var incompatibleCsvAliases = format == SupportedFileFormat.Csv && hadExistingTarget && loadMode != ImportLoadMode.Replace
+                    ? await ReadIncompatibleCsvAliasesAsync(connection, (targetSchema, allowedTableName), cancellationToken)
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 // Collects WKT records that could not be parsed (bad WKT/EWKT, stray header lines, a
                 // truncated multi-line tail). Surfaced as a completion warning so the loss is never silent.
@@ -152,8 +155,8 @@ internal sealed partial class StreamingFileImportService
 
                     if (format == SupportedFileFormat.Csv)
                     {
-                        var alias = PreserveCsvSourceId(feature, typedColumnInference, csvGeometryDiagnostics!.Headers);
-                        csvSourceIdAlias ??= alias;
+                        csvSourceIdAlias ??= ResolveCsvSourceIdAlias(csvGeometryDiagnostics!.Headers, incompatibleCsvAliases);
+                        PreserveCsvSourceId(feature, typedColumnInference, csvSourceIdAlias);
                     }
 
                     batch.Add(feature);
@@ -329,12 +332,6 @@ internal sealed partial class StreamingFileImportService
 
                 var completionWarningsBuilder = new List<string>(warnings.Length + 2);
                 completionWarningsBuilder.AddRange(warnings);
-                if (csvSourceIdAlias is not null)
-                {
-                    completionWarningsBuilder.Add(
-                        $"The CSV 'id' column is available as '{csvSourceIdAlias}'; 'id' is the generated feature key.");
-                }
-
                 if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
                 {
                     completionWarningsBuilder.Add(string.Format(
@@ -418,6 +415,11 @@ internal sealed partial class StreamingFileImportService
                         completionWarningsBuilder.Add(
                             "Table statistics could not be refreshed after the import was committed; the imported rows were kept.");
                     }
+                }
+
+                if (dataCommitted && csvSourceIdAlias is not null)
+                {
+                    completionWarningsBuilder.Add(BuildCsvSourceIdWarning(csvSourceIdAlias, typedColumns));
                 }
 
                 if (dataCommitted && cancellationToken.IsCancellationRequested)

@@ -2452,7 +2452,7 @@ internal sealed class GeometryServiceHandler(
 
     private IResult ExecuteTrimExtend(TrimExtendParameters parameters, HonuaTelemetryScope scope)
     {
-        // parameters.ExtendHow is parsed but intentionally not honored here (#2742): trimExtend
+        // parameters.ExtendHow is parsed but intentionally not honored here: trimExtend
         // applies the default trim/extend behavior regardless of the extendHow bit flags.
         var trimLine = ReadGeometry(parameters.TrimExtendToJson);
         var writer = new WKBWriter();
@@ -2469,7 +2469,7 @@ internal sealed class GeometryServiceHandler(
 
     // Trims a polyline at its intersection with the trim line, or extends the polyline's
     // terminal segment to reach the trim line when they do not currently intersect.
-    // Esri keeps the part to the left of the oriented trim line (#6131).
+    // Esri keeps the part to the left of the oriented trim line.
     internal static Geometry TrimOrExtend(Geometry polyline, Geometry trimLine)
     {
         var factory = polyline.Factory;
@@ -2742,7 +2742,7 @@ internal sealed class GeometryServiceHandler(
 
         // Polygonization returns every closed face, which includes faces coincident with the
         // existing input polygons. autoComplete must return ONLY the new gap-filling polygons,
-        // so drop faces whose interior falls inside the union of the input polygons (#2742).
+        // so drop faces whose interior falls inside the union of the input polygons.
         Geometry? inputUnion = null;
         if (inputPolygons.Count > 0)
         {
@@ -2806,7 +2806,7 @@ internal sealed class GeometryServiceHandler(
     }
 
     // Keep the target before the first crossing, splice in the reshaper oriented from
-    // that crossing to the last, then keep the target after the last crossing (#6129).
+    // that crossing to the last, then keep the target after the last crossing.
     // Fewer than two crossings leaves the target unchanged.
     private static Geometry ReshapeLine(Geometry target, Geometry reshaper)
     {
@@ -2904,7 +2904,7 @@ internal sealed class GeometryServiceHandler(
     // Esri preserves the longest portion of the original ring between the reshaper's
     // first and last boundary crossings and replaces the shorter portion. An outward
     // reshaper therefore adds its lobe, and an inward one removes the bite on the
-    // shorter boundary even when that bite is the larger face (#6128). Reshaper
+    // shorter boundary even when that bite is the larger face. Reshaper
     // orientation is not consulted.
     private static Polygon ReshapePolygon(Polygon polygon, Geometry reshaper)
     {
@@ -3512,11 +3512,11 @@ internal sealed class GeometryServiceHandler(
             "esrigeometryrelationtouch" => geometry1.Touches(geometry2),
             // lineTouch: interiors disjoint and boundaries meet in a 1-dimensional (line) set.
             // "F***T****" also matched 0-dimensional corner-point boundary touches; "F***1****"
-            // requires boundary∩boundary to be a curve (#2742).
+            // requires boundary∩boundary to be a curve.
             "esrigeometryrelationlinetouch" => geometry1.Relate(geometry2, "F***1****"),
             // pointTouch: interiors disjoint and boundaries meet in a 0-dimensional (point) set.
             // "FT*******" only constrained interior∩interior and interior∩boundary, matching edge
-            // touches too; "F***0****" requires a point-dimensional boundary touch (#2742).
+            // touches too; "F***0****" requires a point-dimensional boundary touch.
             "esrigeometryrelationpointtouch" => geometry1.Relate(geometry2, "F***0****"),
             "esrigeometryrelationrelation" => geometry1.Relate(geometry2, relationParam!),
             _ => false

@@ -70,14 +70,23 @@ internal sealed partial class Wfs20Handler
     {
         var properties = new XElement(FeatureSchemaNamespace + "sequence");
         var geometryName = ResolveGeometryPropertyName(descriptor.Resource);
-        if (geometryName is not null)
-        {
-            properties.Add(new XElement(FeatureSchemaNamespace + "element",
+        var geometry = geometryName is null ? null : new XElement(FeatureSchemaNamespace + "element",
                 new XAttribute("name", XmlConvert.EncodeLocalName(geometryName)),
                 new XAttribute("type", profile.GeometryPropertyType(descriptor.Resource)),
-                new XAttribute("minOccurs", "0"), new XAttribute("nillable", "true")));
+                new XAttribute("minOccurs", "0"), new XAttribute("nillable", "true"));
+        var legacy = profile.FeatureElement != "AbstractFeature";
+        var geometryAfterAttributes = legacy && descriptor.Declared.GeometryAfterAttributes;
+        if (!geometryAfterAttributes)
+        {
+            properties.Add(geometry);
         }
-        properties.Add(GetVisibleAttributeFields(descriptor.Resource).Select(CreateFeatureSchemaField));
+        properties.Add(GetVisibleAttributeFields(descriptor.Resource)
+            .Where(field => !legacy || !descriptor.Declared.IsHidden(field.Name))
+            .Select(CreateFeatureSchemaField));
+        if (geometryAfterAttributes)
+        {
+            properties.Add(geometry);
+        }
         return
         [
             new XElement(FeatureSchemaNamespace + "element",

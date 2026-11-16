@@ -127,7 +127,7 @@ internal static partial class MapServerEndpoints
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
         // Esri services accept BOTH GET and POST for queryDomains; clients POST large
-        // layers arrays that exceed URL limits (honua-server#1825). Merge the form body
+        // layers arrays that exceed URL limits. Merge the form body
         // over the query string so both methods share this read-only handler.
         var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
         if (values is null)

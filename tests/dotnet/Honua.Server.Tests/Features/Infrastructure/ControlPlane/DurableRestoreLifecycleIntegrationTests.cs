@@ -153,7 +153,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests
             });
             var coordinator = new PreMigrationRestoreCoordinator(
                 new PreMigrationRestoreAssessmentService(journal, revisions, snapshots, secrets, monitor, cell),
-                new PreMigrationRestoreExecutionService(revisions, snapshots, secrets, Substitute.For<IComposeRollbackTransport>(), probe, customer, audit, cell));
+                new PreMigrationRestoreExecutionService(revisions, snapshots, secrets, probe, customer, audit, cell));
             var targets = Substitute.For<IDeployTargetRegistry>();
             targets.GetAsync("cell", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
             {

@@ -26,8 +26,8 @@ internal static class MapServerPublicationResolver
         // enumerates this same publication set unfiltered, so the legend, metadata,
         // find, identify and KML surfaces must describe every layer the service
         // actually renders — otherwise a service whose tiles draw returns an empty
-        // legend (honua-server#3046 regression). Dedupe by numeric ID keeps the
-        // handler/worker dictionary lookups collision-free.
+        // legend. Dedupe by numeric ID keeps the handler/worker dictionary lookups
+        // collision-free.
         var candidatePublications = TenantScopeHelpers.FilterVisiblePublications(
                 snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id], tenantId)
             .Where(snapshot.IsRoutable)

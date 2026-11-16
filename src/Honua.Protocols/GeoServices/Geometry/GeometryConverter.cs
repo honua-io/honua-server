@@ -104,37 +104,4 @@ internal sealed class GeometryConverter : IGeometryConverter
         return document.RootElement.Clone();
     }
 
-    public static byte[] ConvertGeometryToWkbWithPooling(NetTopologySuite.Geometries.Geometry geometry)
-    {
-        ArgumentNullException.ThrowIfNull(geometry);
-
-        var writer = new WKBWriter();
-
-        // For large geometries, we could estimate buffer size and use pooled memory
-        // For now, use standard approach but with potential for pooled optimization
-        return writer.Write(geometry);
-    }
-
-    public static int EstimateWkbSize(NetTopologySuite.Geometries.Geometry geometry)
-    {
-        if (geometry == null || geometry.IsEmpty)
-            return 0;
-
-        // Rough estimate based on geometry type and number of coordinates
-        // Each coordinate is ~16 bytes (2 doubles) + overhead for geometry structure
-        var coordinateCount = geometry.NumPoints;
-        var baseOverhead = geometry.GeometryType switch
-        {
-            "Point" => 21,      // WKB header + point structure
-            "LineString" => 25,  // WKB header + linestring structure
-            "Polygon" => 29,     // WKB header + polygon structure
-            "MultiPoint" => 29,  // WKB header + multi structure
-            "MultiLineString" => 33, // WKB header + multi structure
-            "MultiPolygon" => 37,    // WKB header + multi structure
-            _ => 41              // Default for complex geometries
-        };
-
-        return baseOverhead + (coordinateCount * 16);
-    }
-
 }

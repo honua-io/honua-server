@@ -45,7 +45,7 @@ internal static class PlanLayerReferences
             {
                 // ProcessLayerAccess.None marks a reserved placeholder the executor never
                 // resolves, so there is no read to authorize — gating it denied jobs for data
-                // the process never touches (honua-server#3046 review).
+                // the process never touches.
                 if (parameter.ValueType != ProcessParameterValueType.LayerId
                     || parameter.LayerAccess == ProcessLayerAccess.None)
                 {

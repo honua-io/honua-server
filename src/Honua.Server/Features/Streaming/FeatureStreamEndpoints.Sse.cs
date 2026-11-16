@@ -237,13 +237,12 @@ internal static partial class FeatureStreamEndpoints
                 // advances Last-Event-ID past the incomplete baseline and makes the reconnect
                 // look replayable. The features the cap dropped did not change, so no delta
                 // will ever carry them. End the stream instead — the client reconnects with no
-                // Last-Event-ID and takes a fresh snapshot (honua-server#3038 review).
+                // Last-Event-ID and takes a fresh snapshot.
                 if (!snapshotResult.Complete)
                 {
                     // Name the bound that truncated the baseline before closing. A silent close
                     // is indistinguishable from a dropped connection, which is precisely the
-                    // ambiguity that made an unservable snapshot look like an untyped failure
-                    // (honua-server#3181 REQ-002).
+                    // ambiguity that made an unservable snapshot look like an untyped failure.
                     await WriteSseTerminalErrorAsync(
                         context.Response,
                         session.SessionId,
@@ -274,7 +273,7 @@ internal static partial class FeatureStreamEndpoints
                 // The response is already committed, so no problem document can be produced here.
                 // End with a terminal error frame instead of letting the exception unwind into an
                 // aborted connection that the caller (or an intermediary) reports as an untyped
-                // 500 (honua-server#3181 REQ-002).
+                // 500.
                 FeatureStreamLog.SnapshotEmitFailed(
                     logger,
                     session.SessionId,
@@ -395,7 +394,7 @@ internal static partial class FeatureStreamEndpoints
             // For fresh sessions, grace was already cleared above.
             bool handoffDone = !hasReplay;
 
-            // Default-subscription delivery fence (honua-server#6104). replayCursor is the
+            // Default-subscription delivery fence. replayCursor is the
             // durable-store sweep floor and only advances through store sweeps; live sends
             // are remembered per cursor instead of raising a high-water mark, so a frame
             // that arrives after a higher cursor is still delivered once.
@@ -511,7 +510,7 @@ internal static partial class FeatureStreamEndpoints
 
                     // Drop only frames already handled: at or below the swept floor, or
                     // already delivered live. A lower cursor that was never delivered is
-                    // still sent (honua-server#6104).
+                    // still sent.
                     if (!message.IsHeartbeat && liveDelivered.IsHandled(message.Envelope.Cursor))
                     {
                         continue;

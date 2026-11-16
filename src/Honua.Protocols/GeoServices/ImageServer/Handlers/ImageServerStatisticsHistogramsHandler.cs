@@ -88,7 +88,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
             // Per ArcGIS ImageServer spec, rasterIds selects raster catalog object IDs (long).
             // Band selection is done via the optional bandIds extension parameter, 0-based like
-            // exportImage bandIds (#4068) and shifted to the raster store's 1-based bands.
+            // exportImage bandIds and shifted to the raster store's 1-based bands.
             if (!ImageServerCatalogIdParser.TryParseRasterIds(ImageServerRequestValues.GetString(values, "rasterIds"), out var rasterIds, out var rasterIdsError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, rasterIdsError ?? "Invalid rasterIds");
@@ -115,7 +115,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
             // A renderingRule applies the same clip/stretch/colormap chain exportImage/identify
             // execute to the pixels BEFORE statistics/histograms are computed, so the reported
-            // per-band values describe the rendered output (#1871). Omitting renderingRule
+            // per-band values describe the rendered output. Omitting renderingRule
             // preserves the raw-source statistics contract. Unsupported chains surface 400/501
             // exactly as on exportImage.
             RasterIdentifyRendering? rendering = null;

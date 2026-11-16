@@ -17,7 +17,7 @@ internal static class SavedMapOperationEndpoints
 
     public static void MapSavedMapOperationEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/operations")
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/maps/{mapId}/collaboration/operations")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Saved Maps", "Collaboration")
@@ -52,8 +52,8 @@ internal static class SavedMapOperationEndpoints
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
         HttpContext context)
     {
-        // One canonical log key per draft regardless of the GUID textual form in the route
-        // (honua-server#2999): appends, replay, sessions, and checkpoints must all agree.
+        // One canonical log key per draft regardless of the GUID textual form in the route:
+        // appends, replay, sessions, and checkpoints must all agree.
         mapId = SavedMapCollaborationMapId.Normalize(mapId);
         var authorizationError = await AuthorizeAsync(mapId, authorizer, context).ConfigureAwait(false);
         if (authorizationError is not null)
@@ -61,8 +61,8 @@ internal static class SavedMapOperationEndpoints
             return authorizationError;
         }
 
-        // Same fail-closed continuity rule as the checkpoint surface (honua-server#2999
-        // review): in a declared multi-replica deployment with a process-local op log, two
+        // Same fail-closed continuity rule as the checkpoint surface: in a declared
+        // multi-replica deployment with a process-local op log, two
         // replicas would each run an independent per-map cursor sequence — both could accept
         // "cursor 1" and broadcast conflicting committed operations that can never be
         // reconciled. Reject the edit honestly instead of accepting state the deployment cannot
@@ -92,7 +92,7 @@ internal static class SavedMapOperationEndpoints
         }
 
         // Only kinds the checkpoint applier can express on the Studio composition body may enter
-        // a checkpointable log (honua-server#2999 review). Admitting one it cannot apply would
+        // a checkpointable log. Admitting one it cannot apply would
         // wedge the map: every later checkpoint 422s while the operation is retained, then fails
         // the continuity guard once it is pruned, so the session could never produce another
         // saved version. Reject at the door instead.
@@ -139,7 +139,7 @@ internal static class SavedMapOperationEndpoints
         // Cursor assignment and live fan-out happen inside ONE per-map serialization point: two
         // concurrent appends must reach subscribers in the same order the log assigned their
         // cursors, otherwise live clients would apply same-aspect edits in the reverse of the
-        // order replay and checkpointing use (honua-server#2999 review).
+        // order replay and checkpointing use.
         var result = await coordinator
             .AppendAndPublishAsync(mapId, appendRequest, context.RequestAborted)
             .ConfigureAwait(false);
@@ -192,12 +192,12 @@ internal static class SavedMapOperationEndpoints
             return authorizationError;
         }
 
-        // Read paths must fail closed on exactly the capability they advertise (honua-server#2999
-        // review). In a declared multi-replica deployment backed by a process-local log the join
-        // handshake reports Replay=false, yet this handler would still answer 200 from node-local
-        // state — during a scale-out or a rolling topology change two replicas could hand the same
-        // client contradictory histories, each looking authoritative. Refusing is the honest
-        // answer: the client falls back to the durable saved state instead of a partial log.
+        // Read paths must fail closed on exactly the capability they advertise. In a declared
+        // multi-replica deployment backed by a process-local log the join handshake reports
+        // Replay=false, yet this handler would still answer 200 from node-local state — during a
+        // scale-out or a rolling topology change two replicas could hand the same client
+        // contradictory histories, each looking authoritative. Refusing is the honest answer: the
+        // client falls back to the durable saved state instead of a partial log.
         if (!capabilities.Current.Replay)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
@@ -235,7 +235,7 @@ internal static class SavedMapOperationEndpoints
             SavedMapOperationJsonContext.Default.ApiResponseSavedMapOperationReplayApiResponse);
     }
 
-    // Fail-closed per-map capability check shared with the session transport (#971/#972): a
+    // Fail-closed per-map capability check shared with the session transport: a
     // generally authenticated principal must still be permitted on THIS saved map before its
     // edits enter the durable op-log. Reusing the join authorizer keeps presence and durable
     // edits on a single identity/RBAC seam. The middleware-level RequireAuthorization already

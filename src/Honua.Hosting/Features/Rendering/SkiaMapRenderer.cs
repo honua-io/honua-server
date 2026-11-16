@@ -129,10 +129,9 @@ internal sealed class SkiaMapRenderer : IDisposable
 
         // A swatch is drawn without a map viewport, so no render zoom exists to evaluate a
         // zoom-dependent paint against. Passing NotDerivable rather than a placeholder level keeps
-        // a zoom-dependent legend from rendering as a confident wrong swatch (honua-server#2873);
+        // a zoom-dependent legend from rendering as a confident wrong swatch;
         // for the zoom-independent styles legends resolve today this changes nothing. A scale-driven
-        // legend zoom, when one is threaded here, comes from RenderZoom.FromScaleDenominator
-        // (honua-server#2866).
+        // legend zoom, when one is threaded here, comes from RenderZoom.FromScaleDenominator.
         var swatchZoom = RenderZoom.NotDerivable("a legend swatch is drawn without a map viewport");
         var padding = 2f;
 

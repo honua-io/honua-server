@@ -23,13 +23,4 @@ internal sealed class GeoServicesExtent
 
     [JsonPropertyName("spatialReference")]
     public required SpatialReferenceJson SpatialReference { get; init; }
-
-    internal static GeoServicesExtent FromFeatureExtent(FeatureExtent extent) => new()
-    {
-        Xmin = extent.MinX,
-        Ymin = extent.MinY,
-        Xmax = extent.MaxX,
-        Ymax = extent.MaxY,
-        SpatialReference = SpatialReferenceJson.FromSpatialReference(extent.GetSpatialReference())
-    };
 }

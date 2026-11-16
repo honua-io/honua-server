@@ -39,7 +39,7 @@ internal sealed partial class ChannelFieldCollectionActionDispatcher : IFieldCol
         cancellationToken.ThrowIfCancellationRequested();
 
         // TryWrite does not wait when FullMode is Wait. A full queue must not
-        // block the request that already committed the mobile push (#6125).
+        // block the request that already committed the mobile push.
         if (!_channel.Writer.TryWrite(invocation))
         {
             LogDropped(_logger, invocation.Action.Id, invocation.InvocationId);

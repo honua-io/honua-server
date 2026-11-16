@@ -24,7 +24,7 @@ public sealed partial class ImportTypedColumnTests
         command.CommandText = $"""
             SELECT id, "{alias}", name, COALESCE(properties->>'id', properties->>'ID')
             FROM "{imported.Schema}"."{imported.Table}"
-            WHERE "{alias}" IN (100, 200)
+            WHERE "{alias}" IN ('100', '200')
             ORDER BY id
             """;
         await using var reader = await command.ExecuteReaderAsync();
@@ -32,7 +32,7 @@ public sealed partial class ImportTypedColumnTests
         {
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetInt32(0).Should().Be(generatedId);
-            reader.GetInt64(1).Should().Be(generatedId * 100L);
+            reader.GetString(1).Should().Be((generatedId * 100).ToString(System.Globalization.CultureInfo.InvariantCulture));
             reader.GetString(2).Should().Be(generatedId == 1 ? "a" : "b");
             reader.GetString(3).Should().Be((generatedId * 100).ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
@@ -76,7 +76,7 @@ public sealed partial class ImportTypedColumnTests
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id FROM "{imported.Schema}"."{imported.Table}" WHERE source_id = 200
+            SELECT id FROM "{imported.Schema}"."{imported.Table}" WHERE source_id = '200'
             """;
         (await command.ExecuteScalarAsync()).Should().Be(2);
     }

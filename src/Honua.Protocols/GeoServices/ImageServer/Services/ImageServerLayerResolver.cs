@@ -164,7 +164,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
                 snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ? service : null))
             // Storage-layer ids collide across stores. The pixels for this route always come
             // from raster storage, so a feature publication on the same id must not supply
-            // the access policy (#6452).
+            // the access policy.
             .Where(candidate =>
                 candidate.StorageLayerId == layerId
                 && candidate.Resource is { Type: MetadataV2ObjectType.RasterDataset }

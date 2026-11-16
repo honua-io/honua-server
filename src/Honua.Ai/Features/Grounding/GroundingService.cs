@@ -124,7 +124,7 @@ internal sealed class GroundingService : IGroundingService
         // accept before the engine ever scores them — never to a
         // protocol-only or workflow-only operation that
         // DirectSubmitPlanValidator/GeoprocessingJobService.EnsurePlanExecutable
-        // is guaranteed to reject (honua-server#4454). This is enforced
+        // is guaranteed to reject. This is enforced
         // independent of which IGroundingEngine implementation is scoring, and
         // pinned against ProcessDefinition.SupportedEntryPoints rather than a
         // hard-coded id list via ProcessExecutionEligibility.IsJobCallable.

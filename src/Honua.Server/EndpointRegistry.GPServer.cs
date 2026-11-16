@@ -12,7 +12,7 @@ public static partial class EndpointRegistry
         // ArcGIS SOAP toolbox discovery over the canonical process catalog.
         new("POST", "/services/{serviceId}/GPServer"),
 
-        // GPServer generic adapter (#723, #1262 sync execute)
+        // GPServer generic adapter, including sync execute
         new("GET", "/rest/services/{serviceId}/GPServer"),
         new("POST", "/rest/services/{serviceId}/GPServer"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}"),

@@ -22,13 +22,4 @@ internal sealed class SpatialReferenceJson
 
     [JsonPropertyName("wkt")]
     public string? Wkt { get; init; }
-
-    internal static SpatialReferenceJson FromSpatialReference(SpatialReference sr) => new()
-    {
-        Wkid = sr.Wkid,
-        LatestWkid = sr.LatestWkid,
-        VcsWkid = sr.VcsWkid,
-        LatestVcsWkid = sr.LatestVcsWkid,
-        Wkt = sr.Wkt
-    };
 }

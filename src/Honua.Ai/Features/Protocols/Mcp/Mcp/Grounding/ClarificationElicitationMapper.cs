@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Ai.Protocols.Mcp.Grounding;
 
 // -----------------------------------------------------------------------
-// MCP-native elicitation payload (honua-server#2484)
+// MCP-native elicitation payload
 //
 // MCP 2025-06-18 elicitation lets a server request structured input from the
 // user through the client (`elicitation/create`: message + requestedSchema).
