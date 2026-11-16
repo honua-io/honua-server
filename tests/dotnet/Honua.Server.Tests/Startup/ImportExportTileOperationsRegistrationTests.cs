@@ -51,8 +51,8 @@ public sealed class ImportExportTileOperationsRegistrationTests
     /// <summary>
     /// Composes the tile-operations module over production service lifetimes: Postgres registers
     /// <see cref="IMetadataV2GraphProvider"/> as <em>scoped</em>
-    /// (<c>src/Honua.Db/Postgres/ServiceCollectionExtensions.cs</c>), unlike the singleton the
-    /// file-backed <c>AddFileMetadataV2Graph</c> dev/test path registers.
+    /// (<c>src/Honua.Db/Postgres/ServiceCollectionExtensions.cs</c>), unlike the singleton a
+    /// file-backed dev/test graph would register.
     /// </summary>
     private static ServiceCollection BuildProductionShapedServices(string substrate)
     {

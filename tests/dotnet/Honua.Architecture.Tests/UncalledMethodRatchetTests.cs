@@ -6,14 +6,8 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Keeps methods that nothing calls out of <c>src/</c>.
-/// </summary>
-/// <remarks>
-/// <c>scripts/ci/uncalled-method-ratchet.py</c> lists methods whose name appears only at
-/// their declaration across the repository's code and configuration text. Delete the
-/// method, or call it, rather than suppressing the finding.
-/// </remarks>
+// scripts/ci/uncalled-method-ratchet.py lists methods whose name appears only at their declaration
+// across the repository's code and configuration text.
 [Trait("Category", "Architecture")]
 public sealed class UncalledMethodRatchetTests
 {
@@ -31,6 +25,6 @@ public sealed class UncalledMethodRatchetTests
     {
         var (exitCode, output, error) = await RepositoryPythonScript.RunAsync(RelativeScript);
         exitCode.Should().Be(0, "the uncalled-method scanner failed: {0}", error);
-        output.Trim().Should().BeEmpty("these methods have no caller; delete them or call them");
+        output.Trim().Should().BeEmpty("these methods have no caller in the repository; check for a reflective or external caller, then delete them");
     }
 }

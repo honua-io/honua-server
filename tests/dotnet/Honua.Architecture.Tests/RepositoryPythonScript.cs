@@ -5,9 +5,6 @@ using System.Diagnostics;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Runs a repository Python script from the repository root and captures its result.
-/// </summary>
 internal static class RepositoryPythonScript
 {
     public static async Task<(int ExitCode, string Output, string Error)> RunAsync(string relativeScript, params string[] arguments)

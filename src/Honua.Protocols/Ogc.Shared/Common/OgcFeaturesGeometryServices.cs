@@ -573,8 +573,4 @@ internal sealed partial class OgcFeaturesGeometryServices
         return count;
     }
 
-    private static partial class Log
-    {
-    }
-
 }
