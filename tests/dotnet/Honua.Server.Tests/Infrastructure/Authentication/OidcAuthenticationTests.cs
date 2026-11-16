@@ -7,6 +7,8 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -34,6 +36,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
+using NSubstitute;
 using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
@@ -1964,6 +1967,15 @@ public class OidcAuthenticationTests
                     observedTenant = provider.GetRequiredService<ITenantContext>().TenantId;
                     return provider.GetRequiredService<TestFeatureStore>();
                 });
+                services.RemoveAll<IFeatureDataProviderRegistry>();
+                services.AddScoped<IFeatureDataProviderRegistry>(provider =>
+                {
+                    var dataProvider = Substitute.For<IFeatureDataProvider>();
+                    dataProvider.ProviderName.Returns(DataProviderNames.Postgis);
+                    dataProvider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+                    dataProvider.Reader.Returns(provider.GetRequiredService<IFeatureReader>());
+                    return new FeatureDataProviderRegistry([dataProvider]);
+                });
             }));
         using var client = factory.CreateClient();
         var tenantOptions = factory.Services.GetRequiredService<IOptions<TenantContextOptions>>().Value;
@@ -1981,7 +1993,7 @@ public class OidcAuthenticationTests
         using var response = await client.SendAsync(request);
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.False(body.RootElement.TryGetProperty("error", out _));
+        Assert.False(body.RootElement.TryGetProperty("error", out var error), error.ToString());
         Assert.NotEmpty(body.RootElement.GetProperty("features").EnumerateArray());
         Assert.Equal("public", observedTenant);
     }
