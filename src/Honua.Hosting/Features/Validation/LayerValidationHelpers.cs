@@ -376,7 +376,7 @@ internal static partial class LayerValidationHelpers
                 StandardErrorHelpers.CreateBadRequest(context, "Collection id is required."));
         }
 
-        var snapshot = source.Snapshot ?? await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        snapshot ??= await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         if (resolveByStorageLayerId &&
             int.TryParse(collectionId, NumberStyles.None, CultureInfo.InvariantCulture, out var storageLayerId))

@@ -94,6 +94,43 @@ public sealed class Wfs20CanonicalServiceWriteTests
         await writer.ReceivedWithAnyArgs(1).ApplyEditsAsync(default, default!, default);
     }
 
+    [Theory]
+    [InlineData(InsertAction)]
+    [InlineData("<wfs:Update typeName=\"honua:svc-cities-layer-1\"><wfs:Property><wfs:ValueReference>name</wfs:ValueReference><wfs:Value>changed</wfs:Value></wfs:Property><fes:Filter><fes:ResourceId rid=\"svc-cities-layer-1.1\"/></fes:Filter></wfs:Update>")]
+    [InlineData("<wfs:Delete typeName=\"honua:svc-cities-layer-1\"><fes:Filter><fes:ResourceId rid=\"svc-cities-layer-1.1\"/></fes:Filter></wfs:Delete>")]
+    [InlineData("<wfs:Replace><honua:svc-cities-layer-1><honua:name>changed</honua:name></honua:svc-cities-layer-1><fes:Filter><fes:ResourceId rid=\"svc-cities-layer-1.1\"/></fes:Filter></wfs:Replace>")]
+    public async Task HandleTransactionAsync_CanonicalGrantWithoutAddressedServiceGrant_IsForbidden(string action)
+    {
+        var (status, writer) = await ExecuteAsync(
+            CreateProvider(canonicalPolicy: null, secondaryPolicy: null),
+            Editor($"data-editor:{CanonicalServiceName}"), action);
+
+        status.Should().Be(StatusCodes.Status403Forbidden);
+        writer.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_AnonymousWriteOnlyOnCanonicalService_IsRejected()
+    {
+        var (status, writer) = await ExecuteAsync(
+            CreateProvider(canonicalPolicy: AnonymousWrites, secondaryPolicy: null), Anonymous());
+
+        status.Should().Be(StatusCodes.Status401Unauthorized);
+        writer.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_TwoPublicationsOfSameResource_ChecksEachService()
+    {
+        var primaryInsert = InsertAction.Replace(SecondaryPublicationId, "svc-primary-layer-0", StringComparison.Ordinal);
+        var (status, writer) = await ExecuteAsync(
+            CreateProvider(canonicalPolicy: null, secondaryPolicy: null),
+            Editor($"data-editor:{CanonicalServiceName}"), primaryInsert + InsertAction);
+
+        status.Should().Be(StatusCodes.Status403Forbidden);
+        writer.ReceivedCalls().Should().BeEmpty();
+    }
+
     private static ClaimsPrincipal Editor(params string[] roles)
         => new(new ClaimsIdentity(
             roles.Select(role => new Claim(ClaimTypes.Role, role))
@@ -104,7 +141,8 @@ public sealed class Wfs20CanonicalServiceWriteTests
 
     private static async Task<(int Status, IFeatureWriter Writer)> ExecuteAsync(
         IMetadataV2GraphProvider provider,
-        ClaimsPrincipal user)
+        ClaimsPrincipal user,
+        string action = InsertAction)
     {
         var writer = Substitute.For<IFeatureWriter>();
         writer.ApplyEditsAsync(default, default!, default)
@@ -115,14 +153,14 @@ public sealed class Wfs20CanonicalServiceWriteTests
                 createdIds: ImmutableArray.Create(101L),
                 createResults: ImmutableArray.Create(EditOperationResult.Success(101))));
         var handler = CreateHandler(provider, writer);
-        var context = CreateContext(provider, user);
+        var context = CreateContext(provider, user, action);
 
         var result = await handler.HandleTransactionAsync(context, CancellationToken.None);
         await result.ExecuteAsync(context);
         return (context.Response.StatusCode, writer);
     }
 
-    private static DefaultHttpContext CreateContext(IMetadataV2GraphProvider provider, ClaimsPrincipal user)
+    private static DefaultHttpContext CreateContext(IMetadataV2GraphProvider provider, ClaimsPrincipal user, string action)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -137,13 +175,13 @@ public sealed class Wfs20CanonicalServiceWriteTests
             "<wfs:Transaction service=\"WFS\" version=\"2.0.0\" " +
             "xmlns:wfs=\"http://www.opengis.net/wfs/2.0\" " +
             "xmlns:fes=\"http://www.opengis.net/fes/2.0\" " +
-            "xmlns:honua=\"http://honua.io/wfs\">" + InsertAction + "</wfs:Transaction>"));
+            "xmlns:honua=\"http://honua.io/wfs\">" + action + "</wfs:Transaction>"));
         context.Response.Body = new MemoryStream();
         return context;
     }
 
-    // One resource, published primarily through a service that does not speak WFS and
-    // secondarily through the WFS service the Transaction addresses.
+    // Both WFS services publish one resource at the same index. Requests must authorize
+    // the addressed publication even when numeric resolution would prefer the primary.
     private static TestMetadataV2GraphProvider CreateProvider(AccessPolicy? canonicalPolicy, AccessPolicy? secondaryPolicy)
         => new TestMetadataV2GraphBuilder()
             .AddResource("res-layer-1", "cities", MetadataV2ObjectType.FeatureDataset, fields: Fields())
@@ -151,7 +189,7 @@ public sealed class Wfs20CanonicalServiceWriteTests
             .AddService(
                 "svc-primary",
                 CanonicalServiceName,
-                protocols: [MetadataV2ServiceProtocols.OgcFeatures],
+                protocols: [MetadataV2ServiceProtocols.Wfs20],
                 accessPolicy: canonicalPolicy)
             .AddService(
                 "svc-cities",
@@ -162,9 +200,10 @@ public sealed class Wfs20CanonicalServiceWriteTests
                 "svc-primary-layer-0",
                 "svc-primary",
                 "res-layer-1",
-                layerIndex: 0,
+                layerIndex: 1,
                 storageBindingId: "binding-layer-1",
-                isPrimary: true)
+                isPrimary: true,
+                publicationType: MetadataV2LayerType.OgcCollection)
             .AddPublication(
                 SecondaryPublicationId,
                 "svc-cities",

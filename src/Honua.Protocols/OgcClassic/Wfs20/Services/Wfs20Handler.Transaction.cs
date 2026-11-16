@@ -263,7 +263,7 @@ internal sealed partial class Wfs20Handler
         // is enforced independently for each action type: a transaction that both inserts
         // into and updates the same layer must clear both the Insert and Update gates,
         // not just the first one seen.
-        var validatedLayerIds = new HashSet<(int LayerId, AuthorizationOperation Operation)>();
+        var validatedPublications = new HashSet<(string PublicationId, AuthorizationOperation Operation)>();
         // Tracks whether the body contained at least one supported WFS action element.
         // ISO 19142 §15.2.5.3: a Delete or Update whose filter matches zero features is a
         // valid no-op that contributes zero operations but is still a recognised action.
@@ -295,7 +295,7 @@ internal sealed partial class Wfs20Handler
                     descriptors,
                     operations,
                     distinctLayerIds,
-                    validatedLayerIds,
+                    validatedPublications,
                     cancellationToken).ConfigureAwait(false),
                 "Update" => await PrepareUpdateOperationsAsync(
                     context,
@@ -303,7 +303,7 @@ internal sealed partial class Wfs20Handler
                     descriptors,
                     operations,
                     distinctLayerIds,
-                    validatedLayerIds,
+                    validatedPublications,
                     cancellationToken).ConfigureAwait(false),
                 "Delete" => await PrepareDeleteOperationsAsync(
                     context,
@@ -311,7 +311,7 @@ internal sealed partial class Wfs20Handler
                     descriptors,
                     operations,
                     distinctLayerIds,
-                    validatedLayerIds,
+                    validatedPublications,
                     cancellationToken).ConfigureAwait(false),
                 "Replace" => await PrepareReplaceOperationsAsync(
                     context,
@@ -319,7 +319,7 @@ internal sealed partial class Wfs20Handler
                     descriptors,
                     operations,
                     distinctLayerIds,
-                    validatedLayerIds,
+                    validatedPublications,
                     cancellationToken).ConfigureAwait(false),
                 "Native" => Wfs20ErrorResults.CreateNotImplemented(
                     context,
@@ -397,7 +397,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
         var handle = insertElement.Attributes()
@@ -430,7 +430,7 @@ internal sealed partial class Wfs20Handler
                 context,
                 descriptor,
                 AuthorizationOperation.Insert,
-                validatedLayerIds,
+                validatedPublications,
                 cancellationToken).ConfigureAwait(false);
             if (validationError != null)
             {
@@ -466,7 +466,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
         var handle = updateElement.Attributes()
@@ -491,7 +491,7 @@ internal sealed partial class Wfs20Handler
             context,
             descriptor,
             AuthorizationOperation.Update,
-            validatedLayerIds,
+            validatedPublications,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
         {
@@ -564,7 +564,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
         var handle = deleteElement.Attributes()
@@ -589,7 +589,7 @@ internal sealed partial class Wfs20Handler
             context,
             descriptor,
             AuthorizationOperation.Delete,
-            validatedLayerIds,
+            validatedPublications,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
         {
@@ -652,7 +652,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
         var handle = replaceElement.Attributes()
@@ -676,7 +676,7 @@ internal sealed partial class Wfs20Handler
             context,
             descriptor,
             AuthorizationOperation.Update,
-            validatedLayerIds,
+            validatedPublications,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
         {
@@ -1194,18 +1194,19 @@ internal sealed partial class Wfs20Handler
         HttpContext context,
         WfsFeatureTypeDescriptor descriptor,
         AuthorizationOperation operation,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
-        var layerId = descriptor.StorageLayerId;
-        if (!validatedLayerIds.Add((layerId, operation)))
+        if (!validatedPublications.Add((descriptor.Publication.Metadata.Id, operation)))
         {
             return null;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+        var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context,
-            layerId,
+            descriptor.Publication.Metadata.Id,
+            descriptor.Snapshot,
+            preferExactPublicationId: true,
             scope: AccessScope.Write,
             requiredProtocol: MetadataV2ServiceProtocols.Wfs20,
             cancellationToken: cancellationToken).ConfigureAwait(false);
