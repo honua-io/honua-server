@@ -101,6 +101,9 @@ The command adds the shipped `compose.console.yaml` overlay to the saved
 override, and enables the Console profile for subsequent quickstart runs. The
 overlay's `console` service is a small HTTPS web server (`console.nginx.conf`) that
 serves the bundle at `/console/` and forwards every other path to the serving API.
+The overlay sets `PUBLIC_BASE_URL` to this HTTPS edge so generated style, source
+and tile URLs share the browser's origin. A later customer Compose file can
+override `PUBLIC_BASE_URL` when the installation uses a different public origin.
 Browser sign-in sessions, CSRF tokens and the identity-provider callback need one
 HTTPS origin, so Console is not offered over plain HTTP. The certificate is
 self-signed and created locally in `secrets/console_tls_certificate` (key in
