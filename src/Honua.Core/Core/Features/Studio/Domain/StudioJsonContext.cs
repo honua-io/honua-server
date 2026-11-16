@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Studio.Domain;
 
-/// <summary>
-/// Source-generated JSON context for Studio package lifecycle domain models.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

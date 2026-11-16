@@ -9,26 +9,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IProcessExecutor"/> for the <c>conversion.rasterize</c>
-/// process: burns vector features into a new raster grid, backed by the GDAL
-/// <c>gdal_rasterize</c> CLI (#2240).
-///
-/// <para>
-/// Reads a base64-encoded GeoJSON FeatureCollection from <c>source</c> and burns
-/// either a fixed <c>burnValue</c> or a numeric <c>attribute</c> into a GeoTIFF whose
-/// grid is defined by <c>cellSize</c> (resolution) or <c>width</c>+<c>height</c>
-/// (pixel dimensions). The output extent is taken from the input layer.
-/// </para>
-/// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
-/// <c>{ "native" }</c>.
-/// </summary>
 internal sealed partial class GdalRasterizeJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalRasterizeJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     public const string HandledProcessId = "conversion.rasterize";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -36,17 +21,13 @@ internal sealed partial class GdalRasterizeJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -142,10 +123,6 @@ internal sealed partial class GdalRasterizeJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Requires exactly one of <c>burnValue</c> (fixed value) or <c>attribute</c>
-    /// (numeric source field) and projects it onto <c>-burn</c> / <c>-a</c>.
-    /// </summary>
     private static bool TryBuildBurnArgs(
         IReadOnlyDictionary<string, string> parameters,
         out List<string> args,
@@ -186,14 +163,6 @@ internal sealed partial class GdalRasterizeJobExecutor(
         return true;
     }
 
-    /// <summary>
-    /// Requires exactly one of <c>cellSize</c> (<c>-tr</c>) or <c>width</c>+<c>height</c>
-    /// (<c>-ts</c>) so the output grid is unambiguous. The extent is inferred from the
-    /// input layer by gdal_rasterize. On the <c>-tr</c> path <paramref name="cellSize"/>
-    /// surfaces the parsed target cell size so the caller can bound the resolution-derived
-    /// output grid against the payload envelope (#2793); it is <c>null</c> on the <c>-ts</c>
-    /// path, which <see cref="GdalOutputGridGuard.TryAdmit"/> bounds inline here.
-    /// </summary>
     private static bool TryBuildGridArgs(
         IReadOnlyDictionary<string, string> parameters,
         GdalWorkerOptions options,

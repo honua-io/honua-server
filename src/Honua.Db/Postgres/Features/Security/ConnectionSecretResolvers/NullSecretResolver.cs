@@ -5,20 +5,10 @@ using Honua.Core.Features.Security.Abstractions;
 
 namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
-/// <summary>
-/// Null implementation of secret resolver that doesn't support any external secret providers.
-/// </summary>
-/// <remarks>
-/// This implementation is used as a fallback when no external secret management
-/// systems are configured. It will always fail to resolve secrets, encouraging
-/// the use of encrypted storage instead.
-/// </remarks>
 internal sealed class NullSecretResolver : IConnectionSecretResolver
 {
-    /// <inheritdoc />
     public string ProviderName => "null";
 
-    /// <inheritdoc />
     public Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException(
@@ -29,14 +19,12 @@ internal sealed class NullSecretResolver : IConnectionSecretResolver
     public Task<string?> ResolveSecretFreshAsync(string secretKey, CancellationToken cancellationToken = default)
         => ResolveSecretAsync(secretKey, cancellationToken);
 
-    /// <inheritdoc />
     public bool CanResolve(string secretKey)
     {
         // Always return false since this resolver doesn't support any providers
         return false;
     }
 
-    /// <inheritdoc />
     public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException(

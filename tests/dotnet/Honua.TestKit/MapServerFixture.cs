@@ -9,10 +9,6 @@ using Xunit;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// Shared MapServer fixture for integration tests that require a live MapServer instance.
-/// Uses Testcontainers to manage the MapServer container lifecycle.
-/// </summary>
 public sealed class MapServerFixture : IAsyncLifetime
 {
     // The state object is process-wide and every mutation is serialized by _sharedLock.
@@ -39,22 +35,12 @@ public sealed class MapServerFixture : IAsyncLifetime
     private const string MapServerNetworkAlias = "mapserver";
     private const string MapCacheWmtsPath = "/mapcache/wmts";
 
-    /// <summary>
-    /// Name of the seeded MapServer polygon layer.
-    /// </summary>
     public const string LayerName = "tsunami_zones";
 
-    /// <summary>
-    /// Gets the MapServer OGC endpoint URL with the fixture mapfile parameter applied.
-    /// </summary>
     public string EndpointUrl => SharedState.SharedEndpointUrl ?? throw new InvalidOperationException("MapServer fixture not initialized.");
 
-    /// <summary>
-    /// Gets the MapCache-backed WMTS endpoint URL for the seeded MapServer layer.
-    /// </summary>
     public string WmtsEndpointUrl => SharedState.SharedWmtsEndpointUrl ?? throw new InvalidOperationException("MapServer fixture not initialized.");
 
-    /// <inheritdoc />
     public async Task InitializeAsync()
     {
         await _sharedLock.WaitAsync().ConfigureAwait(false);
@@ -74,7 +60,6 @@ public sealed class MapServerFixture : IAsyncLifetime
         }
     }
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         await _sharedLock.WaitAsync().ConfigureAwait(false);

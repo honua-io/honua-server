@@ -25,8 +25,13 @@ import Graphic from "@arcgis/core/Graphic.js";
 import Point from "@arcgis/core/geometry/Point.js";
 import FeatureLayer from "@arcgis/core/layers/FeatureLayer.js";
 
+const service = "http://localhost:8080/rest/services/parks/FeatureServer";
+// The layer id is assigned at publish; read it from the service document.
+const { layers } = await (await fetch(`${service}?f=json`)).json();
+const layerIndex = layers[0].id;
+
 const layer = new FeatureLayer({
-  url: "http://localhost:8080/rest/services/parks/FeatureServer/1", // a layer id from the service's layers list
+  url: `${service}/${layerIndex}`,
 });
 await layer.load();
 const objectIdField = layer.objectIdField;
@@ -77,19 +82,19 @@ await layer.applyEdits({
 });
 ```
 
-`applyEdits` also accepts `addFeatures`, `updateFeatures`, and `deleteFeatures` together. Set `rollbackOnFailureEnabled: true` in its options to make the batch all-or-nothing.
+`applyEdits` also accepts `addFeatures`, `updateFeatures`, and `deleteFeatures` together. The server applies a batch all-or-nothing unless the request says `rollbackOnFailure=false`; set `rollbackOnFailureEnabled` in the SDK options to state which you want.
 
 ## Do the same with OGC API Features or OData
 
 | Operation | FeatureServer | OGC API Features | OData v4 |
 |---|---|---|---|
 | Insert | `POST .../{layerId}/addFeatures` | `POST /ogc/features/collections/{collectionId}/items` (GeoJSON Feature body) | `POST /odata/Layers({layerId})/Features` |
-| Replace | `POST .../{layerId}/updateFeatures` | `PUT .../items/{featureId}` | `PUT /odata/Layers({layerId})/Features({objectId})` |
+| Replace | `POST .../{layerId}/updateFeatures` with every attribute | `PUT .../items/{featureId}` | `PUT /odata/Layers({layerId})/Features({objectId})` |
 | Partial update | `POST .../{layerId}/updateFeatures` | `PATCH .../items/{featureId}` | `PATCH /odata/Layers({layerId})/Features({objectId})` |
 | Delete | `POST .../{layerId}/deleteFeatures` | `DELETE .../items/{featureId}` | `DELETE /odata/Layers({layerId})/Features({objectId})` |
 | Batch | `POST .../applyEdits` | `POST .../items/batch` | `POST /odata/$batch` |
 
-OGC API Features takes `Content-Type: application/geo+json` bodies; a successful insert returns `201 Created` with a `Location` header pointing at the new item. OData follows standard v4 semantics, including atomicity groups inside `$batch`. WFS 2.0 `Transaction` (`POST /wfs`) is also supported for XML-based clients.
+OGC API Features takes `Content-Type: application/geo+json` bodies for `POST` and `PUT`, and `application/merge-patch+json` for `PATCH` (another type returns `415`); a successful insert returns `201 Created` with a `Location` header pointing at the new item. `PUT` replaces the feature: in OGC API Features and OData an attribute you leave out becomes null, and an OData `PUT` without `Geometry` clears the geometry. `updateFeatures` and `PATCH` leave omitted attributes unchanged. OData follows standard v4 semantics, including atomicity groups inside `$batch`. WFS 2.0 `Transaction` (`POST /wfs`) is also supported for XML-based clients.
 
 > SDK: the Honua and ArcGIS Maps SDKs call `applyEdits` for you; point them at `/rest/services/{service}/FeatureServer` on the deployment origin.
 
@@ -97,7 +102,7 @@ OGC API Features takes `Content-Type: application/geo+json` bodies; a successful
 
 Query the layer and confirm your edit round-trips:
 
-Open `http://localhost:8080/rest/services/parks/FeatureServer/1/query?where=name%3D%27Honolulu%20Hale%27&outFields=*&f=json` in a browser and compare it with the expected response (the object id is the one `addFeatures` returned):
+Open `http://localhost:8080/rest/services/parks/FeatureServer/{layerIndex}/query?where=name%3D%27Honolulu%20Hale%27&outFields=*&f=json` in a browser, replacing `{layerIndex}` with the [layer index](../../reference/protocols/geoservices-rest.md#layer-index) used above, and compare it with the expected response (the object id is the one `addFeatures` returned):
 
 ```json
 { "features": [ { "attributes": { "objectid": 70052, "name": "Honolulu Hale" }, "geometry": { "x": -157.8583, "y": 21.3069 } } ] }
@@ -107,12 +112,12 @@ Open `http://localhost:8080/rest/services/parks/FeatureServer/1/query?where=name
 
 | Symptom | Fix |
 |---|---|
-| `401` / `403` on a write | The layer or service access policy blocks anonymous writes. Authenticate with an admin API key, a role listed in `allowedWriteRoles`, or a role holding an `insert`/`update`/`delete` grant — see [Control access](../secure/access-control.md). |
+| `401` / `403` on a write (FeatureServer: HTTP 200 with error code `499` when the credential is missing) | The layer or service access policy blocks anonymous writes. Authenticate with an admin API key, a role listed in `allowedWriteRoles`, or a role holding an `insert`/`update`/`delete` grant — see [Control access](../secure/access-control.md). |
 | `Create edits are not enabled` (also `Update`/`Delete`): FeatureServer error 400, OGC API Features and OData `405` | The layer was published without edit capabilities. Publish a managed copy with `storageMode` `managed` and the edit capabilities (it gets new object ids); see [editable layers](../../reference/admin-api/connections-and-layers.md#editable-layers). |
-| `404` for the service or layer | Check the service name and layer id with `honua services` and `honua layers <service-id>`. The layer must be published and bound to a storage layer. |
+| `404` for the service or layer (FeatureServer: HTTP 200 with error code `404`) | Check the service name and layer id with `honua services` and `honua layers <service-id>`. The layer must be published and bound to a storage layer. |
 | Edits rejected on DuckDB / SQL Server / Oracle layers | Those providers are read-only in the current release. Move writable layers to the PostgreSQL provider. |
 | Geometry rejected | Vertex count and payload size are capped by `Limits__Geometry__*`; oversized or invalid geometries return a validation error naming the limit. |
-| Partial batch applied | `applyEdits` defaults to per-row results. Pass `rollbackOnFailure=true` for transactional batches. |
+| A valid row in a batch was not written | `applyEdits` rolls the whole batch back when one row fails (the other rows report code `1008`). Pass `rollbackOnFailure=false` to keep the rows that succeed. |
 
 More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 

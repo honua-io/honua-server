@@ -29,13 +29,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// HTTP adapter regression coverage for provider-routed GeoServices MVT and H3 surfaces.
-/// The fallback services return distinct bytes/data so a silent primary-provider fallback
-/// cannot satisfy these assertions.
-/// </summary>
 [Collection("Database")]
-public sealed class ProviderRoutedTileAndH3EndpointTests :
+public sealed partial class ProviderRoutedTileAndH3EndpointTests :
     IClassFixture<ProviderRoutedTileAndH3EndpointTests.Fixture>
 {
     private static readonly byte[] SecondaryMvt = [0x11, 0x12];
@@ -351,7 +346,8 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
                     Type = MetadataV2FieldType.BigInteger,
                     Nullable = false,
                     SemanticRoles = ["id.primary"]
-                }
+                },
+                new MetadataV2Field { Name = "observed_at", Type = MetadataV2FieldType.DateTime }
             };
 
             return new TestMetadataV2GraphBuilder()

@@ -226,6 +226,30 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore', generator)
         self.assertIn('generate-geoservices-parity.sh "$@" --no-build --no-restore', generator)
 
+    def test_operation_join_uses_fresh_catalog_in_required_pr_architecture(self):
+        action = (ROOT / '.github/actions/lean-gate/action.yml').read_text()
+        refresh = action.index('- name: Regenerate projections and report advisory drift')
+        join = action.index('- name: Validate operation-capability join against fresh catalog')
+        architecture = action.index('- name: Run .NET Tests (Architecture)')
+        self.assertLess(refresh, join)
+        self.assertLess(join, architecture)
+        refresh_block = action[refresh:join]
+        join_block = action[join:].split('    # Server.Tests', 1)[0]
+        guard = next(line.strip() for line in refresh_block.splitlines() if line.strip().startswith('if:'))
+        self.assertIn(guard, join_block)
+        self.assertIn('python3 scripts/ci/generate-operation-capability.test.py', join_block)
+        self.assertIn('python3 scripts/ci/generate-operation-capability.py --check', join_block)
+        self.assertNotIn('continue-on-error:', join_block)
+        matrix = (ROOT / '.github/workflows/capability-matrix-aggregation.yml').read_text()
+        for name in ('Test the operation-capability join', 'Drift check operation-capability.v1.json'):
+            block = matrix.split('- name: ' + name, 1)[1].split('- name:', 1)[0]
+            self.assertIn("if: github.event_name != 'pull_request'", block)
+        parity = action.split('- name: Regenerate admin parity exports', 1)[1]
+        self.assertLess(parity.index('generate-admin-operation-parity-exports.sh'),
+                        parity.index('- name: Run .NET Tests (Server Fast Tier)'))
+        emitter = (ROOT / 'scripts/ci/generate-admin-operation-parity-exports.sh').read_text()
+        self.assertIn('AdminParityExports_EmitWhenExplicitlyRequested', emitter)
+
     def test_trunk_roster_consumers_regenerate_before_the_strict_roster_test(self):
         # PRs may not commit the roster (check-generated-file-ownership.py), so
         # every trunk run that executes McpToolRosterDriftTests must project it

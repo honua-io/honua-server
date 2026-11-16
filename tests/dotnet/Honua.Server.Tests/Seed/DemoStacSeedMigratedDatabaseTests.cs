@@ -20,25 +20,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Seed;
 
-/// <summary>
-/// Regression for honua-io/honua-server#3384: the live demo canary reads HTTP 500 from
-/// <c>GET /stac/collections/90810/items</c> and <c>POST /stac/search</c> while collection
-/// discovery and collection metadata stay 200.
-///
-/// The deployed cause is database state, not the STAC handlers: the demo database lost
-/// <c>honua.features</c> (PostgreSQL <c>42P01</c>) but kept its <c>feature_changes</c> journal,
-/// and the Metadata v2 graph still publishes the collection. This test drives the real
-/// <c>tests/seed/demo-stac-imagery-v1.sql</c> over a database migrated by the production DbUp
-/// runner, then pins both halves of that contract through a host bound to the database:
-/// <list type="bullet">
-///   <item>seeded, collection 90810 serves exactly the four seed scenes through the canary's own
-///   items and search requests, with geometry, datetime and properties equal to the literals the
-///   seed inserts (restated here, not read back from the server);</item>
-///   <item>with the relation dropped and the journal retained, metadata stays 200 while items and
-///   search fail loudly with 500 (never an empty 200 page a canary would pass), and re-running the
-///   seed refuses without recreating the relation, because the journal cannot be rebaselined.</item>
-/// </list>
-/// </summary>
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Stac)]
 public sealed class DemoStacSeedMigratedDatabaseTests
@@ -48,7 +29,6 @@ public sealed class DemoStacSeedMigratedDatabaseTests
     private const string CollectionPath = "/stac/collections/" + CollectionId;
     private const string SearchPath = "/stac/search";
 
-    /// <summary>The Maui Reef Watch scenes the seed inserts under layer 90810.</summary>
     private static readonly ExpectedScene[] _reefWatchScenes =
     [
         new("9081001", -156.4730, 20.8910, "S2-MAUI-Reef-01", "2026-03-01T20:30:00Z", 96, 5.2, 142.0, "sentinel-2a", 4326),
@@ -194,10 +174,6 @@ public sealed class DemoStacSeedMigratedDatabaseTests
             },
             "Test");
 
-    /// <summary>
-    /// Renders the psql script for the ADO.NET driver: drops the psql preamble and binds the
-    /// <c>env</c> and <c>schema</c> variables the managed demo executor passes.
-    /// </summary>
     private static async Task<string> RenderSeedAsync()
     {
         var source = await File.ReadAllTextAsync(RepositoryPaths.Resolve("tests", "seed", "demo-stac-imagery-v1.sql"));

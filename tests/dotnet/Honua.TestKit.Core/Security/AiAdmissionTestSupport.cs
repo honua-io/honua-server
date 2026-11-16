@@ -5,7 +5,6 @@ using Honua.Core.Features.Security.Admission;
 
 namespace Honua.TestKit.Security;
 
-/// <summary>Explicit invocation admission fixture for tests that exercise model transport without a durable backend.</summary>
 public sealed class RecordingAiAdmission : IAiExecutionAdmission
 {
     public int Acquired { get; private set; }

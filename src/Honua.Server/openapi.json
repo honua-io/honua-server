@@ -819,6 +819,9 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request"
+          },
           "404": {
             "description": "Feature not found"
           }

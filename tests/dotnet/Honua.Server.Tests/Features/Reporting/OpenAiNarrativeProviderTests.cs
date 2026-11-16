@@ -20,7 +20,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Reporting;
 
-/// <summary>Exercises the optional narrative provider's outbound privacy boundary.</summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpenAiNarrativeProviderTests
 {

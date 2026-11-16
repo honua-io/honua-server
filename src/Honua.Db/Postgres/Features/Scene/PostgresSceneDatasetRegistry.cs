@@ -13,11 +13,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Scene;
 
-/// <summary>
-/// PostgreSQL-backed implementation of the scene dataset registry. Serves as
-/// both the lookup seam for hosted 3D Tiles serving (#837) and the admin
-/// CRUD surface introduced in #844.
-/// </summary>
 internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISceneRegistrationService
 {
     private const string DatasetTypeHostedTiles = "hosted_tiles";
@@ -101,13 +96,6 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         _hydrator = hydrator;
     }
 
-    /// <remarks>
-    /// The pooled connection and reader are released <em>before</em> the asset hydration runs. Hydration
-    /// (#2459, ADR-0060) can pull a multi-GB tileset from the object store, so holding the connection
-    /// across it would let a cold-cache request herd pin every pooled connection for the whole download
-    /// and exhaust the pool. The row is fully materialized inside the connection scope; the download and
-    /// projection then happen with no database resources held.
-    /// </remarks>
     public async ValueTask<SceneDataset?> FindAsync(string id, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(id))
@@ -418,12 +406,6 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         };
     }
 
-    /// <summary>
-    /// Resolves a stored asset root to the absolute, separator-trimmed form
-    /// expected by <c>SceneAssetResolver</c>. Mirrors the canonicalization
-    /// applied by <c>ConfigurationSceneDatasetRegistry</c> at startup so
-    /// relative roots (e.g. dev fixture paths) survive projection.
-    /// </summary>
     private string CanonicalizeAssetRoot(string assetRoot)
     {
         // Path.Combine is only reached when assetRoot is not rooted (the ternary's other branch

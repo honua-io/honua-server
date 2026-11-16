@@ -15,12 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fail-closed admission for <c>conversion.raster-format</c> output drivers (#3307).
-/// A target whose GDAL driver is in the effective <c>SkipDrivers</c> set must be
-/// rejected before <c>gdal_translate</c> runs, using the same set
-/// <see cref="GdalRuntimeHardening"/> writes to <c>GDAL_SKIP</c>.
-/// </summary>
 public sealed class GdalRasterOutputDriverAdmissionTests
 {
     [UnitTest]
@@ -164,11 +158,6 @@ public sealed class GdalRasterOutputDriverAdmissionTests
         }
     }
 
-    /// <summary>
-    /// <c>IOptions.Value</c> is the runner lifetime. <c>IOptionsMonitor.CurrentValue</c>
-    /// is a reload the runners ignore. Implementing both lets this fixture still compile
-    /// if admission is switched back to the monitor.
-    /// </summary>
     private sealed class DivergentHardeningOptions(
         GdalHardeningOptions snapshot,
         GdalHardeningOptions? reloaded = null) : IOptions<GdalHardeningOptions>, IOptionsMonitor<GdalHardeningOptions>

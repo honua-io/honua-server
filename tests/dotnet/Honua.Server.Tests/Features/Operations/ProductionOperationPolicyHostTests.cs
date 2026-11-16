@@ -29,13 +29,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// Owner decision 10 (2026-10-10): a Production host composed from the shipped
-/// <c>appsettings.Production.json</c> lets an administrative key execute typed operations through
-/// the built-in rule, without operator-authored rules, while a layer write key still hits the
-/// fail-closed default. Reproduces the honua-release run 38066103745 denial of
-/// <c>service.publish</c> for an <c>admin:write</c> key.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -109,6 +102,47 @@ public sealed class ProductionOperationPolicyHostTests
         using var list = new HttpRequestMessage(HttpMethod.Get, "/api/v1/operations");
         list.Headers.Add("X-API-Key", adminWrite.Key);
         (await client.SendAsync(list)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // One policy decides every agent change. Walk the shipped catalog so a new
+    // state-changing operation cannot let an administrative agent act without one human approval.
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    public async Task ProductionHost_EveryStateChangingOperation_AgentNeedsHumanApproval()
+    {
+        using var factory = CreateProductionFactory(new Dictionary<string, string?>());
+        await using var scope = factory.Services.CreateAsyncScope();
+        var pdp = scope.ServiceProvider.GetRequiredService<IOperationPolicyDecisionPoint>();
+        var snapshot = await scope.ServiceProvider.GetRequiredService<IOperationCatalog>().GetSnapshotAsync();
+        var changes = snapshot.Operations
+            .Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
+            .ToArray();
+        changes.Should().Contain(static descriptor => descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal));
+
+        var direct = new List<string>();
+        foreach (var descriptor in changes)
+        {
+            var decision = await pdp.EvaluateAsync(
+                descriptor,
+                new OperationRequest { OperationId = descriptor.OperationId },
+                new OperationPolicyContext
+                {
+                    PrincipalId = "agent-catalog-walk",
+                    Roles = [AgentApprovalRule.AgentRole, OperationPolicyBuiltInRules.FullAdministratorRole],
+                });
+            if (decision.Kind is not (PolicyDecisionKind.RequireApproval or PolicyDecisionKind.Deny))
+            {
+                direct.Add($"{descriptor.OperationId}: {decision.Kind}");
+            }
+        }
+
+        direct.Should().BeEmpty("an agent's change is a proposal unless explicitly approved for agents");
+        var publish = changes.Single(static descriptor => descriptor.OperationId == ServicePublishOperation.OperationId);
+        (await pdp.EvaluateAsync(
+                publish,
+                new OperationRequest { OperationId = publish.OperationId },
+                new OperationPolicyContext { Roles = [OperationPolicyBuiltInRules.FullAdministratorRole] }))
+            .Kind.Should().Be(PolicyDecisionKind.Allow, "a human administrator keeps the built-in allow");
     }
 
     private static async Task<PolicyDecision> EvaluateAsKeyAsync(IServiceProvider services, string apiKey)

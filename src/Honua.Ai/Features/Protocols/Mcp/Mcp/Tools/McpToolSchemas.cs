@@ -329,7 +329,7 @@ internal static class McpToolSchemas
             "data": {
               "type": "string",
               "minLength": 1,
-              "description": "Caller-supplied. The dataset content, inline. Capped at 4 MB; use the REST import upload (POST /api/v1/admin/import/upload) for larger files."
+              "description": "Caller-supplied. The dataset content, inline. Capped at 4 MB."
             },
             "datasetName": {
               "type": "string",

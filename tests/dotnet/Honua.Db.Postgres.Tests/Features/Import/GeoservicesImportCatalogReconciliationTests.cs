@@ -25,13 +25,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Integration coverage for issue #1379: the Validating phase invokes
-/// <see cref="MigrationCatalogReconciler"/> against the published Metadata v2 catalog entry that the
-/// AutoPublish step materialized, and binds the resulting catalog-parity report to the per-layer
-/// <see cref="MigrationReconciliationArtifact"/>. A faithfully imported layer must yield an all-green
-/// catalog reconciliation (no fail findings, <c>pass</c> classification).
-/// </summary>
 [Collection("Database")]
 public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture fixture)
 {

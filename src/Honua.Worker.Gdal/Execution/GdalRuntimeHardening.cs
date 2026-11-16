@@ -5,16 +5,8 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Builds the restrictive GDAL environment every GDAL/OGR CLI subprocess inherits
-/// (#2765). Pure and deterministic so the exact variable set can be asserted
-/// offline; both the in-process (<see cref="ProcessGdalCommandRunner"/>) and
-/// container-exec (<see cref="DockerGdalCommandRunner"/>) runners apply it so no
-/// invocation escapes the driver-skip / remote-VSI-disable policy.
-/// </summary>
 internal static class GdalRuntimeHardening
 {
-    /// <summary>Sentinel extension gated into the <c>/vsicurl</c>-family allow-list to block it.</summary>
     private const string BlockedCurlExtension = ".honua-vsi-blocked";
 
     // Only an invocation whose arguments include an object-store path declared through
@@ -78,14 +70,6 @@ internal static class GdalRuntimeHardening
         return env;
     }
 
-    /// <summary>
-    /// Driver short names written to <c>GDAL_SKIP</c>. Blank entries are dropped
-    /// and the rest are trimmed, in configured order. Output-driver admission
-    /// must use this sequence so a padded token cannot disagree with the
-    /// subprocess environment.
-    /// </summary>
-    /// <param name="options">The configured hardening policy.</param>
-    /// <returns>The effective skip list, possibly empty.</returns>
     public static IReadOnlyList<string> EffectiveSkipDrivers(GdalHardeningOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -170,11 +154,6 @@ internal static class GdalRuntimeHardening
         }
     }
 
-    /// <summary>
-    /// Formats the environment as <c>docker run -e KEY</c> argument pairs, in a
-    /// stable order, for the container-exec runner. Values are supplied to the
-    /// container-runtime process environment so credentials never enter argv.
-    /// </summary>
     public static IReadOnlyList<string> ToDockerEnvArguments(IReadOnlyDictionary<string, string> environment)
     {
         ArgumentNullException.ThrowIfNull(environment);

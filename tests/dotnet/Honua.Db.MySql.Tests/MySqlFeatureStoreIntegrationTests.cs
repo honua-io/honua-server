@@ -19,15 +19,6 @@ using Testcontainers.MySql;
 
 namespace Honua.Db.MySql.Tests;
 
-/// <summary>
-/// Gated integration tests that exercise the full MySQL provider stack against a
-/// MySQL 8 container. The standard PR test run skips them via the
-/// <c>Category!=MySql</c> filter. The fixture additionally requires
-/// <c>HONUA_TEST_MYSQL=1</c> so a stray <c>--filter Category=MySql</c> does not
-/// spin up Docker on machines without it. To actually run the suite, both the
-/// category filter and the environment variable are required:
-/// <c>HONUA_TEST_MYSQL=1 dotnet test --filter Category=MySql</c>.
-/// </summary>
 [Trait("Category", "MySql")]
 public sealed class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
 {

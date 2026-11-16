@@ -7,9 +7,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Caching;
 
-/// <summary>
-/// Tests for memory response cache implementation
-/// </summary>
 [Collection("Unit")]
 public class MemoryResponseCacheTests : IDisposable
 {

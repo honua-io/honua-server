@@ -21,13 +21,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Integration coverage for honua-server#1255: Esri coded-value and range domains
-/// captured on import must persist through publish into the Metadata v2 graph,
-/// survive the compat-compile (activated current snapshot), and surface on the
-/// canonical field the FeatureServer field <c>domain</c> and <c>queryDomains</c>
-/// surfaces read from (<see cref="MetadataV2Field.Domain"/>).
-/// </summary>
 [Collection("Database")]
 public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixture)
 {

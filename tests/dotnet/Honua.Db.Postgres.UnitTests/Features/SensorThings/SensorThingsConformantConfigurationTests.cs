@@ -7,9 +7,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Db.Postgres.Tests.Features.SensorThings;
 
-/// <summary>
-/// Verifies trim-safe conformant-profile configuration retains Boolean binding semantics.
-/// </summary>
 public sealed class SensorThingsConformantConfigurationTests
 {
     [UnitTest]

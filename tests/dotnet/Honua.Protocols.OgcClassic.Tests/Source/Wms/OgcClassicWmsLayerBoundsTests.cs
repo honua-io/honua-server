@@ -13,11 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// honua-server#6097: WMS LAYERS / QUERY_LAYERS are deduplicated by storage layer and
-/// bounded, so one anonymous request cannot fan out into N feature scans and N renders
-/// while holding a shared render-capacity lease.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
 public sealed class OgcClassicWmsLayerBoundsTests : IAsyncLifetime

@@ -77,9 +77,11 @@ versions, a package update voids the decision and the finding comes back for rev
 add image findings to `.trivyignore`: ignore entries hide findings, VEX documents them. The
 one remaining entry, CVE-2025-6965 (bundled SQLite in `SQLitePCLRaw.lib.e_sqlite3`, no
 upstream fix, kept in step with the NuGet audit suppression), is read by the trunk JIT scan
-and by the `ci.yml` image gate (Trivy's default ignore file). The release rescan, the
-release-asset scan and the `release-bundle.yml` gate use an empty ignore file and report it
-as an unfixed finding. Move it
+and by the `ci.yml` image gate (Trivy's default ignore file). The release rescan and release-asset scan use empty ignore files and report it
+as an unfixed finding. The `release-bundle.yml` gate uses `.trivyignore-release`. `.trivyignore-release` holds only documented, time-boxed exceptions
+that the release gate script (`scripts/ci/trivy-release-gate.sh`, which does not read VEX)
+must honour; each entry states the package, why it does not apply, the owner and an expiry.
+Move it
 to a VEX decision once its runtime reachability is established, or remove it when a fix ships.
 
 Do not mark a shell or command-line package (`dash`, `bash`, `tar`, `coreutils`,

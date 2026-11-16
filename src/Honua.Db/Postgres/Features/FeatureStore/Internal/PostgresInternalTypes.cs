@@ -3,7 +3,4 @@
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Internal;
 
-/// <summary>
-/// Cache entry for layer SRID information with expiration tracking.
-/// </summary>
 internal sealed record LayerSridCacheEntry(int? Srid, DateTimeOffset CreatedAt);

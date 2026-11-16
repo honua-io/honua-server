@@ -10,10 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
 
-/// <summary>
-/// Unit tests for CommonQueryValidator ensuring consistent validation behavior
-/// across all protocols and endpoints.
-/// </summary>
 public class CommonQueryValidatorTests
 {
     private readonly CommonQueryValidator _validator;

@@ -7,38 +7,8 @@ using Honua.Core.Features.Scene.Generation;
 
 namespace Honua.Core.Features.Scene.PointCloud;
 
-/// <summary>
-/// Converts a decoded LAS point cloud into a deterministic 3D Tiles point
-/// tileset: a quadtree of <c>.pnts</c> tiles plus a <c>tileset.json</c> tree
-/// servable through the existing scene infrastructure (#1201).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Points are projected to geographic coordinates by a caller-supplied
-/// <see cref="PointCloudGeoTransform"/> (which interprets the LAS file's CRS),
-/// partitioned by their lon/lat into a quadtree via the same deterministic
-/// scheme used for feature tiling (#1200), and each content node is written as a
-/// <c>.pnts</c> tile whose positions are ECEF-encoded with an RTC center.
-/// Classification, intensity, and RGB are preserved per point.
-/// </para>
-/// <para>
-/// Output is byte-stable: points keep their LAS file order, tile uris are
-/// assigned in a fixed pre-order walk, and the writer emits fixed property
-/// orders, so identical input produces identical bytes across runs.
-/// </para>
-/// </remarks>
 public static class PointCloudTilesetBuilder
 {
-    /// <summary>
-    /// Builds the in-memory artifacts (tile uris -> bytes, plus the tileset
-    /// document bytes) for a LAS point cloud. The caller writes the returned
-    /// blobs under the scene asset root.
-    /// </summary>
-    /// <param name="points">Decoded LAS points in file order. Must be non-empty.</param>
-    /// <param name="transform">Projects a LAS (x, y, z) to (lon°, lat°, heightMeters).</param>
-    /// <param name="options">Tiling thresholds (max points per tile, depth).</param>
-    /// <param name="generatorTag">Optional generator label for the tileset asset block.</param>
-    /// <returns>The deterministic point-cloud tileset artifacts.</returns>
     public static PointCloudTilesetResult Build(
         IReadOnlyList<LasPoint> points,
         PointCloudGeoTransform transform,
@@ -387,50 +357,19 @@ public static class PointCloudTilesetBuilder
     }
 }
 
-/// <summary>
-/// Projects a LAS (x, y, z) coordinate to (longitude°, latitude°, height m).
-/// Implementations interpret the LAS file's CRS.
-/// </summary>
-/// <param name="x">LAS X in the file's horizontal units.</param>
-/// <param name="y">LAS Y in the file's horizontal units.</param>
-/// <param name="z">LAS Z (elevation) in meters.</param>
-/// <returns>Geographic longitude/latitude in degrees and ellipsoidal height in meters.</returns>
 public delegate (double Longitude, double Latitude, double Height) PointCloudGeoTransform(double x, double y, double z);
 
-/// <summary>
-/// Tiling thresholds for the point-cloud quadtree (#1201).
-/// </summary>
 public sealed record PointCloudTilingOptions
 {
-    /// <summary>Maximum points a leaf tile may hold before subdivision.</summary>
     public int MaxPointsPerTile { get; init; } = 50_000;
 
-    /// <summary>Hard cap on quadtree depth.</summary>
     public int MaxDepth { get; init; } = 16;
 
-    /// <summary>Representative points carried by each interior node as a coarse LOD.</summary>
     public int InteriorSampleCount { get; init; } = 8_192;
 
-    /// <summary>
-    /// Hard cap on the total number of points the builder will accept. Enforced
-    /// before any per-point buffer is allocated so a malformed or hostile LAS
-    /// cannot drive an unbounded multi-GB allocation; a larger cloud is rejected
-    /// with a stable scene error. The default (250 million) comfortably exceeds
-    /// realistic single-tileset ingests while bounding worst-case memory.
-    /// </summary>
     public long MaxPointCount { get; init; } = 250_000_000L;
 }
 
-/// <summary>
-/// Deterministic artifacts produced from a LAS point cloud (#1201): the
-/// serialized <c>tileset.json</c> bytes plus a map of relative <c>.pnts</c> uris
-/// to their bytes, and dataset summary fields.
-/// </summary>
-/// <param name="TilesetJsonBytes">Serialized tileset document.</param>
-/// <param name="Tiles">Map of relative <c>.pnts</c> uri to tile bytes.</param>
-/// <param name="BoundsDegrees">Dataset envelope [west, south, east, north] in degrees.</param>
-/// <param name="TileCount">Number of <c>.pnts</c> tiles written.</param>
-/// <param name="PointCount">Total points ingested.</param>
 public readonly record struct PointCloudTilesetResult(
     byte[] TilesetJsonBytes,
     IReadOnlyDictionary<string, byte[]> Tiles,

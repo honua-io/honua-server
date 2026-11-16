@@ -16,13 +16,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Contract tests for <see cref="BedrockStudioAiProxyAdapter"/> against a fake
-/// <see cref="IChatClient"/> standing in for <c>BedrockChatClientAdapter</c> — no AWS account, no
-/// live Bedrock call. Proves the bridge: <see cref="ChatResponseUpdate"/> content
-/// (<see cref="TextContent"/> / <see cref="FunctionCallContent"/> / <see cref="UsageContent"/>) maps
-/// onto the same neutral <see cref="StudioAiChatEvent"/> sequence the HTTP-based adapters produce.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class BedrockStudioAiProxyAdapterTests
 {
@@ -226,10 +219,6 @@ public sealed class BedrockStudioAiProxyAdapterTests
         public IChatClient Create(string model, string region, string? apiKey) => client;
     }
 
-    /// <summary>
-    /// Hands out a different <see cref="IChatClient"/> per request, so a test can prove the adapter
-    /// builds a fresh client for every stream rather than reusing a poisoned one.
-    /// </summary>
     private sealed class SequenceBedrockChatClientFactory(IReadOnlyList<IChatClient> clients) : IBedrockChatClientFactory
     {
         public int CreateCount { get; private set; }
@@ -238,11 +227,6 @@ public sealed class BedrockStudioAiProxyAdapterTests
             => clients[Math.Min(CreateCount++, clients.Count - 1)];
     }
 
-    /// <summary>
-    /// Never produces an update: the stream stalls until the adapter's deadline cancels it. Records
-    /// enumerator disposal and client disposal so the outage matrix's Bedrock
-    /// <c>stall-before-first-event</c> case can assert the upstream is released.
-    /// </summary>
     private sealed class StallingChatClient : IChatClient
     {
         private int _enumeratorsDisposed;
@@ -292,7 +276,6 @@ public sealed class BedrockStudioAiProxyAdapterTests
         }
     }
 
-    /// <summary>Yields a fixed list of updates — stands in for the Converse-backed streaming adapter.</summary>
     private sealed class FakeStreamingChatClient(IReadOnlyList<ChatResponseUpdate> updates) : IChatClient
     {
         public Task<ChatResponse> GetResponseAsync(
@@ -344,7 +327,6 @@ public sealed class BedrockStudioAiProxyAdapterTests
         }
     }
 
-    /// <summary>Simulates an AWS SDK transport/auth failure surfacing mid-stream.</summary>
     private sealed class ThrowingChatClient : IChatClient
     {
         public Task<ChatResponse> GetResponseAsync(

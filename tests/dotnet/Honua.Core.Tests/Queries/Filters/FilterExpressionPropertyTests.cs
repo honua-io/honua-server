@@ -14,15 +14,8 @@ using Gen = FsCheck.Fluent.Gen;
 
 namespace Honua.Core.Tests.Queries.Filters;
 
-/// <summary>
-/// Property-based tests for filter expressions to ensure mathematical properties hold.
-/// </summary>
 public class FilterExpressionPropertyTests
 {
-    /// <summary>
-    /// Validates that binary expressions maintain associativity for AND operations.
-    /// (a AND b) AND c should be equivalent to a AND (b AND c)
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(NestedExpressionArbs) })]
     public bool AndOperationIsAssociative(BinaryExpression a, BinaryExpression b, BinaryExpression c)
@@ -55,9 +48,6 @@ public class FilterExpressionPropertyTests
         }
     }
 
-    /// <summary>
-    /// Validates that OR operations are also associative.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(NestedExpressionArbs) })]
     public bool OrOperationIsAssociative(BinaryExpression a, BinaryExpression b, BinaryExpression c)
@@ -87,9 +77,6 @@ public class FilterExpressionPropertyTests
         }
     }
 
-    /// <summary>
-    /// Validates that property references handle all valid property names correctly.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(PropertyNameArbs) })]
     public bool PropertyReferenceHandlesAllValidNames(string propertyName)
@@ -112,9 +99,6 @@ public class FilterExpressionPropertyTests
         }
     }
 
-    /// <summary>
-    /// Validates that literal expressions preserve value equality.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(LiteralValueArbs) })]
     public bool LiteralExpressionsPreserveValues(object? value)
@@ -137,9 +121,6 @@ public class FilterExpressionPropertyTests
         }
     }
 
-    /// <summary>
-    /// Validates that comparison operations with null values are handled consistently.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(PropertyNameArbs), typeof(ComparisonOperatorArbs) })]
     public bool NullComparisonHandling(string propertyName, BinaryOperator op)
@@ -162,9 +143,6 @@ public class FilterExpressionPropertyTests
         }
     }
 
-    /// <summary>
-    /// Validates that spatial predicates handle boundary coordinates correctly.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(PropertyNameArbs), typeof(BoundaryCoordinateArbs) })]
     public bool SpatialPredicatesBoundaryHandling(string propertyName, Coordinate coord)
@@ -201,9 +179,6 @@ public class FilterExpressionPropertyTests
         }
     }
 
-    /// <summary>
-    /// Validates that function calls handle various argument combinations.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(FunctionNameArbs), typeof(FunctionArgsArbs) })]
     public bool FunctionCallArgumentHandling(string functionName, FilterExpression[] args)
@@ -228,9 +203,6 @@ public class FilterExpressionPropertyTests
         }
     }
 
-    /// <summary>
-    /// Validates that temporal predicates handle date boundary conditions.
-    /// </summary>
     [Trait("Tier", "Fast")]
     [Property(Arbitrary = new[] { typeof(PropertyNameArbs), typeof(DateTimeArbs), typeof(TemporalOperatorArbs) })]
     public bool TemporalPredicateDateBoundaries(string propertyName, DateTime dateTime, TemporalOperator temporalOp)

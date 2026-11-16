@@ -3,25 +3,12 @@
 
 namespace Honua.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Extension methods to register OGC API Features endpoints.
-/// </summary>
-/// <remarks>
-/// CITE conformance: 137/137 (OGC API Features 1.0 `default` profile, 100% pass on trunk).
-/// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
-/// </remarks>
 internal static partial class OgcFeaturesEndpoints
 {
-    /// <summary>
-    /// Logging class for OGC Features endpoints
-    /// </summary>
     internal sealed class OgcFeaturesEndpointsLog
     {
     }
 
-    /// <summary>
-    /// Maps all OGC API Features endpoints by delegating to specialized endpoint classes
-    /// </summary>
     public static IEndpointRouteBuilder MapOgcFeaturesEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Register core metadata endpoints (landing page, conformance, OpenAPI)

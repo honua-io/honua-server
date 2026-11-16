@@ -11,11 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Reporting;
 
-/// <summary>
-/// Verifies the Reporting feature registration honors the
-/// <c>Reporting:Enabled</c> configuration flag so operators can fully disable
-/// the reporting surface (services + endpoints) per the documented contract.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class ReportingServiceCollectionExtensionsTests
 {

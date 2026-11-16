@@ -3,11 +3,6 @@
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Shared identifiers for the spatial-reference (non-4326 SRID) integration test fixture.
-/// Tests seed the Metadata v2 graph with these ids/SRID; the constants keep the seeded
-/// graph and the test assertions in sync.
-/// </summary>
 public static class SpatialReferenceTestLayerCatalog
 {
     public const string ServiceId = "srid-test";

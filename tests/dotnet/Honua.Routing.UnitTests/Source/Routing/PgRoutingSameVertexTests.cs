@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Same-vertex solves without a database. The scripted session returns no
-/// pgRouting row when start = end, which is pgRouting 3.x behaviour (#6157).
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class PgRoutingSameVertexTests
 {

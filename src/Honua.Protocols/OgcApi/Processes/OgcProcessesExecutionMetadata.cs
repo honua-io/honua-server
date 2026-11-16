@@ -3,9 +3,6 @@
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Durable protocol choices needed when an asynchronous execution is later polled.
-/// </summary>
 internal static class OgcProcessesExecutionMetadata
 {
     internal const string ResponseMode = "ogc.processes.response";

@@ -8,10 +8,6 @@ using static Honua.Db.Postgres.Tests.Features.SpatialAnalytics.SpatialAnalyticsR
 
 namespace Honua.Db.Postgres.Tests.Features.SpatialAnalytics;
 
-/// <summary>
-/// Executes the policy-carrying analytics SQL against PostGIS, so the row filter and
-/// field-mask placement is proven by the rows that come back rather than by SQL shape.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresSpatialAnalyticsReaderReadPolicyDatabaseTests(PostgresFixture fixture)
 {

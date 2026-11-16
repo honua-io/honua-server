@@ -17,7 +17,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>Provider failure diagnostics must never retain response text or exception payloads.</summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAiProxyLoggingPrivacyTests
 {

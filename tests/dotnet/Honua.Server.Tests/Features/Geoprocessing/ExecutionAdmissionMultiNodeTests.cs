@@ -791,10 +791,6 @@ public sealed class ExecutionAdmissionMultiNodeTests
         public string[] EnqueuedJobIds => enqueued.ToArray();
     }
 
-    /// <summary>
-    /// Independent observer of the durable active set: the maximum global count and the maximum
-    /// per-partition count and cost weight seen at any sample during a burst.
-    /// </summary>
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue => value;

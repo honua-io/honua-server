@@ -22,16 +22,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage for the dispatcher that routes claimed geoprocessing jobs
-/// to the correct per-process executor. The dispatcher is the single
-/// IJobExecutor registered for ExecutionJobKind.Geoprocessing after slice 2;
-/// slice 3 extended it with geometry.area + geometry.union; slice 4 added
-/// geometry.centroid + geometry.length + geometry.convex-hull; slice 5 adds
-/// geometry.dissolve + geometry.simplify + geometry.snap. This test pins
-/// the routing contract so unknown process ids never reach a per-process
-/// executor by accident.
-/// </summary>
 public sealed class GeoprocessingDispatchJobExecutorTests
 {
     [UnitTest]
@@ -692,11 +682,6 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
-    /// <summary>
-    /// Job record routed to <see cref="FakeArtifactPublishingExecutor"/> (registered
-    /// only in the dispatchers these workspace-routing tests build), isolating the
-    /// workspace-routing behavior from real geometry executor logic.
-    /// </summary>
     private static ExecutionJobRecord CreateFakeExecutorJobRecord(string? workspaceId, bool? overwriteOutput)
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -734,11 +719,6 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         };
     }
 
-    /// <summary>
-    /// Minimal <see cref="IProcessExecutor"/> that publishes a single fixed
-    /// artifact and succeeds, used to isolate workspace-routing tests from real
-    /// geometry executor logic.
-    /// </summary>
     private sealed class FakeArtifactPublishingExecutor : IProcessExecutor
     {
         public const string HandledProcessId = "test.fake-artifact-publisher";
@@ -755,12 +735,6 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         }
     }
 
-    /// <summary>
-    /// Builds a dispatcher routing only <see cref="FakeArtifactPublishingExecutor"/>,
-    /// isolated from <see cref="CreateDispatcher"/>'s full executor set so the
-    /// exact-match <see cref="SupportedProcessIds_ListsSliceFiveExecutors"/>
-    /// assertion is unaffected by these workspace-routing tests.
-    /// </summary>
     private static GeoprocessingDispatchJobExecutor CreateFakeExecutorDispatcher(
         IServiceScopeFactory? scopeFactory)
     {

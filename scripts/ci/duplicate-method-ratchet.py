@@ -8,6 +8,12 @@ removed before the comparison, so a copy that differs only by commentary
 still pairs. String literals stay, so a one-line message change still
 compares as a near-copy instead of disappearing.
 
+--static-helpers switches to the lower threshold for static helpers: two
+static methods with the same name and parameter types, each 8 to 24 normalized
+lines, pair when their normalized bodies are identical. A copied static helper
+has no instance state to justify the copy, so it moves to one shared
+declaration. That list has its own baseline file.
+
 The architecture test commits the output as a baseline and refuses both new
 pairs and a baseline that lists a pair the scanner no longer finds. Shrink
 the baseline only by deleting the duplicated method.
@@ -16,6 +22,7 @@ Usage:
     python3 scripts/ci/duplicate-method-ratchet.py
     python3 scripts/ci/duplicate-method-ratchet.py --self-test
     python3 scripts/ci/duplicate-method-ratchet.py --write tests/dotnet/Honua.Architecture.Tests/duplicate-method-baseline.txt
+    python3 scripts/ci/duplicate-method-ratchet.py --static-helpers --write tests/dotnet/Honua.Architecture.Tests/duplicate-static-helper-baseline.txt
 """
 from __future__ import annotations
 
@@ -25,6 +32,7 @@ import sys
 from pathlib import Path
 
 MIN_LINES = 25
+STATIC_MIN_LINES = 8
 MIN_RATIO = 0.92
 # 2 * min / (min + max) >= MIN_RATIO implies min/max >= MIN_RATIO / (2 - MIN_RATIO).
 MIN_LENGTH_RATIO = MIN_RATIO / (2.0 - MIN_RATIO)
@@ -307,8 +315,8 @@ def parameter_types(params: str) -> str:
     return ",".join(types)
 
 
-def match_signature(header: str) -> tuple[str, str] | None:
-    """Return (name, parameter-type string) when header ends in a method declaration."""
+def match_signature(header: str) -> tuple[str, str, bool] | None:
+    """Return (name, parameter-type string, is static) when header ends in a method declaration."""
     start = max(header.rfind(";"), header.rfind("{"), header.rfind("}"))
     window = header[start + 1 :]
     where_at = window.find(" where ")
@@ -336,6 +344,9 @@ def match_signature(header: str) -> tuple[str, str] | None:
             left = left[:cut].rstrip()
     if not left:
         return None
+    # A field initializer ("Map = new Dictionary<...>(...) { ... }") is not a method declaration.
+    if "=" in left[left.rfind("]") + 1 :]:
+        return None
     parts = left.split()
     name = parts[-1]
     if not name.isidentifier() or name in KEYWORDS:
@@ -351,7 +362,11 @@ def match_signature(header: str) -> tuple[str, str] | None:
         return None
     if "new" in prefix and not has_return:
         return None
-    return name, parameter_types(params)
+    # Preprocessor lines are not masked: "#region static helpers" must not make a method static.
+    lines = left.split("\n")
+    directives = [index for index, line in enumerate(lines) if line.lstrip().startswith("#")]
+    declaration = " ".join(lines[directives[-1] + 1 :] if directives else lines)
+    return name, parameter_types(params), "static" in declaration.split()[:-1]
 
 
 def matching_brace(masked: str, open_index: int) -> int | None:
@@ -368,6 +383,8 @@ def matching_brace(masked: str, open_index: int) -> int | None:
 
 
 class Method:
+    static = False
+
     def __init__(self, path: str, name: str, types: str, line: int, body: list[str]) -> None:
         self.path = path
         self.name = name
@@ -394,9 +411,12 @@ def extract_methods(path: str, text: str) -> tuple[list[Method], bool]:
                 if end is None:
                     return [], False
                 body = normalize_body(text[index : end + 1], masked[index : end + 1])
-                if len(body) >= MIN_LINES:
+                is_static = signature[2]
+                if len(body) >= (STATIC_MIN_LINES if is_static else MIN_LINES):
                     line = text.count("\n", 0, index) + 1
-                    methods.append(Method(path, signature[0], signature[1], line, body))
+                    method = Method(path, signature[0], signature[1], line, body)
+                    method.static = is_static
+                    methods.append(method)
             depth += 1
         elif char == "}":
             depth -= 1
@@ -419,7 +439,9 @@ def iter_source_files(root: Path) -> list[Path]:
     return files
 
 
-def scan(root: Path) -> tuple[list[str], list[str]]:
+def scan(root: Path, belongs=None) -> tuple[list[str], list[str]]:
+    """Pair the methods that belongs() keeps: is_general by default, is_static_helper for the lower threshold."""
+    belongs = belongs or is_general
     methods: list[Method] = []
     unbalanced: list[str] = []
     for path in iter_source_files(root):
@@ -429,7 +451,7 @@ def scan(root: Path) -> tuple[list[str], list[str]]:
         if not balanced:
             unbalanced.append(relative)
             continue
-        methods.extend(found)
+        methods.extend(method for method in found if belongs(method))
 
     by_endpoint: dict[str, list[Method]] = {}
     for method in methods:
@@ -457,14 +479,96 @@ def scan(root: Path) -> tuple[list[str], list[str]]:
                 # rules out every method after it.
                 if shorter / longer < MIN_LENGTH_RATIO:
                     break
-                if left.body == right.body or difflib.SequenceMatcher(
-                    None, left.body, right.body, autojunk=False
-                ).ratio() >= MIN_RATIO:
+                if is_pair(left, right):
                     left_id = left.endpoint(left.endpoint(False) in collisions)
                     right_id = right.endpoint(right.endpoint(False) in collisions)
                     first, second = sorted((left_id, right_id))
                     pairs.add(f"{first}|{second}")
     return sorted(pairs), unbalanced
+
+
+def is_general(method: Method) -> bool:
+    return len(method.body) >= MIN_LINES
+
+
+def is_static_helper(method: Method) -> bool:
+    """Only static methods are extracted below MIN_LINES, so a short method is a static helper."""
+    return len(method.body) < MIN_LINES
+
+
+def is_pair(left: Method, right: Method) -> bool:
+    if len(left.body) < MIN_LINES or len(right.body) < MIN_LINES:
+        # Below the general threshold only an exact static copy counts.
+        return left.types == right.types and left.body == right.body
+    return left.body == right.body or difflib.SequenceMatcher(
+        None, left.body, right.body, autojunk=False
+    ).ratio() >= MIN_RATIO
+
+
+STATIC_HELPER_SAMPLE = '''
+namespace Demo;
+
+internal sealed class Short
+{
+    private static string Trim(string value)
+    {
+        if (value.Length == 0)
+        {
+            return value;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed;
+    }
+
+    private string Label(string value)
+    {
+        if (value.Length == 0)
+        {
+            return value;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed;
+    }
+}
+'''
+
+
+def static_helper_self_test(long_method: Method) -> str | None:
+    """Return the failure message for the static-helper tier, or None when it behaves."""
+    one, _ = extract_methods("src/C.cs", STATIC_HELPER_SAMPLE)
+    two, _ = extract_methods("src/D.cs", STATIC_HELPER_SAMPLE.replace("namespace Demo", "namespace Demo.Other"))
+    if [method.name for method in one] != ["Trim"]:
+        return f"self-test: expected only the static helper, found {[m.name for m in one]}"
+    if not is_pair(one[0], two[0]):
+        return "self-test: an exact static helper copy did not pair"
+    changed, _ = extract_methods("src/E.cs", STATIC_HELPER_SAMPLE.replace("value.Trim()", "value.TrimEnd()"))
+    if is_pair(one[0], changed[0]):
+        return "self-test: a short static helper with a different body paired"
+    if is_general(one[0]) or not is_static_helper(one[0]):
+        return "self-test: a short static helper belongs to the static-helper list only"
+    if is_static_helper(long_method) or not is_general(long_method):
+        return "self-test: a long method belongs to the general list only"
+    retyped_sample = STATIC_HELPER_SAMPLE.replace("Trim(string value)", "Trim(ReadOnlySpan<char> value)")
+    retyped, _ = extract_methods("src/F.cs", retyped_sample)
+    if is_pair(one[0], retyped[0]):
+        return "self-test: short static helpers with different parameter types paired"
+    region_sample = STATIC_HELPER_SAMPLE.replace("    private string Label", "    #region static helpers\n    private string Label")
+    region, _ = extract_methods("src/G.cs", region_sample)
+    if [method.name for method in region] != ["Trim"]:
+        return "self-test: a preprocessor line made an instance method static"
+    initializer = "\n".join(f'            ["k{index}"] = "v",' for index in range(10))
+    field_sample = STATIC_HELPER_SAMPLE.replace(
+        "    private string Label",
+        "    private static readonly IReadOnlyDictionary<string, string> Map =\n"
+        f"        new Dictionary<string, string>(StringComparer.Ordinal)\n        {{\n{initializer}\n        }};\n\n"
+        "    private string Label",
+    )
+    field, _ = extract_methods("src/H.cs", field_sample)
+    if [method.name for method in field] != ["Trim"]:
+        return "self-test: a static field initializer was taken for a static helper"
+    return None
 
 
 def self_test() -> int:
@@ -521,6 +625,10 @@ internal static class Sample
         print("self-test: raw-string contents leaked into the normalized body", file=sys.stderr)
         return 1
     del root_text
+    failure = static_helper_self_test(first[0])
+    if failure is not None:
+        print(failure, file=sys.stderr)
+        return 1
     print("self-test ok", file=sys.stderr)
     return 0
 
@@ -531,24 +639,32 @@ HEADER = """# Generated by scripts/ci/duplicate-method-ratchet.py. Do not add li
 # pair is gone. The architecture test rejects a new line against trunk.
 """
 
+STATIC_HEADER = """# Generated by scripts/ci/duplicate-method-ratchet.py --static-helpers. Do not add lines.
+# Each line is a pair of static methods under src/ with the same name and
+# parameter types whose normalized bodies are 8 to 24 lines and identical.
+# Delete a line only when that pair is gone: move the helper to one shared
+# declaration. The architecture test rejects a new line against trunk.
+"""
+
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--write", type=Path, help="Write the baseline file here.")
+    parser.add_argument("--static-helpers", action="store_true", help="List exact copies of short static helpers.")
     parser.add_argument("--root", type=Path, default=None)
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
     root = args.root or Path(__file__).resolve().parents[2]
-    pairs, unbalanced = scan(root)
+    pairs, unbalanced = scan(root, is_static_helper if args.static_helpers else is_general)
     if unbalanced:
         print("unbalanced C# files (scanner skipped them):", file=sys.stderr)
         for path in unbalanced:
             print(path, file=sys.stderr)
         return 2
     if args.write:
-        payload = HEADER + "".join(f"{pair}\n" for pair in pairs)
+        payload = (STATIC_HEADER if args.static_helpers else HEADER) + "".join(f"{pair}\n" for pair in pairs)
         args.write.write_text(payload, encoding="utf-8")
         print(f"wrote {len(pairs)} pairs to {args.write}", file=sys.stderr)
         return 0

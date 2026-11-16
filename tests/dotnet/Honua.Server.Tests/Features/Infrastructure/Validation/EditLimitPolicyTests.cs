@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Validation;
 
-/// <summary>
-/// The shared edit-limit policy used by FeatureServer applyEdits and replica upload, OData
-/// <c>$batch</c> and gRPC ApplyEdits.
-/// </summary>
 public sealed class EditLimitPolicyTests
 {
     private static readonly EditLimits Limits = new() { MaxFeaturesPerEdit = 2, MaxEditsPerTransaction = 5 };

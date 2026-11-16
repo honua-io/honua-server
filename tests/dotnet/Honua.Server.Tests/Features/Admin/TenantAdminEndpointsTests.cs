@@ -14,10 +14,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the tenant lifecycle admin surface (issue #2156): create, list, get,
-/// suspend, resume, delete, and the per-tenant billing usage export.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

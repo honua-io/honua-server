@@ -10,17 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Alerts;
 
-/// <summary>
-/// PostgreSQL store for the operator lifecycle row attached to an alert event.
-/// </summary>
-/// <remarks>
-/// <see cref="ApplyAsync"/> is the operator-action path: it writes the lifecycle
-/// mutation and its domain audit intent in ONE transaction so a committed
-/// mutation is never externally observable without either its audit record or a
-/// durable reconciliation record that completes it (#3865). The individual
-/// acknowledge/suppress/resolve methods remain for seeding and internal callers
-/// that are not operator actions.
-/// </remarks>
 internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
 {
     private const string LifecycleProjection =
@@ -88,7 +77,6 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
             command => BindResolve(command, actor, note, resolvedAt),
             cancellationToken);
 
-    /// <inheritdoc />
     public async Task<AlertLifecycleTransition> ApplyAsync(
         AlertLifecycleCommand command,
         CancellationToken cancellationToken = default)
