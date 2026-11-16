@@ -1,14 +1,14 @@
 ---
 type: reference
 title: "Forms"
-description: "Reference for form packages: builders create editable drafts, validate them against the target layer, publish immutable runtime versions, and reopen a published version as a new draft."
+description: "Author forms in XLSForm workbooks. Import creates an editable form-package draft; validate it against the target layer, publish an immutable runtime version, and export the published version back to XLSForm."
 resource: "honua://capability/fieldops.forms"
 resources:
   - "honua://capability/fieldops.offline-sync"
 ---
 # Forms
 
-Reference for form packages: builders create editable drafts, validate them against the target layer, publish immutable runtime versions, and reopen a published version as a new draft. Field clients fetch published packages and submit data against them.
+Author forms in XLSForm workbooks. Import creates an editable form-package draft; validate it against the target layer, publish an immutable runtime version, and export the published version back to XLSForm. Field clients fetch published packages and submit data against them.
 
 All routes require admin authentication — see [Authentication](../../guides/secure/authentication.md). Submissions additionally require edit permission on the target service/layer.
 
@@ -19,6 +19,8 @@ Also available in Honua Console — UI guide coming soon.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/v1/admin/forms/packages` | List package summaries (one per package family) |
+| POST | `/api/v1/admin/forms/packages/import?serviceId={serviceId}&layerId={layerId}` | Import an XLSForm workbook as a draft |
+| GET | `/api/v1/admin/forms/packages/{formId}/export` | Export the current published version as XLSForm |
 | POST | `/api/v1/admin/forms/packages` | Create draft version 1, or the next draft for an existing `formId` |
 | GET | `/api/v1/admin/forms/packages/{formId}` | Get the current draft (falls back to the current published version) |
 | GET | `/api/v1/admin/forms/packages/{formId}/versions` | List all versions, newest first |
@@ -27,6 +29,14 @@ Also available in Honua Console — UI guide coming soon.
 | POST | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate` | Validate against the target service/layer; stores the result for drafts |
 | POST | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish` | Validate and publish a draft as an immutable version |
 | POST | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen` | Create a new draft from a published version |
+
+### Import and export XLSForm
+
+Upload an `.xlsx` workbook as the `file` part of a `multipart/form-data` request to the import route. Supply the target service and layer in the query string. A successful import returns `201` with the draft package version. Import does not publish: use the existing validate and publish routes after checking the resulting draft.
+
+The workbook uses `survey`, `choices`, and `settings` sheets. Unsupported question types, expressions, or structures produce `400` with cell diagnostics identifying the sheet, row, column, and reason. Correct the workbook and import again; an unsuccessful import creates no draft. Empty or malformed archives also return `400`.
+
+Export returns the current published package as an `.xlsx` download. Drafts must be published before export. Unsupported package behavior produces diagnostics rather than a workbook that silently omits behavior.
 
 Contract notes:
 

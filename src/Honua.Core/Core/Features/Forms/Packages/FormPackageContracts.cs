@@ -38,6 +38,9 @@ public sealed class FormPackageDocument
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
+    [JsonPropertyName("expressionLanguage")]
+    public string? ExpressionLanguage { get; init; }
+
     [JsonPropertyName("target")]
     public FormTargetDefinition? Target { get; init; }
 
