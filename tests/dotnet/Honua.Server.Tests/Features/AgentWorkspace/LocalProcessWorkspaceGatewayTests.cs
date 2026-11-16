@@ -41,7 +41,7 @@ public sealed class LocalProcessWorkspaceGatewayTests
         using var handler = new Handler(_ => throw new InvalidOperationException("Must not send."));
         using var client = new HttpClient(handler);
         await Assert.ThrowsAsync<LocalProcessWorkspaceException>(() =>
-            Create(client).BindAsync(Access with { ActorId = "human" }, "project", CancellationToken.None));
+            Create(client).BindProjectAsync(Access with { ActorId = "human" }, "project", CancellationToken.None));
         Assert.Equal(0, handler.Calls);
     }
 

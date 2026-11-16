@@ -700,6 +700,9 @@ jobs:
       # Source/config URL checks run after merge after the routing and recovery guards.
       - name: Verify runtime documentation links and anchors
         run: |
+          # The router validates the inventory without rewriting the tracked
+          # page; links are checked against this head's projection, as in Docs Link Gate.
+          python3 scripts/ci/generate-workflow-inventory.py
           python3 scripts/ci/check-doc-links.test.py
           python3 scripts/ci/check-doc-links.py
 
