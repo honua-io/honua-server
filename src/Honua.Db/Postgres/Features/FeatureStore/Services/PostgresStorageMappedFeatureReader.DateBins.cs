@@ -47,7 +47,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             return await ReadStatisticsRowsAsync(sql, cancellationToken).ConfigureAwait(false);
         }
         catch (PostgresException exception) when (
-            exception.SqlState == PostgresErrorCodes.UndefinedFunction && dateBin.FixedInterval.HasValue)
+            exception.SqlState == PostgresErrorCodes.UndefinedFunction &&
+            dateBin.FixedInterval.HasValue &&
+            exception.MessageText.Contains("date_bin", StringComparison.Ordinal))
         {
             throw new NotSupportedException(
                 "Fixed-interval date bins need PostgreSQL 14 or later on the source database.", exception);
