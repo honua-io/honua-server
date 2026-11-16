@@ -51,7 +51,7 @@ public sealed class FolderServiceAuthorizationTests
 
         var result = await FolderEndpoints.RequireServiceAccessAsync(context, new MetadataV2Service
         {
-            Metadata = new MetadataV2Identity { Id = "service", Name = "survey" }
+            Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "survey" }
         });
 
         evaluatedPrincipal.Should().BeSameAs(requester);
@@ -89,7 +89,7 @@ public sealed class FolderServiceAuthorizationTests
         var operatorPrincipal = Principal("operator");
         var requester = Principal("requester");
         var context = new DefaultHttpContext { RequestServices = services, User = operatorPrincipal };
-        var service = new MetadataV2Service { Metadata = new MetadataV2Identity { Id = "service", Name = "survey" } };
+        var service = new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "survey" } };
         (await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Admin))
             .Should().BeNull();
         context.Features.Set(new FolderReplayServicePrincipal(requester, new OperationProposal
