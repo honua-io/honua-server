@@ -379,7 +379,7 @@ internal sealed partial class ODataBatchHandler
         {
             var operation = MapMethodToOperation(method);
             var accessError = await RequireBatchWriteAccessAsync(
-                context, validation, operation, cancellationToken).ConfigureAwait(false);
+                context, (validation, operation), cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return (null, CreateErrorResponseFromResult(
@@ -464,10 +464,10 @@ internal sealed partial class ODataBatchHandler
 
     private static async Task<IResult?> RequireBatchWriteAccessAsync(
         HttpContext context,
-        LayerValidationHelpers.MetadataV2ValidationResult validation,
-        AuthorizationOperation operation,
+        (LayerValidationHelpers.MetadataV2ValidationResult Validation, AuthorizationOperation Operation) write,
         CancellationToken cancellationToken)
     {
+        var (validation, operation) = write;
         var accessError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context, validation.Resource!, validation.Service, operation, cancellationToken).ConfigureAwait(false);
         return accessError ?? await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
