@@ -49612,6 +49612,20 @@
             ],
             "description": "Normalized comparison applied between the attribute and the claim value(s)."
           },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
+          },
           "description": {
             "type": "string",
             "nullable": true
@@ -49669,6 +49683,20 @@
             "nullable": true,
             "maxLength": 16,
             "description": "Accepts `in` (default when omitted or blank), `equals`, `eq`, or `=`. Any other value returns 400."
+          },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
           },
           "description": {
             "type": "string",

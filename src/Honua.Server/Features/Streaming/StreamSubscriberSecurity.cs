@@ -32,7 +32,7 @@ internal sealed class StreamSubscriberSecurity
     public bool Allows(FeatureStreamEnvelope envelope)
     {
         var policy = Volatile.Read(ref _state).Resolve(envelope);
-        if (policy is null)
+        if (policy is null || !policy.SupportsStreaming)
         {
             return false;
         }
@@ -211,4 +211,8 @@ internal enum StreamSubscriberSecurityRefreshOutcome
 
 internal sealed record StreamLayerReadPolicy(
     IReadOnlyList<FilterExpression> Predicates,
-    HashSet<string> MaskedFields);
+    HashSet<string> MaskedFields)
+{
+    public bool SupportsStreaming { get; } = Predicates.All(static predicate =>
+        InMemoryFilterEvaluator.TryValidateStreamingExpression(predicate, out _));
+}

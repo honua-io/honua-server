@@ -338,6 +338,30 @@ public sealed partial class AdminOperationRequestContractTests
         })).IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task RlsPolicyCreate_DeclaredRestrictions_RemainStrings()
+    {
+        const string area = "{\"type\":\"Polygon\",\"coordinates\":[[[0,0],[1,0],[1,1],[0,0]]]}";
+        using var capture = new CaptureHandler();
+        using var client = new HttpClient(capture);
+        var executor = CreateOperate("admin.rls-policy.create", client);
+        await executor.SubmitAsync(new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?>
+            {
+                ["role"] = "viewer", ["service"] = "roads", ["layer"] = "1",
+                ["attribute"] = "region", ["claimType"] = "region",
+                ["filterExpression"] = "population > 100", ["areaGeometry"] = area
+            }
+        }, new OperationPolicyContext());
+
+        using var body = JsonDocument.Parse(capture.Body!);
+        body.RootElement.GetProperty("filterExpression").GetString().Should().Be("population > 100");
+        body.RootElement.GetProperty("areaGeometry").ValueKind.Should().Be(JsonValueKind.String);
+        body.RootElement.GetProperty("areaGeometry").GetString().Should().Be(area);
+    }
+
     private sealed class ContractProvider : IOperationDescriptorProvider
     {
         public string ProviderId => ServicePublishOperation.ProviderId;
@@ -361,8 +385,8 @@ public sealed partial class AdminOperationRequestContractTests
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
         return new AdminOperateOperationExecutor(
-            AdminOperateOperationCatalog.Definitions.Single(d => d.OperationId == id),
-            AdminOperateOperationCatalog.Descriptors.Single(d => d.OperationId == id),
+            AdminOperateOperationCatalog.Definitions.Concat(AdminAccessOperationCatalog.Definitions.Cast<IAdminHttpOperationDefinition>()).Single(d => d.OperationId == id),
+            AdminOperateOperationCatalog.Descriptors.Concat(AdminAccessOperationCatalog.Descriptors).Single(d => d.OperationId == id),
             factory, Context(), new InMemoryAdminApiKeyStore(TimeProvider.System), TimeProvider.System,
             new OperationLineageAttestationStore(TimeProvider.System));
     }
