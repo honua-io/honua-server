@@ -339,16 +339,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
             $$$"""{"jsonrpc":"2.0","id":"{{{toolName}}}","method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}""");
         var completed = await ApprovedStudioDraftCall.CompleteAsync(response, toolName, (_fixture, _identityProvider, Tenant));
         if (completed is { } value) return value;
-        var hasProtocolError = response.TryGetProperty("error", out var protocolError);
-        hasProtocolError.Should().BeFalse(
-            $"tool '{toolName}' should return a tool result: {(hasProtocolError ? protocolError.GetRawText() : "(none)")}");
-        var result = response.GetProperty("result");
-        if (result.TryGetProperty("isError", out var isError))
-        {
-            isError.GetBoolean().Should().BeFalse($"tool '{toolName}' failed: {result.GetRawText()}");
-        }
-
-        return result.GetProperty("structuredContent").Clone();
+        return ApprovedStudioDraftCall.ReadResult(response, toolName);
     }
 
     private static async Task<JsonElement> RpcAsync(HttpClient client, string body)

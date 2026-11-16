@@ -43,6 +43,20 @@ internal static class ApprovedStudioDraftCall
         return document.RootElement.Clone();
     }
 
+    public static JsonElement ReadResult(JsonElement response, string toolName)
+    {
+        var hasProtocolError = response.TryGetProperty("error", out var protocolError);
+        hasProtocolError.Should().BeFalse(
+            $"tool '{toolName}' should return a tool result: {(hasProtocolError ? protocolError.GetRawText() : "(none)")}");
+        var result = response.GetProperty("result");
+        if (result.TryGetProperty("isError", out var isError))
+        {
+            isError.GetBoolean().Should().BeFalse($"tool '{toolName}' failed: {result.GetRawText()}");
+        }
+
+        return result.GetProperty("structuredContent").Clone();
+    }
+
     private static string? GetProposalId(JsonElement response)
     {
         if (response.TryGetProperty("error", out var error)
