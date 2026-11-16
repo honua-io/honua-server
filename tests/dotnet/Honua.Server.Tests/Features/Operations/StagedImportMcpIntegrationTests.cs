@@ -74,6 +74,40 @@ public sealed class StagedImportMcpIntegrationTests
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Import)]
+    [Endpoint("POST /mcp")]
+    public async Task Preview_ForbiddenSchemas_ReturnsFailedEnvelopeWithoutPreviewBinding()
+    {
+        var artifact = FeatureCollectionArtifact.BuildDataUri(Encoding.UTF8.GetBytes(GeoJson));
+        var fixture = CreateFixture(artifact);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var agent = await HumanApprovedOperation.CreateProposerClientAsync(fixture);
+            var configuration = fixture.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
+            string[] schemas = ["pg_catalog", "honua", configuration["Database:Schema"] ?? "honua", "unconfigured_destination"];
+            foreach (var schema in schemas.Distinct(StringComparer.Ordinal))
+            {
+                var root = await CallAsync(agent, "honua_op_dataset_stage_preview",
+                    Arguments(schema, artifact, $"intent-refuse-{schema}"));
+                var result = root.GetProperty("result");
+                result.GetProperty("isError").GetBoolean().Should().BeTrue(root.GetRawText());
+                var structured = result.GetProperty("structuredContent");
+                structured.GetProperty("status").GetString().Should().Be("Failed", root.GetRawText());
+                root.GetRawText().Should().NotContain("previewFingerprint");
+                structured.TryGetProperty("proposalId", out _).Should().BeFalse(root.GetRawText());
+                var text = result.GetProperty("content").EnumerateArray().Last().GetProperty("text").GetString()!;
+                using var document = JsonDocument.Parse(text);
+                JsonElement.DeepEquals(document.RootElement, structured).Should().BeTrue();
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static WebAppFixture CreateFixture(string artifact)
     {
         var jobs = Substitute.For<IGeoprocessingJobService>();
