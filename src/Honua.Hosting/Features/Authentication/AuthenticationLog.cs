@@ -157,4 +157,10 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Warning,
         Message = "Failed authentication attempts are counted per connection address and ForwardedHeaders is disabled; behind a proxy every client shares the proxy's address. Enable ForwardedHeaders or list the proxy in Authentication:FailedAttempts:ExemptNetworks")]
     public static partial void AuthenticationSourceIsConnectionAddress(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 4123,
+        Level = LogLevel.Warning,
+        Message = "SECURITY: a credential that matched no managed API key was refused without comparing the administrator password, because Authentication:AdminPassword:LoopbackOnly is true and the request did not come directly from loopback")]
+    public static partial void AdminPasswordRefusedOnNetworkPath(ILogger logger);
 }

@@ -6,15 +6,17 @@ using System.Net.Sockets;
 
 namespace Honua.Infrastructure.Authentication;
 
-internal sealed record ApiKeyRequestContext(string? Origin, string? Referer, IPAddress? ClientIp)
+internal sealed record ApiKeyRequestContext(string? Origin, string? Referer, ClientConnection Client)
 {
+    public IPAddress? ClientIp => Client.Address;
+
     public static ApiKeyRequestContext From(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
         return new ApiKeyRequestContext(
             context.Request.Headers.Origin.FirstOrDefault(),
             context.Request.Headers.Referer.FirstOrDefault(),
-            context.Connection.RemoteIpAddress);
+            ClientConnection.From(context));
     }
 }
 

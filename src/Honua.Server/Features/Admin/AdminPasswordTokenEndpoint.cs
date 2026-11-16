@@ -16,7 +16,7 @@ internal sealed class AdminPasswordAuthenticator(
 {
     internal Task<ApiKeyValidation> ValidateAsync(HttpContext context, string password) =>
         ApiKeyAuthenticationHandler.ValidateAdminPasswordAsync(
-            new AdminPasswordAttempt(password, OidcAuthenticationExtensions.AdminSessionScheme, context.Connection.RemoteIpAddress),
+            new AdminPasswordAttempt(password, OidcAuthenticationExtensions.AdminSessionScheme, ClientConnection.From(context)),
             dependencies, logger, context.RequestAborted);
 
     internal static IResult Reject(HttpContext context, ApiKeyValidation validation) => validation.Rejection switch

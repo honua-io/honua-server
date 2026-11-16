@@ -224,6 +224,61 @@ public sealed class ConfigurationValidationServiceTests
                 $"'{finding.Value}' ({finding.Key} at {finding.Location})")));
     }
 
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public void ValidateConfiguration_NonDevelopment_WithoutAdminPasswordAndOidcSignIn_Passes()
+    {
+        var errors = ValidateWithoutAdminPassword(new Dictionary<string, string?>
+        {
+            ["Oidc:Enabled"] = "true",
+            ["Oidc:Generic:Enabled"] = "true",
+            ["Oidc:Generic:Authority"] = "https://idp.example.com",
+            ["Oidc:Generic:ClientId"] = "honua-console"
+        });
+
+        errors.Should().NotContain(error => error.StartsWith("HONUA_ADMIN_PASSWORD is required", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("false", "https://idp.example.com")]
+    [InlineData("true", null)]
+    public void ValidateConfiguration_NonDevelopment_WithoutAdminPasswordOrUsableOidc_ReturnsError(string oidcEnabled, string? authority)
+    {
+        var errors = ValidateWithoutAdminPassword(new Dictionary<string, string?>
+        {
+            ["Oidc:Enabled"] = oidcEnabled,
+            ["Oidc:Generic:Enabled"] = "true",
+            ["Oidc:Generic:Authority"] = authority,
+            ["Oidc:Generic:ClientId"] = "honua-console"
+        });
+
+        errors.Should().Contain(error => error.StartsWith("HONUA_ADMIN_PASSWORD is required", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public void ValidateConfiguration_LoopbackOnlyOnLambda_ReturnsError()
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:AdminPassword:LoopbackOnly"] = "true",
+            ["AWS_LAMBDA_RUNTIME_API"] = "127.0.0.1:9001"
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment: false);
+
+        errors.Should().Contain(error => error.StartsWith("Authentication:AdminPassword:LoopbackOnly cannot be used on AWS Lambda", StringComparison.Ordinal));
+    }
+
+    private static List<string> ValidateWithoutAdminPassword(Dictionary<string, string?> oidc)
+    {
+        oidc["HONUA_ADMIN_PASSWORD"] = null;
+        return ConfigurationValidationService.ValidateConfiguration(
+            BuildConfiguration(oidc), NullLogger.Instance, isDevelopment: false);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

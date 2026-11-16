@@ -5,4 +5,7 @@ using System.Net;
 
 namespace Honua.Infrastructure.Authentication;
 
-internal readonly record struct AdminPasswordAttempt(string Password, string SchemeName, IPAddress? ClientIp = null);
+internal readonly record struct AdminPasswordAttempt(string Password, string SchemeName, ClientConnection Client = default)
+{
+    public IPAddress? ClientIp => Client.Address;
+}

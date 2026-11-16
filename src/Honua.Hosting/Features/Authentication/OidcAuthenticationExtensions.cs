@@ -410,6 +410,14 @@ public static partial class OidcAuthenticationExtensions
         });
     }
 
+    // Interactive sign-in exists only when OIDC is on and at least one provider is fully configured;
+    // the start-up validators use the same test as scheme registration.
+    internal static bool HasUsableSignInProvider(OidcAuthenticationOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.Enabled && HasAnyProviderEnabled(options);
+    }
+
     private static bool HasAnyProviderEnabled(OidcAuthenticationOptions options)
     {
         return options.AzureAd?.IsValid == true ||

@@ -131,16 +131,11 @@ internal static class ConfigurationOptionsValidator
             if (!isDevelopment && string.IsNullOrWhiteSpace(apiKeyOptions.AdminPassword))
             {
                 var oidcOptions = serviceProvider.GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
-                var oidcEnabled =
-                    oidcOptions.AzureAd?.Enabled == true
-                    || oidcOptions.Google?.Enabled == true
-                    || oidcOptions.Generic?.Enabled == true;
-
-                if (!oidcEnabled)
+                if (!OidcAuthenticationExtensions.HasUsableSignInProvider(oidcOptions))
                 {
                     errors.Add(
-                        "HONUA_ADMIN_PASSWORD is required in production environments unless an OIDC provider "
-                        + "(AzureAd, Google, or Generic) is enabled under OidcAuthentication.");
+                        "HONUA_ADMIN_PASSWORD is required in production environments unless Oidc:Enabled is true "
+                        + "and an OIDC provider is fully configured.");
                 }
             }
 

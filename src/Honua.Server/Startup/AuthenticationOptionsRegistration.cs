@@ -31,6 +31,7 @@ internal static class AuthenticationOptionsRegistration
             }
 
             options.AdminPassword = adminPassword;
+            options.AdminPasswordLoopbackOnly = configuration.GetValue(AdminPasswordNetworkPolicy.LoopbackOnlyKey, false);
             options.DevAuthBypass = configuration["HONUA_DEV_AUTH"];
             options.DevAuthBypassAcknowledged = configuration["HONUA_DEV_AUTH_ALLOW_BYPASS"];
             options.EnvironmentName = environment.EnvironmentName;

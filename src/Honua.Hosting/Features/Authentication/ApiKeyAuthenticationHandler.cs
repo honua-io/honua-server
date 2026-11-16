@@ -146,7 +146,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         var passwordValidation = await ValidateAdminPasswordAsync(
-            new AdminPasswordAttempt(presentation.ApiKey, presentation.SchemeName, presentation.Request?.ClientIp),
+            new AdminPasswordAttempt(presentation.ApiKey, presentation.SchemeName, presentation.Request?.Client ?? default),
             dependencies, logger, cancellationToken).ConfigureAwait(false);
         return lookup.StoreUnavailable && passwordValidation.Rejection is ApiKeyRejection.AdminPasswordNotConfigured or ApiKeyRejection.InvalidKey
             ? new ApiKeyValidation(null, ApiKeyRejection.CredentialStoreUnavailable)
@@ -167,13 +167,23 @@ internal sealed class ApiKeyAuthenticationHandler(
             return new ApiKeyValidation(null, ApiKeyRejection.SourceRefused, RetryAfter: retryAfter);
         }
 
-        var validation = await CompareAdminPasswordAsync(attempt, dependencies, logger, cancellationToken).ConfigureAwait(false);
+        // Refused before the password is resolved or compared, so the answer says nothing about it; it
+        // still counts as a failed attempt, as a wrong password would.
+        var validation = AdminPasswordNetworkPolicy.Permits(dependencies.Options, attempt.Client.Reach)
+            ? await CompareAdminPasswordAsync(attempt, dependencies, logger, cancellationToken).ConfigureAwait(false)
+            : RefuseNetworkPassword(logger);
         if (validation.CountsAsFailure)
         {
             tracked.CountFailure();
         }
 
         return validation;
+    }
+
+    private static ApiKeyValidation RefuseNetworkPassword(ILogger logger)
+    {
+        AuthenticationLog.AdminPasswordRefusedOnNetworkPath(logger);
+        return new ApiKeyValidation(null, ApiKeyRejection.InvalidKey, CountsAsFailure: true);
     }
 
     private static async Task<StoredKeyLookup> LookUpStoredKeyAsync(
