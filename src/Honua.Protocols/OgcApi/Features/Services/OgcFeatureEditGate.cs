@@ -31,6 +31,12 @@ internal static partial class OgcFeatureEditGate
         FeatureEditBatch batch,
         CancellationToken cancellationToken)
     {
+        var repeatedUpdates = RepeatedUpdateRejections(batch);
+        if (repeatedUpdates.Length > 0)
+        {
+            return (batch, FeatureEditGate.RejectedResult(batch, repeatedUpdates));
+        }
+
         var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
             target.Reader,
             target.LayerId,
@@ -62,6 +68,14 @@ internal static partial class OgcFeatureEditGate
             cancellationToken).ConfigureAwait(false);
         return (checkedBatch, rejections.Count == 0 ? null : FeatureEditGate.RejectedResult(checkedBatch, Safe(rejections)));
     }
+
+    private static FeatureEditHookRejection[] RepeatedUpdateRejections(FeatureEditBatch batch)
+        => [.. FeatureEditRows.Enumerate(batch)
+            .Where(static row => row.Kind == FeatureEditOperationKind.Update)
+            .GroupBy(static row => row.ObjectId)
+            .Where(static group => group.Count() > 1)
+            .SelectMany(static group => group.Select(static row => new FeatureEditHookRejection(
+                row.Kind, row.Index, "An edit batch cannot update the same feature more than once.")))];
 
     internal static Task RunAfterAsync(Target target, FeatureEditBatch batch, FeatureEditResult result)
     {

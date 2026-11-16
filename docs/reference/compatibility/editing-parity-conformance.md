@@ -82,7 +82,7 @@ never by parsing the message.
   complete stored snapshot, including masked attributes used only inside validation. OGC PUT
   preserves omitted protected fields while removing omitted editable fields. The writer checks
   the snapshot state token under its row lock, so a concurrent change fails the update rather
-  than combining stale validations. Repeated gRPC update targets in one batch are rejected
+  than combining stale validations. Repeated OGC API Features or gRPC update targets in one batch are rejected
   before hooks or writes.
 - An OGC API Features edit fails as a whole when one row is rejected. A gRPC `ApplyEdits` call
   with `rollback_on_failure` fails with `INVALID_ARGUMENT`; without it, only the rejected rows
