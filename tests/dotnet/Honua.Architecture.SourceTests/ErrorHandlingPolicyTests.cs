@@ -69,6 +69,9 @@ public sealed class ErrorHandlingPolicyTests
         // Pure route-table partials and dispatcher files whose handlers live
         // in companion files that *do* carry error-handling scaffolding.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AdminInfoEndpoints.cs"),
+        // Pure route wiring. Request validation and stream failure handling live in
+        // AdminLiveStream (400 for an unknown topic, catch of cancellation and IO).
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AdminLiveEndpoints.cs"),
         // Cancellation helpers delegate error shaping to TryReconcileDurableCancelAsync
         // in the main partial; this file only bridges successful results.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "OperationsProgressEndpoints.CancellationResults.cs"),

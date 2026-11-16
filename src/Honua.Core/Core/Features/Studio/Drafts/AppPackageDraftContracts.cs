@@ -73,21 +73,3 @@ public sealed record AppPackageDraftResult
     /// </summary>
     public bool Succeeded => Package is not null;
 }
-
-/// <summary>
-/// Creates <see cref="AppPackage"/> drafts deterministically from structured
-/// input, with no model inference and no natural-language input (ADR-0076).
-/// </summary>
-public interface IAppPackageDraftFactory
-{
-    /// <summary>
-    /// Validates <paramref name="request"/> and projects it onto a draft
-    /// <see cref="AppPackage"/>.
-    /// </summary>
-    /// <param name="request">The structured composition input.</param>
-    /// <returns>
-    /// A result carrying the created package, or the blocking findings that
-    /// prevented creation.
-    /// </returns>
-    AppPackageDraftResult CreateDraft(AppPackageDraftRequest request);
-}

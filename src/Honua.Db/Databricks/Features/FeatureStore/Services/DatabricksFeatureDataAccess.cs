@@ -43,9 +43,9 @@ internal interface IDatabricksFeatureDataAccess
 /// </summary>
 internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
 {
-    private readonly IDatabricksStatementClient _client;
+    private readonly DatabricksStatementClient _client;
 
-    public DatabricksFeatureDataAccess(IDatabricksStatementClient client)
+    public DatabricksFeatureDataAccess(DatabricksStatementClient client)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
     }

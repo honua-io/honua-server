@@ -278,6 +278,8 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | `FeatureChangeEvents__Webhook__Url` / `FeatureChangeEvents__Webhook__Secret` | — | Webhook target URL and HMAC signing secret. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | `5` | Delivery attempts per event (exponential backoff). |
 
+Outbound clients using DNS-validated direct connections, including feature-change webhooks, URL imports, migration sources and external-service discovery, ignore system HTTP proxy settings. Permit direct egress to their configured destinations.
+
 Application-level rate limiting is opt-in (`RateLimiting__Enabled=true`, off by default) and supplements edge enforcement; enforce rate limits at your edge proxy, load balancer, or WAF. Its counters are per node: a limit of N admits up to N requests per window on each replica.
 
 ## Admission and pooling
@@ -452,6 +454,10 @@ Enabled remote AI transfers require exact operator approval rules. See [AI model
 ## AI invocation admission
 
 Model calls require `AiExecutionAdmission__DeploymentId` (empty by default).
-`AiExecutionAdmission__Backend` accepts `auto` (default), `postgres` or `redis`.
-See [AI invocation admission](ai-execution-admission.md) for authoritative backend selection,
-policy fields, typed initialize/update/stop/resume controls and migration. Missing authority denies model calls.
+PostgreSQL is the sole admission authority. Remove the retired
+`AiExecutionAdmission__Backend` selector; legacy `auto` and `postgres` values remain
+accepted, while any other value prevents startup. Preserve the deployment
+identity and ledger; switching from the retired cache backend requires an
+explicit migration plan for outstanding invocations and charged history.
+See [AI invocation admission](ai-execution-admission.md) for policy fields,
+typed initialize/update/stop/resume controls and migration. Missing authority denies model calls.

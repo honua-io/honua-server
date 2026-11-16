@@ -19,17 +19,10 @@ using NpgsqlTypes;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Server.Features.Admin.OperateFixtures;
 
-internal interface IOperateObservabilityFixtureSeeder
-{
-    Task<OperateObservabilityFixtureSeedResponse> SeedAsync(
-        string profile,
-        CancellationToken cancellationToken = default);
-}
-
 internal sealed partial class OperateObservabilityFixtureSeeder(
     IServiceProvider services,
     TimeProvider timeProvider,
-    ILogger<OperateObservabilityFixtureSeeder> logger) : IOperateObservabilityFixtureSeeder
+    ILogger<OperateObservabilityFixtureSeeder> logger)
 {
     private const string HarborWkt =
         "POLYGON((-157.8720 21.2980,-157.8580 21.2980,-157.8580 21.3090,-157.8720 21.3090,-157.8720 21.2980))";

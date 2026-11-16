@@ -20,7 +20,7 @@ Honua exposes each published service as:
 
 1. Open a map in the desktop client.
 2. Add data from a path (for example **Map** ribbon, **Add Data → Data From Path**).
-3. Paste the FeatureServer layer URL, for example `http://localhost:8080/rest/services/my-service/FeatureServer/0`, and add it. The layer draws and appears in the table of contents.
+3. Paste the FeatureServer layer URL, `http://localhost:8080/rest/services/{serviceId}/FeatureServer/{layerId}`, and add it. Layer ids are the ids in the service's `layers` list (`FeatureServer?f=json`), not zero-based positions. Honua does not renumber layers per service, so read the id from that list rather than assuming `0` or `1`. The layer draws and appears in the table of contents.
 4. Repeat with the `MapServer` URL to add the server-rendered map service instead.
 5. To filter, set a definition query on the layer, such as `OBJECTID > 0`; Honua's `query` endpoint evaluates the expression server-side.
 
@@ -53,7 +53,7 @@ The same URLs work in native GeoServices REST client SDKs, for example a JavaScr
 
 ```js
 const layer = new FeatureLayer({
-  url: "http://localhost:8080/rest/services/my-service/FeatureServer/0"
+  url: "http://localhost:8080/rest/services/my-service/FeatureServer/1" // a layer id from the service's layers list
 });
 ```
 
@@ -61,14 +61,14 @@ const layer = new FeatureLayer({
 
 Confirm the service metadata and a query respond before blaming the client:
 
-Open `http://localhost:8080/rest/services/{service}/FeatureServer?f=json` and `http://localhost:8080/rest/services/{service}/FeatureServer/0/query?where=1%3D1&resultRecordCount=1&f=json` in a browser, substituting the service id. The first response describes the service and the second returns one feature.
+Open `http://localhost:8080/rest/services/{service}/FeatureServer?f=json` and `http://localhost:8080/rest/services/{service}/FeatureServer/{layerId}/query?where=1%3D1&resultRecordCount=1&f=json` in a browser, substituting the service id and a layer id from the first response's `layers` list. The first response describes the service and the second returns one feature.
 
 In the desktop client, the layer should draw, the attribute table should open, and a definition query should change the feature count.
 
 ## Troubleshoot
 
-- **"Cannot add data" / 404 on the URL**: check the service id with `honua services`. See [troubleshooting](../deploy/troubleshooting.md).
-- **Credential prompt loops or 401**: run the `PortalCompat.generateToken` example in **Token auth** above with the same account. Token issuance returns 403 over plain HTTP unless `RequireHttps` is disabled.
+- **"Cannot add data" / 404 on the URL**: check the service id with `honua services`, and use a layer id from the service's `layers` list rather than `0` (an unknown layer returns error code 404, "Service layer was not found"). See [troubleshooting](../deploy/troubleshooting.md).
+- **Credential prompt loops, 401, or error code 499**: an anonymous request to a secured service returns a JSON error with code `499` ("Unauthorized") in an HTTP 200 response, and the service list at `/rest/services` omits services the caller cannot read. To check the credentials, run the `PortalCompat.generateToken` example in **Token auth** above with the same account. Token issuance returns 403 over plain HTTP unless `RequireHttps` is disabled.
 - **`generateToken` returns 402 Payment Required**: the `identity.portal-token` entitlement is not active in your edition configuration.
 - **WCS connection fails**: the URL contains `/services/`. Use `/ogc/wcs/{serviceId}` (see **Raster coverages over WCS** above).
 - **Layer draws but some operations fail**: Honua implements broad but not total GeoServices REST parity; check the operation in the [GeoServices parity reference](../../reference/compatibility/geoservices-parity.md) before debugging further.
