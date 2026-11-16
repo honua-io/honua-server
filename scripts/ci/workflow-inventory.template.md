@@ -831,11 +831,11 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (11 Nov 2026): every `dispatch_rank` is the median passing job
-duration of trunk runs 42929935484, 42935981545, 42968585882 and 42986321489, the
-first full runs after the tiny-shard consolidation. The governance children measured
-5.2, 10.0 and 7.0 minutes. A shard with no passing job keeps the larger of its old rank
-and its failed duration.
+Measured ranks (16 Nov 2026): every measured `dispatch_rank` is the median passing
+job duration over ten full trunk runs, counting a run only when the shard's filter at
+its head equals the current filter (gate-model.md, "Measured ranks"). 171 of 219
+shards are measured, ranks sum to 1,644.0 runner-minutes and 189 shards fit the
+10-minute PR shard budget.
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 

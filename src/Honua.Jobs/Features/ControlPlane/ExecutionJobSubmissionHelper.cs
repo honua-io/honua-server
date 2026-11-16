@@ -19,6 +19,7 @@ internal static partial class ExecutionJobSubmissionHelper
     public static bool NeedsLocalDispatchRepair(ExecutionJobRecord job)
         => job.Status == ExecutionJobStatus.Queued
             && job.Spec.Kind is ExecutionJobKind.Geoprocessing or ExecutionJobKind.Export or ExecutionJobKind.TileCache
+                or ExecutionJobKind.GeoservicesImport or ExecutionJobKind.GeoServerImport
             && job.AttemptCount == 0
             && job.ClaimedBy == null
             && !job.CancellationRequestedAt.HasValue
