@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -333,25 +332,15 @@ internal sealed class LayerValidationService(
             return null;
         }
 
-        var schemaName = ReadStringOption(storageBinding.Options, "schemaName")
-            ?? ReadStringOption(storageBinding.Options, "schema");
-        var tableName = ReadStringOption(storageBinding.Options, "tableName")
-            ?? ReadStringOption(storageBinding.Options, "table");
+        var (schemaName, tableName) = storageBinding.ResolveRelationalTable();
 
-        if (string.IsNullOrWhiteSpace(tableName))
-        {
-            var parsed = ParseRelationalLocator(storageBinding.Locator);
-            schemaName ??= parsed.SchemaName;
-            tableName = parsed.TableName;
-        }
-
-        var primaryKeyColumn = ReadStringOption(storageBinding.Options, "primaryKeyColumn")
+        var primaryKeyColumn = storageBinding.ReadStringOption("primaryKeyColumn")
             ?? resource.FindPrimaryIdField()?.Name
             ?? FieldNames.ObjectId;
-        var geometryColumn = ReadStringOption(storageBinding.Options, "geometryColumn")
+        var geometryColumn = storageBinding.ReadStringOption("geometryColumn")
             ?? resource.FindPrimaryGeometryField()?.Name;
-        var storageSrid = ReadIntOption(storageBinding.Options, "storageSrid")
-            ?? ReadIntOption(storageBinding.Options, "srid")
+        var storageSrid = storageBinding.ReadIntOption("storageSrid")
+            ?? storageBinding.ReadIntOption("srid")
             ?? resource.Spatial?.StorageCrs?.ResolveSrid()
             ?? resource.ReadSrid();
 
@@ -396,63 +385,6 @@ internal sealed class LayerValidationService(
         }
 
         return errors;
-    }
-
-    private static (string? SchemaName, string? TableName) ParseRelationalLocator(string? locator)
-    {
-        var trimmed = locator?.Trim();
-        if (string.IsNullOrWhiteSpace(trimmed) ||
-            trimmed.Contains(':', StringComparison.Ordinal) ||
-            trimmed.Contains('/', StringComparison.Ordinal))
-        {
-            return (null, null);
-        }
-
-        var parts = trimmed.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return parts.Length switch
-        {
-            0 => (null, null),
-            1 => (null, UnquoteIdentifier(parts[0])),
-            _ => (UnquoteIdentifier(parts[^2]), UnquoteIdentifier(parts[^1]))
-        };
-    }
-
-    private static string UnquoteIdentifier(string value)
-    {
-        var trimmed = value.Trim();
-        return trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"'
-            ? trimmed[1..^1].Replace("\"\"", "\"", StringComparison.Ordinal)
-            : trimmed;
-    }
-
-    private static string? ReadStringOption(IReadOnlyDictionary<string, JsonElement> options, string key)
-    {
-        if (!options.TryGetValue(key, out var value))
-        {
-            return null;
-        }
-
-        return value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : value.ToString();
-    }
-
-    private static int? ReadIntOption(IReadOnlyDictionary<string, JsonElement> options, string key)
-    {
-        if (!options.TryGetValue(key, out var value))
-        {
-            return null;
-        }
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
-        {
-            return number;
-        }
-
-        return value.ValueKind == JsonValueKind.String &&
-            int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : null;
     }
 
     private static ColumnInfo? FindColumn(TableInfo table, string columnName)
