@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
