@@ -196,6 +196,7 @@ public sealed class StreamingGeoJsonReaderTests
         {
             await foreach (var _ in reader.ReadFeaturesAsync(stream))
             {
+                // Fully enumerate so malformed input must be rejected at EOF.
             }
         };
 
