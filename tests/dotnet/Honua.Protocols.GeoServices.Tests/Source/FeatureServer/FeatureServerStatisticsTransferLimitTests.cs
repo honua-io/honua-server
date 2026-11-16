@@ -13,9 +13,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Grouped statistics are capped by the transfer limit, not the smaller feature page default.
-/// </summary>
+// Grouped statistics are capped by the transfer limit, not the smaller feature page default.
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerStatisticsTransferLimitTests(FeatureServerStatisticsTransferLimitFixture fixture)
