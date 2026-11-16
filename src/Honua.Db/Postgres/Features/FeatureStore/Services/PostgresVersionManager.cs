@@ -17,8 +17,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     private const string DefaultVersionSentinel = "sde.default";
 
     // The (service, version) maintenance lock auto-expires after this lease if a holder crashes
-    // mid-reconcile/post, so a stuck lock can never permanently wedge a version. The Redis
-    // handle renews the lease while the critical section runs.
+    // mid-reconcile/post, so a stuck lock can never permanently wedge a version.
     private static readonly TimeSpan MaintenanceLockLease = TimeSpan.FromMinutes(15);
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
