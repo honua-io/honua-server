@@ -41,20 +41,8 @@ public sealed partial class LayerPublishingIntegrationTests
             // catalog-only MCP surface after that fixture provider composition.
             Host.ConfigureServices(services =>
             {
-                // Built-in connections are derived from this data source's connection
-                // string. Include the same isolated feature schema the fixture writer
-                // uses so reconnecting through that registration reaches its features.
                 services.RemoveAll<NpgsqlDataSource>();
-                services.AddSingleton<NpgsqlDataSource>(_ =>
-                {
-                    var connection = new NpgsqlConnectionStringBuilder(Host.Postgres.ConnectionString)
-                    {
-                        SearchPath = $"{Host.CurrentSchema},public",
-                        Multiplexing = false,
-                        PersistSecurityInfo = true
-                    };
-                    return NpgsqlDataSource.Create(connection.ConnectionString);
-                });
+                services.AddSingleton<NpgsqlDataSource>(_ => CreateFixtureFeatureDataSource());
                 services.AddMcpCatalogPublicationSurface();
                 // The Test host composes MCP before the fixture graph provider exists, so
                 // honua_query_features is absent unless this production tool is registered here.
@@ -75,6 +63,19 @@ public sealed partial class LayerPublishingIntegrationTests
                         ?? new AttachmentLimits(),
                     migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
             });
+        }
+
+        private NpgsqlDataSource CreateFixtureFeatureDataSource()
+        {
+            // Built-in connections must reconnect to the same isolated feature schema
+            // as the fixture writer so managed-store identity checks remain meaningful.
+            var connection = new NpgsqlConnectionStringBuilder(Host.Postgres.ConnectionString)
+            {
+                SearchPath = $"{Host.CurrentSchema},public",
+                Multiplexing = false,
+                PersistSecurityInfo = true
+            };
+            return NpgsqlDataSource.Create(connection.ConnectionString);
         }
 
         public async Task InitializeAsync()
