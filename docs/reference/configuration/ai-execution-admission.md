@@ -16,13 +16,13 @@ Legacy policies count invocation attempts and active reservations only; they are
 | Environment variable | Default | Meaning |
 | --- | --- | --- |
 | `AiExecutionAdmission__DeploymentId` | empty | Stable identity shared by all replicas; required for model calls, maximum 128 characters. |
-| `AiExecutionAdmission__Backend` | `auto` | `auto` or `postgres`; both select the PostgreSQL admission authority. Any other value denies model calls. |
 
-The system database is the only admission authority. A host without the PostgreSQL admission
-store, or configured with any other backend value (including the retired `redis`), denies model
-calls. Selection and the deployment identity are process snapshots. Restart replicas to change
-these options consistently. Runtime failure never selects another authority or a memory fallback.
-PostgreSQL requires schema migration 140.
+PostgreSQL is the sole admission authority and requires schema migration 140. The deployment
+identity is a process snapshot; restart replicas to change it consistently. Runtime failure never
+selects another authority or a memory fallback. The former `Backend` option is retired: remove it
+from deployment configuration. Legacy `auto` and `postgres` values are accepted during migration;
+any other value prevents startup rather than silently switching budget authorities.
+See the [PostgreSQL admission authority note](../../internal/contributor/ai-admission-postgres.md).
 Keep the deployment identity and ledger stable across upgrades: choosing a new identity creates a
 separate budget authority. Credential readiness (`Configured`) does not establish admission or
 disclosure approval.
@@ -93,8 +93,9 @@ admission occurs before SSE where possible: budget, concurrency or ledger-capaci
 identity/session checks remain separate. Report denial uses deterministic narrative fallback;
 imagery returns a sanitized inference failure.
 
-Migrate by applying the schema, configuring one stable deployment/backend, setting an explicit
-policy through initialize, and authorizing resume. Existing disclosure rules and credentials remain required. Disclosure workload classification is
+Migrate by applying the schema, configuring one stable deployment identity, setting an explicit
+policy through initialize, verifying PostgreSQL recovery, and authorizing
+resume. Existing disclosure rules and credentials remain required. Disclosure workload classification is
 operator asserted; admission does not inspect content or verify that label. Installed recovery,
 failover/rollback, remote cancellation and full end-to-end operational qualification remain pending.
 

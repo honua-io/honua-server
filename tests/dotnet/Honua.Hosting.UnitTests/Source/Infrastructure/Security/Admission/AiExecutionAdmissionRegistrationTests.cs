@@ -13,59 +13,57 @@ namespace Honua.Server.Tests.Infrastructure.Security.Admission;
 
 public sealed class AiExecutionAdmissionRegistrationTests
 {
-    [UnitTest]
-    public void Backend_AutoOrPostgres_WithPostgresStore_SelectsPostgres()
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData("auto")]
+    [InlineData("postgres")]
+    public void AddAiExecutionAdmission_RegisteredAuthority_UsesDirectStore(string? backend)
     {
-        foreach (var backend in new[] { "auto", "postgres", "Postgres" })
-        {
-            var postgres = Substitute.For<IAiExecutionAdmissionStore>();
-            using var services = Build(backend, postgres);
-            using var scope = services.CreateScope();
+        var store = Substitute.For<IAiExecutionAdmissionStore>();
+        var services = new ServiceCollection();
+        services.AddScoped<IAiExecutionAdmissionStore>(_ => store);
+        services.AddAiExecutionAdmission(Configuration(backend));
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
 
-            scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>().Should().BeSameAs(postgres, backend);
-        }
+        scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>().Should().BeSameAs(store);
+        services.Should().NotContain(descriptor => descriptor.IsKeyedService &&
+            descriptor.ServiceType == typeof(IAiExecutionAdmissionStore));
+    }
+
+    [UnitTheory]
+    [InlineData("memory")]
+    [InlineData("MEMORY")]
+    [InlineData("unknown")]
+    [InlineData("")]
+    public void AddAiExecutionAdmission_RetiredOrInvalidAuthority_RejectsConfiguration(string backend)
+    {
+        var services = new ServiceCollection();
+
+        var register = () => services.AddAiExecutionAdmission(Configuration(backend));
+
+        register.Should().Throw<InvalidOperationException>();
     }
 
     [UnitTest]
-    public async Task Backend_RetiredRedisOrUnknown_DeniesEvenWithPostgresStore()
-    {
-        foreach (var backend in new[] { "redis", "memory", "" })
-        {
-            var postgres = Substitute.For<IAiExecutionAdmissionStore>();
-            using var services = Build(backend, postgres);
-            using var scope = services.CreateScope();
-
-            var store = scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>();
-            store.Should().NotBeSameAs(postgres, backend);
-            (await store.TryAcquireAsync(null!, Guid.NewGuid(), CancellationToken.None)).Code.Should().Be("unavailable", backend);
-        }
-    }
-
-    [UnitTest]
-    public async Task Backend_Auto_WithoutPostgresStore_Denies()
-    {
-        using var services = Build("auto", postgres: null);
-        using var scope = services.CreateScope();
-
-        var decision = await scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>()
-            .TryAcquireAsync(null!, Guid.NewGuid(), CancellationToken.None);
-        decision.Code.Should().Be("unavailable");
-    }
-
-    private static ServiceProvider Build(string backend, IAiExecutionAdmissionStore? postgres)
+    public async Task AcquireAsync_MissingAuthority_DeniesInvocation()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        if (postgres is not null)
-        {
-            services.AddKeyedScoped("postgres", (_, _) => postgres);
-        }
+        services.AddAiExecutionAdmission(Configuration(null));
+        using var provider = services.BuildServiceProvider();
+        var admission = provider.GetRequiredService<IAiExecutionAdmission>();
+        var context = AiExecutionContext.Create("deployment", "test:actor", "studio-chat");
 
-        services.AddAiExecutionAdmission(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        await FluentActions.Awaiting(() => admission.AcquireAsync(context, default))
+            .Should().ThrowAsync<AiAdmissionException>()
+            .Where(exception => exception.Code == "unavailable");
+    }
+
+    private static IConfiguration Configuration(string? backend) => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["AiExecutionAdmission:DeploymentId"] = "deployment",
-            ["AiExecutionAdmission:Backend"] = backend,
-        }).Build());
-        return services.BuildServiceProvider();
-    }
+            ["AiExecutionAdmission:Backend"] = backend
+        }).Build();
 }

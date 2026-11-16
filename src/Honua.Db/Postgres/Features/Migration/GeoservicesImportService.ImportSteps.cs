@@ -58,21 +58,11 @@ internal sealed partial class GeoservicesImportService
         // the winner just committed, or is still publishing, copying attachments into, or reconciling.
         // The lease is session-level so it survives the data commit; the finally below releases it, and a
         // dropped connection (a crashed worker) releases it too.
-        if (!await TryAcquireTargetImportLockAsync(connection, targetSchema, request.TableName, cancellationToken))
+        var receiptContext = new ImportCommitReceiptContext(connection, transaction, request, targetSchema);
+        var lockFailure = await GetTargetLockFailureAsync(receiptContext, stopwatch, cancellationToken);
+        if (lockFailure is not null)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
-            stopwatch.Stop();
-            Log.TargetImportInProgress(_logger, request.TableName);
-            return GeoservicesImportResult.CreateFailure(
-                request.TableName,
-                request.ServiceUrl,
-                request.LayerId,
-                $"Another import is already writing target table '{request.TableName}'; this job did not modify it. "
-                + "Wait for that import to finish, then retry.",
-                stopwatch.Elapsed) with
-            {
-                ServiceName = request.ServiceName
-            };
+            return lockFailure;
         }
 
         // #4827: the step a top-level failure happened in, so the job reports where it failed and
@@ -83,6 +73,12 @@ internal sealed partial class GeoservicesImportService
         var failedFeatures = 0;
         try
         {
+            var committed = await ReadCommittedImportAsync(receiptContext, cancellationToken);
+            if (committed is not null)
+            {
+                return committed;
+            }
+
             // Phase 1: Discover layer metadata
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Discovering, request,
                 "Discovering layer metadata", 0, null);
@@ -366,14 +362,11 @@ internal sealed partial class GeoservicesImportService
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
                 "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
-            // #4600: a nonspatial ArcGIS table is created without a geom column (BuildCreateTableSql), so
-            // indexing it unconditionally failed every table import with 42703.
-            if (!string.IsNullOrEmpty(layerInfo.GeometryType))
+            await PrepareImportCommitAsync(receiptContext with
             {
-                await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
-            }
-
-            await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
+                Features = featuresProcessed,
+                Failures = failedFeatures
+            }, layerInfo, cancellationToken);
 
             stage = ImportFailureStage.Committing;
             await transaction.CommitSafelyAsync(cancellationToken);
@@ -596,6 +589,11 @@ internal sealed partial class GeoservicesImportService
                 catalogReconciliationReport: reconciliation.CatalogReport,
                 fidelityVerdict: fidelity.Verdict,
                 fidelityDifferences: fidelity.Differences);
+        }
+        catch (Exception ex) when (stage == ImportFailureStage.Committing && ex is not OutOfMemoryException)
+        {
+            // Release the connection/target lock before the worker resolves the receipt on a fresh connection.
+            throw new GeoservicesImportCommitOutcomeUnknownException(ex);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1132,4 +1130,11 @@ internal sealed partial class GeoservicesImportService
     /// </summary>
     internal static bool IsGeometryField(GeoservicesFieldInfo field)
         => field.Type.Equals("esriFieldTypeGeometry", StringComparison.OrdinalIgnoreCase);
+    private static ValueTask JoinCommitAsync(
+        ImportCommitParticipant? participant,
+        ImportCommitScope scope,
+        CancellationToken cancellationToken) => participant is null
+            ? ValueTask.CompletedTask
+            : participant(scope, cancellationToken);
+
 }

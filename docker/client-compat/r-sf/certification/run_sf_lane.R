@@ -390,7 +390,7 @@ new_protocol_ctx <- function(base_url, spec, probe) {
 #'
 #' The compose stack seeds several services, so "take the first layer" is not
 #' safe: prefer the collection id verbatim (OAPIF), then the WFS type name the
-#' server derives from the seeded layer name, then anything bound to the
+#' server advertises for the seeded publication, then anything bound to the
 #' seeded service.
 score_layer_name <- function(name, service_id, collection_id) {
   score <- 0L

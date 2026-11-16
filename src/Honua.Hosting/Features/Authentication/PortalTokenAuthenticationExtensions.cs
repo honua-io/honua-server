@@ -199,7 +199,7 @@ public static class PortalTokenAuthenticationExtensions
 
     private static void TryAddPortalAccessProjection(this IServiceCollection services, IConfiguration configuration)
     {
-        services.TryAddSingleton<IPortalAccessProjection>(_ =>
+        services.TryAddSingleton<PortalAccessProjection>(_ =>
         {
             // The Portal access/visibility projection is off-by-default so the
             // facade never exposes a discovery surface unless an operator opts in,
