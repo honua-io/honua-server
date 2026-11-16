@@ -142,12 +142,23 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
 
     private async Task<JsonElement> ApproveMutationAsync(JsonElement result)
     {
-        var failed = result.TryGetProperty("isError", out var isError) && isError.GetBoolean();
-        failed.Should().BeFalse();
-        var proposal = result.GetProperty("structuredContent").GetProperty("operation");
-        proposal.GetProperty("status").GetString().Should().Be("RequiresApproval");
-        var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(
-            _fixture, proposal.GetProperty("proposalId").GetString()!);
+        var content = result.GetProperty("structuredContent");
+        string proposalId;
+        if (content.TryGetProperty("operation", out var operation))
+        {
+            var failed = result.TryGetProperty("isError", out var isError) && isError.GetBoolean();
+            failed.Should().BeFalse();
+            operation.GetProperty("status").GetString().Should().Be("RequiresApproval");
+            proposalId = operation.GetProperty("proposalId").GetString()!;
+        }
+        else
+        {
+            result.GetProperty("isError").GetBoolean().Should().BeTrue();
+            content.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+            proposalId = content.GetProperty("proposalId").GetString()!;
+        }
+
+        var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(_fixture, proposalId);
         handle.GetProperty("status").GetString().Should().Be("Completed");
         using var payload = JsonDocument.Parse(
             handle.GetProperty("result").GetProperty("details").GetProperty("payload").GetString()!);
