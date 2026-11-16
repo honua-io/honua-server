@@ -34,16 +34,13 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
     private const string Tenant = "tenant-a";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private readonly RedisFixture _redis = new();
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         _fixture
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 // Authentication must be decided by the presented credential only: the
                 // dev-auth bypass would hand every request the same issuer-less identity.
@@ -79,7 +76,6 @@ public sealed class StudioPublicationProposalOwnerPollTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
     }
 
     [IntegrationTest]

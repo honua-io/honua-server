@@ -104,7 +104,6 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         return new WebAppFixture().UseKestrel().WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
-                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
