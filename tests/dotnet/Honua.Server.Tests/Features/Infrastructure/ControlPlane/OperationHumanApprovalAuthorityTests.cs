@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -26,12 +27,15 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class OperationHumanApprovalAuthorityTests
 {
     [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task VerifyAsync_AuthorizedHuman_AllowsRequesterAndAnotherPerson(bool requesterApproves)
+    [InlineData(true, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData(true, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData(false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData(false, (int)AdminAuthSessionOrigin.Builtin)]
+    public async Task VerifyAsync_AuthorizedHuman_AllowsRequesterAndAnotherPerson(bool requesterApproves, int originValue)
     {
+        var origin = (AdminAuthSessionOrigin)originValue;
         using var host = new OperationHumanApprovalTestHost();
-        var human = await host.CreateHumanAsync();
+        var human = await host.CreateHumanAsync(origin: origin);
         var requester = requesterApproves ? CanonicalSecurityActor.Resolve(human.Principal)!.ActorId : "agent:requester";
         var proposal = OperationHumanApprovalTestHost.Proposal(requester);
         host.ReviewRequest(human);
@@ -42,7 +46,9 @@ public sealed class OperationHumanApprovalAuthorityTests
 
         evidence.Version.Should().Be(OperationHumanApprovalEvidence.CurrentVersion);
         evidence.ActorId.Should().Be(CanonicalSecurityActor.Resolve(human.Principal)!.ActorId);
-        evidence.Channel.Should().Be(OperationHumanApprovalEvidence.InteractiveOidcChannel);
+        evidence.Channel.Should().Be(origin == AdminAuthSessionOrigin.Builtin
+            ? OperationHumanApprovalEvidence.InteractivePasswordChannel
+            : OperationHumanApprovalEvidence.InteractiveOidcChannel);
         review.TenantId.Should().Be(proposal.TenantId);
         evidence.PlanHash.Should().Be(proposal.SealedPlanHash);
         evidence.ProposalVersion.Should().Be(proposal.Version);
@@ -51,19 +57,67 @@ public sealed class OperationHumanApprovalAuthorityTests
         review.ExpiresAt.Should().BeOnOrBefore(host.Clock.GetUtcNow().AddMinutes(5));
     }
 
-    [UnitTheory]
-    [InlineData("bearer")]
-    [InlineData("key")]
-    [InlineData("mcp")]
-    [InlineData("query-token")]
-    [InlineData("query-key")]
-    [InlineData("esri")]
-    [InlineData("embed")]
-    [InlineData("token-header")]
-    public async Task OpenReviewAsync_NonHumanTransportWithLiveCookie_RefusesCapability(string transport)
+    [UnitTest]
+    public async Task VerifyAsync_PasswordAdmin_UsesBuiltinAuthorityWhenManagedLookupIsUnavailable()
     {
-        using var host = new OperationHumanApprovalTestHost();
+        var memberships = Substitute.For<IPrincipalMembershipSource>();
+        memberships.ResolveMembershipAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<PrincipalMembership?>(new InvalidOperationException("unavailable")));
+        using var host = new OperationHumanApprovalTestHost(options: new() { Memberships = memberships });
+        var human = await host.CreateHumanAsync(origin: AdminAuthSessionOrigin.Builtin);
+        var proposal = OperationHumanApprovalTestHost.Proposal();
+        host.ReviewRequest(human);
+        var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
+        host.ApproveRequest(human, review);
+
+        var evidence = await host.Authority.VerifyAsync(proposal, OperationHumanApprovalTestHost.Approval(human));
+
+        evidence.Channel.Should().Be(OperationHumanApprovalEvidence.InteractivePasswordChannel);
+        await memberships.DidNotReceiveWithAnyArgs().ResolveMembershipAsync(default!, default(string), default);
+    }
+
+    [UnitTest]
+    public async Task VerifyAsync_OidcMembershipRevokedAfterReview_RefusesDecision()
+    {
+        var memberships = Substitute.For<IPrincipalMembershipSource>();
+        memberships.ResolveMembershipAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(true, ["admin"]));
+        using var host = new OperationHumanApprovalTestHost(options: new() { Memberships = memberships });
         var human = await host.CreateHumanAsync();
+        var proposal = OperationHumanApprovalTestHost.Proposal();
+        host.ReviewRequest(human);
+        var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
+        memberships.ResolveMembershipAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new PrincipalMembership(false, []));
+        host.ApproveRequest(human, review);
+
+        var verify = () => host.Authority.VerifyAsync(proposal, OperationHumanApprovalTestHost.Approval(human));
+
+        await verify.Should().ThrowAsync<HumanApprovalRequiredException>();
+    }
+
+    [UnitTheory]
+    [InlineData("bearer", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("bearer", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("key", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("key", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("mcp", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("mcp", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("query-token", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("query-token", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("query-key", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("query-key", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("esri", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("esri", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("embed", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("embed", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("token-header", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("token-header", (int)AdminAuthSessionOrigin.Builtin)]
+    public async Task OpenReviewAsync_NonHumanTransportWithLiveCookie_RefusesCapability(string transport, int originValue)
+    {
+        var origin = (AdminAuthSessionOrigin)originValue;
+        using var host = new OperationHumanApprovalTestHost();
+        var human = await host.CreateHumanAsync(origin: origin);
         host.ReviewRequest(human);
         switch (transport)
         {
@@ -95,18 +149,27 @@ public sealed class OperationHumanApprovalAuthorityTests
     }
 
     [UnitTheory]
-    [InlineData("version")]
-    [InlineData("proposal")]
-    [InlineData("tenant")]
-    [InlineData("requester")]
-    [InlineData("scope")]
-    [InlineData("operation-instance")]
-    [InlineData("plan")]
-    [InlineData("policy")]
-    public async Task VerifyAsync_ReviewBindingChanged_RefusesDecision(string change)
+    [InlineData("version", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("version", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("proposal", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("proposal", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("tenant", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("tenant", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("requester", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("requester", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("scope", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("scope", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("operation-instance", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("operation-instance", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("plan", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("plan", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("policy", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("policy", (int)AdminAuthSessionOrigin.Builtin)]
+    public async Task VerifyAsync_ReviewBindingChanged_RefusesDecision(string change, int originValue)
     {
+        var origin = (AdminAuthSessionOrigin)originValue;
         using var host = new OperationHumanApprovalTestHost();
-        var human = await host.CreateHumanAsync();
+        var human = await host.CreateHumanAsync(origin: origin);
         var proposal = OperationHumanApprovalTestHost.Proposal();
         host.ReviewRequest(human);
         var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
@@ -119,13 +182,17 @@ public sealed class OperationHumanApprovalAuthorityTests
     }
 
     [UnitTheory]
-    [InlineData("tampered")]
-    [InlineData("oversized")]
-    [InlineData("duplicate")]
-    public async Task VerifyAsync_InvalidCapability_RefusesDecision(string change)
+    [InlineData("tampered", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("tampered", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("oversized", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("oversized", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("duplicate", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("duplicate", (int)AdminAuthSessionOrigin.Builtin)]
+    public async Task VerifyAsync_InvalidCapability_RefusesDecision(string change, int originValue)
     {
+        var origin = (AdminAuthSessionOrigin)originValue;
         using var host = new OperationHumanApprovalTestHost();
-        var human = await host.CreateHumanAsync();
+        var human = await host.CreateHumanAsync(origin: origin);
         var proposal = OperationHumanApprovalTestHost.Proposal();
         host.ReviewRequest(human);
         var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
@@ -159,15 +226,21 @@ public sealed class OperationHumanApprovalAuthorityTests
     }
 
     [UnitTheory]
-    [InlineData("expired")]
-    [InlineData("logout")]
-    [InlineData("permission")]
-    [InlineData("mcp")]
-    [InlineData("resolved")]
-    public async Task VerifyAsync_AuthorityLostAfterReview_RefusesDecision(string change)
+    [InlineData("expired", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("expired", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("logout", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("logout", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("permission", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("permission", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("mcp", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("mcp", (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("resolved", (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("resolved", (int)AdminAuthSessionOrigin.Builtin)]
+    public async Task VerifyAsync_AuthorityLostAfterReview_RefusesDecision(string change, int originValue)
     {
+        var origin = (AdminAuthSessionOrigin)originValue;
         using var host = new OperationHumanApprovalTestHost();
-        var human = await host.CreateHumanAsync();
+        var human = await host.CreateHumanAsync(origin: origin);
         var proposal = OperationHumanApprovalTestHost.Proposal();
         host.ReviewRequest(human);
         var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
@@ -222,7 +295,7 @@ public sealed class OperationHumanApprovalAuthorityTests
             var review = await first.Authority.OpenReviewAsync(proposal, first.Context);
             var keys = destination == "wrong-key" ? new EphemeralDataProtectionProvider() : DataProtectionProvider.Create(directory);
             using var second = new OperationHumanApprovalTestHost(keys, sharedSessions,
-                destination == "wrong-audience" ? "https://other.example.com" : "https://server.example.com");
+                new() { Audience = destination == "wrong-audience" ? "https://other.example.com" : "https://server.example.com" });
             second.ApproveRequest(human, review);
 
             var verify = () => second.Authority.VerifyAsync(proposal, OperationHumanApprovalTestHost.Approval(human));

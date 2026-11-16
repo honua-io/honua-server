@@ -367,7 +367,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            Log.ImportTimedOut(_logger, request.CollectionId, ToSafeSourceUrl(serviceUri));
+            Log.ImportTimedOut(_logger, request.CollectionId, MigrationSourceUrls.ToSafeSourceUrl(serviceUri));
             return Failure(
                 request,
                 "OGC API Features collection import timed out.",
@@ -378,7 +378,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         }
         catch (HttpRequestException ex)
         {
-            Log.ImportFailed(_logger, request.CollectionId, ToSafeSourceUrl(serviceUri), ex);
+            Log.ImportFailed(_logger, request.CollectionId, MigrationSourceUrls.ToSafeSourceUrl(serviceUri), ex);
             return Failure(
                 request,
                 "OGC API Features collection items endpoint could not be reached.",
@@ -389,7 +389,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         }
         catch (JsonException ex)
         {
-            Log.ImportFailed(_logger, request.CollectionId, ToSafeSourceUrl(serviceUri), ex);
+            Log.ImportFailed(_logger, request.CollectionId, MigrationSourceUrls.ToSafeSourceUrl(serviceUri), ex);
             return Failure(
                 request,
                 "OGC API Features items document could not be parsed as JSON.",
@@ -750,7 +750,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
     {
         if (_logger.IsEnabled(LogLevel.Debug))
         {
-            var url = ToSafeSourceUrl(collectionUri);
+            var url = MigrationSourceUrls.ToSafeSourceUrl(collectionUri);
             Log.CollectionMetadataUnavailable(_logger, collectionId, url, exception);
         }
 
@@ -915,31 +915,15 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
 
         return Uri.TryCreate(href, UriKind.Absolute, out var absolute)
             ? absolute
-            : Uri.TryCreate(EnsureDirectoryBase(baseUri), href, out var relative)
+            : Uri.TryCreate(MigrationSourceUrls.EnsureDirectoryBase(baseUri), href, out var relative)
                 ? relative
                 : null;
     }
 
     private static Uri AppendPath(Uri baseUri, string relativePath)
     {
-        var root = EnsureDirectoryBase(baseUri);
+        var root = MigrationSourceUrls.EnsureDirectoryBase(baseUri);
         return new Uri(root, relativePath.TrimStart('/'));
-    }
-
-    private static Uri EnsureDirectoryBase(Uri uri)
-    {
-        var builder = new UriBuilder(uri)
-        {
-            Query = string.Empty,
-            Fragment = string.Empty
-        };
-
-        if (builder.Path.Length == 0 || builder.Path[^1] != '/')
-        {
-            builder.Path += "/";
-        }
-
-        return builder.Uri;
     }
 
     private static Uri AddOrReplaceQueryParameter(Uri uri, string name, string value)
@@ -957,19 +941,6 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         return builder.Uri;
     }
 
-
-    private static string ToSafeSourceUrl(Uri uri)
-    {
-        var builder = new UriBuilder(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty,
-            Query = string.Empty,
-            Fragment = string.Empty
-        };
-
-        return builder.Uri.AbsoluteUri;
-    }
 
     private async Task<JsonDocument?> TryFetchSchemaDocumentAsync(
         Uri serviceUri,
@@ -991,7 +962,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             if (_logger.IsEnabled(LogLevel.Debug))
             {
 #pragma warning disable CA1873 // safe-url helper only invoked inside the IsEnabled gate above
-                Log.SchemaDocumentUnavailable(_logger, collectionId, ToSafeSourceUrl(schemaUri), ex);
+                Log.SchemaDocumentUnavailable(_logger, collectionId, MigrationSourceUrls.ToSafeSourceUrl(schemaUri), ex);
 #pragma warning restore CA1873
             }
 
@@ -1002,7 +973,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             if (_logger.IsEnabled(LogLevel.Debug))
             {
 #pragma warning disable CA1873 // safe-url helper only invoked inside the IsEnabled gate above
-                Log.SchemaDocumentUnavailable(_logger, collectionId, ToSafeSourceUrl(schemaUri), ex);
+                Log.SchemaDocumentUnavailable(_logger, collectionId, MigrationSourceUrls.ToSafeSourceUrl(schemaUri), ex);
 #pragma warning restore CA1873
             }
 

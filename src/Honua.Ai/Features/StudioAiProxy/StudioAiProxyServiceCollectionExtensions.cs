@@ -61,7 +61,7 @@ internal static class StudioAiProxyServiceCollectionExtensions
         services.AddSingleton<IStudioAiProxyAdapter, OpenAiCompatibleStudioAiProxyAdapter>();
         services.AddSingleton<IStudioAiProxyAdapter, BedrockStudioAiProxyAdapter>();
 
-        services.TryAddSingleton<IStudioAiProxyService, StudioAiProxyService>();
+        services.TryAddSingleton<StudioAiProxyService>();
         return services;
     }
 }

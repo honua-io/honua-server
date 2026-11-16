@@ -19,6 +19,8 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
 
     public required GeoservicesImportStatus Status { get; init; }
 
+    public bool DataCommitted { get; init; }
+
     public int FeaturesProcessed { get; init; }
 
     public int? EstimatedTotalFeatures { get; init; }

@@ -20,13 +20,17 @@ public sealed class OperationActorAuditTests
     private const string McpApiKeyActor = "ApiKey:api-key:3f1c2b4a-8d7e-4c55-9a10-6b2e7d9c0f11";
 
     [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task SubmitAsync_AuthenticatedCallCanceledBeforeActuation_AuditsTheCallerNotAnonymous()
+    [Theory]
+    [InlineData(false, AuditActorType.UserId)]
+    [InlineData(true, AuditActorType.UserId)]
+    public async Task SubmitAsync_AuthenticatedCallCanceledBeforeActuation_AuditsTheCallerNotAnonymous(
+        bool agent, AuditActorType expectedType)
     {
         using var requestCancellation = new CancellationTokenSource();
         var audit = new CapturingAuditLog();
+        using var catalog = new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System);
         var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System),
+            catalog,
             [new CancelingDuringValidationExecutor(requestCancellation)],
             new AllowAllPolicyDecisionPoint(),
             TimeProvider.System,
@@ -34,7 +38,7 @@ public sealed class OperationActorAuditTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => dispatcher.SubmitAsync(
             new OperationRequest { OperationId = OperationId },
-            new OperationPolicyContext { PrincipalId = McpApiKeyActor, AuthorizationOutcome = "authorized" },
+            new OperationPolicyContext { PrincipalId = McpApiKeyActor, Roles = agent ? ["agent"] : [], AuthorizationOutcome = "authorized" },
             requestCancellation.Token));
 
         var accepted = Assert.Single(audit.Events, entry => entry.Action == "operation.accepted");
@@ -44,8 +48,31 @@ public sealed class OperationActorAuditTests
         {
             Assert.Equal(McpApiKeyActor, entry.Actor);
             Assert.NotEqual(AuditEvent.AnonymousActor, entry.Actor);
-            Assert.NotEqual(AuditActorType.Anonymous, entry.ActorType);
+            Assert.Equal(expectedType, entry.ActorType);
+            Assert.Equal(agent ? McpApiKeyActor : null, entry.ActorAgent);
         }
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task SubmitAsync_AgentWithoutRequiredScope_AuditsDenialBeforeAcceptance()
+    {
+        var audit = new CapturingAuditLog();
+        using var catalog = new OperationCatalog([new StubDescriptorProvider()], TimeProvider.System);
+        var dispatcher = new OperationDispatcher(
+            catalog,
+            [], new AllowAllPolicyDecisionPoint(), TimeProvider.System, auditLog: audit);
+        var result = await dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = OperationId },
+            new OperationPolicyContext { PrincipalId = McpApiKeyActor, Roles = ["agent"], ScopeGoverned = true });
+
+        Assert.Equal(OperationHandleStatus.Denied, result.Status);
+        var denied = Assert.Single(audit.Events);
+        Assert.Equal("operation.denied", denied.Action);
+        Assert.Equal(McpApiKeyActor, denied.Actor);
+        Assert.Equal(AuditActorType.UserId, denied.ActorType);
+        Assert.Equal(McpApiKeyActor, denied.ActorAgent);
+        Assert.NotNull(result.AuditId);
     }
 
     [Trait("Tier", "Fast")]
