@@ -103,7 +103,6 @@ public sealed class SpatialReferenceResolverTests
 
         public int? WktResult { get; set; }
 
-        /// <summary>The last <see cref="CancellationToken"/> passed to any async method.</summary>
         public CancellationToken LastCancellationToken { get; private set; }
 
         public Task<int?> DetectFromPrjAsync(string prjContent, CancellationToken cancellationToken = default)

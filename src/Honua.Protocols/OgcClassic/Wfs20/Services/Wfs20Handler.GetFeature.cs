@@ -590,7 +590,7 @@ internal sealed partial class Wfs20Handler
 
         // A normal KVP request may name multiple types with one shared filter. Only treat the
         // request as a multi-query continuation when a per-query value is present. This is the
-        // shape emitted by the XML multi-Query paging link (#4169).
+        // shape emitted by the XML multi-Query paging link.
         if (propertyTokens.Length < 2 && filterTokens.Length < 2)
         {
             return false;

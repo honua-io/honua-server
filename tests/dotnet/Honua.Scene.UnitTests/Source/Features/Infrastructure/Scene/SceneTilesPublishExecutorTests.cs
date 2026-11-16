@@ -22,11 +22,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Unit tests for the 3D Tiles generation executor (#842). The tests use
-/// in-memory stubs for the catalog and feature source so the pipeline can be
-/// exercised end-to-end without standing up Postgres.
-/// </summary>
 public sealed class SceneTilesPublishExecutorTests : IDisposable
 {
     private const int LayerId = 7;
@@ -66,6 +61,39 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         {
             Directory.Delete(_outputRoot, recursive: true);
         }
+    }
+
+    [UnitTest]
+    public async Task Execute_OutputRootIsFile_ThrowsSafeOutputErrorBeforeRegistration()
+    {
+        BuildLayer();
+        _featureSource.Features = SamplePolygons();
+        await File.WriteAllTextAsync(_outputRoot, "blocks-directory-creation");
+        try
+        {
+            var act = () => _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+            var failure = await act.Should().ThrowAsync<SceneOutputUnwritableException>();
+            failure.Which.InnerException.Should().BeAssignableTo<IOException>();
+            failure.Which.Message.Should().NotContain(_outputRoot);
+            _registration.Records.Should().BeEmpty();
+        }
+        finally
+        {
+            File.Delete(_outputRoot);
+        }
+    }
+
+    [UnitTest]
+    public async Task Execute_SourceIoFailure_RemainsServiceUnavailable()
+    {
+        BuildLayer();
+        _featureSource.StreamFailure = new IOException("source connection failed");
+
+        var act = () => _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+
+        var failure = await act.Should().ThrowAsync<ServiceUnavailableException>();
+        failure.Which.InnerException.Should().BeSameAs(_featureSource.StreamFailure);
+        _registration.Records.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -869,7 +897,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var act = () => _executor.RunDirectAsync(
             BuildIntent(sceneId: "promo-fail"), CancellationToken.None);
-        await act.Should().ThrowAsync<ServiceUnavailableException>();
+        await act.Should().ThrowAsync<SceneOutputUnwritableException>();
 
         // The registry insert preceded the failed promotion, but the
         // executor must call DeactivateAsync on the inserted record so

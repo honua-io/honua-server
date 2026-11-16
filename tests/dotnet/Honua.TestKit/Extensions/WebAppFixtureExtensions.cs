@@ -30,12 +30,6 @@ public static class WebAppFixtureExtensions
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Reads the stored <c>name</c> attribute straight out of Postgres, bypassing every server
-    /// read path (and therefore every cache, projection or substituted reader), so a test can
-    /// assert what the database actually holds after an edit. Returns <see langword="null"/> when
-    /// the row does not exist.
-    /// </summary>
     public static async Task<string?> ReadStoredFeatureNameAsync(
         this WebAppFixture fixture,
         int layerId,
@@ -54,11 +48,6 @@ public static class WebAppFixtureExtensions
         return await command.ExecuteScalarAsync(cancellationToken) as string;
     }
 
-    /// <summary>
-    /// Counts stored rows whose <c>name</c> attribute matches, straight out of Postgres. The
-    /// at-most-once edit proofs need "how many rows exist", which a response envelope cannot show:
-    /// a deduplicated retry and a duplicated insert can return the same body.
-    /// </summary>
     public static async Task<long> CountStoredFeaturesByNameAsync(
         this WebAppFixture fixture,
         int layerId,
@@ -77,9 +66,6 @@ public static class WebAppFixtureExtensions
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Counts every stored row on a layer, straight out of Postgres.
-    /// </summary>
     public static async Task<long> CountStoredFeaturesAsync(
         this WebAppFixture fixture,
         int layerId,
@@ -95,11 +81,6 @@ public static class WebAppFixtureExtensions
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Rewrites a stored row's <c>name</c> attribute directly in Postgres, standing in for a
-    /// concurrent writer that committed outside the request under test. Returns the number of rows
-    /// affected so a caller can assert the interfering write actually landed.
-    /// </summary>
     public static async Task<int> UpdateStoredFeatureNameAsync(
         this WebAppFixture fixture,
         int layerId,

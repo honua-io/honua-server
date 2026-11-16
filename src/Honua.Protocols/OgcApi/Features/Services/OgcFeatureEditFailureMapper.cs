@@ -1,15 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Maps writer <see cref="EditOperationResult"/> failures onto OGC HTTP statuses
-/// from the safe client message. Writer error codes stay unchanged.
-/// </summary>
 internal static class OgcFeatureEditFailureMapper
 {
     internal const string ConflictMessage = "The operation conflicted with existing data.";
@@ -35,6 +32,12 @@ internal static class OgcFeatureEditFailureMapper
         if (string.Equals(editResult.ErrorMessage, "Operation rolled back.", StringComparison.Ordinal))
         {
             return 424;
+        }
+
+        // A rule or plugin refused the row; its wording must not be read as another status.
+        if (editResult.ErrorCode == FeatureEditGate.RejectedErrorCode)
+        {
+            return 400;
         }
 
         if (Contains(editResult.ErrorMessage, "not found"))

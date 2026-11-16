@@ -28,7 +28,7 @@ public static class TenantContextExtensions
         }
 
         // Scoped so each request gets its own instance — guarantees no tenant id leaks
-        // between concurrent requests, which is the core invariant of issue #1144.
+        // between concurrent requests, which is the core multi-tenancy invariant.
         services.AddScoped<RequestTenantContext>();
         services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<RequestTenantContext>());
 

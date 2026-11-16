@@ -60,7 +60,7 @@ internal sealed partial class Wfs20Handler
 
         try
         {
-            // WFS-T transactions are Community (#1591): open-protocol feature edits carry no
+            // WFS-T transactions are Community: open-protocol feature edits carry no
             // entitlement gate. The Pro editing gate applies only to the FeatureServer surface.
             var document = await ReadTransactionDocumentAsync(context.Request, cancellationToken).ConfigureAwait(false);
             var root = document.Root;
@@ -259,11 +259,11 @@ internal sealed partial class Wfs20Handler
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
         var operations = ImmutableArray.CreateBuilder<PreparedTransactionOperation>();
         var distinctLayerIds = new HashSet<int>();
-        // Keyed on (layerId, operation) so per-operation authorization (BH3-001/BH3-014)
-        // is enforced independently for each action type: a transaction that both inserts
+        // Keyed on publication and operation so every addressed service and action
+        // is authorized independently: a transaction that both inserts
         // into and updates the same layer must clear both the Insert and Update gates,
         // not just the first one seen.
-        var validatedLayerIds = new HashSet<(int LayerId, AuthorizationOperation Operation)>();
+        var validatedPublications = new HashSet<(string PublicationId, AuthorizationOperation Operation)>();
         // Tracks whether the body contained at least one supported WFS action element.
         // ISO 19142 §15.2.5.3: a Delete or Update whose filter matches zero features is a
         // valid no-op that contributes zero operations but is still a recognised action.
@@ -295,7 +295,7 @@ internal sealed partial class Wfs20Handler
                     descriptors,
                     operations,
                     distinctLayerIds,
-                    validatedLayerIds,
+                    validatedPublications,
                     cancellationToken).ConfigureAwait(false),
                 "Update" => await PrepareUpdateOperationsAsync(
                     context,
@@ -303,7 +303,7 @@ internal sealed partial class Wfs20Handler
                     descriptors,
                     operations,
                     distinctLayerIds,
-                    validatedLayerIds,
+                    validatedPublications,
                     cancellationToken).ConfigureAwait(false),
                 "Delete" => await PrepareDeleteOperationsAsync(
                     context,
@@ -311,7 +311,7 @@ internal sealed partial class Wfs20Handler
                     descriptors,
                     operations,
                     distinctLayerIds,
-                    validatedLayerIds,
+                    validatedPublications,
                     cancellationToken).ConfigureAwait(false),
                 "Replace" => await PrepareReplaceOperationsAsync(
                     context,
@@ -319,7 +319,7 @@ internal sealed partial class Wfs20Handler
                     descriptors,
                     operations,
                     distinctLayerIds,
-                    validatedLayerIds,
+                    validatedPublications,
                     cancellationToken).ConfigureAwait(false),
                 "Native" => Wfs20ErrorResults.CreateNotImplemented(
                     context,
@@ -397,7 +397,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
         var handle = insertElement.Attributes()
@@ -428,9 +428,9 @@ internal sealed partial class Wfs20Handler
             var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, featureElement.Name.LocalName);
             var validationError = await ValidateTransactionLayerWriteAccessAsync(
                 context,
-                descriptor,
+                (descriptor, descriptors),
                 AuthorizationOperation.Insert,
-                validatedLayerIds,
+                validatedPublications,
                 cancellationToken).ConfigureAwait(false);
             if (validationError != null)
             {
@@ -466,7 +466,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
         var handle = updateElement.Attributes()
@@ -489,9 +489,9 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor,
+            (descriptor, descriptors),
             AuthorizationOperation.Update,
-            validatedLayerIds,
+            validatedPublications,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
         {
@@ -564,7 +564,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
         var handle = deleteElement.Attributes()
@@ -587,9 +587,9 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor,
+            (descriptor, descriptors),
             AuthorizationOperation.Delete,
-            validatedLayerIds,
+            validatedPublications,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
         {
@@ -652,7 +652,7 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
         ImmutableArray<PreparedTransactionOperation>.Builder operations,
         HashSet<int> distinctLayerIds,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
         var handle = replaceElement.Attributes()
@@ -674,9 +674,9 @@ internal sealed partial class Wfs20Handler
         // Replace modifies an existing feature, so it authorizes as an Update (BH3-001/BH3-014).
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor,
+            (descriptor, descriptors),
             AuthorizationOperation.Update,
-            validatedLayerIds,
+            validatedPublications,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
         {
@@ -1192,20 +1192,22 @@ internal sealed partial class Wfs20Handler
 
     private static async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
         HttpContext context,
-        WfsFeatureTypeDescriptor descriptor,
+        (WfsFeatureTypeDescriptor Requested, IReadOnlyList<WfsFeatureTypeDescriptor> Visible) featureType,
         AuthorizationOperation operation,
-        HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
+        HashSet<(string PublicationId, AuthorizationOperation Operation)> validatedPublications,
         CancellationToken cancellationToken)
     {
-        var layerId = descriptor.StorageLayerId;
-        if (!validatedLayerIds.Add((layerId, operation)))
+        var descriptor = featureType.Requested;
+        if (!validatedPublications.Add((descriptor.Publication.Metadata.Id, operation)))
         {
             return null;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+        var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context,
-            layerId,
+            descriptor.Publication.Metadata.Id,
+            descriptor.Snapshot,
+            preferExactPublicationId: true,
             scope: AccessScope.Write,
             requiredProtocol: MetadataV2ServiceProtocols.Wfs20,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -1214,28 +1216,30 @@ internal sealed partial class Wfs20Handler
             return layerValidation.ErrorResult;
         }
 
-        if (!IsAnonymousWriteAllowed(context, layerValidation.Resource!, layerValidation.Service))
+        // Every action uses its specific operation, including anonymously writable publications.
+        var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context,
+            layerValidation.Resource!,
+            layerValidation.Service,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+        if (rbacError != null)
         {
-            // Per-operation authorization (BH3-001/BH3-014): each WFS-T action type is gated on its
-            // specific operation so an insert-only grantee cannot Update/Delete via a Transaction and
-            // vice-versa. Replace maps to Update since it modifies an existing feature.
-            var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                layerValidation.Resource!,
-                layerValidation.Service,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-            if (rbacError != null)
-            {
-                return rbacError;
-            }
+            return rbacError;
+        }
+
+        var canonicalError = await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
+            context, (layerValidation, operation), cancellationToken).ConfigureAwait(false);
+        if (canonicalError != null)
+        {
+            return canonicalError;
         }
 
         // Declared capabilities of the advertised feature type's publication bound every
         // Transaction action, including on anonymously writable layers (SEC-5).
         var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(
             descriptor.Service,
-            descriptor.Publication,
+            ResolveEditCapabilityPublication(descriptor, featureType.Visible),
             operation);
         return undeclared is null
             ? null
@@ -1246,6 +1250,31 @@ internal sealed partial class Wfs20Handler
                 "Transaction");
     }
 
+
+    // The STAC collection publication that publishing writes beside a layer's feature publication
+    // was the advertised feature type, so clients hold its name. A Transaction through it is bound
+    // by the feature publication of the same layer in the same service. The candidates are the
+    // feature types this caller can see, so another tenant's or service's publication never applies.
+    private static MetadataV2Layer ResolveEditCapabilityPublication(
+        WfsFeatureTypeDescriptor descriptor,
+        IReadOnlyList<WfsFeatureTypeDescriptor> visibleFeatureTypes)
+    {
+        var publication = descriptor.Publication;
+        if (publication.PublicationType != MetadataV2LayerType.StacCollection)
+        {
+            return publication;
+        }
+
+        return visibleFeatureTypes
+            .Where(candidate => candidate.StorageLayerId == descriptor.StorageLayerId)
+            .Select(static candidate => candidate.Publication)
+            .Where(candidate =>
+                candidate.PublicationType != MetadataV2LayerType.StacCollection &&
+                string.Equals(candidate.ServiceId, publication.ServiceId, StringComparison.Ordinal))
+            .OrderByDescending(static candidate => candidate.IsPrimary)
+            .ThenBy(static candidate => candidate.Metadata.Id, StringComparer.Ordinal)
+            .FirstOrDefault() ?? publication;
+    }
 
     private static WfsFeatureTypeDescriptor ResolveTransactionFeatureTypeDescriptor(
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,
@@ -1572,7 +1601,7 @@ internal sealed partial class Wfs20Handler
         if (!string.IsNullOrWhiteSpace(srsNameValue))
         {
             // An srsName that is present but unparseable/unsupported is a transaction failure
-            // (OGC exception), not a silent fall back to the layer CRS (#2737). A missing srsName
+            // (OGC exception), not a silent fall back to the layer CRS. A missing srsName
             // keeps the correct feature-type-CRS default below.
             if (!SpatialReferenceHelpers.TryParseCrsDefinition(srsNameValue, out crsDefinition))
             {

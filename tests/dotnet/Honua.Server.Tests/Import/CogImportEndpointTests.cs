@@ -11,9 +11,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for COG import endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -134,10 +131,6 @@ public class CogImportEndpointTests : IAsyncLifetime
         response.StatusCode.Should().NotBe(HttpStatusCode.UnsupportedMediaType);
     }
 
-    /// <summary>
-    /// Creates a minimal valid TIFF header (little-endian, classic) for testing format detection.
-    /// Not a complete GeoTIFF — just enough for header validation.
-    /// </summary>
     private static byte[] CreateMinimalGeoTiffBytes()
     {
         return
@@ -150,9 +143,6 @@ public class CogImportEndpointTests : IAsyncLifetime
         ];
     }
 
-    /// <summary>
-    /// Creates a minimal BigTIFF header for testing format detection.
-    /// </summary>
     private static byte[] CreateMinimalBigTiffBytes()
     {
         return

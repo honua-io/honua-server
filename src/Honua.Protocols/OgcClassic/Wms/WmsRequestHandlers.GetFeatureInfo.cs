@@ -145,7 +145,7 @@ internal static partial class WmsRequestHandlers
         }
 
         // Query each storage layer once: repeated QUERY_LAYERS tokens would otherwise repeat
-        // the temporal resolution and the identify scan per token (#6097).
+        // the temporal resolution and the identify scan per token.
         queryLayers = [.. queryLayers.DistinctBy(layer => layer.StorageLayerId)];
 
         var mapLayerStorageIds = new HashSet<int>(mapLayers.Select(layer => layer.StorageLayerId));
@@ -176,11 +176,11 @@ internal static partial class WmsRequestHandlers
                 .GroupBy(item => item.StorageLayerId)
                 .ToDictionary(group => group.Key, group => group.First().Filter);
 
-        // Apply the TIME dimension to identify, mirroring GetMap. Previously GetFeatureInfo
-        // ignored TIME entirely, so on a time-enabled layer GetMap showed the selected instant
-        // but identify returned features across all times (and an invalid TIME was silently
-        // accepted instead of InvalidDimensionValue) (#1991). Parsed against queryLayers so
-        // each queried layer gets its own temporal filter slot.
+        // Apply the TIME dimension to identify, mirroring GetMap. Ignoring TIME here would
+        // make identify on a time-enabled layer return features across all times while GetMap
+        // shows the selected instant (and would silently accept an invalid TIME instead of
+        // raising InvalidDimensionValue). Parsed against queryLayers so each queried layer
+        // gets its own temporal filter slot.
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var temporalResult = await TryResolveWmsLayerTemporalFiltersAsync(
             context,
@@ -214,7 +214,7 @@ internal static partial class WmsRequestHandlers
         // Use the wrap-aware effective width so a dateline-crossing geographic BBOX (minX > maxX,
         // which GetMap supports via BuildTransform/GetEffectiveWidth) maps pixels to coordinates
         // correctly instead of producing a negative width, a mirrored click point, and a negative
-        // tolerance (#2739). The inverse of GetMap's NormalizeLongitude can land past the +limit
+        // tolerance. The inverse of GetMap's NormalizeLongitude can land past the +limit
         // edge, so fold it back into the canonical world range.
         var mapWidth = CoordinateTransformer.GetEffectiveWidth(requestedExtent);
         var mapHeight = requestedExtent.MaxY - requestedExtent.MinY;
@@ -352,8 +352,8 @@ internal static partial class WmsRequestHandlers
 
         if (string.Equals(infoFormat, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            // The schema location names the endpoint and WMS version that answered this request
-            // (honua-server#5019). This handler serves both the MapServer mount and the OGC mount,
+            // The schema location names the endpoint and WMS version that answered this request.
+            // This handler serves both the MapServer mount and the OGC mount,
             // and a fixed MapServer/1.1.1 location sent a 1.3.0 response from the OGC mount to a
             // different endpoint and protocol version, one that is unreachable when only WMS is
             // enabled. BaseUrlResolver already includes PathBase, so only the matched route path is

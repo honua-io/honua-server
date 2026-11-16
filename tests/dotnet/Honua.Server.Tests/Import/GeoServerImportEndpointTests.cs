@@ -40,9 +40,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for GeoServer import endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -337,7 +334,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting(bool universalCancel)
     {
-        var underlying = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        var underlying = new UniversalProgressStore();
         var store = Substitute.For<IUniversalProgressStore>();
         var snapshotRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -410,7 +407,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/geoserver/jobs/{jobId}/cancel")]
     public async Task CancelJob_RejectsStaleWorkerProgressAndTerminalWrites()
     {
-        var store = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        var store = new UniversalProgressStore();
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns("Development");
         var manager = new GeoServerImportJobManager(store, NullLogger<GeoServerImportJobManager>.Instance);

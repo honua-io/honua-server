@@ -69,7 +69,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                 package = GeoprocessingResultPackageFactory.Create(job, processCatalog);
             }
 
-            // Optional post-success raster output registration (#3089). Registration is
+            // Optional post-success raster output registration. Registration is
             // idempotent (unique catalog identity per immutable staged object), so a
             // failure here only skips the package persist: the result read path replays
             // registration and never exposes a Completed package without it.

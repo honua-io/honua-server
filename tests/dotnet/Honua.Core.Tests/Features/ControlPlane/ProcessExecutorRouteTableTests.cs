@@ -8,13 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.ControlPlane;
 
-/// <summary>
-/// Unit tests for <see cref="ProcessExecutorRouteTable"/> — the shared
-/// auto-registration routing-table builder used by the managed and GDAL
-/// geoprocessing dispatchers (GP Devkit authoring contract #2122). Pins the
-/// fail-fast diagnostics that protect the authoring contract from a duplicate or
-/// empty process-id declaration.
-/// </summary>
 public sealed class ProcessExecutorRouteTableTests
 {
     private sealed class FakeProcessExecutor(params string[] ids) : IProcessExecutor

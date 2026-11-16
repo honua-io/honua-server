@@ -24,7 +24,7 @@ internal static partial class TemporalHistorySlicesEndpoints
         const string basePath = "/api/v{version:apiVersion}/temporal/services/{serviceId}/layers/{layerId:int}";
 
         // Diff: distinct diff-read permission (slice 2).
-        // T10 (#2346): temporal/data-history is built-experimental — gate every
+        // T10: temporal/data-history is built-experimental — gate every
         // temporal group with a 404 short-circuit when it is experimental-disabled.
         var diffGroup = endpoints.MapGroup(basePath)
             .WithCapabilityGate("temporal.filtering")
@@ -51,7 +51,8 @@ internal static partial class TemporalHistorySlicesEndpoints
 
         _ = readGroup.MapPost("/rollback/plan", HandleRollbackPlanAsync)
             .WithName("PlanTemporalRollback")
-            .WithSummary("Plan a governed rollback to a target checkpoint (slice 5 of #1166).");
+            .WithSummary("Plan a governed rollback to a target checkpoint (slice 5 of #1166).")
+            .WithRouteAgentRule("Changes nothing.");
 
         // Rollback execution: distinct rollback-execution permission (slice 5).
         var rollbackGroup = endpoints.MapGroup(basePath)

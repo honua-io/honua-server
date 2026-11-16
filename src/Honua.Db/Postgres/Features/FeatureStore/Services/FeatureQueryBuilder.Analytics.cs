@@ -76,7 +76,7 @@ internal sealed partial class FeatureQueryBuilder
             // storage mode `ST_AsGeoJSON(bytea)` / `ST_Collect(bytea)` would fail at
             // execution; carrying the typed operand through the CTE keeps the output
             // path correct across Geometry / Geography / Bytea storage modes.
-            // Field masks (#1940) are subtracted where the attributes enter the CTE, so
+            // Field masks are subtracted where the attributes enter the CTE, so
             // neither the per-feature "attributes" output nor the per-cluster statistics
             // can observe a masked value. Without masks this is the bare column.
             var attributesSource = BuildMaskedAttributesColumn(ResolveMaskedFields(query), ref paramIndex, parameters);

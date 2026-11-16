@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-// The library projects carry no XML doc comments. The clean-code check only looks at added
+// The library projects and the tests carry no XML doc comments. The clean-code check only looks at added
 // lines, so this guard keeps the whole tree at zero. It reads documentation-comment trivia
 // from the syntax tree, so "///" inside a string is not a hit.
 [Trait("Category", "Architecture")]
@@ -41,6 +41,17 @@ public sealed class LibraryProjectXmlDocTests
             .ToList();
 
         offending.Should().BeEmpty("library code carries no XML doc comments; let names carry the meaning");
+    }
+
+    [ArchitectureTest]
+    public void SourceFiles_UnderTests_HaveNoXmlDocComments()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var offending = SourceFiles(repositoryRoot, "tests")
+            .SelectMany(file => XmlDocLocations(repositoryRoot, file))
+            .ToList();
+
+        offending.Should().BeEmpty("test code carries no XML doc comments; let test names carry the meaning");
     }
 
     private static IEnumerable<string> SourceFiles(string repositoryRoot, string root)

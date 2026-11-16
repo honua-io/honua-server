@@ -6,9 +6,9 @@
 // id) via ValidateServiceV2Async, mirroring MapServer. GET + POST share the metadata
 // handler because Esri clients hydrate service metadata by POSTing {"f":"json"}.
 //
-// This is the metadata FOUNDATION (#1777): the tile / resources / tileMap routes are
+// This is the metadata FOUNDATION: the tile / resources / tileMap routes are
 // declared here but their handlers live in partial files (*.Tile.cs / *.Resources.cs /
-// *.TileMap.cs) so the parallel wave (#1778 / #1779 / #1781) can fill them in WITHOUT
+// *.TileMap.cs) so the parallel wave can fill them in WITHOUT
 // editing this file. The foundation stubs them as HTTP 501.
 
 using System.Diagnostics;
@@ -187,7 +187,7 @@ internal static partial class VectorTileServerEndpoints
         var maxLod = tileInfo.Lods is { Length: > 0 } maxLods ? maxLods[^1].Level : 0;
 
         // The extent is reported in the tiling scheme's spatial reference, not the service's:
-        // clients discard an extent whose spatial reference differs from tileInfo's (#5015).
+        // clients discard an extent whose spatial reference differs from tileInfo's.
         var extent = await VectorTileServerExtentResolver.ResolveAsync(
             publications.Select(static publication => publication.Resource),
             service.SpatialReference,

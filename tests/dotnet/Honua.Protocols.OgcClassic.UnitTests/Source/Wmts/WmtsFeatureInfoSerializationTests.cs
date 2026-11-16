@@ -8,9 +8,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
-/// <summary>
-/// Verifies feature-info attribute serialization using only the production JSON context.
-/// </summary>
 public sealed class WmtsFeatureInfoSerializationTests
 {
     [Theory]

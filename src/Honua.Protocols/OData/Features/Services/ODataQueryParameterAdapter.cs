@@ -113,7 +113,7 @@ internal sealed class ODataQueryParameterAdapter(
             // Clamp the effective page size to the configured server-driven paging cap
             // (OData:MaxPageSize). A very large $top on an ad hoc spatial query
             // (geo.intersects + $select) otherwise forces Postgres into a pathological
-            // plan for the huge LIMIT and the request hangs past the budget (#1644).
+            // plan for the huge LIMIT and the request hangs past the budget.
             // The streaming handler emits an @odata.nextLink carrying this clamped page
             // size so clients page through the remaining rows. A null $top keeps null
             // (the downstream paging layer applies its own default and clamp).

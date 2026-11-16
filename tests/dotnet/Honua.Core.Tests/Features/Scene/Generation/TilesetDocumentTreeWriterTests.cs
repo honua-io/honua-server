@@ -9,9 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Generation;
 
-/// <summary>
-/// Unit tests for the multi-level (quadtree LOD) tileset writer path (#1200).
-/// </summary>
 public sealed class TilesetDocumentTreeWriterTests
 {
     private static readonly double[] Bounds = [-122.5, 37.7, -122.4, 37.8];

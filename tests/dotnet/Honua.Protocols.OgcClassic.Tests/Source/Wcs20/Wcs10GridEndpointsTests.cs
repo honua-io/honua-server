@@ -9,7 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>Checks the actual WCS GeoTIFF grid and samples through the real PostGIS raster store.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs10)]
 public sealed class Wcs10GridEndpointsTests : IAsyncLifetime

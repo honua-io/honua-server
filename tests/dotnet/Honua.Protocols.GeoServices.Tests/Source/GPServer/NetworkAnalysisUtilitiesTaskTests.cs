@@ -11,13 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// The NetworkAnalysisUtilities tasks every GPServer publishes (#5035).
-/// <c>arcpy.nax</c> refuses a stand-alone routing service dictionary without a
-/// <c>utilityUrl</c>, and on that GP service it executes <c>GetTravelModes</c> then
-/// <c>GetToolInfo</c> before it will solve; ArcGIS Pro 3.7.1 stopped at
-/// "Task 'GetTravelModes' on service 'test_service' was not found".
-/// </summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class NetworkAnalysisUtilitiesTaskTests : IClassFixture<NAServerEndpointTestsFixture>

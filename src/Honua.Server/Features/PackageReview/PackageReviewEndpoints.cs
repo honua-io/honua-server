@@ -37,14 +37,16 @@ internal static partial class PackageReviewEndpoints
             .WithSummary("Validate a package using the shared package-review contract.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<PackageReviewResponse>>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/preview", HandlePreview)
             .WithDisplayName("Preview Package")
             .WithSummary("Validate a package and return a read-only preview plan.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<PackageReviewResponse>>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .WithRouteAgentRule("Changes nothing.");
 
         group.MapPost("/", HandlePublishMapPackage)
             .WithDisplayName("Publish Map Package")
@@ -115,7 +117,7 @@ internal static partial class PackageReviewEndpoints
         HttpContext context,
         [FromServices] IStudioDraftMutationRuntime mutationRuntime)
     {
-        // honua-server#4906: the body is read here rather than bound by the framework. Framework
+        // The body is read here rather than bound by the framework. Framework
         // binding refused every package the installed CLI sends with an empty 400: the
         // honua_map_package.v1 document makes status/createdAt optional where MapPackage marks
         // them required, and the combined HTTP resolver reads PackageStatus without the

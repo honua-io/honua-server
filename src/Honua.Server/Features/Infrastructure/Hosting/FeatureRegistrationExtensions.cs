@@ -112,14 +112,14 @@ internal static class FeatureRegistrationExtensions
 #if !HONUA_EXCLUDE_GEOSERVICES
         services.AddFeatureServer();
 #endif
-        // Plugin/extension SDK (#347): registers IPluginEditPipeline (a no-op unless the
+        // Plugin/extension SDK: registers IPluginEditPipeline (a no-op unless the
         // Enterprise plugin.sdk entitlement is active and plugins are compiled in) so the
         // FeatureServer edit path can depend on it unconditionally. Custom builds add plugins
         // via the AddHonuaPlugins(configuration, plugins => plugins.Add<...>()) overload.
         services.AddHonuaPlugins(configuration);
         services.AddCloudDemoServices(configuration);
         // Seed a default GPServer-capable service on a bare instance so the
-        // geoprocessing facade is usable out of the box (honua-server#2349).
+        // geoprocessing facade is usable out of the box.
         services.AddGeoprocessingDefaultServiceSeeding(configuration);
         services.AddGeocoding(configuration);
         services.AddForms(configuration);
@@ -188,7 +188,7 @@ internal static class FeatureRegistrationExtensions
             services.AddPostgresSceneRegistry(configuration);
         }
         // Read-through local materialization cache for hosted scene assets so a
-        // scene published on one node is servable from any node (#2459, ADR-0060).
+        // scene published on one node is servable from any node (ADR-0060).
         if (scene3dTilesEnabled || sceneI3sEnabled)
         {
             services.AddSceneAssetHydration();
@@ -206,7 +206,7 @@ internal static class FeatureRegistrationExtensions
         services.AddPrintingTools();
 #endif
         services.AddGeoprocessing(configuration);
-        // Routing subsystem (#1266): selects pgRouting or the mock provider via
+        // Routing subsystem: selects pgRouting or the mock provider via
         // Routing:Provider. The GeoServices NAServer adapter consumes IRoutingProvider.
         Honua.Routing.Features.Routing.ServiceCollectionExtensions.AddRouting(services, configuration);
         // Job-orchestration substrate (queue + log store) used by AddGeoprocessing.
@@ -219,20 +219,20 @@ internal static class FeatureRegistrationExtensions
         // writes terminal status. AddJobWorker self-gates on IJobQueue being registered,
         // which AddJobOrchestration does whenever the job store is.
         services.AddJobWorker(configuration);
-        // Durable isolated shadow-topology rebuild worker + self-healing reconciler
-        // (#2718/#2720). Self-gates on the routing rebuild store (Postgres-only) and the
+        // Durable isolated shadow-topology rebuild worker + self-healing reconciler.
+        // Self-gates on the routing rebuild store (Postgres-only) and the
         // execution-job store both being registered above.
         Honua.Server.Features.Admin.Routing.NetworkTopologyRebuildServiceCollectionExtensions.AddNetworkTopologyRebuildJobs(services, configuration);
         services.AddAnalysisContent(configuration);
         services.AddTemporalHistory();
         services.AddAnalysisReporting(configuration);
         services.AddCapabilityManifest(configuration);
-        // #2343 (T7): register the capability-gate OpenAPI document transformer into
-        // the AddOpenApi pipeline so operations gated on a disabled-experimental
+        // Register the capability-gate OpenAPI document transformer into the
+        // AddOpenApi pipeline so operations gated on a disabled-experimental
         // capability are pruned from the generated OpenAPI document, keeping the
-        // published contract in agreement with the runtime gate (T5). No-op until an
-        // experimental capability is flipped off-by-default (T10 / #2346). Depends on
-        // the ICapabilityRegistry registered by AddCapabilityManifest above.
+        // published contract in agreement with the runtime gate. Has no effect
+        // unless an experimental capability is off by default. Depends on the
+        // ICapabilityRegistry registered by AddCapabilityManifest above.
         services.AddCapabilityGatedOpenApi();
         services.AddPackageReview();
 #if !HONUA_EXCLUDE_MCP
@@ -245,20 +245,20 @@ internal static class FeatureRegistrationExtensions
         services.AddEnhancedAdminServices();
         services.AddMetadataReleaseServices();
         // RBAC-aware ArcGIS Portal item projector consumed by the Portal/Sharing
-        // REST read surface (#1371 → #1243).
+        // REST read surface.
         services.AddPortalItemProjection();
         services.AddStudioPackageLifecycle(configuration);
         services.TryAddScoped<Honua.Infrastructure.Security.StudioEndpointAuthorization>();
         // Server-side deliverable export: render a Studio map/dashboard/report content version to a
         // shareable PDF/PNG. Reuses the SkiaSharp raster/font surface (the headless Lambda
-        // fontconfig/freetype infra from #1728) and the canonical Studio lifecycle store; PDFs are
+        // fontconfig/freetype infra) and the canonical Studio lifecycle store; PDFs are
         // composed via SkiaSharp's SKDocument (no new PDF dependency).
         // Scoped (not Singleton): the exporter consumes the scoped IStudioPackageLifecycleService,
         // so a singleton registration is a captive dependency that fails DI scope validation at
         // host build. It is resolved per-request via [FromServices] on the export endpoint.
         services.TryAddScoped<Honua.Server.Features.Studio.Export.IStudioDeliverableExporter,
             Honua.Server.Features.Studio.Export.StudioDeliverableExporter>();
-        // Durable Studio map collaboration: comment threads + activity feed (#1278, slice 1).
+        // Durable Studio map collaboration: comment threads + activity feed.
         // In-memory store is the default; AddPostgreSqlServices overrides it with durable storage.
         Honua.Core.Features.Console.Collaboration.StudioMapCollaborationServiceCollectionExtensions
             .AddStudioMapCollaboration(services);
@@ -426,7 +426,7 @@ internal static class FeatureRegistrationExtensions
 #endif
         endpoints.MapSpecGroundingEndpoints();
         endpoints.MapSpecEndpoints();
-        // Plugin-contributed REST routes (ICustomEndpoint, #1562). A no-op unless a custom build
+        // Plugin-contributed REST routes (ICustomEndpoint). A no-op unless a custom build
         // compiled in a plugin that contributes endpoints; gated per request behind the Enterprise
         // plugin.sdk entitlement and the operator kill-switch.
         endpoints.MapHonuaPluginEndpoints();

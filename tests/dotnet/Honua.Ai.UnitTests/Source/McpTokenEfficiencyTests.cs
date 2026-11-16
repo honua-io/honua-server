@@ -12,37 +12,14 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Measures the token cost of the MCP surface so the A1 token-efficiency work is
-/// evidenced by numbers, not assertions alone. Two axes are measured with the
-/// principal-engineer estimator (serialized chars / 4 ≈ tokens):
-/// <list type="number">
-/// <item><description><c>tools/list</c> serialized token estimate — guards against
-/// response-shaping regressions bloating the catalog, without forcing the
-/// teaching descriptions (#2499) to be gutted to win tokens.</description></item>
-/// <item><description>A representative <c>honua_query_features</c> result — proves
-/// the text-content contract: the full FeatureCollection is in
-/// <c>structuredContent</c> and, per MCP 2025-06-18 (Tools, "Structured Content"),
-/// the same serialized JSON is also returned as a <c>text</c> block, preceded by a
-/// compact summary for large pages.</description></item>
-/// </list>
-/// </summary>
 public sealed partial class McpTaxonomyAlignmentTests
 {
     private readonly ITestOutputHelper? _output;
 
-    /// <summary>
-    /// xUnit injects <see cref="ITestOutputHelper"/> so the measurement tests can
-    /// report exact token numbers. The parameterless-friendly nullable keeps the
-    /// other (static-helper-driven) conformance tests in this partial class
-    /// unaffected.
-    /// </summary>
     public McpTaxonomyAlignmentTests(ITestOutputHelper output) => _output = output;
 
-    /// <summary>Principal-engineer token estimate: serialized characters / 4.</summary>
     private static int EstimateTokens(string serialized) => serialized.Length / 4;
 
-    /// <summary>Token estimate from a raw character count.</summary>
     private static int EstimateTokens(int chars) => chars / 4;
 
     [UnitTest]
@@ -170,10 +147,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         TextShouldEqualStructuredContent(result.Content[0].Text ?? string.Empty, result.StructuredContent);
     }
 
-    /// <summary>
-    /// Asserts that a text block parses as JSON and is structurally equal to
-    /// the result's <c>structuredContent</c>.
-    /// </summary>
     private static void TextShouldEqualStructuredContent(string text, JsonElement? structuredContent)
     {
         structuredContent.Should().NotBeNull();
@@ -183,10 +156,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             "the text block must carry the same serialized JSON as structuredContent");
     }
 
-    /// <summary>
-    /// A representative query_features page: point features with quantized
-    /// geometry and a handful of attributes, the shape the tool returns.
-    /// </summary>
     private static McpQueryFeaturesOutput BuildRepresentativeQueryPage(int featureCount)
     {
         var features = new List<JsonNode>(featureCount);
@@ -269,10 +238,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             "6-dp quantization must trim full-precision coordinate noise from the payload");
     }
 
-    /// <summary>
-    /// Mirrors the live <c>QueryFeaturesTool</c> summary shape closely enough to
-    /// measure the token delta without reaching into the tool's private helper.
-    /// </summary>
     private static string SummarizeForMeasurement(McpQueryFeaturesOutput output)
     {
         var pagingNote = output.ExceededTransferLimit && output.NextOffset is { } next

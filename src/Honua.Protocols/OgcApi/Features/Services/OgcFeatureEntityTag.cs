@@ -13,18 +13,10 @@ using Honua.Infrastructure.Caching;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Computes canonical entity tags for OGC API Features resources.
-/// </summary>
 internal static class OgcFeatureEntityTag
 {
     private const string RepresentationTagPrefix = "of-";
 
-    /// <summary>
-    /// Picks the feature whose bytes are hashed into the entity tag.
-    /// The same CRS uses the response feature so the tag and the payload are one read.
-    /// A different response CRS uses the storage snapshot, which is what writes hash.
-    /// </summary>
     public static Feature SelectEntitySnapshot(
         int responseSrid,
         int storageSrid,

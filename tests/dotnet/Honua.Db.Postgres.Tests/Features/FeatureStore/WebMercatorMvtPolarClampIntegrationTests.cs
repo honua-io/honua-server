@@ -21,12 +21,6 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Executes the Web Mercator MVT SQL against PostGIS for a geographic layer with a vertex at
-/// latitude -90 (#6109). PROJ rejects ±90 for Mercator, so an unclamped
-/// <c>ST_Transform(geom, 3857)</c> aborts the whole tile statement; the managed, source-backed
-/// and custom-gridset tile builders must clip through <see cref="DatumTransformSql"/> first.
-/// </summary>
 [Collection("Database")]
 public sealed class WebMercatorMvtPolarClampIntegrationTests : IAsyncLifetime
 {

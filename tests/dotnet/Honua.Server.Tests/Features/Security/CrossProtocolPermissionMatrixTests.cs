@@ -32,18 +32,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// Cross-protocol conformance matrix for the canonical per-operation RBAC
-/// resolver (#1375) wired through every protocol adapter via the shared
-/// <c>AccessPolicyHelpers</c> seam (#1376).
-/// <para>
-/// Read protocols are exercised against an explicit role list. A wildcard
-/// per-operation grant does not skip that list (#6358). A grant that names the
-/// target layer still allows that layer. Write protocols use no explicit role list, so a
-/// per-operation write grant still overrides the coarse data-editor deny, and a grant
-/// that allows <c>query</c> but not <c>update</c> still denies writes.
-/// </para>
-/// </summary>
 public sealed partial class CrossProtocolPermissionMatrixTests
     : IClassFixture<CrossProtocolPermissionMatrixTests.WildcardQueryReadFixture>
 {
@@ -69,25 +57,12 @@ public sealed partial class CrossProtocolPermissionMatrixTests
 
     // ---- Helpers --------------------------------------------------------
 
-    /// <summary>
-    /// Builds a factory for the READ matrix: the alpha service has an explicit
-    /// coarse read policy requiring a role the principal never holds. A wildcard
-    /// query grant does not skip that list (#6358). A grant that names the layer does.
-    /// </summary>
     private static WebApplicationFactory<Program> CreateFactory(params PermissionGrant[] grants)
         => CreateFactory(
             new RbacTestLayerCatalog(alphaServiceMetadata:
                 ServiceRbacTestFixture.CreateServiceMetadata(readRoles: [CoarseOnlyRole])),
             grants);
 
-    /// <summary>
-    /// Builds a factory for the WRITE matrix: the alpha service carries NO explicit
-    /// write policy, so the coarse data-editor role gate denies a principal lacking
-    /// the data-editor/admin role. A per-operation write grant (#1376) overrides
-    /// that coarse deny; a query-only grant does not. Explicit AccessPolicy write
-    /// restrictions remain authoritative and are covered separately, so they are
-    /// intentionally absent here.
-    /// </summary>
     private static WebApplicationFactory<Program> CreateWriteFactory(params PermissionGrant[] grants)
         => CreateFactory(new RbacTestLayerCatalog(), grants);
 
@@ -947,10 +922,6 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     // visibility is covered by WfsReadVisibilityTests against the WFS handler seam
     // rather than a fixture HTTP round-trip here.
 
-    /// <summary>
-    /// <see cref="IRoleStore"/> that resolves the supplied per-operation grants for
-    /// a single role; any other role resolves to no grants.
-    /// </summary>
     private sealed class MatrixRoleStore(string roleName, PermissionGrant[] grants) : IRoleStore
     {
         public Task<EffectivePermissions> GetEffectivePermissionsAsync(
@@ -993,14 +964,6 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     }
 }
 
-/// <summary>
-/// Direct coverage of the WFS GetFeature read seam: the WFS adapter filters
-/// published feature types through <c>AccessPolicyHelpers.IsResourceAccessibleAsync</c>
-/// with the <see cref="AuthorizationOperation.Query"/> operation (#1376). These
-/// tests exercise that exact shared seam. A per-operation grant does not skip an
-/// explicit role list (#6358); an empty or matching list still honors the grant, and
-/// the no-grant case falls back to the coarse <see cref="AccessPolicy"/>.
-/// </summary>
 [Protocol(TestProtocols.Wfs20)]
 [Operation(Operations.Query)]
 public sealed class WfsReadVisibilitySeamTests

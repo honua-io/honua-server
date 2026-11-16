@@ -20,25 +20,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the DI shape for the MCP operator surface and the opt-in promotion
-/// surface. The hosted-promotion resources (<c>honua://published-services*</c>,
-/// <c>honua://deployments*</c>, <c>honua://map-packages*</c>,
-/// <c>honua://app-packages*</c>) are intentionally gated behind
-/// <see cref="McpServiceCollectionExtensions.AddMcpPromotionSurface"/> so the
-/// default server composition cannot advertise promotion URIs backed only by
-/// process-local empty state.
-/// </summary>
 public sealed partial class McpServiceCollectionExtensionsTests
 {
-    /// <summary>
-    /// The default real-host composition
-    /// (<see cref="FeatureRegistrationExtensions.AddServerFeatures"/>) gates the
-    /// promotion surface on canonical publishing + deployment persistence
-    /// (#1951). With no provider registering those stores, the gate stays closed
-    /// and the promotion resources are NOT advertised — the same honesty
-    /// invariant that keeps tools/list from advertising an always-empty surface.
-    /// </summary>
     [UnitTest]
     public void AddServerFeatures_DefaultComposition_WithoutCanonicalStores_DoesNotAdvertisePromotionResources()
     {
@@ -61,14 +44,6 @@ public sealed partial class McpServiceCollectionExtensionsTests
             .Should().BeFalse("no canonical IDeploymentStore persistence is wired into AddServerFeatures yet");
     }
 
-    /// <summary>
-    /// Positive branch of the #1951 gate: when canonical
-    /// <see cref="IPublishedServiceStore"/> and <see cref="IDeploymentStore"/>
-    /// persistence is registered before the default composition runs (as a
-    /// durable provider does), <see cref="FeatureRegistrationExtensions.AddServerFeatures"/>
-    /// opts the promotion surface in automatically, so a deployed server
-    /// advertises honua://published-services|deployments|map-packages|app-packages.
-    /// </summary>
     [UnitTest]
     public void AddServerFeatures_WithCanonicalStores_AdvertisesPromotionResourcesByDefault()
     {

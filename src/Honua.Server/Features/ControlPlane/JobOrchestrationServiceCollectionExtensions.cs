@@ -61,7 +61,7 @@ internal static class JobOrchestrationServiceCollectionExtensions
         // JobExecutionService is the always-on queue drainer, not a periodic tick; it stays hosted
         // in both trigger modes on the API and on long-lived hosts. An event-handler Lambda
         // already runs one reconcile or tick per invocation and then releases its pool; a second
-        // drainer on a pool of 2 pins connections across freeze (honua-server#6515).
+        // drainer on a pool of 2 pins connections across freeze.
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
             services.AddHostedService<JobExecutionService>();

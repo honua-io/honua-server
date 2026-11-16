@@ -12,18 +12,9 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Reporting;
 
-/// <summary>
-/// Golden-file renderer tests. Each process family listed in the AC renders
-/// to a committed Markdown/HTML body; byte-equal comparison ensures template
-/// changes surface as reviewable diffs.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class RenderGoldenTests
 {
-    /// <summary>
-    /// Set this environment variable to <c>1</c> to rewrite goldens. Intended
-    /// for intentional template updates; CI must run with the variable unset.
-    /// </summary>
     private const string UpdateEnvVar = "HONUA_REPORTING_UPDATE_GOLDENS";
 
     public static IEnumerable<object[]> Cases()

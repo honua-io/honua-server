@@ -7,7 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>Architecture invariants for the canonical raster GP source contract.</summary>
 [Trait("Category", "Architecture")]
 public sealed class RasterSourceContractArchitectureTests
 {

@@ -182,7 +182,7 @@ internal sealed partial class YarpRollingDeployBackend(
 
         // An unsatisfiable mount blocks here rather than at submit, so the operator reads the reason
         // instead of watching the standby exit at startup and the rollout fail at the exposure
-        // deadline as "never passed the backend health gate" (#4617).
+        // deadline as "never passed the backend health gate".
         try
         {
             BuildMounts(spec);
@@ -380,7 +380,7 @@ internal sealed partial class YarpRollingDeployBackend(
                 };
             }
 
-            // Retain-through-observation (honua-server#4618): the old replica keeps running after
+            // Retain-through-observation: the old replica keeps running after
             // cutover instead of being stopped here. Stopping it immediately would disconnect the
             // advertised rollback protection window from reality — a candidate that fails moments
             // after cutover would have nothing left to recover to. The reconciler's post-activation
@@ -438,7 +438,7 @@ internal sealed partial class YarpRollingDeployBackend(
             // restarts, so after a promote+restart it wrongly reads "not promoted". The durable
             // operation record is the authoritative signal that survives any restart: PromoteAsync's
             // caller (the reconciler) only ever sets Deploy.Protection once cutover has actually
-            // completed (honua-server#4618), so its presence proves promotion happened even though the
+            // completed, so its presence proves promotion happened even though the
             // old replica is now retained (not removed) at cutover and would otherwise look
             // indistinguishable from the pre-cutover state. The container-label fallback covers
             // callers/tests that construct an operation without a durable Protection record.

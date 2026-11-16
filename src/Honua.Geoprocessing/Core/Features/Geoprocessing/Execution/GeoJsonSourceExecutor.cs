@@ -66,7 +66,7 @@ internal sealed class GeoJsonSourceExecutor(IOptionsMonitor<GeoprocessingExecuto
 
         // Publish through the spillable publisher: small sources stay inline (back-compat),
         // large sources spill to an NDJSON stream so downstream transforms read incrementally
-        // and the legacy 50 MiB cap no longer fails a large source feed.
+        // and the 50 MiB inline cap does not fail a large source feed.
         var published = await FeatureStreamPublisher.PublishAsync(
             ToAsync(collection, cancellationToken),
             HandledProcessId,

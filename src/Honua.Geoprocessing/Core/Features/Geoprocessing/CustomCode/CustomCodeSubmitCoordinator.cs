@@ -112,7 +112,7 @@ internal sealed class CustomCodeSubmitCoordinator(
         // user-code harness reads (docker/worker-customcode-python/harness/jobspec.py).
         // Batch backends strip the env. prefix and surface each as the matching
         // CUSTOMCODE_* container env var. This is the
-        // SERVER half of the cross-piece param->env contract (#2191); only project
+        // SERVER half of the cross-piece param->env contract; only project
         // keys that are actually present so optional parameters stay unset. The
         // Round-4 harness drift guard pins the same map via ParameterToEnv.
         foreach (var (paramKey, envName) in CustomCodeJobContract.ParameterToEnvName)

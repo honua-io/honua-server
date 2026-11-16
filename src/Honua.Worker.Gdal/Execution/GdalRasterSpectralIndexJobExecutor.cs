@@ -100,7 +100,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
 
                 // Bound the DECLARED pixel footprint before writing the file or
                 // invoking GDAL so a compressible GeoTIFF declaring enormous
-                // dimensions cannot force a decompression-bomb allocation (#2766).
+                // dimensions cannot force a decompression-bomb allocation.
                 if (!rasterInput.TryAdmit(opts, out var dimensionError))
                 {
                     Log.InvalidInputs(logger, job.OperationId, dimensionError);

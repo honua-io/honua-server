@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
-/// <summary>
-/// Unit tests for <see cref="VersionAccessPolicy"/> — the centralized visibility and lifecycle
-/// authorization helpers that fix BH3-002 (list/info), BH3-003 (inspectConflicts), and
-/// BH3-004 (delete/alter/reconcile/post/session) version-access gaps.
-/// </summary>
 public sealed class VersionAccessPolicyTests
 {
     // ---- Test data helpers -----------------------------------------------------------------

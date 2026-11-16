@@ -19,9 +19,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin.Share;
 
-/// <summary>
-/// Integration tests for Console Share export definitions, run history, and traffic APIs (#1216).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Export)]
@@ -758,9 +755,6 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies Share traffic endpoints keep durable traffic-store outages retryable.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Export)]
@@ -833,13 +827,6 @@ public sealed class ShareAdminTrafficUnavailableTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies a Supported trigger whose dispatch to the job queue fails with a cancellation-class
-/// (request-abort) exception still rolls the created job back to a terminal state and records a
-/// Failed run, rather than letting the cancellation bypass compensation and strand a Queued job no
-/// worker runs (#1216 request-abort regression). A generic dispatch failure is exercised by the
-/// run-persist failure suite's shared compensation path.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Export)]
@@ -997,10 +984,6 @@ public sealed class ShareExportDispatchFailureTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies a Supported trigger whose run record cannot be persisted rolls the created job back to
-/// a terminal state and never dispatches it, so a job is never claimable without a Share run.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Export)]

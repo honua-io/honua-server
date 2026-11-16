@@ -10,11 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalRasterReclassifyJobExecutor"/>: remap-table
-/// folding into a trusted nested-where gdal_calc.py expression, plus the parse guards
-/// (#2239).
-/// </summary>
 public sealed class GdalRasterReclassifyExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-reclassify-test";

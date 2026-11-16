@@ -43,12 +43,12 @@ internal sealed class FixturePlanAnalysisService : IPlanAnalysisService
             {
                 Status = "rejected",
 
-                // #2485: explicitly disclose fixture (demo) mode on the miss path.
+                // Explicitly disclose fixture (demo) mode on the miss path.
                 // The engine:"fixture" discriminator already flags every fixture
                 // response, but the miss reason must also say — in plain language —
                 // that this server replays canned demo plans and where planning
                 // actually happens, so a caller (or a cold client LLM) does not read
-                // "rejected" as "your intent is unsupported". ADR-0076 (#3255) moved
+                // "rejected" as "your intent is unsupported". ADR-0076 moved
                 // compilation of arbitrary intents to the client: the server no
                 // longer runs a model of its own, so the escape hatch is the calling
                 // model, not a server-side provider setting.

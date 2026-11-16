@@ -36,7 +36,7 @@ internal static partial class EmbedPolicyEndpoints
             // Embed widgets load on arbitrary ISV origins, so the browser CORS preflight
             // must be permitted from any origin; the per-embed-key origin allow-list is the
             // authoritative gate enforced inside the handlers. Without this dedicated policy
-            // the global ProductionCors rejects the preflight before the handler runs (#1191).
+            // the global ProductionCors rejects the preflight before the handler runs.
             .RequireCors(CorsConfiguration.EmbedPolicy)
             // NoCache is required (SEC-20): the policy response is a function of the
             // embed key in X-Honua-Embed-Key (or ?key=) and of the request Origin, not
@@ -57,7 +57,7 @@ internal static partial class EmbedPolicyEndpoints
 
     private static async Task<Results<Ok<EmbedPolicyResponse>, UnauthorizedHttpResult, JsonHttpResult<ApiResponse<object>>>>
         HandlePolicy(
-            [FromServices] InMemoryEmbedKeyStore store,
+            [FromServices] IEmbedKeyStore store,
             [FromServices] InMemoryEmbedAnalyticsStore analytics,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedPolicyEndpointsLog> logger,
@@ -110,7 +110,7 @@ internal static partial class EmbedPolicyEndpoints
     private static async Task<Results<Ok<ApiResponse<EmbedAnalyticsIngestResponse>>, UnauthorizedHttpResult, BadRequest<ApiResponse<object>>, JsonHttpResult<ApiResponse<object>>>>
         HandleAnalytics(
             IngestEmbedAnalyticsRequest request,
-            [FromServices] InMemoryEmbedKeyStore store,
+            [FromServices] IEmbedKeyStore store,
             [FromServices] InMemoryEmbedAnalyticsStore analytics,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedPolicyEndpointsLog> logger,
@@ -155,7 +155,7 @@ internal static partial class EmbedPolicyEndpoints
 
         // Validate the ENTIRE batch before persisting anything. Persisting per-event while
         // a later event can still reject with 400 double-counts the earlier events when the
-        // client retries the whole batch; the ingest must be all-or-nothing (#1191).
+        // client retries the whole batch; the ingest must be all-or-nothing.
         var mapped = new List<EmbedAnalyticsEvent>(request.Events.Count);
         foreach (var dto in request.Events)
         {
@@ -182,7 +182,7 @@ internal static partial class EmbedPolicyEndpoints
         return TypedResults.Ok(ApiResponse<EmbedAnalyticsIngestResponse>.CreateSuccess(response));
     }
 
-    private static async Task<EmbedKeyValidationResult?> ResolveKeyAsync(InMemoryEmbedKeyStore store, HttpContext context)
+    private static async Task<EmbedKeyValidationResult?> ResolveKeyAsync(IEmbedKeyStore store, HttpContext context)
     {
         var keyMaterial = ExtractKeyMaterial(context);
         if (string.IsNullOrWhiteSpace(keyMaterial))

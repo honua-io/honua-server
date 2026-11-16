@@ -1224,24 +1224,24 @@ public sealed partial class ExecutionJobReconcilerTests
 
     [Fact]
     [Trait("Tier", "Fast")]
-    public async Task ReconcileExecutionJob_TransientRedisTimeoutWhileObserving_LeavesTheRunningJobAlone()
+    public async Task ReconcileExecutionJob_TransientTimeoutWhileObserving_LeavesTheRunningJobAlone()
     {
-        // honua-server#6507: a Redis timeout during a sweep used to stamp a healthy, heartbeating
+        // A store timeout during a sweep used to stamp a healthy, heartbeating
         // Batch import terminal Failed, so its worker lost the execution lease 30 s in.
         var backend = Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns("aws-batch");
         backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
         backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new StackExchange.Redis.RedisTimeoutException("Timeout awaiting response", StackExchange.Redis.CommandStatus.Unknown));
-        var job = CreateJobRecord("job-redis-timeout", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch);
+            .ThrowsAsync(new TimeoutException("Timeout awaiting response"));
+        var job = CreateJobRecord("job-store-timeout", ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch);
         var jobStore = new InMemoryExecutionJobStore(job);
         var sut = new ExecutionJobReconciler(jobStore, [backend], new InMemoryProgressStore(),
             NullLogger<ExecutionJobReconciler>.Instance);
 
-        var act = () => sut.ReconcileExecutionJobAsync("job-redis-timeout");
-        await act.Should().ThrowAsync<StackExchange.Redis.RedisTimeoutException>();
+        var act = () => sut.ReconcileExecutionJobAsync("job-store-timeout");
+        await act.Should().ThrowAsync<TimeoutException>();
 
-        var stored = (await jobStore.GetAsync("job-redis-timeout"))!;
+        var stored = (await jobStore.GetAsync("job-store-timeout"))!;
         stored.Status.Should().Be(ExecutionJobStatus.Running);
         stored.CompletedAt.Should().BeNull();
         stored.ErrorMessage.Should().BeNull();

@@ -279,7 +279,7 @@ internal sealed class PostgresRoleStore : IRoleStore
                 // rbac_roles / rbac_role_permissions tables. Treat as "no grants"
                 // so PermissionResolver yields NoMatch and AccessPolicyHelpers
                 // falls back to the coarse AccessPolicy instead of 500ing
-                // enforced query paths (honua-server#1341 pattern).
+                // enforced query paths.
                 return new EffectivePermissions
                 {
                     UserId = userId ?? string.Empty,

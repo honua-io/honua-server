@@ -14,9 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 
-/// <summary>
-/// Integration tests for PerformanceMonitoringMiddleware.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public class PerformanceMonitoringMiddlewareTests

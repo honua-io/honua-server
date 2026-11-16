@@ -24,16 +24,6 @@ using Moq;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Staged-activation coverage for protected metadata releases (#4619). Every scenario drives the
-/// real reconciler, activator, script executor, preflight gate and smoke checker (which queries
-/// through the canonical <see cref="FeatureProviderQueryRouter"/> and evaluates the shared
-/// <see cref="IAccessPolicyEvaluator"/>) over a graph store with the Postgres store's semantics:
-/// store-allocated revisions, an ETag-guarded current pointer, and staged revisions that readers
-/// never see. Those store semantics are proven against real PostgreSQL by
-/// <c>PostgresMetadataV2GraphStoreFreshDbTests.StageAsync_KeepsReadersOnCurrent_AndActivationNeverOverwritesANewerRevision</c>.
-/// Physical feature rows live outside the graph so rollback's data preservation is observable.
-/// </summary>
 public sealed class MetadataReleaseReconcilerTests
 {
     private const string NewField = "owner_email";
@@ -694,11 +684,6 @@ public sealed class MetadataReleaseReconcilerTests
                 .Build();
     }
 
-    /// <summary>
-    /// Graph store with the Postgres store's semantics: store-allocated revisions above every
-    /// retained snapshot, an ETag-guarded current pointer, staged revisions that do not move it, and
-    /// a typed concurrency exception. Records every value the current pointer takes.
-    /// </summary>
     private sealed class StagedGraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager
     {
         private readonly object _gate = new();
@@ -712,9 +697,6 @@ public sealed class MetadataReleaseReconcilerTests
             _currentHistory.Add(_current);
         }
 
-        /// <summary>
-        /// Invoked inside activation before the ETag check, to land a concurrent writer first.
-        /// </summary>
         public Func<Task>? BeforeActivate { get; set; }
 
         public Func<Task>? BeforeSave { get; set; }
@@ -844,10 +826,6 @@ public sealed class MetadataReleaseReconcilerTests
         }
     }
 
-    /// <summary>
-    /// Physical feature rows per storage layer, served through the canonical provider router.
-    /// Independent of the metadata graph, so data preservation across rollback is observable.
-    /// </summary>
     private sealed class PhysicalFeatureProvider : IFeatureDataProvider
     {
         private readonly Dictionary<int, List<Dictionary<string, object?>>> _rows = new()
@@ -898,9 +876,6 @@ public sealed class MetadataReleaseReconcilerTests
             => Rows(layerId).Select(row => new Dictionary<string, object?>(row)).ToArray();
     }
 
-    /// <summary>
-    /// Qualified additive ETL: writes values only into the fields the plan declares.
-    /// </summary>
     private sealed class PopulatingEtl(PhysicalFeatureProvider physical) : IMetadataReleaseDataJobDispatcher
     {
         public int Calls { get; private set; }

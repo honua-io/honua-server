@@ -11,12 +11,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests asserting that <c>returnDistance</c> is spec-compliant for the
-/// general layer <c>/query</c> operation, not just K-nearest-neighbor queries: when a
-/// spatial filter geometry is supplied, each matched feature carries its geodesic
-/// distance (meters) from the query geometry under the runtime <c>distance</c> attribute.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerReturnDistanceQueryTests : IClassFixture<WebAppFixture>

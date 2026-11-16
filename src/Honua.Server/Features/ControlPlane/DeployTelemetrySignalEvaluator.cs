@@ -64,7 +64,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
             return InvalidPolicyDecision(operation.Deploy, operation.CreatedAt, policy);
         }
 
-        // Before the candidate receives traffic there is no evidence to evaluate (#4617). Hold only until
+        // Before the candidate receives traffic there is no evidence to evaluate. Hold only until
         // the exposure deadline, then fail the rollout without ever activating the candidate: a deploy
         // that never reaches exposure must neither wait forever nor promote.
         if (operation.Status == WorkflowOperationStatus.Submitted && operation.Deploy.TrafficExposedAt == null)
@@ -77,12 +77,12 @@ internal sealed class DeployTelemetrySignalEvaluator(
         }
 
         // Warmup/bake anchors on when the candidate actually started receiving traffic, not when the
-        // operation record was created (#4617): backend provisioning time between the two can be
+        // operation record was created: backend provisioning time between the two can be
         // unbounded, during which no telemetry evidence is meaningful yet. Falls back to CreatedAt for
         // operations persisted before TrafficExposedAt was tracked, preserving prior behavior for them.
         var exposureAnchor = operation.Deploy.TrafficExposedAt ?? operation.CreatedAt;
 
-        // Synthetic /healthz/ready gate (#1849): a provider-independent rollback trigger inherited by
+        // Synthetic /healthz/ready gate: a provider-independent rollback trigger inherited by
         // every backend and change class. An unhealthy probe short-circuits to the same rollback path
         // as an error-rate/latency breach (subject to the anti-flap debounce). A healthy probe does not
         // promote on its own — it falls through to the metrics gate, which must also pass.
@@ -95,7 +95,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
             }
         }
 
-        // Golden-query correctness gate (#2811): a status/5xx/p95-healthy release can still be corrupt
+        // Golden-query correctness gate: a status/5xx/p95-healthy release can still be corrupt
         // (200 OK, wrong/garbled body). This provider-independent gate asserts the response body matches
         // an operator-declared checksum/substring before the deploy is allowed to auto-promote. A failing
         // golden query drives the SAME rollback path as an error-rate breach (subject to the anti-flap
@@ -119,7 +119,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
             });
         }
 
-        // Explicit probe-only profile (#4617): the readiness and golden-query probes above are the whole
+        // Explicit probe-only profile: the readiness and golden-query probes above are the whole
         // gate, so no metrics connection is consulted. Metric-required profiles never take this path —
         // Parse rejects a probe-only gate that was not declared health-only.
         if (policy.IsHealthOnly)
@@ -170,7 +170,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
             // Missing/insufficient evidence (absent metric, ambiguous/stale sample rejected by the
             // provider, sample floor not yet met) is bounded by the evidence grace window rather than
             // the anti-flap debounce, which exists for noisy instantaneous breaches, not sustained
-            // absence (#4617). Genuine breaches and the healthy path are unaffected.
+            // absence. Genuine breaches and the healthy path are unaffected.
             return instantaneous.WaitForMoreTelemetry
                 ? BoundEvidenceWait(exposureAnchor, policy, instantaneous.Message)
                 : ApplyBreachDebounce(operation, instantaneous);
@@ -275,7 +275,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         DateTimeOffset createdAt,
         DeployTelemetryPolicy policy)
     {
-        // Bounded wait (#2161): an invalid policy is a configuration error that will never
+        // Bounded wait: an invalid policy is a configuration error that will never
         // self-heal from telemetry, so an unbounded WaitForMoreTelemetry silently parks the
         // deploy in Reconciling forever. Hold for a finite grace window (so a transient
         // mid-edit config is tolerated), then escalate to a rollback recommendation rather
@@ -506,7 +506,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         var missingSignals = new List<string>();
 
         // A configured signal with no usable reading (absent, or rejected by the provider as
-        // non-finite/ambiguous/stale) must never fall through to "healthy" (#4617) — that is exactly
+        // non-finite/ambiguous/stale) must never fall through to "healthy" — that is exactly
         // how a real degradation goes undetected when the sample floor is unconfigured. It is treated
         // as still-waiting evidence instead, which the caller bounds via the evidence grace window.
         if (policy.HasErrorSignal && policy.ErrorRateThreshold.HasValue)
@@ -902,7 +902,7 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
         }
 
         // A well-formed query (sum(), avg(), a single selector match, …) resolves to exactly one
-        // series. More than one is an ambiguous-cardinality configuration error (#4617): silently
+        // series. More than one is an ambiguous-cardinality configuration error: silently
         // taking result[0] can promote or hold a deploy on an arbitrary, unintended series. Surface
         // it as a failure so the caller's bounded-grace handling applies instead of a silent guess.
         if (result.GetArrayLength() > 1)
@@ -942,7 +942,7 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
             };
 
             // An unparseable or missing observation timestamp is exactly the "ignores the
-            // observation timestamp" gap this bound closes (#4617): treat it as absent rather than
+            // observation timestamp" gap this bound closes: treat it as absent rather than
             // assume freshness.
             if (!sampleUnixSeconds.HasValue)
             {
@@ -974,7 +974,7 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
 
         // Prometheus legitimately returns "NaN"/"+Inf"/"-Inf" for undefined expressions (for
         // example a 0/0 rate). Treating a non-finite value as a real reading can silently pass an
-        // ill-defined signal through the threshold comparison (#4617); absent is the correct and
+        // ill-defined signal through the threshold comparison; absent is the correct and
         // already-handled semantics.
         return double.IsFinite(parsed) ? parsed : null;
     }

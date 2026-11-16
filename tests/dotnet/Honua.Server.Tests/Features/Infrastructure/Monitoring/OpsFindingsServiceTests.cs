@@ -27,10 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit tests for the deterministic ops-findings rule set (<see cref="OpsFindingsService"/>), one
-/// rule at a time against fake seams.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class OpsFindingsServiceTests
 {
@@ -635,10 +631,6 @@ public sealed partial class OpsFindingsServiceTests
         Assert.Contains("manual-intervention-deploy-operations:beyond-materialization-window", coverage.ExpectedComponentIds ?? []);
     }
 
-    /// <summary>
-    /// Stubs the store's kind + status query, the read the real store answers for stuck deploys
-    /// (the Redis store never lists them as active).
-    /// </summary>
     private static void StubStuckDeploys(IWorkflowOperationStore workflowStore, params WorkflowOperationRecord[] operations)
     {
         workflowStore.HasLaterDeployOfTargetAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
@@ -1591,8 +1583,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Propose_ActionableFinding_WithoutOperationGateway_ReturnsGatewayUnavailable()
     {
-        // Redis-less composition (#2511): OpsFindingsService is constructed without an
-        // IOperationGateway (only wired with the durable control-plane graph). Findings still
+        // OpsFindingsService is constructed without an IOperationGateway. Findings still
         // evaluate; proposing an otherwise-actionable fix degrades cleanly instead of throwing.
         var workflowStore = Substitute.For<IWorkflowOperationStore>();
         StubStuckDeploys(workflowStore, BuildDeployOperation("op-9", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: "rev-1", desiredRevision: "rev-2"));
@@ -1612,7 +1603,10 @@ public sealed partial class OpsFindingsServiceTests
 
         Assert.Equal(OpsFindingProposalStatus.GatewayUnavailable, result.Status);
         Assert.Equal(finding.Id, result.FindingId);
-        Assert.False(string.IsNullOrWhiteSpace(result.Message));
+        Assert.Equal(
+            "The durable control-plane operation gateway is unavailable "
+                + "(it requires a configured system database); the recommended action cannot be proposed.",
+            result.Message);
     }
 
     [UnitTest]

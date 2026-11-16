@@ -46,7 +46,7 @@ internal static partial class FeatureStreamEndpoints
 
                 // The live path already sent this cursor (it arrived ahead of the sweep, or
                 // out of order below the live high-water mark): skip it so the sweep that
-                // resumes from the swept floor does not re-send it (honua-server#6104).
+                // resumes from the swept floor does not re-send it.
                 if (liveDelivered is not null && liveDelivered.WasDeliveredLive(evt.Cursor))
                 {
                     continue;
@@ -89,7 +89,7 @@ internal static partial class FeatureStreamEndpoints
 
                 // Sequence is allocated only for frames that survive filtering and dedup, and
                 // INSIDE the write lock, so allocation order is wire order even when the writer
-                // task is draining the same subscription concurrently (#3038 REQ-002 + review).
+                // task is draining the same subscription concurrently.
                 if (!await SendStampedWebSocketJsonAsync(
                         webSocket,
                         writeLock,
@@ -180,7 +180,7 @@ internal static partial class FeatureStreamEndpoints
 
                 // The live path already sent this cursor (it arrived ahead of the sweep, or
                 // out of order below the live high-water mark): skip it so the sweep that
-                // resumes from the swept floor does not re-send it (honua-server#6104).
+                // resumes from the swept floor does not re-send it.
                 if (liveDelivered is not null && liveDelivered.WasDeliveredLive(evt.Cursor))
                 {
                     continue;

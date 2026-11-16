@@ -13,9 +13,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// Locks the MapServer tile-cache, output-SR, and synchronous exportTiles contracts.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerImageContractTests
 {

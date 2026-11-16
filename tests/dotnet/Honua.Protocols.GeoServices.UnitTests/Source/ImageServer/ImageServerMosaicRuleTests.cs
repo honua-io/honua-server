@@ -10,10 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit tests for <see cref="ImageServerMosaicRule"/> parsing and ordering resolution, with a
-/// focus on the non-date <c>esriMosaicAttribute</c> support added in #1870.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerMosaicRuleTests
 {

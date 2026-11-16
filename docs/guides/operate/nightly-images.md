@@ -18,7 +18,7 @@ newest of the 100 latest trunk commits that is certified, never HEAD at cron
 time. It builds and checks out that sha, stamps `HONUA_GIT_SHA` and the
 `org.opencontainers.image.revision` label with it, and publishes the per-sha tags
 above plus the dated and channel tags (`nightly`, `nightly-<yyyymmdd>`, `trunk`,
-and the `-aot`, `-lambda-aot`, `-jit` and `-functions-aot` variants), so those
+and the `-aot`, `-lambda-aot` and `-jit` variants), so those
 channel tags now point at the newest certified image. The run log and step
 summary name the chosen sha and its certifying run. When no commit in that
 window qualifies, the run fails and lists the missing or unsuccessful lanes for

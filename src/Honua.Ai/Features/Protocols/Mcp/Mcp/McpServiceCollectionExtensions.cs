@@ -17,22 +17,11 @@ using Honua.Core.Features.Studio.Drafts;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// DI registration for the MCP operator surface. Tool and resource handlers are
-/// stateless singletons; handlers that need scoped state resolve it through an
-/// <see cref="IServiceScopeFactory"/> during the request. That keeps the
-/// <c>SurfaceInitialized</c> startup log fired exactly once across the process
-/// lifetime and avoids re-building the tool and resource catalogs on every
-/// <c>POST /mcp</c> request.
-/// </summary>
 internal static class McpServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the Streamable-HTTP session registry (honua-server#1954).
-    /// </summary>
     internal static IServiceCollection AddMcpSessionManager(this IServiceCollection services)
     {
-        // Streamable-HTTP session registry (honua-server#1954). A process-wide
+        // Streamable-HTTP session registry. A process-wide
         // singleton constructed via a factory so it picks up the configured
         // lifecycle bounds and the host TimeProvider (defaults to
         // TimeProvider.System when none is registered). A host with a system
@@ -48,7 +37,7 @@ internal static class McpServiceCollectionExtensions
 
             // Without a store, a host that runs as several instances (Lambda, a
             // MultiNode deployment) mints signed self-describing session ids so any
-            // instance can serve a session another minted (honua-server#5629).
+            // instance can serve a session another minted.
             var selection = McpSessionModeResolver.Resolve(
                 options,
                 store is not null,
@@ -88,12 +77,6 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Binds <see cref="McpOptions"/> from the <c>Mcp</c> section. The
-    /// stateless-session fallback defaults by environment (on only in
-    /// Development); that default is applied before binding, so an explicit
-    /// <c>Mcp:StatelessSessionFallback</c> setting still wins.
-    /// </summary>
     internal static IServiceCollection AddMcpOptions(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<McpOptions>()
@@ -104,18 +87,6 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers MCP tools, core resources (jobs, workspaces, catalog), and the
-    /// JSON-RPC dispatcher. The hosted-promotion surface (published services,
-    /// deployments, map/app packages) is intentionally not registered here —
-    /// those handlers depend on canonical <see cref="Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore"/>
-    /// and <see cref="Honua.Core.Features.Deployment.Abstractions.IDeploymentStore"/> persistence,
-    /// Hosts that have registered canonical persistence call
-    /// <see cref="AddMcpPromotionSurface"/> to advertise those resources; the
-    /// Postgres server profile does this through the server composition gate.
-    /// Metadata-backed ordinary publications use <see cref="AddMcpCatalogPublicationSurface"/>
-    /// when the promotion stores are absent.
-    /// </summary>
     public static IServiceCollection AddMcpDataAccessSurface(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -131,7 +102,7 @@ internal static class McpServiceCollectionExtensions
         }
 
         // PlanAnalysisTool resolves its IPlanAnalysisService from the
-        // deterministic fixture replay. ADR-0076 (#3255) retired the live,
+        // deterministic fixture replay. ADR-0076 retired the live,
         // provider-backed planner with the rest of the server-side inference
         // surface, so there is no config-driven lane selection left and CI stays
         // AI-credit-free by construction. Hosts can still call
@@ -146,7 +117,7 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecutePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
 
-        // ── MCP capability-breadth tools (#2813) ──────────────────────────────
+        // ── MCP capability-breadth tools ──────────────────────────────
         // honua_list_jobs: caller-scoped job enumeration (status filter + cursor
         // paging) over the canonical IGeoprocessingJobService.ListJobsAsync, so an
         // agent can find a queued/stuck job to feed honua_cancel_job. Registered
@@ -165,7 +136,7 @@ internal static class McpServiceCollectionExtensions
         // reader gated block, next to honua_query_features.)
         // ──────────────────────────────────────────────────────────────────────
 
-        // honua_publish_service (#1951): the authoring/publishing tool. It routes
+        // honua_publish_service: the authoring/publishing tool. It routes
         // through the canonical IOperationInvoker (operations toolset) →
         // ServicePublishExecutor → ILayerPublishingService rather than
         // reimplementing publish. Registered unconditionally and gated at
@@ -177,7 +148,7 @@ internal static class McpServiceCollectionExtensions
         // pattern the typed governed proposal tools use for the operation gateway.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishServiceTool>());
 
-        // honua_publish_result (#2482): promotes a completed analysis job's
+        // honua_publish_result: promotes a completed analysis job's
         // materialized artifact into a hosted layer. It resolves the job result
         // package through IGeoprocessingJobService (composed before this method,
         // like every other job-backed tool) and routes the promotion through the
@@ -188,7 +159,7 @@ internal static class McpServiceCollectionExtensions
         // and returns a structured "unavailable" handle when none is composed.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishResultTool>());
 
-        // Authoring tools (#1951, re-founded by ADR-0076 / #3255):
+        // Authoring tools (re-founded by ADR-0076):
         // create_map_package / create_app_package create draft packages
         // deterministically from structured input through the shared
         // MapPackageDraftFactory / AppPackageDraftFactory in Honua.Core. They
@@ -211,13 +182,13 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateMapPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateAppPackageTool>());
 
-        // Studio draft lifecycle + composition tools (honua-server#3002, AD-8:
-        // composition state IS a lifecycle draft; the browser is a projection).
-        // Every tool authorizes against the OperatorResourceType.StudioDraft
-        // grant family ("studio-compose") so #3001 can scope it independently
-        // of the existing package-review/authoring grants, and delegates all
+        // Studio draft lifecycle + composition tools (composition state IS a
+        // lifecycle draft; the browser is a projection). Every tool authorizes
+        // against the OperatorResourceType.StudioDraft grant family
+        // ("studio-compose") so it can be scoped independently of the existing
+        // package-review/authoring grants, and delegates all
         // state changes to IStudioPackageLifecycleService — no lifecycle logic
-        // is reimplemented here. Registered unconditionally (PR #3016 review):
+        // is reimplemented here. Registered unconditionally:
         // AddStudioPackageLifecycle registers IStudioPackageLifecycleService /
         // IStudioPackageValidator as Scoped and, in the real host composition
         // (FeatureRegistrationExtensions.AddServerFeatures), runs AFTER this
@@ -286,7 +257,7 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ClarifyIntentTool>());
 
-        // Platform-operations observability tools (#2555) are read-only adapters
+        // Platform-operations observability tools are read-only adapters
         // over the admin ops-health/findings/alert/timeline surfaces. The server
         // composition root registers IMcpOpsObservabilityReader after the same
         // ops-read/admin authorization dependencies as the REST endpoints, so
@@ -300,7 +271,7 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, OperateEventsTool>());
         }
 
-        // Job diagnosis tools (#6219) read the admin job diagnostics projection through
+        // Job diagnosis tools read the admin job diagnostics projection through
         // IMcpJobDiagnosticsReader, which the server composition root registers next to the
         // ops-observability reader. The same gate keeps tools/list honest in minimal hosts.
         if (services.Any(d => d.ServiceType == typeof(IMcpJobDiagnosticsReader)))
@@ -309,7 +280,7 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, JobEvidenceTool>());
         }
 
-        // Platform-ops tools (#2566) are thin MCP adapters over the deploy
+        // Platform-ops tools are thin MCP adapters over the deploy
         // control-plane read/proposal seams. Tool advertisement is gated on the
         // host providing the server-side reader, so minimal compositions stay truthful.
         if (services.Any(d => d.ServiceType == typeof(IMcpPlatformOpsReader)))
@@ -325,14 +296,14 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposePlatformReleaseConvergenceTool>());
         }
 
-        // honua_list_capabilities (#1949): a self-describing manifest of the live
+        // honua_list_capabilities: a self-describing manifest of the live
         // tool/resource surface for a cold client LLM. Registered unconditionally
         // because it only reflects whatever catalog the composition wired — it has
         // no external service dependency and never advertises an empty capability
         // it cannot back.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, Discovery.ListCapabilitiesTool>());
 
-        // Geocode/route tools (#1597) are only advertised when the host
+        // Geocode/route tools are only advertised when the host
         // composition has wired the underlying canonical services (AddGeocoding
         // / AddRouting run before AddMcpDataAccessSurface in the server
         // composition root). Checking the descriptor list here keeps
@@ -374,7 +345,7 @@ internal static class McpServiceCollectionExtensions
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.ListLayersTool>());
 
-            // honua_resolve_entity (#1949): NL/text → ranked service/layer refs over
+            // honua_resolve_entity: NL/text → ranked service/layer refs over
             // the same Metadata v2 catalog ListLayersTool reads, so it is gated on
             // the same provider being wired.
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, Discovery.ResolveEntityTool>());
@@ -383,7 +354,7 @@ internal static class McpServiceCollectionExtensions
             {
                 services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.QueryFeaturesTool>());
 
-                // honua_describe_layer (#2813): a layer's field schema + row count
+                // honua_describe_layer: a layer's field schema + row count
                 // + CRS/extent. Reads the same Metadata v2 graph (schema) and shared
                 // IFeatureReader (row count) as honua_query_features, so it is gated
                 // on the same two capabilities being composed.
@@ -409,7 +380,7 @@ internal static class McpServiceCollectionExtensions
                 services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.RenderMapTool>());
             }
 
-            // Styling tools (#2482, ADR-0048): honua_get_style (read the StyleRef
+            // Styling tools (ADR-0048): honua_get_style (read the StyleRef
             // for a layer/style over the OGC API - Styles surface) and
             // honua_apply_style_preset (bind a catalog styleId as a layer's
             // primary/default style, persisting through the styleId-keyed
@@ -429,7 +400,7 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, WorkspaceResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, ProcessCatalogResource>());
 
-        // honua://catalog/features (#1946, ADR-0054): the evidence-based feature
+        // honua://catalog/features (ADR-0054): the evidence-based feature
         // catalog. Registered in the default composition (unlike the promotion
         // resources) because it serves a static, embedded, drift-gated artifact —
         // it has no runtime persistence dependency and cannot advertise an empty
@@ -455,21 +426,21 @@ internal static class McpServiceCollectionExtensions
 
         services.TryAddSingleton<McpDataAccessSurface>();
 
-        // MCP transport + session-lifecycle options (A3 hardening; #2537):
+        // MCP transport + session-lifecycle options (A3 hardening):
         // server-initiated GET-stream toggle, idle TTL, session cap, and eviction
         // policy. Bound from the `Mcp` section; defaults live on McpOptions.
         services.AddMcpOptions(configuration);
 
         services.AddMcpSessionManager();
 
-        // honua-server#4909: a bearer token admitted on a session's initialize (or on a
+        // A bearer token admitted on a session's initialize (or on a
         // refreshed-token request that session accepted) may be reused on that session
         // under token replay protection; reuse anywhere else stays a replay.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<
             Honua.Infrastructure.Authentication.ITokenReplayScopeResolver,
             McpTokenReplayScopeResolver>());
 
-        // Server-push notifications over the session SSE stream (honua-server#1954):
+        // Server-push notifications over the session SSE stream:
         // the publisher builds notifications/progress + */list_changed frames and
         // enqueues them onto the owning session; the progress bridge polls the
         // canonical job runtime and forwards progress to the session that started
@@ -480,7 +451,7 @@ internal static class McpServiceCollectionExtensions
             McpRealtimeStream.ResolveFanout(sp)));
         services.TryAddSingleton<McpJobProgressBridge>();
 
-        // ADR-0058 B2 (#2334): bind the served /mcp catalog to the unified
+        // ADR-0058 B2: bind the served /mcp catalog to the unified
         // capability registry as its single source of truth. The registry is the
         // provenance the honua_list_capabilities projection and the geospatial-mcp
         // manifest emitter read; the startup composition check
@@ -492,7 +463,7 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, McpRegistryBindingStartupCheck>());
 
-        // honua-server#3428: server-authored workflow discovery views. The options
+        // Server-authored workflow discovery views. The options
         // carry only the server/profile leg of the negotiation contract (the
         // default view for a session that negotiates none); the views themselves
         // are derived from the canonical live catalog, never configured. With the
@@ -505,16 +476,6 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Publishes validated operations-toolset descriptors as first-class MCP tools
-    /// (#2483, ADR-0056 Increment 4). The audited Admin projection publishes by default
-    /// (#3363; <c>Mcp:PublishOperations:AdminProjection=false</c> withholds it) and the full
-    /// catalog stays opt-in via <c>Mcp:PublishOperations:Enabled</c>. Must be called
-    /// AFTER the operations toolset is composed (<c>AddOperationsToolset</c>), because
-    /// the tool source resolves the canonical <see cref="Honua.Core.Features.Operations.Abstractions.IOperationCatalog"/>
-    /// — call it from a host that has the operations toolset wired, not from a bare
-    /// <see cref="AddMcpDataAccessSurface"/> composition.
-    /// </summary>
     public static IServiceCollection AddMcpPublishedOperationTools(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -535,10 +496,6 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers persisted catalog publication readback without manufacturing
-    /// promotion or deployment stores. Deployment/package resources stay absent.
-    /// </summary>
     public static IServiceCollection AddMcpCatalogPublicationSurface(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -557,15 +514,6 @@ internal static class McpServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers the hosted-promotion MCP resource handlers (published services,
-    /// deployments, map/app packages, and the promotion list index). Callers
-    /// must register canonical <see cref="Honua.Core.Features.Publishing.Abstractions.IPublishedServiceStore"/>
-    /// and <see cref="Honua.Core.Features.Deployment.Abstractions.IDeploymentStore"/> persistence
-    /// before invoking this extension; this method deliberately does not wire
-    /// any fallback stores so the default server composition cannot advertise
-    /// promotion resources backed by process-local, always-empty state.
-    /// </summary>
     public static IServiceCollection AddMcpPromotionSurface(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

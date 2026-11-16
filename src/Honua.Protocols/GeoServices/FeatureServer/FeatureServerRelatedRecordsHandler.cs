@@ -279,7 +279,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
             // Build response. Per the Esri queryRelatedRecords contract, the field
             // schema / object-id field / geometry metadata are emitted once at the
-            // top level and each group carries a flat relatedRecords array (#1452).
+            // top level and each group carries a flat relatedRecords array.
             var response = new QueryRelatedRecordsResponse
             {
                 ObjectIdFieldName = grouped.ObjectIdFieldName,

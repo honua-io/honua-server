@@ -17,10 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Integration tests for enhanced OGC API Features functionality
-/// Covers Issues #157 (MVP gaps), #56 (content negotiation), and related enhancements
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]

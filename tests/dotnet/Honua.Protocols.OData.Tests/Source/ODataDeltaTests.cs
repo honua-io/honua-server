@@ -21,10 +21,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Integration tests for OData $deltatoken change tracking support.
-/// Verifies that change tracking is opt-in and delta links round-trip cleanly.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed partial class ODataDeltaTests : IAsyncLifetime

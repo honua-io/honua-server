@@ -20,15 +20,8 @@ namespace Honua.Protocols.Ogc.Api.Coverages.Services;
 
 internal sealed class ZarrCoverageService
 {
-    /// <summary>
-    /// CoverageJSON media type served for Zarr-backed collections.
-    /// </summary>
     internal const string CoverageJsonContentType = "application/prs.coverage+json";
 
-    /// <summary>
-    /// Raw decoded payload cap. CoverageJSON expands roughly 3-4x over the
-    /// binary buffer, so this keeps responses comfortably bounded.
-    /// </summary>
     private const long MaxCoverageOutputBytes = 16L * 1024L * 1024L;
 
     private static readonly ImmutableHashSet<string> SupportedQueryParameters =
@@ -53,19 +46,12 @@ internal sealed class ZarrCoverageService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Returns the first registered Zarr store for the storage layer whose
-    /// metadata scan has completed, or null when the layer has no servable store.
-    /// </summary>
     public async Task<ZarrRegistration?> FindServableRegistrationAsync(int storageLayerId, CancellationToken cancellationToken)
     {
         var registrations = await _zarrStore.ListByLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         return registrations.FirstOrDefault(registration => registration.Metadata is not null);
     }
 
-    /// <summary>
-    /// Builds the OGC API Coverages collection document for a Zarr-backed layer.
-    /// </summary>
     public static OgcCoverageCollection CreateCollection(
         MetadataV2Object resource,
         int storageLayerId,
@@ -128,10 +114,6 @@ internal sealed class ZarrCoverageService
         };
     }
 
-    /// <summary>
-    /// Builds the field-selection schema for a Zarr-backed collection: one
-    /// selectable property per discovered variable.
-    /// </summary>
     public static CoverageSchema CreateSchema(MetadataV2Object resource, int storageLayerId, ZarrRegistration registration)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -168,11 +150,6 @@ internal sealed class ZarrCoverageService
         };
     }
 
-    /// <summary>
-    /// Serves a CoverageJSON subset of a Zarr-backed collection. Supports
-    /// <c>properties</c> single-variable selection and OGC-style
-    /// <c>subset=dim(low:high)</c> parameters expressed as inclusive grid indices.
-    /// </summary>
     public async Task<IResult> GetCoverageAsync(
         HttpContext context,
         string collectionId,
@@ -418,13 +395,6 @@ internal sealed class ZarrCoverageService
         return true;
     }
 
-    /// <summary>
-    /// Translates an OGC <c>datetime</c> query parameter into a synthetic
-    /// grid-index subset over the store's time dimension and appends it to
-    /// <paramref name="subsets"/>. No-ops when <c>datetime</c> is absent. Requires
-    /// the store to declare a resolvable time axis, and rejects a request that
-    /// also subsets the time dimension explicitly via <c>subset=</c>.
-    /// </summary>
     private static bool TryApplyTemporalSubset(
         HttpContext context,
         ZarrStoreMetadata metadata,
@@ -500,7 +470,7 @@ internal sealed class ZarrCoverageService
             {
                 // A subset targeting a declared additional coordinate axis
                 // (vertical/elevation/named) is resolved from coordinate values to a
-                // grid-index slice through the shared coordinate-axis indexer (#1872).
+                // grid-index slice through the shared coordinate-axis indexer.
                 if (TryMatchCoordinateAxis(metadata, segment, out var axis))
                 {
                     if (!TryResolveCoordinateSubset(axis!, segment, out var resolved, out error))
@@ -522,10 +492,6 @@ internal sealed class ZarrCoverageService
         return true;
     }
 
-    /// <summary>
-    /// Returns true when <paramref name="segment"/> targets a declared additional
-    /// coordinate axis (not a spatial or temporal axis), yielding the matched axis.
-    /// </summary>
     private static bool TryMatchCoordinateAxis(ZarrStoreMetadata metadata, string segment, out ZarrAxis? axis)
     {
         axis = null;
@@ -546,11 +512,6 @@ internal sealed class ZarrCoverageService
         return axis is not null;
     }
 
-    /// <summary>
-    /// Resolves a coordinate-valued subset (<c>axis(value)</c> or
-    /// <c>axis(low:high)</c>) on a declared additional axis to an inclusive
-    /// grid-index slice via <see cref="CfCoordinateAxisIndexer"/>.
-    /// </summary>
     private static bool TryResolveCoordinateSubset(
         ZarrAxis axis,
         string segment,

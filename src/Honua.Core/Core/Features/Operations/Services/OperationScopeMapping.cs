@@ -117,9 +117,9 @@ public static class OperationScopeMapping
         => ResolveStudioOperation(operationId) != default;
 
     // Every Studio mutation routed through the canonical runtime needs a mapping: the dispatcher
-    // refuses any scope-governed submission it cannot map (#4722), so an unmapped identity made
-    // OAuth reopen, publication proposals, rollback and validation fail before an envelope existed
-    // (#3429). The operations mirror StudioAuthorizationService's scope ceiling.
+    // refuses any scope-governed submission it cannot map, so an unmapped identity made
+    // OAuth reopen, publication proposals, rollback and validation fail before an envelope existed.
+    // The operations mirror StudioAuthorizationService's scope ceiling.
     private static OperatorOperation ResolveStudioOperation(string operationId)
         => operationId switch
         {
@@ -152,7 +152,8 @@ public static class OperationScopeMapping
 
         // Access-family reads expose key, user, tenant and provider inventories, so a
         // scope-governed bearer needs read authority for them and not merely discover/create.
-        if (operationId.EndsWith(".list", StringComparison.Ordinal) ||
+        if (operationId is "admin.oidc-provider.revisions" or "admin.rate-limit-policy.revisions" ||
+            operationId.EndsWith(".list", StringComparison.Ordinal) ||
             operationId.EndsWith(".get", StringComparison.Ordinal) ||
             operationId.EndsWith(".status", StringComparison.Ordinal) ||
             operationId.EndsWith(".test", StringComparison.Ordinal) ||

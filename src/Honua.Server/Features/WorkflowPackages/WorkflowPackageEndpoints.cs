@@ -89,7 +89,7 @@ internal static class WorkflowPackageEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         group.MapPost("/workflow-packages/{packageId}/versions/{packageVersion:int}/publish", HandlePublishVersion)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("PublishWorkflowPackageVersion")
             .WithSummary("Publish a workflow package version to a job, schedule, or process endpoint target")
             .Accepts<PublishWorkflowPackageRequest>("application/json")
@@ -111,7 +111,7 @@ internal static class WorkflowPackageEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         group.MapPost("/workflow-publications/{publicationId}/status", HandleSetPublicationStatus)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("SetWorkflowPublicationStatus")
             .WithSummary("Enable or disable a workflow package publication and its schedule definition")
             .Accepts<SetWorkflowPublicationStatusRequest>("application/json")
@@ -420,8 +420,8 @@ internal static class WorkflowPackageEndpoints
             return BadRequest(context, ex.Message);
         }
         // A publication target whose durable store was never composed is refused with the
-        // capability-unavailable receipt (honua-release#202) rather than a bare 503, so a terminal
-        // agent can branch on `code`/`missingDependency` instead of parsing prose (#3585).
+        // capability-unavailable receipt rather than a bare 503, so a terminal
+        // agent can branch on `code`/`missingDependency` instead of parsing prose.
         catch (WorkflowPublicationDependencyUnavailableException)
         {
             return WorkflowPublicationUnavailable(context);

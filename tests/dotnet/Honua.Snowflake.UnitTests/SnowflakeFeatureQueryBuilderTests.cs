@@ -9,12 +9,6 @@ using Honua.Db.Snowflake.Features.FeatureStore.Services;
 
 namespace Honua.Db.Snowflake.Tests;
 
-/// <summary>
-/// Unit tests for the Snowflake query builder. Verifies Snowflake SQL dialect, double-quoted
-/// identifier handling, positional parameter binding, paging, spatial predicates, and rejection of
-/// unsupported relationships and injection attempts. These tests run in normal CI; they do not
-/// require a live Snowflake warehouse.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class SnowflakeFeatureQueryBuilderTests
 {

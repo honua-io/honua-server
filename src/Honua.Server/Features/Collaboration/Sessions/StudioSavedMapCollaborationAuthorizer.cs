@@ -63,7 +63,7 @@ internal sealed class StudioSavedMapCollaborationAuthorizer : ISavedMapCollabora
             // StudioCompositionBodyEditor, which rejects every other family. Authorizing a
             // query/analysis/dashboard/report/form draft would hand clients accepted cursors and
             // live broadcasts for edits no checkpoint could ever persist, so refuse before any
-            // operation enters the log (honua-server#2999 review).
+            // operation enters the log.
             if (!StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(draft.Family))
             {
                 return SavedMapCollaborationAuthorizationResult.Forbid(
@@ -91,7 +91,7 @@ internal sealed class StudioSavedMapCollaborationAuthorizer : ISavedMapCollabora
             // the item owner) the draft owner is intentionally denied at that boundary. UpdateDraft
             // on the draft alone therefore over-admits: the caller edits and broadcasts, then
             // every checkpoint 403s and the operations accumulate until they age out of the
-            // retained window and the continuity guard refuses too (honua-server#2999 review).
+            // retained window and the continuity guard refuses too.
             //
             // Enforced with the SAME operation, resource type, and owner the checkpoint endpoint
             // uses, so the two boundaries cannot drift apart.

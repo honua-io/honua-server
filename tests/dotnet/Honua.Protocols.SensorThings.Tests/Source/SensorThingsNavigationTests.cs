@@ -10,7 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>HTTP navigation receipts for the exposed SensorThings entity sets.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsNavigationTests : IAsyncLifetime

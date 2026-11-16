@@ -147,7 +147,7 @@ public static class PortalTokenAuthenticationExtensions
 
     private static void TryAddPortalOAuthBridge(this IServiceCollection services)
     {
-        // The ArcGIS OAuth2 named-user bridge (#1242) composes the existing OIDC
+        // The ArcGIS OAuth2 named-user bridge composes the existing OIDC
         // identity core and IPortalTokenIssuer rather than introducing a parallel
         // auth subsystem (ADR-0049). The store/broker/token-service are scoped to
         // the request like the credential verifier; the store is registered as a
@@ -158,9 +158,9 @@ public static class PortalTokenAuthenticationExtensions
         services.TryAddSingleton<Honua.Infrastructure.Security.ISecurityTokenStore, Honua.Infrastructure.Security.InMemorySecurityTokenStore>();
         services.TryAddSingleton<PortalOAuthStore>();
 
-        // First-class OAuth2 client registry + scope catalogue (ADR-0053 Increment 2,
-        // #1888). Singletons mirror the in-memory IAdminApiKeyStore pattern: no
-        // parallel durable token store (ADR-0049). They are additive — the flag-gated
+        // First-class OAuth2 client registry + scope catalogue (ADR-0053 Increment
+        // 2). Singletons mirror the in-memory IAdminApiKeyStore pattern: no parallel
+        // durable token store (ADR-0049). They are additive — the flag-gated
         // Increment-1 client_credentials path keeps working via the API-key fallback.
         services.TryAddSingleton<IOAuthClientStore>(sp => new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
@@ -174,9 +174,9 @@ public static class PortalTokenAuthenticationExtensions
         services.AddHttpContextAccessor();
         services.TryAddSingleton<Honua.Core.Features.Security.Abstractions.IPortalResourceReadAuthorizer, PortalResourceReadAuthorizer>();
 
-        // Optional JWT access-token format + RFC 7662 introspection (ADR-0068, #1890)
+        // Optional JWT access-token format + RFC 7662 introspection (ADR-0068)
         // and pluggable IdP/OIDC federation for client_credentials (ADR-0053
-        // Increment 3, #1889). All strictly opt-in via options; registering the
+        // Increment 3). All strictly opt-in via options; registering the
         // services unconditionally keeps the flag-off path a no-op (the services
         // report disabled and the token service falls back to the opaque/in-tree
         // paths) so there is no behaviour change by default.
@@ -203,7 +203,7 @@ public static class PortalTokenAuthenticationExtensions
         {
             // The Portal access/visibility projection is off-by-default so the
             // facade never exposes a discovery surface unless an operator opts in,
-            // consistent with the entitlement-gated generateToken surface (#1370).
+            // consistent with the entitlement-gated generateToken surface.
             var enabled = configuration.GetValue(
                 $"{PortalAccessProjectionConfiguration.SectionName}:Enabled",
                 defaultValue: false);

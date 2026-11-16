@@ -12,11 +12,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalRasterInterpolateJobExecutor"/>: the
-/// gdal_grid IDW argument projection plus the ordinary-kriging path, whose predictions
-/// are solved in managed code and handed to gdal_translate for encoding (#3932).
-/// </summary>
 public sealed class GdalRasterInterpolateExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-interpolate-test";
@@ -259,13 +254,6 @@ public sealed class GdalRasterInterpolateExecutorTests
         }
     }
 
-    /// <summary>
-    /// The sample cap and the cell cap can BOTH be satisfied by a request whose prediction
-    /// cost is their product SQUARED (the per-cell standard error solves the primal system
-    /// against the cached factorization, O(samples²) per cell). That work runs in managed
-    /// code before the GDAL child process exists, so ToolTimeout does not bound it; the
-    /// combined budget must refuse it up front.
-    /// </summary>
     [Theory]
     [InlineData(1_000, ExecutionJobStatus.Failed)]
     [InlineData(200_000, ExecutionJobStatus.Succeeded)]
@@ -471,13 +459,6 @@ public sealed class GdalRasterInterpolateExecutorTests
             runner, GdalJobFactory.Options(scratch), NullLogger<GdalRasterInterpolateJobExecutor>.Instance);
     }
 
-    /// <summary>
-    /// A fake runner for the kriging two-band pipeline: <c>gdal_translate</c>'s output
-    /// path is its last CLI argument, but <c>gdal_merge.py -separate -o &lt;path&gt; ...</c>
-    /// names its output earlier, after <c>-o</c>. <see cref="FakeGdalCommandRunner.Succeeding"/>
-    /// only knows the fixed-offset-from-the-end convention, so this locates each tool's
-    /// output path the way it actually names it.
-    /// </summary>
     private static FakeGdalCommandRunner SucceedingKrigingRunner(byte[] outputBytes)
         => new((tool, args, _) =>
         {

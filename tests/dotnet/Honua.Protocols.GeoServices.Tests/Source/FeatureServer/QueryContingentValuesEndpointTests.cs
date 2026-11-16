@@ -11,11 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for the service-level <c>queryContingentValues</c> operation (#1878 Phase 1):
-/// the endpoint serves per-layer contingent value definitions from the Metadata v2 graph and an empty
-/// collection when none are authored.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class QueryContingentValuesEndpointTests : IAsyncLifetime

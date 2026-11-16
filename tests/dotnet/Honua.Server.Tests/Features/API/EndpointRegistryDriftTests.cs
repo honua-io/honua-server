@@ -13,10 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.API;
 
-/// <summary>
-/// Verifies that EndpointRegistry stays in sync with actually deployed endpoints.
-/// Prevents drift where new endpoints are added to the app but not tracked in the registry.
-/// </summary>
 [Collection("Database")]
 public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 {
@@ -35,10 +31,6 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// Endpoints deployed in the application that are intentionally excluded from the registry.
-    /// These are infrastructure/internal endpoints that don't need integration test coverage tracking.
-    /// </summary>
     private static readonly HashSet<string> _excludedExactPatterns = new(StringComparer.OrdinalIgnoreCase)
     {
         // ASP.NET infrastructure
@@ -500,7 +492,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
             // GetFromJsonAsync<T> (e.g. GET /api/v1/admin/oauth-scopes) is reported as
             // uncovered even though it has a backing HTTP request.
             // ConnectAsync(...) matches a WebSocket upgrade, which the server routes as an
-            // HTTP GET endpoint (e.g. GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream);
+            // HTTP GET endpoint (e.g. GET /api/v1/maps/{mapId}/collaboration/sessions/stream);
             // those routes are exercised by ws-client ConnectAsync rather than a plain GetAsync.
             "GET" => @"(?:\.Get(?:FromJson)?|Get\w*)Async(?:<[^()]*>)?\s*\(|\.ConnectAsync\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Get\s*,",
             "POST" => @"(?:\.Post(?:AsJson)?|Post\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Post\s*,",
@@ -584,11 +576,6 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         throw new DirectoryNotFoundException("Could not locate tests/dotnet/Honua.Server.Tests from the test execution directory.");
     }
 
-    /// <summary>
-    /// Catalogued integration and component sources whose actual HTTP requests
-    /// back EndpointRegistry entries. Unit and architecture sources cannot provide
-    /// integration evidence merely by containing route strings.
-    /// </summary>
     private static List<string> FindIntegrationTestSourceRoots()
     {
         var serverTests = FindServerTestSourceRoot();

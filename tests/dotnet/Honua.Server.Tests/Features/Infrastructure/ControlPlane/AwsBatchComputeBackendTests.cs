@@ -1448,18 +1448,8 @@ internal sealed class StubAwsBatchJobClient : IAwsBatchJobClient
         Status = "RUNNING"
     };
 
-    /// <summary>
-    /// Optional queue of scripted describe results. Each describe call dequeues the next
-    /// entry; once empty, <see cref="NextDescribeResult"/> is returned. Lets tests model
-    /// sequential AWS Batch state transitions (for example, RUNNABLE then FAILED after a
-    /// cancel request).
-    /// </summary>
     public Queue<AwsBatchJobState?> DescribeResults { get; } = new();
 
-    /// <summary>
-    /// Optional result for <see cref="ListJobsByNameAsync"/>. Null means the stub should
-    /// return the default empty list; tests set this to script discovery outcomes.
-    /// </summary>
     public IReadOnlyList<AwsBatchJobState>? NextListJobsResult { get; set; }
 
     public Exception? SubmitException { get; set; }
