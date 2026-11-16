@@ -805,7 +805,7 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/observability/errors")]
     [Endpoint("GET /api/v1/admin/observability/logs")]
     [Endpoint("POST /api/v1/admin/geocoding/reference-data/import")]
-    [Endpoint("GET /hubs/admin")]
+    [Endpoint("GET /api/v1/admin/live")]
     [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
     [Endpoint("POST /api/mobile/exceptions")]
     [Endpoint("GET /api/v1/admin/api-keys")]
@@ -816,7 +816,6 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/cache/status")]
     [Endpoint("GET /api/v1/admin/operations/cache/health")]
     [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
-    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
     [Endpoint("GET /sharing/rest/info")]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public void TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked()
@@ -859,7 +858,7 @@ public class OidcAuthenticationTests
             ("OAuth scopes", route => route.StartsWith("/api/v{version:apiVersion}/admin/oauth-scopes", StringComparison.Ordinal)),
             ("client-certificate trust", route => route.StartsWith("/api/v{version:apiVersion}/admin/security/client-certificates", StringComparison.Ordinal)),
             ("rate-limit policy administration", route => route.StartsWith("/api/v{version:apiVersion}/admin/rate-limits", StringComparison.Ordinal)),
-            ("admin realtime hub", route => route.Equals("/hubs/admin", StringComparison.Ordinal)),
+            ("admin realtime hub", route => route.Equals("/api/v1/admin/live", StringComparison.Ordinal)),
             ("stateless GeometryServer", route => route.StartsWith("/rest/services/Utilities/Geometry/GeometryServer/", StringComparison.Ordinal))
         };
 
@@ -885,7 +884,6 @@ public class OidcAuthenticationTests
             "Get Cache Status",
             "Get Cache Health",
             "Get Cache Statistics",
-            "Get Redis Cache Metrics",
             "ArcGIS Portal Sharing Info"
         }.Select(displayName =>
             Assert.Single(routeEndpoints, endpoint => endpoint.DisplayName == displayName));
@@ -919,7 +917,7 @@ public class OidcAuthenticationTests
                 (route.StartsWith("/api/v{version:apiVersion}/admin/", StringComparison.Ordinal) ||
                  route.StartsWith("/api/v{version:apiVersion}/metrics/", StringComparison.Ordinal) ||
                  route.StartsWith("/monitoring/", StringComparison.Ordinal) ||
-                 route is "/metrics" or "/hubs/admin" or "/api/mobile/exceptions");
+                 route is "/metrics" or "/api/v1/admin/live" or "/api/mobile/exceptions");
         });
 
         Assert.All(markedAdminEndpoints, endpoint =>
@@ -960,7 +958,6 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/cache/status")]
     [Endpoint("GET /api/v1/admin/operations/cache/health")]
     [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
-    [Endpoint("GET /api/v1/admin/operations/cache/redis")]
     [Endpoint("GET /sharing/rest/info")]
     public async Task TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers()
     {
@@ -987,7 +984,6 @@ public class OidcAuthenticationTests
             "/api/v1/admin/cache/status",
             "/api/v1/admin/operations/cache/health",
             "/api/v1/admin/operations/cache/statistics",
-            "/api/v1/admin/operations/cache/redis",
             "/sharing/rest/info"
         }.Select(route => new HttpRequestMessage(HttpMethod.Get, route)))
         {

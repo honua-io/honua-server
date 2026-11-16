@@ -210,6 +210,7 @@ internal static class AdminApiOperationCatalog
             },
             AllowsNull = allowsNull,
             Format = resolved.TryGetProperty("format", out var format) ? format.GetString() : null,
+            Minimum = resolved.TryGetProperty("minimum", out var minimum) ? minimum.GetDecimal() : null,
             EnumValues = resolved.TryGetProperty("enum", out var values) ? values.EnumerateArray().Select(static value => value.ValueKind == JsonValueKind.Null ? null : value.ToString()).ToArray() : [],
             Items = resolved.TryGetProperty("items", out var items) ? ConvertSchema(root, items) : null,
             Properties = resolved.TryGetProperty("properties", out var properties)

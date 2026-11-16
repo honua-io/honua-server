@@ -61,7 +61,7 @@ internal sealed class ImageServerCalculateVolumeHandler
             // baseType selects the reference surface. Only the constant-z plane (baseType 0) is
             // supported: the per-pixel band vectors carry no positions, so a best-fitting plane or a
             // perimeter-derived base (baseType 1-4) cannot be reconstructed honestly here.
-            if (!TryParseBaseType(GetString(values, "baseType"), out var baseType, out var baseTypeError))
+            if (!TryParseBaseType(ImageServerRequestValues.GetString(values, "baseType"), out var baseType, out var baseTypeError))
             {
                 ImageServerLog.InvalidCalculateVolumeParameters(_logger, layerId, baseTypeError!);
                 return StandardErrorHelpers.CreateBadRequest(context, baseTypeError!);
@@ -75,7 +75,7 @@ internal sealed class ImageServerCalculateVolumeHandler
                     "best-fitting-plane and perimeter-derived base surfaces are not implemented.");
             }
 
-            if (!TryParseConstantZ(GetString(values, "constantZ") ?? GetString(values, "referenceHeight"),
+            if (!TryParseConstantZ(ImageServerRequestValues.GetString(values, "constantZ") ?? ImageServerRequestValues.GetString(values, "referenceHeight"),
                     out var basePlane, out var constantZError))
             {
                 ImageServerLog.InvalidCalculateVolumeParameters(_logger, layerId, constantZError!);
@@ -83,8 +83,8 @@ internal sealed class ImageServerCalculateVolumeHandler
             }
 
             if (!ImageServerVolumeGeometries.TryParse(
-                    GetString(values, "geometries"),
-                    GetString(values, "geometryType"),
+                    ImageServerRequestValues.GetString(values, "geometries"),
+                    ImageServerRequestValues.GetString(values, "geometryType"),
                     raster.Srid,
                     out var areas,
                     out var geometriesError))
@@ -256,7 +256,4 @@ internal sealed class ImageServerCalculateVolumeHandler
 
         return true;
     }
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 }

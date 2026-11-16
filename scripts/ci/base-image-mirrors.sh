@@ -100,9 +100,9 @@ print_dotnet_inventory_markdown() {
     dockerfile="${path#"${REPO_ROOT}/"}"
     while IFS= read -r line; do
       line="${line%$'\r'}"
-      if [[ "${line}" =~ ^[[:space:]]*[Aa][Rr][Gg][[:space:]]+(DOTNET_(SDK|ASPNET|RUNTIME_DEPS)_IMAGE)=(.*)$ ]]; then
+      if [[ "${line}" =~ ^[[:space:]]*[Aa][Rr][Gg][[:space:]]+(DOTNET_(SDK|ASPNET|RUNTIME_DEPS)(_FULL)?_IMAGE)=(.*)$ ]]; then
         arg_name="${BASH_REMATCH[1]}"
-        source_ref="${BASH_REMATCH[3]}"
+        source_ref="${BASH_REMATCH[4]}"
         source_ref="${source_ref%"${source_ref##*[![:space:]]}"}"
         if [[ "${source_ref}" =~ ${DIGEST_REF_PATTERN} ]]; then
           printf '| `%s` | `%s` | `%s` |\n' "${dockerfile}" "${arg_name}" "${source_ref}"

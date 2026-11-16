@@ -2,12 +2,12 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Validation;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-internal sealed class FeatureQueryValidator : IFeatureQueryValidator
+internal sealed class FeatureQueryValidator
 {
     private readonly ICommonQueryValidator _commonQueryValidator;
 

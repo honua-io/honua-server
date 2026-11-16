@@ -31,6 +31,8 @@ public sealed class Wfs20StoredQueryScopeTests
 {
     private const string WfsNs = "http://www.opengis.net/wfs/2.0";
 
+    private static readonly InMemoryWfsStoredQueryStore StoredQueries = new();
+
     // ─── BH3-009 regression ──────────────────────────────────────────────────────
 
     /// <summary>
@@ -130,6 +132,7 @@ public sealed class Wfs20StoredQueryScopeTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IWfsStoredQueryStore>(StoredQueries);
         services.AddSingleton<ITenantContext>(new FixedTenantContext("tenant-editor"));
         services.AddSingleton<Microsoft.Extensions.Options.IOptions<Honua.Infrastructure.Authentication.RbacOptions>>(
             Microsoft.Extensions.Options.Options.Create(new Honua.Infrastructure.Authentication.RbacOptions
@@ -158,6 +161,7 @@ public sealed class Wfs20StoredQueryScopeTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IWfsStoredQueryStore>(StoredQueries);
         services.AddSingleton<ITenantContext>(new FixedTenantContext(tenantId));
         var context = new DefaultHttpContext
         {

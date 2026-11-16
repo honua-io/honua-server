@@ -69,6 +69,8 @@ internal readonly record struct RemoteCancelStampResult(
 
 internal static class ExecutionJobCancellationHelper
 {
+    internal static bool RequiresCommitRecovery(ExecutionJobRecord job)
+        => job.Spec.Kind == ExecutionJobKind.GeoservicesImport && job.AttemptCount > 0;
 
     public static bool HasSubmittedProviderMarker(ExecutionJobRecord job)
         => !string.IsNullOrEmpty(job.ProviderOperationId)
@@ -141,7 +143,7 @@ internal static class ExecutionJobCancellationHelper
             }
 
             var now = DateTimeOffset.UtcNow;
-            if (current.ClaimedBy != null)
+            if (current.ClaimedBy != null || RequiresCommitRecovery(current))
             {
                 if (current.CancellationRequestedAt.HasValue)
                 {
@@ -199,7 +201,7 @@ internal static class ExecutionJobCancellationHelper
             return new(ExecutionJobCancellationState.TerminalConflict, current);
         }
 
-        if (current.ClaimedBy != null && current.CancellationRequestedAt.HasValue)
+        if ((current.ClaimedBy != null || RequiresCommitRecovery(current)) && current.CancellationRequestedAt.HasValue)
         {
             return new(ExecutionJobCancellationState.CancellationRequested, current);
         }
