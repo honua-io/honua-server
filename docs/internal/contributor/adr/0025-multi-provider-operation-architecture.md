@@ -19,8 +19,8 @@ is not sufficient as the source of truth for all control-plane behavior.
 Key constraints:
 
 1. Deploy workflows have different semantics from batch jobs. A Kubernetes
-   rollout, an AWS Lambda alias shift, and an Azure Functions revision swap are
-   not the same kind of operation as a geoprocessing batch run.
+   rollout and an AWS Lambda alias shift are not the same kind of operation as
+   a geoprocessing batch run.
 2. Deploy control cannot rely on node-local background workers or in-memory
    fallback state. A deploy operation must survive replica restarts and be safe
    to reconcile from any control-plane instance.
@@ -68,8 +68,6 @@ Example backends:
 
 - Kubernetes
 - AWS Lambda
-- Azure Functions
-- Azure Container Apps
 
 Workflow states are richer than generic queue states. They include:
 
@@ -184,8 +182,7 @@ internals.
 - Introduce dedicated operation store interfaces for workflow operations and
   execution jobs.
 - Implement Redis-backed operation stores with lease semantics.
-- Add deploy backend adapters for Kubernetes, AWS Lambda, Azure Functions, and
-  Azure Container Apps.
+- Add deploy backend adapters for Kubernetes and AWS Lambda.
 - Add batch compute backend adapters for AWS Batch (the Kubernetes Jobs adapter ships as `honua-kubernetes-job`).
 - Add control-plane endpoints for planning, submission, observation, and
   rollback based on the workflow operation model.

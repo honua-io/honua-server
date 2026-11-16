@@ -609,7 +609,8 @@ def check_fixture_input_owners(config: dict[str, Any]) -> None:
         "tests/fixtures/plugins/": "Server Features Miscellaneous",
     }
     for prefix, expected_owner in owners.items():
-        result = run_selector([f"{prefix}consumer-input.json"])
+        # Ownership must include the entire family even when it outgrows the PR cap.
+        result = run_selector([f"{prefix}consumer-input.json"], cap=len(config["shards"]))
         expected = set(capacity_split_names(config, expected_owner))
         if set(result["shards"]) != expected:
             raise FixtureError(
