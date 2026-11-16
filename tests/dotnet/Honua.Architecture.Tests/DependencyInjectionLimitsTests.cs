@@ -156,7 +156,7 @@ public sealed class DependencyInjectionLimitsTests
         var baseDirectory = AppContext.BaseDirectory;
         var loaded = new Dictionary<string, Assembly>(StringComparer.OrdinalIgnoreCase)
         {
-            [typeof(EndpointRegistry).Assembly.GetName().Name!] = typeof(EndpointRegistry).Assembly
+            [typeof(Program).Assembly.GetName().Name!] = typeof(Program).Assembly
         };
 
         foreach (var path in Directory.EnumerateFiles(baseDirectory, "Honua.*.dll"))

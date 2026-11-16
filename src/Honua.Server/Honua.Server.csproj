@@ -123,6 +123,13 @@
     <ProjectReference Include="..\Honua.Scene\Honua.Scene.csproj" Condition="'$(HonuaIncludeScene)' == 'true'" />
   </ItemGroup>
 
+  <!-- The endpoint and operation registries are governance data for tests and generators.
+       Honua.TestKit.Abstractions compiles them; the server assembly does not ship them. -->
+  <ItemGroup>
+    <Compile Remove="EndpointRegistry*.cs" />
+    <Compile Remove="OperationRegistry.cs" />
+    <None Include="EndpointRegistry*.cs;OperationRegistry.cs" />
+  </ItemGroup>
   <ItemGroup Condition="'$(HonuaIncludeGeoServices)' != 'true'">
     <Compile Remove="Features\Geocoding\GeocodingHandler.cs" />
     <Compile Remove="Features\Geocoding\GeocodingEndpoints.cs" />
