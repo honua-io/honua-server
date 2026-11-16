@@ -19,25 +19,14 @@ services:
       timeout: 2s
       retries: 60
 
-  redis:
-    image: redis:7.2-alpine@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 2s
-      timeout: 2s
-      retries: 60
-
   server:
     image: ${HONUA_SERVER_IMAGE:?set HONUA_SERVER_IMAGE to a digest-addressed image}
     ports:
       - "127.0.0.1:${HONUA_GP_PORT:-18080}:8080"
     environment: &honua-environment
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=honua
-      ConnectionStrings__Redis: redis:6379
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=honua;SSL Mode=Disable
+      Jobs__Store__RetentionSweepInterval: 00:00:01
       Licensing__DevGrantEdition: Pro
       HONUA_ADMIN_PASSWORD: gp-reliability-admin
       Security__ConnectionEncryption__MasterKey: honua-gp-reliability-master-key-0123456789
@@ -76,8 +65,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
       interval: 2s
       timeout: 3s
@@ -93,8 +80,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
       interval: 2s
       timeout: 3s
@@ -104,7 +89,8 @@ services:
     image: ${HONUA_WORKER_IMAGE:?set HONUA_WORKER_IMAGE to a digest-addressed image}
     environment:
       DOTNET_ENVIRONMENT: Development
-      ConnectionStrings__Redis: ${HONUA_GP_WORKER_REDIS:-redis:6379}
+      ConnectionStrings__DefaultConnection: Host=${HONUA_GP_WORKER_POSTGRES_HOST:-postgres};Port=5432;Database=honua;Username=honua;Password=honua;SSL Mode=Disable
+      Jobs__Store__RetentionSweepInterval: 00:00:01
       GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
       Geoprocessing__OutputStaging__Enabled: "true"
       Geoprocessing__OutputStaging__Provider: local
@@ -123,7 +109,7 @@ services:
       HONUA_GP_QUALIFICATION_BARRIER_ROOT: ${HONUA_GP_QUALIFICATION_BARRIER_ROOT:-}
       HONUA_GP_QUALIFICATION_EXECUTOR_MODE: ${HONUA_GP_QUALIFICATION_EXECUTOR_MODE:-}
     depends_on:
-      redis:
+      postgres:
         condition: service_healthy
     volumes:
       - ${HONUA_GP_OBJECT_ROOT:-/tmp/honua-gp-reliability-objects}:/var/lib/honua/gp-outputs
@@ -138,7 +124,7 @@ services:
     image: python:3.12-alpine@sha256:b64631e04e4920160c50fbe8d8df828f7f35f06f425cb44aa09bca53e708a35a
     command: [python, /qualification/gp-terminal-proxy.py]
     healthcheck:
-      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1',6379),2).close()"]
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1',5432),2).close()"]
       interval: 1s
       timeout: 3s
       retries: 30
@@ -146,9 +132,8 @@ services:
       - ../../scripts/qualification/gp-terminal-proxy.py:/qualification/gp-terminal-proxy.py:ro
       - ${HONUA_GP_BARRIER_ROOT:-/tmp/honua-gp-reliability-barriers}:/barriers
     depends_on:
-      redis:
+      postgres:
         condition: service_healthy
 
 volumes:
   postgres-data:
-  redis-data:
