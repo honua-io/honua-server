@@ -3,23 +3,17 @@
 
 using System.Collections.Immutable;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Tiles.Models;
 
-public sealed record TileSetsList : ICollectionResponse<TileSetItem>
+public sealed record TileSetsList
 {
     [JsonPropertyName("tilesets")]
     public required ImmutableArray<TileSetItem> Tilesets { get; init; }
 
     [JsonPropertyName("links")]
     public ImmutableArray<Link>? Links { get; init; }
-
-    // ICollectionResponse implementation
-    ImmutableArray<TileSetItem> ICollectionResponse<TileSetItem>.Items => Tilesets;
-    ImmutableArray<ILink>? ICollectionResponse<TileSetItem>.Links => Links?.Cast<ILink>().ToImmutableArray();
-    IPaginationMetadata? ICollectionResponse<TileSetItem>.Pagination => null;
 }
 
 public sealed record TileSetItem
@@ -94,18 +88,13 @@ public sealed record TileMatrixSetLimit
     public int MaxTileCol { get; init; }
 }
 
-public sealed record TileMatrixSetsList : ICollectionResponse<TileMatrixSetItem>
+public sealed record TileMatrixSetsList
 {
     [JsonPropertyName("tileMatrixSets")]
     public required ImmutableArray<TileMatrixSetItem> TileMatrixSets { get; init; }
 
     [JsonPropertyName("links")]
     public ImmutableArray<Link>? Links { get; init; }
-
-    // ICollectionResponse implementation
-    ImmutableArray<TileMatrixSetItem> ICollectionResponse<TileMatrixSetItem>.Items => TileMatrixSets;
-    ImmutableArray<ILink>? ICollectionResponse<TileMatrixSetItem>.Links => Links?.Cast<ILink>().ToImmutableArray();
-    IPaginationMetadata? ICollectionResponse<TileMatrixSetItem>.Pagination => null;
 }
 
 public sealed record TileMatrixSetItem
