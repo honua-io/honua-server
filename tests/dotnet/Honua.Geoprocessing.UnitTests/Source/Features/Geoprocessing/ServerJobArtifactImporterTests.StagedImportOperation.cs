@@ -78,7 +78,7 @@ public sealed partial class ServerJobArtifactImporterTests
             harness.Request(StagedImportOperation.PreviewOperationId), harness.Context(), CancellationToken.None);
         var fingerprint = preview.Result!.Details[StagedImportOperation.PreviewFingerprintParameter];
         var configuration = harness.Services.GetRequiredService<IConfiguration>();
-        // The previously allowed default is no longer an operational destination.
+        // The preview destination is absent from the current operational-schema configuration.
         configuration[ImportTargetSchemaPolicy.DefaultOperationalSchemaConfigurationKey] = "replacement_data";
         harness.Jobs.ClearReceivedCalls();
         var request = harness.Request(StagedImportOperation.ImportOperationId,
