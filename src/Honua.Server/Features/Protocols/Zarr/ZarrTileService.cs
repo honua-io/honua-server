@@ -36,7 +36,7 @@ internal sealed class ZarrTileService : IZarrTileService
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly ILayerAccessAuthorizer _layerAccessAuthorizer;
     private readonly IZarrStore _store;
-    private readonly IZarrSubsetReader _subsetReader;
+    private readonly ZarrSubsetReader _subsetReader;
     private readonly IEnumerable<ICloudRangeReader> _rangeReaders;
     private readonly ITileMatrixSetRegistry _tileMatrixSets;
     private readonly ILogger<ZarrEndpointsLog> _logger;
@@ -45,7 +45,7 @@ internal sealed class ZarrTileService : IZarrTileService
         IMetadataV2GraphProvider graphProvider,
         ILayerAccessAuthorizer layerAccessAuthorizer,
         IZarrStore store,
-        IZarrSubsetReader subsetReader,
+        ZarrSubsetReader subsetReader,
         IEnumerable<ICloudRangeReader> rangeReaders,
         ITileMatrixSetRegistry tileMatrixSets,
         ILogger<ZarrEndpointsLog> logger)

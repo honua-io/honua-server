@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Studio.Services;
 /// <summary>
 /// Default package-family registry for the Studio lifecycle.
 /// </summary>
-public sealed class StudioPackageFamilyRegistry : IStudioPackageFamilyRegistry
+public sealed class StudioPackageFamilyRegistry
 {
     private const int DefaultMaxPackageBytes = 1_048_576;
     private static readonly StudioPackageOperation[] AllLifecycleOperations =

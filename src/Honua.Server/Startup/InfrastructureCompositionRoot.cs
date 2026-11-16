@@ -273,7 +273,6 @@ internal static class InfrastructureCompositionRoot
         services.AddSingleton<InMemoryCacheService>();
         services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
         services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<InMemoryCacheService>());
-        services.AddSingleton<ICacheStorageMetricsProvider>(sp => sp.GetRequiredService<InMemoryCacheService>());
 
         ConfigureExternalEditRevisions(services, configuration);
 

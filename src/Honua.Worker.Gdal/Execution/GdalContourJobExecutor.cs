@@ -104,6 +104,7 @@ internal sealed partial class GdalContourJobExecutor(
             // Both second segments are fixed relative literal filenames, so they can
             // never be rooted and silently discard workspace.
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
+            using var remoteInputScope = GdalRemoteInputScope.Trust(sourceInput.ReferencedPath);
             var outputPath = Path.Join(workspace, "output.geojson");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a

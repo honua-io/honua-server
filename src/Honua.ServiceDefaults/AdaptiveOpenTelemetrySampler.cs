@@ -12,13 +12,13 @@ namespace Honua.ServiceDefaults;
 /// </summary>
 public sealed class AdaptiveOpenTelemetrySampler : Sampler
 {
-    private readonly IAdaptiveSampler _adaptiveSampler;
+    private readonly AdaptiveSampler _adaptiveSampler;
     private readonly TracingOptions _tracingOptions;
 
     /// <summary>
     /// Initializes a new adaptive OpenTelemetry sampler.
     /// </summary>
-    public AdaptiveOpenTelemetrySampler(IAdaptiveSampler adaptiveSampler, TracingOptions tracingOptions)
+    public AdaptiveOpenTelemetrySampler(AdaptiveSampler adaptiveSampler, TracingOptions tracingOptions)
     {
         _adaptiveSampler = adaptiveSampler ?? throw new ArgumentNullException(nameof(adaptiveSampler));
         _tracingOptions = tracingOptions ?? throw new ArgumentNullException(nameof(tracingOptions));

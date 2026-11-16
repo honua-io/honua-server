@@ -7,7 +7,7 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Raster;
 
-public sealed class SceneAnalysisService : ISceneAnalysisService
+public sealed class SceneAnalysisService
 {
     private const int Wgs84Srid = SpatialConstants.DefaultSrid;
 

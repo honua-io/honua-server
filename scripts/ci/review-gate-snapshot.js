@@ -6,7 +6,7 @@ const { isDeepStrictEqual } = require('node:util');
 // `__typename` on every author is REQUIRED, not cosmetic: GraphQL reports bot
 // logins without the `[bot]` suffix, and `reviewerFor` accepts a suffix-less bot
 // login only when GitHub also types the author as a `Bot`. Dropping it makes
-// every Claude review invisible to the gate.
+// every Claude and Codex review, thread and objection invisible to the gate.
 const QUERY = `
 query(
   $owner: String!,

@@ -16,16 +16,10 @@ using Npgsql;
 
 namespace Honua.Geocoding.Features.Geocoding.ReferenceDataImport;
 
-/// <summary>
-/// Default <see cref="IGeocoderReferenceDataImportService"/>: maps CSV reference data columns to
-/// the canonical reference roles, classifies every header column into an explicit report, and
-/// materializes the records into the local PostGIS geocoder reference table using the same
-/// documented schema and <c>search_text</c> normalization the local provider queries (#2151).
-/// </summary>
 internal sealed partial class GeocoderReferenceDataImportService(
     IConfiguration configuration,
     IOptionsMonitor<LocalGeocoderProviderConfiguration> localConfiguration,
-    ILogger<GeocoderReferenceDataImportService> logger) : IGeocoderReferenceDataImportService
+    ILogger<GeocoderReferenceDataImportService> logger)
 {
     private const int BatchSize = 500;
     private const int MaxSkippedRowDetails = 25;
