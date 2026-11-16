@@ -135,10 +135,6 @@ public sealed class TileRendererWkbTests
         polygonWithHole.Should().NotEqual(solidPolygon);
     }
 
-    /// <summary>
-    /// Builds a WKB Point payload with the specified byte order.
-    /// Layout: [byteOrder(1)] [type(4)] [x(8)] [y(8)] = 21 bytes
-    /// </summary>
     private static byte[] BuildPointWkb(double x, double y, bool littleEndian)
     {
         var wkb = new byte[21];

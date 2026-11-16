@@ -6,9 +6,6 @@ using Xunit;
 
 namespace Honua.LoadTests;
 
-/// <summary>
-/// Verifies session deadlines independently of NBomber's request completion.
-/// </summary>
 public sealed class LoadRunDeadlineTests
 {
     [UnitTest]

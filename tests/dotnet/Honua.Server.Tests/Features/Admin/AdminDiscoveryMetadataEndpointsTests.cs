@@ -233,6 +233,43 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
         (await UpdateAsync(client, path, before.Etag)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/discovery")]
+    [InlineData("/api/v1/admin/metadata/layers/0/discovery")]
+    [InlineData("/api/v1/admin/services/test/discovery")]
+    public async Task Discovery_EquivalentPublications_ReportsCanonicalPreviewStorageIdentity(string path)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resourceId = snapshot.Index.ResourcesByStorageLayerId[0].Metadata.Id;
+        var publication = snapshot.Graph.Publications.First(candidate => candidate.ResourceId == resourceId &&
+            snapshot.Index.ServicesById[candidate.ServiceId].Metadata.Name == "test");
+        var equivalent = publication with
+        {
+            Metadata = publication.Metadata with { Id = "pub-preview-stac" },
+            PublicationType = MetadataV2LayerType.StacCollection,
+            Identifier = new() { Value = "catalog-preview" },
+            ServiceLocalId = "catalog-preview",
+            LayerIndex = 37
+        };
+        var retired = publication with
+        {
+            Metadata = publication.Metadata with { Id = "pub-preview-retired" },
+            Status = new() { Lifecycle = MetadataV2LifecycleStatus.Retired }
+        };
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Revision + 1,
+            Publications = [.. snapshot.Graph.Publications, equivalent, retired]
+        }, schema: _fixture.MetadataGraphSchema);
+
+        var result = await ReadAsync(_fixture.CreateAdminClient(), path);
+
+        result.AffectedPublications.Single(impact => impact.PublicationId == publication.Metadata.Id).PreviewStorageLayerId.Should().Be(0);
+        result.AffectedPublications.Single(impact => impact.PublicationId == equivalent.Metadata.Id).PreviewStorageLayerId.Should().Be(0);
+        result.AffectedPublications.Single(impact => impact.PublicationId == retired.Metadata.Id).PreviewStorageLayerId.Should().BeNull();
+    }
+
     private static async Task AssertLayerKeywordsAsync(HttpClient client)
     {
         using var response = await client.GetAsync("/ogc/services/test/wms?SERVICE=WMS&REQUEST=GetCapabilities");

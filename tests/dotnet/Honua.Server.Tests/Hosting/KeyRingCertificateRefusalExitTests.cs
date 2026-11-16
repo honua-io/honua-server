@@ -10,13 +10,6 @@ using Testcontainers.Redis;
 
 namespace Honua.Server.Tests.Hosting;
 
-/// <summary>
-/// Boots the real server entry point in Production with a reachable Redis and no operation
-/// key-ring certificate (the Lambda + Redis topology of honua-server#6500). Redis switches the
-/// durable operation secret channel on, which needs the certificate. The refusal must name the
-/// setting and exit with <see cref="StartupRefusal.ExitCode"/>, not abort the runtime
-/// ("signal: aborted" on Lambda, 134 / 139 locally).
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class KeyRingCertificateRefusalExitTests
 {

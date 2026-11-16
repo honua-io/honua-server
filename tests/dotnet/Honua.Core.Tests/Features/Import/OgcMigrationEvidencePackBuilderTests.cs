@@ -11,12 +11,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Slice 5 of issue #1016: deterministic OGC migration evidence-pack
-/// generation. The pack bundles the slice 1-4 outputs (inventory, WFS data
-/// import, WMS/WMTS render plans, tile-cache export) per source so reviewers
-/// can audit every stage of a classic OGC migration from one artifact.
-/// </summary>
 public sealed class OgcMigrationEvidencePackBuilderTests
 {
     [Trait("Tier", "Fast")]

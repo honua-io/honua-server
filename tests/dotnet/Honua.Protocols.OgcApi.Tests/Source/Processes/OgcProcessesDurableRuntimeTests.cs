@@ -17,9 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Verifies first-slice OGC API Processes execution against the durable runtime.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesDurableRuntimeTests

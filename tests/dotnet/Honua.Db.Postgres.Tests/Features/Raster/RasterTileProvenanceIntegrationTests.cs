@@ -8,7 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>Checks migration preservation and cache rejection after historical writer overwrites.</summary>
 [Collection("Database")]
 public sealed class RasterTileProvenanceIntegrationTests(PostgresFixture fixture)
 {

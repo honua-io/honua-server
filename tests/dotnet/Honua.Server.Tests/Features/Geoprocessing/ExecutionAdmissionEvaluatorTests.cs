@@ -14,12 +14,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit tests for <see cref="ExecutionAdmissionEvaluator"/>, which gates
-/// submission on backpressure, concurrency, rate, and cost dimensions.
-/// Exercises each dimension individually plus the short-circuit evaluation
-/// order so callers can rely on the first-failing-dimension contract.
-/// </summary>
 public sealed class ExecutionAdmissionEvaluatorTests
 {
     private const string Principal = "alice";

@@ -8,13 +8,6 @@ using NBomber.CSharp;
 
 namespace Honua.LoadTests.Scenarios;
 
-/// <summary>
-/// Load scenario: <c>GET /ogc/tiles/collections/{collection}/styles/default/tiles/{tileMatrixSet}/{z}/{y}/{x}</c>
-/// with z/x/y chosen from a representative set of low-zoom tiles. Nominal rate
-/// is 100 requests/second over <see cref="LoadScenarioSettings.GetDuration"/>
-/// (default 60 seconds). Driven by the nightly load-soak workflow and
-/// excluded from PR CI via Tier=Slow.
-/// </summary>
 public static class TilesLoadScenario
 {
     public const string ScenarioName = "tiles_styles_load";
@@ -22,10 +15,6 @@ public static class TilesLoadScenario
     public const string DefaultCollectionId = "0";
     public const string DefaultTileMatrixSet = "WebMercatorQuad";
 
-    /// <summary>
-    /// Representative low-zoom tile coordinates exercising index lookups and
-    /// MVT encoding across a handful of cells.
-    /// </summary>
     internal static readonly (int Z, int Y, int X)[] TileCoordinates =
     {
         (0, 0, 0),

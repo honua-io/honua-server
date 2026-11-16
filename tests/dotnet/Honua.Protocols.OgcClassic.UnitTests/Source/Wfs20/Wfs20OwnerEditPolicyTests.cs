@@ -18,9 +18,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Protocols.OgcClassic.UnitTests.Wfs20;
 
-/// <summary>
-/// WFS Transaction applies the shared owner-edit policy before the write commits.
-/// </summary>
 public sealed class Wfs20OwnerEditPolicyTests
 {
     private const string NonOwnerDenial =

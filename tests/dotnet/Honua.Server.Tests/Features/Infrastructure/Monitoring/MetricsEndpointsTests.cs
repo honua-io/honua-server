@@ -12,9 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Integration tests for metrics endpoints functionality.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Health)]
 public class MetricsEndpointsTests : IClassFixture<WebAppFixture>

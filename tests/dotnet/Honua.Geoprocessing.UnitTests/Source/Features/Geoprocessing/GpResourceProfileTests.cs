@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit coverage for the per-job <see cref="GpResourceProfile"/> (honua-server#2165): the typed
-/// vCPU/memory/GPU/timeout/retry/ephemeral/arch profile the GP job spec carries and the mapping
-/// onto the <c>batch.*</c> contract keys that <c>AwsBatchComputeBackend</c> consumes for SubmitJob
-/// overrides and ephemeral job-definition tier selection. Fully offline — no AWS, no Redis.
-/// </summary>
 public sealed class GpResourceProfileTests
 {
     private static ProcessDefinition Process(

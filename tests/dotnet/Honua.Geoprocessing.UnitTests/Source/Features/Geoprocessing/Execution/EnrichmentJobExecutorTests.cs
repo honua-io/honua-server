@@ -27,17 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Executor-level coverage for the <c>enrichment.enrich</c> async batch enrichment
-/// job (#2283): the job-executable counterpart of <c>POST /api/enrich</c>. Verifies
-/// the enrichment vocabulary (datasetId, method, outputFields, aggregates), both
-/// source forms (registered layer id and staged inline FeatureCollection), the
-/// dataset minimum-edition/entitlement gate, the dataset-attribution provenance
-/// members on the published artifact, and the fail-closed behavior when the
-/// catalog resolver or layer connector is absent. The dataset layer and target
-/// layer are streamed through a faked <c>source.honua-layer</c> connector so no
-/// Postgres runs.
-/// </summary>
 public sealed class EnrichmentJobExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -408,14 +397,6 @@ public sealed class EnrichmentJobExecutorTests
         _lastRetryable.Should().BeFalse();
     }
 
-    /// <summary>
-    /// TOCTOU guard (#3043 review). The submit-time gate authorizes the dataset's backing
-    /// layer as it stood at submission and stamps that identity onto the job. If an admin
-    /// re-points the managed dataset at a DIFFERENT layer while the job is queued, execution
-    /// must refuse rather than read a layer nobody authorized — here the job was authorized
-    /// for layer 8 but the dataset now resolves to layer 99, whose features the fake
-    /// connector would happily stream.
-    /// </summary>
     [UnitTest]
     public async Task Enrich_DatasetRepointedAfterSubmission_FailsWithoutReadingTheReboundLayer()
     {
@@ -446,10 +427,6 @@ public sealed class EnrichmentJobExecutorTests
             "the re-pointed layer must never be read");
     }
 
-    /// <summary>
-    /// A job carrying no authorized dataset-layer binding never cleared the submit-time
-    /// gate, so execution fails closed instead of reading the current dataset layer.
-    /// </summary>
     [UnitTest]
     public async Task Enrich_NoAuthorizedDatasetLayerBinding_FailsClosed()
     {
@@ -469,10 +446,6 @@ public sealed class EnrichmentJobExecutorTests
         source.RequestedLayerIds.Should().BeEmpty("an unbound job must not read any layer");
     }
 
-    /// <summary>
-    /// A caller-supplied binding cannot widen access: the gate is the only writer, so a
-    /// forged value that disagrees with the resolved dataset simply fails the job.
-    /// </summary>
     [UnitTest]
     public async Task Enrich_CallerSuppliedDatasetLayerBinding_DoesNotAuthorizeADifferentLayer()
     {
@@ -678,10 +651,6 @@ public sealed class EnrichmentJobExecutorTests
         return (status, error);
     }
 
-    /// <summary>
-    /// Runs a job that carries NO authorized dataset-layer binding — i.e. a job that never
-    /// cleared the submit-time gate.
-    /// </summary>
     private static async Task<(ExecutionJobStatus Status, string? Error)> RunUnboundExpectingFailureAsync(
         ServiceProvider services,
         params (string Name, string Value)[] inputs)
@@ -854,10 +823,6 @@ public sealed class EnrichmentJobExecutorTests
         };
     }
 
-    /// <summary>
-    /// Layered fake that also records the <see cref="DagSourceRequest.OutputSrid"/> of
-    /// every read, so a test can prove both layers were streamed in one CRS.
-    /// </summary>
     private sealed class RecordingDagFeatureSource : IDagFeatureSource
     {
         private readonly IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>> _byLayer;
@@ -891,11 +856,6 @@ public sealed class EnrichmentJobExecutorTests
         }
     }
 
-    /// <summary>
-    /// Fake <see cref="IDagFeatureSource"/> returning a distinct feature set per
-    /// catalog layer id, so the executor reads the target layer and the enrichment
-    /// dataset's layer from the same connector without a Postgres catalog.
-    /// </summary>
     private sealed class FakeLayeredDagFeatureSource : IDagFeatureSource
     {
         private readonly IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>> _byLayer;
@@ -911,7 +871,6 @@ public sealed class EnrichmentJobExecutorTests
 
         public string SourceId { get; }
 
-        /// <summary>Every layer id this connector was asked to stream, in call order.</summary>
         public IReadOnlyList<int> RequestedLayerIds => _requestedLayerIds;
 
         public async IAsyncEnumerable<DagSourceFeature> ReadAsync(

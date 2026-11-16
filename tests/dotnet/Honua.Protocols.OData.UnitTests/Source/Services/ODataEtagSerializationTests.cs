@@ -8,12 +8,6 @@ using Xunit;
 
 namespace Honua.Protocols.OData.Tests.Services;
 
-/// <summary>
-/// Unit tests for the AOT-safe ETag canonicalizer (#1647). The previous implementation
-/// used the reflection-based <c>JsonSerializer.SerializeToUtf8Bytes(object)</c> overload,
-/// which throws "Reflection-based serialization has been disabled" under PublishAot=true
-/// and 500'd every OData write on AOT Lambda images.
-/// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "OData")]
 [Trait("Feature", "ETag")]

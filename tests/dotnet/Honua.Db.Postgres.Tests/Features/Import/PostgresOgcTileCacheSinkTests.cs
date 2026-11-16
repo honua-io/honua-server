@@ -15,10 +15,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresOgcTileCacheSink"/> backed by a
-/// real Postgres + PostGIS container.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
 {

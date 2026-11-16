@@ -13,12 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Esri parameter and envelope parity for extractChanges (#4017) and createReplica (#4018). Requests
-/// are form-encoded the way the ArcGIS API for Python sends them. Every expected value is computed from
-/// the rows the test itself writes (names, WGS84 ordinates and the closed-form Web Mercator projection),
-/// never from an earlier response.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
@@ -580,10 +574,6 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    /// <summary>
-    /// Posts a request that must fail and returns every string in the error document, so the assertion
-    /// holds for both the Esri error envelope and problem details.
-    /// </summary>
     private async Task<string> PostFormForErrorAsync(string operation, Dictionary<string, string> form)
     {
         using var content = new FormUrlEncodedContent(form);

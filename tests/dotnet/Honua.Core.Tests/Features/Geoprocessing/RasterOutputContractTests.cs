@@ -10,11 +10,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Contract tests for the typed raster output descriptors (#3089): serialization
-/// round-trips, envelope detection over durable artifact-reference strings, bounded
-/// validation, fail-closed Zarr rejection, and the attempt-scoped key scheme.
-/// </summary>
 public sealed class RasterOutputContractTests
 {
     [Trait("Tier", "Fast")]

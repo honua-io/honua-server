@@ -18,9 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Deploy state conflicts stay 409. A missing Redis store stays 503 (honua-server#5625).
-/// </summary>
 public sealed class DeployControlStateErrorTests
 {
     [UnitTest]

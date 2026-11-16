@@ -10,14 +10,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Tests.Features.Capabilities;
 
-/// <summary>
-/// Unit coverage for the #2335 (B3) manifest derivation seam: the
-/// <c>honua.capability_manifest.v1</c> surface's <c>Capabilities[]</c> and
-/// <c>Packages.Families[]</c> are derived by iterating the unified capability registry
-/// through <see cref="CapabilityGateResolver"/>. These tests pin the registry roster
-/// the manifest projects and the gate-resolver omit mechanism the manifest applies —
-/// the Server-side wire equivalence is proven by the manifest endpoint golden test.
-/// </summary>
 public sealed class CapabilityManifestRegistryProjectionTests
 {
     private static readonly CapabilityRegistry Registry = new CapabilityRegistry();

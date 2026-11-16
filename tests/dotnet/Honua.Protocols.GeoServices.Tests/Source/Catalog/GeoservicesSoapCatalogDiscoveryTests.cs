@@ -30,10 +30,6 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
 
     public GeoservicesSoapCatalogDiscoveryTests(PublicCatalogFixture publicCatalog) => _publicCatalog = publicCatalog;
 
-    /// <summary>
-    /// Shares a host for SOAP argument-binding cases that read an identical public catalog.
-    /// Authorization and host-configuration cases retain their own factories.
-    /// </summary>
     public sealed class PublicCatalogFixture : IAsyncLifetime
     {
         public WebApplicationFactory<Program> Factory { get; } = CreateFactory(CreatePublicCatalog());
@@ -102,12 +98,6 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
         await AssertDeniedChildMetadataAsync(anonymous, HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>
-    /// honua-server#4783: the catalog handoff must hold past metadata. A caller the catalog
-    /// lists a role-restricted service to (the role the policy names) must not be refused by
-    /// the FeatureServer and MapServer operations a client runs next. Admin's built-in
-    /// wildcard grant does not skip that list (#6358); a wrong role and anonymous stay refused.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services")]
@@ -183,11 +173,6 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
         }
     }
 
-    /// <summary>
-    /// Returns the outcome of every operation handoff keyed by path: 0 for a successful JSON
-    /// response, otherwise the Esri error code (403 forbidden, 499 token required) or the HTTP
-    /// status. A refusal must not carry layer content.
-    /// </summary>
     private static async Task<Dictionary<string, int>> ReadOperationHandoffOutcomesAsync(HttpClient client)
     {
         var outcomes = new Dictionary<string, int>(StringComparer.Ordinal);

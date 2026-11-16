@@ -8,11 +8,6 @@ using Honua.Db.Postgres.Features.Scene;
 
 namespace Honua.Db.Postgres.Tests.Features.Scene;
 
-/// <summary>
-/// Verifies the minimal WKB reader used by <see cref="PostgresSceneFeatureSource"/>
-/// correctly consumes (and ignores) the M ordinate so vertex streams from
-/// PostGIS LineStringM/PolygonZM/etc. are not corrupted.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class WkbGeometryReaderTests
 {

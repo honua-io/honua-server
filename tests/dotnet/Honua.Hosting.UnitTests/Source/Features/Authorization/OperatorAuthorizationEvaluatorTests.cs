@@ -838,7 +838,6 @@ public sealed class OperatorAuthorizationEvaluatorTests
     {
         private readonly Dictionary<string, List<PermissionGrant>> _roleGrants = new(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>The userId the evaluator passed to the most recent effective-permissions lookup.</summary>
         public string? LastRequestedUserId { get; private set; }
 
         public void AddGrant(string roleName, string service, string layer, string operation)

@@ -10,15 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
-/// <summary>
-/// Comprehensive tests for the secure connection registry.
-/// </summary>
-/// <remarks>
-/// Tests cover:
-/// - CRUD operations for secure connections
-/// - Error conditions and edge cases
-/// - Connection health updates
-/// </remarks>
 [Collection("Database")]
 [SecurityTest]
 public partial class SecureConnectionRegistryTests : IClassFixture<WebAppFixture>

@@ -26,9 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Verifies the GPServer adapter against the real durable execution substrate.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
 public sealed partial class GPServerDurableRuntimeTests

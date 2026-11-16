@@ -11,13 +11,6 @@ using Honua.Core.Features.Spec.Services;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// End-to-end behaviour of <see cref="SpecApplyOrchestrator"/>: drives the DAG,
-/// honours cache semantics, and emits the contractually-required event stream.
-/// These tests validate the acceptance criteria for ticket #789 —
-/// cache reuse, closure invalidation, failure isolation, cooperative
-/// cancellation, and reserved-kind rejection.
-/// </summary>
 public class SpecApplyOrchestratorTests
 {
     [Trait("Tier", "Fast")]

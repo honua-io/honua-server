@@ -6,11 +6,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// In-memory <see cref="IJobExecutionContext"/> double that records progress,
-/// log, and artifact calls so executor behaviour can be asserted without the
-/// Redis-backed substrate.
-/// </summary>
 internal sealed class RecordingJobExecutionContext(string operationId) : IJobExecutionContext
 {
     public string OperationId { get; } = operationId;

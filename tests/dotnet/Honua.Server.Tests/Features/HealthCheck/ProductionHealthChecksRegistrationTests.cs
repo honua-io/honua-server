@@ -15,12 +15,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.HealthCheck;
 
-/// <summary>
-/// Unit tests for <see cref="ProductionHealthChecks.AddProductionHealthChecks"/>. Covers PA-065 /
-/// PA-162: the <c>ExternalServiceHealthCheck</c> no-op stub (always returned <c>Healthy</c>
-/// regardless of real external-service state) was removed rather than registered as a real
-/// health gate, since it manufactured false confidence.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class ProductionHealthChecksRegistrationTests
 {

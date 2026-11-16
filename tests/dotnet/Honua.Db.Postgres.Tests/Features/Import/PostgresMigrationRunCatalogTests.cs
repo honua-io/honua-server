@@ -17,13 +17,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #1015 slice 5: <see cref="PostgresMigrationRunCatalog"/> persists run
-/// records, enforces sticky-terminal-status semantics, and pages the list view
-/// most-recent first. These tests use the shared Testcontainers Postgres
-/// fixture and exercise the real SQL (no mocks) so the JSONB evidence-pack
-/// column and DISTINCT-status filter are validated end-to-end.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
 {
@@ -201,11 +194,6 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
     private PostgresMigrationRunCatalog CreateCatalog()
         => new(fixture.DataSource, NullLogger<PostgresMigrationRunCatalog>.Instance);
 
-    /// <summary>
-    /// The 031 migration creates honua.migration_runs; tests apply the same
-    /// schema directly so they do not depend on the migration runner. The
-    /// table is shared across the container (run id is per-test).
-    /// </summary>
     private async Task EnsureMigrationRunsTableAsync()
     {
         // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global

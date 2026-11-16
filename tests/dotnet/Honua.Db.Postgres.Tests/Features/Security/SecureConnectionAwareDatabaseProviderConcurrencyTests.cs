@@ -12,19 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
-/// <summary>
-/// Regression tests for the interaction between
-/// <see cref="SecureConnectionAwareDatabaseProvider"/> and the shared
-/// <see cref="QueryConcurrencyGate"/> when secure-mode is configured.
-/// </summary>
-/// <remarks>
-/// Ticket #605: a previous fix pass took the gate slot before resolving the
-/// secure connection. The registry's metadata lookup itself opens a connection
-/// through the primary (gated) provider, so the slot acquired by the secure
-/// provider self-blocked the metadata open at <c>MaxConcurrentQueries=1</c> and
-/// double-counted capacity at higher limits. The fix moves the gate acquisition
-/// to <em>after</em> the registry lookup completes.
-/// </remarks>
 [Collection("Database")]
 public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
 {
@@ -167,12 +154,6 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
         gate.AvailableSlots.Should().Be(2);
     }
 
-    /// <summary>
-    /// Test stub that mirrors <see cref="PostgresSecureConnectionRegistry.GetConnectionByNameAsync"/>:
-    /// the resolver opens a metadata connection through the primary provider
-    /// (which is gated by the same <see cref="QueryConcurrencyGate"/>) before
-    /// returning the resolved connection string.
-    /// </summary>
     private sealed class RegistryLookupSimulatingResolver : ISecureConnectionResolver
     {
         private readonly IPrimaryDatabaseConnectionProvider _primaryProvider;
