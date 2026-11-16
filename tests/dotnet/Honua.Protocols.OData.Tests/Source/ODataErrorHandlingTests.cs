@@ -23,20 +23,41 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
-public sealed class ODataErrorHandlingTests : IAsyncLifetime
+public sealed class ODataErrorHandlingTests : IClassFixture<ODataErrorHandlingTests.ReadOnlyProHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
 
-    public async Task InitializeAsync()
+    private readonly HttpClient _client;
+    private WebAppFixture? _mutableFixture;
+
+    public ODataErrorHandlingTests(ReadOnlyProHost host) => _client = host.Fixture.Client;
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync() => _mutableFixture?.DisposeAsync() ?? Task.CompletedTask;
+
+    // All segments are relative literal path fragments (not user input), so none can be
+    // rooted and silently drop earlier arguments.
+    private static WebAppFixture CreateProFixture()
+        => new WebAppFixture().WithTestLicense(HonuaEdition.Pro).UseSeed(Path.Join("tests", "seed", "odata.yaml"));
+
+    // Cases that send writes or batches own a private host and schema.
+    private async Task<WebAppFixture> StartMutableFixtureAsync()
     {
-        // All segments are relative literal path fragments (not user input), so none can be
-        // rooted and silently drop earlier arguments.
-        _fixture.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
-        await _fixture.InitializeAsync();
+        _mutableFixture = CreateProFixture();
+        await _mutableFixture.InitializeAsync();
+        return _mutableFixture;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    // Read-only cases share one seeded Pro host for the class instead of building one per case.
+    public sealed class ReadOnlyProHost : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = CreateProFixture();
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     #region Invalid $filter Syntax
 
@@ -45,7 +66,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$filter=invalid")]
     public async Task Filter_InvalidSyntax_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter=invalid_syntax");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -58,7 +79,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_MissingLeftOperand_ReturnsBadRequest()
     {
         var filter = " eq 1";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -71,7 +92,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_MissingRightOperand_ReturnsBadRequest()
     {
         var filter = "ObjectId eq";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -84,7 +105,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_InvalidOperator_ReturnsBadRequest()
     {
         var filter = "ObjectId badop 1";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -97,7 +118,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_UnbalancedParentheses_ReturnsBadRequest()
     {
         var filter = "(ObjectId eq 1";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -110,7 +131,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_UnclosedStringLiteral_ReturnsBadRequest()
     {
         var filter = "name eq 'unclosed";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -123,7 +144,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_NonExistentField_ReturnsBadRequest()
     {
         var filter = "nonexistent_field eq 'value'";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -139,7 +160,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=-1")]
     public async Task Top_NegativeValue_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidQueryOption");
@@ -150,7 +171,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$skip=-1")]
     public async Task Skip_NegativeValue_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=-1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$skip=-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidQueryOption");
@@ -161,7 +182,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=abc")]
     public async Task Top_NonNumericValue_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=abc");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=abc");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response);
@@ -172,7 +193,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$skip=abc")]
     public async Task Skip_NonNumericValue_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$skip=abc");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$skip=abc");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response);
@@ -183,7 +204,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?unsupported=1")]
     public async Task UnknownQueryParameter_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?unsupported=1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?unsupported=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidQueryOption");
@@ -198,7 +219,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$orderby=invalid-field")]
     public async Task OrderBy_InvalidField_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=invalid-field");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$orderby=invalid-field");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidQuery");
@@ -212,7 +233,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$orderby=population invalid")]
     public async Task OrderBy_InvalidDirection_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$orderby=population invalid");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$orderby=population invalid");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response);
@@ -226,7 +247,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$orderby=population asc nulls last")]
     public async Task OrderBy_WithExtraTokens_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$orderby=population asc nulls last");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -243,7 +264,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_SubstringFunction_ReturnsMatches()
     {
         var filter = "substring(name, 0, 3) eq 'San'";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -261,7 +282,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_YearFunction_ReturnsMatches()
     {
         var filter = "year(datetime'2020-01-01T00:00:00Z') eq 2020";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -275,7 +296,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_ToLowerFunction_ReturnsMatches()
     {
         var filter = "tolower(name) eq 'san francisco'";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -291,7 +312,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_ConcatFunction_ReturnsMatches()
     {
         var filter = "concat(name, state) eq 'San FranciscoCalifornia'";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -311,7 +332,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task GeoIntersects_MalformedGeometry_ReturnsBadRequest()
     {
         var filter = "geo.intersects(Geometry, geography'INVALID')";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -325,7 +346,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     {
         // Polygon with only 2 points - invalid
         var filter = "geo.intersects(Geometry, geography'POLYGON((0 0, 1 0))')";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -339,7 +360,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     {
         // Polygon that doesn't close (first and last point should be same)
         var filter = "geo.intersects(Geometry, geography'POLYGON((0 0, 1 1, 2 0, 0 1))')";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -352,7 +373,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task GeoDistance_MalformedPoint_ReturnsBadRequest()
     {
         var filter = "geo.distance(Geometry, geography'POINT') lt 100";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -365,7 +386,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task GeoDistance_NonNumericCoordinates_ReturnsBadRequest()
     {
         var filter = "geo.distance(Geometry, geography'POINT(abc def)') lt 100";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -381,8 +402,9 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/Layers({layerId})/Features with invalid JSON")]
     public async Task Create_InvalidJson_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         using var content = new StringContent("{ invalid json }", Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
+        var response = await fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -392,6 +414,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/Layers({layerId})/Features with invalid geometry WKB")]
     public async Task Create_InvalidGeometryWkb_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         var payload = new
         {
             Geometry = new
@@ -404,7 +427,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(payload);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
+        var response = await fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -414,6 +437,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/Layers({layerId})/Features with invalid geometry coordinate type")]
     public async Task Create_InvalidGeometryCoordinateType_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         var payload = new
         {
             Geometry = new
@@ -426,7 +450,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(payload);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
+        var response = await fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response);
@@ -437,6 +461,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/Layers({layerId})/Features with invalid geometry payload details hidden")]
     public async Task Create_InvalidGeometryPayload_DoesNotLeakParserDetails()
     {
+        var fixture = await StartMutableFixtureAsync();
         const string sentinel = "SENTINEL_GEOMETRY_PAYLOAD";
         var payload = new
         {
@@ -450,7 +475,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(payload);
         using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", requestContent);
+        var response = await fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "BadRequest");
@@ -475,7 +500,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
             Content = new StringContent("{ invalid json }", Encoding.UTF8, "application/json")
         };
 
-        var response = await _fixture.Client.SendAsync(message);
+        var response = await _client.SendAsync(message);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -489,7 +514,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId}) nonexistent layer")]
     public async Task GetFeatures_NonExistentLayer_ReturnsNotFound()
     {
-        var response = await _fixture.Client.GetAsync("/odata/Features(99999)");
+        var response = await _client.GetAsync("/odata/Features(99999)");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         await AssertODataErrorAsync(response, "ResourceNotFound");
@@ -500,7 +525,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId},{objectId}) nonexistent feature")]
     public async Task GetFeature_NonExistent_ReturnsNotFound()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId},999999)");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId},999999)");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         await AssertODataErrorAsync(response, "ResourceNotFound");
@@ -516,7 +541,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_TypeMismatchNumeric_ReturnsBadRequest()
     {
         var filter = "population eq 'not_a_number'";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -529,7 +554,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     public async Task Filter_TypeMismatchBoolean_ReturnsBadRequest()
     {
         var filter = "is_capital eq 'not_a_bool'";
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter={Uri.EscapeDataString(filter)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -545,7 +570,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply without $apply param")]
     public async Task Apply_MissingApplyParam_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$apply");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})/$apply");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidQueryOption");
@@ -556,7 +581,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply?$apply=invalid")]
     public async Task Apply_InvalidExpression_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population as Total)");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -568,7 +593,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply?$apply=aggregate(nonexistent with sum as Total)")]
     public async Task Apply_NonExistentField_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(nonexistent_field with sum as Total)");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -580,7 +605,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply?$apply=groupby((field,,field),aggregate(...))")]
     public async Task Apply_GroupBy_WithMalformedDelimiter_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=groupby((state,,state),aggregate(population with sum as TotalPop))");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -592,7 +617,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply?$apply=aggregate(...,)")]
     public async Task Apply_Aggregate_WithTrailingDelimiter_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population with sum as TotalPop,)");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -608,7 +633,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$search without $search param")]
     public async Task Search_MissingSearchParam_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})/$search");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})/$search");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidQueryOption");
@@ -623,8 +648,9 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with invalid JSON")]
     public async Task Batch_InvalidJson_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         using var content = new StringContent("{ invalid json }", Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -634,8 +660,9 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with unsupported content type")]
     public async Task Batch_UnsupportedContentType_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         using var content = new StringContent("{}", Encoding.UTF8, "text/plain");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response);
@@ -646,8 +673,9 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch without content type")]
     public async Task Batch_MissingContentType_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         using var content = new ByteArrayContent("{}"u8.ToArray());
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response);
@@ -658,11 +686,12 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with missing requests")]
     public async Task Batch_MissingRequests_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         var payload = new { notRequests = "missing" };
         var json = JsonSerializer.Serialize(payload);
 
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -672,6 +701,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with invalid URL in request")]
     public async Task Batch_InvalidRequestUrl_ReturnsErrorInResponse()
     {
+        var fixture = await StartMutableFixtureAsync();
         var payload = new
         {
             requests = new[]
@@ -687,7 +717,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(payload);
         using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
+        var response = await fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -704,6 +734,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with malformed key predicate URL")]
     public async Task Batch_MalformedKeyPredicateUrl_ReturnsErrorInResponse()
     {
+        var fixture = await StartMutableFixtureAsync();
         var payload = new
         {
             requests = new[]
@@ -719,7 +750,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(payload);
         using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
+        var response = await fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -736,6 +767,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with key predicate containing unknown key")]
     public async Task Batch_KeyPredicateWithUnknownKey_ReturnsErrorInResponse()
     {
+        var fixture = await StartMutableFixtureAsync();
         var payload = new
         {
             requests = new[]
@@ -751,7 +783,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(payload);
         using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
+        var response = await fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -768,6 +800,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with duplicate key predicate property")]
     public async Task Batch_KeyPredicateWithDuplicateObjectId_ReturnsErrorInResponse()
     {
+        var fixture = await StartMutableFixtureAsync();
         var payload = new
         {
             requests = new[]
@@ -783,7 +816,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(payload);
         using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
+        var response = await fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -800,6 +833,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with malformed $select delimiter")]
     public async Task Batch_MalformedSelectDelimiter_ReturnsErrorInResponse()
     {
+        var fixture = await StartMutableFixtureAsync();
         var payload = new
         {
             requests = new[]
@@ -815,7 +849,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(payload);
         using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
+        var response = await fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -832,6 +866,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with too many requests")]
     public async Task Batch_TooManyRequests_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         var requests = string.Join(
             ',',
             Enumerable.Range(1, 1001)
@@ -840,7 +875,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var payload = $$"""{"requests":[{{requests}}]}""";
 
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidRequest");
@@ -854,6 +889,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with oversized multipart section")]
     public async Task Batch_MultipartSectionTooLarge_ReturnsBadRequest()
     {
+        var fixture = await StartMutableFixtureAsync();
         const string boundary = "batch_oversized";
         var oversizedBody = new string('a', 10 * 1024 * 1024 + 1);
         var payload = string.Join("\r\n",
@@ -873,7 +909,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
 
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidRequest");
@@ -887,6 +923,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("POST /odata/$batch with mixed access")]
     public async Task Batch_MixedAccess_ReturnsPerItemResponses()
     {
+        var fixture = await StartMutableFixtureAsync();
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
                 alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["alpha-reader"]),
@@ -934,7 +971,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=-1")]
     public async Task Error_HasCorrectODataV4Format()
     {
-        var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
+        var response = await _client.GetAsync($"/odata/Features({TestLayerId})?$top=-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -1023,7 +1060,7 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         // The odata.metadata preference parameter is defined for data-entity responses only
         // (OData JSON Format v4.01 §3.1) and has no meaning on error payloads. Strict OData
         // clients (e.g. Microsoft OData client library, Azure Data Factory) may reject it.
-        var response = await _fixture.Client.GetAsync(
+        var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter=invalid_syntax");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
