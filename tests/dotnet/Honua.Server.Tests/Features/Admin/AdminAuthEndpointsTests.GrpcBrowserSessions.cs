@@ -17,10 +17,10 @@ public sealed partial class AdminAuthEndpointsTests
     [Endpoint("GET /api/v1/admin/auth/session")]
     public async Task GetSession_ValidApiKeyWithSessionCookie_IsAuthenticated()
     {
-        await SignInGrpcBrowserAsync();
-        _client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-key");
+        var client = await SignInGrpcBrowserAsync();
+        client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-key");
 
-        var session = await _client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
+        var session = await client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
 
         session!.IsAuthenticated.Should().BeTrue();
     }
@@ -29,14 +29,14 @@ public sealed partial class AdminAuthEndpointsTests
     [Endpoint("GET /api/v1/admin/auth/session")]
     public async Task GetSession_InvalidApiKeyWithSessionCookie_PreservesBrowserSession()
     {
-        await SignInGrpcBrowserAsync();
-        _client.DefaultRequestHeaders.Add("X-API-Key", "invalid-key");
+        var client = await SignInGrpcBrowserAsync();
+        client.DefaultRequestHeaders.Add("X-API-Key", "invalid-key");
 
-        var session = await _client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
+        var session = await client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
 
         session!.IsAuthenticated.Should().BeFalse();
-        _client.DefaultRequestHeaders.Remove("X-API-Key");
-        var restored = await _client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
+        client.DefaultRequestHeaders.Remove("X-API-Key");
+        var restored = await client.GetFromJsonAsync<AdminAuthSessionResponse>("/api/v1/admin/auth/session");
         restored!.IsAuthenticated.Should().BeTrue();
     }
 
@@ -46,8 +46,8 @@ public sealed partial class AdminAuthEndpointsTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
     public async Task GrpcWeb_ExplicitApiKeyWithSessionCookie_ReachesServiceWithoutCsrf()
     {
-        await SignInGrpcBrowserAsync();
-        _client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-key");
+        var client = await SignInGrpcBrowserAsync();
+        client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-key");
 
         using var response = await PostEmptyGrpcWebAsync();
 
@@ -78,8 +78,8 @@ public sealed partial class AdminAuthEndpointsTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
     public async Task GrpcWeb_SessionCookieWithCsrf_ReachesService()
     {
-        await SignInGrpcBrowserAsync();
-        await BrowserCsrf.SetHeaderAsync(_client);
+        var client = await SignInGrpcBrowserAsync();
+        await BrowserCsrf.SetHeaderAsync(client);
 
         using var response = await PostEmptyGrpcWebAsync();
 
@@ -93,8 +93,8 @@ public sealed partial class AdminAuthEndpointsTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
     public async Task GrpcWeb_SessionCookieWithInvalidCsrf_ReturnsPermissionDeniedMetadata()
     {
-        await SignInGrpcBrowserAsync();
-        _client.DefaultRequestHeaders.Add("X-Honua-CSRF", "invalid");
+        var client = await SignInGrpcBrowserAsync();
+        client.DefaultRequestHeaders.Add("X-Honua-CSRF", "invalid");
 
         using var response = await PostEmptyGrpcWebAsync();
 
@@ -108,9 +108,9 @@ public sealed partial class AdminAuthEndpointsTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.SpecService/PlanSpec")]
     public async Task GrpcWeb_SessionCookieWithCrossSiteCsrf_ReturnsPermissionDeniedMetadata()
     {
-        await SignInGrpcBrowserAsync();
-        await BrowserCsrf.SetHeaderAsync(_client);
-        _client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site");
+        var client = await SignInGrpcBrowserAsync();
+        await BrowserCsrf.SetHeaderAsync(client);
+        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site");
 
         using var response = await PostEmptyGrpcWebAsync();
 
@@ -149,9 +149,9 @@ public sealed partial class AdminAuthEndpointsTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeatures")]
     public async Task GrpcWeb_ExplicitPortalBearerWithSessionCookie_ReachesServiceWithoutCsrf()
     {
-        await SignInGrpcBrowserAsync();
-        await BrowserCsrf.SetHeaderAsync(_client);
-        _client.DefaultRequestHeaders.Referrer = new Uri("https://localhost/");
+        var client = await SignInGrpcBrowserAsync();
+        await BrowserCsrf.SetHeaderAsync(client);
+        client.DefaultRequestHeaders.Referrer = new Uri("https://localhost/");
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["username"] = "admin",
@@ -160,12 +160,12 @@ public sealed partial class AdminAuthEndpointsTests
             ["referer"] = "https://localhost/",
             ["f"] = "json",
         });
-        using var issuance = await _client.PostAsync("/sharing/rest/generateToken", content);
+        using var issuance = await client.PostAsync("/sharing/rest/generateToken", content);
         issuance.StatusCode.Should().Be(HttpStatusCode.OK);
-        _client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
+        client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
         using var token = System.Text.Json.JsonDocument.Parse(await issuance.Content.ReadAsStringAsync());
         token.RootElement.TryGetProperty("token", out var bearer).Should().BeTrue();
-        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer", bearer.GetString());
 
         using var response = await PostEmptyGrpcWebAsync();
@@ -173,7 +173,7 @@ public sealed partial class AdminAuthEndpointsTests
         // The administrative Spec service requires an operator credential even for a valid portal token.
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
-        using var query = await PostEmptyGrpcWebAsync(_client,
+        using var query = await PostEmptyGrpcWebAsync(client,
             "/geospatial.v1.FeatureService/QueryFeatures");
         query.StatusCode.Should().Be(HttpStatusCode.OK);
         query.Headers.GetValues("grpc-status").Should().ContainSingle().Which.Should().Be("3");
@@ -188,15 +188,20 @@ public sealed partial class AdminAuthEndpointsTests
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
     public async Task SessionOperation_ExplicitApiKeyWithSessionCookie_StillRequiresCsrf(string path)
     {
-        await SignInGrpcBrowserAsync();
-        _client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-key");
+        var client = await SignInGrpcBrowserAsync();
+        client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-key");
 
-        using var response = await _client.PostAsync(path, null);
+        using var response = await client.PostAsync(path, null);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    private Task SignInGrpcBrowserAsync() => SignInGrpcBrowserAsync(_client);
+    private async Task<HttpClient> SignInGrpcBrowserAsync()
+    {
+        var client = await GetClientAsync();
+        await SignInGrpcBrowserAsync(client);
+        return client;
+    }
 
     private static async Task SignInGrpcBrowserAsync(HttpClient browser)
     {
@@ -207,7 +212,7 @@ public sealed partial class AdminAuthEndpointsTests
         browser.DefaultRequestHeaders.Remove("X-Honua-CSRF");
     }
 
-    private Task<HttpResponseMessage> PostEmptyGrpcWebAsync() => PostEmptyGrpcWebAsync(_client);
+    private async Task<HttpResponseMessage> PostEmptyGrpcWebAsync() => await PostEmptyGrpcWebAsync(await GetClientAsync());
 
     private static async Task<HttpResponseMessage> PostEmptyGrpcWebAsync(
         HttpClient browser, string path = "/geospatial.v1.SpecService/PlanSpec")
