@@ -556,7 +556,7 @@ internal sealed class ImageServerCoordinateMetadataHandler
     {
         // Web Mercator (EPSG:3857) is conformal: an axis-aligned extent inverse-projects to an
         // axis-aligned lon/lat quadrangle, so inverse-project the corners and use the same
-        // spherical-cap area formula as geographic extents (#2734).
+        // spherical-cap area formula as geographic extents.
         if (extent.Srid is int srid && SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid) == 3857)
         {
             var (minLon, minLat) = WebMercatorMath.WebMercatorToLonLat(extent.XMin, extent.YMin);
@@ -567,9 +567,9 @@ internal sealed class ImageServerCoordinateMetadataHandler
         // Geographic extents (WGS 84, NAD83, the other confirmed geographic SRIDs, and any
         // unlisted EPSG 4000–4999 geographic-block code such as EPSG:4301/4314/4322) are already
         // lon/lat degrees. The geographic determination is resolved by the caller through the
-        // registry-backed IGeographicSridClassifier (#2794), which classifies arbitrary codes from
+        // registry-backed IGeographicSridClassifier, which classifies arbitrary codes from
         // live spatial_ref_sys WKT and falls back to the static broad-list-plus-range heuristic
-        // (#2732) so these codes are not mis-measured as degrees-squared-as-metres in the planar
+        // so these codes are not mis-measured as degrees-squared-as-metres in the planar
         // branch below.
         if (isGeographicForMeasurement)
         {

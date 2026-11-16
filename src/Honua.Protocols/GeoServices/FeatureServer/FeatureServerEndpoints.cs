@@ -123,8 +123,8 @@ internal static partial class FeatureServerEndpoints
             .Produces(404);
 
         // Esri services accept BOTH GET and POST for the service-level query operation;
-        // clients POST large layerDefs/layers arrays that exceed URL limits
-        // (honua-server#1825). The POST companion shares the read-only handler and is
+        // clients POST large layerDefs/layers arrays that exceed URL limits.
+        // The POST companion shares the read-only handler and is
         // anonymous by design (per-layer access is enforced by the handler).
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesPost)
             .WithMetadata(ReadOnlyRequestMetadata.Instance)
@@ -365,7 +365,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(404);
 
         // calculate is a bulk field rewrite, so it is POST-only like the ArcGIS REST contract
-        // and every other FeatureServer edit route (#6100): a GET mapping let a cross-site
+        // and every other FeatureServer edit route: a GET mapping let a cross-site
         // top-level navigation carrying a SameSite=Lax session cookie rewrite layer data, and
         // bypassed the degraded-startup write block, which only refuses unsafe methods.
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/calculate", HandleCalculate)
@@ -474,7 +474,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(404);
 
         // Esri services accept BOTH GET and POST for queryDomains; clients POST large
-        // layers arrays that exceed URL limits (honua-server#1825). The POST companion
+        // layers arrays that exceed URL limits. The POST companion
         // shares the read-only handler and is anonymous by design (per-layer access is
         // enforced by the handler).
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/queryDomains", HandleQueryDomains)
@@ -498,7 +498,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(400)
             .Produces(404);
 
-        // Service-level validateSQL (#1446): Esri's canonical validateSQL is at the
+        // Service-level validateSQL: Esri's canonical validateSQL is at the
         // FeatureServer service root and takes sql + sqlType (where|orderBy|expression),
         // reusing the shared SQL validation against a representative service layer. The
         // layer-level route below is retained.

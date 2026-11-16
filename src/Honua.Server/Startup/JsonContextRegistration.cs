@@ -144,10 +144,10 @@ internal static class JsonContextRegistration
 #if !HONUA_EXCLUDE_OGC_API
         Honua.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default,
 #endif
-        // Temporal history slice 2-5 request/response bodies (#1166): registered for [FromBody]
+        // Temporal history slice 2-5 request/response bodies: registered for [FromBody]
         // deserialization through the HTTP JSON options chain.
         Honua.Server.Features.Temporal.TemporalHistorySlicesJsonContext.Default,
-        // Data-enrichment admin DTOs (#2280): RegisterEnrichmentDatasetRequest /
+        // Data-enrichment admin DTOs: RegisterEnrichmentDatasetRequest /
         // UpdateEnrichmentDatasetRequest are [FromBody]-bound, so the source-generated context
         // must be part of the minimal-API resolver or the host aborts at startup.
         Honua.Server.Features.DataEnrichment.Models.EnrichmentJsonContext.Default);

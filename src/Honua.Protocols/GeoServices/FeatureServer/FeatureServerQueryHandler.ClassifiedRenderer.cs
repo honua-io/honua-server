@@ -760,7 +760,7 @@ internal sealed partial class FeatureServerQueryHandler
     {
         // Publisher-hidden fields resolve exactly like unknown fields, matching /query
         // outStatistics: classifying or listing distinct values of a hidden column would
-        // otherwise disclose it (#6098).
+        // otherwise disclose it.
         var match = resource.FindVisibleSchemaField(fieldName);
         if (match is not null)
         {

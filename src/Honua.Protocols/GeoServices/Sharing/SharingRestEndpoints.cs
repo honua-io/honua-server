@@ -309,7 +309,7 @@ public static class SharingRestEndpoints
             PortalTokenLog.CredentialsFromQueryString(logger);
         }
 
-        // Federated exchange (#5491): a client signed in to the portal trades its portal token
+        // Federated exchange: a client signed in to the portal trades its portal token
         // for one scoped to this server by presenting the token with the server's URL in place
         // of a username and password.
         var exchangeRequested = !string.IsNullOrWhiteSpace(portalToken) || !string.IsNullOrWhiteSpace(serverUrl);
@@ -1181,7 +1181,7 @@ public static class SharingRestEndpoints
         // PortalTokenClientType.Ip does (it always binds to the connection's
         // RemoteIpAddress), so accept "requestip" as an alias of "ip" rather than
         // falling through to the referer path and rejecting the request with a
-        // misleading "referer required" error (#1912).
+        // misleading "referer required" error.
         if (string.Equals(raw, "ip", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(raw, "requestip", StringComparison.OrdinalIgnoreCase))
         {

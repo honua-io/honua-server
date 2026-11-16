@@ -70,7 +70,7 @@ internal sealed class CustomCodeJobSubmissionGate
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         }
 
-        // Release pinning (honua-server#6221): a submission that names a process is resolved
+        // Release pinning: a submission that names a process is resolved
         // against its live binding before the custom-code parameters are validated, so the
         // validated repo/ref/entrypoint are the release's and the job keeps them on every retry.
         if (_releaseAdmission is not null)

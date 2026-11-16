@@ -210,7 +210,7 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
                 // for came back as the whole document at the wrong offset and the dataset
                 // failed to open outright — DuckDB Spatial's ST_Read over a plain items URL
                 // regressed from green to "Could not open GDAL dataset" the moment HEAD
-                // started working (honua-server#3389). Declaring `none` restores the
+                // started working. Declaring `none` restores the
                 // streaming read.
                 //
                 // Stamped whenever the response is silent about ranges, NOT only when this

@@ -591,7 +591,7 @@ internal sealed class InputValidationMiddleware
     private static bool IsEdrWktCoordsQueryOption(HttpRequest request, string paramType, string name, string value)
     {
         // OGC API - EDR position coords are WKT, and the EDR 1.1 MULTIPOINT((x y),(x y)) form carries
-        // the "((" and "))" tokens the LDAP heuristic flags (#4153). Exempt only a pure WKT value so
+        // the "((" and "))" tokens the LDAP heuristic flags. Exempt only a pure WKT value so
         // anything carrying filter syntax is still inspected.
         return paramType.Equals("query", StringComparison.Ordinal) &&
                name.Equals("coords", StringComparison.OrdinalIgnoreCase) &&
@@ -626,7 +626,7 @@ internal sealed class InputValidationMiddleware
         }
 
         // OGC API - EDR shares the OGC API datetime grammar, so its position/cube queries accept
-        // the same open-start interval (#4151).
+        // the same open-start interval.
         var path = request.Path.Value;
         return path?.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) == true ||
                path?.StartsWith("/stac", StringComparison.OrdinalIgnoreCase) == true ||

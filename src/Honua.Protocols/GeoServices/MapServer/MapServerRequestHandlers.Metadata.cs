@@ -298,7 +298,7 @@ internal static partial class MapServerEndpoints
             Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
             // GIF is intentionally omitted: the SkiaSharp-backed export renderer ships no
             // GIF encoder and the export handler rejects format=gif, so advertising it here
-            // would let capabilities claim an output the service cannot produce. (#1772)
+            // would let capabilities claim an output the service cannot produce.
             SupportedImageFormatTypes = "PNG,PNG8,PNG24,PNG32,JPG",
             // The current MapServer implementation only accepts a narrow dynamicLayers subset
             // for interoperability; do not advertise the full ArcGIS dynamic-layer contract.
@@ -338,7 +338,7 @@ internal static partial class MapServerEndpoints
         // extensions of the {name}/MapServer service and read this list to decide whether the
         // feature service is a versioned workspace. When the MapServer route resolves a map-only
         // service that shares its name with the feature service, describe the extensions of the
-        // service the sibling FeatureServer route actually serves (#5036).
+        // service the sibling FeatureServer route actually serves.
         if (!service.Protocols.Contains(ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase))
         {
             var featureService = await resourceValidator
@@ -474,7 +474,7 @@ internal static partial class MapServerEndpoints
             // Mirror hasAttachments + relationships from the same source the FeatureServer
             // layer metadata uses (canonical attachment capability + the canonical resource
             // relationships) so a MapServer sublayer advertises the related records and
-            // attachments the equivalent FeatureServer layer does (#1923).
+            // attachments the equivalent FeatureServer layer does.
             HasAttachments = FeatureServerEndpoints.ResourceSupportsAttachmentsV2(resource),
             Relationships = FeatureServerEndpoints.BuildRelationshipResponseV2(resource, snapshot, service),
             MinScale = resource.Display?.MinScale ?? 0,
@@ -663,7 +663,7 @@ internal static partial class MapServerEndpoints
             cancellationToken).ConfigureAwait(false);
         // WebMercatorMaxLatitude projects a few ulps past the closed 3857 square.
         // A cache client rejects that layer extent and does not open the sublayer
-        // as a dataset (#5556).
+        // as a dataset.
         if (projected is { } extent
             && double.IsFinite(extent.Xmin)
             && double.IsFinite(extent.Ymin)

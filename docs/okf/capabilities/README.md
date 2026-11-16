@@ -48,7 +48,6 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [Sun/Shadow Analysis](analytics.sun-shadow.md) | Analytics | Pro | ga |
 | [Viewshed](analytics.viewshed.md) | Analytics | Pro | ga |
 | [Output Caching](caching.output-cache.md) | Caching | Pro | ga |
-| [Redis Distributed Cache](caching.redis.md) | Caching | Pro | ga |
 | [AWS SNS Delivery](channels.aws-sns.md) | Channels | Enterprise | **preview** |
 | [Azure Event Grid Delivery](channels.azure-eventgrid.md) | Channels | Enterprise | **preview** |
 | [Digest Delivery](channels.digest.md) | Channels | Enterprise | **preview** |

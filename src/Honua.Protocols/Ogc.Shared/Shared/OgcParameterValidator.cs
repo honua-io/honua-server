@@ -7,7 +7,7 @@ using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
 
-#pragma warning disable CA1716 // The Shared namespace is intentional — mirrors the audit-fixes kernel placement (#1144).
+#pragma warning disable CA1716 // The Shared namespace is intentional — mirrors the audit-fixes kernel placement.
 namespace Honua.Protocols.Ogc.Shared;
 #pragma warning restore CA1716
 

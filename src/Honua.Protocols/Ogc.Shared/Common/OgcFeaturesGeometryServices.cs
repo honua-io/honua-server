@@ -454,7 +454,7 @@ internal sealed partial class OgcFeaturesGeometryServices
             // Transform the whole sequence in a single batched call instead of awaiting
             // TransformPointAsync per vertex: for SRID pairs without an in-memory fast
             // path the PostGIS-backed service would otherwise issue one database round
-            // trip per coordinate on the mutation path (#1593).
+            // trip per coordinate on the mutation path.
             var xs = new double[count];
             var ys = new double[count];
             for (var index = 0; index < count; index++)

@@ -894,7 +894,7 @@ internal static partial class AttachmentEndpoints
                 IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(context))
             : EditPrincipal.Anonymous;
         // The feature above is the masked read used for existence. The owner check uses a
-        // separate policy query and does not copy that value onto the feature (#5426).
+        // separate policy query and does not copy that value onto the feature.
         var decision = await OwnerEditPolicyFieldAccess.AuthorizeAsync(
             featureReader,
             layerId,

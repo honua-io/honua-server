@@ -82,7 +82,7 @@ internal static class AlertAdminEndpoints
         group.MapPost("/rules/test", HandleTestRule)
             .WithDisplayName("Test Alert Rule")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            // #2998: on-demand rule evaluation is the Pro alerts.evaluation surface; the
+            // On-demand rule evaluation is the Pro alerts.evaluation surface; the
             // background evaluation pipeline enforces per-rule entitlements through
             // IAlertEditionPolicy instead of a boot-time gate.
             .AddEndpointFilter((invocationContext, next) =>
@@ -916,7 +916,7 @@ internal static class AlertAdminEndpoints
             {
                 status = ChannelStatusUnauthorized;
 
-                // #2998: an Alerts:Edition cap and a missing entitlement have different remedies
+                // An Alerts:Edition cap and a missing entitlement have different remedies
                 // (configuration vs licensing), so they must not share one message.
                 message = denialReason == AlertEditionDenialReason.EditionCap
                     ? $"The configured alert edition cap does not allow the '{channel.ToExternalName()}' delivery channel, even though the active license includes it."

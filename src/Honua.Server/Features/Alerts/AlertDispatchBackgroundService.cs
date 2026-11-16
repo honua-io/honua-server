@@ -99,7 +99,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     // Readiness measures whether the dispatcher loop is alive, not whether an
                     // arbitrary remote webhook is responsive. Stamp before claiming/dispatching
                     // the batch so a slow or black-holed sink cannot make every replica appear
-                    // dead while the loop is still making progress (#30).
+                    // dead while the loop is still making progress.
                     Interlocked.Exchange(ref _lastPollAtTicks, now.UtcTicks);
 
                     // Resolved per batch so the entitlement is read LIVE: a dispatch queued while

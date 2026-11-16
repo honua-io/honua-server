@@ -32,7 +32,7 @@ internal static class HealthEndpoints
 
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Probe answers must reflect the live process on every request (honua-server#4805): the
+        // Probe answers must reflect the live process on every request: the
         // entitled output-cache base policy otherwise stores the anonymous 200 for its default
         // expiration, so a store loss or dependency outage stays invisible to orchestration.
         _ = endpoints.MapMethods("/healthz/live", [HttpMethods.Get], HandleLivenessProbe)

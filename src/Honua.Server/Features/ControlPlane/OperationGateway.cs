@@ -743,7 +743,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         // Honor the idempotency key on the approval path: a repeated proposal (e.g.
         // propose → refresh → propose) must fold onto the existing active proposal
-        // rather than minting a duplicate AwaitingApproval record (#1693). The
+        // rather than minting a duplicate AwaitingApproval record. The
         // proposal id is derived deterministically from the key so a concurrent
         // duplicate TryCreate collides and we fetch-and-return the winner (race-safe).
         var now = DateTimeOffset.UtcNow;
@@ -1670,7 +1670,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     // per-operation DB connection), so resolve it from a fresh scope per audit write
     // rather than capturing it as a constructor dependency. Capturing the scoped
     // service would be a captive dependency and fails DI scope validation at startup
-    // under the durable control-plane path (honua-server#1908).
+    // under the durable control-plane path.
     private async Task<string?> WriteAuditAsync(
         OperationProposal proposal,
         string action,
