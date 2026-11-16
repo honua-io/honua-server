@@ -38,36 +38,9 @@ internal sealed partial class AlertAuditOutboxReconciler : BackgroundService
         _interval = interval;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Run once immediately: a restart is exactly the case this exists for.
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await ReconcileOnceAsync(stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Never let a reconciliation fault stop the loop: the pending intents
-                // are durable and the next pass retries them.
-                Log.PassFailed(_logger, ex);
-            }
-
-            try
-            {
-                await Task.Delay(_interval, _timeProvider, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-        }
-    }
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        new OutboxReconciliationRunner(_timeProvider, _interval).RunAsync(
+            ReconcileOnceAsync, exception => Log.PassFailed(_logger, exception), stoppingToken);
 
     internal async Task<int> ReconcileOnceAsync(CancellationToken cancellationToken)
     {

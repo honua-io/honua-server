@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Security.Admission;
+using Honua.Server.Features.Alerts;
 
 namespace Honua.Alerts.Ops;
 
@@ -12,33 +13,9 @@ internal sealed partial class AiMonthlyActorNoticeReconciler(
 {
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await ReconcileOnceAsync(stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception exception) when (exception is not OutOfMemoryException)
-            {
-                LogPassFailed(logger, exception);
-            }
-
-            try
-            {
-                await Task.Delay(Interval, timeProvider, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-        }
-    }
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        new OutboxReconciliationRunner(timeProvider, Interval).RunAsync(
+            ReconcileOnceAsync, exception => LogPassFailed(logger, exception), stoppingToken);
 
     internal async Task<int> ReconcileOnceAsync(CancellationToken cancellationToken)
     {
