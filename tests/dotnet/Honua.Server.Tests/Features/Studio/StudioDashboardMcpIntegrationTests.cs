@@ -15,6 +15,7 @@ using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
 using Honua.Server.Tests.Features.Admin;
+using Honua.Server.Tests.Features.Studio;
 using Honua.TestKit;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Attributes;
@@ -307,6 +308,8 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
     private async Task<JsonElement> CallAsync(string verb, string arguments)
     {
         var response = await RpcAsync(verb, arguments);
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, verb, (_fixture, _identityProvider, null));
+        if (completed is { } value) return value;
         response.TryGetProperty("error", out _).Should().BeFalse(response.GetRawText());
         var result = response.GetProperty("result");
         if (result.TryGetProperty("isError", out var error))

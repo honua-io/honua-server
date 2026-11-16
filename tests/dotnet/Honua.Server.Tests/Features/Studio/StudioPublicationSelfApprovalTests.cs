@@ -286,7 +286,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         data.GetProperty("contentHash").GetString().Should().Be(version.GetProperty("contentHash").GetString());
     }
 
-    private static async Task<string> ProposeAsync(HttpClient client)
+    private async Task<string> ProposeAsync(HttpClient client)
     {
         var (version, packageKey) = await SaveVersionAsync(client);
 
@@ -298,7 +298,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         return proposalId!;
     }
 
-    private static async Task<(JsonElement Version, string PackageKey)> SaveVersionAsync(HttpClient client)
+    private async Task<(JsonElement Version, string PackageKey)> SaveVersionAsync(HttpClient client)
     {
         var packageKey = $"self-approval-{Guid.NewGuid():N}";
         var created = await CallToolAsync(client, "honua_studio_create_draft",
@@ -332,11 +332,13 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         return client;
     }
 
-    private static async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
+    private async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
     {
         var response = await RpcAsync(
             client,
             $$$"""{"jsonrpc":"2.0","id":"{{{toolName}}}","method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}""");
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, toolName, (_fixture, _identityProvider, Tenant));
+        if (completed is { } value) return value;
         var hasProtocolError = response.TryGetProperty("error", out var protocolError);
         hasProtocolError.Should().BeFalse(
             $"tool '{toolName}' should return a tool result: {(hasProtocolError ? protocolError.GetRawText() : "(none)")}");

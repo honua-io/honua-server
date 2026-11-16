@@ -191,7 +191,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         after.CurrentVersionId.Should().Be(before!.CurrentVersionId);
     }
 
-    private static async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
+    private async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
     {
         var version = await SaveVersionAsync(client);
         var itemId = version.GetProperty("itemId").GetGuid();
@@ -200,7 +200,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         return (proposed, itemId);
     }
 
-    private static async Task<JsonElement> SaveVersionAsync(HttpClient client)
+    private async Task<JsonElement> SaveVersionAsync(HttpClient client)
     {
         var packageKey = $"admin-publish-{Guid.NewGuid():N}";
         var created = await CallToolAsync(client, "honua_studio_create_draft",
@@ -225,11 +225,13 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         return client;
     }
 
-    private static async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
+    private async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
     {
         var response = await RpcAsync(
             client,
             $$$"""{"jsonrpc":"2.0","id":"{{{toolName}}}","method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}""");
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, toolName, (_fixture, _identityProvider, Tenant));
+        if (completed is { } value) return value;
         var hasProtocolError = response.TryGetProperty("error", out var protocolError);
         hasProtocolError.Should().BeFalse(
             $"tool '{toolName}' should return a tool result: {(hasProtocolError ? protocolError.GetRawText() : "(none)")}");

@@ -212,10 +212,12 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    private static async Task<JsonElement> CallToolAsync(HttpClient client, string name, string arguments)
+    private async Task<JsonElement> CallToolAsync(HttpClient client, string name, string arguments)
     {
         var response = await RpcAsync(client,
             $$$"""{"jsonrpc":"2.0","id":"{{{name}}}","method":"tools/call","params":{"name":"{{{name}}}","arguments":{{{arguments}}}}}""");
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, name, (_fixture, _identityProvider, TenantA));
+        if (completed is { } value) return value;
         response.TryGetProperty("error", out _).Should().BeFalse(response.GetRawText());
         var result = response.GetProperty("result");
         result.TryGetProperty("isError", out var isError).Should().BeTrue(result.GetRawText());
