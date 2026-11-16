@@ -44,7 +44,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
         // a capability error is now signalled as HTTP 200 +
-        // {"error":{...}} (formerly 501/503), so distinguish success from a capability
+        // {"error":{...}}, so distinguish success from a capability
         // error by the presence of an "error" member, not the HTTP status.
         var isError = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out _);
         if (response.StatusCode == HttpStatusCode.OK && !isError)
@@ -127,7 +127,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
         // a capability error is now HTTP 200 + {"error":{...}}
-        // (formerly 501/503); branch on the "error" member, not the HTTP status.
+        //; branch on the "error" member, not the HTTP status.
         var isError = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out _);
         if (response.StatusCode == HttpStatusCode.OK && !isError)
         {

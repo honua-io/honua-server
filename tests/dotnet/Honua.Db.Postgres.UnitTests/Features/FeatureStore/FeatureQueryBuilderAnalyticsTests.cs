@@ -326,7 +326,7 @@ public sealed class FeatureQueryBuilderAnalyticsTests
     [Fact]
     public void AzimuthalScale_AtPlaneLimits_StaysWithinOnePercent()
     {
-        // Reviewer rerun: tangential scale of azimuthal equidistant is rho/sin(rho)
+        // Tangential scale of azimuthal equidistant is rho/sin(rho)
         // on the WGS 84 semi-major axis. Web Mercator at 60°N is sec(latitude) = 2,
         // so a 1,000 m ground separation is 2,000 m in EPSG:3857 and a requested
         // 1,000 m buffer only reaches about 500 m on the ground — below 600 m.

@@ -81,7 +81,7 @@ public sealed class DatabaseMigrationStartupTests
         });
 
         // Creating the first client builds the host and runs startup migrations.
-        // IDatabaseMigrationRunner must be registered so boot succeeds.
+        // Without an IDatabaseMigrationRunner, startup skips migrations and remains ready.
         using var client = factory.CreateClient();
 
         var migrationState = factory.Services.GetRequiredService<MigrationState>();

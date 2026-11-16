@@ -144,7 +144,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_NormalizesBothLayersToOneCrs()
     {
-        // Codex P1: without a common output CRS a 4326 source joined to a 3857 dataset
+        // Without a common output CRS a 4326 source joined to a 3857 dataset
         // would compare raw, incomparable ordinates. Both reads must therefore request
         // the SAME OutputSrid.
         var source = new RecordingDagFeatureSource(
@@ -170,7 +170,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_InputAboveCap_FailsFastWithActionableMessage()
     {
-        // Codex P2: the cap must be enforced WHILE streaming so an oversized selection
+        // The cap must be enforced WHILE streaming so an oversized selection
         // fails fast instead of materializing everything before the artifact check.
         var services = DefaultServices(dataset: Dataset());
 
@@ -187,7 +187,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_CallerCannotRaiseInputCapAboveOperatorCeiling()
     {
-        // Codex P2: the cap is an operator ceiling a caller may only LOWER, so an
+        // The cap is an operator ceiling a caller may only LOWER, so an
         // int.MaxValue request cannot disable the streaming guard.
         var source = new RecordingDagFeatureSource(
             HonuaLayerSourceId,
@@ -212,7 +212,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_InlineSourceAboveCap_FailsLikeTheLayerBackedSource()
     {
-        // Codex P2: the admission cap is a property of the request, not the source form.
+        // The admission cap is a property of the request, not the source form.
         // An inline collection above the cap must fail exactly as the equivalent
         // layer-backed selection does, before the dataset read and the join.
         var services = DefaultServices(dataset: Dataset());
@@ -345,7 +345,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_MatchBudgetExceeded_SurfacesActionableMessage()
     {
-        // Codex P2: the budget's remedies must reach the caller verbatim rather than
+        // The budget's remedies must reach the caller verbatim rather than
         // collapsing to "computation failed: TransformInputException". Two 1-feature
         // layers with a carried field exceed a budget of zero on the first match.
         var services = DefaultServices(
@@ -368,7 +368,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public void MatchBudget_ExhaustedByCumulativeCarriedValues_ThrowsActionableError()
     {
-        // Codex P1: the per-layer input caps cannot see the join's Cartesian growth
+        // The per-layer input caps cannot see the join's Cartesian growth
         // (targets x matches x carried fields), so a cumulative budget must fail the
         // job before the carried arrays and artifact are materialized.
         var budget = new SpatialJoinSupport.MatchBudget(4);

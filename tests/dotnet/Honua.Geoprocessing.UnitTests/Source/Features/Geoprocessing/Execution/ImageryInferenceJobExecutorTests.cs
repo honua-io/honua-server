@@ -640,7 +640,7 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_ExcessivelyCoarseOutput_IsRejectedNotWavedThrough()
     {
-        // Codex's worked example: a 640-unit source and a 1x1 result with a
+        // A 640-unit source and a 1x1 result with a
         // 1000-unit pixel differ by 360 units, which a whole-output-pixel
         // tolerance would have accepted as "extent preserved".
         var coarse = BuildGeoTiff(
@@ -733,7 +733,7 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_InRangeButOffFootprintDetections_AreRejected()
     {
-        // Codex's example: [10, 20] is numerically valid lon/lat, so a global
+        // [10, 20] is numerically valid lon/lat, so a global
         // bounds test accepts it — but the source is an EPSG:32610 (UTM 10N)
         // scene, whose zone spans roughly -129..-117 longitude. Publishing this
         // would place the detection on another continent.

@@ -33,7 +33,7 @@ public sealed class FeatureServerH3TileTests : IClassFixture<WebAppFixture>
             HttpStatusCode.OK, HttpStatusCode.NoContent, HttpStatusCode.NotImplemented, HttpStatusCode.ServiceUnavailable);
 
         // a capability error is now signalled as HTTP 200 +
-        // a JSON {"error":{...}} body (formerly 501/503), so an OK response is a
+        // a JSON {"error":{...}} body, so an OK response is a
         // real tile only when it is not the JSON error envelope.
         if (response.StatusCode == HttpStatusCode.OK &&
             response.Content.Headers.ContentType?.MediaType != "application/json")

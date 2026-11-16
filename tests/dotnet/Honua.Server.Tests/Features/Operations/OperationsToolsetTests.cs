@@ -243,7 +243,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public void AddOperationsToolset_StoreRegisteredAfterComposition_UsesDurableReplayVerifier()
     {
-        // The reviewer's exact scenario: fixtures add the proposal store AFTER
+        // Fixtures add the proposal store after
         // AddOperationsToolset (post-Program ConfigureServices). Resolution-time
         // selection must honor the final composition, not a registration snapshot.
         var services = new ServiceCollection();
