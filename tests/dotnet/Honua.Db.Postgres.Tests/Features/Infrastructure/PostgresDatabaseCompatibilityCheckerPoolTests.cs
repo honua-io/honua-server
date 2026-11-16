@@ -65,8 +65,9 @@ public sealed class PostgresDatabaseCompatibilityCheckerPoolTests(PostgresFixtur
             elapsed.Stop();
             output.WriteLine("Configured capacity: 1; cancelled: {0}; elapsed: {1:F1} ms", exception is OperationCanceledException, elapsed.Elapsed.TotalMilliseconds);
             exception.Should().BeAssignableTo<OperationCanceledException>("preflight must wait on the configured pool");
-            await using var command = fixture.DataSource.CreateCommand("SELECT count(*) FROM pg_stat_activity WHERE datname = @database");
+            await using var command = fixture.DataSource.CreateCommand("SELECT count(*) FROM pg_stat_activity WHERE datname = @database AND application_name = @application");
             command.Parameters.AddWithValue("database", _databaseName);
+            command.Parameters.AddWithValue("application", new NpgsqlConnectionStringBuilder(_configuredConnectionString).ApplicationName);
             ((long)(await command.ExecuteScalarAsync())!).Should().Be(1);
         }
 
