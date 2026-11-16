@@ -72,6 +72,31 @@ def verify_features(features: list[dict]) -> None:
         raise ValueError("Published sample identities, names or coordinates differ from the quickstart")
 
 
+def fetch_json(url: str, key: str) -> dict:
+    request = urllib.request.Request(url, headers={"X-API-Key": key})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read())
+
+
+def verify_geoservices_layer(base: str, key: str, fetch=fetch_json) -> int:
+    """The quickstart's GeoServices URL resolves with the id its service document lists."""
+    service = f"{base}/rest/services/quickstart/FeatureServer"
+    try:
+        layers = fetch(service + "?f=json", key)["layers"]
+        (layer_id,) = [layer["id"] for layer in layers]
+        if type(layer_id) is not int:
+            raise ValueError("layer id is not an integer")
+        layer = fetch(f"{service}/{layer_id}?f=json", key)
+        if "error" in layer or layer["id"] != layer_id:
+            raise ValueError(f"FeatureServer/{layer_id} does not resolve")
+        query = fetch(f"{service}/{layer_id}/query?where=1%3D1&outFields=id,name&outSR=4326&f=json", key)
+        verify_features(query["features"])
+    except (KeyError, TypeError, AttributeError, ValueError) as error:
+        # A malformed answer is a failed proof with a reason, not a traceback.
+        raise ValueError(f"Quickstart GeoServices layer URL: {error!r}") from error
+    return layer_id
+
+
 def publication_filename(blocks: dict[str, str]) -> str:
     command = shlex.split(blocks["query"])
     if len(command) != 2 or command[0] != "python":
@@ -187,6 +212,8 @@ def main() -> int:
             wait_ready(base)
             layer_id, _ = publish_sample(work, blocks, run)
             receipt["publishQuery"] = True
+            key = (work / "secrets/honua_admin_password").read_text().strip()
+            receipt["geoservicesLayerId"] = verify_geoservices_layer(base, key)
             run(compose + ["restart", "honua", "postgres", "redis"])
             wait_ready(base)
             # Query the persisted layer through the published SDK, without seed,

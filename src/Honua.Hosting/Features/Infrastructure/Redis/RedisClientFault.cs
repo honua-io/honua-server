@@ -30,10 +30,6 @@ internal static class RedisClientFault
         => exception is not OperationCanceledException
            && (exception is StackExchange.Redis.RedisException or TimeoutException || IsCompletedReader(exception));
 
-    internal static bool IsCredentialStoreUnavailable(Exception exception)
-        => IsRedisTransportFault(exception)
-           || (exception is System.Data.Common.DbException && exception is not OperationCanceledException);
-
     // A completed-reader fault is retried once because a freeze can tear the pipe under one command; a second fault propagates so the caller fails closed.
     internal static async Task<T> RetryCompletedReaderAsync<T>(
         Func<Task<T>> operation,

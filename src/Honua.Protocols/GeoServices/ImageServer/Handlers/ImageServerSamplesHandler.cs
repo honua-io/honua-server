@@ -57,7 +57,7 @@ internal sealed class ImageServerSamplesHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            if (!IsSupportedFormat(GetString(values, "f")))
+            if (!IsSupportedFormat(ImageServerRequestValues.GetString(values, "f")))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, "Unsupported format");
                 return StandardErrorHelpers.CreateBadRequest(
@@ -65,8 +65,8 @@ internal sealed class ImageServerSamplesHandler
                     "Only JSON format is supported. Use f=json or f=pjson.");
             }
 
-            var maxSampleCount = ResolveSampleCount(GetString(values, "sampleCount"));
-            var sampleDistanceRaw = GetString(values, "sampleDistance");
+            var maxSampleCount = ResolveSampleCount(ImageServerRequestValues.GetString(values, "sampleCount"));
+            var sampleDistanceRaw = ImageServerRequestValues.GetString(values, "sampleDistance");
             double? sampleDistance = null;
             if (!string.IsNullOrWhiteSpace(sampleDistanceRaw))
             {
@@ -79,7 +79,7 @@ internal sealed class ImageServerSamplesHandler
                 sampleDistance = parsedDistance;
             }
 
-            var interpolation = GetString(values, "interpolation");
+            var interpolation = ImageServerRequestValues.GetString(values, "interpolation");
             if (!string.IsNullOrWhiteSpace(interpolation) &&
                 !string.Equals(interpolation, "RSP_NearestNeighbor", StringComparison.OrdinalIgnoreCase))
             {
@@ -89,13 +89,13 @@ internal sealed class ImageServerSamplesHandler
             }
 
             if (!ImageServerGeometryHelpers.TryGetSamplePoints(
-                    GetString(values, "geometry"), sampleDistance, maxSampleCount, out var samplePoints, out var geometryError))
+                    ImageServerRequestValues.GetString(values, "geometry"), sampleDistance, maxSampleCount, out var samplePoints, out var geometryError))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, geometryError ?? "Invalid geometry");
                 return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometry.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(ImageServerRequestValues.GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, timeError ?? "Invalid time");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
@@ -107,7 +107,7 @@ internal sealed class ImageServerSamplesHandler
             // pipeline (#1869). Layers without a servable Zarr store stay metadata-only and return
             // an honest 501 rather than silently sampling the dimension-collapsed raster.
             if (!ImageServerMultidimensionalDefinition.TryParse(
-                    GetString(values, "multidimensionalDefinition"), out var dimensionConstraints, out var multidimError))
+                    ImageServerRequestValues.GetString(values, "multidimensionalDefinition"), out var dimensionConstraints, out var multidimError))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, multidimError ?? "Invalid multidimensionalDefinition");
                 return StandardErrorHelpers.CreateBadRequest(context, multidimError ?? "Invalid multidimensionalDefinition.");
@@ -116,7 +116,7 @@ internal sealed class ImageServerSamplesHandler
             if (dimensionConstraints.Count > 0)
             {
                 return await GetMultidimensionalSamplesAsync(
-                        context, layerId, samplePoints, dimensionConstraints, GetString(values, "sr"), cancellationToken)
+                        context, layerId, samplePoints, dimensionConstraints, ImageServerRequestValues.GetString(values, "sr"), cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -128,7 +128,7 @@ internal sealed class ImageServerSamplesHandler
 
             // Same mosaicRule contract as exportImage and identify: lock to the requested
             // rasters, honour ordering, and reject an unsupported where or method.
-            if (!ImageServerMosaicRule.TryParse(GetString(values, "mosaicRule"), out var mosaicRule, out var mosaicRuleError, out var mosaicRuleNotImplemented))
+            if (!ImageServerMosaicRule.TryParse(ImageServerRequestValues.GetString(values, "mosaicRule"), out var mosaicRule, out var mosaicRuleError, out var mosaicRuleNotImplemented))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, mosaicRuleError);
                 return mosaicRuleNotImplemented
@@ -136,7 +136,7 @@ internal sealed class ImageServerSamplesHandler
                     : StandardErrorHelpers.CreateBadRequest(context, mosaicRuleError);
             }
 
-            var requestSrid = ImageServerGeometryHelpers.TryParseSrid(GetString(values, "sr"));
+            var requestSrid = ImageServerGeometryHelpers.TryParseSrid(ImageServerRequestValues.GetString(values, "sr"));
             var mergeStrategy = mosaicRule.Operation
                 ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
             var isLockRaster = mosaicRule.Method == MosaicMethod.LockRaster;
@@ -360,7 +360,4 @@ internal sealed class ImageServerSamplesHandler
         => string.IsNullOrWhiteSpace(format) ||
            string.Equals(format, "json", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 }
