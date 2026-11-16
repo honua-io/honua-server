@@ -216,7 +216,7 @@ public sealed class McpStudioDeploymentPostgresHttpTests : IAsyncLifetime
     {
         var response = await RpcAsync(client,
             $$$"""{"jsonrpc":"2.0","id":"{{{name}}}","method":"tools/call","params":{"name":"{{{name}}}","arguments":{{{arguments}}}}}""");
-        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, name, (_fixture, _identityProvider, TenantA));
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, name, (_fixture, _identityProvider, TenantA, null));
         if (completed is { } value) return value;
         response.TryGetProperty("error", out _).Should().BeFalse(response.GetRawText());
         var result = response.GetProperty("result");

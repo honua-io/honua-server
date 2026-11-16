@@ -36,6 +36,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly string _studioSchema = $"dashboard_{Guid.NewGuid():N}";
     private HttpClient _client = null!;
+    private HumanApprovalHttpClient _setupApprover = null!;
 
     public async Task InitializeAsync()
     {
@@ -56,6 +57,8 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         await ApplyStudioMigrationsAsync();
         _client = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
+        _setupApprover = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "studio-draft-setup-approver");
     }
 
     private async Task ApplyStudioMigrationsAsync()
@@ -87,6 +90,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         _client.Dispose();
+        _setupApprover.Dispose();
         await _fixture.Postgres.DropSchemaAsync(_studioSchema);
         await _fixture.DisposeAsync();
         await _redis.DisposeAsync();
@@ -324,7 +328,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
     private async Task<JsonElement> CallAsync(string verb, string arguments)
     {
         var response = await RpcAsync(verb, arguments);
-        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, verb, (_fixture, _identityProvider, null));
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, verb, (_fixture, _identityProvider, null, _setupApprover));
         if (completed is { } value) return value;
         response.TryGetProperty("error", out _).Should().BeFalse(response.GetRawText());
         var result = response.GetProperty("result");

@@ -336,7 +336,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         var response = await ApprovedStudioDraftCall.RpcAsync(
             client,
             $$$"""{"jsonrpc":"2.0","id":"{{{toolName}}}","method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}""");
-        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, toolName, (_fixture, _identityProvider, Tenant));
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, toolName, (_fixture, _identityProvider, Tenant, null));
         if (completed is { } value) return value;
         return ApprovedStudioDraftCall.ReadResult(response, toolName);
     }

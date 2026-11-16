@@ -28,7 +28,7 @@ internal static class ApprovedStudioDraftCall
     }
 
     public static async Task<JsonElement?> CompleteAsync(JsonElement response, string tool,
-        (WebAppFixture Fixture, AdminAuthEndpointsTests.StubHttpClientFactory IdentityProvider, string? Tenant) context)
+        (WebAppFixture Fixture, AdminAuthEndpointsTests.StubHttpClientFactory IdentityProvider, string? Tenant, HumanApprovalHttpClient? Human) context)
     {
         var verb = tool.Replace("honua_studio_", "", StringComparison.Ordinal);
         if (verb is not ("create_draft" or "update_draft" or "validate_draft" or "save_version"
@@ -38,8 +38,9 @@ internal static class ApprovedStudioDraftCall
         var proposalId = GetProposalId(response);
         if (proposalId is null) return null;
 
-        using var human = await HumanApprovalHttpClient.AuthenticateAsync(
-            context.Fixture, context.IdentityProvider, "studio-draft-setup-approver", context.Tenant);
+        using var createdHuman = context.Human is null ? await HumanApprovalHttpClient.AuthenticateAsync(
+            context.Fixture, context.IdentityProvider, "studio-draft-setup-approver", context.Tenant) : null;
+        var human = context.Human ?? createdHuman!;
         using var approval = await human.ApproveAsync(proposalId);
         var body = await approval.Content.ReadAsStringAsync();
         approval.StatusCode.Should().Be(HttpStatusCode.OK, body);
