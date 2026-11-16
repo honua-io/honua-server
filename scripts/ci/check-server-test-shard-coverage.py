@@ -561,8 +561,14 @@ def _eval(node, fqn: str) -> bool:
     raise ValueError(f"unknown op {op}")
 
 
+@functools.lru_cache(maxsize=512)
+def _parsed_filter(filter_text: str):
+    """Reuse syntax across method lookups; changed filters get their own entry."""
+    return _FilterParser(filter_text).parse()
+
+
 def shard_claims(filter_text: str, fqn: str) -> bool:
-    return _eval(_FilterParser(filter_text).parse(), fqn)
+    return _eval(_parsed_filter(filter_text), fqn)
 
 
 def is_exempt(fqn: str) -> bool:
