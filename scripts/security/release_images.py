@@ -36,6 +36,20 @@ MANIFEST_MEDIA_TYPES = {
     "application/vnd.oci.image.manifest.v1+json",
     "application/vnd.docker.distribution.manifest.v2+json",
 }
+IMAGE_CONFIG_MEDIA_TYPES = {
+    "application/vnd.oci.image.config.v1+json",
+    "application/vnd.docker.container.image.v1+json",
+}
+# Only filesystem layers belong in the runnable Marketplace copy. OCI artifacts
+# share the image-manifest envelope but may carry arbitrary document layers.
+IMAGE_LAYER_MEDIA_TYPES = {
+    f"application/vnd.oci.image.layer{restriction}.v1.tar{compression}"
+    for restriction in ("", ".nondistributable")
+    for compression in ("", "+gzip", "+zstd")
+} | {
+    "application/vnd.docker.image.rootfs.diff.tar.gzip",
+    "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip",
+}
 
 
 def _load_json(path):
@@ -206,11 +220,17 @@ def assert_single_manifest(manifest):
     _require(manifest.get("mediaType") in MANIFEST_MEDIA_TYPES,
              "Target must be a single image manifest, not an index carrying attestations")
     _require("manifests" not in manifest, "Target must not reference other manifests")
-    _require(not manifest.get("subject"), "Target must not be an attestation or referrer")
-    for layer in manifest.get("layers", []):
-        media_type = str(layer.get("mediaType", ""))
-        _require("in-toto" not in media_type and "attestation" not in media_type,
-                 "Target carries an attestation layer")
+    _require(manifest.get("schemaVersion") == 2, "Target must use image manifest schema 2")
+    _require("subject" not in manifest and "artifactType" not in manifest,
+             "Target must not be an artifact or referrer")
+    _require(not (manifest.get("annotations") or {}).get("vnd.docker.reference.type"),
+             "Target must not be an attestation manifest")
+    _require((manifest.get("config") or {}).get("mediaType") in IMAGE_CONFIG_MEDIA_TYPES,
+             "Target must carry a container image configuration")
+    _require(isinstance(manifest.get("layers"), list), "Target must declare image layers")
+    for layer in manifest["layers"]:
+        _require(isinstance(layer, dict) and layer.get("mediaType") in IMAGE_LAYER_MEDIA_TYPES,
+                 "Target carries a non-filesystem layer")
     return True
 
 

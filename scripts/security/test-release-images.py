@@ -180,7 +180,8 @@ class AttestationFreeCopy(unittest.TestCase):
             ri.platform_manifest(self.INDEX, "linux/arm64")
 
     def test_target_must_be_a_single_manifest_without_attestations(self):
-        manifest = {"mediaType": "application/vnd.oci.image.manifest.v1+json",
+        manifest = {"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "config": {"mediaType": "application/vnd.oci.image.config.v1+json"},
                     "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"}]}
         self.assertTrue(ri.assert_single_manifest(manifest))
         attested = copy.deepcopy(manifest)
@@ -188,6 +189,34 @@ class AttestationFreeCopy(unittest.TestCase):
         for bad in (self.INDEX, attested, dict(manifest, subject={"digest": "sha256:" + "1" * 64})):
             with self.assertRaises(ValueError):
                 ri.assert_single_manifest(bad)
+
+    def test_rejects_artifact_envelopes_even_without_attestation_keywords(self):
+        image = {"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                 "config": {"mediaType": "application/vnd.oci.image.config.v1+json"}, "layers": []}
+        artifacts = [dict(image, artifactType="application/spdx+json"),
+                     dict(image, config={"mediaType": "application/vnd.oci.empty.v1+json"}),
+                     dict(image, layers=[{"mediaType": "application/spdx+json"}]),
+                     dict(image, annotations={"vnd.docker.reference.type": "attestation-manifest"}),
+                     dict(image, schemaVersion=1), dict(image, config={}), dict(image, layers=None)]
+        for artifact in artifacts:
+            with self.subTest(artifact=artifact), self.assertRaises(ValueError):
+                ri.assert_single_manifest(artifact)
+
+    def test_accepts_container_image_layer_formats_and_empty_scratch_images(self):
+        configs = ("application/vnd.oci.image.config.v1+json",
+                   "application/vnd.docker.container.image.v1+json")
+        layers = ("application/vnd.oci.image.layer.v1.tar",
+                  "application/vnd.oci.image.layer.v1.tar+gzip",
+                  "application/vnd.oci.image.layer.v1.tar+zstd",
+                  "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip",
+                  "application/vnd.docker.image.rootfs.diff.tar.gzip",
+                  "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip")
+        for config in configs:
+            for layer in layers:
+                manifest = {"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                            "config": {"mediaType": config}, "layers": [{"mediaType": layer}]}
+                self.assertTrue(ri.assert_single_manifest(manifest))
+            self.assertTrue(ri.assert_single_manifest(dict(manifest, layers=[])))
 
 
 if __name__ == "__main__":
