@@ -50,10 +50,7 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
         await layer.InsertAsync("""{"name":"not yet published"}""");
         (await layer.HeadAsync()).Should().BeGreaterThan(published);
 
-        await ExecuteAsync($"""
-            CREATE OR REPLACE FUNCTION honua.feature_change_read_horizon()
-            RETURNS BIGINT LANGUAGE sql STABLE AS $$ SELECT {published}::BIGINT $$;
-            """);
+        await PinHorizonAsync(published);
         try
         {
             (await CreateTracker().GetCurrentGenerationAsync()).Should().Be(published);
@@ -75,13 +72,76 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
         }
     }
 
+    [IntegrationTest(Timeout = 120000)]
+    public async Task ReadWindow_HorizonBelowNewestChanges_CountsOnlyPublishedChanges()
+    {
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734303);
+        await layer.InsertAsync("""{"name":"first"}""");
+        var first = await layer.HeadAsync();
+        await layer.InsertAsync("""{"name":"second"}""");
+        var published = await layer.HeadAsync();
+        await InsertUnpublishedAsync(layer, 3);
+
+        await PinHorizonAsync(published);
+        try
+        {
+            var log = CreateLog(new RealtimeOptions { ResumeMaxEvents = 2 }, TimeProvider.System);
+            var window = await log.ReadWindowAsync(CancellationToken.None);
+            var cached = await log.ReadWindowAsync(CancellationToken.None);
+
+            window.Head.Should().Be(published);
+            window.Oldest.Should().BeLessThanOrEqualTo(first, "the two newest published changes stay resumable");
+            cached.Should().Be(window);
+        }
+        finally
+        {
+            await ExecuteAsync(MigratedBody);
+        }
+    }
+
+    [IntegrationTest(Timeout = 120000)]
+    public async Task ReadWindow_HorizonBelowNewestChanges_AgesOutOnlyPublishedChanges()
+    {
+        await using var layer = await FeatureChangeTestLayer.CreateAsync(database, 734304);
+        await layer.InsertAsync("""{"name":"published"}""");
+        var published = await layer.HeadAsync();
+        await InsertUnpublishedAsync(layer, 2);
+
+        await PinHorizonAsync(published);
+        try
+        {
+            var afterRetention = new FixedTimeProvider(DateTimeOffset.UtcNow.AddDays(30));
+            var window = await CreateLog(new RealtimeOptions(), afterRetention).ReadWindowAsync(CancellationToken.None);
+
+            window.Head.Should().Be(published);
+            window.Oldest.Should().Be(published + 1);
+        }
+        finally
+        {
+            await ExecuteAsync(MigratedBody);
+        }
+    }
+
     private PostgresChangeTracker CreateTracker() => new(Connections());
 
-    private PostgresFeatureChangeLog CreateLog()
-        => new(
-            new JobStoreDatabase(database.DataSource),
-            new RealtimeCapabilityLimits(Options.Create(new RealtimeOptions())),
-            TimeProvider.System);
+    private PostgresFeatureChangeLog CreateLog() => CreateLog(new RealtimeOptions(), TimeProvider.System);
+
+    private PostgresFeatureChangeLog CreateLog(RealtimeOptions options, TimeProvider time)
+        => new(new JobStoreDatabase(database.DataSource), new RealtimeCapabilityLimits(Options.Create(options)), time);
+
+    private static async Task InsertUnpublishedAsync(FeatureChangeTestLayer layer, int count)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            await layer.InsertAsync("""{"name":"not yet published"}""");
+        }
+    }
+
+    private Task PinHorizonAsync(long generation)
+        => ExecuteAsync($"""
+            CREATE OR REPLACE FUNCTION honua.feature_change_read_horizon()
+            RETURNS BIGINT LANGUAGE sql STABLE AS $$ SELECT {generation}::BIGINT $$;
+            """);
 
     private TestDatabaseConnectionProvider Connections() => new(database.DataSource);
 
@@ -95,5 +155,10 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
     {
         await using var command = database.DataSource.CreateCommand(sql);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 }
