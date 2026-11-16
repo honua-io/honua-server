@@ -19,7 +19,7 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-internal sealed class QueryFeaturesTool : IMcpTool
+internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
 {
     public const string ToolName = "honua_query_features";
 

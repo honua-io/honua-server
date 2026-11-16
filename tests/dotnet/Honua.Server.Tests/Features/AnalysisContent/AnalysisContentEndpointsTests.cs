@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
@@ -453,7 +454,7 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/analysis/jobs/{jobId}/logs")]
     public async Task JobLogs_WhenLogStoreUnavailable_ReturnsServiceUnavailable()
     {
-        // The job resolves, but the log store is down. The documented contract is a
+        // The job resolves, but the PostgreSQL log store is down. The documented contract is a
         // retryable 503 for an unavailable log store, not a generic 500.
         _logs.FailWithStoreOutage = true;
 
@@ -688,7 +689,7 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
 
         public int TailReadCount { get; private set; }
 
-        // When set, TailAsync simulates a log store outage.
+        // When set, TailAsync simulates a PostgreSQL log store outage.
         public bool FailWithStoreOutage { get; set; }
 
         public void SeedFailureLogs()
@@ -752,7 +753,7 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             TailReadCount++;
             if (FailWithStoreOutage)
             {
-                throw new Npgsql.NpgsqlException("database unavailable");
+                throw new TransientDbException();
             }
 
             var entries = _entries.TryGetValue(operationId, out var found) ? found : [];
@@ -791,5 +792,10 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             TimeSpan ttl,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+    }
+
+    private sealed class TransientDbException() : DbException("database unavailable")
+    {
+        public override bool IsTransient => true;
     }
 }

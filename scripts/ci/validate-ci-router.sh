@@ -491,6 +491,10 @@ assert_exact_shards \
   "tests/dotnet/Honua.Server.Tests/Import/StreamingImportTests.cs" \
   '["Cloud and Streaming Import","File and Raster Import"]'
 assert_exact_shards \
+  "geojson-preview-validation-import-owner" \
+  "tests/dotnet/Honua.Server.Tests/Import/GeoJsonPreviewValidationTests.cs" \
+  '["File and Raster Import"]'
+assert_exact_shards \
   "geometry-audit-test-only-owner" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/GeoServicesGeometryConverterAuditTests.cs" \
   '["FeatureServer Editing and Relationships","FeatureServer Query Services and Replication"]'
@@ -1719,6 +1723,10 @@ run_fixture scripts/ci/test-streaming-capacity-partition.py "${PYTHON_BIN}" scri
 run_fixture scripts/ci/test-live-output-capacity-partitions.py "${PYTHON_BIN}" scripts/ci/test-live-output-capacity-partitions.py
 run_fixture scripts/ci/check-server-test-shard-coverage.test.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
+  --assert-owner \
+    "Honua.Server.Tests.Import.GeoJsonPreviewValidationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "File and Raster Import 3" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.CatalogCapabilitiesMetadataTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
