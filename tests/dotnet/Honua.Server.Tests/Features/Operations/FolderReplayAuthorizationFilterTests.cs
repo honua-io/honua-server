@@ -126,6 +126,43 @@ public sealed class FolderReplayAuthorizationFilterTests
 
     [UnitTheory]
     [InlineData("valid", true)]
+    [InlineData("unapproved", false)]
+    [InlineData("wrong-instance", false)]
+    [InlineData("wrong-tenant", false)]
+    [InlineData("wrong-requester", false)]
+    [InlineData("wrong-operation", false)]
+    [InlineData("wrong-stored-proposal-id", false)]
+    [InlineData("changed-plan", false)]
+    [InlineData("changed-context-hash", false)]
+    [InlineData("completed", false)]
+    public async Task AuthorizeOperationAsync_WithoutTransportCredential_RequiresBoundDurableReplay(string scenario, bool authorized)
+    {
+        var proposal = Proposal();
+        if (scenario == "unapproved") proposal = proposal with { ResolvedBy = null };
+        if (scenario == "wrong-stored-proposal-id") proposal = proposal with { ProposalId = "another" };
+        if (scenario == "changed-plan") proposal = proposal with { SealedPlanHash = "invalid" };
+        if (scenario == "completed") proposal = proposal with { Status = OperationProposalStatus.Succeeded };
+        using var services = Services(proposal, "public", "proposal");
+        var authority = await FolderReplayAuthority.AuthorizeOperationAsync(new FolderOperationReplayAdmission(
+            new OperationRequest { OperationId = scenario == "wrong-operation" ? "folder.delete" : "folder.update" },
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal",
+                ApprovedPlanHash = scenario == "changed-context-hash" ? "another" : proposal.SealedPlanHash,
+                OperationInstanceId = scenario == "wrong-instance" ? "another" : "instance",
+                PrincipalId = scenario == "wrong-requester" ? "another" : "requester",
+                TenantId = scenario == "wrong-tenant" ? "another" : "public"
+            }), services);
+        (authority is not null).Should().Be(authorized);
+        if (authority is null) return;
+        authority.RequesterPrincipal.Identity!.IsAuthenticated.Should().BeTrue();
+        authority.RequesterPrincipal.Claims.Should().NotContain(claim => claim.Type == ClaimTypes.Role);
+        authority.OperatorPrincipal.IsInRole(OperationPolicyBuiltInRules.FullAdministratorRole).Should().BeTrue();
+        authority.Proposal.Should().BeSameAs(proposal);
+    }
+
+    [UnitTheory]
+    [InlineData("valid", true)]
     [InlineData("changed-command", false)]
     [InlineData("explicit-null-title", false)]
     [InlineData("changed-operation", false)]
@@ -254,6 +291,7 @@ public sealed class FolderReplayAuthorizationFilterTests
             Kind = OperationClass.AdminConfigChange,
             Status = OperationProposalStatus.Executing,
             ResolvedBy = "approver",
+            RequestedBy = "requester",
             Plan = plan,
             SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
             Audit = new OperationAuditInfo { OperationInstanceId = "instance" },
