@@ -11,7 +11,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!--
-      GP Devkit dev tool (#2123). Packaged as a local dotnet tool (`honua gp`) for
+      GP Devkit dev tool. Packaged as a local dotnet tool (`honua gp`) for
       a sub-second, offline geoprocessing dev loop. It is DELIBERATELY kept out
       of the AOT-published server surface: nothing in Honua.Server references this
       project, so the AOT publish (which targets only Honua.Server's transitive
@@ -38,7 +38,7 @@
     <ProjectReference Include="..\Core\Honua.Geoprocessing.csproj" />
     <ProjectReference Include="..\..\Honua.Worker.Gdal\Honua.Worker.Gdal.csproj" />
     <!--
-      GP Devkit P6 (#2127): the golden-file GP test SDK powers `honua gp test`,
+      GP Devkit P6: the golden-file GP test SDK powers `honua gp test`,
       which discovers + runs the golden fixtures under tests/fixtures/gp/ through the
       same headless runner `gp run` uses.
     -->
@@ -46,7 +46,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- honua-gp.yaml descriptor parsing for `release` (#6221); the devkit is not AOT-published. -->
+    <!-- honua-gp.yaml descriptor parsing for `release`; the devkit is not AOT-published. -->
     <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
@@ -57,7 +57,7 @@
 
   <ItemGroup>
     <!--
-      `honua-gp-devkit init` (#6217) copies the honua-samples GP templates byte for byte.
+      `honua-gp-devkit init` copies the honua-samples GP templates byte for byte.
       They are embedded here together with their TEMPLATE-MANIFEST.json (per-file SHA-256),
       which GpCustomProjectScaffolder.VerifyEmbedded checks, so drift between the devkit and
       honua-samples trunk is a test failure, not a surprise. Keep the resource names as the

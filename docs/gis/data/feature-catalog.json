@@ -4021,22 +4021,6 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-operations-cache-redis",
-      "route": "/api/v1/admin/operations/cache/redis",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.CacheOperationsEndpointsTests.GetRedisMetrics_WhenRedisNotConfigured_ReturnsCommunitySafeStatus",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "get-api-v1-admin-operations-cache-statistics",
       "route": "/api/v1/admin/operations/cache/statistics",
       "method": "GET",
@@ -6494,7 +6478,13 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotMode_EmitsCompleteBaselineThenCorrelatedMutation",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotMode_FullyExpiredHistory_EmitsCompleteReplacementSnapshot",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotMode_SseResumeHeaders_DoNotSkipTheSnapshotStorePreflight",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation"
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.AfterTaskBStops_LastEventIdOnTaskA_ReplaysEveryRemainingHttpEdit",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.DirectSqlEdits_ReachTaskBSse_OnceInOrderWithinTarget",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.DirectSqlEdits_WithoutTaskBListener_ReachSseWithinDegradedPollTarget",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.HttpEditsOnTaskA_ReachTaskBSse_OnceInOrderWithinTarget",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.ListenerKilledDuringHttpEdits_TaskBSseLosesNothingAndListenerReconnects",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.TaskBStopsMidStream_ClientResumesOnTaskA_WithNoLossOrDuplicate"
       ],
       "proof_ledger_surface": "feature-event-streaming",
       "maturity": "experimental",
@@ -23319,7 +23309,11 @@
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.InputValidation_ExcessivelyLargePayload_ShouldBeRejected",
         "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_ActualHttpReadMatchesSql_ThenMembershipAndUnshareRevoke",
         "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.ReadOnlyCapability_CannotWrite_OrUseAnAccompanyingAdminKey",
-        "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.WriteCapability_UsesCanonicalFeatureEditPipeline_AndStillCannotAdminister"
+        "Honua.Server.Tests.Infrastructure.Authentication.ScopedJobCallbackAuthenticationTests.WriteCapability_UsesCanonicalFeatureEditPipeline_AndStillCannotAdminister",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.AfterTaskBStops_LastEventIdOnTaskA_ReplaysEveryRemainingHttpEdit",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.HttpEditsOnTaskA_ReachTaskBSse_OnceInOrderWithinTarget",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.ListenerKilledDuringHttpEdits_TaskBSseLosesNothingAndListenerReconnects",
+        "Honua.Server.Tests.Realtime.TwoHostFeatureHttpTests.TaskBStopsMidStream_ClientResumesOnTaskA_WithNoLossOrDuplicate"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",

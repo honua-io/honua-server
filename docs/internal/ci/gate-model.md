@@ -662,6 +662,7 @@ These workflows run on schedule and can be dispatched manually:
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `release-please.yml` (SDK repos only) | Push | Version automation |
+| `disabled-workflow-check.yml` | Weekly schedule | Fails while a workflow disabled on GitHub is still in the tree, unless an active workflow calls it or a dated entry names the ticket that decides it |
 
 ## Attesting reviewers
 
@@ -736,6 +737,28 @@ Receipts have scope `archived-customer-journey`, distinguish `candidate` from
 `customerJourneyComplete` becomes true only after both complete installations
 and their cleanup pass. A prospective PR receipt cannot qualify a shipped archive;
 release verification needs a recorded pass from the published candidate.
+
+Command output stays withheld; a failed command reports its operation, exit
+code and fixed signal labels. Compose prints `pull access denied` for an image
+the package builds locally (`LOCALLY_BUILT_IMAGES`: the PostGIS datum-grid image)
+before building it, so that line does not count when a build line follows it;
+denials of any other image, including official Docker Hub images Docker names
+without a path, still count. `localBuildStarted` says whether a build started.
+When initialization or the health read fails, the receipt also records the
+Compose version and each service's name, state, health and exit code (60-second
+reads, only short identifier-like values), and teardown still runs.
+
+### GP Scoped Key Contract
+
+`gp-scoped-key-contract.yml` runs one job per test project (6 jobs). Each job
+builds its project once and runs every case with `--no-build`, its own filter,
+its own TRX and the same execution proof: every source-derived method and theory
+row, required class and named method must run and pass
+(`scripts/ci/gp-scoped-key-contract.py`). Cases that never used PostgreSQL keep
+an empty `HONUA_TEST_DB_URL`. Before this, 8 of 13 jobs each compiled
+Honua.Server.Tests for one filter: run 43759686692 spent about 5,950 job-seconds,
+4,000 of them in those 8 jobs, mostly compiling. A failing case no longer stops
+the others; the job fails after all of them run.
 
 ### Check registration
 
@@ -1095,11 +1118,28 @@ runs and twice-daily full runs. That job already participates in CI Gate; no
 required check name or aggregate dependency changes. The runtime URL scan still
 runs and fails the trunk gate when a source/config link breaks.
 
-Derived Artifact Normalization watches .NET generator/proving-test code and
-client compatibility receipts instead of every test language, and GIS data
-instead of GIS prose. Runtime source, generator scripts, CITE status and all
-existing build/setup inputs remain covered. Its producer/consumer security
-boundary and deterministic replay are unchanged.
+Derived Artifact Normalization runs on pull requests only when its own recipe
+can change: the producer workflow, the .NET setup action, the envelope builder,
+every generator input the envelope pins (`GENERATOR_INPUTS` in
+`scripts/ci/normalization-envelope.py`) and the three projections. Its consumer
+is observe-only since feature PRs stopped committing these projections (14 Nov),
+so an envelope for an ordinary source change produced no result anyone used.
+That generation still runs: PR Gate's architecture job regenerates the same
+projections and reports drift on every ready PR, ci.yml's foundation job does
+the same on affected trunk and twice-daily full runs, and the nightly
+generated-files-on-trunk writer publishes them. `validate-optional-pr-inputs.py`
+fails if a pinned generator input stops admitting the producer. The
+producer/consumer security boundary and deterministic replay are unchanged.
+
+The review-first and router validators project the workflow inventory into a
+scratch file (or compare it with `--check`) instead of rewriting the tracked
+page. The page is trunk-published and may lag the workflow YAML; a rewrite left
+the PR Gate checkout dirty, and the later private-feed restore proof, which
+requires an unchanged tracked checkout, failed on any PR touching its inputs.
+Among the `scripts/ci/*.sh` entry points only `regenerate-generated-files.sh`
+rewrites the page, and `generate-workflow-inventory.test.py` enforces that. The
+doc-link steps in ci.yml (after the router validators) and Docs Link Gate
+regenerate it on purpose so links are checked against this head's projection.
 
 ## Server test fixture lifetimes
 
@@ -1538,17 +1578,25 @@ This change adds no runners or jobs: one lifecycle runner before and after.
 Live after-change readiness diagnostics and elapsed time await a new failure;
 no lifecycle rerun or runtime savings are claimed from unit validation.
 
+The manual rc.1 upgrade and return each run migrate-only after stopping rc.1
+and before candidate startup. The harness explicitly selects Gate, clears prior
+approval, and accepts exit 5 only for annotated contracts on its reviewed script
+allowlist with matching SHA-256 bytes. Migration 183 removes optional indexes;
+future contracts require a separate review. The exact returned nonce authorizes
+one retry, which must exit 0 with a verified schema. Unknown contracts, changed
+SQL, malformed summaries and failed verification stop the journey. This adds no
+jobs or runners (one lifecycle runner before and after). Run 43729796698's manual
+journey reported one pass and one failure in 349 seconds before this repair.
+Refusals name the script, refusal code and exit code, never raw output, and the
+checks raise explicitly so `python -O` cannot strip them.
+
 Both manual rollback and MCP lifecycle startup share the service-state allowlist and credential/error formatting; each caller retains its command context and timeouts.
 
-GitHub-managed Code Quality runs use `dynamic/github-code-quality/codeql`, so their
-workflow cannot declare repository-owned concurrency. `code-quality-supersession.yml`
-reconciles PR and managed-workflow start events using trusted default-branch code.
-It cancels only active managed Code Quality runs for the same PR whose SHA differs
-from the live PR head, rechecking that head before each cancellation. Current-head
-coverage, trunk scans, required checks and other PRs remain protected. The helper
-checks out no PR code and grants only Actions write, contents read and PR read.
+GitHub-managed Code Quality is switched off for this repository, so there is no
+managed analysis to supersede and no helper workflow for it; `codeql.yml` is the
+only CodeQL analysis of C# (Roslyn analyzers still run as errors in the build).
 CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
-already cancel superseded PR runs through their existing per-PR concurrency groups.
+cancel superseded PR runs through their per-PR concurrency groups.
 
 Normalization consumer admission reads the exact producer attempt before joining
 its per-PR cancellation group. Only a successful envelope-packaging job admits
@@ -1569,7 +1617,8 @@ CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
 `advisory-runner-select.yml` before allocating compute. Same-repository PRs use
 trusted base scripts and the existing OIDC role to read the build-host instance
 and heartbeat. A heartbeat no older than 90 seconds must match the current
-instance and advertise an idle heavy runner. Otherwise the job uses its existing
+instance and advertise more than two idle heavy runners: two stay free for
+required PR Gate jobs. Otherwise the job uses its existing
 hosted label. Missing configuration, credentials, read failures and selector
 failure all fall back to hosted compute. This selector never wakes or resizes
 the host; AWS retries and step timeouts are bounded. The current role trusts PR

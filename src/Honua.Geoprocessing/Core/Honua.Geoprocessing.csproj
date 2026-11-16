@@ -60,14 +60,14 @@
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.UnitTests" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
     <InternalsVisibleTo Include="Honua.Ai.UnitTests" />
-    <!-- GP Devkit P6 (#2127): the golden-SDK self-tests drive the internal managed
+    <!-- GP Devkit P6: the golden-SDK self-tests drive the internal managed
          executors (geometry.buffer / geometry.clip) through the public test SDK. -->
     <InternalsVisibleTo Include="Honua.Geoprocessing.Testing.Tests" />
-    <!-- GP Devkit dev CLI (#2123): consumes the internal AddGeoprocessing
+    <!-- GP Devkit dev CLI: consumes the internal AddGeoprocessing
          registration to resolve the managed IProcessExecutor set without a job store.
          Grant matches the CLI's AssemblyName (honua-gp), not its project name. -->
     <InternalsVisibleTo Include="honua-gp" />
-    <!-- Cross-project honesty check (#2253): the GDAL worker test asserts every
+    <!-- Cross-project honesty check: the GDAL worker test asserts every
          native-routed catalog process (BuiltInProcessCatalog) is routable by the
          worker dispatcher, so it needs the internal catalog. -->
     <InternalsVisibleTo Include="Honua.Worker.Gdal.Tests" />
@@ -76,7 +76,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Geoprocessing.UnitTests" />
-    <!-- reproduce tests assert that an old bundle still parses (honua-server#6220). -->
+    <!-- reproduce tests assert that an old bundle still parses. -->
     <InternalsVisibleTo Include="Honua.Geoprocessing.Cli.Tests" />
   </ItemGroup>
 </Project>
