@@ -57,17 +57,27 @@ internal sealed partial class PostgresAttachmentUploadSessionStore : IAttachment
     {
         var request = new AttachmentUploadRequest
         {
-            OwnerId = reader.GetString(1), ServiceId = reader.GetString(2),
-            LayerId = reader.GetInt32(3), PublishedLayerId = reader.IsDBNull(20) ? null : reader.GetInt32(20),
-            FeatureId = reader.GetInt64(4), Operation = reader.GetString(5),
-            IdempotencyKey = reader.GetString(6), Filename = reader.GetString(7), ContentType = reader.GetString(8),
-            Keywords = reader.GetFieldValue<string[]>(9), ExpectedSize = reader.GetInt64(10),
-            Sha256 = reader.GetFieldValue<byte[]>(11), ReplaceAttachmentId = reader.IsDBNull(12) ? null : reader.GetInt64(12),
-            MaxChunkBytes = reader.GetInt32(13), Lifetime = reader.GetDateTime(17) - reader.GetDateTime(16)
+            OwnerId = reader.GetString(1),
+            ServiceId = reader.GetString(2),
+            LayerId = reader.GetInt32(3),
+            PublishedLayerId = reader.IsDBNull(20) ? null : reader.GetInt32(20),
+            FeatureId = reader.GetInt64(4),
+            Operation = reader.GetString(5),
+            IdempotencyKey = reader.GetString(6),
+            Filename = reader.GetString(7),
+            ContentType = reader.GetString(8),
+            Keywords = reader.GetFieldValue<string[]>(9),
+            ExpectedSize = reader.GetInt64(10),
+            Sha256 = reader.GetFieldValue<byte[]>(11),
+            ReplaceAttachmentId = reader.IsDBNull(12) ? null : reader.GetInt64(12),
+            MaxChunkBytes = reader.GetInt32(13),
+            Lifetime = reader.GetDateTime(17) - reader.GetDateTime(16)
         };
         var session = new AttachmentUploadSession
         {
-            SessionId = reader.GetGuid(0), Request = request, NextOffsetBytes = reader.GetInt64(14),
+            SessionId = reader.GetGuid(0),
+            Request = request,
+            NextOffsetBytes = reader.GetInt64(14),
             State = reader.GetString(15) switch
             {
                 "uploading" => AttachmentUploadState.Uploading,

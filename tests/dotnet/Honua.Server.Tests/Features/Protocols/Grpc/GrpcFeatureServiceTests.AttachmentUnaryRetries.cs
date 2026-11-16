@@ -43,7 +43,8 @@ public sealed partial class GrpcFeatureServiceTests
         });
         var pending = _sut.UploadAttachment(new Proto.UploadAttachmentRequest
         {
-            Upload = ValidAttachmentUpload(), Content = ByteString.CopyFromUtf8("test")
+            Upload = ValidAttachmentUpload(),
+            Content = ByteString.CopyFromUtf8("test")
         }, context);
         await appendEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         session = session! with { State = AttachmentUploadState.Committed, NextOffsetBytes = 4 };
@@ -92,7 +93,8 @@ public sealed partial class GrpcFeatureServiceTests
         });
         var action = () => _sut.UploadAttachment(new Proto.UploadAttachmentRequest
         {
-            Upload = ValidAttachmentUpload(), Content = ByteString.CopyFromUtf8("test")
+            Upload = ValidAttachmentUpload(),
+            Content = ByteString.CopyFromUtf8("test")
         }, context);
 
         (await action.Should().ThrowAsync<AttachmentUploadException>()).Which.Failure.Should().Be(AttachmentUploadFailure.InvalidState);

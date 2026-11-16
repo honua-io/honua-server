@@ -36,7 +36,9 @@ internal sealed partial class HonuaFeatureService
         {
             session = await AppendUnaryAttachmentAsync(session, new Proto.UploadAttachmentChunkRequest
             {
-                OffsetBytes = 0, Content = request.Content, Sha256 = request.Upload.Sha256
+                OffsetBytes = 0,
+                Content = request.Content,
+                Sha256 = request.Upload.Sha256
             }, context).ConfigureAwait(false);
         }
         var attachment = await AttachmentService<IAttachmentUploadPublisher>(context).PublishAsync(session, context.CancellationToken).ConfigureAwait(false);
@@ -82,13 +84,21 @@ internal sealed partial class HonuaFeatureService
         await EnsureAttachmentEditAccessAsync(target, context, AuthorizationOperation.Update).ConfigureAwait(false);
         return await AttachmentService<IAttachmentUploadSessionStore>(context).BeginAsync(new AttachmentUploadRequest
         {
-            OwnerId = AttachmentOwner(context), ServiceId = upload.Parent.ServiceId,
-            LayerId = target.Layer.StorageLayerId, PublishedLayerId = upload.Parent.LayerId, FeatureId = target.FeatureId,
-            Operation = operation, IdempotencyKey = upload.IdempotencyKey,
-            Filename = upload.Name, ContentType = upload.ContentType, Keywords = upload.Keywords.ToArray(),
-            ExpectedSize = upload.SizeBytes, Sha256 = upload.Sha256.ToByteArray(),
+            OwnerId = AttachmentOwner(context),
+            ServiceId = upload.Parent.ServiceId,
+            LayerId = target.Layer.StorageLayerId,
+            PublishedLayerId = upload.Parent.LayerId,
+            FeatureId = target.FeatureId,
+            Operation = operation,
+            IdempotencyKey = upload.IdempotencyKey,
+            Filename = upload.Name,
+            ContentType = upload.ContentType,
+            Keywords = upload.Keywords.ToArray(),
+            ExpectedSize = upload.SizeBytes,
+            Sha256 = upload.Sha256.ToByteArray(),
             ReplaceAttachmentId = upload.HasReplaceAttachmentId ? upload.ReplaceAttachmentId : null,
-            MaxChunkBytes = AttachmentChunkBytes, Lifetime = AttachmentSessionLifetime
+            MaxChunkBytes = AttachmentChunkBytes,
+            Lifetime = AttachmentSessionLifetime
         }, context.CancellationToken).ConfigureAwait(false);
     }
 
@@ -157,7 +167,9 @@ internal sealed partial class HonuaFeatureService
             return await AttachmentService<IAttachmentUploadSessionStore>(context).AppendAsync(new AttachmentUploadChunk
             {
                 Key = new AttachmentUploadSessionKey(session.Request.OwnerId, session.SessionId),
-                OffsetBytes = request.OffsetBytes, Content = request.Content.ToByteArray(), Sha256 = request.Sha256.ToByteArray()
+                OffsetBytes = request.OffsetBytes,
+                Content = request.Content.ToByteArray(),
+                Sha256 = request.Sha256.ToByteArray()
             }, context.CancellationToken).ConfigureAwait(false);
         }
         catch (AttachmentUploadException exception) when (exception.Failure == AttachmentUploadFailure.Conflict)
@@ -169,7 +181,9 @@ internal sealed partial class HonuaFeatureService
     private static Proto.AttachmentUploadSession ToAttachmentSession(AttachmentUploadSession session)
         => new()
         {
-            SessionId = session.SessionId.ToString("D"), ExpiresAtUtcMs = session.ExpiresAt.ToUnixTimeMilliseconds(),
-            NextOffsetBytes = session.NextOffsetBytes, MaxChunkBytes = session.Request.MaxChunkBytes
+            SessionId = session.SessionId.ToString("D"),
+            ExpiresAtUtcMs = session.ExpiresAt.ToUnixTimeMilliseconds(),
+            NextOffsetBytes = session.NextOffsetBytes,
+            MaxChunkBytes = session.Request.MaxChunkBytes
         };
 }

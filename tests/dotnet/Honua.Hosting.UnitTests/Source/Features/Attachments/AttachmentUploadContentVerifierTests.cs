@@ -78,14 +78,24 @@ public sealed class AttachmentUploadContentVerifierTests
         });
         var session = new AttachmentUploadSession
         {
-            SessionId = Guid.NewGuid(), State = AttachmentUploadState.Uploading,
-            NextOffsetBytes = content.Length, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+            SessionId = Guid.NewGuid(),
+            State = AttachmentUploadState.Uploading,
+            NextOffsetBytes = content.Length,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
             Request = new AttachmentUploadRequest
             {
-                OwnerId = "editor", ServiceId = "service", LayerId = 1, FeatureId = 2,
-                Operation = "chunked", IdempotencyKey = "key", Filename = "note.txt",
-                ContentType = "text/plain", ExpectedSize = content.Length, Sha256 = SHA256.HashData(content),
-                MaxChunkBytes = 1024, Lifetime = TimeSpan.FromMinutes(5)
+                OwnerId = "editor",
+                ServiceId = "service",
+                LayerId = 1,
+                FeatureId = 2,
+                Operation = "chunked",
+                IdempotencyKey = "key",
+                Filename = "note.txt",
+                ContentType = "text/plain",
+                ExpectedSize = content.Length,
+                Sha256 = SHA256.HashData(content),
+                MaxChunkBytes = 1024,
+                Lifetime = TimeSpan.FromMinutes(5)
             }
         };
         return (new AttachmentUploadContentVerifier(store,

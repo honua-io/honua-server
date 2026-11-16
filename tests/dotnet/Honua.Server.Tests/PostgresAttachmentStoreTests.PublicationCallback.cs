@@ -52,7 +52,10 @@ public partial class PostgresAttachmentStoreTests
         await using var content = new MemoryStream("abcdef"u8.ToArray());
         var uploaded = await _fileStorage.UploadIfMatchAsync(new Honua.Core.Features.Infrastructure.Domain.FileUploadRequest
         {
-            Content = content, FileName = "notes.txt", ContentType = "text/plain", ObjectKeyOverride = objectKey
+            Content = content,
+            FileName = "notes.txt",
+            ContentType = "text/plain",
+            ObjectKeyOverride = objectKey
         }, null);
         Assert.True(uploaded.Success);
         await _fixture.ExecuteAsync($"""
@@ -83,7 +86,10 @@ public partial class PostgresAttachmentStoreTests
         await using var content = new MemoryStream("abcdef"u8.ToArray());
         var uploaded = await _fileStorage.UploadIfMatchAsync(new Honua.Core.Features.Infrastructure.Domain.FileUploadRequest
         {
-            Content = content, FileName = "notes.txt", ContentType = "text/plain", ObjectKeyOverride = objectKey
+            Content = content,
+            FileName = "notes.txt",
+            ContentType = "text/plain",
+            ObjectKeyOverride = objectKey
         }, null);
         Assert.True(uploaded.Success);
         await _fixture.ExecuteAsync($"""

@@ -21,7 +21,10 @@ public partial class PostgresAttachmentStoreTests
         var content = "abcdef"u8.ToArray();
         await store.AppendAsync(new AttachmentUploadChunk
         {
-            Key = key, OffsetBytes = 0, Content = content, Sha256 = SHA256.HashData(content)
+            Key = key,
+            OffsetBytes = 0,
+            Content = content,
+            Sha256 = SHA256.HashData(content)
         });
         var restarted = NewUploadSessionStore();
         var results = await Task.WhenAll(CommitPreparedSessionAsync(store, key), CommitPreparedSessionAsync(restarted, key));
@@ -41,7 +44,10 @@ public partial class PostgresAttachmentStoreTests
         var content = "abcdef"u8.ToArray();
         await store.AppendAsync(new AttachmentUploadChunk
         {
-            Key = key, OffsetBytes = 0, Content = content, Sha256 = SHA256.HashData(content)
+            Key = key,
+            OffsetBytes = 0,
+            Content = content,
+            Sha256 = SHA256.HashData(content)
         });
         var failure = await Assert.ThrowsAsync<AttachmentUploadException>(() => CommitPreparedSessionAsync(store, key));
         Assert.Equal(AttachmentUploadFailure.InvalidContent, failure.Failure);
@@ -74,7 +80,9 @@ public partial class PostgresAttachmentStoreTests
         var original = await CommitPreparedSessionAsync(store, firstKey);
         var replacementKey = await PrepareCommitSessionAsync(store, CreateSessionRequest() with
         {
-            IdempotencyKey = "replacement", ReplaceAttachmentId = original.Id, Filename = "replacement.txt"
+            IdempotencyKey = "replacement",
+            ReplaceAttachmentId = original.Id,
+            Filename = "replacement.txt"
         });
         var replacement = await CommitPreparedSessionAsync(store, replacementKey);
         Assert.Equal(original.Id, replacement.Id);
@@ -95,7 +103,9 @@ public partial class PostgresAttachmentStoreTests
             Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgresAttachmentStore>.Instance, _schemaName,
             attachmentLimits: new Honua.Core.Configuration.AttachmentLimits
             {
-                MaxAttachmentsPerFeature = 1, MaxAttachmentSize = 1024, MaxTotalAttachmentSize = 1024
+                MaxAttachmentsPerFeature = 1,
+                MaxAttachmentSize = 1024,
+                MaxTotalAttachmentSize = 1024
             }, migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!, schemaOptions: new AttachmentStoreSchemaOptions(null, _schemaName));
         var store = new PostgresAttachmentUploadSessionStore(new TestDatabaseConnectionProvider(_fixture.DataSource), _schemaName, publisher);
         var keys = await Task.WhenAll(Enumerable.Range(0, 2).Select(index =>
@@ -139,7 +149,10 @@ public partial class PostgresAttachmentStoreTests
             await using var content = new MemoryStream("abcdef"u8.ToArray());
             var result = await _fileStorage.UploadIfMatchAsync(new Honua.Core.Features.Infrastructure.Domain.FileUploadRequest
             {
-                Content = content, FileName = "notes.txt", ContentType = "text/plain", ObjectKeyOverride = path
+                Content = content,
+                FileName = "notes.txt",
+                ContentType = "text/plain",
+                ObjectKeyOverride = path
             }, null, token);
             Assert.True(result.Success);
             return path;
@@ -165,7 +178,10 @@ public partial class PostgresAttachmentStoreTests
         var content = "abcdef"u8.ToArray();
         await store.AppendAsync(new AttachmentUploadChunk
         {
-            Key = key, OffsetBytes = 0, Content = content, Sha256 = SHA256.HashData(content)
+            Key = key,
+            OffsetBytes = 0,
+            Content = content,
+            Sha256 = SHA256.HashData(content)
         });
         return key;
     }
@@ -194,8 +210,17 @@ public partial class PostgresAttachmentStoreTests
 
     private static AttachmentUploadRequest CreateSessionRequest() => new()
     {
-        OwnerId = "owner", ServiceId = "service", LayerId = TestLayerId, FeatureId = TestFeatureId,
-        Operation = "chunked", IdempotencyKey = "commit-retry", Filename = "notes.txt", ContentType = "text/plain",
-        ExpectedSize = 6, Sha256 = SHA256.HashData("abcdef"u8), MaxChunkBytes = 6, Lifetime = TimeSpan.FromHours(1)
+        OwnerId = "owner",
+        ServiceId = "service",
+        LayerId = TestLayerId,
+        FeatureId = TestFeatureId,
+        Operation = "chunked",
+        IdempotencyKey = "commit-retry",
+        Filename = "notes.txt",
+        ContentType = "text/plain",
+        ExpectedSize = 6,
+        Sha256 = SHA256.HashData("abcdef"u8),
+        MaxChunkBytes = 6,
+        Lifetime = TimeSpan.FromHours(1)
     };
 }

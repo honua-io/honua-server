@@ -32,9 +32,12 @@ internal sealed partial class HonuaFeatureService
         var attachments = await AttachmentService<IAttachmentNativeMetadataStore>(context).QueryPageAsync(
             new AttachmentPageQuery
             {
-                LayerId = target.Layer.StorageLayerId, FeatureId = target.FeatureId,
-                AfterId = after, Limit = size + 1,
-                ContentTypes = request.ContentTypes.ToArray(), Keywords = request.Keywords.ToArray()
+                LayerId = target.Layer.StorageLayerId,
+                FeatureId = target.FeatureId,
+                AfterId = after,
+                Limit = size + 1,
+                ContentTypes = request.ContentTypes.ToArray(),
+                Keywords = request.Keywords.ToArray()
             }, context.CancellationToken).ConfigureAwait(false);
         var page = attachments.Select(value => MapAttachment(value.Attachment, value.Metadata)).ToArray();
         var response = new Proto.ListAttachmentsResponse();
@@ -67,7 +70,8 @@ internal sealed partial class HonuaFeatureService
         }
         return new Proto.GetAttachmentUrlResponse
         {
-            Url = url, ExpiresAtUtcMs = expires.ToUnixTimeMilliseconds(),
+            Url = url,
+            ExpiresAtUtcMs = expires.ToUnixTimeMilliseconds(),
             Attachment = await DescribeAttachmentAsync(attachment, context).ConfigureAwait(false)
         };
     }
@@ -84,9 +88,13 @@ internal sealed partial class HonuaFeatureService
         await EnsureAttachmentEditAccessAsync(target, context, AuthorizationOperation.Delete).ConfigureAwait(false);
         await AttachmentService<IAttachmentMutationStore>(context).DeleteAsync(new AttachmentDeleteRequest
         {
-            OwnerId = AttachmentOwner(context), ServiceId = request.Parent.ServiceId,
-            LayerId = target.Layer.StorageLayerId, FeatureId = target.FeatureId,
-            AttachmentId = request.AttachmentId, IdempotencyKey = request.IdempotencyKey, Lifetime = AttachmentSessionLifetime
+            OwnerId = AttachmentOwner(context),
+            ServiceId = request.Parent.ServiceId,
+            LayerId = target.Layer.StorageLayerId,
+            FeatureId = target.FeatureId,
+            AttachmentId = request.AttachmentId,
+            IdempotencyKey = request.IdempotencyKey,
+            Lifetime = AttachmentSessionLifetime
         }, context.CancellationToken).ConfigureAwait(false);
         return new Proto.DeleteAttachmentResponse { AttachmentId = request.AttachmentId };
     }
@@ -107,7 +115,10 @@ internal sealed partial class HonuaFeatureService
     {
         var descriptor = new Proto.AttachmentDescriptor
         {
-            AttachmentId = value.Id, Name = value.Filename, ContentType = value.ContentType, SizeBytes = value.Size,
+            AttachmentId = value.Id,
+            Name = value.Filename,
+            ContentType = value.ContentType,
+            SizeBytes = value.Size,
             GlobalId = metadata?.GlobalId.ToString("D") ?? string.Empty,
             Sha256 = metadata is null ? ByteString.Empty : ByteString.CopyFrom(metadata.Sha256)
         };

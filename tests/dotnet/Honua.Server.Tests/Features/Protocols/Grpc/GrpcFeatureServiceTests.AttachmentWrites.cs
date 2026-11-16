@@ -72,7 +72,8 @@ public sealed partial class GrpcFeatureServiceTests
         });
         var response = await _sut.UploadAttachment(new Proto.UploadAttachmentRequest
         {
-            Upload = ValidAttachmentUpload(), Content = ByteString.CopyFromUtf8("test")
+            Upload = ValidAttachmentUpload(),
+            Content = ByteString.CopyFromUtf8("test")
         }, context);
         await store.Received(1).BeginAsync(Arg.Is<AttachmentUploadRequest>(value => value.Operation == "unary"),
             Arg.Any<CancellationToken>());
@@ -93,9 +94,19 @@ public sealed partial class GrpcFeatureServiceTests
         var store = Substitute.For<IAttachmentUploadSessionStore>();
         var request = new AttachmentUploadRequest
         {
-            OwnerId = "owner", ServiceId = "test", LayerId = 99, PublishedLayerId = 7, FeatureId = 900,
-            Operation = "chunked", IdempotencyKey = "test-upload", Filename = "photo.txt", ContentType = "text/plain",
-            ExpectedSize = 4, Sha256 = SHA256.HashData("test"u8), MaxChunkBytes = 1024 * 1024, Lifetime = TimeSpan.FromHours(24)
+            OwnerId = "owner",
+            ServiceId = "test",
+            LayerId = 99,
+            PublishedLayerId = 7,
+            FeatureId = 900,
+            Operation = "chunked",
+            IdempotencyKey = "test-upload",
+            Filename = "photo.txt",
+            ContentType = "text/plain",
+            ExpectedSize = 4,
+            Sha256 = SHA256.HashData("test"u8),
+            MaxChunkBytes = 1024 * 1024,
+            Lifetime = TimeSpan.FromHours(24)
         };
         var session = NewAttachmentSession(request);
         store.GetAsync(Arg.Any<AttachmentUploadSessionKey>(), Arg.Any<CancellationToken>()).Returns(session);
@@ -165,7 +176,9 @@ public sealed partial class GrpcFeatureServiceTests
             services => services.AddSingleton(store));
         var action = () => _sut.DeleteAttachment(new Proto.DeleteAttachmentRequest
         {
-            Parent = ValidAttachmentUpload().Parent, AttachmentId = 23, IdempotencyKey = "delete"
+            Parent = ValidAttachmentUpload().Parent,
+            AttachmentId = 23,
+            IdempotencyKey = "delete"
         }, context);
         (await action.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
         await store.DidNotReceiveWithAnyArgs().DeleteAsync(default!);
@@ -179,9 +192,19 @@ public sealed partial class GrpcFeatureServiceTests
         var store = Substitute.For<IAttachmentUploadSessionStore>();
         var session = NewAttachmentSession(new AttachmentUploadRequest
         {
-            OwnerId = "owner", ServiceId = "test", LayerId = 42, PublishedLayerId = 7, FeatureId = 900,
-            Operation = "chunked", IdempotencyKey = "test-upload", Filename = "photo.txt", ContentType = "text/plain",
-            ExpectedSize = 4, Sha256 = SHA256.HashData("test"u8), MaxChunkBytes = 1024 * 1024, Lifetime = TimeSpan.FromHours(24)
+            OwnerId = "owner",
+            ServiceId = "test",
+            LayerId = 42,
+            PublishedLayerId = 7,
+            FeatureId = 900,
+            Operation = "chunked",
+            IdempotencyKey = "test-upload",
+            Filename = "photo.txt",
+            ContentType = "text/plain",
+            ExpectedSize = 4,
+            Sha256 = SHA256.HashData("test"u8),
+            MaxChunkBytes = 1024 * 1024,
+            Lifetime = TimeSpan.FromHours(24)
         });
         store.GetAsync(Arg.Any<AttachmentUploadSessionKey>(), Arg.Any<CancellationToken>()).Returns(session);
         var publisher = Substitute.For<IAttachmentUploadPublisher>();
@@ -251,9 +274,19 @@ public sealed partial class GrpcFeatureServiceTests
         var store = Substitute.For<IAttachmentUploadSessionStore>();
         var session = NewAttachmentSession(new AttachmentUploadRequest
         {
-            OwnerId = "owner", ServiceId = "test", LayerId = 42, PublishedLayerId = 7, FeatureId = 900,
-            Operation = "chunked", IdempotencyKey = "test-upload", Filename = "photo.txt", ContentType = "text/plain",
-            ExpectedSize = 4, Sha256 = SHA256.HashData("test"u8), MaxChunkBytes = 1024 * 1024, Lifetime = TimeSpan.FromHours(24)
+            OwnerId = "owner",
+            ServiceId = "test",
+            LayerId = 42,
+            PublishedLayerId = 7,
+            FeatureId = 900,
+            Operation = "chunked",
+            IdempotencyKey = "test-upload",
+            Filename = "photo.txt",
+            ContentType = "text/plain",
+            ExpectedSize = 4,
+            Sha256 = SHA256.HashData("test"u8),
+            MaxChunkBytes = 1024 * 1024,
+            Lifetime = TimeSpan.FromHours(24)
         });
         store.GetAsync(Arg.Any<AttachmentUploadSessionKey>(), Arg.Any<CancellationToken>()).Returns(session);
         var publisher = Substitute.For<IAttachmentUploadPublisher>();
@@ -284,10 +317,19 @@ public sealed partial class GrpcFeatureServiceTests
         store.AppendAsync(Arg.Any<AttachmentUploadChunk>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult(NewAttachmentSession(new AttachmentUploadRequest
             {
-                OwnerId = call.Arg<AttachmentUploadChunk>().Key.OwnerId, ServiceId = "test", LayerId = 42,
-                PublishedLayerId = 7, FeatureId = 900, Operation = "unary", IdempotencyKey = "test-upload",
-                Filename = "photo.txt", ContentType = "text/plain", ExpectedSize = 4,
-                Sha256 = SHA256.HashData("test"u8), MaxChunkBytes = 1024 * 1024, Lifetime = TimeSpan.FromHours(24)
+                OwnerId = call.Arg<AttachmentUploadChunk>().Key.OwnerId,
+                ServiceId = "test",
+                LayerId = 42,
+                PublishedLayerId = 7,
+                FeatureId = 900,
+                Operation = "unary",
+                IdempotencyKey = "test-upload",
+                Filename = "photo.txt",
+                ContentType = "text/plain",
+                ExpectedSize = 4,
+                Sha256 = SHA256.HashData("test"u8),
+                MaxChunkBytes = 1024 * 1024,
+                Lifetime = TimeSpan.FromHours(24)
             }) with { NextOffsetBytes = 4 }));
     }
 
@@ -304,7 +346,7 @@ public sealed partial class GrpcFeatureServiceTests
         triple = triple with
         {
             StorageLayerId = 42,
-            Publication = triple.Publication with { Identifier = new MetadataV2PublicationIdentifier { Value = "7", IsNumeric = true } }
+            Publication = triple.Publication with { Identifier = new MetadataV2LayerIdentifier { Value = "7", IsNumeric = true } }
         };
         _resourceValidator.ValidateServiceLayerV2Async("test", 7, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(triple));
@@ -315,13 +357,19 @@ public sealed partial class GrpcFeatureServiceTests
     private static Proto.AttachmentUpload ValidAttachmentUpload() => new()
     {
         Parent = new Proto.AttachmentParent { ServiceId = "test", LayerId = 7, ObjectId = 17 },
-        Name = "photo.txt", ContentType = "text/plain", IdempotencyKey = "test-upload", SizeBytes = 4,
+        Name = "photo.txt",
+        ContentType = "text/plain",
+        IdempotencyKey = "test-upload",
+        SizeBytes = 4,
         Sha256 = ByteString.CopyFrom(SHA256.HashData("test"u8))
     };
 
     private static AttachmentUploadSession NewAttachmentSession(AttachmentUploadRequest request) => new()
     {
-        SessionId = Guid.NewGuid(), Request = request, NextOffsetBytes = 0,
-        State = AttachmentUploadState.Uploading, ExpiresAt = DateTimeOffset.UtcNow.AddHours(24)
+        SessionId = Guid.NewGuid(),
+        Request = request,
+        NextOffsetBytes = 0,
+        State = AttachmentUploadState.Uploading,
+        ExpiresAt = DateTimeOffset.UtcNow.AddHours(24)
     };
 }

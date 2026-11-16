@@ -60,7 +60,8 @@ public sealed partial class GrpcIntegrationTests
         attachment.Sha256.ToByteArray().Should().Equal(SHA256.HashData("test"u8));
         var download = await _client.GetAttachmentUrlAsync(new Proto.GetAttachmentUrlRequest
         {
-            Parent = parent, AttachmentId = attachment.AttachmentId
+            Parent = parent,
+            AttachmentId = attachment.AttachmentId
         }, _headers);
         download.Url.Should().Be("https://downloads.example.test/attachment?signature=test");
         download.Url.Should().NotContain("private/attachment-object");

@@ -21,7 +21,9 @@ public partial class PostgresAttachmentStoreTests
             Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgresAttachmentStore>.Instance, _schemaName,
             attachmentLimits: new Honua.Core.Configuration.AttachmentLimits
             {
-                MaxAttachmentsPerFeature = 5, MaxAttachmentSize = 5, MaxTotalAttachmentSize = 1024
+                MaxAttachmentsPerFeature = 5,
+                MaxAttachmentSize = 5,
+                MaxTotalAttachmentSize = 1024
             }, migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!, schemaOptions: new AttachmentStoreSchemaOptions(null, _schemaName));
         var restarted = new PostgresAttachmentUploadSessionStore(
             new TestDatabaseConnectionProvider(_fixture.DataSource), _schemaName, publisher);

@@ -64,8 +64,13 @@ public sealed class AttachmentUploadPublisherTests
         var path = AttachmentUploadObjectKey.ForSession(session.SessionId);
         cloud.UploadIfMatchAsync(default!, default, default).ReturnsForAnyArgs(UploadResult.CreateSuccess(new CloudFile
         {
-            FileId = path, FileName = "note.txt", StoragePath = path, ContentType = "text/plain",
-            SizeBytes = 10, UploadedAt = DateTimeOffset.UtcNow, Provider = CloudStorageProvider.Local
+            FileId = path,
+            FileName = "note.txt",
+            StoragePath = path,
+            ContentType = "text/plain",
+            SizeBytes = 10,
+            UploadedAt = DateTimeOffset.UtcNow,
+            Provider = CloudStorageProvider.Local
         }));
 
         var attachment = await publisher.PublishAsync(session);
@@ -130,13 +135,23 @@ public sealed class AttachmentUploadPublisherTests
             await call.Arg<Stream>().WriteAsync(bytes));
         var session = new AttachmentUploadSession
         {
-            SessionId = Guid.NewGuid(), State = AttachmentUploadState.Uploading,
-            NextOffsetBytes = bytes.Length, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+            SessionId = Guid.NewGuid(),
+            State = AttachmentUploadState.Uploading,
+            NextOffsetBytes = bytes.Length,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
             Request = new AttachmentUploadRequest
             {
-                OwnerId = "editor", ServiceId = "service", LayerId = 1, FeatureId = 2,
-                Operation = "chunked", IdempotencyKey = "key", Filename = "note.txt", ContentType = "text/plain",
-                ExpectedSize = bytes.Length, Sha256 = SHA256.HashData(bytes), MaxChunkBytes = 1024,
+                OwnerId = "editor",
+                ServiceId = "service",
+                LayerId = 1,
+                FeatureId = 2,
+                Operation = "chunked",
+                IdempotencyKey = "key",
+                Filename = "note.txt",
+                ContentType = "text/plain",
+                ExpectedSize = bytes.Length,
+                Sha256 = SHA256.HashData(bytes),
+                MaxChunkBytes = 1024,
                 Lifetime = TimeSpan.FromMinutes(5)
             }
         };

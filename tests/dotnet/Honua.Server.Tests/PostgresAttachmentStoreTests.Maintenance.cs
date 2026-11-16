@@ -21,7 +21,8 @@ public partial class PostgresAttachmentStoreTests
         var original = await CreateTestAttachment();
         var replacement = await PrepareCommitSessionAsync(store, CreateSessionRequest() with
         {
-            IdempotencyKey = "replacement", ReplaceAttachmentId = original.Id
+            IdempotencyKey = "replacement",
+            ReplaceAttachmentId = original.Id
         });
         var path = await UploadMaintenanceReplacementAsync(replacement.SessionId);
         var current = await store.CommitAsync(replacement, path);
@@ -114,7 +115,9 @@ public partial class PostgresAttachmentStoreTests
         await using var content = new MemoryStream("abcdef"u8.ToArray());
         var uploaded = await _fileStorage.UploadIfMatchAsync(new FileUploadRequest
         {
-            Content = content, FileName = "replacement.txt", ContentType = "text/plain",
+            Content = content,
+            FileName = "replacement.txt",
+            ContentType = "text/plain",
             ObjectKeyOverride = AttachmentUploadObjectKey.ForSession(sessionId)
         }, null);
         Assert.True(uploaded.Success);

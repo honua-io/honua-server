@@ -74,7 +74,8 @@ public sealed partial class GrpcFeatureServiceTests
         });
         var action = () => _sut.GetAttachmentUrl(new Proto.GetAttachmentUrlRequest
         {
-            Parent = AttachmentParent(), AttachmentId = 2
+            Parent = AttachmentParent(),
+            AttachmentId = 2
         }, context);
         var exception = (await action.Should().ThrowAsync<RpcException>()).Which;
         exception.StatusCode.Should().Be(StatusCode.FailedPrecondition);
@@ -114,7 +115,8 @@ public sealed partial class GrpcFeatureServiceTests
     {
         var action = () => _sut.DeleteAttachment(new Proto.DeleteAttachmentRequest
         {
-            Parent = AttachmentParent(), AttachmentId = 2
+            Parent = AttachmentParent(),
+            AttachmentId = 2
         }, CreateCallContext());
         (await action.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }

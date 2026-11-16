@@ -31,14 +31,18 @@ internal sealed partial class HonuaFeatureService
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
         var request = new Proto.QueryFeaturesRequest
         {
-            ServiceId = parent.ServiceId, LayerId = parent.LayerId, ResultRecordCountLong = 2
+            ServiceId = parent.ServiceId,
+            LayerId = parent.LayerId,
+            ResultRecordCountLong = 2
         };
         SetAttachmentParentSelector(request, parent, layer);
         var queryContext = await CreateQueryContextAsync(
             request, layer, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query with
         {
-            PublicIdAttributeName = layer.ObjectIdFieldName, ReturnPublicObjectIds = false, ExcludeAttributes = true
+            PublicIdAttributeName = layer.ObjectIdFieldName,
+            ReturnPublicObjectIds = false,
+            ExcludeAttributes = true
         };
         return new AttachmentTarget(layer, await ResolveAttachmentFeatureAsync(layer, query, context).ConfigureAwait(false));
     }
@@ -125,12 +129,16 @@ internal sealed partial class HonuaFeatureService
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
         var queryContext = await CreateQueryContextAsync(new Proto.QueryFeaturesRequest
         {
-            ServiceId = session.Request.ServiceId, LayerId = publishedId, ResultRecordCountLong = 2
+            ServiceId = session.Request.ServiceId,
+            LayerId = publishedId,
+            ResultRecordCountLong = 2
         }, layer, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
         await ResolveAttachmentFeatureAsync(layer, queryContext.Query with
         {
-            ObjectIds = [session.Request.FeatureId], PublicIdAttributeName = null,
-            ReturnPublicObjectIds = false, ExcludeAttributes = true
+            ObjectIds = [session.Request.FeatureId],
+            PublicIdAttributeName = null,
+            ReturnPublicObjectIds = false,
+            ExcludeAttributes = true
         }, context).ConfigureAwait(false);
         await EnsureAttachmentEditAccessAsync(new AttachmentTarget(layer, session.Request.FeatureId),
             context, AuthorizationOperation.Update).ConfigureAwait(false);

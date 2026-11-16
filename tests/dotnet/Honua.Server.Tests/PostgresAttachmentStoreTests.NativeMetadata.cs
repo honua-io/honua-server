@@ -17,7 +17,10 @@ public partial class PostgresAttachmentStoreTests
         await _attachmentStore.UpdateKeywordsAsync(TestLayerId, TestFeatureId, attachment.Id, "photo,original");
         var page = await _attachmentStore.QueryPageAsync(new AttachmentPageQuery
         {
-            LayerId = TestLayerId, FeatureId = TestFeatureId, Limit = 10, Keywords = [keyword]
+            LayerId = TestLayerId,
+            FeatureId = TestFeatureId,
+            Limit = 10,
+            Keywords = [keyword]
         });
         var item = Assert.Single(page);
         Assert.Equal(attachment.Id, item.Attachment.Id);
@@ -33,7 +36,10 @@ public partial class PostgresAttachmentStoreTests
         await _attachmentStore.UpdateKeywordsAsync(TestLayerId, TestFeatureId, attachment.Id, "photo,original");
         var page = await _attachmentStore.QueryPageAsync(new AttachmentPageQuery
         {
-            LayerId = TestLayerId, FeatureId = TestFeatureId, Limit = 10, Keywords = [keyword]
+            LayerId = TestLayerId,
+            FeatureId = TestFeatureId,
+            Limit = 10,
+            Keywords = [keyword]
         });
         Assert.Empty(page);
     }
@@ -106,8 +112,11 @@ public partial class PostgresAttachmentStoreTests
             CreateSessionRequest() with { IdempotencyKey = "third", Keywords = ["a", "b"] }));
         var query = new AttachmentPageQuery
         {
-            LayerId = TestLayerId, FeatureId = TestFeatureId, Limit = 1,
-            ContentTypes = [first.ContentType], Keywords = ["a,b"]
+            LayerId = TestLayerId,
+            FeatureId = TestFeatureId,
+            Limit = 1,
+            ContentTypes = [first.ContentType],
+            Keywords = ["a,b"]
         };
         var page = Assert.Single(await _attachmentStore.QueryPageAsync(query));
         Assert.Equal(first.Id, page.Attachment.Id);
@@ -135,7 +144,9 @@ public partial class PostgresAttachmentStoreTests
         Assert.Empty(await _attachmentStore.GetNativeMetadataAsync(query with { FeatureId = TestFeatureId + 1 }));
         var replacement = await PrepareCommitSessionAsync(NewUploadSessionStore(), request with
         {
-            IdempotencyKey = "replace-native", ReplaceAttachmentId = attachment.Id, Keywords = ["new,value"]
+            IdempotencyKey = "replace-native",
+            ReplaceAttachmentId = attachment.Id,
+            Keywords = ["new,value"]
         });
         await CommitPreparedSessionAsync(sessions, replacement);
         var updated = Assert.Single(await _attachmentStore.GetNativeMetadataAsync(query)).Value;

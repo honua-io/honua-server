@@ -51,7 +51,12 @@ public partial class PostgresAttachmentStoreTests
 
     private static AttachmentDeleteRequest CreateDeleteRequest(long attachmentId) => new()
     {
-        OwnerId = "owner", ServiceId = "service", LayerId = TestLayerId, FeatureId = TestFeatureId,
-        AttachmentId = attachmentId, IdempotencyKey = "delete-retry", Lifetime = TimeSpan.FromHours(1)
+        OwnerId = "owner",
+        ServiceId = "service",
+        LayerId = TestLayerId,
+        FeatureId = TestFeatureId,
+        AttachmentId = attachmentId,
+        IdempotencyKey = "delete-retry",
+        Lifetime = TimeSpan.FromHours(1)
     };
 }
