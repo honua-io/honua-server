@@ -27,11 +27,11 @@ public sealed class FeatureServerQueryNumericValidationTests : IClassFixture<Web
         {
             var data = new TheoryData<string, string, string>();
             foreach (var parameter in new[] { "distance", "maxAllowableOffset" })
-            foreach (var value in new[] { "NaN", "Infinity", "-Infinity", "1e999" })
-            {
-                data.Add("GET", parameter, value);
-                data.Add("POST", parameter, value);
-            }
+                foreach (var value in new[] { "NaN", "Infinity", "-Infinity", "1e999" })
+                {
+                    data.Add("GET", parameter, value);
+                    data.Add("POST", parameter, value);
+                }
 
             return data;
         }
@@ -43,11 +43,11 @@ public sealed class FeatureServerQueryNumericValidationTests : IClassFixture<Web
         {
             var data = new TheoryData<string, string, string>();
             foreach (var parameter in new[] { "distance", "maxAllowableOffset" })
-            foreach (var value in new[] { "", "0", "1" })
-            {
-                data.Add("GET", parameter, value);
-                data.Add("POST", parameter, value);
-            }
+                foreach (var value in new[] { "", "0", "1" })
+                {
+                    data.Add("GET", parameter, value);
+                    data.Add("POST", parameter, value);
+                }
 
             return data;
         }
