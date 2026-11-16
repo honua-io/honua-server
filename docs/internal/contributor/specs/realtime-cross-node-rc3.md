@@ -366,6 +366,14 @@ Cost: the Console's SignalR connection factory and three clients (`ConsoleAdminH
 Console and Server change in the same release. The status frame (`event: status`) keeps
 `AdminRealtimeStatus` without `backplaneEnabled`, and `realtimeGroups` becomes `topics`.
 
+The server advertises `realtime.streamPath` as `/api/v1/admin/live`, `protocol` as `sse`,
+and `statusEventName` as `status` in its observability capabilities. `hubPath` is removed.
+`topics` defaults to all four topics; an unknown or empty list element returns 400.
+`Last-Event-ID` must be `admin:<nonnegative sequence>`; malformed or other-family cursors
+return 400. Retention and excessive replay gaps produce a `reset` frame with `reason` and
+`head`; clients refresh the corresponding REST view. Event names and dashboard payloads
+remain unchanged; ops-health snapshots also identify their producing task through `taskId`.
+
 ## 10. CloudFront, load balancer and ECS
 These are changes to honua-io/honua-marketplace `aws/cloudformation/container-product/deploy.yaml`.
 That repository is not edited here.

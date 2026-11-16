@@ -2430,6 +2430,24 @@
       "rule": "graph-resource",
       "line": "        JsonElement.DeepEquals(response, schemas.GetProperty(\"MetadataV2ResourceEditing\")).Should().BeTrue();",
       "reason": "Regression verifies the canonical schema remains equal to the published legacy wire schema during vocabulary migration."
+    },
+    {
+      "path": "scripts/ci/surface-vocabulary.v1.json",
+      "rule": "serving-target",
+      "line": "    {\"id\": \"layer\", \"object\": \"Layer\", \"terms\": [\"publication\", \"serving target\", \"hosted layer\", \"slot\", \"feature class\"]},",
+      "reason": "Surface vocabulary policy lists the retired term so the check can reject it."
+    },
+    {
+      "path": "scripts/ci/surface-vocabulary.v1.json",
+      "rule": "hosted-layer",
+      "line": "    {\"id\": \"layer\", \"object\": \"Layer\", \"terms\": [\"publication\", \"serving target\", \"hosted layer\", \"slot\", \"feature class\"]},",
+      "reason": "Surface vocabulary policy lists the retired term so the check can reject it."
+    },
+    {
+      "path": "scripts/ci/surface-vocabulary.v1.json",
+      "rule": "content-item",
+      "line": "    {\"id\": \"studio-kind\", \"object\": \"actual kind, such as Map, App or Dashboard\", \"terms\": [\"content item\", \"item\", \"package\", \"composition\", \"family\"]},",
+      "reason": "Surface vocabulary policy lists the retired term so the check can reject it."
     }
   ]
 }

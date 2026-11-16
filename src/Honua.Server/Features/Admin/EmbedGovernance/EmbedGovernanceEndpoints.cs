@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.EmbedGovernance;
 using Honua.Core.Features.EmbedGovernance.Abstractions;
 using Honua.Core.Features.EmbedGovernance.Domain;
 using Honua.Infrastructure.Authentication;
@@ -59,7 +60,7 @@ internal static partial class EmbedGovernanceEndpoints
     }
 
     private static async Task<Ok<ApiResponse<IReadOnlyList<EmbedKeyResponse>>>> HandleListKeys(
-        [FromServices] IEmbedKeyStore store,
+        [FromServices] InMemoryEmbedKeyStore store,
         HttpContext context)
     {
         var now = DateTimeOffset.UtcNow;
@@ -71,7 +72,7 @@ internal static partial class EmbedGovernanceEndpoints
     private static async Task<Results<Created<ApiResponse<EmbedKeySecretResponse>>, BadRequest<ApiResponse<object>>>>
         HandleCreateKey(
             CreateEmbedKeyRequest request,
-            [FromServices] IEmbedKeyStore store,
+            [FromServices] InMemoryEmbedKeyStore store,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedGovernanceEndpointsLog> logger,
             HttpContext context)
@@ -101,7 +102,7 @@ internal static partial class EmbedGovernanceEndpoints
 
     private static async Task<Results<Ok<ApiResponse<EmbedKeyResponse>>, NotFound<ApiResponse<object>>>> HandleGetKey(
         Guid id,
-        [FromServices] IEmbedKeyStore store,
+        [FromServices] InMemoryEmbedKeyStore store,
         HttpContext context)
     {
         var record = await store.GetAsync(id, context.RequestAborted);
@@ -116,7 +117,7 @@ internal static partial class EmbedGovernanceEndpoints
     private static async Task<Results<Ok<ApiResponse<EmbedKeySecretResponse>>, NotFound<ApiResponse<object>>>>
         HandleRotateKey(
             Guid id,
-            [FromServices] IEmbedKeyStore store,
+            [FromServices] InMemoryEmbedKeyStore store,
             [FromServices] IAuditLog auditLog,
             [FromServices] ILogger<EmbedGovernanceEndpointsLog> logger,
             HttpContext context)
@@ -142,7 +143,7 @@ internal static partial class EmbedGovernanceEndpoints
 
     private static async Task<Results<Ok<ApiResponse<EmbedKeyResponse>>, NotFound<ApiResponse<object>>>> HandleRevokeKey(
         Guid id,
-        [FromServices] IEmbedKeyStore store,
+        [FromServices] InMemoryEmbedKeyStore store,
         [FromServices] IAuditLog auditLog,
         [FromServices] ILogger<EmbedGovernanceEndpointsLog> logger,
         HttpContext context)
@@ -161,7 +162,7 @@ internal static partial class EmbedGovernanceEndpoints
     }
 
     private static async Task<Results<Ok<ApiResponse<EmbedUsageResponse>>, BadRequest<ApiResponse<object>>>> HandleUsage(
-        [FromServices] IEmbedAnalyticsStore analytics,
+        [FromServices] InMemoryEmbedAnalyticsStore analytics,
         [FromQuery] string? groupBy,
         [FromQuery] string? integrationId,
         [FromQuery] string? tenantId,

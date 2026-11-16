@@ -35,7 +35,7 @@
     <!-- Microsoft.AspNetCore.OpenApi provides the IOpenApiDocumentTransformer seam
          (and the AddOpenApi/OpenApiOptions pipeline) the capability-gate transformer
          registers into so disabled-experimental endpoints are pruned from the
-         generated OpenAPI document (Track T7 / #2343). -->
+         generated OpenAPI document. -->
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <!-- Direct reference pins the transitive Microsoft.OpenApi up to the patched
          2.7.5 (clears the NU1903 advisory from the 2.0.0 AspNetCore.OpenApi pulls). -->
@@ -70,7 +70,7 @@
          Parquet paths. -->
     <PackageReference Include="Apache.Arrow" />
     <PackageReference Include="ParquetSharp" />
-    <!-- Confluent.Kafka backs the enterprise event-bus Kafka sink (#357):
+    <!-- Confluent.Kafka backs the enterprise event-bus Kafka sink:
          the broker-agnostic IFeatureChangeEventSink Kafka adapter publishes
          committed feature-change events to a configurable topic with an
          idempotent producer (producer-side exactly-once) and routes failed
@@ -80,7 +80,7 @@
          without a live broker. Excluded from the PostGIS-only default image
          (HonuaIncludeEventBrokers=false). -->
     <PackageReference Include="Confluent.Kafka" Condition="'$(HonuaIncludeEventBrokers)' == 'true'" />
-    <!-- NATS.Net backs the enterprise event-bus NATS sink (#357): the
+    <!-- NATS.Net backs the enterprise event-bus NATS sink: the
          broker-agnostic IFeatureChangeEventSink NATS adapter publishes committed
          feature-change events to a configurable JetStream subject with optional
          message deduplication (publish-side exactly-once) and routes failed

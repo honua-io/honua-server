@@ -33,6 +33,12 @@
   ],
   "operations": [
     {
+      "operationId": "GetAdminLive",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/live"
+    },
+    {
       "operationId": "SearchCoordinateSystemsV1",
       "catalogOperationId": null,
       "method": "GET",
@@ -1189,12 +1195,6 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/operations/cache/health"
-    },
-    {
-      "operationId": "getOperationsCacheRedisMetrics",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/operations/cache/redis"
     },
     {
       "operationId": "getOperationsCacheStatistics",

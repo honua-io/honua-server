@@ -14,7 +14,7 @@ namespace Honua.Alerts;
 internal sealed partial class RealtimeAlertNotificationBroadcaster(
     IRealtimeFanoutProvider provider,
     ILogger<RealtimeAlertNotificationBroadcaster> logger)
-    : IStreamingSubscriptionManager, IDisposable, IAsyncDisposable
+    : IDisposable, IAsyncDisposable
 {
     private readonly IRealtimeFanoutProvider _provider = provider;
     private readonly ILogger<RealtimeAlertNotificationBroadcaster> _logger = logger;

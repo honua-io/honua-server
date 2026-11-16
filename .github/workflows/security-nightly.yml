@@ -815,6 +815,10 @@ jobs:
     if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.supported-release-inventory.result == 'success' && needs.supported-release-inventory.outputs.count != '0' }}
     name: Report release image findings
     runs-on: ubuntu-latest
+    # SECURITY_FINDINGS_TOKEN writes to the private tracker. It belongs in this environment, whose
+    # deployment rule admits trunk only; once no repository secret of that name remains, a
+    # branch's copy of this workflow cannot read it.
+    environment: security-tracker
     timeout-minutes: 10
     permissions:
       contents: read

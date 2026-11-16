@@ -159,11 +159,18 @@ jobs:
           echo "Dry run complete. Built packages:" >> "${GITHUB_STEP_SUMMARY}"
           ls -1 nupkgs/*.nupkg >> "${GITHUB_STEP_SUMMARY}"
 
+  authorize-publish:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+    uses: ./.github/workflows/publish-authorization.yml
+    with:
+      tag-patterns: 'honua-core-v* v*.*.*'
+
   publish:
     name: Publish to GitHub Packages
-    needs: package-smoke
+    needs: [package-smoke, authorize-publish]
     if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
     runs-on: ubuntu-latest
+    environment: publish-packages
     timeout-minutes: 15
     permissions:
       contents: read
