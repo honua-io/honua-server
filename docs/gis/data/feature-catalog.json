@@ -4021,22 +4021,6 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-operations-cache-redis",
-      "route": "/api/v1/admin/operations/cache/redis",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.CacheOperationsEndpointsTests.GetRedisMetrics_WhenRedisNotConfigured_ReturnsCommunitySafeStatus",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
-      ],
-      "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
       "id": "get-api-v1-admin-operations-cache-statistics",
       "route": "/api/v1/admin/operations/cache/statistics",
       "method": "GET",
