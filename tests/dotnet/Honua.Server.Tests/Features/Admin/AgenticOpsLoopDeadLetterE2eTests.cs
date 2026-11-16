@@ -85,6 +85,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
             });
 
         await _fixture.InitializeAsync();
+        await ClearAlertStateAsync(_fixture);
         _dispatchHealth.Refresh = cancellationToken => _fixture
             .GetService<IAlertDispatchStore>()
             .GetBacklogAsync(cancellationToken);
@@ -265,6 +266,16 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         }
 
         await MarkSeededDispatchesDeadLetterAsync(fixture, eventIds);
+    }
+
+    private static async Task ClearAlertStateAsync(WebAppFixture fixture)
+    {
+        var dataSource = fixture.GetService<NpgsqlDataSource>();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "TRUNCATE TABLE honua.alert_event_lifecycle, honua.alert_dispatch, honua.alert_events CASCADE",
+            connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     private static async Task MarkSeededDispatchesDeadLetterAsync(WebAppFixture fixture, HashSet<long> eventIds)
