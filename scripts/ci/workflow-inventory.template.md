@@ -109,8 +109,9 @@ scripts/ci/workflow-inventory.template.md for narrative and per-workflow notes. 
 
 > Canonical inventory of every workflow in `.github/workflows/`. File, name and
 > trigger columns are derived from YAML. New workflows appear automatically.
-> Feature PRs edit workflow YAML and the source template; trunk automation
-> publishes this page. Run `python3 scripts/ci/generate-workflow-inventory.py`
+> Feature PRs edit workflow YAML and the source template; submitted projections
+> require canonical verification. Trunk automation also publishes this page.
+> Run `python3 scripts/ci/generate-workflow-inventory.py`
 > to preview it locally before validation.
 
 **Branch protection requires `PR Gate` and `Review Gate` together**: unprivileged
@@ -185,7 +186,13 @@ cancel current work and then shed without replacement. Draft and title/body-only
 edits use isolated groups because they cannot generate a replacement envelope.
 Trusted consumer admission resolves the live PR and cancels only older producer
 generations before per-attempt validation. Observe mode retains envelope
-validation and drift reporting; trunk regeneration publishes generated documents.
+validation and drift reporting. Source PRs commit regenerated projections, and
+the existing architecture job verifies submitted bytes and modes after regeneration.
+The MCP roster retains its existing valid-provenance contract; its generated body
+and file mode must still match exactly.
+Trusted ownership admission requires the current validator and required invocation;
+older branches must adopt the repair. Generated-only publications retain canonical
+trunk-producer proof. No runner job or required aggregate dependency changes.
 Live-head checks and compare-and-swap remain required before branch mutation.
 
 Auto-merge keeps `cancel-in-progress: false` and `queue: max` so live eligibility
