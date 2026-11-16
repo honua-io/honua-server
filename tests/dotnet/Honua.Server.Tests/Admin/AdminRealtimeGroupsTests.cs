@@ -2,216 +2,281 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using FluentAssertions;
+using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Realtime;
+using Honua.Server.Tests.Infrastructure;
+using Honua.Server.Tests.Realtime;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.SignalR;
-using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Admin;
 
-/// <summary>
-/// Realtime ops-push coverage for #2554: the ops-health / operate-events / deploy-operations hub groups,
-/// their admin authorization, the backplane feature-detect fallback, and real cross-replica fan-out over a
-/// Testcontainers Redis backplane.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Streaming)]
-[Collection(RedisFixture.CollectionName)]
-public sealed class AdminRealtimeGroupsTests
+public sealed class AdminRealtimeGroupsTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     private const string AdminPassword = "admin-realtime-groups-password";
-    private static readonly TimeSpan ReceiveTimeout = TimeSpan.FromSeconds(20);
-
-    private static readonly JsonSerializerOptions CaseInsensitive = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
-    private readonly RedisFixture _redis;
-
-    public AdminRealtimeGroupsTests(RedisFixture redis)
-    {
-        _redis = redis;
-    }
 
     [IntegrationTest]
-    [Endpoint("POST /hubs/admin/negotiate")]
-    public async Task NonAdminConnection_CannotConnect_SoCannotSubscribe()
+    [Endpoint("GET /api/v1/admin/live")]
+    public async Task Live_InProcessProvider_WakesAfterCommittedProposalAndWorkflowWrites()
     {
-        using var factory = CreateFactory(redisConnectionString: null);
-        await using var connection = BuildConnection(factory, apiKey: null);
-
-        // Hub-level admin authorization gates the whole connection: a non-admin cannot negotiate, therefore
-        // cannot reach any Subscribe method.
-        var connect = async () => await connection.StartAsync();
-        await connect.Should().ThrowAsync<Exception>();
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /hubs/admin/negotiate")]
-    public async Task WithoutBackplane_GroupsNotAdvertised_AndSubscribeRejected()
-    {
-        using var factory = CreateFactory(redisConnectionString: null);
-        await using var connection = BuildConnection(factory, AdminPassword);
-        await connection.StartAsync();
-
-        var status = await connection.InvokeAsync<JsonElement>("GetStatus");
-        var probe = Deserialize<StatusProbe>(status);
-        probe.BackplaneEnabled.Should().BeFalse();
-        probe.RealtimeGroups.Should().BeEmpty();
-
-        // Feature-detect contract: with no backplane the group is not joinable — the client must poll.
-        var subscribe = async () => await connection.InvokeAsync("SubscribeToOpsHealth");
-        await subscribe.Should().ThrowAsync<HubException>();
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /hubs/admin/negotiate")]
-    public async Task WithBackplane_OpsHealthFlush_PushesSnapshotToSubscriber()
-    {
-        using var factory = CreateFactory(_redis.ConnectionString);
-        await using var connection = BuildConnection(factory, AdminPassword);
-
-        var received = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        connection.On<JsonElement>(
-            AdminRealtimeContract.OpsHealthSnapshotEventName,
-            snapshot => received.TrySetResult(snapshot));
-
-        await connection.StartAsync();
-
-        var status = Deserialize<StatusProbe>(await connection.InvokeAsync<JsonElement>("GetStatus"));
-        status.BackplaneEnabled.Should().BeTrue();
-        status.RealtimeGroups.Should().Contain(AdminRealtimeContract.OpsHealthGroup);
-
-        await connection.InvokeAsync("SubscribeToOpsHealth");
-
-        var flushSignal = factory.Services.GetRequiredService<OpsHealthFlushSignal>();
-        flushSignal.Raise(BuildSnapshot("Degraded"));
-
-        var payload = await received.Task.WaitAsync(ReceiveTimeout);
-        payload.GetProperty("overallStatus").GetString().Should().Be("Degraded");
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /hubs/admin/negotiate")]
-    public async Task WithBackplane_Transition_PushesDeployAndOperateEvents()
-    {
-        using var factory = CreateFactory(_redis.ConnectionString);
-        await using var connection = BuildConnection(factory, AdminPassword);
-
-        var deploy = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var operate = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        connection.On<JsonElement>(AdminRealtimeContract.DeployOperationEventName, e => deploy.TrySetResult(e));
-        connection.On<JsonElement>(AdminRealtimeContract.OperateEventEventName, e => operate.TrySetResult(e));
-
-        await connection.StartAsync();
-        await connection.InvokeAsync("SubscribeToDeployOperations");
-        await connection.InvokeAsync("SubscribeToOperateEvents");
-
-        var operationId = $"op-{Guid.NewGuid():N}";
-        var listener = factory.Services.GetServices<IWorkflowOperationTransitionListener>()
-            .OfType<RealtimeOperationTransitionListener>()
-            .Single();
-        await listener.OnTransitionAsync(
-            BuildTransition(operationId, WorkflowOperationTransitionKind.Submitted));
-
-        var deployPayload = await deploy.Task.WaitAsync(ReceiveTimeout);
-        deployPayload.GetProperty("operationId").GetString().Should().Be(operationId);
-        deployPayload.GetProperty("transitionKind").GetString().Should().Be("Submitted");
-        deployPayload.GetProperty("eventId").GetString().Should().NotBeNullOrWhiteSpace();
-
-        var operatePayload = await operate.Task.WaitAsync(ReceiveTimeout);
-        operatePayload.GetProperty("kind").GetString().Should().Be("release");
-        operatePayload.GetProperty("operationId").GetString().Should().Be(operationId);
-        operatePayload.GetProperty("title").GetString().Should().StartWith("Deploy submitted");
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /hubs/admin/negotiate")]
-    public async Task WithBackplane_FansOutAcrossReplicas()
-    {
-        // Two independent server hosts sharing ONE Redis backplane: a client connected to host B must receive
-        // an ops-health snapshot produced on host A. This is the multi-replica fan-out the ticket exists for.
-        using var hostA = CreateFactory(_redis.ConnectionString);
-        using var hostB = CreateFactory(_redis.ConnectionString);
-        await using var connectionB = BuildConnection(hostB, AdminPassword);
-
-        var marker = $"FanOut-{Guid.NewGuid():N}";
-        var received = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        connectionB.On<JsonElement>(AdminRealtimeContract.OpsHealthSnapshotEventName, snapshot =>
+        await using var log = await RealtimeLogHarness.CreateAsync(database);
+        var dispatcher = log.CreateDispatcher();
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(new RealtimeTransactionWriter(log.Log, dispatcher)) };
+        using var host = CreateInProcessFactory(log, dispatcher, storage);
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        using var response = await client.GetAsync("/api/v1/admin/live?topics=proposals,operate-events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+        (await ReadFrameAsync(reader)).Kind.Should().Be("status");
+        var proposals = host.Services.GetRequiredService<IOperationProposalStore>();
+        var proposal = new OperationProposal
         {
-            if (snapshot.GetProperty("overallStatus").GetString() == marker)
+            ProposalId = "local-wakeup",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Kind = default,
+            Status = OperationProposalStatus.AwaitingApproval,
+            Plan = new OperationProposalPlan { ExecutionPayload = "private" }
+        };
+        await AssertCommittedDeliveryAsync(() => proposals.TryCreateAsync(proposal), "ProposalPending");
+        await AssertCommittedDeliveryAsync(() => proposals.TrySetAsync(proposal with { Status = OperationProposalStatus.Submitted }), "ProposalResolved");
+        var operations = host.Services.GetRequiredService<IWorkflowOperationStore>();
+        var operation = BuildTransition("local-wakeup", WorkflowOperationTransitionKind.Created).Operation;
+        await AssertCommittedDeliveryAsync(() => operations.TryCreateAsync(operation), "OperateEvent");
+        var persisted = (await operations.GetAsync(operation.OperationId))!;
+        await AssertCommittedDeliveryAsync(() => operations.TrySetAsync(persisted with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            UpdatedAt = persisted.UpdatedAt.AddSeconds(1)
+        }), "OperateEvent");
+
+        async Task AssertCommittedDeliveryAsync(Func<Task<bool>> write, string kind)
+        {
+            // Follow the tail service's wake path without a background probe masking a missing signal.
+            await dispatcher.DispatchOnceAsync(default);
+            dispatcher.DrainWakeups();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var wake = dispatcher.WaitForWakeAsync(TimeSpan.FromMinutes(1), timeout.Token);
+            (await write()).Should().BeTrue();
+            (await wake).Should().BeTrue("committed local writes must not wait for the polling interval");
+            await dispatcher.DispatchOnceAsync(default);
+            (await ReadFrameAsync(reader)).Kind.Should().Be(kind);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/live")]
+    public async Task Live_WorkflowTransitions_ShareEventIdentityWithRestTimeline()
+    {
+        await using var log = await RealtimeLogHarness.CreateAsync(database);
+        var dispatcher = log.CreateDispatcher();
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(new RealtimeTransactionWriter(log.Log, dispatcher)) };
+        using var tail = log.CreateTail(dispatcher, null, new RealtimeOptions());
+        await tail.StartAsync(default);
+        using var host = CreatePostgresFactory(log, dispatcher, storage);
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        using var response = await client.GetAsync("/api/v1/admin/live?topics=operate-events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+        (await ReadFrameAsync(reader)).Kind.Should().Be("status");
+        var timeline = new ReleaseTimelineBuffer();
+        var store = new TransitionObservingWorkflowOperationStore(
+            host.Services.GetRequiredService<IWorkflowOperationStore>(),
+            [new ReleaseTimelineTransitionListener(timeline)],
+            NullLogger<TransitionObservingWorkflowOperationStore>.Instance);
+        var operation = BuildTransition("timeline-identity", WorkflowOperationTransitionKind.Created).Operation;
+        operation = operation with { UpdatedAt = operation.UpdatedAt.AddMinutes(-1) };
+
+        (await store.TryCreateAsync(operation)).Should().BeTrue();
+        var created = await ReadFrameAsync(reader);
+        created.Payload.GetProperty("eventId").GetString().Should().Be(timeline.Snapshot()[0].EventId);
+        created.Payload.GetProperty("occurredAt").GetDateTimeOffset().Should().Be(operation.UpdatedAt);
+        var persisted = (await store.GetAsync(operation.OperationId))!;
+        var updated = persisted with { Status = WorkflowOperationStatus.Succeeded, UpdatedAt = operation.UpdatedAt.AddSeconds(1) };
+
+        (await store.TrySetAsync(updated)).Should().BeTrue();
+        var promoted = await ReadFrameAsync(reader);
+        promoted.Payload.GetProperty("eventId").GetString().Should().Be(timeline.Snapshot()[0].EventId);
+        promoted.Payload.GetProperty("eventId").GetString().Should().NotBe(created.Payload.GetProperty("eventId").GetString());
+        await tail.StopAsync(default);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/live")]
+    public async Task Live_StatusOnlyConnection_ReplaysEventsAfterDisconnect()
+    {
+        await using var log = await RealtimeLogHarness.CreateAsync(database);
+        var dispatcher = log.CreateDispatcher();
+        using var tail = log.CreateTail(dispatcher, null, new RealtimeOptions());
+        await tail.StartAsync(default);
+        using var host = CreatePostgresFactory(log, dispatcher);
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        using var initial = await client.GetAsync("/api/v1/admin/live?topics=ops-health", HttpCompletionOption.ResponseHeadersRead);
+        using var initialReader = new StreamReader(await initial.Content.ReadAsStreamAsync());
+        var status = await ReadFrameAsync(initialReader);
+        status.Id.Should().NotBeNullOrWhiteSpace("even a quiet stream must expose its replay boundary");
+        initial.Dispose();
+
+        await host.Services.GetRequiredService<AdminRealtimePublisher>().PublishAsync(
+            new AdminRealtimeMessage(AdminRealtimeContract.OpsHealthTopic, "OpsHealthSnapshot",
+                JsonSerializer.SerializeToElement(new { overallStatus = "Degraded" })), default);
+        client.DefaultRequestHeaders.Add("Last-Event-ID", status.Id);
+        using var resumed = await client.GetAsync("/api/v1/admin/live?topics=ops-health", HttpCompletionOption.ResponseHeadersRead);
+        using var resumedReader = new StreamReader(await resumed.Content.ReadAsStreamAsync());
+        (await ReadFrameAsync(resumedReader)).Kind.Should().Be("status");
+        (await ReadFrameAsync(resumedReader)).Payload.GetProperty("overallStatus").GetString().Should().Be("Degraded");
+        await tail.StopAsync(default);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/live")]
+    public async Task Live_AnotherTaskPublishes_ReceivesHealthAndResumesTransitionsOnReplacementTask()
+    {
+        await using var log = await RealtimeLogHarness.CreateAsync(database);
+        var dispatcherA = log.CreateDispatcher();
+        var storage = (await log.CreateControlPlaneStorageAsync()) with { Realtime = new AdminControlPlaneRealtimeWriter(new RealtimeTransactionWriter(log.Log, dispatcherA)) };
+        var dispatcherB = log.CreateDispatcher();
+        using var tailA = log.CreateTail(dispatcherA, null, new RealtimeOptions());
+        using var tailB = log.CreateTail(dispatcherB, null, new RealtimeOptions());
+        await tailA.StartAsync(default);
+        await tailB.StartAsync(default);
+        using var hostA = CreatePostgresFactory(log, dispatcherA, storage);
+        using var hostB = CreatePostgresFactory(log, dispatcherB, storage);
+        using var clientB = hostB.CreateClient();
+        clientB.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        using var response = await clientB.GetAsync("/api/v1/admin/live", HttpCompletionOption.ResponseHeadersRead);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+        var status = await ReadFrameAsync(reader);
+        status.Kind.Should().Be("status");
+        status.Payload.GetProperty("topics").GetArrayLength().Should().Be(4);
+        status.Payload.TryGetProperty("backplaneEnabled", out _).Should().BeFalse();
+        hostA.Services.GetRequiredService<OpsHealthFlushSignal>().Raise(BuildSnapshot("Degraded"));
+        var health = await ReadFrameAsync(reader);
+        health.Kind.Should().Be("OpsHealthSnapshot");
+        health.Payload.GetProperty("overallStatus").GetString().Should().Be("Degraded");
+        health.Payload.GetProperty("taskId").GetString().Should().NotBeNullOrWhiteSpace();
+        await AssertProposalDeliveryAsync(hostA, reader);
+        response.Dispose();
+        await AssertTransitionReplayAsync(hostA, hostB, health.Id!);
+        await tailA.StopAsync(default);
+        await tailB.StopAsync(default);
+    }
+
+    private static async Task AssertTransitionReplayAsync(WebApplicationFactory<Program> hostA,
+        WebApplicationFactory<Program> hostB, string cursor)
+    {
+        var store = hostB.Services.GetRequiredService<IWorkflowOperationStore>();
+        (await store.TryCreateAsync(BuildTransition("resume-op", WorkflowOperationTransitionKind.Created).Operation))
+            .Should().BeTrue();
+        using var clientA = hostA.CreateClient();
+        clientA.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        clientA.DefaultRequestHeaders.Add("Last-Event-ID", cursor);
+        using var replay = await clientA.GetAsync("/api/v1/admin/live?topics=deploy-operations", HttpCompletionOption.ResponseHeadersRead);
+        using var replayReader = new StreamReader(await replay.Content.ReadAsStreamAsync());
+        (await ReadFrameAsync(replayReader)).Kind.Should().Be("status");
+        var transition = await ReadFrameAsync(replayReader);
+        transition.Kind.Should().Be("DeployOperationTransition");
+        transition.Payload.GetProperty("operationId").GetString().Should().Be("resume-op");
+        transition.Id.Should().NotBe(cursor);
+    }
+
+    private static async Task AssertProposalDeliveryAsync(WebApplicationFactory<Program> host, StreamReader reader)
+    {
+        var proposal = new OperationProposal
+        {
+            ProposalId = "live-proposal",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Kind = default,
+            Status = OperationProposalStatus.AwaitingApproval,
+            Plan = new OperationProposalPlan { ExecutionPayload = "private-execution-payload" }
+        };
+        var store = host.Services.GetRequiredService<IOperationProposalStore>();
+        (await store.TryCreateAsync(proposal)).Should().BeTrue();
+        var pending = await ReadFrameAsync(reader);
+        pending.Kind.Should().Be("ProposalPending");
+        pending.Payload.GetProperty("proposalId").GetString().Should().Be(proposal.ProposalId);
+        pending.Payload.GetRawText().Should().NotContain("private-execution-payload");
+        (await store.TrySetAsync(proposal with { Status = OperationProposalStatus.Submitted })).Should().BeTrue();
+        (await ReadFrameAsync(reader)).Kind.Should().Be("ProposalResolved");
+    }
+
+    private static WebApplicationFactory<Program> CreatePostgresFactory(
+        RealtimeLogHarness log, RealtimeDispatcher dispatcher, ControlPlaneStorage? storage = null)
+        => CreateFactory(new LiveFactorySeed(
+            new PostgresRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log)),
+            storage));
+
+    private static WebApplicationFactory<Program> CreateInProcessFactory(
+        RealtimeLogHarness log, RealtimeDispatcher dispatcher, ControlPlaneStorage storage)
+        => CreateFactory(new LiveFactorySeed(
+            new InProcessRealtimeFanoutProvider(log.Log, dispatcher, new RealtimePresenceBatcher(log.Log)),
+            storage));
+
+    private static WebApplicationFactory<Program> CreateFactory(LiveFactorySeed seed)
+        => ConfiguredWebApplicationFactory.Create(builder =>
+        {
+            TestWebApplicationFactory.ConfigureForTests(builder);
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["HONUA_ADMIN_PASSWORD"] = AdminPassword }));
+            builder.ConfigureTestServices(services =>
             {
-                received.TrySetResult(snapshot);
-            }
+                services.Replace(ServiceDescriptor.Singleton(seed.Provider));
+                if (seed.Storage is not null)
+                {
+                    var retention = Options.Create(new ControlPlaneRetentionOptions());
+                    services.Replace(ServiceDescriptor.Singleton<IOperationProposalStore>(new PostgresOperationProposalStore(
+                        seed.Storage, retention, NullLogger<PostgresOperationProposalStore>.Instance)));
+                    services.Replace(ServiceDescriptor.Singleton<IWorkflowOperationStore>(new PostgresWorkflowOperationStore(
+                        seed.Storage, new WorkflowOperationRetention(retention, Options.Create(new MetadataReleaseOperationOptions())),
+                        NullLogger<PostgresWorkflowOperationStore>.Instance)));
+                }
+            });
         });
 
-        await connectionB.StartAsync();
-        await connectionB.InvokeAsync("SubscribeToOpsHealth");
+    private sealed record LiveFactorySeed(IRealtimeFanoutProvider Provider, ControlPlaneStorage? Storage);
 
-        // Produce on host A; host B's connected client should receive it via the shared backplane.
-        var flushOnA = hostA.Services.GetRequiredService<OpsHealthFlushSignal>();
-        flushOnA.Raise(BuildSnapshot(marker));
-
-        var payload = await received.Task.WaitAsync(ReceiveTimeout);
-        payload.GetProperty("overallStatus").GetString().Should().Be(marker);
-    }
-
-    private static WebApplicationFactory<Program> CreateFactory(string? redisConnectionString)
-        => new TestWebApplicationFactory()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                // Set the Redis connection via UseSetting (not ConfigureAppConfiguration) so it is visible in
-                // builder.Configuration when AddAdminRealtime reads it during service registration — app
-                // configuration sources are only merged at build time, which is too late for the backplane gate.
-                if (!string.IsNullOrWhiteSpace(redisConnectionString))
-                {
-                    builder.UseSetting("ConnectionStrings:redis", redisConnectionString);
-                }
-
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["HONUA_ADMIN_PASSWORD"] = AdminPassword,
-                    });
-                });
-            });
-
-    private static HubConnection BuildConnection(WebApplicationFactory<Program> factory, string? apiKey)
+    private static async Task<SseFrame> ReadFrameAsync(StreamReader reader)
     {
-        var server = factory.Server;
-        var builder = new HubConnectionBuilder()
-            .WithUrl(new Uri(server.BaseAddress, AdminRealtimeContract.HubPath.TrimStart('/')), options =>
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        string? id = null;
+        string? kind = null;
+        string? data = null;
+        while (await reader.ReadLineAsync(timeout.Token) is { } line)
+        {
+            if (line.StartsWith("id: ", StringComparison.Ordinal)) { id = line[4..]; }
+            if (line.StartsWith("event: ", StringComparison.Ordinal)) { kind = line[7..]; }
+            if (line.StartsWith("data: ", StringComparison.Ordinal)) { data = line[6..]; }
+            if (line.Length == 0 && data is not null)
             {
-                options.HttpMessageHandlerFactory = _ => server.CreateHandler();
-                options.Transports = HttpTransportType.LongPolling;
-                if (apiKey is not null)
-                {
-                    options.Headers["X-API-Key"] = apiKey;
-                }
-            });
-
-        return builder.Build();
+                using var document = JsonDocument.Parse(data);
+                return new SseFrame(id, kind!, document.RootElement.Clone());
+            }
+        }
+        throw new EndOfStreamException("The SSE stream closed before an event.");
     }
 
-    private static T Deserialize<T>(JsonElement element)
-        => element.Deserialize<T>(CaseInsensitive)!;
+    private sealed record SseFrame(string? Id, string Kind, JsonElement Payload);
 
     private static WorkflowOperationTransition BuildTransition(string operationId, WorkflowOperationTransitionKind kind)
     {
@@ -286,7 +351,4 @@ public sealed class AdminRealtimeGroupsTests
             },
         };
 
-    private sealed record StatusProbe(
-        [property: JsonPropertyName("backplaneEnabled")] bool BackplaneEnabled,
-        [property: JsonPropertyName("realtimeGroups")] IReadOnlyList<string> RealtimeGroups);
 }

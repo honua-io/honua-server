@@ -7,8 +7,10 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.Raster.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Import;
 
@@ -16,7 +18,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddImportSuggestionsCore(this IServiceCollection services)
     {
-        services.TryAddSingleton<IGeoServicesConstructCapabilityRegistry>(
+        services.TryAddSingleton<GeoServicesConstructCapabilityRegistry>(
             _ => new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors));
         services.TryAddScoped<IFileFormatDetectionService, FileFormatDetectionService>();
         services.TryAddSingleton<ImportSchemaSuggestionService>();
@@ -40,7 +42,8 @@ public static class ServiceCollectionExtensions
         // The pinned-DNS handler enforces the private/loopback address policy at connect
         // time (SSRF guard, incl. DNS rebinding and redirects), mirroring the sibling
         // migration clients; the import service scopes the allow-unsafe-local-URLs flag.
-        services.AddResilientHttpClient<OgcCoverageImportService>(
+        services.AddResilientHttpClient(
+            nameof(OgcCoverageImportService),
             "ogc-coverage-import",
             HttpResiliencePolicies.SlowServiceDefaults,
             configureClient: client =>
@@ -49,14 +52,16 @@ public static class ServiceCollectionExtensions
                 client.Timeout = TimeSpan.FromMinutes(10);
             },
             configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
-        services.TryAddScoped<IOgcCoverageImportService>(serviceProvider =>
-            serviceProvider.GetRequiredService<OgcCoverageImportService>());
+        services.TryAddScoped(serviceProvider => new OgcCoverageImportService(
+            serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(OgcCoverageImportService)),
+            serviceProvider.GetRequiredService<IRasterImportService>(),
+            serviceProvider.GetRequiredService<ILogger<OgcCoverageImportService>>()));
 
         // Legacy WCS coverage import service (issue #1030 slice 3). The WCS
         // service wraps the slice-2 coverage import pipeline — no separate
         // HttpClient is needed because the underlying service handles all
         // wire IO. Format negotiation and inventory downgrades happen in-process.
-        services.TryAddScoped<IOgcWcsImportService, OgcWcsImportService>();
+        services.TryAddScoped<OgcWcsImportService>();
 
         // Default in-memory evidence store for ArcGIS migration runs. Postgres composition
         // root replaces this with a durable implementation; tests rely on this default to

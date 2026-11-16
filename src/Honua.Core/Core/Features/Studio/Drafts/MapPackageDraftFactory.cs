@@ -41,7 +41,7 @@ namespace Honua.Core.Features.Studio.Drafts;
 /// conventions the eight families used (retained-knowledge defect 2).
 /// </para>
 /// </remarks>
-public sealed partial class MapPackageDraftFactory : IMapPackageDraftFactory
+public sealed partial class MapPackageDraftFactory
 {
     /// <summary>Server-owned package format discriminator.</summary>
     public const string MapPackageFormat = "honua_map_package.v1";

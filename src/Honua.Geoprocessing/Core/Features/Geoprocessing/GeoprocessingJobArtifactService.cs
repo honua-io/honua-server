@@ -66,7 +66,7 @@ internal sealed class GeoprocessingJobArtifactService
         {
             try
             {
-                if (callback is IReplayableJobTerminalCallback replayable)
+                if (callback is GeoprocessingJobTerminalCallback replayable)
                 {
                     await replayable.ReplayAsync(job, CancellationToken.None).ConfigureAwait(false);
                 }
@@ -75,7 +75,7 @@ internal sealed class GeoprocessingJobArtifactService
                     await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
                 }
             }
-            catch (GeoprocessingStoreUnavailableException ex) when (callback is IReplayableJobTerminalCallback)
+            catch (GeoprocessingStoreUnavailableException ex) when (callback is GeoprocessingJobTerminalCallback)
             {
                 GeoprocessingServiceLog.TerminalCallbackReplayFailed(_logger, job.OperationId, ex);
                 retryable ??= ex;
