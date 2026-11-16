@@ -123,6 +123,8 @@ public sealed class WmtsAdvertisedResourceTests : IAsyncLifetime
         }
         finally
         {
+            // The shared host outlives this case, so an unconsumed activation must not leak.
+            provider.ClearPendingActivation();
             provider.SetGraph(original, schema: _fixture.CurrentSchema);
         }
     }

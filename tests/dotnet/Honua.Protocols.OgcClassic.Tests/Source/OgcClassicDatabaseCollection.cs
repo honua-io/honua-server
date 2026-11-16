@@ -3,7 +3,7 @@
 
 using Honua.TestKit;
 
-namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
+namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic;
 
 // The "Database" collection serializes this assembly's database-backed classes. Its
 // collection-scoped WebAppFixture holds a reference on the shared default host, so
