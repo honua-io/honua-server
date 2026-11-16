@@ -29,7 +29,7 @@ honua services
 honua layers "$SERVICE_ID"
 ```
 
-The URL shape changes: a source URL like `https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer/0` becomes `$HONUA_URL/rest/services/parcels/FeatureServer/0`, with one service id per published Honua service and no folder segment. Honua also answers under the `/arcgis` site-root alias ([service path prefix](../../gis/service-path-prefix.md)), but new configuration should use the root form. Build the old-URL → new-URL table for every service before touching client code.
+The URL shape changes: a source URL like `https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer/0` becomes `$HONUA_URL/rest/services/parcels/FeatureServer/{layerId}`, where `{layerId}` is the id from `honua layers "$SERVICE_ID"` (do not assume the source layer number carries over), with one service id per published Honua service and no folder segment. Honua also answers under the `/arcgis` site-root alias ([service path prefix](../../gis/service-path-prefix.md)), but new configuration should use the root form. Build the old-URL → new-URL table for every service before touching client code.
 
 ### 2. Point JavaScript apps at the compat layer
 
@@ -43,7 +43,7 @@ The `@honua/sdk-js/client-compat` subpath ships compatibility wrappers (`Feature
 import { FeatureLayerCompat } from "@honua/sdk-js/client-compat";
 
 const layer = new FeatureLayerCompat({
-  url: "http://localhost:8080/rest/services/parcels/FeatureServer/0",
+  url: "http://localhost:8080/rest/services/parcels/FeatureServer/1", // a layer id from the service's layers list
   outFields: ["*"],
   definitionExpression: "STATUS = 'ACTIVE'",
 });
