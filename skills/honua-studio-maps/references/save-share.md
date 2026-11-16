@@ -22,3 +22,34 @@ For team or organization sharing, confirm the actual audience accepted by this
 installation. Do not infer a visibility token from conversational wording.
 Read back publication state and test as the intended audience when possible.
 State explicitly when audience access could not be verified.
+
+## Approval and readback
+
+Inspect every mutation response before using draft or version fields. Approval
+can appear as a `RequiresApproval` operation result or as an error with
+`approvalRequired: true`, a `proposalId` and a resource URI. Retain the original
+proposal identity; do not repeat the mutation to work around an approval wait
+or a lost response. Read the existing proposal or operation first.
+
+When the client supports URL elicitation, open the server-provided approval URL
+for a human to review in Console. Otherwise, direct the human to the recorded
+proposal in Console's Approvals inbox. The human uses an interactive password
+or OIDC session and reviews the exact operation and resource. An agent or API
+key cannot approve. Opening the URL or accepting a client prompt does not
+record server approval.
+
+Resume the original request when supported, or read the returned proposal URI
+(`honua://proposals/{id}`). Wait for `Succeeded` or `Completed`; approval and
+running states are not completion. A publication proposal can report `Active`;
+verify its published version and audience. Stop on `Failed`, `Rejected` or `Cancelled`
+and report the outcome. Human approval does not supply missing requester
+permissions. If the installation rejects the requester's authority, report that
+blocker to the operator; do not switch to a more privileged credential.
+
+After completion, recover the resulting resource identities from the completed
+operation or proposal's available result fields. Re-read the draft with
+`honua_studio_get_draft` for its current generation before the next edit; verify
+a saved version with `honua_studio_get_version` before publication. A resumed
+request may return only status, without a draft or version payload. If the
+installation exposes no resulting identity, report that gap and stop rather
+than inventing an id, reusing a stale generation or submitting a second mutation.
