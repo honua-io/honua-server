@@ -295,7 +295,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // Geometry and attributes go through FeatureMutationValidator before the write (#6193).
 
         var editBatch = ToEditBatch(request);
-        await EnsureWriteAccessAsync(context, layer.Service, layer.Publication, layer.Resource, editBatch).ConfigureAwait(false);
+        await EnsureWriteAccessAsync(context, layer, editBatch).ConfigureAwait(false);
         EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
         EnsureEditLimits(editBatch, _editLimits);
         (editBatch, var globalIds) = await PrepareGlobalIdsAsync(new EditCall(request, layer, context), editBatch)
@@ -1241,9 +1241,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
-        MetadataV2Service service,
-        MetadataV2Layer publication,
-        MetadataV2Object resource,
+        GrpcLayerContext layer,
         FeatureEditBatch editBatch)
     {
         var httpContext = context.GetHttpContext();
@@ -1252,8 +1250,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // as on the REST and OGC API Features write paths.
         var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
             httpContext,
-            publication,
-            resource,
+            new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot),
             context.CancellationToken).ConfigureAwait(false);
 
         // Match the REST ApplyEdits seam: conversion first establishes the bounded
@@ -1285,8 +1282,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         {
             var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
                 httpContext,
-                resource,
-                service,
+                layer.Resource,
+                layer.Service,
                 operation,
                 context.CancellationToken).ConfigureAwait(false);
 
@@ -1296,7 +1293,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             {
                 var canonicalDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
                     httpContext,
-                    resource,
+                    layer.Resource,
                     target.Service,
                     operation,
                     context.CancellationToken).ConfigureAwait(false);

@@ -376,7 +376,7 @@ internal static partial class LayerValidationHelpers
                 StandardErrorHelpers.CreateBadRequest(context, "Collection id is required."));
         }
 
-        snapshot ??= await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var snapshot = source.Snapshot ?? await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         if (resolveByStorageLayerId &&
             int.TryParse(collectionId, NumberStyles.None, CultureInfo.InvariantCulture, out var storageLayerId))
@@ -1065,8 +1065,7 @@ internal static partial class LayerValidationHelpers
 
         var canonical = await ResolveCanonicalWriteServiceAsync(
             context,
-            validation.Publication,
-            validation.Resource,
+            new CanonicalWriteSource(validation.Publication, validation.Resource, validation.Snapshot),
             cancellationToken).ConfigureAwait(false);
         if (canonical is not { } target)
         {
@@ -1093,16 +1092,16 @@ internal static partial class LayerValidationHelpers
     // Null when the publication is itself primary or the resource has no visible primary publication.
     internal static async Task<CanonicalWriteService?> ResolveCanonicalWriteServiceAsync(
         HttpContext context,
-        MetadataV2Layer publication,
-        MetadataV2Object resource,
+        CanonicalWriteSource source,
         CancellationToken cancellationToken)
     {
-        if (publication.IsPrimary)
+        if (source.Publication.IsPrimary)
         {
             return null;
         }
 
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        // Callers pass the snapshot they validated against so both lookups see one metadata version.
+        var snapshot = source.Snapshot ?? await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         // Not converted to `.FirstOrDefault(...)`: the predicate needs two intermediate
         // values computed per candidate (the resolved resource and the resolved service),
         // reused across the equality and visibility checks.
@@ -1110,7 +1109,7 @@ internal static partial class LayerValidationHelpers
         {
             var pubResource = snapshot.ResolveResource(pub);
             if (pubResource is null ||
-                !string.Equals(pubResource.Metadata.Id, resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))
+                !string.Equals(pubResource.Metadata.Id, source.Resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -1127,6 +1126,11 @@ internal static partial class LayerValidationHelpers
         // No primary publication declared — nothing to enforce.
         return null;
     }
+
+    internal readonly record struct CanonicalWriteSource(
+        MetadataV2Layer Publication,
+        MetadataV2Object Resource,
+        MetadataV2GraphSnapshot? Snapshot = null);
 
     internal readonly record struct CanonicalWriteService(MetadataV2Service? Service);
 

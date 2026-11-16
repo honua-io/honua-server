@@ -1,0 +1,220 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using System.Collections.Immutable;
+using System.Security.Claims;
+using System.Text;
+using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Edit;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Query;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
+using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Validation;
+using Honua.Protocols.Ogc.Classic.Wfs20;
+using Honua.Protocols.Ogc.Common;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
+
+namespace Honua.Protocols.OgcClassic.UnitTests.Wfs20;
+
+[Protocol(TestProtocols.Wfs20)]
+[Operation(Operations.Security)]
+public sealed class Wfs20CanonicalServiceWriteTests
+{
+    private const string SecondaryPublicationId = "svc-cities-layer-1";
+    private const string CanonicalServiceName = "primary";
+    private const string SecondaryServiceName = "cities";
+
+    private const string InsertAction =
+        "<wfs:Insert><honua:svc-cities-layer-1><honua:name>created</honua:name></honua:svc-cities-layer-1></wfs:Insert>";
+
+    private static readonly AccessPolicy AnonymousWrites = new() { AllowAnonymous = true, AllowAnonymousWrite = true };
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_SecondaryGrantWithoutCanonicalServiceGrant_IsForbidden()
+    {
+        var (status, writer) = await ExecuteAsync(
+            CreateProvider(canonicalPolicy: null, secondaryPolicy: null),
+            Editor($"data-editor:{SecondaryServiceName}"));
+
+        status.Should().Be(StatusCodes.Status403Forbidden);
+        writer.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_SecondaryAndCanonicalServiceGrants_Inserts()
+    {
+        var (status, writer) = await ExecuteAsync(
+            CreateProvider(canonicalPolicy: null, secondaryPolicy: null),
+            Editor($"data-editor:{SecondaryServiceName}", $"data-editor:{CanonicalServiceName}"));
+
+        status.Should().Be(StatusCodes.Status200OK);
+        await writer.ReceivedWithAnyArgs(1).ApplyEditsAsync(default, default!, default);
+    }
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_AnonymousWriteOnlyOnSecondaryService_IsRejected()
+    {
+        var (status, writer) = await ExecuteAsync(
+            CreateProvider(canonicalPolicy: null, secondaryPolicy: AnonymousWrites),
+            Anonymous());
+
+        status.Should().Be(
+            StatusCodes.Status401Unauthorized,
+            "anonymous writes on the secondary service do not open the canonical service's resource");
+        writer.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_AnonymousWriteOnBothServices_Inserts()
+    {
+        var (status, writer) = await ExecuteAsync(
+            CreateProvider(canonicalPolicy: AnonymousWrites, secondaryPolicy: AnonymousWrites),
+            Anonymous());
+
+        status.Should().Be(StatusCodes.Status200OK);
+        await writer.ReceivedWithAnyArgs(1).ApplyEditsAsync(default, default!, default);
+    }
+
+    private static ClaimsPrincipal Editor(params string[] roles)
+        => new(new ClaimsIdentity(
+            roles.Select(role => new Claim(ClaimTypes.Role, role))
+                .Prepend(new Claim(ClaimTypes.NameIdentifier, "alice")),
+            "Test"));
+
+    private static ClaimsPrincipal Anonymous() => new(new ClaimsIdentity());
+
+    private static async Task<(int Status, IFeatureWriter Writer)> ExecuteAsync(
+        IMetadataV2GraphProvider provider,
+        ClaimsPrincipal user)
+    {
+        var writer = Substitute.For<IFeatureWriter>();
+        writer.ApplyEditsAsync(default, default!, default)
+            .ReturnsForAnyArgs(FeatureEditResult.Success(
+                createdCount: 1,
+                updatedCount: 0,
+                deletedCount: 0,
+                createdIds: ImmutableArray.Create(101L),
+                createResults: ImmutableArray.Create(EditOperationResult.Success(101))));
+        var handler = CreateHandler(provider, writer);
+        var context = CreateContext(provider, user);
+
+        var result = await handler.HandleTransactionAsync(context, CancellationToken.None);
+        await result.ExecuteAsync(context);
+        return (context.Response.StatusCode, writer);
+    }
+
+    private static DefaultHttpContext CreateContext(IMetadataV2GraphProvider provider, ClaimsPrincipal user)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions { DataEditorRoles = ["editor"] }));
+        services.AddSingleton(provider);
+        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        context.User = user;
+        context.Request.Method = HttpMethods.Post;
+        context.Request.ContentType = "application/xml";
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(
+            "<wfs:Transaction service=\"WFS\" version=\"2.0.0\" " +
+            "xmlns:wfs=\"http://www.opengis.net/wfs/2.0\" " +
+            "xmlns:fes=\"http://www.opengis.net/fes/2.0\" " +
+            "xmlns:honua=\"http://honua.io/wfs\">" + InsertAction + "</wfs:Transaction>"));
+        context.Response.Body = new MemoryStream();
+        return context;
+    }
+
+    // One resource, published primarily through a service that does not speak WFS and
+    // secondarily through the WFS service the Transaction addresses.
+    private static TestMetadataV2GraphProvider CreateProvider(AccessPolicy? canonicalPolicy, AccessPolicy? secondaryPolicy)
+        => new TestMetadataV2GraphBuilder()
+            .AddResource("res-layer-1", "cities", MetadataV2ObjectType.FeatureDataset, fields: Fields())
+            .AddStorageBinding("binding-layer-1", "res-layer-1", "test.layers.1", storageLayerId: 1)
+            .AddService(
+                "svc-primary",
+                CanonicalServiceName,
+                protocols: [MetadataV2ServiceProtocols.OgcFeatures],
+                accessPolicy: canonicalPolicy)
+            .AddService(
+                "svc-cities",
+                SecondaryServiceName,
+                protocols: [MetadataV2ServiceProtocols.Wfs20],
+                accessPolicy: secondaryPolicy)
+            .AddPublication(
+                "svc-primary-layer-0",
+                "svc-primary",
+                "res-layer-1",
+                layerIndex: 0,
+                storageBindingId: "binding-layer-1",
+                isPrimary: true)
+            .AddPublication(
+                SecondaryPublicationId,
+                "svc-cities",
+                "res-layer-1",
+                layerIndex: 1,
+                storageBindingId: "binding-layer-1",
+                publicationType: MetadataV2LayerType.OgcCollection)
+            .BuildProvider();
+
+    private static MetadataV2Field[] Fields()
+        =>
+        [
+            new MetadataV2Field
+            {
+                Name = "objectid",
+                Type = MetadataV2FieldType.Integer,
+                Nullable = false,
+                SemanticRoles = ["id.primary"]
+            },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Editable = true }
+        ];
+
+    private static Wfs20Handler CreateHandler(IMetadataV2GraphProvider provider, IFeatureWriter writer)
+    {
+        var coordinateTransform = Substitute.For<ICoordinateTransformService>();
+        var reader = Substitute.For<IFeatureReader>();
+        var queryServices = new Wfs20QueryServices(
+            reader,
+            Substitute.For<IGmlFeatureStore>(),
+            provider,
+            Substitute.For<IFilterExpressionService>(),
+            new Wfs20QueryParameterAdapter(NullLogger<Wfs20QueryParameterAdapter>.Instance),
+            new QueryProcessor(Substitute.For<IFilterExpressionTranslator>(), reader, NullLogger<QueryProcessor>.Instance, provider),
+            Options.Create(new Wfs20Options()),
+            Substitute.For<IConfiguration>());
+        var editServices = new Wfs20EditServices(
+            writer,
+            new Wfs20EditParameterAdapter(NullLogger<Wfs20EditParameterAdapter>.Instance),
+            new EditProcessor(NullLogger<EditProcessor>.Instance),
+            new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
+            new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()),
+            Options.Create(new LimitsOptions()));
+        var spatialServices = new Wfs20SpatialServices(
+            new OgcFeaturesGeometryServices(
+                Substitute.For<IGeometryService>(),
+                coordinateTransform,
+                Options.Create(new LimitsOptions()),
+                NullLogger<OgcFeaturesGeometryServices>.Instance),
+            coordinateTransform,
+            Substitute.For<ICrsRegistry>());
+        return new Wfs20Handler(NullLogger<Wfs20Handler>.Instance, queryServices, editServices, spatialServices);
+    }
+}

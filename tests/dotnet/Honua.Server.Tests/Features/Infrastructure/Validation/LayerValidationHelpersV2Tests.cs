@@ -216,7 +216,7 @@ public sealed class LayerValidationHelpersV2Tests
         var secondary = graph.Publications.Single(publication => publication.Metadata.Id == "pub-secondary");
 
         var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
-            context, secondary, graph.Resources[0], CancellationToken.None);
+            context, new LayerValidationHelpers.CanonicalWriteSource(secondary, graph.Resources[0]), CancellationToken.None);
 
         canonical.Should().NotBeNull("a write through a secondary publication must also clear the canonical service");
         canonical!.Value.Service!.Metadata.Id.Should().Be("svc-primary");
@@ -230,7 +230,7 @@ public sealed class LayerValidationHelpersV2Tests
         var primary = graph.Publications.Single(publication => publication.Metadata.Id == "pub-primary");
 
         var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
-            context, primary, graph.Resources[0], CancellationToken.None);
+            context, new LayerValidationHelpers.CanonicalWriteSource(primary, graph.Resources[0]), CancellationToken.None);
 
         canonical.Should().BeNull("the canonical publication's own service check already covers it");
     }
@@ -242,7 +242,7 @@ public sealed class LayerValidationHelpersV2Tests
         var (context, graph) = BuildContext(allowAnonymous: true);
 
         var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
-            context, graph.Publications[0], graph.Resources[0], CancellationToken.None);
+            context, new LayerValidationHelpers.CanonicalWriteSource(graph.Publications[0], graph.Resources[0]), CancellationToken.None);
 
         canonical.Should().BeNull("a resource without a primary publication has no canonical service to enforce");
     }
