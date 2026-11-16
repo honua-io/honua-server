@@ -330,7 +330,8 @@ public sealed partial class GrpcFeatureServiceTests
                 Sha256 = SHA256.HashData("test"u8),
                 MaxChunkBytes = 1024 * 1024,
                 Lifetime = TimeSpan.FromHours(24)
-            }) with { NextOffsetBytes = 4 }));
+            }) with
+            { NextOffsetBytes = 4 }));
     }
 
     private void ArrangeAttachmentEditing(string? owner = null)
