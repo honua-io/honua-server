@@ -1470,3 +1470,11 @@ class. Both run in the current selected PR and full trunk shard mechanisms;
 no shard definition, workflow, required check or aggregate dependency changes.
 The authored workflow inventory template carries this explanation; the canonical
 inventory producer publishes its generated projection.
+
+Paired build-host runs preserve all 24 passing cases with no skips: VSTest
+102 → 21 seconds, fixture-inclusive TRX 114.646 → 29.494 seconds. Test-body
+seconds fall from 25.912 to 4.126 for the endpoint class plus 0.053 for the
+host-free geometry class. Both runs use one process; no runners are added.
+The 81-second execution saving is 1.35 runner-minutes for this focused suite;
+full CI shard wall-time savings remain unmeasured. These measurements use the
+initial fixture change before the equivalent strict-signature parameter adapters.
