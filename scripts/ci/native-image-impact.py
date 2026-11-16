@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Report-only native-image impact routing.
-
-The selector derives managed inputs from the ProjectReference closure instead
-of maintaining another list of source directories.  It emits evidence only;
-neither native-image workflow reads this report while policy mode is
-``observe``.
-"""
+"""Validate image inputs and compute content addresses for authoritative builds."""
 
 from __future__ import annotations
 
@@ -14,7 +8,6 @@ import fnmatch
 import functools
 import hashlib
 import json
-import os
 import re
 import subprocess
 import sys
@@ -25,22 +18,7 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_POLICY = ROOT / ".github" / "native-image-impact.json"
-SCHEMA = "honua.ci.native-image-impact-observation/v3"
-TRUSTED_EXECUTION = "default-branch-workflow-run/v1"
-SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
-TERMINAL_CONCLUSIONS = {
-    "success",
-    "failure",
-    "cancelled",
-    "timed_out",
-    "action_required",
-    "neutral",
-    "skipped",
-    "stale",
-    "startup_failure",
-}
 SERVING_VARIANTS = ("generic", "lambda", "functions")
-IMAGE_INPUT_TREES = ("merge", "head")
 IMAGE_INPUT_CLASSES = (
     "serving_generic",
     "serving_lambda",
@@ -48,15 +26,6 @@ IMAGE_INPUT_CLASSES = (
     "worker",
 )
 TREE_ENTRY = re.compile(rb"^([0-7]{6}) (blob|commit) ([0-9a-f]{40})\t(.*)$", re.DOTALL)
-RISK_CLASSES = (
-    "server_aot_compile",
-    "generic_final_rootfs",
-    "lambda_final_rootfs",
-    "functions_final_rootfs",
-    "worker_managed_graph",
-    "worker_native_rootfs",
-    "worker_vulnerability",
-)
 
 
 class PolicyError(RuntimeError):
@@ -210,12 +179,6 @@ def graph_matching_paths(
     return sorted(set(matched))
 
 
-def _fingerprint(projects: Iterable[str], external_inputs: Iterable[str]) -> str:
-    return "sha256:" + _sha256_json(
-        {"projects": sorted(projects), "external_inputs": sorted(external_inputs)}
-    )
-
-
 def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
     try:
         policy = json.loads(path.read_text(encoding="utf-8"))
@@ -223,8 +186,6 @@ def load_policy(path: Path = DEFAULT_POLICY) -> dict[str, Any]:
         raise PolicyError(f"cannot load {path}: {error}") from error
     if policy.get("schema") != "honua.ci.native-image-impact-policy/v1":
         raise PolicyError("unsupported native-image impact policy schema")
-    if policy.get("mode") != "observe":
-        raise PolicyError("native-image impact policy must remain observe-only")
     return policy
 
 
@@ -404,69 +365,6 @@ def validate_policy(repo: Path, policy: dict[str, Any]) -> None:
                 f"{kind} legacy trigger drift: workflow paths no longer match policy"
             )
 
-    observer = (repo / ".github/workflows/native-image-impact-observe.yml").read_text(
-        encoding="utf-8"
-    )
-    if "  workflow_run:" not in observer or "    workflows: [PR Gate]" not in observer:
-        raise PolicyError("observer must execute after the canonical PR Gate")
-    if re.search(r"(?m)^  pull_request:\s*$", observer):
-        raise PolicyError("candidate-controlled pull_request observer is forbidden")
-    if re.search(r"(?m)^\s{4}paths(?:-ignore)?:", observer):
-        raise PolicyError("observer must run on every pull request without path filters")
-    required_trust_markers = (
-        "trusted-pr-workflow-run",
-        "context.ref !== trustedRef",
-        "Checkout candidate tree as inert data",
-        "persist-credentials: false",
-        "default-branch-workflow-run/v1",
-        "repositoryId: repository.id",
-        "head_repository.full_name == github.repository",
-        "SOURCE_RUN_ATTEMPT",
-        "SOURCE_RUN_CONCLUSION",
-        "policy_inputs_sha256",
-        "observer_workflow_blob_sha",
-        "Recheck exact PR identity before retaining evidence",
-    )
-    if any(token not in observer for token in required_trust_markers):
-        raise PolicyError("observer lost its trusted execution boundary")
-    validate_observer_permissions(observer)
-    forbidden = ("docker build", "docker/build-push-action", "gh run cancel", "cancelWorkflowRun")
-    if any(token in observer for token in forbidden):
-        raise PolicyError("observe-only workflow gained build or cancellation authority")
-
-
-def validate_observer_permissions(source: str) -> None:
-    expected = {
-        "actions": "read",
-        "checks": "read",
-        "contents": "read",
-        "pull-requests": "read",
-    }
-    try:
-        import yaml
-    except ModuleNotFoundError:
-        canonical = """permissions:
-  actions: read
-  checks: read
-  contents: read
-  pull-requests: read
-"""
-        if canonical not in source or source.count("permissions:") != 1:
-            raise PolicyError("observer permissions are not the canonical read-only block")
-        return
-
-    try:
-        document = yaml.safe_load(source)
-    except yaml.YAMLError as error:
-        raise PolicyError("observer workflow YAML is invalid") from error
-    if not isinstance(document, dict) or document.get("permissions") != expected:
-        raise PolicyError("observer workflow permissions are not the exact read-only allowlist")
-    jobs = document.get("jobs")
-    if not isinstance(jobs, dict) or any(
-        isinstance(job, dict) and "permissions" in job for job in jobs.values()
-    ):
-        raise PolicyError("observer jobs must not override workflow permissions")
-
 
 def routing_reasons(
     repo: Path,
@@ -533,30 +431,6 @@ def routing_reasons(
     return reasons
 
 
-def bound_reason_evidence(reasons: dict[str, list[str]]) -> dict[str, dict[str, int | str]]:
-    """Replace per-class path lists with a count and a canonical digest.
-
-    The observation used to repeat every matched path in every risk class.
-    PR #6544 changed 8,054 paths and ``candidate.reasons`` alone was about
-    1.8 MB, which pushed the receipt over the auditor's 2 MiB member cap
-    (#6621). The auditor replays ``changed_paths``; it does not need these
-    lists. The digest is ``_sha256_json`` of the sorted unique paths, so a
-    reader who still has that list can recompute it. Routing itself still
-    uses the lists in-process. Editing this classifier starts a new policy
-    generation; older receipts become cohort drift, not integrity failures.
-    """
-    if set(reasons) != set(RISK_CLASSES):
-        raise PolicyError("routing reasons do not cover the risk classes")
-    bounded: dict[str, dict[str, int | str]] = {}
-    for name in RISK_CLASSES:
-        paths = reasons[name]
-        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
-            raise PolicyError(f"routing reasons for {name} are invalid")
-        ordered = sorted(set(paths))
-        bounded[name] = {"count": len(ordered), "sha256": _sha256_json(ordered)}
-    return bounded
-
-
 def image_input_selection(
     repo: Path, policy: dict[str, Any], paths: Iterable[str], *, normalized: bool = False
 ) -> dict[str, list[str]]:
@@ -573,143 +447,6 @@ def image_input_selection(
     }
     selection["worker"] = reasons["worker_vulnerability"]
     return selection
-
-
-def evaluate(
-    repo: Path,
-    policy: dict[str, Any],
-    changed_paths: Iterable[str],
-    *,
-    base_sha: str = "",
-    head_sha: str = "",
-    repository: str = "",
-    pull_request: int = 0,
-    policy_sha: str = "",
-    policy_blob_sha: str = "",
-    routing_policy_blob_sha: str = "",
-    gate_workflow_blob_sha: str = "",
-    serving_workflow_blob_sha: str = "",
-    worker_workflow_blob_sha: str = "",
-    resolver_blob_sha: str = "",
-    observer_workflow_blob_sha: str = "",
-    policy_inputs_sha256: str = "",
-    trusted_execution: str = "",
-    gate_workflow_path: str = "",
-    gate_run_id: int = 0,
-    gate_run_attempt: int = 0,
-    gate_run_conclusion: str = "",
-    tree_ref: str = "HEAD",
-    image_input_tree: str = "head",
-    image_input_tree_sha: str = "",
-    # ``image_inputs`` is a test seam only: it lets the unit suite address the
-    # tree once instead of per case. ``main`` never passes it, so production
-    # observations always derive the digests from ``tree_ref``.
-    image_inputs: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    paths = sorted({normalize_path(path) for path in changed_paths if normalize_path(path)})
-    if image_input_tree not in IMAGE_INPUT_TREES:
-        raise PolicyError("image input tree kind is invalid")
-    if image_inputs is None:
-        image_inputs = image_input_digests(repo, policy, tree_ref)
-    if set(image_inputs) != set(IMAGE_INPUT_CLASSES) or any(
-        re.fullmatch(r"[0-9a-f]{64}", value or "") is None for value in image_inputs.values()
-    ):
-        raise PolicyError("image input digests are incomplete")
-    matched = routing_reasons(repo, policy, paths, normalized=True)
-    reasons = bound_reason_evidence(matched)
-    serving_projects, serving_external = project_closure(
-        repo, policy["roots"]["serving"], policy["global_projects"]
-    )
-    serving_external = sorted(
-        set(serving_external) | set(policy["serving_external_patterns"])
-    )
-    worker_projects, worker_external = project_closure(
-        repo, policy["roots"]["worker"], policy["global_projects"]
-    )
-    risk_classes = {name: bool(matched[name]) for name in RISK_CLASSES}
-    serving_variants = {
-        name: risk_classes[f"{name}_final_rootfs"] for name in SERVING_VARIANTS
-    }
-    worker_build = any(
-        risk_classes[name]
-        for name in ("worker_managed_graph", "worker_native_rootfs", "worker_vulnerability")
-    )
-    legacy_common = bool(
-        matching_paths(paths, policy["legacy"]["serving_common_patterns"])
-    )
-    legacy_serving_variants = {
-        name: legacy_common
-        or bool(
-            matching_paths(
-                paths, policy["legacy"]["serving_variant_patterns"][name]
-            )
-        )
-        for name in SERVING_VARIANTS
-    }
-    legacy_serving = any(legacy_serving_variants.values())
-    legacy_worker = bool(matching_paths(paths, policy["legacy"]["worker_patterns"]))
-    candidate_serving = any(serving_variants.values())
-
-    return {
-        "schema": SCHEMA,
-        "mode": "observe",
-        "mutation": "none",
-        "repository": repository,
-        "pull_request": pull_request,
-        "base_sha": base_sha,
-        "head_sha": head_sha,
-        "changed_paths": paths,
-        "changed_paths_sha256": _sha256_json(paths),
-        "policy_sha": policy_sha,
-        "policy_blob_sha": policy_blob_sha,
-        "routing_policy_blob_sha": routing_policy_blob_sha,
-        "gate_workflow_blob_sha": gate_workflow_blob_sha,
-        "serving_workflow_blob_sha": serving_workflow_blob_sha,
-        "worker_workflow_blob_sha": worker_workflow_blob_sha,
-        "resolver_blob_sha": resolver_blob_sha,
-        "observer_workflow_blob_sha": observer_workflow_blob_sha,
-        "policy_inputs_sha256": policy_inputs_sha256,
-        "image_input_digests": dict(sorted(image_inputs.items())),
-        "image_input_tree": image_input_tree,
-        "image_input_tree_sha": image_input_tree_sha,
-        "trusted_execution": trusted_execution,
-        "gate_workflow_path": gate_workflow_path,
-        "gate_run_id": gate_run_id,
-        "gate_run_attempt": gate_run_attempt,
-        "gate_run_head_sha": head_sha,
-        "gate_run_conclusion": gate_run_conclusion,
-        "graphs": {
-            "serving": {
-                "root": policy["roots"]["serving"],
-                "projects": serving_projects,
-                "external_inputs": serving_external,
-                "fingerprint": _fingerprint(serving_projects, serving_external),
-            },
-            "worker": {
-                "root": policy["roots"]["worker"],
-                "projects": worker_projects,
-                "external_inputs": worker_external,
-                "fingerprint": _fingerprint(worker_projects, worker_external),
-            },
-        },
-        "legacy": {
-            "serving_trigger": legacy_serving,
-            "serving_variants": legacy_serving_variants,
-            "worker_trigger": legacy_worker,
-        },
-        "candidate": {
-            "risk_classes": risk_classes,
-            "serving_variants": serving_variants,
-            "worker_build": worker_build,
-            "reasons": reasons,
-        },
-        "comparison": {
-            "serving_legacy_only": legacy_serving and not candidate_serving,
-            "worker_legacy_only": legacy_worker and not worker_build,
-            "serving_candidate_only": candidate_serving and not legacy_serving,
-            "worker_candidate_only": worker_build and not legacy_worker,
-        },
-    }
 
 
 def _is_unsafe_path(path: str) -> bool:
@@ -733,27 +470,11 @@ def _nul_records(raw: bytes, source: str) -> list[bytes]:
     return raw[:-1].split(b"\0")
 
 
-def parse_changed_path_output(raw: bytes) -> list[str]:
-    paths: list[str] = []
-    seen: set[str] = set()
-    for encoded in _nul_records(raw, "git diff"):
-        try:
-            path = encoded.decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise PolicyError("git diff emitted a non-UTF-8 path") from error
-        if _is_unsafe_path(path) or path in seen:
-            raise PolicyError(f"git diff emitted an unsafe path: {path!r}")
-        seen.add(path)
-        paths.append(path)
-    return paths
-
-
 def parse_tree_output(raw: bytes) -> dict[str, tuple[str, str]]:
     """Parse ``git ls-tree -r -z`` into ``path -> (mode, object id)``.
 
-    Unlike the changed-path parser this deliberately does **not** reject an
-    unusual path: one legal-but-odd filename anywhere in the repository must not
-    disable every observation. Safety is enforced later, and fail-closed, over
+    One legal-but-odd filename anywhere in the repository must not disable
+    every digest calculation. Safety is enforced later, and fail-closed, over
     the subset actually selected as image input (see ``_content_digest``).
     Non-UTF-8 names survive as surrogate escapes so they can still be matched
     and, if selected, rejected.
@@ -817,131 +538,13 @@ def image_input_digests(
     dominant cost on this repository (#3204).
 
     ``ref`` must name the tree the authoritative image workflows actually build.
-    Both of them check out the ``pull_request`` merge ref, so the observer
-    passes the verified merge commit here and only falls back to the head
-    commit when no merge commit can be verified.
+    The authoritative serving-image workflow supplies its checked-out HEAD.
     """
     entries = tree_entries(repo, ref)
     selection = image_input_selection(repo, policy, entries.keys(), normalized=True)
     if any(not selection.get(name) for name in IMAGE_INPUT_CLASSES):
         raise PolicyError("image input selection is empty for at least one image class")
     return {name: _content_digest(entries, selection[name]) for name in IMAGE_INPUT_CLASSES}
-
-
-def changed_paths(repo: Path, base_ref: str, head_ref: str) -> list[str]:
-    result = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "-z",
-            "--diff-filter=ACDMRTUXB",
-            f"{base_ref}...{head_ref}",
-        ],
-        cwd=repo,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if result.returncode != 0:
-        detail = result.stderr.decode("utf-8", errors="replace").strip()
-        raise PolicyError(f"git diff failed: {detail}")
-    return parse_changed_path_output(result.stdout)
-
-
-def observation_identity(args: argparse.Namespace) -> dict[str, Any]:
-    values = {
-        "base_sha": args.base,
-        "head_sha": args.head,
-        "policy_sha": args.policy_sha,
-        "policy_blob_sha": args.policy_blob_sha,
-        "routing_policy_blob_sha": args.routing_policy_blob_sha,
-        "gate_workflow_blob_sha": args.gate_workflow_blob_sha,
-        "serving_workflow_blob_sha": args.serving_workflow_blob_sha,
-        "worker_workflow_blob_sha": args.worker_workflow_blob_sha,
-        "resolver_blob_sha": args.resolver_blob_sha,
-        "observer_workflow_blob_sha": args.observer_workflow_blob_sha,
-    }
-    if any(SHA_PATTERN.fullmatch(value or "") is None for value in values.values()):
-        raise PolicyError("observation identity contains an invalid SHA")
-    if args.repository != "honua-io/honua-server" or args.pr < 1:
-        raise PolicyError("observation repository or pull request is invalid")
-    if args.trusted_execution != TRUSTED_EXECUTION:
-        raise PolicyError("observation did not run through trusted default-branch policy")
-    if args.gate_workflow_path != ".github/workflows/pr-gate.yml":
-        raise PolicyError("observation source is not the canonical PR Gate")
-    if args.gate_run_id < 1 or args.gate_run_attempt < 1:
-        raise PolicyError("observation source run identity is invalid")
-    if args.gate_run_conclusion not in TERMINAL_CONCLUSIONS:
-        raise PolicyError("observation source run conclusion is invalid")
-    if re.fullmatch(r"[0-9a-f]{64}", args.policy_inputs_sha256 or "") is None:
-        raise PolicyError("observation policy input digest is invalid")
-    if args.image_input_tree not in IMAGE_INPUT_TREES:
-        raise PolicyError("observation image input tree kind is invalid")
-    if SHA_PATTERN.fullmatch(args.image_input_tree_sha or "") is None:
-        raise PolicyError("observation image input tree commit is invalid")
-    if args.image_input_tree == "head" and args.image_input_tree_sha != args.head:
-        raise PolicyError("head-tree observation must address the observed head commit")
-    if args.image_input_tree == "merge" and args.image_input_tree_sha == args.head:
-        raise PolicyError("merge-tree observation must address the merge commit")
-    return {
-        "policy_sha": args.policy_sha,
-        "policy_blob_sha": args.policy_blob_sha,
-        "routing_policy_blob_sha": args.routing_policy_blob_sha,
-        "gate_workflow_blob_sha": args.gate_workflow_blob_sha,
-        "serving_workflow_blob_sha": args.serving_workflow_blob_sha,
-        "worker_workflow_blob_sha": args.worker_workflow_blob_sha,
-        "resolver_blob_sha": args.resolver_blob_sha,
-        "observer_workflow_blob_sha": args.observer_workflow_blob_sha,
-        "policy_inputs_sha256": args.policy_inputs_sha256,
-        "trusted_execution": args.trusted_execution,
-        "gate_workflow_path": args.gate_workflow_path,
-        "gate_run_id": args.gate_run_id,
-        "gate_run_attempt": args.gate_run_attempt,
-        "gate_run_conclusion": args.gate_run_conclusion,
-        "image_input_tree": args.image_input_tree,
-        "image_input_tree_sha": args.image_input_tree_sha,
-    }
-
-
-def markdown(report: dict[str, Any]) -> str:
-    candidate = report["candidate"]
-    lines = [
-        "## Native-image impact observation",
-        "",
-        f"- Mode: `{report['mode']}` (mutation: `{report['mutation']}`)",
-        f"- PR/head: `#{report['pull_request']}` / `{report['head_sha']}`",
-        f"- Legacy serving trigger: `{str(report['legacy']['serving_trigger']).lower()}`",
-        "- Legacy serving variants: "
-        f"`{json.dumps(report['legacy']['serving_variants'], sort_keys=True)}`",
-        f"- Candidate serving variants: `{json.dumps(candidate['serving_variants'], sort_keys=True)}`",
-        f"- Legacy worker trigger: `{str(report['legacy']['worker_trigger']).lower()}`",
-        f"- Candidate worker build: `{str(candidate['worker_build']).lower()}`",
-        f"- Image input tree: `{report['image_input_tree']}` "
-        f"(`{report['image_input_tree_sha'][:12]}`)",
-        "- Image input digests: "
-        + ", ".join(
-            f"`{name}={digest[:12]}`"
-            for name, digest in sorted(report["image_input_digests"].items())
-        ),
-        "",
-        "| Risk class | Impacted | Matched inputs |",
-        "|---|---:|---|",
-    ]
-    for name in RISK_CLASSES:
-        evidence = candidate["reasons"][name]
-        count = evidence["count"]
-        rendered = "—" if count == 0 else f"`{count}` (`{evidence['sha256'][:12]}`)"
-        lines.append(
-            f"| `{name}` | `{str(candidate['risk_classes'][name]).lower()}` | {rendered} |"
-        )
-    lines.extend(
-        [
-            "",
-            "This report is observation-only. Existing image workflows remain authoritative.",
-        ]
-    )
-    return "\n".join(lines) + "\n"
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -953,30 +556,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     digests.add_argument("--repo-root", type=Path, default=ROOT)
     digests.add_argument("--tree-ref", default="HEAD")
     digests.add_argument("--output", type=Path)
-    observe = subparsers.add_parser("observe")
-    observe.add_argument("--repo-root", type=Path, default=ROOT)
-    observe.add_argument("--base", required=True)
-    observe.add_argument("--head", required=True)
-    observe.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
-    observe.add_argument("--pr", type=int, default=0)
-    observe.add_argument("--output", type=Path, required=True)
-    observe.add_argument("--markdown", type=Path, required=True)
-    observe.add_argument("--policy-sha", required=True)
-    observe.add_argument("--policy-blob-sha", required=True)
-    observe.add_argument("--routing-policy-blob-sha", required=True)
-    observe.add_argument("--gate-workflow-blob-sha", required=True)
-    observe.add_argument("--serving-workflow-blob-sha", required=True)
-    observe.add_argument("--worker-workflow-blob-sha", required=True)
-    observe.add_argument("--resolver-blob-sha", required=True)
-    observe.add_argument("--observer-workflow-blob-sha", required=True)
-    observe.add_argument("--policy-inputs-sha256", required=True)
-    observe.add_argument("--trusted-execution", required=True)
-    observe.add_argument("--gate-workflow-path", required=True)
-    observe.add_argument("--gate-run-id", type=int, required=True)
-    observe.add_argument("--gate-run-attempt", type=int, required=True)
-    observe.add_argument("--gate-run-conclusion", required=True)
-    observe.add_argument("--image-input-tree", required=True, choices=list(IMAGE_INPUT_TREES))
-    observe.add_argument("--image-input-tree-sha", required=True)
     return parser.parse_args(argv)
 
 
@@ -993,7 +572,7 @@ def main(argv: list[str] | None = None) -> int:
             policy_root, policy["roots"]["worker"], policy["global_projects"]
         )
         print(
-            f"native-image-impact=ok mode=observe serving_projects={len(serving)} "
+            f"native-image-impact=ok serving_projects={len(serving)} "
             f"worker_projects={len(worker)}"
         )
         return 0
@@ -1004,23 +583,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output.write_text(rendered + "\n", encoding="utf-8")
         print(rendered)
         return 0
-    repo_root = args.repo_root.resolve()
-    identity = observation_identity(args)
-    report = evaluate(
-        repo_root,
-        policy,
-        changed_paths(repo_root, args.base, args.head),
-        base_sha=args.base,
-        tree_ref=args.image_input_tree_sha,
-        head_sha=args.head,
-        repository=args.repository,
-        pull_request=args.pr,
-        **identity,
-    )
-    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    args.markdown.write_text(markdown(report), encoding="utf-8")
-    print(json.dumps(report, sort_keys=True))
-    return 0
+    raise PolicyError(f"unsupported command: {args.command}")
 
 
 if __name__ == "__main__":

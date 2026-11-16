@@ -39,22 +39,11 @@ internal static class GeoservicesServiceUrlValidation
     internal const string DisallowedHostMessage =
         "ServiceUrl host is not in the configured Migration:AllowedServiceHostSuffixes allowlist.";
 
-    /// <summary>
-    /// Validates the service URL without a host allowlist (any public HTTPS host is permitted).
-    /// For deployments that restrict which hosts may be contacted, use the overload that accepts
-    /// an <c>allowedHostSuffixes</c> parameter.
-    /// </summary>
     public static Task<GeoservicesServiceUrlValidationResult> ValidateAsync(
         string serviceUrl,
         CancellationToken cancellationToken = default)
         => ValidateAsync(serviceUrl, allowedHostSuffixes: null, ResolveHostAddressesAsync, cancellationToken);
 
-    /// <summary>
-    /// Validates the service URL, optionally enforcing a host-suffix allowlist.
-    /// When <paramref name="allowedHostSuffixes"/> is non-null and non-empty, the request host
-    /// must exactly match, or be a subdomain of, at least one listed suffix (e.g. ".arcgisonline.com").
-    /// An empty allowlist rejects all hosts. A null allowlist allows any public host.
-    /// </summary>
     public static Task<GeoservicesServiceUrlValidationResult> ValidateAsync(
         string serviceUrl,
         IReadOnlyCollection<string>? allowedHostSuffixes,

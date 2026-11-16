@@ -39,7 +39,7 @@ Run `POST /api/v1/admin/roles` in the explorer with this body:
 }
 ```
 
-Note the returned role `id`. `GET /api/v1/admin/roles` lists all roles; `PUT`/`DELETE /api/v1/admin/roles/{id}` rename or remove one.
+Note the returned `roleId`. `GET /api/v1/admin/roles` lists all roles; `PUT`/`DELETE /api/v1/admin/roles/{id}` rename or remove one.
 
 ### 3. Grant per-operation permissions to the role
 
@@ -54,7 +54,7 @@ Run `PUT /api/v1/admin/roles/{roleId}/permissions`, substituting the role id ret
 }
 ```
 
-Operations: `query` (read), `insert`, `update`, `delete`, `export`, `metadata`, `admin`, or `*`. `service` and `layer` accept `*`; a service-level grant (`layer:"*"`) implies all its layers. Grants never hard-deny — when none matches, the resource's access policy decides.
+Operations: `query` (read), `insert`, `update`, `delete`, `export`, `metadata`, `admin`, or `*`. Check the spelling: an operation name outside this list is stored without an error. `service` and `layer` accept `*`; a service-level grant (`layer:"*"`) implies all its layers. Grants never hard-deny — when none matches, the resource's access policy decides.
 
 ### 4. Assign roles to users
 
@@ -66,7 +66,7 @@ Run `PUT /api/v1/admin/users/{userId}/roles`, substituting the user's OIDC id, w
 }
 ```
 
-The list replaces the user's role set. `GET /api/v1/admin/users` lists known users (OIDC sign-ins appear after first login). Roles also flow from your IdP's token claims (`Rbac__RoleClaimType`, default `roles`) and from API-key permission labels.
+The list replaces the user's role set. `GET /api/v1/admin/users` lists known users (OIDC sign-ins appear after first login). Roles also flow from your IdP's token claims (`Rbac__RoleClaimType`, default `roles`). An API key is not a member of a role you create: giving a key a role's name as a permission does not let it pass `allowedWriteRoles` or use that role's grants.
 
 ### 5. Restrict which rows a role can see (row-level security)
 
