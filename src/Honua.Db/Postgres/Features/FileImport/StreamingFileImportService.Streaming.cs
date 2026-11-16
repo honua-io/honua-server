@@ -120,6 +120,7 @@ internal sealed partial class StreamingFileImportService
                 // (e.g. malformed WKT). Surfaced as a completion warning so the loss is never silent.
                 var csvGeometryDiagnostics = format == SupportedFileFormat.Csv ? new CsvGeometryDiagnostics() : null;
                 string? csvSourceIdAlias = null;
+                var hiddenSourceWarnings = new Dictionary<string, string>(StringComparer.Ordinal);
 
                 // Collects WKT records that could not be parsed (bad WKT/EWKT, stray header lines, a
                 // truncated multi-line tail). Surfaced as a completion warning so the loss is never silent.
@@ -156,6 +157,7 @@ internal sealed partial class StreamingFileImportService
                         csvSourceIdAlias ??= alias;
                     }
 
+                    ObserveHiddenSourceProperties(feature, hiddenSourceWarnings, format);
                     batch.Add(feature);
                     ObserveTypedColumns(typedColumnInference, feature);
 
@@ -329,6 +331,7 @@ internal sealed partial class StreamingFileImportService
 
                 var completionWarningsBuilder = new List<string>(warnings.Length + 2);
                 completionWarningsBuilder.AddRange(warnings);
+                completionWarningsBuilder.AddRange(hiddenSourceWarnings.Values);
                 if (csvSourceIdAlias is not null)
                 {
                     completionWarningsBuilder.Add(
