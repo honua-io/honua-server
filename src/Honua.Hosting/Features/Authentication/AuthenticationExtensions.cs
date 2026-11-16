@@ -58,11 +58,11 @@ public static class AuthenticationExtensions
         services.TryAddScoped<IClaimsTransformation, ManagedMembershipClaimsTransformation>();
 
         // Required by AdminPermissionAuthorizationHandler to read the request method
-        // when authorization is evaluated outside the endpoint resource (#1985).
+        // when authorization is evaluated outside the endpoint resource.
         services.AddHttpContextAccessor();
 
-        // Enforces scoped admin API-key permissions on the general request path
-        // (#1985). Registered as a singleton authorization handler so it participates
+        // Enforces scoped admin API-key permissions on the general request path.
+        // Registered as a singleton authorization handler so it participates
         // in every policy that adds AdminPermissionRequirement below.
         services.AddSingleton<IAuthorizationHandler, AdminPermissionAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, AdminApproveAuthorizationHandler>();
@@ -73,7 +73,7 @@ public static class AuthenticationExtensions
         services.AddSingleton<IAuthorizationHandler, OpsReadAuthorizationHandler>();
 
         // Widens the Studio package lifecycle surface from admin-only to ownership-scoped end
-        // users behind a feature flag (honua-server#3001).
+        // users behind a feature flag.
         services.AddSingleton<IAuthorizationHandler, StudioLifecycleAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, StudioAiProxyAuthorizationHandler>();
         // Records the 401/403 outcome of every policy the authorization middleware evaluates —
@@ -90,7 +90,7 @@ public static class AuthenticationExtensions
             .AddScheme<AuthenticationSchemeOptions, ScopedJobTokenAuthenticationHandler>(
                 ScopedJobAuthentication.Scheme, options => { });
 
-        // #2958: the client-certificate scheme is only ever a valid policy scheme
+        // The client-certificate scheme is only ever a valid policy scheme
         // reference when the security.mtls experimental capability is enabled — resolved
         // once here (composition time) rather than per-policy-evaluation.
         var mtlsCapabilityEnabled = ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled(configuration);

@@ -24,6 +24,7 @@ using Honua.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using FilterExpressionHelpers = Honua.Infrastructure.Helpers.FilterExpressionHelpers;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 using Proto = Geospatial.V1;
 
@@ -289,8 +290,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
-        // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
-        // Geometry and attributes go through FeatureMutationValidator before the write (#6193).
+        // gRPC ApplyEdits is an open-protocol edit surface and remains Community.
+        // Geometry and attributes go through FeatureMutationValidator before the write.
 
         var prepared = await PrepareGrpcEditAsync(new EditCall(request, layer, context)).ConfigureAwait(false);
         var editBatch = prepared.Batch;
@@ -326,7 +327,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         editBatch = prepared.Batch;
         globalIds = prepared.GlobalIds;
         var requestBatch = prepared.RequestBatch;
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(requestBatch);
+        var gate = prepared.Gate!;
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(gate.Without(requestBatch));
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
 
@@ -353,13 +355,13 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             {
                 keyedApplication = await _featureWriter.ApplyEditsAsync(
                     layer.StorageLayerId,
-                    editBatch,
+                    gate.Written,
                     new FeatureEditIdempotencyReceipt
                     {
                         Scope = keyedEdit.Scope,
                         ExpiresAt = _editReceipts.ResponseExpiresAt,
                         Payload = staged => GrpcApplyEditsReceipts.EncodeReceipt(
-                            StampResultGlobalIds(globalIds, GrpcConversionHelpers.ToProtoApplyEditsResponse(staged))),
+                            StampResultGlobalIds(globalIds, GrpcConversionHelpers.ToProtoApplyEditsResponse(gate.Merge(staged)))),
                     },
                     context.CancellationToken).ConfigureAwait(false);
                 result = keyedApplication.Value.Result;
@@ -368,7 +370,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             {
                 result = await _featureWriter.ApplyEditsAsync(
                     layer.StorageLayerId,
-                    editBatch,
+                    gate.Written,
                     context.CancellationToken).ConfigureAwait(false);
             }
         }
@@ -380,7 +382,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             throw;
         }
 
-        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+        var reported = gate.Merge(result);
+        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(reported);
         StampResultGlobalIds(globalIds, response);
 
         // A receipt committed under this key replaces this attempt's result, and no change
@@ -392,13 +395,21 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return FilterResultGlobalIds(globalIds, committed);
         }
 
-        await PublishFeatureChangeEventsAsync(
-            request.ServiceId ?? "unknown",
-            request.LayerId,
-            layer,
-            requestBatch,
-            result,
-            context).ConfigureAwait(false);
+        try
+        {
+            await PublishFeatureChangeEventsAsync(
+                request.ServiceId ?? "unknown",
+                request.LayerId,
+                layer,
+                requestBatch,
+                reported,
+                context).ConfigureAwait(false);
+        }
+        finally
+        {
+            // The edit has committed, so its after-hooks run even when publishing its events fails.
+            await gate.RunAfterAsync(result).ConfigureAwait(false);
+        }
 
         return response;
     }
@@ -578,11 +589,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             storedById[objectId] = existing.Value;
         }
 
-        if (editBatch.Updates.IsDefaultOrEmpty)
-        {
-            return new VisibleEditTargets(editBatch, storedById);
-        }
-
         var mergedUpdates = ImmutableArray.CreateBuilder<Feature>(editBatch.Updates.Length);
         var preconditions = ImmutableArray.CreateBuilder<FeatureEditPrecondition>();
         var guarded = new HashSet<long>();
@@ -604,16 +610,21 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
 
             mergedUpdates.Add(MergePartialUpdate(update, stored));
-            // Masked reads store the full-row token before fields are removed.
-            // Attach that token so a concurrent writer fails the update. An unmasked
-            // read has no token; hashing the caller-visible snapshot would not match
-            // the row the writer locks.
-            if (stored.ReadStateToken is { Length: > 0 } token && guarded.Add(stored.Id))
+        }
+
+        // Both update and delete rules read these snapshots. Bind each target to the row
+        // the writer will lock so a concurrent change cannot bypass the validation.
+        foreach (var stored in storedById.Values)
+        {
+            if (guarded.Add(stored.Id))
             {
                 preconditions.Add(new FeatureEditPrecondition
                 {
                     ObjectId = stored.Id,
-                    ExpectedStateToken = token
+                    ExpectedStateToken = FeatureStateToken.FromReadSnapshot(stored),
+                    MaskedFields = stored.EditValidationAttributes is { } full
+                        ? full.Keys.Except(stored.Attributes.Keys, StringComparer.OrdinalIgnoreCase).ToImmutableArray()
+                        : ImmutableArray<string>.Empty
                 });
             }
         }
@@ -892,7 +903,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             Offset = pagination.Offset,
             // Streaming pages the full result set itself, and ids-only responses carry no
             // exceeded_transfer_limit signal, so neither may inherit the default page size when the
-            // caller did not ask for one: FeatureServer returnIdsOnly is likewise unbounded (#6112).
+            // caller did not ask for one: FeatureServer returnIdsOnly is likewise unbounded.
             Limit = (streaming || request.ReturnIdsOnly) && !requestedLimit.HasValue ? null : pagination.Limit
         };
 
@@ -1032,7 +1043,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     private static void EnsureAggregationNotRequested(Proto.QueryFeaturesRequest request)
     {
-        // #5465: geospatial.v1 defines no aggregate result shape. QueryFeaturesResponse and
+        // The geospatial.v1 contract defines no aggregate result shape. QueryFeaturesResponse and
         // FeaturePage carry the layer's attribute field definitions and feature rows only, so
         // answering out_statistics/group_by would either invent an unpublished response shape
         // or silently return ordinary features. Refuse until the contract defines one.
@@ -1114,48 +1125,54 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
-        MetadataV2Service service,
-        MetadataV2Object resource,
+        GrpcLayerContext layer,
         FeatureEditBatch editBatch)
     {
-        var httpContext = context.GetHttpContext();
-
         // Match the REST ApplyEdits seam: conversion first establishes the bounded
         // set of requested edit kinds, then every present kind must independently
         // pass the canonical resource data-editor gate before reads, outbox
         // resolution, or writes begin.
         if (!editBatch.Creates.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Insert).ConfigureAwait(false);
         }
 
         if (!editBatch.Updates.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Update).ConfigureAwait(false);
         }
 
         if (!editBatch.Deletes.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Delete).ConfigureAwait(false);
         }
 
         // Preserve the prior authorization ceiling for an empty no-op request.
         if (editBatch.Creates.IsEmpty && editBatch.Updates.IsEmpty && editBatch.Deletes.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Update).ConfigureAwait(false);
         }
+    }
 
-        async Task EnsureOperationAccessAsync(AuthorizationOperation operation)
-        {
-            var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-                httpContext,
-                resource,
-                service,
-                operation,
-                context.CancellationToken).ConfigureAwait(false);
+    private static async Task EnsureOperationAccessAsync(
+        ServerCallContext context, GrpcLayerContext layer, AuthorizationOperation operation)
+    {
+        var httpContext = context.GetHttpContext();
 
-            ThrowIfAccessDenied(decision);
-        }
+        var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+            httpContext,
+            layer.Resource,
+            layer.Service,
+            operation,
+            context.CancellationToken).ConfigureAwait(false);
+
+        ThrowIfAccessDenied(decision);
+
+        var canonicalDecision = await LayerValidationHelpers.EvaluateCanonicalServiceWriteAccessAsync(
+            httpContext,
+            (new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot), operation),
+            context.CancellationToken).ConfigureAwait(false);
+        ThrowIfAccessDenied(canonicalDecision);
     }
 
     // An edit kind the publication omits is rejected.
@@ -1205,7 +1222,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     {
         var httpContext = context.GetHttpContext();
 
-        // Per-operation RBAC grants are consulted first (#1376) via the shared
+        // Per-operation RBAC grants are consulted first via the shared
         // seam; the coarse AccessPolicy read evaluation is the no-grant fallback.
         var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
             httpContext,

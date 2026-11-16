@@ -6,9 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Basic architecture tests to validate project structure
-/// </summary>
 [Trait("Category", "Architecture")]
 public class BasicArchitectureTests
 {

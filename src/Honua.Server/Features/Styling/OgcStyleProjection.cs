@@ -65,8 +65,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         // Phase 1: a storage-bound collection projects to one OGC style. A feature collection
         // always publishes one — its stored MapLibre style, or the layer default it renders with
         // until the first PUT — because OGC API Features advertises rel=stylesheet for it;
-        // listing only stored styles left every advertised link on an unstyled collection 404
-        // (#4993). Other resource types (rasters, tables) have no meaningful vector default and
+        // listing only stored styles left every advertised link on an unstyled collection 404.
+        // Other resource types (rasters, tables) have no meaningful vector default and
         // project only when a MapLibre style is genuinely stored.
         var storedOnlyCandidates = new List<(string StyleId, MetadataV2Object Resource, int StorageLayerId)>();
         foreach (var resource in snapshot.Graph.Resources)

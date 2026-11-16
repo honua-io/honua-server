@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Unit tests for Feature domain model
-/// </summary>
 public class FeatureTests
 {
     [UnitTest]

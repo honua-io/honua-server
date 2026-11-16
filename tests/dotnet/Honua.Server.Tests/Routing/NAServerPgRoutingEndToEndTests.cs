@@ -18,29 +18,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Gated end-to-end integration tests that exercise the full GeoServices NAServer
-/// HTTP path over the <em>real</em> <see cref="PgRoutingProvider"/> (not the
-/// in-memory test double used by the protocol-level
-/// <c>NAServerEndpointTests</c>). The booted server runs against its normal
-/// Postgres fixture, but the registered <see cref="IRoutingProvider"/> is replaced
-/// with a real <see cref="PgRoutingProvider"/> bound to a separate, seeded
-/// pgRouting database (<see cref="PgRoutingFixture"/>). This proves the whole
-/// stack: HTTP request → NAServer adapter (parameter translation) → real
-/// <see cref="PgRoutingProvider"/> SQL → pgRouting → Esri-shaped JSON response.
-/// </summary>
-/// <remarks>
-/// Opt-in only: set <c>HONUA_ROUTING_TEST=1</c> to run (the heavy
-/// <c>pgrouting/pgrouting</c> image is never pulled on the default Fast tier).
-/// See issue #1266 and ADR-0050. Seed network (vertices 1-9, every edge cost = 1):
-/// <code>
-///   7 -- 8 -- 9        (0,.02) (.01,.02) (.02,.02)
-///   |    |    |
-///   4 -- 5 -- 6        (0,.01) (.01,.01) (.02,.01)
-///   |    |    |
-///   1 -- 2 -- 3        (0,0)   (.01,0)   (.02,0)
-/// </code>
-/// </remarks>
 public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixture>, IAsyncLifetime
 {
     private const string RoutingTestEnv = "HONUA_ROUTING_TEST";
@@ -50,10 +27,6 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
 
     private readonly WebAppFixture _fixture;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NAServerPgRoutingEndToEndTests"/> class.
-    /// </summary>
-    /// <param name="routingFixture">The seeded pgRouting fixture (separate DB).</param>
     public NAServerPgRoutingEndToEndTests(PgRoutingFixture routingFixture)
     {
         ArgumentNullException.ThrowIfNull(routingFixture);
@@ -74,10 +47,8 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
             });
     }
 
-    /// <inheritdoc />
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
-    /// <inheritdoc />
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [RoutingTest(RoutingTestEnv)]

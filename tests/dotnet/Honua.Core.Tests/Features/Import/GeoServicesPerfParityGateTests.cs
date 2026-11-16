@@ -7,10 +7,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Offline tests for <see cref="GeoServicesPerfParityGate"/> — the performance-parity gate that
-/// grades measured Honua-vs-source latency ratios and emits a scorecard verdict (issue #1249).
-/// </summary>
 public sealed class GeoServicesPerfParityGateTests
 {
     private static readonly PerfParityBudget Budget = new()

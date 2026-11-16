@@ -17,14 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage of the slice-5 <c>geometry.dissolve</c> executor. Mirrors
-/// the failure surfaces the union executor pins (since dissolve uses the
-/// same WkbArray input contract) plus the new group-aware behavior: two
-/// overlapping boxes tagged with the same key collapse into one feature,
-/// while two distinct keys yield a FeatureCollection with one feature per
-/// group.
-/// </summary>
 public sealed class GeometryDissolveJobExecutorTests
 {
     private const string FeatureDataUriPrefix = "data:application/geo+json;base64,";

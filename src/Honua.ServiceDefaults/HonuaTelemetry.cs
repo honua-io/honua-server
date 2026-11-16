@@ -57,7 +57,7 @@ public static class HonuaTelemetry
 
     private const int DefaultMaxExceptionDetailLength = 256;
 
-    // Serving-latency rolling-window aggregation defaults (Part 1, #2463).
+    // Serving-latency rolling-window aggregation defaults.
     private const int DefaultServingLatencyWindowSeconds = 300; // 5 minutes
     private const int DefaultServingLatencySamplesPerProtocol = 4096;
 
@@ -116,7 +116,7 @@ public static class HonuaTelemetry
         _maxExceptionDetailLength = maxLength;
 
         // Span-event attributes are fixed once added, so providers that record exception text on
-        // events (retry callbacks) apply this same policy at construction (#5475).
+        // events (retry callbacks) apply this same policy at construction.
         TelemetryExceptionDetailPolicy.Configure(exportDetails
             ? message => SanitizeTelemetryText(message, maxLength)
             : static _ => null);

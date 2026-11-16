@@ -21,8 +21,7 @@ internal static class StreamingOperationsEndpoints
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/operations/streaming")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            // Promoted to GA in #2428 — no capability gate; admin authorization still
-            // required below.
+            // GA: no capability gate; admin authorization still required below.
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Operations")

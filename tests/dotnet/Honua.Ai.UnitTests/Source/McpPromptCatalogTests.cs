@@ -13,11 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Pins the curated MCP prompt catalog (#1953): the advertised <c>prompts/list</c>
-/// roster, the descriptor shape, and the <c>prompts/get</c> rendering/argument
-/// validation contract.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpPromptCatalogTests
 {
@@ -83,6 +78,24 @@ public sealed class McpPromptCatalogTests
         message.Content.Text.Should().NotContain("{objective}");
         message.Content.Text.Should().NotContain("{studyArea}");
         message.Content.Text.Should().NotContain("{criteria}");
+    }
+
+    [UnitTest]
+    public void Get_ArgumentValueContainingAnotherPlaceholder_StaysLiteral()
+    {
+        var result = McpPromptCatalog.Get("site_selection_analysis", new Dictionary<string, string>
+        {
+            ["objective"] = "LITERAL_{criteria}_END",
+            ["studyArea"] = "AREA_{objective}_END",
+            ["criteria"] = "near arterial roads",
+        });
+
+        var text = result.Messages[0].Content.Text;
+        text.Should().Contain("LITERAL_{criteria}_END");
+        text.Should().Contain("AREA_{objective}_END");
+        text.Should().Contain("near arterial roads");
+        text.Should().NotContain("LITERAL_near arterial roads_END");
+        text.Should().NotContain("AREA_LITERAL_");
     }
 
     [UnitTest]

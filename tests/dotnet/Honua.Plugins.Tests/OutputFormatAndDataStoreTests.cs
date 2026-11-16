@@ -20,9 +20,6 @@ using Xunit;
 
 namespace Honua.Plugins.Tests;
 
-/// <summary>
-/// Tests for the data-store and output-format plugin extension points (issue #2856, ADR-0067).
-/// </summary>
 public sealed class OutputFormatAndDataStoreTests
 {
     private static ServiceProvider BuildProvider(

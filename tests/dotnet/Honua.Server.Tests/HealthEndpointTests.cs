@@ -9,9 +9,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for health endpoints.
-/// </summary>
 [Protocol(TestProtocols.Health)]
 [Collection("Database.CoreEndpoints")]
 public sealed class HealthEndpointTests : IAsyncLifetime

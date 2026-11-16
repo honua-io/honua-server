@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
-using System.Security.Claims;
 using System.Text.Json;
 using System.Text;
 using System.Xml.Linq;
@@ -129,12 +128,11 @@ internal sealed partial class Wfs20Handler
         var plans = ImmutableArray.CreateBuilder<LayerQueryPlan>(featureTypes.Count);
 
         // The per-feature-type query build + count has no cross-type dependency, so run
-        // every feature type's build+count pair concurrently instead of one at a time
-        // (previously a serial CountAsync round trip per feature type in the multi-type
-        // GetFeature path). The offset/limit distribution below IS sequential (each
-        // type's share depends on how much of the offset/count budget prior types in
-        // request order consumed), so that accounting still runs as a second,
-        // I/O-free pass over the precomputed results in the original order.
+        // every feature type's build+count pair concurrently instead of one at a time.
+        // The offset/limit distribution below IS sequential (each type's share depends
+        // on how much of the offset/count budget prior types in request order
+        // consumed), so that accounting still runs as a second, I/O-free pass over the
+        // precomputed results in the original order.
         var perTypeResults = await Task.WhenAll(featureTypes.Select(async featureType =>
         {
             var query = await BuildFeatureQueryAsync(
@@ -148,7 +146,7 @@ internal sealed partial class Wfs20Handler
                 // A qualified RESOURCEID is scoped by its own type name. When the request
                 // selects multiple types (including the implicit all-types selection), ignore
                 // that id while building the other type's plan instead of rejecting the entire
-                // request because the prefix does not match that plan (#4168).
+                // request because the prefix does not match that plan.
                 enforceResourceIdTypeMatch: featureTypes.Count == 1,
                 requireResourceIdQualifier: featureTypes.Count > 1,
                 cancellationToken: cancellationToken,
@@ -291,7 +289,7 @@ internal sealed partial class Wfs20Handler
         }
 
         // Default filter geometry without an explicit srsName to the queried feature type's
-        // storage CRS rather than an unconditional EPSG:4326 assumption (#2737).
+        // storage CRS rather than an unconditional EPSG:4326 assumption.
         resource = resource with
         {
             SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
@@ -533,7 +531,7 @@ internal sealed partial class Wfs20Handler
         // always longitude,latitude; WFS 1.1.0's default (4-element, no explicit CRS) BBOX is
         // also lon,lat. Only a WFS 1.1.0 BBOX with an explicit 5th-element CRS honors that
         // CRS's declared axis order. WFS 2.0 (wfsVersion == null on that path) is unchanged
-        // and keeps the CRS-derived axis order (lat,lon for EPSG:4326) (#2737).
+        // and keeps the CRS-derived axis order (lat,lon for EPSG:4326).
         if (IsWfs10(wfsVersion) || (IsWfs11(wfsVersion) && parts.Length == 4))
         {
             axisOrder = AxisOrder.EastNorth;
@@ -1605,22 +1603,6 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static bool IsAnonymousWriteAllowed(
-        HttpContext context,
-        MetadataV2Object resource,
-        MetadataV2Service? service)
-    {
-        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
-        var anonymousPrincipal = new ClaimsPrincipal(new ClaimsIdentity());
-        var decision = evaluator.Evaluate(
-            anonymousPrincipal,
-            resource.AccessPolicy,
-            service?.AccessPolicy,
-            AccessScope.Write);
-
-        return decision.IsAllowed;
-    }
-
     private static string[] ParseQualifiedList(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1944,7 +1926,11 @@ internal sealed partial class Wfs20Handler
         string LocalName,
         string NamespacePrefix,
         string NamespaceUri,
-        MetadataV2GraphSnapshot Snapshot);
+        MetadataV2GraphSnapshot Snapshot)
+    {
+        // The encoding the deployer declared for the resource under extensions.wfs.
+        public WfsDeclaredEncoding Declared { get; init; } = WfsDeclaredEncoding.None;
+    }
 
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,

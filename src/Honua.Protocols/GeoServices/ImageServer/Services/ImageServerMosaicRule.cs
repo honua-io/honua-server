@@ -232,8 +232,8 @@ public readonly record struct ImageServerMosaicRule
             return MosaicMethod.Seamline;
         }
 
-        // esriMosaicNadir is now executable (#1870): the export path ranks rasters by the off-nadir
-        // angle persisted in the sensor/orientation metadata (#1907). Rasters with no recorded
+        // esriMosaicNadir is now executable: the export path ranks rasters by the off-nadir
+        // angle persisted in the sensor/orientation metadata. Rasters with no recorded
         // off-nadir angle rank last; with a single raster the method is a no-op accepted upstream.
         if (methodName.Equals("esriMosaicNadir", StringComparison.OrdinalIgnoreCase))
         {
@@ -244,7 +244,7 @@ public readonly record struct ImageServerMosaicRule
         {
             // Esri ByAttribute with a base sortValue ranks rasters by their distance from that
             // value. The raster store only orders by the attribute itself, so a base value is a
-            // recognized-but-unsupported form (#4063); a direction token ("asc"/"desc") is not.
+            // recognized-but-unsupported form; a direction token ("asc"/"desc") is not.
             if (!string.IsNullOrWhiteSpace(sortValue) && !IsSortDirectionToken(sortValue))
             {
                 return MosaicMethod.Unsupported;
@@ -256,8 +256,8 @@ public readonly record struct ImageServerMosaicRule
                 return MosaicMethod.ByDate;
             }
 
-            // A non-date attribute sort over an allowlisted catalog column is now executable
-            // (#1870). Any other field remains a recognized-but-unsupported attribute mosaic.
+            // A non-date attribute sort over an allowlisted catalog column is now executable.
+            // Any other field remains a recognized-but-unsupported attribute mosaic.
             if (TryResolveAttributeSortColumn(sortField, out attributeSortColumn))
             {
                 return MosaicMethod.Attribute;

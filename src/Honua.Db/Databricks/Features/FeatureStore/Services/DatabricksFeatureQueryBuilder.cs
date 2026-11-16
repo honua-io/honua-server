@@ -434,7 +434,7 @@ internal static class DatabricksFeatureQueryBuilder
     }
 
     // Esri spatialRel is evaluated from the filter geometry: Within and Contains lead with the
-    // filter operand (issue #2068). Symmetric relationships lead with the feature geometry.
+    // filter operand. Symmetric relationships lead with the feature geometry.
     // Function names come from DatabricksSqlFilterTranslator's operator table.
     private static string FormatEnvelopePredicate(SpatialRelationship relationship, string feature, string filter)
         => relationship switch

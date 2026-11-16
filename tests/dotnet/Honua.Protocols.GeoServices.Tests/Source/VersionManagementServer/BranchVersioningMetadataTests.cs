@@ -108,12 +108,6 @@ public sealed class BranchVersioningMetadataTests(ITestOutputHelper output) : IA
         canonicalPostPayload.RootElement.GetRawText().Should().Be(getPayload.RootElement.GetRawText());
     }
 
-    /// <summary>
-    /// #5036: a client fetches {name}/MapServer (by POST) and reads <c>supportedExtensions</c> to
-    /// decide whether {name}/FeatureServer is a versioned workspace. When a map-only service shares
-    /// the name, the MapServer route resolves that service, and the list must still describe the
-    /// extensions the sibling FeatureServer route serves rather than come back empty.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]

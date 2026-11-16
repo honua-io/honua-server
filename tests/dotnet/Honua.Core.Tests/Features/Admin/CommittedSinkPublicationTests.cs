@@ -6,9 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Admin;
 
-/// <summary>
-/// Endpoint pin and external-schema scope for a committed PostGIS sink (#6399, #6400).
-/// </summary>
 public sealed class CommittedSinkPublicationTests
 {
     private const string Connection =

@@ -33,8 +33,7 @@ internal sealed class Wcs20CoverageBackend(
         int layerId,
         ZarrRasterSliceReadRequest request,
         CancellationToken cancellationToken)
-        // The classic WCS GetCoverage path serves native-CRS slices only (transformed
-        // WCS Zarr output is tracked as a follow-up under #2717); no transform service is
-        // threaded here.
+        // The classic WCS GetCoverage path serves native-CRS slices only (no transformed
+        // WCS Zarr output); no transform service is threaded here.
         => zarrRasterSliceReader.ReadAsync(layerId, request, cancellationToken: cancellationToken);
 }

@@ -42,7 +42,7 @@ internal sealed class StudioLifecycleAuthorizationHandler(
     {
         if (IsRecognizedAdmin(context.User, _adminRoleOptions.CurrentValue))
         {
-            // Preserve the scoped admin-permission boundary this policy replaced (#1985) --
+            // Preserve the scoped admin-permission boundary this policy replaced --
             // but only for API-key principals. The prior RequireAdminAuthorization() gate ran
             // AdminPermissionRequirement so an admin:read-scoped key could read but never
             // mutate Studio resources; that grammar classifies the "permission" claims the

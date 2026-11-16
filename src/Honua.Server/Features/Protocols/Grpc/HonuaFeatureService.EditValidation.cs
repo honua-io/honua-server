@@ -23,13 +23,15 @@ internal sealed partial class HonuaFeatureService
     private readonly record struct PreparedGrpcEdit(EditCall Call, FeatureEditBatch Batch, GlobalIdEdit GlobalIds)
     {
         public FeatureEditBatch RequestBatch { get; init; }
+
+        public EditGate? Gate { get; init; }
     }
 
     private async Task<PreparedGrpcEdit> PrepareGrpcEditAsync(EditCall call)
     {
         var batch = ToEditBatch(call.Request);
         var layer = call.Layer;
-        await EnsureWriteAccessAsync(call.Context, layer.Service, layer.Resource, batch).ConfigureAwait(false);
+        await EnsureWriteAccessAsync(call.Context, layer, batch).ConfigureAwait(false);
         EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, batch);
         EnsureEditLimits(batch, _editLimits);
         // Dropped before the storability check, so a forged value of any wire type is ignored.
@@ -71,9 +73,11 @@ internal sealed partial class HonuaFeatureService
         // the RLS-enforced reader and fails closed when hidden (#2071).
         var visible = await EnsureEditTargetsVisibleAsync(call.Layer.StorageLayerId, batch, call.Context.CancellationToken)
             .ConfigureAwait(false);
+        var rules = ApplyEditRules(call, visible.Batch, visible.Stored);
+        requestBatch = CalculatedEventBatch(requestBatch, rules.Batch);
         var globalIds = edit.GlobalIds with { ExistingGlobalIds = StoredGlobalIds(visible.Stored, edit.GlobalIds.Field) };
         var owner = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            _featureReader, call.Layer.StorageLayerId, call.Layer.Resource.OwnerEditPolicy, visible.Batch,
+            _featureReader, call.Layer.StorageLayerId, call.Layer.Resource.OwnerEditPolicy, rules.Batch,
             ServiceDataEditorAuthorization.ResolveEditPrincipal(call.Context.GetHttpContext()), call.Context.CancellationToken)
             .ConfigureAwait(false);
         if (!owner.IsAllowed)
@@ -81,9 +85,12 @@ internal sealed partial class HonuaFeatureService
             throw new RpcException(new Status(StatusCode.PermissionDenied, owner.DenialReason ?? "Edit not permitted."));
         }
         // Change events carry the stamped tracking values, as GeoServices events do.
+        var stamped = GrpcEditorTracking.Stamp(call.Layer.Resource, owner.Batch, stamp);
+        var gate = await CheckEditGateAsync(call, rules with { Batch = stamped }, visible.Stored).ConfigureAwait(false);
         return edit with
         {
-            Batch = GrpcEditorTracking.Stamp(call.Layer.Resource, owner.Batch, stamp),
+            Batch = stamped,
+            Gate = gate,
             GlobalIds = globalIds,
             RequestBatch = GrpcEditorTracking.Stamp(call.Layer.Resource, requestBatch, stamp),
         };

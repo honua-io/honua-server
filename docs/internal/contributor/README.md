@@ -1,12 +1,12 @@
 # Contributor Documentation
 
-This section is for people **building or extending** Honua (core contributors, agents, and external devs).
+This section is for Honua Geo developers and their agents. Honua Server does not accept outside code contributions; see [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 
 ## Getting Started
 
 - **Agent Guidelines** — see `AGENTS.md` in the repository root
 - [Development Setup](development/getting-started.md) — prerequisites, installation, and first run
-- [Contributing Guide](development/contributing.md) — code style, architecture rules, PR process
+- [Development guide](development/contributing.md) — code style, architecture rules, PR process
 - [Local Helm Testing](development/k3d-helm.md) — handoff to the `honua-helm` repository
 
 ## Architecture

@@ -37,10 +37,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit tests for the shared <see cref="GeoprocessingJobService"/>
-/// that backs both gRPC and REST adapters.
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed partial class GeoprocessingJobServiceTests
 {
@@ -334,10 +330,6 @@ public sealed partial class GeoprocessingJobServiceTests
         await other.Should().ThrowAsync<GeoprocessingIdempotencyConflictException>();
     }
 
-    /// <summary>
-    /// Audit as written before the durable owner actor was recorded: <c>RequestedBy</c> holds the
-    /// raw subject or API-key id and the snapshot carries no <c>OwnerActorId</c>.
-    /// </summary>
     private static OperationAuditInfo CreatePriorFormatAudit(string requestedBy, JobSecurityClaim identityClaim)
         => new()
         {

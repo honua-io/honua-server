@@ -420,8 +420,8 @@ internal static class WorkflowPackageEndpoints
             return BadRequest(context, ex.Message);
         }
         // A publication target whose durable store was never composed is refused with the
-        // capability-unavailable receipt (honua-release#202) rather than a bare 503, so a terminal
-        // agent can branch on `code`/`missingDependency` instead of parsing prose (#3585).
+        // capability-unavailable receipt rather than a bare 503, so a terminal
+        // agent can branch on `code`/`missingDependency` instead of parsing prose.
         catch (WorkflowPublicationDependencyUnavailableException)
         {
             return WorkflowPublicationUnavailable(context);

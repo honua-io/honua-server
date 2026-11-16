@@ -9,11 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Admin;
 
-/// <summary>
-/// Regression tests for <see cref="PostgreSqlTableDiscoveryService"/> focusing
-/// on interoperability between the public <c>DbConnection</c> overload and the
-/// gated provider wrapper (<c>SemaphoreReleasingConnection</c>).
-/// </summary>
 [Collection("Database")]
 public sealed class PostgreSqlTableDiscoveryServiceTests
 {

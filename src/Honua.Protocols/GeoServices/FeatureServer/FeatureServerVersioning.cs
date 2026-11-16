@@ -79,7 +79,7 @@ internal static class FeatureServerVersioning
         }
 
         // A bare name prefers the caller's own branch. Qualified names, including ones whose
-        // branch name contains dots, are matched as the full owner.name identity (#6140).
+        // branch name contains dots, are matched as the full owner.name identity.
         var callerOwner = context.User?.Identity?.Name;
         var resolved = await versionManager.ResolveAsync(gdbVersion, callerOwner, cancellationToken).ConfigureAwait(false);
         if (resolved is not { } resolvedVersion)

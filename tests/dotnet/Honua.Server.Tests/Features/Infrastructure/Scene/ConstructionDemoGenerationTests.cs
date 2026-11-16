@@ -16,13 +16,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// End-to-end demo coverage for the NVIDIA construction fixture (#899)
-/// against the v1 generation pipeline (#842). Locks the determinism,
-/// feature-id traceability, attribute round-trip, bounding-region, and
-/// flat-Z=0 warning behavior that the demo client (CesiumJS plus identify)
-/// relies on. Hermetic — uses in-memory stubs, no Postgres or HTTP host.
-/// </summary>
 public sealed class ConstructionDemoGenerationTests : IDisposable
 {
     private readonly string _outputRoot;

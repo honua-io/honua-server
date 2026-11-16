@@ -45,7 +45,7 @@ internal static class GeometryServiceEndpoints
             .WithName("GeometryServiceBufferGet")
             .WithTags("GeometryService");
 
-        // PUBLIC by design (#1144): GeoServices geometry helpers are stateless
+        // PUBLIC by design: GeoServices geometry helpers are stateless
         // mathematical operations on inline coordinates with no data
         // mutation. POSTs mirror the GET form (used when payload exceeds URL
         // limits). Marked AllowAnonymous so the audit guard records the

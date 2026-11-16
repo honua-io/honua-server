@@ -24,17 +24,18 @@ internal sealed partial class HonuaFeatureService
                 "The transaction provider does not support durable service edit receipts."));
         }
         var results = await ApplyServiceLayersAsync(execution, transaction).ConfigureAwait(false);
-        var rolledBack = call.Request.RollbackOnFailure && results.Any(result => result.HasErrors);
+        var reported = results.Select((result, index) => execution.Edits[index].Gate!.Merge(result)).ToArray();
+        var rolledBack = call.Request.RollbackOnFailure && reported.Any(result => result.HasErrors);
         if (rolledBack)
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             for (var index = 0; index < results.Length; index++)
             {
-                var result = results[index];
-                results[index] = FeatureEditResult.Rollback(result.CreateResults, result.UpdateResults, result.DeleteResults);
+                var result = reported[index];
+                reported[index] = FeatureEditResult.Rollback(result.CreateResults, result.UpdateResults, result.DeleteResults);
             }
         }
-        var layerResults = new ServiceEditResults(results,
+        var layerResults = new ServiceEditResults(reported,
             rolledBack ? ServiceEditOutcome.RolledBack : ServiceEditOutcome.Committed);
         var response = BuildServiceEditResponse(execution.Edits, layerResults);
         var outcome = await CommitServiceEditsAsync(transaction, execution, response).ConfigureAwait(false);
@@ -45,7 +46,15 @@ internal sealed partial class HonuaFeatureService
         execution.Keyed?.Complete(response, execution.Fingerprint);
         if (!rolledBack)
         {
-            await PublishServiceChangesAsync(execution, results).ConfigureAwait(false);
+            try
+            {
+                await PublishServiceChangesAsync(execution, reported).ConfigureAwait(false);
+            }
+            finally
+            {
+                await Task.WhenAll(execution.Edits.Select((edit, index) => edit.Gate!.RunAfterAsync(results[index])))
+                    .ConfigureAwait(false);
+            }
         }
         return response;
     }
@@ -61,7 +70,7 @@ internal sealed partial class HonuaFeatureService
             var outbox = await ResolveServiceOutboxAsync(edit).ConfigureAwait(false);
             using var scope = FeatureMutationOutboxScope.BeginIfNotNull(outbox);
             results[index] = await transaction.ApplyEditsAsync(edit.Call.Layer.StorageLayerId,
-                edit.Batch, call.Context.CancellationToken).ConfigureAwait(false);
+                edit.Gate!.Written, call.Context.CancellationToken).ConfigureAwait(false);
         }
         return results;
     }
@@ -95,7 +104,7 @@ internal sealed partial class HonuaFeatureService
             edit.Call.Request.LayerId, HonuaTelemetry.Protocols.Grpc,
             serviceId: edit.Call.Request.ServiceId, serviceProtocol: GrpcProtocolName,
             layerSrid: edit.Call.Layer.SpatialReference.ToSrid(),
-            perOperationGeometryChanged: BuildPerOperationGeometryChanged(edit.RequestBatch),
+            perOperationGeometryChanged: BuildPerOperationGeometryChanged(edit.Gate!.Without(edit.RequestBatch)),
             cancellationToken: edit.Call.Context.CancellationToken);
 
     private async Task<FeatureWriterTransactionCommitOutcome> CommitServiceEditsAsync(

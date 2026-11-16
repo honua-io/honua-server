@@ -250,7 +250,7 @@ internal static partial class AdminApiKeyEndpoints
         // Resource grants must name a target. Reject a bare "write:"/"read:" (or
         // "{prefix}{service}/" / "{prefix}/{layer}") so an operator cannot mint a key
         // that authenticates but matches no resource. Only read grants accept the
-        // "read:*" and "read:{service}/*" wildcards; write grants never do (#1637).
+        // "read:*" and "read:{service}/*" wildcards; write grants never do.
         if (request.Permissions.Any(static permission => LayerScopedWriteKey.IsMalformedResourceGrant(permission)))
         {
             validationMessage =

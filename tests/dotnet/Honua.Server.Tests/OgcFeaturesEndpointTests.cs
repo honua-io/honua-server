@@ -14,9 +14,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for OGC API Features Core endpoints (landing page and conformance)
-/// </summary>
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Collection("Database.CoreEndpoints")]
 public sealed class OgcFeaturesEndpointTests : IAsyncLifetime

@@ -20,18 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Tool-contract tests for the Studio draft lifecycle and composition MCP
-/// tools (honua-server#3002): input-schema shape, generation-conflict typed
-/// errors, family-gating and not-found typed errors, the structural
-/// publish-tool-absence guarantee (REQ-003/REQ-009), read-only honesty for
-/// validate/preview (PR #3016 review), and the per-request service
-/// resolution that keeps the singleton tool descriptors from capturing the
-/// scoped <see cref="IStudioPackageLifecycleService"/>/<see cref="IStudioPackageValidator"/>
-/// as constructor dependencies. Uses mocked collaborators injected via
-/// <c>httpContext.RequestServices</c>; <see cref="StudioMcpToolDelegationTests"/>
-/// covers the real <c>InMemoryStudioPackageStore</c>-backed happy path.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioMcpToolContractTests
 {

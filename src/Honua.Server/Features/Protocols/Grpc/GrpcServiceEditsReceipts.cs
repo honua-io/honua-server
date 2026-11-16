@@ -30,6 +30,9 @@ internal sealed class GrpcServiceEditsReceipts(IFeatureEditIdempotencyReceipts? 
     internal static byte[] EncodeReceipt(Proto.ApplyServiceEditsResponse response, string fingerprint)
         => [0x02, .. Convert.FromHexString(fingerprint), .. response.ToByteArray()];
 
+    protected override byte[] EncodeLocal(Proto.ApplyServiceEditsResponse response, string? fingerprint)
+        => EncodeReceipt(response, fingerprint ?? throw new ArgumentNullException(nameof(fingerprint)));
+
     protected override DurableEditReceipt DecodeDurable(ReadOnlyMemory<byte> receipt)
     {
         if (receipt.Length < FingerprintLength + 1 || receipt.Span[0] != 0x02)

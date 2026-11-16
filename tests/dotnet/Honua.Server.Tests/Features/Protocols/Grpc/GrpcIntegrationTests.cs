@@ -18,37 +18,16 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// Integration tests for gRPC FeatureService exercised through the full ASP.NET Core pipeline
-/// with a real PostgreSQL database via <see cref="WebAppFixture"/>.
-/// Uses gRPC-Web transport (HTTP/1.1) since the in-memory test server does not support HTTP/2.
-/// </summary>
-/// <remarks>
-/// Every assertion here is measured against the literal <c>tests/seed/server.yaml</c>
-/// denominator for layer <see cref="WebAppFixture.TestLayerId"/>: five rows, objectids
-/// 1-5, three of category <c>test</c> and two of category <c>sample</c>, with objectid 3
-/// deliberately carrying a null geometry. A response that is merely well-formed — a
-/// non-negative count, a non-empty page list, an echoed write — must not pass; each test
-/// names the exact rows, ids and values the server has to produce (#4411).
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
 public sealed partial class GrpcIntegrationTests : IAsyncLifetime
 {
-    /// <summary>Rows the seed publishes on the test layer.</summary>
     private const long SeededFeatureCount = 5;
 
-    /// <summary>Rows the seed publishes with <c>category = 'test'</c>.</summary>
     private const long SeededTestCategoryCount = 3;
 
-    /// <summary>Rows the seed publishes with <c>category = 'sample'</c>.</summary>
     private const long SeededSampleCategoryCount = 2;
 
-    /// <summary>
-    /// Streaming page size for this fixture. Chosen so the five seeded rows span three
-    /// pages (2 + 2 + 1); with the 1000-row default every read is a single page and the
-    /// paging contract is never exercised.
-    /// </summary>
     private const int StreamBatchSize = 2;
 
     private const string AddedFeatureName = "gRPC integration test";

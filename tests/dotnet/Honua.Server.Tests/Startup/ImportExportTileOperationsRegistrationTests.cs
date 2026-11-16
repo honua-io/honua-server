@@ -72,12 +72,6 @@ public sealed class ImportExportTileOperationsRegistrationTests
         ValidateContainer(services);
     }
 
-    /// <summary>
-    /// Composes the tile-operations module over production service lifetimes: Postgres registers
-    /// <see cref="IMetadataV2GraphProvider"/> as <em>scoped</em>
-    /// (<c>src/Honua.Db/Postgres/ServiceCollectionExtensions.cs</c>), unlike the singleton the
-    /// file-backed <c>AddFileMetadataV2Graph</c> dev/test path registers.
-    /// </summary>
     private static ServiceCollection BuildProductionShapedServices(string substrate)
     {
         var configuration = new ConfigurationBuilder().Build();
@@ -108,12 +102,6 @@ public sealed class ImportExportTileOperationsRegistrationTests
         return services;
     }
 
-    /// <summary>
-    /// Builds the container the way a Development-environment host does. This must stay
-    /// <c>ValidateOnBuild</c>-based: a lazy resolve only covers the services a test happens to ask
-    /// for, while <c>ValidateOnBuild</c> walks every descriptor in the module and turns a
-    /// three-minute e2e boot timeout into a fast unit failure.
-    /// </summary>
     private static void ValidateContainer(IServiceCollection services)
     {
         var build = () =>

@@ -5,12 +5,6 @@ using System.Diagnostics;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Shared read and parent-commit comparison for source-text ratchets.
-/// A baseline may shrink. It may not gain lines against the checked-out base.
-/// The first commit that adds the file is the seed: the parent does not have
-/// it yet, so the growth check stays quiet until the file is on trunk.
-/// </summary>
 internal static class SourceTextRatchet
 {
     internal static string AbsolutePath(string repositoryRoot, string relativePath)

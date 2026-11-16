@@ -25,13 +25,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Focused coverage for the client-agnostic discovery tools (#1949):
-/// <c>honua_resolve_entity</c> (NL/text → ranked catalog references) and
-/// <c>honua_list_capabilities</c> (self-describing surface manifest). They run
-/// through the JSON-RPC dispatcher with a substituted Metadata v2 catalog, so they
-/// validate the MCP adapter behavior without a database.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpDiscoveryToolTests
 {
@@ -301,7 +294,6 @@ public sealed class McpDiscoveryToolTests
         },
     };
 
-    /// <summary>A runtime tool source yielding fixed tools.</summary>
     private sealed class FixedToolSource(params IMcpTool[] tools) : IMcpToolSource
     {
         public ValueTask<IReadOnlyList<IMcpTool>> GetToolsAsync(CancellationToken cancellationToken) =>

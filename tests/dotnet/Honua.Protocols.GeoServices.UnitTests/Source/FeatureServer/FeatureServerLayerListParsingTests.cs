@@ -14,13 +14,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// The GeoServices <c>layers</c> parameter (createReplica / extractChanges) is a JSON
-/// array per the Esri spec. The ArcGIS API for Python
-/// (<c>FeatureLayerCollection.extract_changes</c> / <c>create_replica</c>) sends the
-/// bracketed JSON-array form (<c>[0]</c> / <c>[0,1]</c>), while the comma-separated
-/// form (<c>0</c> / <c>0,1</c>) is also widely used. Both forms must parse identically.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureServerLayerListParsingTests
 {

@@ -255,10 +255,10 @@ public static class OgcStylesEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
         }
 
-        // MapLibre sources/sprite/glyphs must be absolute (TileJSON 3.0.0 §3.2, #5442);
+        // MapLibre sources/sprite/glyphs must be absolute (TileJSON 3.0.0 §3.2);
         // the derived SLD and drawingInfo encodings carry no endpoint URLs.
         var content = stylesheet.Encoding == OgcStyleEncoding.MapboxStyle
-            ? StyleEndpointUrlResolver.Resolve(stylesheet.Content, BaseUrlResolver.GetBaseUrl(context), context.Request)
+            ? StyleEndpointUrlResolver.Resolve(stylesheet.Content, StyleUrlContext.From(context))
             : stylesheet.Content;
 
         return Results.Content(content, stylesheet.MediaType, Encoding.UTF8);

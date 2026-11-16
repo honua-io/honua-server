@@ -194,7 +194,7 @@ internal static partial class ODataComputeService
                     break;
                 // Intentional exact-zero check: an epsilon comparison would treat a
                 // legitimate small scientific-notation divisor (e.g. 1e-10) as zero and
-                // silently drop the $compute expression's actual division/modulo result (#2828).
+                // silently drop the $compute expression's actual division/modulo result.
                 case ODataComputeOperator.Divide when !right.Equals(0d):
                     result = left / right;
                     break;

@@ -12,25 +12,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Regression tests for three S1 OAuth2 race conditions found in the bughunt-2 audit:
-/// <list type="bullet">
-/// <item><description>
-/// BH2-022 — TOCTOU: <c>ConsumeAuthorizationCodeAsync</c> is non-atomic; two concurrent
-/// requests with the same code can both acquire the record and obtain access tokens.
-/// </description></item>
-/// <item><description>
-/// BH2-023 — Refresh-token rotation race: <c>ExchangeRefreshTokenAsync</c> reads the
-/// refresh-token record with <c>GetRefreshTokenAsync</c> and removes it separately; two
-/// concurrent callers can both pass the read before either removes, both obtaining tokens.
-/// </description></item>
-/// <item><description>
-/// BH2-024 — Refresh token permanently destroyed: <c>RemoveRefreshTokenAsync</c> was
-/// called unconditionally before <c>IssueAsync</c>; a transient <c>IssueAsync</c> failure
-/// permanently deletes the refresh token and forces interactive re-authentication.
-/// </description></item>
-/// </list>
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -38,12 +19,6 @@ public sealed class PortalOAuthRaceConditionTests
 {
     // ─── BH2-022: authorization code TOCTOU ─────────────────────────────────────
 
-    /// <summary>
-    /// Two concurrent requests presenting the same authorization code must result in
-    /// exactly one successful acquisition.  Before the fix both callers completed
-    /// <c>GetAsync</c> before either called <c>RemoveAsync</c>, so both obtained a valid
-    /// record and could independently mint an access token (RFC 6749 §4.1.2 violation).
-    /// </summary>
     [UnitTest]
     public async Task ConsumeAuthorizationCodeAsync_ConcurrentConsumers_OnlyOneAcquires_Bh2022()
     {
@@ -69,10 +44,6 @@ public sealed class PortalOAuthRaceConditionTests
             "caller must acquire the record (BH2-022)");
     }
 
-    /// <summary>
-    /// After a successful consume the code must be irrevocably gone.  Retrying the
-    /// same code later must return <see langword="null"/>.
-    /// </summary>
     [UnitTest]
     public async Task ConsumeAuthorizationCodeAsync_SecondCallAfterSuccess_ReturnsNull_Bh2022()
     {
@@ -96,12 +67,6 @@ public sealed class PortalOAuthRaceConditionTests
 
     // ─── BH2-023: refresh-token rotation race ───────────────────────────────────
 
-    /// <summary>
-    /// Two concurrent refresh-token exchanges (rotation enabled) must result in exactly
-    /// one successful token acquisition.  Before the fix both callers completed
-    /// <c>GetRefreshTokenAsync</c> before either called <c>RemoveRefreshTokenAsync</c>,
-    /// so both minted independent access tokens from the same credential.
-    /// </summary>
     [UnitTest]
     public async Task ConsumeRefreshTokenAsync_ConcurrentConsumers_OnlyOneAcquires_Bh2023()
     {
@@ -125,10 +90,6 @@ public sealed class PortalOAuthRaceConditionTests
             "the second must receive null and return invalid_grant (BH2-023)");
     }
 
-    /// <summary>
-    /// When a concurrent caller steals the consume slot the service must respond with
-    /// <c>invalid_grant</c> rather than silently issuing a duplicate token or throwing.
-    /// </summary>
     [UnitTest]
     public async Task ExchangeRefreshTokenAsync_ConcurrentSecondConsumer_ReturnsInvalidGrant_Bh2023()
     {
@@ -164,12 +125,6 @@ public sealed class PortalOAuthRaceConditionTests
 
     // ─── BH2-024: refresh token destroyed when IssueAsync throws ────────────────
 
-    /// <summary>
-    /// When <see cref="IPortalTokenIssuer.IssueAsync"/> throws after the refresh token
-    /// has been atomically consumed, the store must restore the original token so the
-    /// client can retry the same request.  Before the fix the token was irrecoverably
-    /// deleted and every retry returned <c>invalid_grant</c>, forcing re-authentication.
-    /// </summary>
     [UnitTest]
     public async Task ExchangeRefreshTokenAsync_WhenIssueAsyncThrows_RefreshTokenIsRestored_Bh2024()
     {
@@ -212,10 +167,6 @@ public sealed class PortalOAuthRaceConditionTests
         restored.ClientId.Should().Be("arcgispro");
     }
 
-    /// <summary>
-    /// After restoration the client must be able to exchange the original refresh token
-    /// successfully with a healthy issuer — the retry path is fully functional.
-    /// </summary>
     [UnitTest]
     public async Task ExchangeRefreshTokenAsync_RetryAfterRestoration_Succeeds_Bh2024()
     {
@@ -335,9 +286,6 @@ public sealed class PortalOAuthRaceConditionTests
             Roles = ["org_user"],
         };
 
-    /// <summary>
-    /// No-op HTTP client factory used when federation is disabled in tests.
-    /// </summary>
     private sealed class NullHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();

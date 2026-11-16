@@ -519,7 +519,7 @@ internal sealed partial class OgcFilterProcessor
         // A 6-value bbox (minx,miny,minz,maxx,maxy,maxz) is spec-legal per OGC API Features
         // Part 1. This 2D feature surface cannot filter on the vertical (minZ/maxZ) component,
         // so use the horizontal coordinates and ignore Z rather than rejecting the request —
-        // 3D-aware OGC/ArcGIS clients send 6-element boxes (#1987). The horizontal ordinates
+        // 3D-aware OGC/ArcGIS clients send 6-element boxes. The horizontal ordinates
         // live at indices 0,1,3,4 in a 6-value box and 0,1,2,3 in a 4-value box.
         var maxLowIndex = partCount == 6 ? 3 : 2; // index of the max-X (or max-lat in NE order)
         var maxHighIndex = partCount == 6 ? 4 : 3; // index of the max-Y (or max-lon in NE order)

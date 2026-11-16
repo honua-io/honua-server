@@ -15,10 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Client-shaped ImageServer coverage over real HTTP routes with a deterministic
-/// raster store. This fills the gap between handler tests and external clients.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerClientCompatibilityTests

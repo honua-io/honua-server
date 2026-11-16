@@ -13,14 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Regression for honua-server#1238: querying a JSONB-attribute-backed layer (mobile
-/// offline demo layer 68910) via OGC API Features <c>/items</c> must succeed only because
-/// the storage binding declares <c>attributesColumn=attributes</c>. Without that accessor
-/// the storage-mapped reader projects bare columns against the shared <c>features</c> table
-/// (which has none) and Postgres raises 42703 — surfacing as an OGC 500. This test
-/// reproduces the broken drift, then proves the seed/bridge fix resolves it.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]
@@ -80,14 +72,6 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
             "the v1 seed inserts three deterministic offline-site features");
     }
 
-    /// <summary>
-    /// Regression for honua-server#1238 follow-up (post-merge Codex P1): layers 68910 (3 point
-    /// features) and 68920 (2 polygon features) both live in the shared <c>features</c> table,
-    /// discriminated by <c>layer_id</c>. A query for one layer must return only that layer's
-    /// rows — never the other layer's features stored in the same table. We assert isolation via
-    /// both the OGC API Features <c>/items</c> and the GeoServices FeatureServer <c>/query</c>
-    /// surfaces, since both adapt through the storage-mapped reader.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/68910/items")]
     public async Task GetItems_SharedFeaturesTable_IsolatesByLayerDiscriminator()

@@ -12,21 +12,6 @@ using Honua.TestKit.Formats;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Decodes the vector tiles the MVT endpoint actually returns and asserts their contents
-/// (honua-server#4421). Nothing in the repository decoded an MVT before
-/// <see cref="MvtTileDecoder"/>: every existing assertion checked a content-type header, or
-/// <c>NotBeEmpty()</c>, and most were wrapped in <c>BeOneOf(OK, NoContent)</c> plus an <c>if</c>
-/// that made them vacuous on the empty-tile failure mode they nominally guarded. A tile pipeline
-/// that clipped wrongly, ignored <c>where=</c>, dropped features at low zoom, or emitted an
-/// undecodable payload passed all of them.
-/// </summary>
-/// <remarks>
-/// Every expected tile coordinate below is computed from the Web Mercator definition and the
-/// tile-matrix arithmetic in <see cref="TileGeometry"/> — not read back out of a previous run — so
-/// these are oracles, not snapshots. The tolerance is +/-2 tile units on a 4096-unit tile
-/// (0.05%), which absorbs the producer's integer rounding without admitting a wrong coordinate.
-/// </remarks>
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]
 [Collection("Database")]
@@ -35,7 +20,6 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
     private const int LayerId = 0;
     private const int Extent = 4096;
 
-    /// <summary>The default <c>TileOptions.TileBuffer</c>, in tile units.</summary>
     private const int Buffer = 256;
 
     private readonly WebAppFixture _fixture = new();
@@ -194,10 +178,6 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
             "mvt-dense", "simplification must not disturb attributes");
     }
 
-    /// <summary>
-    /// A second host with <c>TileOptions:SimplifyZoom</c> below every zoom level, so the same tile
-    /// is rendered without <c>ST_SimplifyPreserveTopology</c> and the A/B above isolates it.
-    /// </summary>
     private sealed class UnsimplifiedFixture : IAsyncDisposable
     {
         private readonly WebAppFixture _fixture = new WebAppFixture()
@@ -282,10 +262,6 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
         (await command.ExecuteNonQueryAsync()).Should().Be(1);
     }
 
-    /// <summary>
-    /// The Web Mercator / XYZ tile arithmetic, implemented here independently of the server so the
-    /// expected values are an oracle rather than a snapshot of the producer's own output.
-    /// </summary>
     internal static class TileGeometry
     {
         private const double EarthRadius = 6378137d;
@@ -323,23 +299,6 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
             return ((mercatorX - originX) / tileSize * extent, (originY - mercatorY) / tileSize * extent);
         }
 
-        /// <summary>
-        /// A dense two-scale zig-zag line running west from the supplied point: every tenth
-        /// vertex makes a coarse ~2.2 km excursion, and the nine vertices between each pair of
-        /// those wobble by ~90 m.
-        /// </summary>
-        /// <remarks>
-        /// Both amplitudes are chosen against the z=8 tile grid, not against ground distance.
-        /// One z=8 tile unit is ~30 m on the ground, and <c>ST_AsMVTGeom</c> snaps the geometry
-        /// to that integer grid and then drops the collinear vertices the snap produces. An
-        /// excursion smaller than a tile unit is therefore erased by the encoder itself, before
-        /// <c>ST_SimplifyPreserveTopology</c> is reached at all, and the A/B in the caller would
-        /// compare two vertices against two. The fine wobble is accordingly several tile units
-        /// wide — visible to the encoder — but well inside the 500 m tolerance, so simplification
-        /// removes it; the coarse excursion is far outside that tolerance and must survive it.
-        /// The whole line stays inside the z=8 tile that contains the supplied point, so nothing
-        /// here is measuring the clip instead of the simplification.
-        /// </remarks>
         public static string DenseZigZagWkt(double lon, double lat, int vertices)
         {
             // ~2.9 tile units of longitude per vertex at z=8, so no two vertices snap together.

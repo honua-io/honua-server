@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IO.Compression;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -56,6 +57,7 @@ internal static class GrpcServiceCollectionExtensions
         services.TryAddSingleton<GrpcExceptionInterceptor>();
         services.TryAddSingleton<GrpcApplyEditsReceipts>(sp => new GrpcApplyEditsReceipts(ResolveEditReceipts(sp)));
         services.TryAddSingleton<GrpcServiceEditsReceipts>(sp => new GrpcServiceEditsReceipts(ResolveEditReceipts(sp)));
+        services.TryAddSingleton<IFeatureEditHooks>(NoOpFeatureEditHooks.Instance);
 #if !HONUA_EXCLUDE_GEOSERVICES
         services.TryAddScoped<SpatialReferenceResolver>();
 #endif

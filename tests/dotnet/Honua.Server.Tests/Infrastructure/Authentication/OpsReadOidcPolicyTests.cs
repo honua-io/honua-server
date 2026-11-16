@@ -11,10 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// With OIDC enabled, OpsRead stays an ops:read policy. It must not be rebuilt as an
-/// admin-role policy.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]

@@ -19,7 +19,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
-/// <summary>Guards live service audiences across canonical read paths and credential/tenant boundaries.</summary>
 public sealed class PortalResourceReadAuthorizerTests
 {
     [UnitTest]

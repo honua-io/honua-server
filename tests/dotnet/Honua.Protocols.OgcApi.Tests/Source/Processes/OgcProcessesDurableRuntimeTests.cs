@@ -17,9 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Verifies first-slice OGC API Processes execution against the durable runtime.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesDurableRuntimeTests
@@ -40,14 +37,14 @@ public sealed class OgcProcessesDurableRuntimeTests
         // AddGeoprocessing; this test exercises the durable-runtime
         // protocol projection independently of the buffer implementation,
         // so swap in a deterministic fixture executor instead.
-        var fixture = NoRedisJobHost.Create()
+        var fixture = PostgresJobHost.Create()
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IJobExecutor>();
                 services.AddSingleton<IJobExecutor, SuccessfulOgcVectorProcessExecutor>();
             });
 
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();

@@ -128,7 +128,7 @@ internal static class McpAuthorizationHelper
 
         // Bind to what the validated credential authorizes, not to the credential bytes:
         // an access token refreshed with identical authority must keep its session, while
-        // any change of roles, groups, permissions or other grants must not (#4909).
+        // any change of roles, groups, permissions or other grants must not.
         return CanonicalSecurityActor.ResolveAuthorityFingerprint(context.User);
     }
 

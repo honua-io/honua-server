@@ -11,12 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Verifies the WS4 observability-spine additions (#2463): the GIS-aware serving-plane
-/// request-duration histogram, the GP-plane execution queue-depth gauge, and the curated
-/// Grafana dashboard bundle. Metric-emission tests subscribe through the shared
-/// <c>Honua</c> meter so they prove the instruments reach the existing Prometheus/OTLP exporters.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("HonuaTelemetry")]
 public sealed class ObservabilitySpineTests

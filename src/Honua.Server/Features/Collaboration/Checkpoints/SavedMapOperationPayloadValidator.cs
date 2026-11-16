@@ -127,7 +127,7 @@ internal static class SavedMapOperationPayloadValidator
             // collections, so a payload such as {"layers":[null]} passed this check when the
             // entry was merely filtered out, and the layer/widget invariant loops below then
             // dereferenced layer.Id — an unhandled NullReferenceException and a 500 for what is
-            // simply a malformed append that deserves a 400 (honua-server#2999 review).
+            // simply a malformed append that deserves a 400.
             if (item.ValueKind != JsonValueKind.Object)
             {
                 error = $"{subject} must be an object.";
@@ -156,7 +156,7 @@ internal static class SavedMapOperationPayloadValidator
         // {"layres":[...]} deserializes to an EMPTY composition, passes every check below, and
         // the applier then replaces the document with nothing — a typo silently clears every
         // layer and widget at checkpoint time. Enumerate the payload and refuse anything the
-        // projection does not model (honua-server#2999 review).
+        // projection does not model.
         if (!TryRejectUnmappedMembers(payload, ReplacementMembers, "The document-replace payload", out error)
             || !TryRejectUnmappedArrayMembers(payload, "layers", LayerMembers, "A layer in the document-replace payload", out error)
             || !TryRejectUnmappedArrayMembers(payload, "widgets", WidgetMembers, "A widget in the document-replace payload", out error)
@@ -180,7 +180,7 @@ internal static class SavedMapOperationPayloadValidator
         }
         // The rejection reason is stable and payload-shaped on purpose: JsonException.Message
         // carries CLR type names, JSON paths and byte offsets, and this string is returned
-        // verbatim in the append endpoint's 400 (honua-server#2999 review).
+        // verbatim in the append endpoint's 400.
         catch (JsonException)
         {
             error = "The document-replace payload is not a valid Studio composition body; " +
@@ -220,7 +220,7 @@ internal static class SavedMapOperationPayloadValidator
 
         // Widgets carry the same invariants as layers and the same consequence: an App
         // composition is indexed by widget id, so a duplicate or blank one is a wedge waiting for
-        // the next widget operation, not a cosmetic issue (honua-server#2999 review).
+        // the next widget operation, not a cosmetic issue.
         var seenWidgets = new HashSet<string>(StringComparer.Ordinal);
         foreach (var widget in body.Widgets ?? [])
         {
@@ -238,8 +238,7 @@ internal static class SavedMapOperationPayloadValidator
 
             // C# `required` only demands the JSON member be PRESENT; it does not make the value
             // non-null or non-blank, so {"widgets":[{"id":"legend","kind":null}]} bound cleanly
-            // and persisted a widget no composition client can interpret
-            // (honua-server#2999 review).
+            // and persisted a widget no composition client can interpret.
             if (string.IsNullOrWhiteSpace(widget.Kind))
             {
                 error = $"Widget '{widget.Id}' in the document-replace payload requires a non-empty 'kind'.";

@@ -29,11 +29,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// API-surface integration tests for the console approval REST API and the shared
-/// operation gateway (#1693/#1694/#1695). The guardrail ladder is stubbed so each
-/// tier can be exercised deterministically without an Enterprise license.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]

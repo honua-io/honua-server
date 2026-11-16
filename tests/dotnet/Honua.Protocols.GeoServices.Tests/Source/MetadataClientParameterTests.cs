@@ -24,10 +24,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 
-/// <summary>
-/// Verifies the GeoServices metadata endpoints accept the default parameters
-/// ArcGIS Pro / arcpy append when resolving a FeatureServer by URL.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class MetadataClientParameterTests : IClassFixture<WebAppFixture>

@@ -21,7 +21,7 @@ internal static class GdalRasterDimensionGuard
         ArgumentNullException.ThrowIfNull(options);
         error = "";
 
-        // Positive raster-format allowlist (#2784). A payload whose magic identifies a
+        // Positive raster-format allowlist. A payload whose magic identifies a
         // KNOWN raster container OUTSIDE the configured allowlist (e.g. JPEG2000 / GIF /
         // BMP / NITF / HFA) would sail past the dimension read below — the guard only
         // parses TIFF/PNG/JPEG headers — and then be opened UNBOUNDED by GDAL, a live

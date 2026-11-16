@@ -24,12 +24,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// Tests for <see cref="OgcMapsTileSetHandler"/> after the Metadata v2 cutover
-/// (#1035 cutover 86/N). The handler now resolves the V2 resource by the
-/// storage-layer-id integer (via <see cref="MetadataV2GraphIndex.ResourcesByStorageLayerId"/>)
-/// and reads protocol membership / access policy from the matching V2 service.
-/// </summary>
 [Protocol(TestProtocols.OgcApiMaps)]
 public class OgcMapsTileSetHandlerTests
 {

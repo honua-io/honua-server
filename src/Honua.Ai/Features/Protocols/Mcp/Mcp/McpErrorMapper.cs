@@ -103,7 +103,7 @@ internal static class McpErrorMapper
                 Code = Codes.FailedPrecondition,
                 ApprovalRequired = true,
                 PolicyRef = approvalEx.PolicyRef,
-                // When the gated plan was persisted as a proposal (ADR-0064, #2814),
+                // When the gated plan was persisted as a proposal (ADR-0064),
                 // surface its id and the honua://proposals/{id} resume resource so an
                 // agent can poll until a human resolves it instead of dead-ending.
                 ProposalId = approvalEx.ProposalId,
@@ -144,8 +144,8 @@ internal static class McpErrorMapper
             }
         },
 
-        // honua-release#202: when the refusal names a dependency the install never composed
-        // (Redis is optional; PostGIS is not), carry the machine-readable receipt and mark it
+        // When the refusal names a dependency the install never composed
+        // (for example the PostgreSQL system database), carry the machine-readable receipt and mark it
         // NOT retryable — retrying cannot help until an operator changes the deployment.
         CapabilityUnavailableException capabilityEx => new McpJsonRpcError
         {

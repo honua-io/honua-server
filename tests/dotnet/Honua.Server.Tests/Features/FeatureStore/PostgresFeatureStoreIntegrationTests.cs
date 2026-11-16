@@ -27,9 +27,6 @@ using TestMetadataV2GraphProvider = Honua.TestKit.Infrastructure.TestMetadataV2G
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Comprehensive integration tests for PostgreSQL feature store operations
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime

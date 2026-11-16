@@ -10,10 +10,8 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
-/// <summary>Checks routing metadata against the supported canonical and REST utility contracts.</summary>
 public sealed class NAServerMetadataTests
 {
-    /// <summary>Esri's published FindRoutes parameter names, which arcpy.nax matches on.</summary>
     private static readonly string[] GeoServicesFindRoutesParameters =
     [
         "Stops", "Measurement_Units", "Travel_Mode",

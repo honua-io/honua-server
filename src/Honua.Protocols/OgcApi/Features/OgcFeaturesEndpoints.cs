@@ -26,14 +26,11 @@ internal static partial class OgcFeaturesEndpoints
         return endpoints;
     }
 
-    // Note: The implementation methods have been moved to specialized classes:
+    // Note: The implementation methods live in specialized classes:
     // - CoreEndpoints.cs - Landing page, conformance, OpenAPI specification
     // - CollectionsEndpoints.cs - Collections list, collection metadata, queryables
     // - FeaturesEndpoints.cs - Features CRUD operations
     // - OgcFeaturesUtilities.cs - Shared utilities and constants
-
-    // The large utility methods and handlers that were previously in this file
-    // are now organized into these focused files for better maintainability.
 
     // The logging methods and other supporting functionality remain here
     // for backwards compatibility with existing code.

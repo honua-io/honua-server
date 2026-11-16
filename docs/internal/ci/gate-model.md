@@ -4,6 +4,17 @@ Every source path has at least one shard owner inside the PR time budget. `test-
 
 #7678 split the nine over-budget shards that were still the only owners of 61 source paths (Admin Catalog and Configuration, Admin Network and Jobs, Admin Platform and Connections, OData Mutations and Batch, Miscellaneous 1 and 2, Cloud and Streaming Import, SensorThings, gRPC Protocol and Scene) into 28 children from the TRX class spans of full run `43580101834`. Classes longer than a child's 5.5-minute share are cut at method boundaries, and classes with no shard time in that run (Tier Fast or Slow) stay in the last child, which also owns future tests. Child ranks are estimates in `full-run-capacity-contracts.json` until the next passing full run measures them. Miscellaneous children continue that family's numbering (3 to 8).
 
+Scheduled full run `43819793722` measured four of those children above ten
+minutes including setup: Miscellaneous 3 (841 seconds), Miscellaneous 4 (603),
+gRPC 1 (646), and gRPC 2 (810). They are replaced by Miscellaneous 9–13 and
+gRPC 3–7, bringing the matrix to 225 jobs. The cuts balance TRX start/end
+intervals, including per-test lifecycle time that the reported test duration
+omits. Each estimate includes the previous job's non-interval overhead (at
+least four minutes) plus thirty seconds of margin. Estimated job durations are
+8.3–8.7 minutes; a scheduled full run must still confirm timing, images and TRX
+coverage before the issue closes. Each residual child owns future methods;
+projects, source triggers, timeouts and report ownership are conserved.
+
 Server Features Streaming Snapshot and Conformance selects the snapshot and conformance classes. The deleted cursor-durability class is omitted from that shard, its parent and the miscellaneous residual filters.
 
 The latest full-run capacity audit partitions eleven additional parents into 26
@@ -94,6 +105,8 @@ select all siblings. Dispatch ranks remain inherited pending measured child runs
 `test-live-output-capacity-partitions.py` conserves the original methods exactly
 once, keeps each class intact for future methods, and rejects lost, duplicated,
 foreign, budget-expanded or path-narrowed selections.
+GeoJSON preview validation belongs to File and Raster Import 3; the router pins
+its executable owner and selects every import sibling when its test file changes.
 
 
 OData Core is partitioned into `OData Core Endpoints` (the whole
@@ -244,7 +257,7 @@ These workflows are merge-blocking for all PRs to trunk:
 | Workflow | What it validates | Path filter |
 |---|---|---|
 | `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; selected shard consumers run the affected tests that fit the `pr_time_budget` in `.github/ci-shards.json` (shards over 10 measured minutes, or past 45 runner-minutes in total, are deferred to the next trunk run and named in the verdict). Independent Fast/architecture jobs (one per test group, each compiling only its test roots), format, analyzer and CI-router jobs remain required. `required.needs` includes `pr-gate`, `fast-tests`, `format`, `ci-router-validation`, and `affected-shards`. The affected-shard aggregate enforces every selected timing/TRX result before `PR Gate` succeeds. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
-| `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it retains a SHA-bound decision receipt for the read-only `review-first-evidence-ledger.yml`; the ledger reports but cannot promote. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | Drafts skip; every ready PR head requires attestation |
+| `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it reports its decision without retaining an experiment artifact. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | Drafts skip; every ready PR head requires attestation |
 | `repo-hygiene.yml` | **Required context `repo-hygiene / Repository hygiene`.** Reads the root allowlist and exact gate-input exceptions from the trusted base branch; checks only PR-added paths for scratch, backups, run output, dated history, product samples and unexpected roots. The shared checker is pinned by SHA, runs with read-only permissions and has a five-minute timeout. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger.** Full CI runs twice daily at 07:23 and 13:23 UTC (23:23 and 05:23 Pacific standard time) and through manual dispatch. It covers managed builds, protocol profiles, foundation and server shards, native Worker tests, runtime proofs, architecture checks, JavaScript checks and compatibility. `CI Gate` requires the runtime proof result and appears only on full CI runs. | n/a — not PR-triggered |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
@@ -1056,7 +1069,7 @@ not add up to less than the parent applies only while every child of a split is
 still estimated: measured children of the 15 Nov splits ran in 2.5 to 8.6 minutes,
 well under their estimates. Of the 48 unmeasured shards, 44 keep a contract
 estimate: 16 are a still-unmeasured child of an earlier split and 28 are children of the
-nine shards split in #7678, which no full run has executed yet. STAC Protocol 4 (no passing job yet) keeps its parent's
+nine shards split in #7678, before the subsequent full-run timing repair described above. These historical counts predate the six additional children; the repaired children keep estimates until measured. STAC Protocol 4 (no passing job yet) keeps its parent's
 13.6. Three changed their filter after the newest run and so leave the record,
 keeping their previous rank until a run measures the new filter: Server Features
 Streaming Snapshot and Conformance (#7820), and Admin Layer Publishing and Admin
@@ -1101,7 +1114,16 @@ The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Ga
 
 Capability Impact Comparison was retired after being disabled in repository
 settings; its workflow has been removed. Capability Matrix Aggregation and
-OpenAPI Contract Governance retain their generator/contract input filters.
+OpenAPI Contract Governance retain their generator/contract input filters. The
+operation-capability completeness, registry resolution and authored artifact
+checks run in PR Gate's existing architecture job after canonical feature
+catalog regeneration. Capability Matrix Aggregation retains these checks for
+scheduled/manual audits of committed trunk projections. New authored routes
+therefore use the catalog generated from the same head, while missing joins
+and stale authored operation-capability artifacts still fail. No additional
+build, runner or required check is added. Both Server Fast and governance
+jobs already regenerate admin parity exports, including the MCP manifest,
+before the strict Server.Tests projection checks.
 
 GeoArrow and GeoParquet interop run on pull requests only for files whose names
 contain GeoArrow or Parquet (sources, tests, CRS resources, test data), the few
@@ -1331,9 +1353,16 @@ router full-coverage escalation, API failure or a larger bound
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
 before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
-Admitted affected runs use two concurrent server shards. Even matrix indices
-use the `honua-heavy` pool, so a run usually holds one heavy runner and at most
-two; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today.
+Admitted affected runs use two concurrent server shards. All trusted indices
+use the configured `honua-heavy` pool, so a run holds at most two heavy runners;
+side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today. Full server
+matrices retain their 16-job limit. A single pool prevents admitted hosted shards
+waiting for capacity from exhausting that limit while heavy runners remain idle.
+Full run 43709972683 had 13 waiting hosted shards plus three executing shards at
+14:17 UTC on 15 Nov, blocking admission of 58 queued heavy shards. The measured
+heavy runner listen-to-next-job gaps were 579 s, 673 s and 869 s for runners 6, 5
+and 3 respectively. These are before-change observations; live after-change
+measurements remain pending. Fork guards and configured/hosted fallback remain.
 An active PR Gate does not defer or cancel an affected run. With up to ten open
 PRs a PR Gate is almost always active: from 05:52 to 17:02 UTC on 14 Nov 2026 the
 former PR-activity rule admitted 0 of 32 dispatches, leaving trunk with only the
@@ -1620,6 +1649,34 @@ installation-token and compare-and-swap mutation controls.
 
 Image measurement exports stay outside the Docker build context: `.dockerignore` excludes root `artifacts/`, including the OCI archive produced before compiler-evidence export. The three Store Image Size exports therefore share unchanged source inputs instead of recompiling Native AOT when measurement output appears. All size, compiler-input and runtime proofs still run.
 
+## Lightweight workflow routing and compatibility
+
+The lightweight workflow callers use the same fork-guarded `HONUA_LIGHT_RUNNER`
+JSON selector and `ubuntu-latest` fallback as PR Gate control jobs. This includes
+Repository hygiene, Clean code, Runner label lint, Review Gate Attestation,
+Review Event Bridge and OpenAPI drift/governance.
+Reusable workflow pins must include the shared selector support. Each local
+shell job exports `TMPDIR`, `TEMP` and `TMP` from `RUNNER_TEMP` before checkout.
+The variable remains an operator availability switch for newly admitted jobs.
+
+OpenAPI governance admits changes to `scripts/ci/lib/python-resolve.sh`, the
+shared Python resolver sourced by its contract validator. A helper-only change
+therefore runs the consuming PR check under the existing non-draft condition.
+
+Docs Link Gate can run a newer workflow against an older PR head. When that head
+predates both the workflow-inventory generator and its template, it validates the
+existing documentation with the complete link and concept suite. A partial
+inventory generator/template pair or a failing generator remains an error. This
+compatibility path adds no jobs and preserves all documentation assertions.
+Reachability grades tracked pages that still exist after concept generation,
+so retired generated pages are not phantom orphans. Links to deleted pages
+continue to fail the link check. This changes no job or runner allocation.
+
+Older PR bases that lack the retired-cache policy load it from fetched trusted
+trunk. The explicit base/head diff is still checked, head-supplied policy cannot
+replace it, and a missing or incomplete trusted policy fails the required
+hygiene job.
+
 ### Advisory image and CodeQL runner selection
 
 CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
@@ -1821,6 +1878,64 @@ Its one-process test execution fell from 458 to 363 seconds, saving 95 seconds
 376.298 seconds. The other three classes are unchanged. This overlaps the
 class measurement and is not added to it. Complete CI-job setup and build
 duration remain unmeasured.
+
+### OData endpoint read-only host lifetime
+
+`ODataEndpointTests` builds its Pro-licensed, `odata.yaml`-seeded application once
+per class through the `ReadOnlyProHost` class fixture. The read-only GET cases use
+that host's client and schema. The theory that changes the metadata graph and
+inserts a feature still builds, seeds and disposes a private Pro host per case.
+Assertions, endpoint attributes and case counts are unchanged.
+
+Paired build-host runs of the class on trunk 47eb3bc9ba passed the same 65 cases
+with no skips. VSTest execution fell from 16m16s to 48s and the TRX interval from
+977.6 to 73.5 seconds. The build host was heavily loaded, so each private Pro host
+cost about 15 seconds there; full run 43709972683 spent 183 seconds of per-case
+fixture time in this class (2.8 seconds per case), which is the expected CI saving.
+Full CI job savings are unmeasured.
+All cases remain in the OData Core Endpoints shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### OData, OGC classic and STAC collection host lifetime
+
+The OData, OGC classic and STAC test assemblies serialize their database-backed
+classes in a `Database` collection that previously had no definition, so nothing
+held the reference-counted shared default host between cases. Each assembly now
+defines that collection with a collection-scoped default `WebAppFixture`, so
+default-configuration cases reuse the shared host instead of rebuilding it. The
+definition keeps default parallelization, so scheduling is unchanged. Existing
+per-case and per-class fixtures and their schemas are unchanged; classes with
+private configuration keep their hosts. The WMTS advertised-resource case now also
+clears any unconsumed graph activation, which could otherwise reach a later case.
+The collection fixture starts the shared host even when a filter selects only
+private-host classes, which costs one startup in that case.
+
+With this change on trunk 47eb3bc9ba, build-host runs of the three complete
+projects passed every case with no skips: OGC classic 592 (19m15s VSTest), STAC
+149 (5m29s) and OData 512 (36m27s). The OGC classic project without this change did not
+finish within 111 minutes of execution on the same, heavily loaded host, so no
+paired whole-project time is claimed. As an estimate from unpaired data, per-case
+fixture time in the affected default-host classes was 2.1 to 3.5 seconds in full
+run 43709972683 and 0.1 to 0.5 seconds in the build-host run, while private-host
+classes stayed near 3.4 seconds; across those 18 classes that is about 639
+seconds (10.7 runner-minutes) of fixture time per full run. Full CI job savings
+are unmeasured.
+All cases remain in their existing shards on selected PR runs and twice-daily
+full trunk runs. This changes no runner count, required check name, required
+aggregate dependency, workflow or shard definition.
+
+## Review-first report collection retired
+
+The review-first experiment was not promoted. The final successful daily audit,
+[run 43752404798](https://github.com/honua-io/honua-server/actions/runs/43752404798),
+reported 5 of 20 required current-policy heads, 151 non-current-policy heads,
+and 1,724 successful Review Gate runs without receipts. It recommended
+`observe-more`. Its single audit job ran for 156 seconds (2.60 runner-minutes).
+Removing the daily collector saves one scheduled job per day; producer artifact
+overhead was not isolated and is not included in that saving. PR workflow and
+required-check counts are unchanged. Exact-head review, thread validation,
+trusted policy provenance, and joint final revalidation remain required.
 
 ## Native-image observer retirement (#7880)
 

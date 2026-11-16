@@ -59,7 +59,7 @@ internal static partial class FeatureServerEndpoints
 
         // /tiles is not an Esri protocol surface: unlike GeoServices /rest, layer-not-found
         // must be a real HTTP 404 with a problem+json body, not a 200-wrapped GeoServices
-        // error envelope (honua-server#2945).
+        // error envelope.
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
@@ -85,7 +85,7 @@ internal static partial class FeatureServerEndpoints
             ?? publication.LayerIndex;
         if (storageLayerId is null)
         {
-            // /tiles is not an Esri protocol surface (honua-server#2945): a real 404, not
+            // /tiles is not an Esri protocol surface: a real 404, not
             // the GeoServices 200-envelope that path-based classification would otherwise apply.
             return ProblemDetailsHelpers.CreateProblem(
                 context,
@@ -183,7 +183,7 @@ internal static partial class FeatureServerEndpoints
                 x,
                 y,
                 z,
-                query,
+                await VectorTileQuery.ForLayerAsync(context, resource, query).ConfigureAwait(false),
                 tileOptions,
                 tileLimits,
                 cancellationToken,

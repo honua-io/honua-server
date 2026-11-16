@@ -17,19 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Coverage for the deterministic package-draft MCP tools
-/// (<c>honua_create_map_package</c> / <c>honua_create_app_package</c>) after
-/// ADR-0076 re-founded them on the shared draft factories in <c>Honua.Core</c>.
-/// </summary>
-/// <remarks>
-/// These run through the JSON-RPC dispatcher with the real factories composed,
-/// because the assertion that matters is behavioural: the tools must return a
-/// real package carrying a stable <c>map_…</c> / <c>app_…</c> identifier. A
-/// roster or manifest check compares names and would pass against a tool that
-/// permanently returns <c>capability_unavailable</c>, which is precisely the
-/// half-finished-deletion end state ADR-0076 designs against.
-/// </remarks>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpPackageDraftToolTests
 {
