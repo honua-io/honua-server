@@ -10,6 +10,7 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
@@ -433,6 +434,51 @@ public sealed class McpIngestDatasetToolTests
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_AgentIngest_CreatesOnlyAndPointsReplacementAtApproval()
+    {
+        var importService = Substitute.For<IFileImportService>();
+        ImportRequest? captured = null;
+        importService.ImportFileAsync(Arg.Do<ImportRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateFailure(
+                "landmarks",
+                SupportedFileFormat.GeoJson,
+                "Create-only import requires a new target table."));
+
+        var response = await DispatchAsAgentAsync(
+            BuildServices(importService),
+            $$"""{"format":"geojson","data":{{JsonSerializer.Serialize(GeoJsonData)}},"datasetName":"landmarks"}""");
+
+        var structured = AssertToolSucceeded(response);
+        structured.GetProperty("success").GetBoolean().Should().BeFalse();
+        structured.GetProperty("errorMessage").GetString().Should().Contain("dataset.stage.import");
+        captured.Should().NotBeNull();
+        captured!.OverwriteExisting.Should().BeFalse();
+        captured.EffectiveLoadMode.Should().Be(ImportLoadMode.CreateOnly);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_HumanIngest_KeepsReplacingTheDataset()
+    {
+        var importService = Substitute.For<IFileImportService>();
+        ImportRequest? captured = null;
+        importService.ImportFileAsync(Arg.Do<ImportRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateFailure("landmarks", SupportedFileFormat.GeoJson, "No features found in file"));
+
+        var response = await DispatchAsync(
+            BuildServices(importService),
+            $$"""{"format":"geojson","data":{{JsonSerializer.Serialize(GeoJsonData)}},"datasetName":"landmarks"}""");
+
+        AssertToolSucceeded(response).GetProperty("errorMessage").GetString().Should().NotContain("dataset.stage.import");
+        captured!.EffectiveLoadMode.Should().Be(ImportLoadMode.Replace);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_IngestCsvOptionProblem_SurfacesAsInvalidArgument()
     {
         // The shared pipeline reports option problems (missing column, geocode row
@@ -580,18 +626,34 @@ public sealed class McpIngestDatasetToolTests
         return services.BuildServiceProvider();
     }
 
-    private async Task<McpJsonRpcResponse?> DispatchAsync(
+    private Task<McpJsonRpcResponse?> DispatchAsync(
         ServiceProvider services,
         string argumentsJson,
         CancellationToken cancellationToken = default)
+    {
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        context.RequestServices = services;
+        return DispatchAsync(context, argumentsJson, cancellationToken);
+    }
+
+    private Task<McpJsonRpcResponse?> DispatchAsAgentAsync(ServiceProvider services, string argumentsJson)
+    {
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        ((ClaimsIdentity)context.User.Identity!).AddClaim(new Claim(ClaimTypes.Role, AgentApprovalRule.AgentRole));
+        context.RequestServices = services;
+        return DispatchAsync(context, argumentsJson, CancellationToken.None);
+    }
+
+    // The context carries the request services the tool resolves.
+    private static async Task<McpJsonRpcResponse?> DispatchAsync(
+        HttpContext context,
+        string argumentsJson,
+        CancellationToken cancellationToken)
     {
         var surface = new McpDataAccessSurface(
             [new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance)],
             [],
             NullLogger<McpDataAccessSurface>.Instance);
-
-        var context = McpTestFactory.AuthenticatedHttpContext();
-        context.RequestServices = services;
 
         return await surface.DispatchAsync(
             context,

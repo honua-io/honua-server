@@ -169,9 +169,8 @@ and workflow-completion events. CodeQL already cancels by PR number and skips
 draft PR analysis; its scheduled/manual analysis remains enabled.
 Review event ordering is not guaranteed. A late old-head event queues behind newer ones and reconciles the current live PR head. Draft conversion still reaches the shared attestation group, queues, and sheds the live draft before checkout or status publication. Other draft pull-request payloads skip resolution.
 
-Trusted observers resolve the current PR before expensive jobs: prebuild
-producers/parity legs cancel by PR and matrix identity; unrelated comments
-cannot interrupt paid work. New validation concurrency uses a unique run ID
+Trusted observers resolve the current PR before expensive jobs; unrelated
+comments cannot interrupt paid work. New validation concurrency uses a unique run ID
 outside PR events, keeping manual qualification independent of trunk pushes.
 Existing release cancellation policy is retained.
 
@@ -510,9 +509,6 @@ which is why both the run count and exact observed span are recorded.
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
 | `native-image-impact-observe.yml` | Native Image Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only comparison of graph-derived image inputs with legacy path triggers. The Serving/GDAL image workflows stay authoritative in observe mode. |
-| `server-test-prebuild-observe.yml` | Server Test Prebuild Observation | `workflow_run` [Review Gate Attestation] (`branches-ignore: trunk`), `workflow_dispatch` | Trusted default-branch read-only shadow producer for #3226. Only `pull_request_target` Review Gate runs are usable, and those are the only ones whose run record carries a PR head branch — hence the `branches-ignore` filter, which drops the `issue_comment`/bridge runs that used to materialise as skipped runs. |
-| `server-test-prebuild-parity.yml` | Server Test Prebuild Parity Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only post-verification shadow: does one already-ready exact prebuild produce the same bounded proof results as an independent restore/build? Publishes no status. |
-| `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
 | `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Trusted admission cancels only older producer generations for the same PR. Observe mode validates envelopes and reports drift without writing PR branches; the existing trunk regeneration producer publishes generated documents. |
 | `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
@@ -624,12 +620,15 @@ candidate context.
 | `label-sync.yml` | Capability Label Sync | `push` (trunk), `workflow_dispatch` | Creates/updates `cap/<category>` labels from the canonical category list; never deletes or renames (#2896). |
 | `reusable-sdk-pr-gate.yml` | SDK PR Gate | `workflow_call` | Reusable gate consumed by `honua-sdk-js`, `honua-sdk-dotnet`, and `honua-sdk-python`. |
 | `server-test-reuse-benchmark.yml` | Server Test Reuse Benchmark | `workflow_dispatch` | Bounded A/B of an overlapped reuse producer against independent baselines. Manual, read-only, publishes no status. |
-| `server-test-prebuild-benchmark.yml` | Server Test Prebuild Benchmark | `workflow_dispatch` | Manual read-only A/B proof for #3226; cannot affect branch protection or the train. |
 
 ## Recently retired
 
 | Workflow file | Retired | Why |
 |---|---|---|
+| `server-test-prebuild-observe.yml` | 2026-11-16 (#7880) | The prebuild shadow experiment, with the parity, ledger and benchmark rows below. The observer had been disabled on GitHub since 9 Nov, so parity found no ready prebuild to compare (0 of 60 runs since 10 Nov reached a comparison), the ledger had nothing to count, and the manual benchmark last ran 14 Aug. The required `PR Gate / Server test producer` does not use any of it. Its planners, receipt, audit, try/validate scripts, policies and `server-test-prebuild-shadow.md` went with it. |
+| `server-test-prebuild-parity.yml` | 2026-11-16 (#7880) | Parity leg of the prebuild shadow experiment; see `server-test-prebuild-observe.yml`. |
+| `server-test-prebuild-evidence-ledger.yml` | 2026-11-16 (#7880) | Ledger of the prebuild shadow experiment; see `server-test-prebuild-observe.yml`. |
+| `server-test-prebuild-benchmark.yml` | 2026-11-16 (#7880) | Manual A/B benchmark of the prebuild shadow experiment; see `server-test-prebuild-observe.yml`. |
 | `pr-gate-impact-observe.yml` | 2026-11-16 (#7880) | Disabled on GitHub since 9 Nov; observe-only docs-only routing classification. The docs-only fast path it measured is enforced through `scripts/ci/docs-only-diff.sh`. Its classifier (`classify-pr-gate-impact.py`) and validator (`validate-pr-gate-impact.sh`) went with it. |
 | `impact-routing-evidence-ledger.yml` | 2026-11-16 (#7880) | Counted observer receipts toward a seven-day promotion bar that disabled observers could no longer reach. `audit-impact-routing-evidence.py`, the promotion and tombstone policies and `impact-routing-evidence.md` went with it. The run-catalog helpers the affected-shard audit uses stay in `collect-impact-routing-runs.py`, without its receipt download path. |
 | `claude-review.yml` | 2026-11-15 (simplify A4) | Disabled on GitHub since the 11-11 review-path ruling; independent review now comes from the lanes and the Codex connector. Its helpers (`claude-review-body.js`, `claude-review-dedupe.js`, `review-catchup.js`) went with it. `review-gate-evidence.js` still grades a Claude bot review if one is posted. |
@@ -640,7 +639,7 @@ candidate context.
 | `auto-rerun-flaky.yml` | 2026-08-16 | Job guarded on `workflow_run.event == 'pull_request'`, which `ci.yml` has not emitted since #2865 removed its `pull_request` trigger. Every run for months was `skipped`. |
 | `ci-failure-triage.yml` | 2026-08-16 | Same dead guard. Its deterministic classifier (`scripts/ci/ci-failure-classifier.js`) and Bedrock helper (`scripts/ci/bedrock-triage.js`) had no other consumer and were removed with it. |
 | `server-test-shard-cache-proof.yml` | 2026-08-16 | One-off hosted proof for the #2735 shard-local cache, triggered only by pushes to a merged experiment branch. The shipped cache lives in `ci.yml` and is still guarded by `scripts/ci/validate-server-test-shard-cache.sh`; the recorded proof stays in `server-test-binary-artifacts.md`. |
-| `server-test-transfer-benchmark.yml` | 2026-08-16 | One-off #2722 benchmark whose design ADR-0074 rejected, triggered only by pushes to `ci/2722-hosted-transfer-benchmark`. Its config and evaluator went with it; the measured result stays in `server-test-transfer-benchmark.md`. Later producer designs are measured by `server-test-reuse-benchmark.yml` and `server-test-prebuild-benchmark.yml`. |
+| `server-test-transfer-benchmark.yml` | 2026-08-16 | One-off #2722 benchmark whose design ADR-0074 rejected, triggered only by pushes to `ci/2722-hosted-transfer-benchmark`. Its config and evaluator went with it; the measured result stays in `server-test-transfer-benchmark.md`. Later producer designs are measured by `server-test-reuse-benchmark.yml`. |
 
 ## Historical change log
 

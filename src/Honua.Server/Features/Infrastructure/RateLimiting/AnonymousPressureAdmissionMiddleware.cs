@@ -38,6 +38,13 @@ internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
             return true;
         }
 
+        // Every geometry operation computes over its whole request; only the service
+        // description is cheap.
+        if (RequestTelemetryClassifier.IsGeometryServiceOperation(context))
+        {
+            return true;
+        }
+
         return operation switch
         {
             "query" or "related" or "edit" or "renderer" or "queryTopFeatures" or "queryDateBins" or
@@ -45,8 +52,7 @@ internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
             "export" or "exportImage" or "generateKml" or "identify" or "find" or
             "computeStatisticsHistograms" or "computeClassStatistics" or
             "aggregate" or "search" or "search.get" or "search.post" or "batch" or "create" or "update" or "delete" or "feature" or
-            "areasAndLengths" or "lengths" or "buffer" or "simplify" or "project" or "intersect" or
-            "union" or "clip" or "difference" or "coverage" or
+            "coverage" or
             "solveClosestFacility" or "solveServiceArea" or "solveRoute" or "submitJob" or "execute" or
             "mcp.rpc" or "wfs.getfeature" or "wfs.getpropertyvalue" or "wfs.transaction" or
             "wfs.lockfeature" or "wms.getmap" or "wms.getfeatureinfo" or
