@@ -89,8 +89,26 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         replacement.PreservedAttributeNames.Should().BeEquivalentTo(["code", "globalid"]);
     }
 
+    [UnitTheory]
+    [InlineData("null")]
+    [InlineData("\"invalid timestamp\"")]
+    public async Task HandlePatchFeatureAsync_ClientTrackingValues_AreIgnoredBeforeValidation(string value)
+    {
+        var existing = ImmutableDictionary<string, object?>.Empty.Add("name", "before")
+            .Add("creator", "original").Add("created", DateTime.UnixEpoch);
+        var result = await ExecuteProtectedPatchAsync(
+            $"{{\"properties\":{{\"name\":\"after\",\"CREATED\":{value},\"updated\":{value}}}}}", existing, tracking: true);
+
+        result.Status.Should().Be(StatusCodes.Status200OK);
+        var update = result.Batch!.Value.Updates.Single();
+        update.Attributes.Should().Contain("name", "after").And.NotContainKey("created").And.NotContainKey("creator");
+        update.Attributes["updated"].Should().BeOfType<DateTime>();
+        update.PreservedAttributeNames.Should().Contain(["creator", "created"]);
+        update.ExplicitAttributeRemovals.Should().BeEmpty();
+    }
+
     private static async Task<(int Status, FeatureEditBatch? Batch)> ExecuteProtectedPatchAsync(
-        string payload, ImmutableDictionary<string, object?> attributes)
+        string payload, ImmutableDictionary<string, object?> attributes, bool tracking = false)
     {
         var reader = Substitute.For<IFeatureReader>();
         var existing = Feature.Create(42, null, attributes);
@@ -102,7 +120,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         var logger = Substitute.For<ILogger<OgcFeaturesTransactionHandler>>();
         logger.IsEnabled(default).ReturnsForAnyArgs(true);
         var (_, handler) = CreateHandlers(reader, writer, logger);
-        var context = ProtectedPatchContext(payload);
+        var context = ProtectedPatchContext(payload, tracking);
 
         var result = await handler.HandlePatchFeatureAsync("pub-cities", "42", null, context, CancellationToken.None);
         await result.ExecuteAsync(context);
@@ -113,12 +131,12 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         return (context.Response.StatusCode, calls.Length == 0 ? null : (FeatureEditBatch)calls[0].GetArguments()[1]!);
     }
 
-    private static DefaultHttpContext ProtectedPatchContext(string payload)
+    private static DefaultHttpContext ProtectedPatchContext(string payload, bool tracking)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-        services.AddSingleton<IMetadataV2GraphProvider>(ProtectedPatchProvider());
+        services.AddSingleton<IMetadataV2GraphProvider>(ProtectedPatchProvider(tracking));
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions { DataEditorRoles = ["editor"] }));
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
@@ -135,15 +153,23 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         return context;
     }
 
-    private static TestMetadataV2GraphProvider ProtectedPatchProvider()
+    private static TestMetadataV2GraphProvider ProtectedPatchProvider(bool tracking)
     {
         MetadataV2Field[] fields =
         [
             new() { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
             new() { Name = "name", Type = MetadataV2FieldType.String, Nullable = false, Editable = true },
             new() { Name = "code", Type = MetadataV2FieldType.String, Nullable = true, Editable = false },
-            new() { Name = "globalid", Type = MetadataV2FieldType.String, Nullable = true, Editable = true }
+            new() { Name = "globalid", Type = MetadataV2FieldType.String, Nullable = true, Editable = true },
+            new() { Name = "creator", Type = MetadataV2FieldType.String, Nullable = true, Editable = false },
+            new() { Name = "created", Type = MetadataV2FieldType.DateTime, Nullable = true, Editable = false },
+            new() { Name = "editor", Type = MetadataV2FieldType.String, Nullable = true, Editable = false },
+            new() { Name = "updated", Type = MetadataV2FieldType.DateTime, Nullable = true, Editable = false }
         ];
+        if (!tracking)
+        {
+            fields = fields.Where(field => field.Name is not ("creator" or "created" or "editor" or "updated")).ToArray();
+        }
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("resource", "cities", MetadataV2ObjectType.FeatureDataset, fields: fields)
             .AddStorageBinding("binding", "resource", "test.layers.7", storageLayerId: 7)
@@ -155,7 +181,12 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         {
             Resources = graph.Resources.Select(resource => resource with
             {
-                Editing = new MetadataV2ObjectEditing { GlobalIdField = "globalid" }
+                Editing = new MetadataV2ObjectEditing
+                {
+                    GlobalIdField = "globalid", CreatorField = tracking ? "creator" : null,
+                    CreatedAtField = tracking ? "created" : null, EditorField = tracking ? "editor" : null,
+                    UpdatedAtField = tracking ? "updated" : null,
+                }
             }).ToArray()
         });
     }

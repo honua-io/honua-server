@@ -32,6 +32,7 @@ internal static partial class OgcFeatureEditGate
         FeatureEditBatch batch,
         CancellationToken cancellationToken)
     {
+        batch = EditorTrackingBatch.OmitClientValues(target.Resource, batch);
         var repeatedUpdates = RepeatedUpdateRejections(batch);
         if (repeatedUpdates.Length > 0)
         {
@@ -71,13 +72,26 @@ internal static partial class OgcFeatureEditGate
             return (rules.Batch, OwnerEditPolicyFieldAccess.DeniedEditResult(rules.Batch, prepared.DenialReason ?? "Edit not permitted."));
         }
 
-        var checkedBatch = prepared.Batch;
+        var clock = target.Context.RequestServices?.GetService<TimeProvider>() ?? TimeProvider.System;
+        var now = clock.GetUtcNow();
+        var checkedBatch = EditorTrackingBatch.Stamp(target.Resource, prepared.Batch,
+            new EditorTrackingStamp(ServiceDataEditorAuthorization.ResolveEditPrincipal(target.Context).Name,
+                field => TrackingTimeValue(field, now)));
         var rejections = await FeatureEditGate.CheckAsync(ResolveHooks(target.Context), check with
         {
             Batch = checkedBatch, Rejections = rules.Rejections,
         }, cancellationToken).ConfigureAwait(false);
         return (checkedBatch, rejections.Count == 0 ? null : FeatureEditGate.RejectedResult(checkedBatch, Safe(rejections)));
     }
+
+    private static object? TrackingTimeValue(MetadataV2Field? field, DateTimeOffset now) => field?.Type switch
+    {
+        null or MetadataV2FieldType.DateTime => now.UtcDateTime,
+        MetadataV2FieldType.Date => DateOnly.FromDateTime(now.UtcDateTime).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        MetadataV2FieldType.String or MetadataV2FieldType.TimestampOffset => now.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+        MetadataV2FieldType.BigInteger or MetadataV2FieldType.Double => now.ToUnixTimeMilliseconds(),
+        _ => null,
+    };
 
     private static IReadOnlyDictionary<string, object?> EffectiveAttributes(
         FeatureEditRow row,
