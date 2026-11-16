@@ -183,6 +183,19 @@ image. Rollbacks to rc.2 or later retain the supported application-only path. Do
 remove the migration journal entry or reintroduce cascading replacement to bypass
 that boundary.
 
+### Optional feature indexes removed in rc.2
+
+`183_RemoveUnusedFeatureIndexes.sql` drops eight `features` indexes that no
+generated query uses. It is a reviewed contract migration: a fresh install never
+builds those indexes, and an existing database applies the drop only with its
+one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce. When you upgrade an rc.1
+database, stop the rc.1 server, run migrate-only with the rc.2 image (it exits `5`
+and names `183_RemoveUnusedFeatureIndexes.sql`), review it, re-run with the nonce,
+then start rc.2; see [Deploy with Docker Compose — Upgrade &
+Rollback](docker-compose.md#upgrade--rollback). An rc.1 image does not qualify the
+migration, so rollback to rc.1 after it applies is by restoring the pre-upgrade
+database backup.
+
 ### Configuration binding correction
 
 Recent releases correct source-generated binding for options that previously used
