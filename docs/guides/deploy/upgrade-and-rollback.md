@@ -60,8 +60,8 @@ restore its matching pre-upgrade backup if that recovery is necessary.
 The pre-rc.2 exceptions are pinned by exact name and SHA-256 in
 `eng/schema/schema-release-boundary.v1.json`: `142_CreateAiFinancialAccounting.sql`,
 `144_RenameGeoServicesRestSourceKind.sql`, and `145_ProtectImportDependencies.sql`.
-These immutable scripts establish the boundary; they do not authorize future
-incompatible migrations. CODEOWNERS designates the founder as the reviewer for boundary changes.
+The same boundary also pins `183_RemoveUnusedFeatureIndexes.sql` for the reviewed
+rc.2 index removal. These exact pins do not authorize other incompatible migrations. CODEOWNERS designates the founder as the reviewer for boundary changes.
 
 The frozen reader baseline is `eng/schema/schema-reader-baseline.v1.json`.
 Every migration, including each newly added script, must also be hash-pinned in
@@ -71,8 +71,8 @@ entry does not extend the frozen reader baseline or exempt a script from contrac
 checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
 From rc.2, a migration carrying `honua:reader-incompatible` or classified as
 contract by the reader fails CI unless its exact name and hash match the release boundary.
-Every migration numbered above that boundary (server 145, raster 008) must declare `expand` and be accepted
-by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
+Every migration above the baseline (server 145, raster 008), except an exact
+release-boundary pin, must declare `expand` and be accepted by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
 Redesign incompatible changes as additive migrations with compatible application
 reads and writes; defer removals until an explicitly approved future release boundary.
 
@@ -83,15 +83,18 @@ broader checks use their exact frozen name and hash as the review record; their 
 is never rewritten to add annotations. They still require contract-apply approval
 when pending against a nonempty migration journal. Fresh installs remain unaffected.
 
-Reader compatibility and contract-apply approval are separate checks. The reader
-recognizes one reviewed removal of eight optional feature indexes, pinned by its
-normalized SQL hash and the numbered `RemoveUnusedFeatureIndexes.sql` basename.
-Its canonical SQL is `eng/schema/remove-unused-feature-indexes.sql`; this resource
-does not run as a migration. The removal remains contract-classified for upgrade
-approval, while a reader containing this review can verify its forward declaration.
-Other names or changed SQL remain refused. Deploy the prepared reader before
-introducing the separate removal migration, then prove rollback with that reader's
-published image. Readers predating this review still refuse the removal.
+Reader compatibility and contract-apply approval are separate checks. Migration
+`183_RemoveUnusedFeatureIndexes.sql` removes eight optional feature indexes and
+is classified as a contract migration. Its exact name and normalized SQL hash are
+pinned in the release boundary; changed SQL or another script name has no exemption.
+The canonical SQL is `eng/schema/remove-unused-feature-indexes.sql`; this resource
+does not itself run as a migration. Applying the migration to an existing database
+requires contract-apply approval, including the exact migration hash in the Compose
+allowlist. The current image must pass feature import, edit and read checks after
+applying it. Older readers must refuse the contract declaration with
+`schema_reader_incompatible`; that refusal is the expected N-1 compatibility result,
+not proof of a successful application rollback. Recovery to an unsupported image
+older than rc.2 requires its matching pre-upgrade database backup.
 
 The release promise journey must retain the GP operation ID before each update
 or rollback, wait for that same job afterward, and verify the decoded output and
