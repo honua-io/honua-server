@@ -95,7 +95,7 @@ Manage published layers through `list_layers`, `set_layer_enabled`, and `set_ser
 
 ```python
 with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as admin:
-    for published_layer in admin.list_layers("primary-db"):
+    for published_layer in admin.list_layers("primary-db", service_name=layer.service_name):
         print(published_layer)
     admin.set_layer_enabled(
         "primary-db",
@@ -131,9 +131,9 @@ return HTTP 202 with a job handle instead of holding the request open for the
 snapshot copy. The response's `data` contains `jobId`, `statusUrl`, `rowsTotal`,
 and `status`. Follow that same-origin relative status URL with the accepting
 tenant's admin credentials. Each poll returns `jobId`, `status`,
-`rowsMaterialized`, `rowsTotal`, `layerId`, and `errorMessage` in `data`.
+`rowsMaterialized`, `rowsTotal`, `storageLayerId`, and `errorMessage` in `data`.
 `Queued` and `Processing` are pending states; `Completed`, `Failed`, and
-`Cancelled` are terminal. Use the completed `layerId` for subsequent queries.
+`Cancelled` are terminal. Use the completed `storageLayerId` for subsequent queries.
 Do not treat acceptance as publication completion.
 
 Accepted work uses its own publication budget and survives a disconnected
