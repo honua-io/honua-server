@@ -52,8 +52,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
             : 0d;
         var geographic = gridGeometry?.IsGeographic ?? targetSrid == 4326;
 
-        // The first pass is the historical query. Later passes exist only after that encode
-        // exceeds the byte budget, so a tile that already fits stays byte-identical.
+        // Tiles within the byte budget use one encode. Only oversized tiles require
+        // additional fitting passes.
         return await MvtTileBudgetFitter.ReadAsync(
             tileLimits.MaxTileSize,
             BuildTileSql,

@@ -1126,10 +1126,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     }
 
     private static double ComputeGeometricError(double[] bounds, double minHeight, double maxHeight)
-        // Shared cos-lat-corrected 3D-diagonal geodesy (see GeodesicError). This is
-        // the root LOD budget handed to the partitioner, so it now also carries the
-        // positive floor the helper applies — ensuring the root tile (even a
-        // root-leaf) declares a non-zero geometric error.
+        // GeodesicError supplies the partitioner's root LOD budget. Its positive floor
+        // ensures that root and root-leaf tiles declare a non-zero geometric error.
         => GeodesicError.RootGeometricError(bounds, minHeight, maxHeight);
 
     private static string SlugifyName(string name, int maxLength)

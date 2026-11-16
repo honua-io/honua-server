@@ -127,7 +127,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var objectIdField = _resource.SchemaFields.FirstOrDefault(field =>
             field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase));
         var injectObjectId = objectIdField is null || objectIdField.Name.Equals(primaryIdFieldName, StringComparison.OrdinalIgnoreCase);
-        // Preserve the historical encoded column name unless a source attribute owns it.
+        // Encode the primary key as objectid unless a source attribute owns that name.
         var encodedPrimaryIdName = injectObjectId ? FieldNames.ObjectId : primaryIdFieldName;
         return (primaryIdFieldName, injectObjectId, encodedPrimaryIdName);
     }
