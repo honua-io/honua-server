@@ -143,7 +143,7 @@ services:
 YAML
 
 compose_down
-compose up -d --build postgres redis honua console
+compose up -d --build postgres honua console
 
 wait_for_url "http://127.0.0.1:${HONUA_HTTP_PORT}/healthz/ready" "honua" 90
 assert_proposal_roundtrip

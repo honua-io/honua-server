@@ -52,6 +52,8 @@ Keep `secrets/`, `.env` and the manager's durable Postgres volume.
 Packages before rc.2 also ran a cache service. After upgrading such an install, run
 `python3 quickstart.py` and then `docker compose up -d --remove-orphans` once to remove
 its container; its volumes hold nothing the new release reads and can be deleted.
+A manual rollback to rc.1 starts that service again from the retained file; see
+[upgrade and rollback](../guides/deploy/upgrade-and-rollback.md).
 
 The serving API is at `http://localhost:18080`; the stable management API and MCP
 are at `http://localhost:18082`. Its bootstrap credential is the private

@@ -598,9 +598,13 @@ The selector validates the catalog and all retained checksums before returning
 the absolute Compose path and `rollbackMode: manual`. Use that path with explicit
 `docker compose --project-directory <existing-install> -p <existing-project> -f
 <retained-compose>` arguments. Keep the project name and volumes unchanged. Do
-not run the historical dependency services over the current installation: stop
-only `honua`, restore the verified database dump through the existing Postgres
-service, and start only `honua` with `up -d --no-deps` under the retained file.
+not recreate dependency services the current installation also runs: stop only
+`honua` and restore the verified database dump through the existing Postgres
+service. Then start, under the retained file, each service its `honua` depends on
+that the current file does not define, such as rc.1's cache service after the
+upgrade removed it (`up -d --wait <service>`; compare the `depends_on` list in
+`config --format json` for both files). Start only `honua` last, with
+`up -d --no-deps` under the retained file.
 Never restore while a serving process can write to the database.
 
 The retained rc.1 file reads `POSTGRES_PASSWORD`, `HONUA_ADMIN_PASSWORD`,
