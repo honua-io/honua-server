@@ -61,7 +61,7 @@ The customer install is the `Honua.Geoprocessing.Cli` package on the GitHub Pack
 feed `https://nuget.pkg.github.com/honua-io/index.json`. `Publish GP Devkit` pushes
 that package only from an explicit canonical-trunk dispatch and retains the
 publication identity for honua-release#615. The tool runs on the .NET 11 runtime; the
-`gp-dotnet` projects it scaffolds target `net10.0`. Authenticate the `honua-github` source
+`gp-dotnet` projects it scaffolds target `net11.0`. Authenticate the `honua-github` source
 with a GitHub token that can read packages before installing:
 
 ```bash
@@ -185,7 +185,7 @@ honua-gp-devkit test --update   # accept the current artifacts and refresh expec
 `summary_tool` / `SummaryTool` until you rename it. The installed tool includes the
 matching Python harness and .NET authoring SDK/harness source payload. `init` extracts
 it under `.honua/toolchain`; no server checkout or unpublished dependency is needed.
-Python 3.11+ and the .NET 10 SDK remain prerequisites for their respective languages.
+Python 3.11+ and the .NET 11 SDK remain prerequisites for their respective languages.
 For .NET, `test` builds the template test project and runs the local harness. Python
 uses the bundled module directly. A failure prints the first differing value, receipt
 path and artifact; `expected/golden.json` also pins the artifact bytes.
@@ -221,7 +221,7 @@ server submission. Add `--probe-container` to also check the GDAL worker image.
 
 A scaffolded project is not a catalog registration. `describe --project <dir>` and
 `list --project <dir>` report that task's own
-prerequisites: the language runtime (Python 3.11+ or a .NET 10 SDK reported by `dotnet --list-sdks`; the runtime host alone is not enough), the committed
+prerequisites: the language runtime (Python 3.11+ or a .NET 11 SDK reported by `dotnet --list-sdks`; the runtime host alone is not enough), the committed
 dependency lock, and the local harness. A lock that is present is the dependency set;
 `describe` does not import each locked package. A missing interpreter, lock, or harness
 is `missing`, names what to install, and `test` stops before starting the harness. The
