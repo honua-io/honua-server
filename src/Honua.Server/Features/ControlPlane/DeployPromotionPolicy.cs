@@ -41,7 +41,7 @@ internal static class DeployPromotionPolicy
                 case "manual":
                     return DeployPromotionGateMode.Manual;
                 default:
-                    // Plan-time Validate rejects an unrecognized value (#4617); this fallback only
+                    // Plan-time Validate rejects an unrecognized value; this fallback only
                     // applies to operations persisted before that validation existed.
                     break;
             }

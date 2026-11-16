@@ -1701,6 +1701,12 @@
       "path": "/observability/audit"
     },
     {
+      "operationId": "listOidcProviderRevisions",
+      "catalogOperationId": "admin.oidc-provider.revisions",
+      "method": "GET",
+      "path": "/oidc/providers/{id}/revisions"
+    },
+    {
       "operationId": "listOidcProviders",
       "catalogOperationId": "admin.oidc-provider.list",
       "method": "GET",
@@ -1747,6 +1753,12 @@
       "catalogOperationId": "admin.rate-limit-policy.list",
       "method": "GET",
       "path": "/rate-limits"
+    },
+    {
+      "operationId": "listRateLimitPolicyRevisions",
+      "catalogOperationId": "admin.rate-limit-policy.revisions",
+      "method": "GET",
+      "path": "/rate-limits/{id}/revisions"
     },
     {
       "operationId": "listRlsPolicies",
@@ -2371,6 +2383,18 @@
       "catalogOperationId": null,
       "method": "POST",
       "path": "/share/exports/{exportId}/trigger"
+    },
+    {
+      "operationId": "undoOidcProviderChange",
+      "catalogOperationId": "admin.oidc-provider.undo",
+      "method": "POST",
+      "path": "/oidc/providers/{id}/undo"
+    },
+    {
+      "operationId": "undoRateLimitPolicyChange",
+      "catalogOperationId": "admin.rate-limit-policy.undo",
+      "method": "POST",
+      "path": "/rate-limits/{id}/undo"
     },
     {
       "operationId": "unregisterCloudRaster",

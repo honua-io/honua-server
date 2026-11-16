@@ -22,7 +22,7 @@ public sealed partial class GPServerDurableRuntimeTests
     public async Task SoapScopedAPIKey_ExactAreaGrant_ExecutesAndOwnsDurableJob()
     {
         var fixture = CreateScopedKeyFixture();
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var admin = fixture.CreateAdminClient();
@@ -79,7 +79,7 @@ public sealed partial class GPServerDurableRuntimeTests
     public async Task SoapScopedAPIKey_UnauthorizedAreaGrant_DeniesBeforeParameterParsing(string grantKind)
     {
         var fixture = CreateScopedKeyFixture();
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var admin = fixture.CreateAdminClient();

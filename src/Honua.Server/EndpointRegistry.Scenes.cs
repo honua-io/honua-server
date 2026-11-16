@@ -19,39 +19,39 @@ public static partial class EndpointRegistry
 
         // Saved-map collaboration session seam.
         new("POST", "/api/v1/maps/{mapId}/collaboration/sessions/join"),
-        // Explicit session end for REST-joined sessions (#2999).
+        // Explicit session end for REST-joined sessions.
         new("POST", "/api/v1/maps/{mapId}/collaboration/sessions/leave"),
-        // Realtime v1-envelope WebSocket transport: presence, deltas, snapshot recovery (#971/#2999).
+        // Realtime v1-envelope WebSocket transport: presence, deltas, snapshot recovery.
         new("GET", "/api/v1/maps/{mapId}/collaboration/sessions/stream"),
         new("POST", "/api/v1/maps/{mapId}/collaboration/feature-locks/claim"),
         new("POST", "/api/v1/maps/{mapId}/collaboration/feature-locks/renew"),
         new("POST", "/api/v1/maps/{mapId}/collaboration/feature-locks/release"),
-        // Durable collaborative edit op-log: append (cursor + idempotency) and replay (#972).
+        // Durable collaborative edit op-log: append (cursor + idempotency) and replay.
         new("POST", "/api/v1/maps/{mapId}/collaboration/operations"),
         new("GET", "/api/v1/maps/{mapId}/collaboration/operations"),
-        // Live-session checkpoint into the Studio package lifecycle (#2999).
+        // Live-session checkpoint into the Studio package lifecycle.
         new("POST", "/api/v1/maps/{mapId}/collaboration/checkpoints"),
 
-        // Public SDK-compatible scene discovery (#923).
+        // Public SDK-compatible scene discovery.
         new("GET", "/api/scenes"),
         new("GET", "/api/scenes/{sceneId}"),
         new("GET", "/api/scenes/{sceneId}/resolve"),
 
-        // Hosted 3D Tiles scene serving (#837).
+        // Hosted 3D Tiles scene serving.
         new("POST", "/scenes/{sceneId}/access-envelope"),
         new("GET", "/scenes/{sceneId}/exports/openusd/stage.usda"),
         new("GET", "/scenes/{sceneId}/tileset.json"),
         new("HEAD", "/scenes/{sceneId}/tileset.json"),
 
         // Esri I3S SceneServer serving at the canonical GeoServices path
-        // (#1806; Enterprise-gated). The /scenes/{sceneId}/SceneServer routes
-        // below are retained as documented aliases (#1202).
+        // (Enterprise-gated). The /scenes/{sceneId}/SceneServer routes
+        // below are retained as documented aliases.
         new("GET", "/rest/services/{sceneId}/SceneServer"),
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}"),
 
-        // I3S node-page traversal (#1809) and per-field statistics (#1811),
+        // I3S node-page traversal and per-field statistics,
         // served at the canonical GeoServices path plus the /scenes alias.
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}"),
         new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0"),
@@ -69,7 +69,7 @@ public static partial class EndpointRegistry
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
 
-        // Scene dataset registry admin endpoints (#844).
+        // Scene dataset registry admin endpoints.
         new("GET", "/api/v1/admin/scenes"),
         new("POST", "/api/v1/admin/scenes"),
         new("GET", "/api/v1/admin/scenes/{id}"),
@@ -77,32 +77,32 @@ public static partial class EndpointRegistry
         new("DELETE", "/api/v1/admin/scenes/{id}"),
         new("GET", "/api/v1/admin/scenes/{id}/resolve"),
 
-        // 3D Tiles generation admin endpoint (#842).
+        // 3D Tiles generation admin endpoint.
         new("POST", "/api/v1/admin/scenes/generate"),
 
-        // CityGML/BIM scene ingest admin endpoint (#1207).
+        // CityGML/BIM scene ingest admin endpoint.
         new("POST", "/api/v1/admin/scenes/ingest/citygml"),
 
-        // LAS/LAZ/COPC point-cloud scene ingest admin endpoint (#1201).
+        // LAS/LAZ/COPC point-cloud scene ingest admin endpoint.
         new("POST", "/api/v1/admin/scenes/ingest/pointcloud"),
 
-        // Network-dataset registry editing admin endpoints (#1882).
+        // Network-dataset registry editing admin endpoints.
         new("GET", "/api/v1/admin/network-datasets"),
         new("POST", "/api/v1/admin/network-datasets"),
         new("GET", "/api/v1/admin/network-datasets/{id}"),
         new("PUT", "/api/v1/admin/network-datasets/{id}"),
         new("DELETE", "/api/v1/admin/network-datasets/{id}"),
 
-        // Network-topology generation/edit admin endpoints (#2716).
+        // Network-topology generation/edit admin endpoints.
         new("GET", "/api/v1/admin/network-datasets/{id}/generations"),
         new("POST", "/api/v1/admin/network-datasets/{id}/generations"),
         new("POST", "/api/v1/admin/network-datasets/{id}/generations/{generation}/edits"),
 
-        // Network-topology durable shadow-topology rebuild admin endpoints (#2718/#2720).
+        // Network-topology durable shadow-topology rebuild admin endpoints.
         new("POST", "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild"),
         new("GET", "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild/{attempt}"),
 
-        // Network-topology atomic promotion/rollback admin endpoints (#2719).
+        // Network-topology atomic promotion/rollback admin endpoints.
         new("POST", "/api/v1/admin/network-datasets/{id}/promote"),
         new("POST", "/api/v1/admin/network-datasets/{id}/rollback"),
         new("GET", "/api/v1/admin/network-datasets/{id}/promotions"),
@@ -110,16 +110,16 @@ public static partial class EndpointRegistry
         new("GET", "/elevation/{datasetId}/value"),
         new("GET", "/elevation/{datasetId}/profile"),
 
-        // Scene analysis on the elevation surface (#1204).
+        // Scene analysis on the elevation surface.
         new("POST", "/elevation/{datasetId}/sun-shadow"),
         new("POST", "/elevation/{datasetId}/slice"),
-        // 3D visibility analysis on the elevation surface (#1203).
+        // 3D visibility analysis on the elevation surface.
         new("POST", "/elevation/{datasetId}/line-of-sight"),
         new("POST", "/elevation/{datasetId}/viewshed"),
 
         new("GET", "/api/styles/{publicationId}.json"),
 
-        // Durable PMTiles publish range proxy (#845).
+        // Durable PMTiles publish range proxy.
         new("GET", "/api/v1/tiles/pmtiles/{*artifactId}"),
         new("HEAD", "/api/v1/tiles/pmtiles/{*artifactId}"),
 

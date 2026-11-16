@@ -122,7 +122,7 @@ var builder = WebApplication.CreateBuilder(args);
 // they had come from the environment. Precedence: appsettings < document < env vars < command line.
 await SettingsDocumentConfiguration.AddSettingsDocumentAsync(builder.Configuration);
 
-// Migrate-only mode (honua-server#6470): HONUA_MIGRATE_ONLY=true applies the database migrations
+// Migrate-only mode: HONUA_MIGRATE_ONLY=true applies the database migrations
 // through the same runner and MigrationSafety gates as serving startup, prints one JSON summary to
 // standard output and exits with a typed code. It composes its own minimal service graph and never
 // builds this web host, so no listener, hosted service, licence or admin credential is
@@ -134,7 +134,7 @@ if (Honua.Server.Hosting.MigrateOnly.MigrateOnlyMode.Resolve(builder.Configurati
     return;
 }
 
-// Compose executor mode (honua-server#6811): HONUA_COMPOSE_EXECUTOR=true serves the allowlisted
+// Compose executor mode: HONUA_COMPOSE_EXECUTOR=true serves the allowlisted
 // Compose socket and never builds this web host. The serving process does not take this path.
 if (Honua.Server.Hosting.ComposeExecutor.ComposeExecutorMode.Resolve(builder.Configuration) !=
     Honua.Server.Hosting.ComposeExecutor.ComposeExecutorSwitch.NotRequested)
@@ -175,7 +175,7 @@ var registerInfrastructureInTestEnvironment =
 // Standalone Test images (e.g. the honua-console live lane's Testcontainers image) expose the
 // Operate observability fixture seed endpoint and must register the real data providers the
 // seeder resolves. They run their own migrations, unlike in-process WebAppFixture hosts which
-// set HONUA_SKIP_MIGRATIONS and wire isolated providers themselves (honua-server#2350).
+// set HONUA_SKIP_MIGRATIONS and wire isolated providers themselves.
 var operateObservabilityFixtureEnabled =
     Honua.Server.Features.Admin.OperateFixtures.OperateObservabilityFixtureOptions.ResolveEnabled(
         builder.Configuration,
@@ -186,8 +186,8 @@ var hostManagesOwnMigrations = !builder.Configuration.GetValue<bool>("HONUA_SKIP
 // A standalone fixture host (Development/Test only) needs the connection-encryption master key
 // the Postgres secure-connection provider requires; the honua-console Testcontainers harness does
 // not supply it. Fill deterministic dev defaults for any keys not already configured so the seed
-// endpoint — and the audit-log/connection-provider path every request hits — works out of the box
-// (honua-server#2350). Skipped in Production because the fixture validator forbids it there.
+// endpoint — and the audit-log/connection-provider path every request hits — works out of the box.
+// Skipped in Production because the fixture validator forbids it there.
 if (operateObservabilityFixtureEnabled &&
     (builder.Environment.IsDevelopment() || isTestEnvironment))
 {
@@ -299,8 +299,8 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     catch (InvalidOperationException ex)
     {
         // A missing or unreadable certificate, or a short secret, is an operator error. Left unhandled it aborts the
-        // runtime ("signal: aborted" on Lambda, exit 139 on the AOT image) with no usable status
-        // (honua-server#6500). Report it and leave with a plain exit status.
+        // runtime ("signal: aborted" on Lambda, exit 139 on the AOT image) with no usable status.
+        // Report it and leave with a plain exit status.
         Honua.Server.Hosting.StartupRefusal.Exit(ex.Message);
         return;
     }
@@ -375,7 +375,7 @@ builder.Host.UseSerilog((context, services, config) =>
 // Skip infrastructure registration in test environment by default - WebAppFixture handles it.
 // Standalone Python/JS harnesses can opt back in with HONUA_REGISTER_TEST_INFRASTRUCTURE=true;
 // a self-migrating standalone Test image that enables the Operate observability fixture also
-// opts in automatically so the seed endpoint's providers resolve (honua-server#2350).
+// opts in automatically so the seed endpoint's providers resolve.
 var registerProviderInfrastructure =
     Honua.Server.Startup.TestInfrastructureRegistrationPolicy.ShouldRegisterInfrastructure(
         isTestEnvironment,
@@ -557,7 +557,7 @@ if (hostHasSystemDatabase)
             // any wedged staged release forward.
             builder.Services.AddHostedService<Honua.ControlPlane.WorkflowOperationBackstopSweepService>();
 
-            // Graduated ops-findings autonomy (#2557): a leased singleton evaluator that can
+            // Graduated ops-findings autonomy: a leased singleton evaluator that can
             // route auto-safe remediation findings back through the operation gateway. It is
             // only hosted with a system database; hosts without one stay inert.
             builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsFindingsAutonomyEvaluationService>();
@@ -569,7 +569,7 @@ if (hostHasSystemDatabase)
         }
     }
 
-    // Agent-operation approval surface (#1692/#1693): durable proposal store +
+    // Agent-operation approval surface: durable proposal store +
     // shared operation gateway choke point + per-class executors.
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>(
         static provider => provider.GetRequiredService<Honua.ControlPlane.PostgresOperationProposalStore>());
@@ -587,20 +587,20 @@ if (hostHasSystemDatabase)
         Honua.ControlPlane.Executors.RestoreGuardedDeployOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.AdminConfigOperationExecutor>();
-    // MetadataRelease executor is create-only BY DESIGN (#2563): rollback and the coordinated-release
+    // MetadataRelease executor is create-only BY DESIGN: rollback and the coordinated-release
     // approval-gate model stay endpoint/cockpit-driven — see MetadataReleaseOperationExecutor remarks.
-    // Seed has NO executor here — it is enum-only on trunk with no runner to adapt (#2563); the gateway
+    // Seed has NO executor here — it is enum-only on trunk with no runner to adapt; the gateway
     // continues to return NotSupported for it, and IOperationExecutorCatalog reports that truthfully.
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.MetadataReleaseOperationExecutor>();
-    // Geoprocess executor (#2814): resumes an approved destructive/sink GP plan.
+    // Geoprocess executor: resumes an approved destructive/sink GP plan.
     // A gated GP submission is persisted as an AwaitingApproval proposal carrying the
     // serialized plan; approving it routes here to re-submit through the GP job
     // pipeline with the approval gate already satisfied (ADR-0064). Resolves the GP
     // job service lazily to avoid the gateway <-> job-service construction cycle.
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.Geoprocessing.GeoprocessOperationExecutor>();
-    // Executor-discovery capability surface (#2563): reflects the exact executors registered above so
+    // Executor-discovery capability surface: reflects the exact executors registered above so
     // discovery consumers (honua_supported_operation_kinds and the proposal compatibility field)
     // can never drift from routing reality.
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutorCatalog,
@@ -626,11 +626,11 @@ else
 // dependency instead of a 500.
 builder.Services.AddHonuaControlPlaneLambdaEventTargets(builder.Configuration);
 
-// Pending-approval notification channel (#1695): emitted from the gateway/store
+// Pending-approval notification channel: emitted from the gateway/store
 // boundary, not per-endpoint. Safe to register on every host.
 builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IProposalNotifier,
     Honua.Server.Features.Admin.ProposalNotifier>();
-// Real admin-config applier: the payload-discriminated ops-action registry (#2561).
+// Real admin-config applier: the payload-discriminated ops-action registry.
 // Executes self-healing actuators (alert redrive/pause/resume, bounded-admission tune),
 // failing closed on unknown/malformed payloads. Replaces the previous logging stub.
 builder.Services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IAdminConfigChangeApplier,
@@ -642,7 +642,7 @@ builder.Services.TryAddSingleton<Honua.Core.Features.Guardrails.Abstractions.IOp
 builder.Services.TryAddSingleton<Honua.Core.Features.Guardrails.Abstractions.IOpsActionSafetyCatalog,
     Honua.ControlPlane.Executors.OpsActionSafetyCatalog>();
 // Autonomous success is evidence-gated: the only auto-safe action must re-observe the live
-// dispatch state across an observation window before the gateway records Succeeded (#2568).
+// dispatch state across an observation window before the gateway records Succeeded.
 builder.Services.AddScoped<Honua.ControlPlane.IAutonomousOperationConvergence,
     Honua.ControlPlane.Executors.AlertDispatchAutonomousOperationConvergence>();
 
@@ -690,7 +690,7 @@ builder.Services.AddScoped<Honua.Infrastructure.Attachments.AttachmentUploadCont
 builder.Services.AddScoped<Honua.Core.Features.Attachments.Abstractions.IAttachmentUploadPublisher,
     Honua.Infrastructure.Attachments.AttachmentUploadPublisher>();
 
-// Federated-query planning and source configuration (#341).
+// Federated-query planning and source configuration.
 // Experimental gate (PA-001): federated query is off by default. Set
 // Experimental__Features__FederatedQuery=true to opt in.
 if (builder.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", false))
@@ -710,7 +710,7 @@ builder.Services.TryAddSingleton<IDatabaseMigrationBackupHookRecorder,
     Honua.Infrastructure.Monitoring.AuditingMigrationBackupHookRecorder>();
 builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DatabaseCompatibilityState>();
 
-// Degraded-start resilience (#1632): when enabled, transient DB-unavailability at startup does
+// Degraded-start resilience: when enabled, transient DB-unavailability at startup does
 // not crash the process; the host serves non-DB routes and recovers connectivity in the background.
 var startupResilienceOptions = builder.Configuration
     .GetSection(Honua.Core.Configuration.StartupResilienceOptions.SectionName)
@@ -751,7 +751,7 @@ builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
-// Edition guardrail ladder (#1691): resolves DirectExecute/RequiresApproval/Blocked
+// Edition guardrail ladder: resolves DirectExecute/RequiresApproval/Blocked
 // per (operation class x edition). Fails closed for unknown classes outside dev.
 builder.Services.Configure<Honua.Core.Features.Guardrails.GuardrailLadderOptions>(
     builder.Configuration.GetSection(Honua.Core.Features.Guardrails.GuardrailLadderOptions.SectionName));
@@ -766,7 +766,7 @@ builder.Services.AddSingleton<Honua.Core.Features.Guardrails.Abstractions.IGuard
 
 // Register configuration documentation service for self-documenting admin endpoint
 // Admin startup connectivity diagnostics require the shared secret provider even when
-// offline sync and other experimental surfaces are disabled (#4008).
+// offline sync and other experimental surfaces are disabled.
 Honua.Infrastructure.Configuration.ConfigurationServiceExtensions.AddSecretManagement(
     builder.Services, builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
@@ -778,14 +778,14 @@ builder.Services.TryAddSingleton<IShareTrafficStore, InMemoryShareTrafficStore>(
 
 // Register control plane IAM in-memory defaults. Uses TryAdd so a durable provider
 // implementation registered earlier (e.g. PostgresRoleStore from AddPostgreSqlServices)
-// wins — otherwise the later default would shadow it and grants would not persist (#1575).
+// wins — otherwise the later default would shadow it and grants would not persist.
 builder.Services.AddInMemoryControlPlaneIamDefaults();
-// Canonical per-operation permission resolver (#1375): the shared authorization
+// Canonical per-operation permission resolver: the shared authorization
 // seam over EffectivePermissions. Scoped so it can consume the (scoped) Postgres
 // role store when durable RBAC is active.
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IPermissionResolver,
     Honua.Core.Features.Authorization.PermissionResolver>();
-// Row-level security (#502, epic #1275). In-memory policy store as the TryAdd default
+// Row-level security. In-memory policy store as the TryAdd default
 // (PostgresRlsPolicyStore wins when durable storage is active), plus the request-scoped
 // filter source that translates the caller's roles/claims + per-layer policies into the
 // parameterized predicate AND-ed into queries across every protocol.
@@ -794,7 +794,7 @@ builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IRl
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource,
     Honua.Infrastructure.Authentication.RowLevelSecurityFilterSource>();
-// Field-level security (column masking) (#1940), the field-level companion to RLS.
+// Field-level security (column masking), the field-level companion to RLS.
 // In-memory policy store as the TryAdd default (PostgresFieldMaskPolicyStore wins when
 // durable storage is active), plus the request-scoped source that resolves the caller's
 // roles + per-layer policies into the set of attributes masked from query output across
@@ -838,7 +838,7 @@ builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IOAuthClientSt
             sp.GetRequiredService<Honua.ControlPlane.JobStoreDatabase>(), sp.GetService<TimeProvider>())
         : new Honua.Infrastructure.Authentication.InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
 // A Lambda sandbox freezes between invocations, so a host that starts stopping there stays a
-// listener-less zombie for minutes. Exit after a short drain so Lambda recycles it (#6558).
+// listener-less zombie for minutes. Exit after a short drain so Lambda recycles it.
 if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment.GetEnvironmentVariable))
 {
     builder.Services.AddHostedService<Honua.Infrastructure.Hosting.LambdaHostStopExitGuard>();
@@ -846,8 +846,7 @@ if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment
 // Embed analytics ingestion is redacted, and the usage report reads a bounded buffer in this task's memory.
 builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore>(
     new Honua.Core.Features.EmbedGovernance.InMemoryEmbedAnalyticsStore());
-// v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
-// V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
+// Admin metadata edits go through IMetadataV2GraphStore, on the canonical MetadataV2Graph document.
 
 // Console content, share, open-data and embed-key state: in the system database when there is one,
 // otherwise in the memory of the single task.
@@ -867,7 +866,7 @@ builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<Honu
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.ICatalogDiscoveryRegistryStore,
     Honua.Server.Features.Console.Services.ProjectedCatalogDiscoveryRegistryStore>();
 
-// Content publication registry for Studio-generated maps/dashboards/reports/apps (#1183).
+// Content publication registry for Studio-generated maps/dashboards/reports/apps.
 // In-memory store is the default; Postgres registration (AddPostgreSqlServices) overrides
 // it with durable storage when Postgres is active.
 Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensions.AddContentPublishingServices(builder.Services);
@@ -925,12 +924,12 @@ Honua.Server.Features.Geoprocessing.ProcessRelease.GpProcessReleasePersistenceRe
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 builder.Services.AddAdminAccessOperations();
-// #2483 (ADR-0056 Increment 4): publish validated operations-toolset descriptors as
-// first-class MCP tools. The audited Admin projection publishes by default (#3363;
-// Mcp:PublishOperations:AdminProjection=false withholds it); the full operations catalog
-// stays opt-in via Mcp:PublishOperations:Enabled=true. Audited secret/session Admin
-// operations never publish. Wired after the operations toolset so the tool source can
-// resolve the canonical IOperationCatalog.
+// ADR-0056 Increment 4: publish validated operations-toolset descriptors as first-class
+// MCP tools. The audited Admin projection publishes by default
+// (Mcp:PublishOperations:AdminProjection=false withholds it); the full operations
+// catalog stays opt-in via Mcp:PublishOperations:Enabled=true. Audited secret/session
+// Admin operations never publish. Wired after the operations toolset so the tool source
+// can resolve the canonical IOperationCatalog.
 #if !HONUA_EXCLUDE_MCP
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
@@ -985,13 +984,13 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IQuerySnapshotStore>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresQuerySnapshotStore(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
-    // Temporal history store (#1166 slices 2-5): reads the uncollapsed change log with attribution.
+    // Temporal history store: reads the uncollapsed change log with attribution.
     // Overrides the Core no-op fallback registered by AddTemporalHistory. Read-only/non-Postgres
     // providers keep the no-op store (history unsupported), matching the no-op change tracker.
     builder.Services.AddScoped<Honua.Core.Features.Temporal.Abstractions.ITemporalHistoryStore>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresTemporalHistoryStore(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
-    // Branch-versioning manager (#1272 Track B, ADR-0051) — Postgres-only; read-only/non-Postgres
+    // Branch-versioning manager (ADR-0051) — Postgres-only; read-only/non-Postgres
     // providers register the NoOp stub (SupportsVersioning=false) in their ServiceCollectionExtensions.
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IVersionManager>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresVersionManager(
@@ -1050,8 +1049,6 @@ builder.Services.AddRealtimeFanout(
 // ---- End block
 builder.Services.AddCollaborationSessionTransport();
 
-// v1 manifest drift webhook dispatcher removed in #1035 cutover.
-
 // Tile-operation job service + warming/background hosted services are registered by
 // AddHonuaImportExportAndTileOperations above.
 
@@ -1064,34 +1061,34 @@ builder.Services.AddCollaborationSessionTransport();
 builder.Services.AddHonuaAuthenticationOptions(builder.Configuration, builder.Environment);
 // ---- End extracted block
 
-// Enterprise identity: SCIM 2.0 provisioning (#510) and SAML 2.0 SP-initiated SSO (#508).
+// Enterprise identity: SCIM 2.0 provisioning and SAML 2.0 SP-initiated SSO.
 // Both adapt into the existing identity/role model: SCIM provisions users + maps groups to
 // roles; SAML consumes a signed assertion and establishes a Honua session.
 builder.Services.AddEnterpriseIdentity(builder.Configuration);
 // Configure security headers
 builder.Services.AddSecurityHeaders(builder.Configuration);
-// Configure security audit log sink (#1144)
+// Configure security audit log sink
 builder.Services.AddHonuaAuditLog();
 // SIEM export connectors (Splunk HEC / Microsoft Sentinel / S3 / syslog) + audit retention and
-// data-residency controls (issue #2157). Off by default (AuditLog:Export:Enabled=false); registers
+// data-residency controls. Off by default (AuditLog:Export:Enabled=false); registers
 // the dispatcher (retry/backoff + dead-letter), residency guard, retention pruner, and any enabled
-// push sinks. Pull-based export + tamper-evidence (#2112) remain the baseline.
+// push sinks. Pull-based export + tamper-evidence remain the baseline.
 Honua.Server.Features.Infrastructure.AuditLog.Export.AuditExportServiceCollectionExtensions
     .AddHonuaAuditExport(builder.Services, builder.Configuration);
-// Scheduled audit hash-chain verifier (#2810): periodically replays the tamper-evident audit chain
+// Scheduled audit hash-chain verifier: periodically replays the tamper-evident audit chain
 // and publishes the result as a signal so a broken link raises a paged health fault / ops finding
 // instead of being caught only on a manual /verify. On by default (AuditLog:ChainVerification:Enabled).
 Honua.Server.Features.Infrastructure.AuditLog.AuditChainVerificationServiceCollectionExtensions
     .AddAuditChainVerification(builder.Services, builder.Configuration);
-// Configure tenant context resolution rail (#1144). Defaults are bound from
+// Configure tenant context resolution rail. Defaults are bound from
 // the MultiTenancy configuration section; the inline callback is the wiring
 // point for environment-specific overrides.
 builder.Services.AddHonuaTenantContext(builder.Configuration, _ => { });
-// Configure schema-per-tenant routing + usage metering rail (#346). Disabled by
+// Configure schema-per-tenant routing + usage metering rail. Disabled by
 // default (MultiTenancy:SchemaRouting:Enabled=false) so single-tenant deployments
 // retain byte-identical behavior; registration only adds the resolver/meter seam.
 builder.Services.AddHonuaTenantSchemaRouting(builder.Configuration);
-// Tenant lifecycle/provisioning + billing wiring (issue #2156). Provisioning is opt-in: the
+// Tenant lifecycle/provisioning + billing wiring. Provisioning is opt-in: the
 // catalog starts empty so single-tenant deployments are unchanged until tenants are created
 // through the admin surface. Registers the catalog, lifecycle service, billing sink, and exporter.
 builder.Services.AddHonuaTenantLifecycle();
@@ -1099,7 +1096,7 @@ builder.Services.AddHonuaTenantLifecycle();
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddBrowserSessionSecurity();
 builder.Services.AddInputValidation(builder.Configuration);
-// App-level rate limiting services (issue #355). Off by default — operators opt in via
+// App-level rate limiting services. Off by default — operators opt in via
 // RateLimiting:Enabled. Registers options validation, the policy store backing the admin
 // surface, and the partitioned middleware. Edge enforcement (ADR-0004) remains the
 // baseline; this is the opt-in identity-aware (tenant/user/API-key) enterprise slice.
@@ -1122,7 +1119,7 @@ builder.Services.AddApiVersioning(options =>
 // Configure JSON serialization for ASP.NET Core (needed for minimal API body binding)
 builder.Services.AddHonuaJsonContexts();
 
-// RFC 9110 §9.3.2: answer HEAD wherever GET is answered (#3389). Registered as a startup
+// RFC 9110 §9.3.2: answer HEAD wherever GET is answered. Registered as a startup
 // filter so the HEAD -> GET rewrite runs ahead of WebApplication's implicit UseRouting;
 // the matching restoration middleware below puts HEAD back once the endpoint is selected.
 // Normalize the optional ArcGIS application prefix before HEAD's endpoint inspection.
@@ -1191,7 +1188,7 @@ app.UseGeoServicesPublicPaths();
 // Restore HEAD after routing so cross-cutting middleware sees the method the client sent.
 app.UseHonuaHeadRequestMethod();
 
-// Data-plane writes stay closed until degraded startup has a database (#6008).
+// Data-plane writes stay closed until degraded startup has a database.
 app.UseDegradedStartupMutationFence();
 
 // Control-plane event-handler Lambdas (reconcile, backstop, scheduled tick) close their pooled
@@ -1502,7 +1499,7 @@ app.Use(async (context, next) =>
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
 // Record each gRPC call's grpc-status for the serving-latency sample while the gRPC-Web trailers
-// are still attached; the outer CorrelationIdMiddleware cannot see them (#5473).
+// are still attached; the outer CorrelationIdMiddleware cannot see them.
 app.UseGrpcServingStatusCapture();
 #endif
 
@@ -1510,7 +1507,7 @@ Honua.Ai.Protocols.Mcp.McpModernHttp.UseOriginValidation(app);
 
 // Add CORS middleware before the exception handler so error responses (4xx/5xx) carry
 // Access-Control-Allow-Origin headers; otherwise browsers report every server error as
-// a CORS failure, masking the real status/body from web clients (#1627). It also stays
+// a CORS failure, masking the real status/body from web clients. It also stays
 // after UseGrpcWeb (preserving the gRPC-Web preflight ordering) and before auth so it can
 // answer preflight requests.
 app.UseHonuaCors(app.Environment);
@@ -1554,7 +1551,7 @@ app.UseAuthentication();
 // Authorization: Bearer)
 // for requests that the default scheme did not authenticate. Must run after
 // UseAuthentication and before authorization and tenant resolution
-// so the tenant middleware sees the hydrated principal claims (#1241).
+// so the tenant middleware sees the hydrated principal claims.
 app.UsePortalTokenAuthentication();
 app.UseBrowserSessionSecurity();
 
@@ -1620,21 +1617,21 @@ app.UseMiddleware<AnonymousPressureAdmissionMiddleware>();
 
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
-// before any downstream feature handler reads ITenantContext (#1144).
+// before any downstream feature handler reads ITenantContext.
 app.UseHonuaTenantContext();
 
-// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
+// App-level rate limiting. Runs after authentication and tenant resolution
 // so schema-routing failures also consume the tenant + authenticated user/API-key bucket
 // (falling back to source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
 // posture is still edge enforcement (ADR-0004).
 app.UseRateLimiting();
 
-// Route the resolved tenant to its PostgreSQL schema and record a usage signal (#346).
+// Route the resolved tenant to its PostgreSQL schema and record a usage signal.
 // No-op unless MultiTenancy:SchemaRouting:Enabled=true. Must run after tenant context
 // resolution and before any feature handler that reads the database.
 app.UseHonuaTenantSchemaRouting();
 
-// Block requests for a suspended/deleted tenant (issue #2156). Runs after tenant context
+// Block requests for a suspended/deleted tenant. Runs after tenant context
 // resolution. A no-op for tenants not present in the catalog, so the default pipeline is
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
@@ -1668,7 +1665,7 @@ app.UseWhen(
 // endpoint the method its handler was written for: HEAD when the endpoint maps HEAD itself
 // (PMTiles range proxy, scene assets), otherwise the GET it maps — a GET-only handler has no
 // HEAD code path, and several read the request body whenever the method is not GET, which would
-// answer 400/415 where GET answers 200. Everything upstream still observes HEAD (#3389).
+// answer 400/415 where GET answers 200. Everything upstream still observes HEAD.
 app.UseHonuaHeadRequestGetSemantics();
 
 // Log application startup
@@ -1688,16 +1685,16 @@ catch (InvalidOperationException ex)
         && !Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
 {
     // An unhandled exception aborts the runtime, and on the AOT image native finalizers then run
-    // after their modules unload, so the container exits 139 instead of reporting the refusal
-    // (honua-server#6488, #6495). Leave through the host dispose path with a plain exit status.
+    // after their modules unload, so the container exits 139 instead of reporting the refusal.
+    // Leave through the host dispose path with a plain exit status.
     await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
     return;
 }
 
 // Run database migrations on startup. A migration safety gate refusal is terminal, but it
 // must leave through the host dispose path: an unhandled exception aborts the runtime and
-// native finalizers then run after their modules unload (honua-server#5507). A schema-floor
-// refusal on the skip-migrations path is the same class of abort (honua-server#6496).
+// native finalizers then run after their modules unload. A schema-floor
+// refusal on the skip-migrations path is the same class of abort.
 try
 {
     await RunDatabaseMigrationsAsync();
@@ -1712,8 +1709,7 @@ catch (Exception ex) when (Honua.Server.Hosting.GatedBootShutdown.IsAttachmentBi
     && !Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
 {
     // The runner returns this mismatch as a failed migration. Rethrowing it leaves Main as an
-    // unhandled exception, and the native image then aborts (exit 139) instead of refusing
-    // (honua-server#6554).
+    // unhandled exception, and the native image then aborts (exit 139) instead of refusing.
     await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
     return;
 }
@@ -1764,7 +1760,6 @@ app.MapServiceSettingsEndpoints();
 app.MapFolderEndpoints();
 
 // Configure admin metadata version/manifest endpoints
-// v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
 app.MapMetadataReleaseEndpoints();
 app.MapMetadataReleaseOperationEndpoints();
 app.MapMetadataReleaseControlEndpoints();
@@ -1788,10 +1783,10 @@ app.MapControlPlaneEventEndpoints();
 // only when HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set; the selector picks the handler.
 app.MapControlPlaneLambdaEventEndpoint(builder.Configuration);
 
-// Console approval surface for agent-proposed operations (#1694).
+// Console approval surface for agent-proposed operations.
 app.MapProposalEndpoints();
 
-// Consolidated ops-health snapshot + deterministic ops-findings engine (ADR-0060 WS4 / #2457).
+// Consolidated ops-health snapshot + deterministic ops-findings engine (ADR-0060 WS4).
 app.MapOpsObservabilityEndpoints();
 
 // Server-authoritative aggregated operational status + read-only ops scope (A12).
@@ -1818,13 +1813,13 @@ if (geofenceAlertsEnabled)
     app.MapAlertAdminEndpoints();
 }
 
-// Configure alert dispatch self-healing ops endpoints (dead-letter redrive, channel pause/resume) (#2561)
+// Configure alert dispatch self-healing ops endpoints (dead-letter redrive, channel pause/resume)
 if (geofenceAlertsEnabled)
 {
     app.MapAlertOpsAdminEndpoints();
 }
 
-// Configure Console Operate observability endpoints (#1168)
+// Configure Console Operate observability endpoints
 if (geofenceAlertsEnabled)
 {
     app.MapObservabilityAlertEndpoints();
@@ -1844,17 +1839,17 @@ app.MapGeocodingReferenceDataImportEndpoints();
 app.MapGeoprocessingUsageEndpoints();
 app.MapFeatureOverviewEndpoints();
 
-// Rate limit policy administration (issue #355): CRUD + status for tenant/user/API-key
+// Rate limit policy administration: CRUD + status for tenant/user/API-key
 // quota policies. Admin-authorized; the policies are consumed by the rate limiting
 // middleware registered above.
 app.MapRateLimitEndpoints();
 app.MapAgentAuthorityEndpoints();
 
-// Tenant lifecycle/provisioning administration (issue #2156): create/suspend/resume/delete plus
+// Tenant lifecycle/provisioning administration: create/suspend/resume/delete plus
 // the per-tenant billing usage export. Admin-authorized.
 app.MapTenantAdminEndpoints();
 
-// Configure compliance admin endpoints (SOC 2 / FedRAMP readiness, key rotation, report export) (#352)
+// Configure compliance admin endpoints (SOC 2 / FedRAMP readiness, key rotation, report export)
 app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
@@ -1866,7 +1861,7 @@ if (app.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", fal
 }
 app.MapClientCertificateAdminEndpoints();
 
-// Configure control plane IAM endpoints (#511)
+// Configure control plane IAM endpoints
 app.MapLicenseEndpoints();
 app.MapOidcProviderEndpoints();
 app.MapUserManagementEndpoints();
@@ -1874,20 +1869,20 @@ app.MapRoleEndpoints();
 app.MapRlsPolicyEndpoints();
 app.MapFieldMaskPolicyEndpoints();
 
-// Enterprise identity provisioning + SSO (#510 SCIM 2.0, #508 SAML 2.0)
+// Enterprise identity provisioning + SSO (SCIM 2.0, SAML 2.0)
 app.MapScimEndpoints();
 app.MapSamlEndpoints();
 
-// Configure Console metadata v2 content + RBAC endpoints (#1162)
+// Configure Console metadata v2 content + RBAC endpoints
 app.MapConsoleSessionEndpoints();
 app.MapConsoleAccessEndpoints();
 app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
-// Console Share access public-link + embed API (#1215)
+// Console Share access public-link + embed API
 app.MapConsoleShareEndpoints();
 app.MapCatalogDiscoveryEndpoints();
 app.MapConsoleSharePublicEndpoints();
-// Console open-data DCAT + STAC publication API (#1214)
+// Console open-data DCAT + STAC publication API
 app.MapConsoleOpenDataEndpoints();
 app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
@@ -1906,15 +1901,12 @@ Honua.Server.Features.Admin.EmbedGovernance.EmbedPolicyEndpoints.MapEmbedPolicyE
 app.MapOAuthClientEndpoints();
 app.MapPackageReviewEndpoints();
 
-// Configure metadata resource endpoints (ADR-0023)
-// v1 MapMetadataResourceEndpoints removed in #1035 cutover.
-
-// Configure operational monitoring endpoints (#512)
+// Configure operational monitoring endpoints
 app.MapCacheOperationsEndpoints();
 app.MapStreamingOperationsEndpoints();
 app.MapGeocodingOperationsEndpoints();
 
-// Configure feature-change streaming transport (#501)
+// Configure feature-change streaming transport
 app.MapFeatureStreamEndpoints();
 app.MapRealtimeNotificationEndpoints();
 app.MapFeatureStreamConformanceEndpoints();
@@ -1961,29 +1953,29 @@ app.MapRasterImportEndpoints();
 // Configure Geoservices service import endpoints
 app.MapGeoservicesImportEndpoints();
 
-// Configure footprint-driven batch import orchestration endpoints (issue #1253)
+// Configure footprint-driven batch import orchestration endpoints
 app.MapMigrationBatchEndpoints();
 
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
 
-// Configure OGC API Features collection import endpoints (#1029 slice 2)
+// Configure OGC API Features collection import endpoints
 app.MapOgcApiFeaturesImportEndpoints();
-// Configure OGC WFS data import endpoints (#1016 slice 2)
+// Configure OGC WFS data import endpoints
 app.MapOgcWfsImportEndpoints();
-// Configure OGC WCS / OGC API Coverages GeoTIFF/COG import endpoints (issue #1030 slice 2)
+// Configure OGC WCS / OGC API Coverages GeoTIFF/COG import endpoints
 app.MapOgcCoverageImportEndpoints();
 
-// Configure legacy OGC WCS coverage import endpoints (issue #1030 slice 3)
+// Configure legacy OGC WCS coverage import endpoints
 app.MapOgcWcsImportEndpoints();
 
-// Configure GeoServer migration run admin orchestration endpoints (issue #1015 slice 5)
+// Configure GeoServer migration run admin orchestration endpoints
 app.MapMigrationRunAdminEndpoints();
 
-// Configure OGC WMTS tile-cache export endpoints (#1016 slice 4)
+// Configure OGC WMTS tile-cache export endpoints
 app.MapOgcTileCacheExportEndpoints();
 
-// Configure Esri tile/vector-tile cache package import + serving endpoints (#1269)
+// Configure Esri tile/vector-tile cache package import + serving endpoints
 app.MapTileCachePackageEndpoints();
 
 if (isTestEnvironment)
@@ -2088,7 +2080,7 @@ async Task RunDatabaseMigrationsAsync()
         {
             // The pending provider script cannot run while migrations are skipped. A baseline that
             // already matches is journaled as adopted; anything short of that match stays a floor
-            // failure and is not repaired here (honua-server#6496).
+            // failure and is not repaired here.
             var adoptedBaseline = schemaGuard.TryAdoptMatchingRasterBaselineAsync(
                 skippedMigrationConnectionString,
                 app.Lifetime.ApplicationStopping);
@@ -2108,7 +2100,7 @@ async Task RunDatabaseMigrationsAsync()
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // A cold start before the migration task ran (honua-server#5916): a required migration is
+            // A cold start before the migration task ran: a required migration is
             // not applied yet, so the schema is behind this binary. Start degraded (readiness 503
             // schema-floor, event endpoints 503) and re-check in the background instead of exiting.
             // A schema newer than this binary (DatabaseSchemaCompatibilityException) or one that
@@ -2195,7 +2187,7 @@ async Task RunDatabaseMigrationsAsync()
 
             // In non-Development environments, re-throw so the app fails to start
             // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
-            // start is enabled and the failure is transient connectivity (#1632).
+            // start is enabled and the failure is transient connectivity.
             if (error is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
                 (!TryEnterDegradedStart("migrations", error, migrationsPending: true)
                 && failOnDatabaseStartupFailure))
@@ -2232,7 +2224,7 @@ async Task RunDatabaseMigrationsAsync()
 
         // In non-Development environments, re-throw so the app fails to start
         // (gives a clear CrashLoopBackOff signal in Kubernetes) — unless degraded
-        // start is enabled and the failure is transient connectivity (#1632).
+        // start is enabled and the failure is transient connectivity.
         if (ex is Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException ||
             (!TryEnterDegradedStart("migrations", ex, migrationsPending: true)
             && failOnDatabaseStartupFailure))
@@ -2242,7 +2234,7 @@ async Task RunDatabaseMigrationsAsync()
     }
 }
 
-// Degraded-start gate (#1632): returns true when the host should keep running despite a
+// Degraded-start gate: returns true when the host should keep running despite a
 // startup database failure, rather than crashing the process (which on AWS Lambda becomes a
 // Runtime.ExitError crash loop that 500s every route, including non-database routes). Only
 // transient connectivity failures are suppressed, and only when degraded start is enabled;
@@ -2337,7 +2329,7 @@ async Task RunPostGisPreflightCheckAsync()
     {
         // The preflight could not reach the database to check compatibility. If degraded start is
         // enabled and the failure is transient connectivity, arm degraded mode (migrations are run
-        // after this method, so they are still pending) rather than crashing the process (#1632).
+        // after this method, so they are still pending) rather than crashing the process.
         if (TryEnterDegradedStart("PostGIS preflight", ex, migrationsPending: !skipMigrationsConfigured, schemaGuardPending: skipMigrationsConfigured))
         {
             return;
@@ -2351,7 +2343,7 @@ async Task RunPostGisPreflightCheckAsync()
     // The database could not be reached (an outage, not an incompatible install): start degraded
     // when enabled — readiness reports 503 with the failure class until the recovery loop succeeds.
     // A genuinely incompatible database (missing PostGIS) is not transient and still fails below.
-    // honua-server#5916: the readiness reason and the log line carry the cause class
+    // The readiness reason and the log line carry the cause class
     // (connection-borrow-timeout, connection-refused, auth, connection-unavailable).
     if (result.IsTransientFailure
         && TryArmDegradedStart(

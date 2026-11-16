@@ -52,7 +52,7 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             MetricsTags);
 
-        // Feature-change transactional outbox dispatcher (#692). Surfaces dispatch backlog
+        // Feature-change transactional outbox dispatcher. Surfaces dispatch backlog
         // and dead-letter accumulation on the readiness endpoint so deployments observe
         // CDC durability regressions before they cause silent event loss.
         healthChecksBuilder.AddCheck<Honua.Infrastructure.Events.Outbox.OutboxHealthCheck>(
@@ -60,7 +60,7 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             OutboxTags);
 
-        // Alert delivery outbox (#2427): surfaces dispatch backlog growth and dead-letter
+        // Alert delivery outbox: surfaces dispatch backlog growth and dead-letter
         // accumulation through the HealthCheckService roll-up / ops-health snapshot
         // overallStatus (not the /healthz/ready probe, which uses ReadinessCheckService and
         // does not run registered health checks) so notification-delivery stalls are visible
@@ -70,16 +70,16 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             AlertsTags);
 
-        // Alert evaluation loop (#2810): the evaluator previously had no health coverage. Surfaces a
-        // hung leader (stale productive-pass heartbeat) and a fleet-wide no-leader stall (no node can
-        // acquire the advisory lease) so a silently-halted evaluation loop is visible on the roll-up
-        // and the paged readiness path. Reports Healthy when the pipeline is disabled.
+        // Alert evaluation loop: surfaces a hung leader (stale productive-pass heartbeat) and a
+        // fleet-wide no-leader stall (no node can acquire the advisory lease) so a silently-halted
+        // evaluation loop is visible on the roll-up and the paged readiness path. Reports Healthy
+        // when the pipeline is disabled.
         healthChecksBuilder.AddCheck<Honua.Alerts.AlertEvaluationHealthCheck>(
             "alert-evaluation",
             HealthStatus.Degraded,
             AlertsTags);
 
-        // Real-time feature streams (#2428, GA promotion): surfaces backpressure
+        // Real-time feature streams (GA promotion): surfaces backpressure
         // (slow-consumer disconnects, session saturation) and cross-node broadcast backlog
         // loss through the HealthCheckService roll-up so streaming degradation is visible
         // before clients silently miss events. Never Unhealthy — best-effort delivery with
@@ -89,14 +89,14 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             StreamingTags);
 
-        // Plugin/extension SDK (#347): reports loaded plugins and whether the Enterprise
+        // Plugin/extension SDK: reports loaded plugins and whether the Enterprise
         // entitlement is active. Always healthy — plugins are optional.
         healthChecksBuilder.AddCheck<PluginHealthCheck>(
             "plugins",
             HealthStatus.Healthy,
             PluginTags);
 
-        // Scheduled audit hash-chain verification (#2810): surfaces a broken/tampered append-only
+        // Scheduled audit hash-chain verification: surfaces a broken/tampered append-only
         // audit chain through the roll-up / ops-health snapshot as a paged signal, rather than only
         // catching it on a manual /verify. Reads the cached signal; never replays the chain on a
         // probe. Healthy before the first pass and while the chain is intact.

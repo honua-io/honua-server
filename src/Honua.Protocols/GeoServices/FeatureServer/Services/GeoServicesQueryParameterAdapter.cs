@@ -71,7 +71,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
             // When outStatistics is present the response columns are the declared statistic
             // aliases plus the groupByFieldsForStatistics columns, not the layer's source
             // fields, so validating orderByFields against the layer schema here would reject
-            // the only names that can order aggregate output (#3372). The aggregate branch of
+            // the only names that can order aggregate output. The aggregate branch of
             // the query handler owns orderByFields in that case — it resolves the terms against
             // the parsed statistic/group-by declarations via GeoServicesStatisticsOrderBy and
             // sets FeatureQuery.OrderBy itself. Leaving it null here also keeps the shared

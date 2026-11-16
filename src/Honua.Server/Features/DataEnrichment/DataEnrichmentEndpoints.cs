@@ -27,7 +27,7 @@ internal static class DataEnrichmentEndpoints
             .Produces(StatusCodes.Status402PaymentRequired)
             .AllowAnonymous();
 
-        // Managed enrichment-dataset catalog discovery (#2280). Edition-filtered: a
+        // Managed enrichment-dataset catalog discovery. Edition-filtered: a
         // caller sees only datasets whose minimum edition is at or below theirs.
         endpoints.MapGet("/api/enrich/datasets", (Delegate)DataEnrichmentRequestHandlers.HandleDatasetsGet)
             .WithName("ListEnrichmentDatasets")
@@ -74,7 +74,7 @@ internal static class DataEnrichmentEndpoints
             .Produces(StatusCodes.Status413PayloadTooLarge)
             .AllowAnonymous();
 
-        // Admin registration surface for the managed catalog (#2280). No-ops on
+        // Admin registration surface for the managed catalog. No-ops on
         // non-Postgres profiles where the registry store is unavailable.
         endpoints.MapEnrichmentDatasetAdminEndpoints();
 

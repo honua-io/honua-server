@@ -154,7 +154,7 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
                         await socket.EndAuthorizationAsync().ConfigureAwait(false);
                         // Cancelling a receive that is still pending aborts the managed socket, and
                         // Kestrel's teardown can then drop the close frame before it leaves: the
-                        // client saw 1006 instead of 1008 (honua-server#4776). Let the endpoint
+                        // client saw 1006 instead of 1008. Let the endpoint
                         // observe the client's close reply first, bounded by one interval.
                         await socket.WaitForCloseReplyAsync(monitorStop.Token).ConfigureAwait(false);
                     }

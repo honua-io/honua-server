@@ -131,7 +131,7 @@ internal static partial class PMTilesProxyEndpoints
             case ArtifactRangeOutcome.TooLarge:
                 // A no-Range GET against an artifact above the safe direct-stream
                 // budget: streaming it whole would silently fail once this response
-                // crosses the host's own payload ceiling (#2991) instead of a clean,
+                // crosses the host's own payload ceiling instead of a clean,
                 // bounded error. Real PMTiles readers always fetch via byte ranges, so
                 // only a "give me the whole file" caller (health checks, curl) hits
                 // this path; point it at Range requests instead of attempting (and

@@ -75,7 +75,7 @@ internal static class Wcs20Endpoints
 
         // Same service scope without a "services" segment. ArcGIS Pro reads
         // {root}/services/{name}/... as an ArcGIS Server site and fails MakeWCSLayer
-        // on its discovery probes (#4584, ADR-0079 amendment).
+        // on its discovery probes (ADR-0079 amendment).
         endpoints.MapGet("/ogc/wcs/{serviceId}",
                 static (HttpContext context, string serviceId, Wcs20Handler handler) =>
                     handler.HandleAsync(context, Wcs20RouteScope.ForService(serviceId)))

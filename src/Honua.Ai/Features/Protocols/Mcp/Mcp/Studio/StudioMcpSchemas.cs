@@ -89,7 +89,7 @@ internal static class StudioMcpSchemas
     // Arity and zoom/pitch ranges come from the shared Studio view contract
     // (StudioCompositionViewBounds) rather than being restated here: the live-collaboration op-log
     // validator enforces the SAME constants, so the advertised schema and the enforced admission
-    // rules cannot drift apart (honua-server#2999 review).
+    // rules cannot drift apart.
     private static readonly string ViewInputSchemaJson = $$"""
         {
           "type": "object",

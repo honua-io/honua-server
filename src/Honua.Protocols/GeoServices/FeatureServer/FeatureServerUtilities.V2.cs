@@ -173,7 +173,7 @@ internal static partial class FeatureServerEndpoints
                 ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
             SpatialReference = resource.Type == MetadataV2ObjectType.Table ? null : spatialReference,
             // Advertise hasZ/hasM from the authored Metadata v2 display flags so 3D/measured
-            // layers self-describe to Esri clients (#1877 Part C). Both default to false and are
+            // layers self-describe to Esri clients. Both default to false and are
             // omitted from the response when unset to keep 2D documents CITE/byte-stable.
             HasZ = resource.Display?.HasZ ?? false,
             HasM = resource.Display?.HasM ?? false,
@@ -208,13 +208,13 @@ internal static partial class FeatureServerEndpoints
             // When the layer exposes attachments, advertise the attachment-capability
             // flags Esri clients inspect. The JS SDK gates queryAttachments(where) on
             // supportsQueryAttachments, and the attachment query surface honors the
-            // documented keywords/uploadId parameters (#1453). The same value is mirrored
+            // documented keywords/uploadId parameters. The same value is mirrored
             // into advancedQueryCapabilities so the nested operations block stays consistent.
             SupportsQueryAttachments = supportsQueryAttachments,
             SupportsAttachmentKeywords = supportsQueryAttachments,
             // Chunked upload-id attachment operations are not implemented. Direct attachment
             // routes may be available, but this flag must remain false until an uploads resource
-            // and its register/upload lifecycle are served (#4052, #4104).
+            // and its register/upload lifecycle are served.
             SupportsAttachmentsByUploadId = false,
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
@@ -226,7 +226,7 @@ internal static partial class FeatureServerEndpoints
             // Esri projects a layer's editing types/templates from its subtypes (one type per
             // subtype, each carrying an editing template seeded with the subtype's default
             // values + subtype code). Honua has no separate template authoring on the canonical
-            // graph, so the subtype-derived types ARE the layer template surface (#1878). The
+            // graph, so the subtype-derived types ARE the layer template surface. The
             // layer-root `templates` array stays empty because, in the Esri model, when a layer
             // has typed/subtyped templates they live inside each `types[]` entry; it is populated
             // only by layers without subtypes (none authored on the canonical graph today).
@@ -238,14 +238,14 @@ internal static partial class FeatureServerEndpoints
             AdvancedQueryCapabilities = advancedQueryCapabilities,
             // Esri subtype surface (subtypeField / subtypes / defaultSubtypeCode) carried
             // from the canonical resource so it survives import → publish → compat-compile
-            // and reaches Esri clients (honua-server#1378). Omitted when the layer has none.
+            // and reaches Esri clients. Omitted when the layer has none.
             SubtypeField = resource.Subtypes?.SubtypeField,
             DefaultSubtypeCode = resource.Subtypes?.DefaultSubtypeCode,
             Subtypes = GeoServicesSubtypeMapper.Map(resource.Subtypes),
             // Contingent-value definition surfaced on the layer metadata from the canonical
             // resource's contingentValueGroups (the same source the service-level
             // queryContingentValues operation reads), reusing GeoServicesContingentValueMapper.
-            // Omitted when the layer declares no contingent values (#1878).
+            // Omitted when the layer declares no contingent values.
             ContingentValuesDefinition = GeoServicesContingentValueMapper.Map(
                 publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
                 resource.ContingentValueGroups)
@@ -768,7 +768,7 @@ internal static partial class FeatureServerEndpoints
 
     private static string MapFieldTypeToSqlV2(MetadataV2FieldType type)
         // Shared with the query response so the layer resource and /query cannot
-        // disagree about the same field (honua-server#5197).
+        // disagree about the same field.
         => GeoServicesFieldConventions.MapSqlType(type);
 
     private static List<string> ReadServiceCapabilitiesV2(MetadataV2Service service)
@@ -831,7 +831,7 @@ internal static partial class FeatureServerEndpoints
         => ServiceSupportsOperationV2(service, operation, publication: null);
 
     // Delegates to the shared resolver so the Esri edits surface and the OGC API Features
-    // write surface answer the same question the same way (#4073, #4707).
+    // write surface answer the same question the same way.
     internal static bool ServiceSupportsOperationV2(
         MetadataV2Service service,
         string operation,

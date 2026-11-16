@@ -36,7 +36,7 @@ internal static class AuthenticationResponseCachePolicy
         // Private caches can still reuse a fresh response after the server revokes
         // the credential: its bytes, Vary key and the asset's ETag have not changed.
         // Preserve an endpoint's private policy as metadata, but never allow it to
-        // opt credentialed responses out of no-store (#4608). No-store takes
+        // opt credentialed responses out of no-store. No-store takes
         // precedence over any retained freshness lifetime.
         if (isAuthenticationDecision || HasCredentialedIdentity(context))
         {

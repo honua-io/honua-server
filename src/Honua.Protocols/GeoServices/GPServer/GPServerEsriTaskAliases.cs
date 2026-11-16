@@ -49,7 +49,7 @@ internal static class GPServerEsriTaskAliases
         ["raster.mosaic"] = "MosaicToNewRaster",
         ["raster.reclassify"] = "Reclassify",
 
-        // Imagery / ML (delegated cloud inference, #2241)
+        // Imagery / ML (delegated cloud inference)
         ["imagery.classify"] = "ClassifyRaster",
 
         // Conversion
@@ -61,8 +61,8 @@ internal static class GPServerEsriTaskAliases
         // data-management.delete-features and data-management.calculate-field are
         // deliberately absent: both are ProtocolOnly operations (their only entry point
         // is the owning synchronous FeatureServer edit endpoint; no process-job executor
-        // is registered), so GPServer never publishes them as tasks (#4409) and an alias
-        // for them would promise a task that cannot be discovered or submitted (#4781).
+        // is registered), so GPServer never publishes them as tasks and an alias
+        // for them would promise a task that cannot be discovered or submitted.
         ["data-management.copy-features"] = "CopyFeatures",
         ["data-management.append"] = "Append",
 
@@ -74,7 +74,7 @@ internal static class GPServerEsriTaskAliases
         ["analytics.spatial-join-managed"] = "SpatialJoin",
         ["analytics.hotspot-managed"] = "HotSpots",
 
-        // Data enrichment (#2283): the async batch enrichment job maps onto the
+        // Data enrichment: the async batch enrichment job maps onto the
         // Esri "Enrich Layer" analysis tool convention.
         ["enrichment.enrich"] = "EnrichLayer",
         ["routing.closest-facilities"] = "FindClosestFacilities",

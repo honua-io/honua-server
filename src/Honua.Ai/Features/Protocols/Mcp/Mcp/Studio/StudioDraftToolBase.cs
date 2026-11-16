@@ -114,7 +114,7 @@ internal abstract class StudioDraftToolBase
         var draft = await lifecycleService.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
         if (draft is null)
         {
-            // Non-disclosure (#3429): authorize a missing draft as an ownerless target first, so a
+            // Non-disclosure: authorize a missing draft as an ownerless target first, so a
             // caller who could not act on another owner's draft receives that same governed denial
             // instead of learning whether the id exists.
             await EnsureStudioAuthorizedAsync(
@@ -124,7 +124,7 @@ internal abstract class StudioDraftToolBase
                 studioOperation,
                 resourceOwnerId: null,
                 // A lookup miss carries the caller's own tenant so the tenant boundary stays a
-                // no-op here and the ownerless-target denial keeps deciding (honua-server#4905).
+                // no-op here and the ownerless-target denial keeps deciding.
                 resourceTenantId: RequestTenantId(httpContext),
                 draftId.ToString("D"),
                 "studio-package-draft",

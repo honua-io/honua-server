@@ -18,6 +18,8 @@ internal static partial class SensorThingsEndpoints
             .WithTags("SensorThings")
             .Produces(200, contentType: "application/json")
             .Produces(400)
+            .Produces(401)
+            .Produces(403)
             .Produces(404)
             .Produces(501);
 
