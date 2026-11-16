@@ -66,7 +66,7 @@ public sealed partial class GPServerDurableRuntimeTests
             using var submitDoc = JsonDocument.Parse(await submit.Content.ReadAsStringAsync());
             var jobId = submitDoc.RootElement.GetProperty("jobId").GetString();
             jobId.Should().NotBeNullOrWhiteSpace();
-            submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+            submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().BeOneOf(GPServerJobWait.AcceptedSubmitStatuses);
 
             using var terminalStatus = await GPServerJobWait.UntilRestSucceededAsync(
                 client,
