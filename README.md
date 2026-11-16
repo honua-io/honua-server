@@ -210,7 +210,7 @@ Frequent destinations:
 | Use the admin API | [Control plane API](docs/reference/admin-api/overview.md) |
 | Check client compatibility | [Compatibility contract](docs/reference/compatibility/clients.md) |
 | Ground an AI agent in this repo | [docs/llms.txt](docs/llms.txt) · [AI agents (MCP)](docs/guides/connect/ai-agents-mcp.md) |
-| Contribute code | [Contributing](docs/internal/contributor/development/contributing.md) · [AGENTS.md](AGENTS.md) |
+| Report a bug or request a feature | [Issues](https://github.com/honua-io/honua-server/issues) · [Contributing](CONTRIBUTING.md) (no outside code contributions) |
 
 ## Related repositories
 
