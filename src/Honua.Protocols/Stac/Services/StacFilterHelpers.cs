@@ -370,10 +370,16 @@ internal static class StacFilterHelpers
             return false;
         }
 
-        return DateTimeOffset.TryParse(
+        return DateTimeOffset.TryParseExact(
             normalized,
+            [
+                "yyyy-MM-dd'T'HH:mm:ss'Z'",
+                "yyyy-MM-dd'T'HH:mm:sszzz",
+                "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'",
+                "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz"
+            ],
             CultureInfo.InvariantCulture,
-            DateTimeStyles.RoundtripKind,
+            DateTimeStyles.AssumeUniversal,
             out timestamp);
     }
 

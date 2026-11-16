@@ -375,6 +375,28 @@ public sealed class StacFilterHelpersTests
         }
     }
 
+    [UnitTest]
+    public void ParseDatetime_WithIncompleteOrSpacedTime_RejectsInstantAndIntervalBounds()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        foreach (var time in new[] { "00:00", "00:00:00 ", "00:00:00.1 " })
+        {
+            foreach (var zone in new[] { "Z", "+01:00", "-01:00" })
+            {
+                var instant = $"2026-11-16T{time}{zone}";
+                foreach (var datetime in new[] { instant, $"{instant}/..", $"../{instant}" })
+                {
+                    StacFilterHelpers.IsValidDatetimeSyntax(datetime).Should().BeFalse("'{0}' is not RFC 3339", datetime);
+                    StacFilterHelpers.ParseDatetime(datetime, resource).Should().BeNull("'{0}' is not RFC 3339", datetime);
+                }
+            }
+        }
+    }
+
     private static async Task<StacV2Lookups.ResolvedStacPublication[]> ResolveVisiblePublicationsAsync(
         MetadataV2Graph graph)
     {

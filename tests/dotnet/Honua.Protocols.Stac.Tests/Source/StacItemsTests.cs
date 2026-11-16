@@ -273,6 +273,9 @@ public sealed class StacItemsTests : IAsyncLifetime
         foreach (var datetime in new[]
         {
             "not-a-datetime",
+            "2026-11-16T12:00Z",
+            "2026-11-16T12:00:00 Z/..",
+            "../2026-11-16T12:00:00 +01:00",
             "2026-11-16T12:00:00.1234567garbageZ",
             "2026-11-16T12:00:00.12345678e2+01:00/..",
             "../2026-11-16T12:00:00.1234567  -01:00"
