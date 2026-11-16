@@ -51,6 +51,7 @@ public sealed partial class PairedPublishEndpointTests(DatabaseFixtureAdapter da
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            ConfigurePublicationAdvertisement(builder);
         });
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();

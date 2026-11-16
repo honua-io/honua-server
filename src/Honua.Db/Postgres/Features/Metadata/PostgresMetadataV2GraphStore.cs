@@ -217,6 +217,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
                 $"Metadata v2 graph failed validation: {string.Join("; ", validation.Errors)}");
         }
 
+        await PublicPublicationWriteFence.PrepareWriteAsync(_connectionProvider, _schemaName, cancellationToken).ConfigureAwait(false);
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await VerifySchemaFloorAsync(connection, cancellationToken).ConfigureAwait(false);
 
@@ -314,6 +315,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(revision);
 
+        await PublicPublicationWriteFence.PrepareWriteAsync(_connectionProvider, _schemaName, cancellationToken).ConfigureAwait(false);
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await VerifySchemaFloorAsync(connection, cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);

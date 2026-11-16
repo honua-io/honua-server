@@ -55,6 +55,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : ICatalogActivationW
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Reason);
+        await PublicPublicationWriteFence.PrepareWriteAsync(_connectionProvider, _schemaName, cancellationToken).ConfigureAwait(false);
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await VerifySchemaFloorAsync(connection, cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);

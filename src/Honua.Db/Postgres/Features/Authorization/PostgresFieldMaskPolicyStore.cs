@@ -71,8 +71,11 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
                 (@policy_id, @role, @service, @layer, @attribute, @description, @created_at, @updated_at)
             """;
 
+        await PublicPublicationWriteFence.PrepareWriteAsync(_connectionProvider, _schemaName, cancellationToken).ConfigureAwait(false);
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var ownedTransaction = connection.Transaction is null
+            ? await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false) : null;
+        var transaction = connection.Transaction ?? ownedTransaction!;
         await PublicPublicationWriteFence.LockAsync(transaction, cancellationToken).ConfigureAwait(false);
         await PublicPublicationWriteFence.RequireNoPublicCopiesAsync(transaction, _schemaName, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -88,7 +91,10 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
         try
         {
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            if (ownedTransaction is not null)
+            {
+                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -104,14 +110,20 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
     {
         var sql = $"DELETE FROM {_table} WHERE policy_id = @policy_id";
 
+        await PublicPublicationWriteFence.PrepareWriteAsync(_connectionProvider, _schemaName, cancellationToken).ConfigureAwait(false);
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var ownedTransaction = connection.Transaction is null
+            ? await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false) : null;
+        var transaction = connection.Transaction ?? ownedTransaction!;
         await PublicPublicationWriteFence.LockAsync(transaction, cancellationToken).ConfigureAwait(false);
         await PublicPublicationWriteFence.RequireNoPublicCopiesAsync(transaction, _schemaName, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("policy_id", NpgsqlDbType.Uuid, policyId);
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        if (ownedTransaction is not null)
+        {
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        }
         return affected > 0;
     }
 

@@ -14,8 +14,10 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
     [IntegrationTheory]
     [InlineData("pending", "save")]
     [InlineData("ready", "save")]
+    [InlineData("revoking", "save")]
     [InlineData("pending", "activate")]
     [InlineData("ready", "activate")]
+    [InlineData("revoking", "activate")]
     public async Task Activate_PublicGenerationWithoutRevoker_PreservesCurrentRevision(string state, string operation)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("public_publication_revocation");

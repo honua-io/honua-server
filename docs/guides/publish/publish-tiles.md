@@ -145,6 +145,14 @@ These settings are stored with the canonical publication. The refresh worker che
 
 Every read requires export access to the current source layer and checks its tenant, publication and visible fields. Retiring or rebinding the source, changing its tenant or hiding a published field can make retained versions unavailable. Immutable artifacts cannot apply current row filters or field masks, so a read returns `403` when the current policy requires either. This also applies to redirects, conditional requests and byte ranges. Authenticated responses and current-pointer redirects use `private, no-store`. Anonymous reads of a currently public, unrestricted layer may use the shared cache policy for static objects. Their ETags include the configuration generation; layer edits and administrative changes use the existing CDN invalidation path. Access changes therefore depend on purge delivery and the bounded shared-cache lifetime, as with other public layer responses. Date-only conditions cannot validate the current access configuration.
 
+### Optional public CDN copies
+
+Public copies are disabled by default. Enable `FileStorage:PublicData:Enabled` only with a separate `FileStorage:PublicData:BucketName`, its `Region`, an HTTPS origin in `BaseUrl`, and `SharedCache:CloudFront:DistributionId`. Apply the public-publication journal migration before enabling this path. The existing private bucket remains the source for authorized reads. Deployment configuration must provide object deletion, CDN invalidation and invalidation-status access for the configured public destination.
+
+Only an anonymous, tenant-free source with no permanent filter, row policy or field mask qualifies. The server records the original bucket, origin, distribution and metadata generation before uploading the four immutable files. It advertises public URLs only after every file is copied and current eligibility is checked again. Redirects retain `private, no-store`; the public objects use the bounded static-object cache policy.
+
+Catalog activation and access-policy changes request revocation and refuse to commit while public copies remain. The refresh sweep deletes those copies from their recorded destination, submits the CDN purge, and waits until every recorded invalidation reports completion. Retry the administrative change after cleanup completes. Purge submission alone does not unblock it. Incomplete uploads are recovered by the sweep after the writer releases its fence. Keep the original destination configured until all outstanding generations are revoked; changing the bucket, origin or distribution leaves cleanup blocked rather than sending it to a replacement destination.
+
 ## Troubleshoot
 
 - **Tile request returns `404`** — the layer id is unknown or disabled; check `GET /api/v1/admin/connections/{id}/layers`.

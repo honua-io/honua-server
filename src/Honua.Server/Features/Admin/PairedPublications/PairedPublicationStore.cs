@@ -39,6 +39,9 @@ internal sealed class PairedPublicationStore
 
     public string VersionKey(string version, string fileName) => $"{_publicationKey}/{version}/{fileName}";
 
+    public Task<Stream?> OpenArtifactAsync(string version, string fileName, CancellationToken cancellationToken)
+        => _storage.DownloadAsync(VersionKey(version, fileName), cancellationToken);
+
     // A create-only marker fences overlapping attempts before any artifact upload. It also
     // survives a lost job receipt; retries recover its version instead of recapturing data.
     public async Task<PublicationPointer?> BeginOperationAsync(string operationId, PairedPublicationRun run, CancellationToken cancellationToken)

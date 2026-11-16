@@ -31,6 +31,9 @@ internal sealed partial class TileOperationExecutionCore
 
     private sealed record PairedArtifacts(Stream Archive, string ArchiveSha256, byte[] Parquet, string ParquetSha256);
 
+    private sealed record PairedActivation(TileOperationProgress Current, PairedPublishContext Context,
+        PublicationDescriptor Validated, PMTilesBuildResult Build);
+
     private async Task<TileOperationProgress> ExecutePairedPublishAsync(
         TileOperationProgress progress,
         TileOperationStartRequest request,
@@ -102,7 +105,7 @@ internal sealed partial class TileOperationExecutionCore
         {
             var checks = await StoreAndCheckAsync(context, artifacts, current.JobId, graphProvider, cancellationToken).ConfigureAwait(false);
             var descriptor = Validated(context, capture, Describe(context, artifacts, build), checks);
-            return await ActivateAsync(current, context, descriptor, build, cancellationToken).ConfigureAwait(false);
+            return await ActivateAsync(new(current, context, descriptor, build), services, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not PairedActivationUnknownException)
         {
@@ -296,12 +299,11 @@ internal sealed partial class TileOperationExecutionCore
     }
 
     private async Task<TileOperationProgress> ActivateAsync(
-        TileOperationProgress current,
-        PairedPublishContext context,
-        PublicationDescriptor validated,
-        PMTilesBuildResult build,
+        PairedActivation activation,
+        IServiceProvider services,
         CancellationToken cancellationToken)
     {
+        var (current, context, validated, build) = activation;
         var run = context.Run;
         var descriptor = validated with { PublishedAt = DateTimeOffset.UtcNow };
         var descriptorKey = context.Store.VersionKey(run.Version, PairedPublicationDescriptorFactory.DescriptorFileName);
@@ -313,6 +315,7 @@ internal sealed partial class TileOperationExecutionCore
                 item, "application/geo+json", ImmutableDictionary<string, string>.Empty, cancellationToken).ConfigureAwait(false);
         }
 
+        await CopyPublicGenerationAsync(context, services, cancellationToken).ConfigureAwait(false);
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
         TileOperationLog.PairedPublishActivated(_logger, current.JobId, run.PublicationId, run.Version);
         return current with

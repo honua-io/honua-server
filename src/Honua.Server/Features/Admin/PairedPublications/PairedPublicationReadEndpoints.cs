@@ -36,7 +36,12 @@ internal static class PairedPublicationReadEndpoints
         context.Response.Headers.CacheControl = "private, no-store";
         var target = await reader.ResolveCurrentAsync(publicationId, cancellationToken).ConfigureAwait(false);
         var error = await RequireAccessAsync(context, target, cancellationToken).ConfigureAwait(false);
-        return error ?? Results.Redirect(
+        if (error is not null)
+        {
+            return error;
+        }
+        var publicUrl = await ResolvePublicAsync(new(context, target!), "descriptor.json", cancellationToken).ConfigureAwait(false);
+        return Results.Redirect(publicUrl?.AbsoluteUri ??
             $"{context.Request.PathBase}/api/v1/publications/{publicationId}/{target!.Descriptor.Version}/descriptor.json",
             permanent: false, preserveMethod: true);
     }
@@ -57,6 +62,11 @@ internal static class PairedPublicationReadEndpoints
         {
             return Results.NotFound();
         }
+        var publicUrl = await ResolvePublicAsync(new(context, target), fileName, cancellationToken).ConfigureAwait(false);
+        if (publicUrl is not null)
+        {
+            return Results.Redirect(publicUrl.AbsoluteUri, permanent: false, preserveMethod: true);
+        }
         var metadata = await reader.GetFileAsync(target, fileName, cancellationToken).ConfigureAwait(false);
         if (metadata is null)
         {
@@ -69,6 +79,23 @@ internal static class PairedPublicationReadEndpoints
         }
         return await ArtifactHttpResponse.ServeConfigurationBoundAsync(
             new(context, metadata, byteReader), cancellationToken).ConfigureAwait(false);
+    }
+
+    private sealed record PublicReadContext(HttpContext Context, PairedPublicationReadTarget Target);
+
+    private static Task<Uri?> ResolvePublicAsync(
+        PublicReadContext read, string fileName, CancellationToken cancellationToken)
+    {
+        var advertiser = read.Context.RequestServices.GetService<PublicPublicationAdvertisement>();
+        if (advertiser is null)
+        {
+            return Task.FromResult<Uri?>(null);
+        }
+        var target = read.Target;
+        var source = new PublicPublicationSourceIdentity(target.Source, target.Snapshot.Revision,
+            target.Source.Publication.LayerIndex);
+        return advertiser.ResolveAsync(new(new(target.Descriptor.PublicationId, target.Descriptor.Version), source, fileName),
+            cancellationToken);
     }
 
     private static async Task<IResult?> RequireAccessAsync(

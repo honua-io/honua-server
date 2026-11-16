@@ -9,6 +9,11 @@ internal sealed partial class PairedPublicationRefreshHostedService(
     internal async Task SweepAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
+        var cleanup = scope.ServiceProvider.GetService<PublicPublicationRevocationSweep>();
+        if (cleanup is not null)
+        {
+            await cleanup.SweepAsync(cancellationToken).ConfigureAwait(false);
+        }
         var refresher = ActivatorUtilities.CreateInstance<PairedPublicationRefresher>(scope.ServiceProvider,
             scope.ServiceProvider.GetRequiredService<PairedPublicationRefreshLease>());
         await refresher.SweepAsync(cancellationToken).ConfigureAwait(false);

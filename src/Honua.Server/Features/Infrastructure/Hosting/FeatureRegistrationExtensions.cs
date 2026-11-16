@@ -8,6 +8,7 @@ using Honua.Core.Features.Temporal;
 using Honua.Server.Features.Temporal;
 using Honua.Db.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Admin.PairedPublications;
 using Honua.ControlPlane;
 using Honua.Ai.AnalysisContent;
 using Honua.Server.Features.Capabilities;
@@ -265,6 +266,7 @@ internal static class FeatureRegistrationExtensions
         services.AddCompliance(configuration);
         services.AddOrchestration();
         services.AddPMTilesProxy();
+        services.AddPublicPublicationDestination(configuration);
 
 #if !HONUA_EXCLUDE_MCP
         // Promotion resources require their canonical stores. Ordinary service

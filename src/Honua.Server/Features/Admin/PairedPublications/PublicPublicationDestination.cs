@@ -86,7 +86,7 @@ internal sealed class PublicPublicationDestination : IPublicPublicationDestinati
             .Add("metadata-revision", provenance.MetadataRevision.ToString(CultureInfo.InvariantCulture));
     }
 
-    private static string ObjectKey(PublicPublicationArtifactKey key)
+    internal static string ObjectKey(PublicPublicationArtifactKey key)
     {
         ArgumentNullException.ThrowIfNull(key);
         if (!PairedPublishRequestRules.IsPublicationId(key.PublicationId) ||

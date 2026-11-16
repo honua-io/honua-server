@@ -227,12 +227,16 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
     [IntegrationTheory]
     [InlineData("pending", "row-create")]
     [InlineData("ready", "row-create")]
+    [InlineData("revoking", "row-create")]
     [InlineData("pending", "row-delete")]
     [InlineData("ready", "row-delete")]
+    [InlineData("revoking", "row-delete")]
     [InlineData("pending", "field-create")]
     [InlineData("ready", "field-create")]
+    [InlineData("revoking", "field-create")]
     [InlineData("pending", "field-delete")]
     [InlineData("ready", "field-delete")]
+    [InlineData("revoking", "field-delete")]
     public async Task PolicyChange_PublicGenerationWithoutRevoker_PreservesPolicyAndCleanup(string state, string operation)
     {
         await AddAsync("alpha", "reader", "parcels", "region");
@@ -277,6 +281,26 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
         await using var command = connection.CreateCommand();
         command.CommandText = $"SELECT COUNT(*) FROM {_schema}.public_publication_generations";
         Assert.Equal(1L, await command.ExecuteScalarAsync());
+        command.CommandText = $"SELECT state FROM {_schema}.public_publication_generations";
+        Assert.Equal("revoking", await command.ExecuteScalarAsync());
+    }
+
+    [IntegrationTest]
+    public async Task PolicyChange_CompletedRevocation_AllowsReadPolicyChanges()
+    {
+        await fixture.ExecuteAsync($"""
+            CREATE TABLE {_schema}.public_publication_generations (state text);
+            INSERT INTO {_schema}.public_publication_generations VALUES ('revoked');
+            """);
+
+        await AddAsync("alpha", "reader", "parcels", "region");
+        var row = Assert.Single(await _rows.ListPoliciesAsync());
+        var field = Assert.Single(await _fields.ListPoliciesAsync());
+        await _rows.DeletePolicyAsync(row.PolicyId);
+        await _fields.DeletePolicyAsync(field.PolicyId);
+
+        Assert.Empty(await _rows.ListPoliciesAsync());
+        Assert.Empty(await _fields.ListPoliciesAsync());
     }
 
     private async Task ResetAsync()
