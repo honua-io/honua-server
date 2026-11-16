@@ -12,8 +12,8 @@ using Npgsql;
 namespace Honua.Server.Tests.Features.Authentication;
 
 [Collection("Database")]
-[Protocol(TestProtocols.Infrastructure)]
-[Operation(Operations.Security)]
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class PostgresOAuthScopeCatalogueTests(DatabaseFixtureAdapter database) : IAsyncLifetime
 {
     private readonly string _schema = "oauth_scopes_" + Guid.NewGuid().ToString("N");
