@@ -13,10 +13,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Observability;
 
-/// <summary>
-/// PostgreSQL implementation of <see cref="IInvestigationStore"/> backing the Console
-/// Operate investigation API (#1168).
-/// </summary>
 internal sealed class PostgresInvestigationStore : IInvestigationStore
 {
     internal const int MinPageSize = 1;

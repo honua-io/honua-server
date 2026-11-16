@@ -5,30 +5,8 @@ using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Routing.Features.Routing.Providers;
 
-/// <summary>
-/// Pure, database-free solver for bounded location-allocation objectives over a
-/// precomputed candidate-facility × demand-point impedance matrix. The
-/// interchange-free greedy heuristic is exact for one-facility requests. For
-/// minimize-facilities it is the standard deterministic greedy set-cover
-/// approximation (at most H(n) times the optimal facility count for n coverable
-/// demand points). Runtime is O(F²D) and memory is O(D), bounded by the routing
-/// facility/demand caps. Kept separate from the provider so it can be unit-tested
-/// without a pgRouting topology or heavyweight optimizer dependency.
-/// </summary>
 internal static class LocationAllocationSolver
 {
-    /// <summary>
-    /// Solves the location-allocation problem for the supplied request and impedance
-    /// matrix.
-    /// </summary>
-    /// <param name="request">The location-allocation request.</param>
-    /// <param name="matrix">
-    /// Impedance matrix: <c>matrix[facility][demand]</c> is the network cost (minutes)
-    /// from candidate facility to demand point, or
-    /// <see cref="double.PositiveInfinity"/> when unreachable.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation checked throughout the bounded search.</param>
-    /// <returns>The chosen facilities and per-demand allocations.</returns>
     public static LocationAllocationSolveResult Solve(
         LocationAllocationSolveRequest request,
         double[][] matrix,

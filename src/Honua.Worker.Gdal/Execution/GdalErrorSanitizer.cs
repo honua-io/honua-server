@@ -7,13 +7,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Sanitizes GDAL CLI stderr before it is persisted onto a job's
-/// client-visible <c>ErrorMessage</c>. Client text must not leak scratch
-/// workspace paths, other absolute paths, <c>/vsi*</c> object keys, or
-/// configured S3/Azure endpoint hosts. Full unsanitized stderr is preserved
-/// in structured logs via <see cref="TruncateForLog"/>.
-/// </summary>
 internal static partial class GdalErrorSanitizer
 {
     private const string EndpointPlaceholder = "<endpoint>";
@@ -30,26 +23,9 @@ internal static partial class GdalErrorSanitizer
         RegexOptions.CultureInvariant)]
     private static partial Regex EndpointHostRegex();
 
-    /// <summary>
-    /// Records endpoint hosts from the worker's S3 and Azure options so later
-    /// <see cref="Sanitize"/> calls redact them without each executor threading
-    /// the options through. Operator logs stay unredacted.
-    /// </summary>
     public static void UseConfiguredEndpoints(AwsS3Options? s3, AzureBlobOptions? azure)
         => _configuredHosts = ExtractHosts(s3, azure);
 
-    /// <summary>
-    /// Returns a sanitized, length-capped stderr suitable for the job's
-    /// client-visible error message. Replaces the per-job workspace path with
-    /// <c>&lt;scratch&gt;</c>, other absolute and <c>/vsi*</c> paths with
-    /// <c>&lt;path&gt;</c>, and endpoint URLs or hosts with <c>&lt;endpoint&gt;</c>.
-    /// </summary>
-    /// <param name="stderr">Raw GDAL stderr.</param>
-    /// <param name="workspace">Per-job scratch workspace path.</param>
-    /// <param name="endpointHosts">
-    /// Extra endpoint hosts to redact, in addition to hosts recorded by
-    /// <see cref="UseConfiguredEndpoints"/> and the built-in cloud host suffixes.
-    /// </param>
     public static string Sanitize(string stderr, string workspace, IReadOnlyList<string>? endpointHosts = null)
     {
         var redacted = WorkspacePathSanitizer.SanitizeForClient(stderr, workspace, int.MaxValue);
@@ -69,11 +45,6 @@ internal static partial class GdalErrorSanitizer
             : redacted[..WorkspacePathSanitizer.DefaultMaxLength] + "…";
     }
 
-    /// <summary>
-    /// Trims and length-caps unredacted stderr for the executor's operator-facing
-    /// structured log. Unlike <see cref="Sanitize"/> this preserves scratch paths,
-    /// virtual-file paths, and endpoint hosts.
-    /// </summary>
     public static string TruncateForLog(string stderr)
         => WorkspacePathSanitizer.TruncateForLog(stderr);
 

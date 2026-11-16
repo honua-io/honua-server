@@ -11,14 +11,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Spec.Services;
 
-/// <summary>
-/// Default <see cref="ISpecApplyEngine"/> implementation. Plans the spec, then
-/// drives the DAG through a bounded drop-oldest <see cref="Channel{T}"/> of
-/// <see cref="SpecApplyEvent"/>s. Events are emitted in the order they occur
-/// and are consumed exactly once by a single reader (SSE or gRPC). The buffer
-/// caps memory if a client detaches mid-apply — the run outlives the request,
-/// so unbounded writes would retain the whole backlog until completion.
-/// </summary>
 internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 {
     // Bounded so a disconnected reader cannot inflate unbounded memory; deep

@@ -113,7 +113,7 @@ APPLIES_PATTERNS = (
     "src/Honua.Server/Hosting/MigrateOnly/*",
     "src/Honua.Server/Startup/ServerCoreSchemaMigrations.cs",
     "eng/schema/schema-reader-baseline.v1.json",
-    "eng/schema/schema-migration-hashes.v1.json",
+    "eng/schema/migration-hashes/*",
     RELEASE_BOUNDARY,
     SEED_SQL,
     "scripts/ci/n1-reader-compat.py",

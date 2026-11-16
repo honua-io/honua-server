@@ -11,14 +11,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-/// <summary>
-/// <c>source.ogc-features</c> DAG connector. Streams features from an OGC API
-/// Features collection using the same link-based pagination the one-shot OGC API
-/// Features import uses: an initial <c>items</c> request with <c>limit</c> (plus
-/// optional <c>bbox</c>/<c>filter</c>/<c>datetime</c>) followed by the chain of
-/// <c>rel="next"</c> links until exhausted. Page fetch + GeoJSON projection are reused
-/// from <see cref="GeoJsonPageReader"/> (bounded-buffer body read).
-/// </summary>
 internal sealed partial class OgcFeaturesDagSource : IDagFeatureSource
 {
     private const int DefaultMaxPages = 1000;

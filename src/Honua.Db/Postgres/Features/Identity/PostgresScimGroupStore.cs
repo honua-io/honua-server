@@ -9,20 +9,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Identity;
 
-/// <summary>
-/// PostgreSQL-backed SCIM 2.0 group store (#510, durable per #3141). Each group maps to a
-/// Honua role named after the group's display name; adding or removing a member
-/// synchronizes that role onto the member's <c>honua.managed_user_roles</c> rows in the
-/// same transaction, so SCIM group changes immediately drive RBAC role assignment and are
-/// visible on every replica. Replaces the process-local <c>InMemoryScimGroupStore</c> as
-/// the registered implementation on Postgres profiles.
-/// </summary>
-/// <remarks>
-/// Members may reference users that have not been provisioned yet; the membership row is
-/// kept and the role sync is a no-op until the user exists (in-memory store parity, which
-/// is why <c>scim_group_members.user_id</c> carries no foreign key to
-/// <c>managed_users</c>).
-/// </remarks>
 internal sealed class PostgresScimGroupStore : IScimGroupStore
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -31,12 +17,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
     private readonly string _usersTable;
     private readonly string _rolesTable;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PostgresScimGroupStore"/> class.
-    /// </summary>
-    /// <param name="dataSource">The Npgsql data source.</param>
-    /// <param name="schemaName">Optional schema override (used by tests for isolated
-    /// schemas); defaults to the application schema.</param>
     public PostgresScimGroupStore(NpgsqlDataSource dataSource, string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
@@ -47,7 +27,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         _rolesTable = SchemaSearchPath.QualifyTable("managed_user_roles", schemaName);
     }
 
-    /// <inheritdoc />
     public async Task<ScimGroup?> CreateGroupAsync(ScimGroupProvisioning provisioning, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(provisioning);
@@ -103,7 +82,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         };
     }
 
-    /// <inheritdoc />
     public async Task<ScimGroup?> GetGroupAsync(string groupId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(groupId))
@@ -123,7 +101,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<ScimGroupPage> ListGroupsAsync(ScimGroupQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -182,7 +159,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<ScimGroup?> ReplaceGroupAsync(string groupId, ScimGroupProvisioning provisioning, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(provisioning);
@@ -263,7 +239,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<ScimGroup?> UpdateMembersAsync(string groupId, ScimGroupMemberChange change, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(change);
@@ -320,7 +295,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         return updated;
     }
 
-    /// <inheritdoc />
     public async Task<bool> DeleteGroupAsync(string groupId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -406,10 +380,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         }
     }
 
-    /// <summary>
-    /// Adds a member row. Returns whether a new row was inserted (an existing membership is
-    /// idempotent and must not re-grant the role).
-    /// </summary>
     private async Task<bool> AddMemberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -429,9 +399,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) > 0;
     }
 
-    /// <summary>
-    /// Removes a member row (case-insensitive). Returns whether a row was removed.
-    /// </summary>
     private async Task<bool> RemoveMemberAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -447,10 +414,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) > 0;
     }
 
-    /// <summary>
-    /// Grants the group's mapped role to a user. No-op when the user has not been
-    /// provisioned (in-memory store parity).
-    /// </summary>
     private async Task GrantRoleAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -474,10 +437,6 @@ internal sealed class PostgresScimGroupStore : IScimGroupStore
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Revokes the group's mapped role from a user. No-op when the user or role assignment
-    /// is absent (in-memory store parity).
-    /// </summary>
     private async Task RevokeRoleAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,

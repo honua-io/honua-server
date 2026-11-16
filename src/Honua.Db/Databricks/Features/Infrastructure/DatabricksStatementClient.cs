@@ -10,12 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Databricks.Features.Infrastructure;
 
-/// <summary>
-/// A fully materialized result set from the Statement Execution API: ordered column
-/// names plus the row data (each cell as a JSON element).
-/// </summary>
-/// <param name="Columns">Ordered column names.</param>
-/// <param name="Rows">Row data; each row aligns positionally with <paramref name="Columns"/>.</param>
 internal sealed record DatabricksResultSet(IReadOnlyList<string> Columns, IReadOnlyList<JsonElement[]> Rows);
 
 internal sealed class DatabricksStatementClient
@@ -240,19 +234,9 @@ internal sealed class DatabricksStatementClient
     }
 }
 
-/// <summary>
-/// Well-known DI client name registered through <c>AddHttpClient</c>. Lets host
-/// applications attach handlers (resilience, retry, telemetry) without taking a hard
-/// dependency on this provider's internals.
-/// </summary>
 internal static class DatabricksServiceClientName
 {
-    /// <summary>Logical HttpClient name for Databricks Statement Execution outbound calls.</summary>
     public const string Default = "Honua.Databricks.Statements";
 
-    /// <summary>
-    /// Service-type identifier used to isolate this provider's resilience (retry +
-    /// circuit-breaker) state from other external dependencies.
-    /// </summary>
     public const string ResilienceServiceType = "databricks-sql";
 }

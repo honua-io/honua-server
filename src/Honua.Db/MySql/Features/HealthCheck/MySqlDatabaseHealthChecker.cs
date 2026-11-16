@@ -7,14 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.MySql.Features.HealthCheck;
 
-/// <summary>
-/// MySQL/MariaDB implementation of <see cref="IDatabaseHealthChecker"/>.
-/// </summary>
-/// <remarks>
-/// The provider routes connections through the shared <see cref="IAdoNetDatabaseConnectionProvider"/>
-/// so the readiness probe exercises the same pooled <c>MySqlDataSource</c> the feature store uses.
-/// Mirrors the Postgres implementation: cheap <c>SELECT 1</c> with a 5s command timeout.
-/// </remarks>
 internal sealed partial class MySqlDatabaseHealthChecker(
     IAdoNetDatabaseConnectionProvider connectionProvider,
     ILogger<MySqlDatabaseHealthChecker> logger)
