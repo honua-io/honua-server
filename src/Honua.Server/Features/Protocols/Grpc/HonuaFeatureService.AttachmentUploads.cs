@@ -4,11 +4,9 @@
 using System.Security.Cryptography;
 using Google.Protobuf;
 using Grpc.Core;
-using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Authorization.Domain;
-using Microsoft.Extensions.Options;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
@@ -104,7 +102,7 @@ internal sealed partial class HonuaFeatureService
 
     private static void ValidateAttachmentUpload(Proto.AttachmentUpload? upload, ServerCallContext context)
     {
-        var limits = context.GetHttpContext().RequestServices.GetService<IOptions<LimitsOptions>>()?.Value ?? new LimitsOptions();
+        var limits = AttachmentUploadLimits(context);
         if (upload is null || upload.Parent is null || string.IsNullOrWhiteSpace(upload.Name) ||
             upload.Name.Length > 1024 || string.IsNullOrWhiteSpace(upload.ContentType) || upload.ContentType.Length > 256 ||
             string.IsNullOrWhiteSpace(upload.IdempotencyKey) || System.Text.Encoding.UTF8.GetByteCount(upload.IdempotencyKey) > 256 ||
@@ -123,7 +121,7 @@ internal sealed partial class HonuaFeatureService
 
     private static void ValidateAttachmentMimeType(string contentType, ServerCallContext context)
     {
-        var limits = context.GetHttpContext().RequestServices.GetService<IOptions<LimitsOptions>>()?.Value ?? new LimitsOptions();
+        var limits = AttachmentUploadLimits(context);
         var mediaType = contentType.Split(';', 2)[0].Trim();
         var allowed = limits.Attachments.AllowedMimeTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (mediaType.Length == 0 || !allowed.Any(value => value.EndsWith("/*", StringComparison.Ordinal)
