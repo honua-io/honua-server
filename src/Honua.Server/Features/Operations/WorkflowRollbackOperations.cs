@@ -122,7 +122,7 @@ internal abstract class WorkflowRollbackOperationExecutor(IServiceProvider servi
         // Deploy targets and coordinated releases are platform resources. Every submission
         // surface (the REST wrappers, /api/v1/operations/{id}/submit, MCP and approval replay)
         // reaches this executor, so the platform authority boundary is enforced here rather
-        // than only in the hand-authored REST handlers (#5625).
+        // than only in the hand-authored REST handlers.
         if (Services.GetService<IHttpContextAccessor>()?.HttpContext?.User is { } principal &&
             !PlatformDeployAuthority.IsAuthorized(principal, Services.GetService<IOptions<TenantContextOptions>>()?.Value))
         {

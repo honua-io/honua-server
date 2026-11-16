@@ -46,8 +46,7 @@ public sealed class OgcGeoJsonProjectionTests
         var geometry = new OgcFeaturesGeometryServices(
             new GeometryService(Options.Create(new LimitsOptions())),
             Substitute.For<ICoordinateTransformService>(),
-            Options.Create(new LimitsOptions()),
-            NullLogger<OgcFeaturesGeometryServices>.Instance);
+            Options.Create(new LimitsOptions()));
         var schema = prepared ? new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false) : null;
         GeoJsonFeature Create(IReadOnlySet<string>? projection) => encoded
             ? OgcGeoJsonFeatureBuilder.Create(EncodedGeoJsonFeature.Create(7, null, attributes),

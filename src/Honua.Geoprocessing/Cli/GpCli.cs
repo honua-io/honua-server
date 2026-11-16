@@ -65,7 +65,7 @@ public static class GpCli
         GlassBoxCapture? glassBox = null,
         string? scratchRoot = null)
     {
-        // Only the dev container settings are configurable; no Redis or control-plane
+        // Only the dev container settings are configurable; no job-store or control-plane
         // services are composed. Native bind mounts use the invoking developer's UID/GID.
         // reproduce passes a fresh scratch root and never a path from the bundle.
         var configuration = GpContainerConfiguration.Create(scratchRoot: scratchRoot);
@@ -75,8 +75,8 @@ public static class GpCli
 
         // Managed geometry/analytics/transform/source/sink executors.
         services.AddGeoprocessing(configuration);
-        // Native GDAL executors (Redis-free seam: options + CLI runner + executors only).
-        // In container mode (--real-worker, #2180) each native gdal.* step runs inside
+        // Native GDAL executors (options + CLI runner + executors only).
+        // In container mode (--real-worker) each native gdal.* step runs inside
         // the real honua-worker-etl image so gp run/plan is a true dry-run of the
         // native submit path; the managed executor set and the durable spec are
         // unchanged — only the GDAL command runner differs.
@@ -1490,7 +1490,7 @@ public static class GpCli
 
     private static void PrintUsage()
     {
-        Console.WriteLine("honua gp — headless, Redis-free geoprocessing dev runner (GP Devkit)");
+        Console.WriteLine("honua gp — headless geoprocessing dev runner (GP Devkit)");
         Console.WriteLine();
         Console.WriteLine("Usage:");
         Console.WriteLine("  Installed tool: honua-gp-devkit <command> (equivalent to the honua gp command family below)");

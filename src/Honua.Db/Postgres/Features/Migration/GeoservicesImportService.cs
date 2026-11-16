@@ -88,7 +88,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         await using var cmd = connection.CreateCommand();
         // Derived like PostgreSQL's own implicit names. A plain "<table>_geom_idx" is truncated to 63
         // bytes, which for a 63-byte table name is the table's own name, so IF NOT EXISTS silently
-        // skipped the index (#4600).
+        // skipped the index.
         cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(PostgresDerivedRelationNames.Build(tableName, "geom", "idx"))} ON {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 

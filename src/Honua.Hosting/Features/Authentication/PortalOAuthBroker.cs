@@ -94,7 +94,7 @@ internal sealed class PortalOAuthBroker(
         // CSRF state so the callback can recover the pinned ArcGIS parameters
         // without a cookie (ArcGIS Pro's embedded browser is hostile to cookies).
         //
-        // CSRF posture (#1484, see ADR-0049 "CSRF posture"): the cookieless binding
+        // CSRF posture (see ADR-0049 "CSRF posture"): the cookieless binding
         // is judged adequate. `idpState` (256 random bits) plus `brokerSessionId`
         // (256-bit cache-key entropy) are both unguessable; the callback consumes the
         // session single-use by id and constant-time-compares `idpState` before
@@ -185,7 +185,7 @@ internal sealed class PortalOAuthBroker(
         // The bridge already exchanged an IdP code. Validate that token with the
         // OIDC verifier directly. UseOidc selects the verifier only for password
         // and generateToken checks, and leaving it false must not turn a configured
-        // bridge callback into an admin-password rejection (honua-server#5424).
+        // bridge callback into an admin-password rejection.
         var idpToken = idpTokens.IdToken ?? idpTokens.AccessToken;
         if (string.IsNullOrWhiteSpace(idpToken))
         {

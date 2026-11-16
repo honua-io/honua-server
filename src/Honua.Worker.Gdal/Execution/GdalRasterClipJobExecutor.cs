@@ -115,7 +115,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
 
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
-            // decompression-bomb allocation (#2766).
+            // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
@@ -239,10 +239,6 @@ internal sealed partial class GdalRasterClipJobExecutor(
         [LoggerMessage(9253, LogLevel.Error,
             "GDAL raster clip executor timed out job {OperationId} after {Timeout}")]
         public static partial void ToolTimedOut(ILogger logger, string operationId, TimeSpan timeout);
-
-        [LoggerMessage(9255, LogLevel.Information,
-            "GDAL raster clip executor completed job {OperationId}: bytes={Bytes}")]
-        public static partial void ClipCompleted(ILogger logger, string operationId, long bytes);
 
         [LoggerMessage(9256, LogLevel.Warning,
             "GDAL raster clip executor could not parse boundary WKB for job {OperationId}")]

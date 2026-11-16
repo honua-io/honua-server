@@ -235,7 +235,7 @@ internal static partial class FeatureServerEndpoints
                 [$"Omit {unsupported}. Append applies the edits array directly."]);
         }
 
-        // Resolve gdbVersion before the upsert match read (#6095): matches must be found within
+        // Resolve gdbVersion before the upsert match read: matches must be found within
         // the named version and the resulting adds/updates must be written there, never DEFAULT.
         var gdbVersion = GetValueString(values, "gdbVersion");
         var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
@@ -513,7 +513,7 @@ internal static partial class FeatureServerEndpoints
 
         // Hidden schema fields and request-scoped field masks are not calculate inputs or outputs.
         // The candidate read returns the full attribute bag, so a sqlExpression could otherwise copy
-        // a publisher-hidden value into a visible field (#6141).
+        // a publisher-hidden value into a visible field.
         var unavailableFields = resource.SchemaFields
             .Where(static field => field.Hidden)
             .Select(static field => field.Name)
@@ -561,7 +561,7 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        // Resolve gdbVersion before any read (#6095): the candidate read must see the named
+        // Resolve gdbVersion before any read: the candidate read must see the named
         // version's rows and the update batches must target that version, never DEFAULT.
         var gdbVersion = GetValueString(values, "gdbVersion");
         var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
@@ -886,7 +886,7 @@ internal static partial class FeatureServerEndpoints
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
 
         // Esri services accept BOTH GET and POST for queryDomains; clients POST large
-        // layers arrays that exceed URL limits (honua-server#1825). Merge the form body
+        // layers arrays that exceed URL limits. Merge the form body
         // over the query string so both methods share this read-only handler.
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
         if (HttpMethods.IsPost(context.Request.Method))
@@ -1422,7 +1422,7 @@ internal static partial class FeatureServerEndpoints
                 return true;
             }
 
-            // Record the identifier before lookup so validation can reject hidden sources (#6141).
+            // Record the identifier before lookup so validation can reject hidden sources.
             _sourceFields.Add(name);
             value = _attributes.TryGetValue(name, out var attribute) ? attribute : null;
             return true;
@@ -1687,7 +1687,7 @@ internal static partial class FeatureServerEndpoints
                 "sql parameter is required");
         }
 
-        // sqlType is optional and overloaded across two distinct Esri concepts (#1901):
+        // sqlType is optional and overloaded across two distinct Esri concepts:
         //   * a SQL-dialect selector (standard|native): standardized SQL vs native DBMS SQL;
         //   * the canonical validateSQL clause-type enum the real ArcGIS clients send
         //     (esriSQLTypeWhere/OrderBy/Expression) plus its short forms (where/orderBy/
@@ -1827,7 +1827,7 @@ internal static partial class FeatureServerEndpoints
         // Esri's service-level sqlType is one of where|orderBy|expression. It defaults to
         // `where` when omitted, matching the most common ArcGIS client usage. Real ArcGIS
         // clients send the canonical enum (esriSQLTypeWhere/OrderBy/Expression), so map those
-        // to the short forms while still accepting the short forms directly (#1858).
+        // to the short forms while still accepting the short forms directly.
         var sqlType = GetValueString(values, "sqlType");
         sqlType = string.IsNullOrWhiteSpace(sqlType) ? "where" : NormalizeServiceSqlType(sqlType);
 

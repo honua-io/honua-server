@@ -7,7 +7,7 @@
 // table. Publishing materializes a one-time snapshot (MaterializeLayerFeaturesAsync) that the
 // server-side MVT/tile path reads, while the feature-query paths read the live source table.
 // Re-importing or updating the source therefore leaves the snapshot â€” and the tiles built from
-// it â€” silently stale (honua-server#1628). These helpers delete the layer's stale snapshot rows
+// it â€” silently stale. These helpers delete the layer's stale snapshot rows
 // and re-insert them from the live source within a single transaction so tiles stay consistent
 // with the live data the query paths serve.
 
@@ -52,8 +52,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         if (metadata.IsManagedStore)
         {
             // A managed-store layer has no source table: its rows ARE the managed store and
-            // carry the layer's edits, so rebuilding them would delete every edit
-            // (honua-server#4859).
+            // carry the layer's edits, so rebuilding them would delete every edit.
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Validation,
                 $"Layer {layerId.ToString(CultureInfo.InvariantCulture)} keeps its features in the managed feature store and has no source table to refresh from.");
@@ -299,7 +298,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             // Npgsql cannot infer a type for NULL when the parameter is also used by
             // an IS NULL branch. The file-import path intentionally passes no schema,
             // so bind the parameter as text explicitly instead of sending an untyped
-            // DBNull that PostgreSQL rejects with 42P08 (honua-server#3442).
+            // DBNull that PostgreSQL rejects with 42P08.
             command.Parameters.Add("@schema", NpgsqlDbType.Text).Value =
                 string.IsNullOrWhiteSpace(schema) ? DBNull.Value : schema;
             command.Parameters.AddWithValue("@table", table);

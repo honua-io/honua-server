@@ -217,7 +217,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             string? stagingToCleanup = stagingDirectory;
             try
             {
-                Directory.CreateDirectory(stagingDirectory);
+                SceneOutputGuard.Run(() => Directory.CreateDirectory(stagingDirectory));
 
                 // Resolve attribute-driven 3D symbology per feature (when a
                 // layer declares it) so the GLB carries baked color/opacity and
@@ -237,10 +237,10 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     var styleBytes = TileStyleSpecWriter.Serialize(styleSpec);
                     // Safe: TileStyleSpecDefaults.FileName is a compile-time constant
                     // ("style.json"), never externally supplied, so it can never be rooted.
-                    await File.WriteAllBytesAsync(
+                    await SceneOutputGuard.RunAsync(() => File.WriteAllBytesAsync(
                         Path.Join(stagingDirectory, TileStyleSpecDefaults.FileName),
                         styleBytes,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken)).ConfigureAwait(false);
                     styleReference = new TilesetStyleReference
                     {
                         Encoding = TileStyleSpecDefaults.Encoding,
@@ -252,7 +252,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 var geometricError = ComputeGeometricError(bounds, minHeight, maxHeight);
 
                 // Choose single-tile (byte-stable v1 layout) or quadtree LOD
-                // partitioning (#1200). The LOD path activates once the dataset
+                // partitioning. The LOD path activates once the dataset
                 // crosses the configured threshold so existing small/medium
                 // datasets keep their deterministic single-tile output.
                 int tileCount;
@@ -284,10 +284,10 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     var tileFileName = "tile_0000.glb";
                     // Safe: tileFileName and "tileset.json" below are hardcoded literals,
                     // never externally supplied, so neither combine can be rooted.
-                    await File.WriteAllBytesAsync(
+                    await SceneOutputGuard.RunAsync(() => File.WriteAllBytesAsync(
                         Path.Join(stagingDirectory, tileFileName),
                         glb,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken)).ConfigureAwait(false);
 
                     var tileset = TilesetDocumentWriter.Build(
                         bounds,
@@ -298,16 +298,16 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                         serverOptions.GeneratorTag,
                         styleReference);
                     var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
-                    await File.WriteAllBytesAsync(
+                    await SceneOutputGuard.RunAsync(() => File.WriteAllBytesAsync(
                         Path.Join(stagingDirectory, "tileset.json"),
                         tilesetBytes,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken)).ConfigureAwait(false);
                     tileCount = 1;
                 }
 
                 // Replicate the fully-staged tileset tree to the shared object
                 // store BEFORE registering so the recorded storage prefix always
-                // implies the bytes exist (#2459, ADR-0060). The dataset id is
+                // implies the bytes exist (ADR-0060). The dataset id is
                 // minted up front so the local hydration marker and the durable
                 // registry row agree on the content version. When no object store
                 // is available the prefix is null and the scene stays node-local
@@ -317,10 +317,10 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     _storage, stagingDirectory, sceneId, cancellationToken).ConfigureAwait(false);
                 if (storagePrefix is not null)
                 {
-                    await SceneAssetHydration.WriteMarkerAsync(
+                    await SceneOutputGuard.RunAsync(() => SceneAssetHydration.WriteMarkerAsync(
                         stagingDirectory,
                         SceneAssetHydration.BuildToken(newDatasetId, storagePrefix),
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken)).ConfigureAwait(false);
                 }
 
                 var registeredDatasetId = await TryRegisterSceneAsync(
@@ -349,7 +349,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 // not resolve a record whose AssetRoot has no bytes.
                 try
                 {
-                    PromoteStagingToFinal(stagingDirectory, outputDirectory);
+                    SceneOutputGuard.Run(() => PromoteStagingToFinal(stagingDirectory, outputDirectory));
                 }
                 catch
                 {
@@ -412,8 +412,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
         // Intentionally generic: this is the top-level scene-generation job boundary.
         // ValidationException and cancellation are already handled above; any other
-        // failure (provider, filesystem, serialization, unexpected bug) must convert
-        // to the documented ServiceUnavailableException rather than crash the caller.
+        // failure is logged here. Local output failures retain their operator-facing
+        // classification; remaining failures become ServiceUnavailableException.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
@@ -422,6 +422,10 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             // existing 8412 Failed event takes a string reason and would
             // otherwise drop everything except the exception type name.
             SceneGenerationLog.FailedUnexpected(_logger, intent.IntentId, intent.SourceId, ex);
+            if (ex is SceneOutputUnwritableException)
+            {
+                throw;
+            }
             // Preserve the inner exception on the wrapping
             // ServiceUnavailableException so any catch site that inspects
             // .InnerException (or just calls ToString) still sees the
@@ -477,10 +481,10 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 $"tile_{i:0000}.glb");
             // Safe: uri is a deterministic "tile_NNNN.glb" name built from the loop
             // index above, never from external/dataset-controlled content.
-            await File.WriteAllBytesAsync(
+            await SceneOutputGuard.RunAsync(() => File.WriteAllBytesAsync(
                 Path.Join(stagingDirectory, uri),
                 glb,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken)).ConfigureAwait(false);
 
             var (nodeMin, nodeMax) = ComputeNodeHeightExtent(node.Features, extrusion);
             content[node] = new SceneTileContent(uri, nodeMin, nodeMax);
@@ -493,10 +497,10 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             styleReference);
         var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
         // Safe: "tileset.json" is a hardcoded literal, never externally supplied.
-        await File.WriteAllBytesAsync(
+        await SceneOutputGuard.RunAsync(() => File.WriteAllBytesAsync(
             Path.Join(stagingDirectory, "tileset.json"),
             tilesetBytes,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)).ConfigureAwait(false);
 
         return contentNodes.Count;
     }

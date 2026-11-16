@@ -765,18 +765,6 @@ internal static partial class ConfigurationDiscoveryLog
     public static partial void DiscoveryFailed(ILogger logger, string error, Exception exception);
 
     [LoggerMessage(
-        EventId = 20003,
-        Level = LogLevel.Warning,
-        Message = "Assembly load warning for {AssemblyName}: {Error}")]
-    public static partial void AssemblyLoadWarning(ILogger logger, string assemblyName, string error);
-
-    [LoggerMessage(
-        EventId = 20004,
-        Level = LogLevel.Warning,
-        Message = "Type extraction error for {TypeName}: {Error}")]
-    public static partial void TypeExtractionError(ILogger logger, string typeName, string error);
-
-    [LoggerMessage(
         EventId = 20005,
         Level = LogLevel.Warning,
         Message = "Value extraction error for {TypeName}: {Error}")]

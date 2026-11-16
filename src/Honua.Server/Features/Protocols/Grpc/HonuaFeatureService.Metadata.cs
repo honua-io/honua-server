@@ -71,7 +71,8 @@ internal sealed partial class HonuaFeatureService
             MaxRecordCount = _maxRecordCount,
             HasZ = resource.Display?.HasZ ?? false,
             HasM = resource.Display?.HasM ?? false,
-            Capabilities = await MetadataCapabilitiesAsync(layer, context).ConfigureAwait(false)
+            Capabilities = await MetadataCapabilitiesAsync(layer, context).ConfigureAwait(false),
+            AttachmentLimits = MetadataAttachmentLimits(context)
         };
         PopulateLayerMetadata(descriptor, layer, fields);
         await AddMetadataRelationshipsAsync(descriptor, new(layer, visible), context).ConfigureAwait(false);
@@ -147,6 +148,7 @@ internal sealed partial class HonuaFeatureService
         var layers = new List<GrpcLayerContext>();
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id)
                      .Where(publication => publication.LayerIndex.HasValue && snapshot.IsRoutable(publication))
+                     .DistinctBy(publication => publication.LayerIndex)
                      .OrderBy(publication => publication.LayerIndex))
         {
             var resource = snapshot.ResolveResource(publication)!;
@@ -180,6 +182,9 @@ internal sealed partial class HonuaFeatureService
             result.Create |= capabilities.Create;
             result.Update |= capabilities.Update;
             result.Delete |= capabilities.Delete;
+            result.ListAttachments |= capabilities.ListAttachments;
+            result.UploadAttachments |= capabilities.UploadAttachments;
+            result.DeleteAttachments |= capabilities.DeleteAttachments;
         }
         return result;
     }
@@ -209,29 +214,36 @@ internal sealed partial class HonuaFeatureService
                 context.CancellationToken).ConfigureAwait(false) is not null,
             QueryDistinct = true,
             QueryOrderBy = true,
-            QueryPagination = true
+            QueryPagination = true,
+            ListAttachments = true
         };
+        if (layer.Resource.Editing is { CanModify: true, SupportsAttachments: true })
+        {
+            result.UploadAttachments = await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Update).ConfigureAwait(false);
+            result.DeleteAttachments = await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Delete).ConfigureAwait(false);
+        }
         var binding = layer.Snapshot?.ResolveStorageBinding(layer.Publication);
         if (binding is null || !FeatureStorageMapping.FromMetadata(layer.Resource, binding).SupportsManagedWrites)
         {
             return result;
         }
         var edits = await MetadataProviderEditsAsync(layer, context).ConfigureAwait(false);
-        result.Create = edits.SupportsCreate && await AllowsAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
-        result.Update = edits.SupportsUpdate && await AllowsAsync(AuthorizationOperation.Update).ConfigureAwait(false);
-        result.Delete = edits.SupportsDelete && await AllowsAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
+        result.Create = edits.SupportsCreate && await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Insert).ConfigureAwait(false);
+        result.Update = edits.SupportsUpdate && await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Update).ConfigureAwait(false);
+        result.Delete = edits.SupportsDelete && await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Delete).ConfigureAwait(false);
         return result;
+    }
 
-        async Task<bool> AllowsAsync(AuthorizationOperation operation)
+    private static async Task<bool> MetadataEditAllowedAsync(GrpcLayerContext layer,
+        ServerCallContext context, AuthorizationOperation operation)
+    {
+        if (LayerValidationHelpers.FindUndeclaredEditCapability(layer.Service, layer.Publication, operation) is not null)
         {
-            if (LayerValidationHelpers.FindUndeclaredEditCapability(layer.Service, layer.Publication, operation) is not null)
-            {
-                return false;
-            }
-            var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(context.GetHttpContext(),
-                layer.Resource, layer.Service, operation, context.CancellationToken).ConfigureAwait(false);
-            return decision.IsAllowed;
+            return false;
         }
+        var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(context.GetHttpContext(),
+            layer.Resource, layer.Service, operation, context.CancellationToken).ConfigureAwait(false);
+        return decision.IsAllowed;
     }
 
     private static int ReadMetadataToken(string token, string serviceId, long revision)

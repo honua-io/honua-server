@@ -1,14 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Studio.Abstractions;
-using Honua.Core.Features.Studio.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -21,12 +18,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
          "layers":[{"id":"parcels","type":"fill","source":"parcels"}]}
         """;
 
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureServices(services =>
-        {
-            services.RemoveAll<IStudioPackageStore>();
-            services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-        });
+    private readonly WebAppFixture _fixture = StudioMcpFixtures.CreateCompositionFixture();
 
     private StudioMcpHttpClient _mcp = null!;
 
@@ -80,10 +72,6 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
 
     private async Task<(Guid DraftId, long Generation)> CreateStyledMapDraftAsync()
     {
-        var created = await _mcp.CallToolAsync(
-            "honua_studio_create_draft",
-            """{"packageKey":"parcels-style-map","family":"map","schemaVersion":"1.0"}""");
-        var draftId = created.GetProperty("draftId").GetGuid();
         var body = """
             {"mapPackageId":"parcels-style-map","format":"honua_map_package.v1",
              "layers":[{"id":"parcels","sourceId":"parcels","visible":true,"styleRef":"honua-inline:parcels"}],
@@ -91,10 +79,8 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
              "mapSpec":
             """ + MapSpec + "}";
 
-        var seeded = await _mcp.CallToolAsync(
-            "honua_studio_update_draft",
-            "{\"draftId\":\"" + draftId + "\",\"generation\":" + created.GetProperty("generation").GetInt64()
-            + ",\"packageKey\":\"parcels-style-map\",\"schemaVersion\":\"1.0\",\"body\":" + body + "}");
-        return (draftId, seeded.GetProperty("generation").GetInt64());
+        using var parsed = JsonDocument.Parse(body);
+        var seeded = await StudioMcpFixtures.SeedMapDraftAsync(_fixture, "parcels-style-map", parsed.RootElement.Clone());
+        return (seeded.DraftId, seeded.Generation);
     }
 }

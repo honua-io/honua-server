@@ -18,7 +18,7 @@ internal sealed class ArtifactByteReader
     // once binary bodies are base64-encoded for the Lambda/API Gateway proxy envelope,
     // ~33% inflation). Above that ceiling the platform doesn't return a clean error: the
     // Lambda response fails to transmit and API Gateway/CloudFront synthesize an opaque
-    // generic 500 with no correlation id (#2991) even though honua-server itself served
+    // generic 500 with no correlation id even though honua-server itself served
     // 200 internally. PMTiles browser clients always read archives via byte-range
     // requests (the header, directories, and tiles are all fetched by range) and never
     // perform a full-file GET in normal operation, so rejecting an oversized full-file

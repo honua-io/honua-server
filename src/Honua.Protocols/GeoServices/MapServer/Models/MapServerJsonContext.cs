@@ -71,7 +71,7 @@ namespace Honua.Protocols.GeoServices.MapServer.Models;
 // numeric columns and lands in the object-typed Attributes/Geometry slots. The published
 // image runs with JsonSerializerIsReflectionEnabledByDefault=false, so a missing
 // JsonTypeInfo throws NotSupportedException (HTTP 500) instead of falling back to
-// reflection — see honua-server#1771 (MapServer find 500 on the AOT image).
+// reflection; MapServer find on the AOT image hits this.
 [JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(Guid))]

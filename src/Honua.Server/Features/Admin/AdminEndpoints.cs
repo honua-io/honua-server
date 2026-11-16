@@ -50,7 +50,7 @@ internal static class AdminEndpoints
         // Runtime OpenAPI endpoint for admin/control-plane contract. The document is
         // public API documentation (the same bundled admin-api.json snapshot committed
         // to the repo), not a secret: it is served anonymously so the /docs explorer and
-        // evaluators can read it without credentials (#1635). Every actual admin
+        // evaluators can read it without credentials. Every actual admin
         // operation stays behind the group's admin authorization.
         _ = adminGroup.MapMethods("/openapi.json", [HttpMethods.Get], HandleGetOpenApiSpec)
             .WithDisplayName("Get Admin OpenAPI Specification")

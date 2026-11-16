@@ -176,7 +176,7 @@ internal sealed class RenderMapTool : IMcpTool
             // coverage and no renderable vector features in the requested window. A genuine
             // renderer-capability failure (e.g. the native SkiaSharp library missing on a
             // serverless/AOT image) is raised as RasterRenderingUnavailableException before
-            // this point and mapped to a failed_precondition capability error (#2770), so
+            // this point and mapped to a failed_precondition capability error, so
             // this message stays specific to the no-data case rather than a generic failure.
             throw new GeoprocessingStoreUnavailableException(
                 "Map rendering produced no output: the requested layer(s) have no raster coverage or renderable features within the requested bounding box.");

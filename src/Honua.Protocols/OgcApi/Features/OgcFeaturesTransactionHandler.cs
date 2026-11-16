@@ -48,7 +48,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const string OgcFeaturesProtocolName = "OgcFeatures";
 
-    // Open-protocol feature mutations are Community (#1591): no entitlement gate here. The
+    // Open-protocol feature mutations are Community: no entitlement gate here. The
     // Pro editing gate applies only to the Esri GeoServices FeatureServer write surface.
 
     public async Task<IResult> HandleBatchOperationAsync(
@@ -180,6 +180,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     {
                         Operation = OgcFeaturesEditOperation.Batch,
                         RollbackOnFailure = true,
+                        ServiceName = layerValidation.Service?.Metadata.Name,
+                        PublicLayerId = publication.LayerIndex,
                         BatchOperations = preparedBatch.PreparedOperations
                             .Select(static operation => new OgcFeaturesBatchEditOperation
                             {
@@ -191,7 +193,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                                     _ => throw new InvalidOperationException($"Unsupported batch operation kind {operation.OperationKind}.")
                                 },
                                 Feature = operation.Feature,
-                                ObjectId = operation.ObjectId
+                                ObjectId = operation.ObjectId,
+                                StoredFeature = operation.StoredFeature
                             })
                             .ToImmutableArray()
                     },
@@ -348,8 +351,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             // The single-feature surfaces get this from ValidateCollectionWriteAccessV2Async,
             // which is called here without a specific operation because a batch body may mix
             // kinds. Each distinct kind present must still be declared by the publication,
-            // otherwise the batch surface accepts edits the collection never advertised
-            // (#4707).
+            // otherwise the batch surface accepts edits the collection never advertised.
             if (service is not null)
             {
                 var capability = op switch
@@ -422,7 +424,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
 
-            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // Collaborative-editing lease enforcement: a feature another editor
             // holds a lease on cannot be replaced or merged out from under them, on this
             // surface as much as on GeoServices applyEdits.
             if (await OgcFeatureLockGuard.RejectIfLockedAsync(
@@ -528,7 +530,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         Feature = feature,
                         ObjectId = objectId,
                         IfMatch = ifMatch,
-                        ExpectedStateToken = expectedStateToken
+                        ExpectedStateToken = expectedStateToken,
+                        ServiceName = layerValidation.Service?.Metadata.Name,
+                        PublicLayerId = publication.LayerIndex
                     },
                     cancellationToken,
                     geometryChangedOverride: geometryChangedForReplace);
@@ -725,7 +729,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
 
-            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // Collaborative-editing lease enforcement: a feature another editor
             // holds a lease on cannot be replaced or merged out from under them, on this
             // surface as much as on GeoServices applyEdits.
             if (await OgcFeatureLockGuard.RejectIfLockedAsync(
@@ -912,7 +916,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         ObjectId = objectId,
                         IfMatch = ifMatch,
                         ClearAllProperties = patchRequest.HasProperties && patchRequest.Properties is null,
-                        ExpectedStateToken = expectedStateToken
+                        ExpectedStateToken = expectedStateToken,
+                        ServiceName = layerValidation.Service?.Metadata.Name,
+                        PublicLayerId = publication.LayerIndex
                     },
                     cancellationToken,
                     geometryChangedOverride: patchRequest.HasGeometry);
@@ -1057,22 +1063,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
-        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            _featureReader,
-            layerId,
-            resource.OwnerEditPolicy,
-            editBatch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(context),
+        var gateTarget = new OgcFeatureEditGate.Target(context, resource, request) { LayerId = layerId, Reader = _featureReader };
+        var (editBatch, ended) = await OgcFeatureEditGate.PrepareAsync(
+            gateTarget,
+            _editProcessor.ToFeatureEditBatch(optimizedEdit, resource),
             cancellationToken).ConfigureAwait(false);
-        if (!prepared.IsAllowed)
+        if (ended is { } stopped)
         {
-            return OwnerEditPolicyFieldAccess.DeniedEditResult(
-                editBatch,
-                prepared.DenialReason ?? "Edit not permitted.");
+            return stopped;
         }
 
-        editBatch = prepared.Batch;
         // Per-row geometry-change semantics: a single-op caller (PATCH, single-op
         // Replace) passes geometryChangedOverride so the attribute-only or replace-of-
         // null cases are tracked precisely without inferring from the merged feature's
@@ -1106,8 +1106,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             geometryChanged: geometryChanged,
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
-        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        FeatureEditResult result;
+        using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData))
+        {
+            result = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        }
+
+        await OgcFeatureEditGate.RunAfterAsync(gateTarget, editBatch, result).ConfigureAwait(false);
+        return result;
     }
 
     private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
@@ -1173,8 +1179,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         return result;
     }
 
+    // A rule or plugin rejection is never "not found", whatever its wording.
     private static bool IsNotFound(EditOperationResult result)
-        => !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
+        => result.ErrorCode != FeatureEditGate.RejectedErrorCode &&
+           !string.IsNullOrWhiteSpace(result.ErrorMessage) &&
            result.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase);
 
     private async Task<IReadOnlyDictionary<string, OgcFeatureIdentifierResolver.ResolvedFeature>> ResolveBatchOperationTargetsAsync(
@@ -1476,7 +1484,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             OperationKind: BatchOperationKind.Delete,
             Operation: operation,
             Feature: null,
-            ObjectId: objectId));
+            ObjectId: objectId)
+        {
+            StoredFeature = resolvedFeature.Feature
+        });
     }
 
     private async Task<PreparedBatchPlan> PrepareBatchOperationsAsync(
@@ -1497,7 +1508,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         var validationFailed = false;
 
         // Resolve every update/delete target up front with at most two provider round
-        // trips instead of one feature lookup per operation (#1593). Ids that do not
+        // trips instead of one feature lookup per operation. Ids that do not
         // resolve are absent from the map and fail only their own operation below,
         // preserving per-operation error semantics.
         var resolvedFeatures = await ResolveBatchOperationTargetsAsync(
@@ -1546,7 +1557,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             var preparedOperation = prepared.Operation! with { Index = index };
 
-            // Collaborative-editing lease enforcement (#4402). Evaluated here, after the
+            // Collaborative-editing lease enforcement. Evaluated here, after the
             // operation resolved to a concrete OBJECTID and before anything is written, so
             // a locked target fails validation and the whole batch — which always runs with
             // RollbackOnFailure — leaves every stored row untouched.
@@ -1635,7 +1646,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         // Reload every successfully created row with one batched ObjectIds query
         // (projected to the response CRS when it differs from storage) instead of a
-        // per-create read round trip (#1593). A row missing from the reload falls back
+        // per-create read round trip. A row missing from the reload falls back
         // to the payload-derived id for that operation only.
         var createdObjectIds = new List<long>();
         var createScanIndex = 0;
@@ -2185,6 +2196,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         // Create operations (no existing row) and is irrelevant for Delete (the
         // outbox payload always defaults to GeometryChanged=false on deletes).
         public bool ExistingHadGeometry { get; init; }
+
+        // The row a delete resolved during prepare, so a delete hook can judge it.
+        public Feature? StoredFeature { get; init; }
     }
 
     private sealed record PreparedBatchValidationResult(

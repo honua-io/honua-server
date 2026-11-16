@@ -296,7 +296,7 @@ public sealed class OperationGatewayIdempotencyTests
 
         public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
-            if (Interlocked.Increment(ref _calls) == 1)
+            if (auditEvent.Action == "operation.proposed" && Interlocked.Increment(ref _calls) == 1)
             {
                 return Task.FromException<string?>(new OperationCanceledException(cancellationToken));
             }
@@ -313,7 +313,7 @@ public sealed class OperationGatewayIdempotencyTests
 
         public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
-            if (Interlocked.Increment(ref _calls) == 1)
+            if (auditEvent.Action == "operation.proposed" && Interlocked.Increment(ref _calls) == 1)
             {
                 return Task.FromException<string?>(new InvalidOperationException("audit unavailable"));
             }

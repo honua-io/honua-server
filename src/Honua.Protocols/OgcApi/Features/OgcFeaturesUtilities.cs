@@ -243,18 +243,6 @@ internal static class OgcFeaturesUtilities
         => OgcQueryablesUtilities.TryResolveTemporalFieldsV2(
             resource, out startFieldName, out startPropertyType, out endFieldName, out endPropertyType);
 
-    public static async Task InvalidateLayerCacheAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
-        if (cacheInvalidator != null)
-        {
-            await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken);
-        }
-    }
-
     public static ImmutableArray<Link> BuildFeatureLinks(
         HttpRequest request,
         string collectionId,

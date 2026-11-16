@@ -923,7 +923,7 @@ internal static partial class OgcResponseFormatter
         {
             // Written through Utf8JsonWriter rather than a reflection-based
             // JsonSerializer.Serialize overload: the published image disables
-            // reflection-based serialization (honua-server#1647).
+            // reflection-based serialization.
             using var typeOnlyStream = new MemoryStream();
             using (var typeOnlyWriter = new Utf8JsonWriter(typeOnlyStream))
             {

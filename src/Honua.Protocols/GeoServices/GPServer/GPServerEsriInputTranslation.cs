@@ -354,7 +354,7 @@ internal static class GPServerEsriInputTranslation
         }
 
         // Esri's Web Mercator aliases (102100/102113/900913) are normalized before they are embedded in the
-        // EWKB, not only on the reported spatial reference (#4033). The executors read the embedded SRID:
+        // EWKB, not only on the reported spatial reference. The executors read the embedded SRID:
         // geometry.project checks it against fromSrid and raster.clip writes it as the cutline EPSG code,
         // so an un-normalized 102100 rejected a 3857 projection and named a CRS EPSG does not define.
         var srid = (geometry.SpatialReference?.Wkid

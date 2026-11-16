@@ -58,14 +58,14 @@ def main():
     output = render(ROOT)
     if args.check:
         # Drift is advisory, same as scripts/ci/report-generated-file-drift.sh.
-        # Feature PRs cannot commit this projection; trunk automation publishes it.
+        # Source PRs may submit verified regeneration; trunk also publishes drift.
         # render() still fails closed on duplicate live rows before this compare.
         if not path.is_file():
             parser.exit(1, 'Workflow inventory page is missing.\n')
         if path.read_text() != output:
             print(
                 'Workflow inventory drift is advisory; trunk automation publishes this page. '
-                'Feature PRs edit the template and workflow YAML and must not commit the projection.',
+                'Edit the template and workflow YAML; submitted projections require canonical verification.',
                 file=sys.stderr)
     else:
         (args.output or path).write_text(output)

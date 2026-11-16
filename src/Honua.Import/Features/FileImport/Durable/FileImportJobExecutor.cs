@@ -140,7 +140,7 @@ internal sealed partial class FileImportJobExecutor(
                 if (result.Success)
                 {
                     // None, not the job token: a committed import still refreshes its snapshot when
-                    // the worker token is already cancelled (trunk #6256).
+                    // the worker token is already cancelled.
                     await ImportedSnapshotRefresher.RefreshAsync(
                         scope.ServiceProvider,
                         request.TargetSchema,

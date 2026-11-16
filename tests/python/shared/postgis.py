@@ -330,6 +330,11 @@ class PostGISFixture:
 
                 self._create_job_stores(conn)
 
+                # Mutation guards query active locks even when no locks are held.
+                # Reuse the production schema because this server skips migrations.
+                feature_locks_sql = (MIGRATIONS_DIR / "180_CreateFeatureLocks.sql").read_text()
+                conn.execute(feature_locks_sql.replace("$HonuaSchema$", "honua"))
+
                 # The Python server intentionally skips DbUp migrations, but the metadata-v2
                 # store still uses the public journal as its schema-floor receipt. Record the
                 # physical metadata-v2 baseline provisioned below so this compatibility fixture

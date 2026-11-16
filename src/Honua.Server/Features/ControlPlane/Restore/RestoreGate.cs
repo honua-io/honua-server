@@ -3,7 +3,6 @@
 
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -29,12 +28,6 @@ internal sealed class RestoreCellOptions
     public List<string> RdsSecurityGroupIds { get; set; } = [];
 
     public string EnvironmentTag { get; set; } = "cert";
-
-    public string ComposeSocketPath { get; set; } = string.Empty;
-
-    public string ComposeBackupDirectory { get; set; } = string.Empty;
-
-    public string ComposeProject { get; set; } = string.Empty;
 
     // This URL must return HTTP 200 and a non-empty body after the prior image is up.
     public string CustomerProbeUrl { get; set; } = string.Empty;
@@ -105,23 +98,9 @@ internal interface IConnectionSecretRetarget
     Task<string?> ReadHostAsync(string secretId, CancellationToken cancellationToken);
 }
 
-internal interface IComposeRollbackTransport
-{
-    bool IsConfigured { get; }
-
-    Task<ComposeRollbackResult> RollbackAsync(string image, string? backupId, string? requestId, CancellationToken cancellationToken);
-}
-
-internal sealed record ComposeRollbackResult(
-    bool Ok,
-    string? Code,
-    bool ReadbackComplete,
-    int? SchemaVersion,
-    bool ImageStarted);
-
 internal interface IRestoredSchemaProbe
 {
-    Task<SchemaJournalSnapshot> ProbeAsync(string? endpoint, CancellationToken cancellationToken);
+    Task<SchemaJournalSnapshot> ProbeAsync(string endpoint, CancellationToken cancellationToken);
 }
 
 internal interface IServingCustomerProbe
@@ -179,8 +158,8 @@ internal sealed class PreMigrationRestoreCoordinator(
         IPriorImageStarter starter,
         CancellationToken cancellationToken)
     {
-        var (decision, target, backup) = await assessment.DecideAsync(payload, cancellationToken).ConfigureAwait(false);
-        return await execution.ExecuteAsync(payload, request, starter, decision, target, backup, cancellationToken).ConfigureAwait(false);
+        var (decision, backup) = await assessment.DecideAsync(payload, cancellationToken).ConfigureAwait(false);
+        return await execution.ExecuteAsync(payload, request, starter, decision, backup, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<RestoreCompletion> ResumeCloudAsync(DeployExecutionPayload payload, OperationGatewayRequest request,
@@ -196,7 +175,7 @@ internal sealed class PreMigrationRestoreAssessmentService(
     IOptionsMonitor<ControlPlaneOptions> controlPlane,
     IOptions<RestoreCellOptions> restoreOptions)
 {
-    public async Task<(RestoreDecision Decision, DeployTargetOptions? Target, VerifiedPreMigrationBackup? Backup)> DecideAsync(
+    public async Task<(RestoreDecision Decision, VerifiedPreMigrationBackup? Backup)> DecideAsync(
         DeployExecutionPayload payload,
         CancellationToken cancellationToken)
     {
@@ -204,14 +183,13 @@ internal sealed class PreMigrationRestoreAssessmentService(
             .FirstOrDefault(candidate => string.Equals(candidate.TargetId, payload.TargetId, StringComparison.Ordinal));
         if (target is null)
         {
-            return (Refuse(PreMigrationRestoreCodes.TargetUnknown, "The deploy target is not in the server catalog."), null, null);
+            return (Refuse(PreMigrationRestoreCodes.TargetUnknown, "The deploy target is not in the server catalog."), null);
         }
 
         var options = restoreOptions.Value;
-        var inPlace = target.TargetKind == DeployTargetKind.SelfHostedRolling;
         var journalSnapshot = await journal.ReadAsync(cancellationToken).ConfigureAwait(false);
         var priorMax = revisions.MaxSchema(payload.DesiredRevision);
-        var (backup, refusal) = await VerifyBackupAsync(payload, options, inPlace, cancellationToken).ConfigureAwait(false);
+        var (backup, refusal) = await VerifyBackupAsync(payload, options, cancellationToken).ConfigureAwait(false);
         var decision = ReaderIncompatibleRestorePolicy.Decide(new RestoreAssessment
         {
             CompatibilityKnown = journalSnapshot.Known,
@@ -220,28 +198,21 @@ internal sealed class PreMigrationRestoreAssessmentService(
             Backup = backup,
             BackupRefusalCode = refusal,
             RetargetConfigured = secrets.IsConfigured && !string.IsNullOrWhiteSpace(options.ConnectionSecretId),
-            InPlaceDatabase = inPlace,
         });
         if (decision.Kind == RestoreDecisionKind.RestoreBeforeStart
-            && target.TargetKind is DeployTargetKind.AzureContainerApps or DeployTargetKind.AzureFunctions or DeployTargetKind.AwsLambda)
+            && target.TargetKind is DeployTargetKind.AwsLambda)
         {
-            return (Refuse(PreMigrationRestoreCodes.RetargetUnsupported, "This target has no product restore executor."), target, null);
+            return (Refuse(PreMigrationRestoreCodes.RetargetUnsupported, "This target has no product restore executor."), null);
         }
 
-        return (decision, target, backup);
+        return (decision, backup);
     }
 
     private async Task<(VerifiedPreMigrationBackup? Backup, string? Refusal)> VerifyBackupAsync(
         DeployExecutionPayload payload,
         RestoreCellOptions options,
-        bool inPlace,
         CancellationToken cancellationToken)
     {
-        if (inPlace)
-        {
-            return VerifyComposeBackup(payload, options);
-        }
-
         if (!RestoreCellScope.IsBoundedPrefix(options.CellPrefix))
         {
             return (null, PreMigrationRestoreCodes.ScopeViolation);
@@ -267,25 +238,6 @@ internal sealed class PreMigrationRestoreAssessmentService(
         return (verification.Backup, verification.Code);
     }
 
-    private static (VerifiedPreMigrationBackup? Backup, string? Refusal) VerifyComposeBackup(
-        DeployExecutionPayload payload,
-        RestoreCellOptions options)
-    {
-        if (string.IsNullOrWhiteSpace(options.ComposeBackupDirectory) || string.IsNullOrWhiteSpace(options.ComposeProject))
-        {
-            return (null, null);
-        }
-
-        var evidence = ComposeBackupDirectory.Read(options.ComposeBackupDirectory, options.ComposeProject, payload.DesiredRevision, payload.BackupId);
-        if (evidence is null)
-        {
-            return (null, string.IsNullOrWhiteSpace(payload.BackupId) ? PreMigrationRestoreCodes.BackupRequired : PreMigrationRestoreCodes.BackupUnverified);
-        }
-
-        var verification = BackupEvidenceVerifier.VerifyCompose(evidence);
-        return (verification.Backup, verification.Code);
-    }
-
     private static RestoreDecision Refuse(string code, string message)
         => new() { Kind = RestoreDecisionKind.Refuse, Code = code, Message = message };
 
@@ -296,7 +248,6 @@ internal sealed class PreMigrationRestoreExecutionService(
     IRevisionSchemaCatalog revisions,
     IRdsSnapshotRestore rds,
     IConnectionSecretRetarget secrets,
-    IComposeRollbackTransport compose,
     IRestoredSchemaProbe probe,
     IServingCustomerProbe customerProbe,
     IPreMigrationRestoreAudit audit,
@@ -307,7 +258,6 @@ internal sealed class PreMigrationRestoreExecutionService(
         OperationGatewayRequest request,
         IPriorImageStarter starter,
         RestoreDecision decision,
-        DeployTargetOptions? target,
         VerifiedPreMigrationBackup? backup,
         CancellationToken cancellationToken)
     {
@@ -337,65 +287,7 @@ internal sealed class PreMigrationRestoreExecutionService(
             };
         }
 
-        if (target!.TargetKind == DeployTargetKind.SelfHostedRolling)
-        {
-            return await ExecuteComposeAsync(payload, request, decision, cancellationToken).ConfigureAwait(false);
-        }
-
         return await ExecuteCloudAsync(payload, request, decision, backup!, starter, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<RestoreCompletion> ExecuteComposeAsync(
-        DeployExecutionPayload payload,
-        OperationGatewayRequest request,
-        RestoreDecision decision,
-        CancellationToken cancellationToken)
-    {
-        if (!compose.IsConfigured)
-        {
-            return await FailAsync(PreMigrationRestoreCodes.TransportUnavailable, "The Compose restore transport is not configured, so the prior image was not started.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
-        }
-
-        var sidecar = await compose.RollbackAsync(payload.DesiredRevision, decision.BackupId, request.CorrelationId, cancellationToken).ConfigureAwait(false);
-        if (!sidecar.Ok || !sidecar.ImageStarted)
-        {
-            return await FailAsync(sidecar.Code ?? PreMigrationRestoreCodes.ProviderFailed, "Compose restore did not finish, so success was not reported.", payload, request, decision.Kind, cancellationToken).ConfigureAwait(false);
-        }
-
-        var observed = await probe.ProbeAsync(endpoint: null, cancellationToken).ConfigureAwait(false);
-        var priorMax = revisions.MaxSchema(payload.DesiredRevision) ?? -1;
-        var observedMax = Max(observed.Applied);
-        var matched = observed.Known && observedMax >= decision.ExpectedSchema!.Value && observedMax <= priorMax
-            && observed.Applied.All(migration => migration.Number <= priorMax);
-        if (!matched || !sidecar.ReadbackComplete)
-        {
-            return await FailAsync(
-                matched ? PreMigrationRestoreCodes.ReadbackIncomplete : PreMigrationRestoreCodes.RestoreIncomplete,
-                "Restore did not return the database to the backup schema, so success was not reported.",
-                payload,
-                request,
-                decision.Kind,
-                cancellationToken,
-                restoreInvoked: true,
-                schemaMatched: matched,
-                servingPointed: true,
-                imageStarted: sidecar.ImageStarted).ConfigureAwait(false);
-        }
-
-        var operationId = OperationIdFor(payload, decision.BackupId);
-        var persisted = await WriteAsync(payload, request, operationId, ok: true, code: null, schema: decision.ExpectedSchema, readback: true, cancellationToken).ConfigureAwait(false);
-        return new RestoreCompletion
-        {
-            Decision = decision.Kind,
-            OperationId = persisted ? operationId : null,
-            Code = persisted ? null : PreMigrationRestoreCodes.AuditFailed,
-            RestoreInvoked = true,
-            SchemaMatched = true,
-            ServingPointed = true,
-            ImageStarted = true,
-            ReadbackComplete = true,
-            AuditPersisted = persisted,
-        };
     }
 
     private async Task<RestoreCompletion> ExecuteCloudAsync(
@@ -598,12 +490,6 @@ internal sealed class PreMigrationRestoreExecutionService(
             && !name.Contains('/', StringComparison.Ordinal)
             && !name.Contains('\\', StringComparison.Ordinal);
     }
-
-    private static string OperationIdFor(DeployExecutionPayload payload, string? backupId)
-    {
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload.TargetId + "\n" + payload.DesiredRevision + "\n" + backupId)))[..32].ToLowerInvariant();
-        return "restore-" + hash;
-    }
 }
 
 internal static class RestoreCellScope
@@ -617,189 +503,11 @@ internal static class RestoreCellScope
 
 }
 
-// The model cannot choose the Compose directory or the dump name.
-internal static class ComposeBackupDirectory
-{
-    public static ComposeBackupManifestEvidence? Read(string root, string project, string image, string? backupId)
-    {
-        if (!Directory.Exists(root))
-        {
-            return null;
-        }
-
-        if (!string.IsNullOrWhiteSpace(backupId))
-        {
-            return Load(root, project, image, backupId, out _);
-        }
-
-        ComposeBackupManifestEvidence? newest = null;
-        DateTimeOffset newestStamp = DateTimeOffset.MinValue;
-        foreach (var directory in Directory.EnumerateDirectories(root))
-        {
-            var id = Path.GetFileName(directory);
-            var loaded = Load(root, project, image, id, out var createdAt);
-            if (loaded is null || BackupEvidenceVerifier.VerifyCompose(loaded).Backup is null)
-            {
-                continue;
-            }
-
-            var stamp = createdAt > DateTimeOffset.MinValue
-                ? createdAt
-                : new DateTimeOffset(Directory.GetLastWriteTimeUtc(directory), TimeSpan.Zero);
-            if (newest is null || stamp > newestStamp)
-            {
-                newest = loaded;
-                newestStamp = stamp;
-            }
-        }
-
-        return newest;
-    }
-
-    // A later absolute path segment must not discard the base directory.
-    private static bool TryChild(string root, string name, string file, out string path)
-    {
-        path = string.Empty;
-        if (string.IsNullOrWhiteSpace(name)
-            || name is "." or ".."
-            || name.IndexOfAny(['/', '\\']) >= 0
-            || Path.IsPathRooted(name)
-            || file.IndexOfAny(['/', '\\']) >= 0
-            || Path.IsPathRooted(file))
-        {
-            return false;
-        }
-
-        var rootFull = Path.GetFullPath(root);
-        var prefix = rootFull.EndsWith(Path.DirectorySeparatorChar)
-            ? rootFull
-            : rootFull + Path.DirectorySeparatorChar;
-        var combined = Path.GetFullPath(Path.Combine(rootFull, name, file));
-        if (!combined.StartsWith(prefix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        path = combined;
-        return true;
-    }
-
-    private static ComposeBackupManifestEvidence? Load(string root, string project, string image, string backupId, out DateTimeOffset createdAt)
-    {
-        createdAt = DateTimeOffset.MinValue;
-        if (!BackupEvidenceVerifier.IsValidBackupId(backupId)) return null;
-        if (!TryChild(root, backupId, "manifest.json", out var manifestPath)
-            || !TryChild(root, backupId, BackupEvidenceVerifier.DumpFileName, out var dumpPath))
-        {
-            return null;
-        }
-        if (!File.Exists(manifestPath) || !File.Exists(dumpPath))
-        {
-            return null;
-        }
-
-        ComposeManifestFile? manifest;
-        try
-        {
-            manifest = JsonSerializer.Deserialize(File.ReadAllText(manifestPath), PreMigrationRestoreJsonContext.Default.ComposeManifestFile);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-
-        if (manifest is null || !string.Equals(manifest.BackupId, backupId, StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        createdAt = manifest.CreatedAt;
-
-        using var dump = File.OpenRead(dumpPath);
-        var hash = Convert.ToHexString(SHA256.HashData(dump)).ToLowerInvariant();
-        return new ComposeBackupManifestEvidence
-        {
-            BackupId = backupId,
-            Project = manifest.Project ?? string.Empty,
-            ExpectedProject = project,
-            Image = manifest.Image ?? string.Empty,
-            ExpectedImage = image,
-            SchemaVersion = manifest.SchemaVersion,
-            Sha256 = manifest.Sha256 ?? string.Empty,
-            ComputedSha256 = hash,
-            DumpFileName = manifest.DumpFile ?? string.Empty,
-        };
-    }
-}
-
-internal sealed record ComposeManifestFile
-{
-    public string? BackupId { get; init; }
-
-    public string? Project { get; init; }
-
-    public string? Image { get; init; }
-
-    public string? Service { get; init; }
-
-    public DateTimeOffset CreatedAt { get; init; }
-
-    public int SchemaVersion { get; init; }
-
-    public string? Sha256 { get; init; }
-
-    public string? DumpFile { get; init; }
-}
-
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
-[JsonSerializable(typeof(ComposeManifestFile))]
 [JsonSerializable(typeof(PreMigrationRestoreAuditLine))]
-[JsonSerializable(typeof(ComposeRollbackWireRequest))]
-[JsonSerializable(typeof(ComposeRollbackWireResponse))]
 internal sealed partial class PreMigrationRestoreJsonContext : JsonSerializerContext
 {
-}
-
-// The audit line never receives members the sidecar adds, including a customer body.
-[JsonSourceGenerationOptions(
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip)]
-[JsonSerializable(typeof(ComposeRollbackWireResponse))]
-internal sealed partial class ComposeRollbackResponseJsonContext : JsonSerializerContext
-{
-}
-
-internal sealed record ComposeRollbackWireRequest
-{
-    public string? Op { get; init; }
-
-    public string? Image { get; init; }
-
-    public string? BackupId { get; init; }
-
-    public string? RequestId { get; init; }
-}
-
-internal sealed record ComposeRollbackWireResponse
-{
-    public string? RequestId { get; init; }
-
-    public bool Ok { get; init; }
-
-    public string? Code { get; init; }
-
-    // Operator text is never written to the audit line.
-    public string? Message { get; init; }
-
-    public string? RunningImage { get; init; }
-
-    public bool ReadbackComplete { get; init; }
-
-    public int? SchemaVersion { get; init; }
-
-    public string? BackupId { get; init; }
 }

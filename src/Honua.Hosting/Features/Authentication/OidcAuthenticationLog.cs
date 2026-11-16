@@ -6,12 +6,6 @@ namespace Honua.Infrastructure.Authentication;
 internal static partial class OidcAuthenticationLog
 {
     [LoggerMessage(
-        EventId = 4200,
-        Level = LogLevel.Information,
-        Message = "OIDC authentication enabled with providers: {Providers}")]
-    public static partial void OidcAuthenticationEnabled(ILogger logger, string providers);
-
-    [LoggerMessage(
         EventId = 4201,
         Level = LogLevel.Warning,
         Message = "JWT token validation failed: {ErrorMessage}")]
@@ -42,34 +36,10 @@ internal static partial class OidcAuthenticationLog
     public static partial void ClaimsTransformed(ILogger logger, int claimCount);
 
     [LoggerMessage(
-        EventId = 4206,
-        Level = LogLevel.Debug,
-        Message = "Token refresh initiated")]
-    public static partial void TokenRefreshInitiated(ILogger logger);
-
-    [LoggerMessage(
-        EventId = 4207,
-        Level = LogLevel.Debug,
-        Message = "Token refresh succeeded")]
-    public static partial void TokenRefreshSucceeded(ILogger logger);
-
-    [LoggerMessage(
-        EventId = 4208,
-        Level = LogLevel.Warning,
-        Message = "Token refresh failed: {ErrorMessage}")]
-    public static partial void TokenRefreshFailed(ILogger logger, string errorMessage);
-
-    [LoggerMessage(
         EventId = 4209,
         Level = LogLevel.Information,
         Message = "OIDC configuration loaded: AzureAD={AzureAdEnabled}, Google={GoogleEnabled}, Generic={GenericEnabled}, Okta={OktaEnabled}, Auth0={Auth0Enabled}")]
     public static partial void OidcConfigurationLoaded(ILogger logger, bool azureAdEnabled, bool googleEnabled, bool genericEnabled, bool oktaEnabled, bool auth0Enabled);
-
-    [LoggerMessage(
-        EventId = 4210,
-        Level = LogLevel.Information,
-        Message = "Admin access granted via role {Role}")]
-    public static partial void AdminAccessGranted(ILogger logger, string role);
 
     [LoggerMessage(
         EventId = 4211,

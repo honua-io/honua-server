@@ -218,7 +218,7 @@ internal static partial class MapServerEndpoints
                     fieldMaskSource, layer.Resource, cancellationToken).ConfigureAwait(false);
                 // An omitted searchFields searches every public string field except those
                 // masked for this caller. Naming a masked field explicitly is a 400: the
-                // store would otherwise reject the whole request (#6148).
+                // store would otherwise reject the whole request.
                 if (searchFieldNames is { Count: > 0 } &&
                     TryFindExplicitMaskedSearchField(layer.Resource, searchFieldNames, maskedFields, out var maskedSearchField))
                 {
