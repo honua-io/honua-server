@@ -36,6 +36,59 @@ public sealed partial class FormPackageValidatorTests
         result.Issues.Should().Contain(issue => issue.Code == "expressionLanguageUnsupported");
     }
 
+    [UnitTheory]
+    [InlineData("relevanceExpression")]
+    [InlineData("constraintExpression")]
+    [InlineData("calculatedExpression")]
+    public async Task ValidateWithoutLanguage_DoesNotSilentlyIgnoreFieldExpressions(string propertyName)
+    {
+        var source = $$"""
+            { "fields": [{ "fieldId": "score", "{{propertyName}}": "false" }] }
+            """;
+        var package = JsonSerializer.Deserialize(source, FormPackageJsonContext.Default.FormPackageDocument)!;
+        var version = new FormPackageVersion
+        {
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
+            Package = package
+        };
+
+        var publish = await CreateValidator().ValidateForPublishAsync(package);
+        var submission = await CreateValidator().ValidateSubmissionAsync(version,
+            CreateSubmissionRequest(FormSubmissionOperations.Create));
+
+        publish.Issues.Should().Contain(issue => issue.Code == "expressionLanguageUnsupported");
+        submission.Issues.Should().Contain(issue => issue.Code == "expressionLanguageUnsupported");
+    }
+
+    [UnitTest]
+    public void PackageSerialization_PreservesPortableFieldExpressions()
+    {
+        const string source = """
+            {
+              "expressionLanguage": "honua.portable.v1",
+              "fields": [{ "fieldId": "score",
+                "relevanceExpression": "${enabled} = true",
+                "constraintExpression": ". >= 0",
+                "constraintMessage": "Score must be nonnegative",
+                "calculatedExpression": "${count} * 2" }]
+            }
+            """;
+        var package = JsonSerializer.Deserialize(source, FormPackageJsonContext.Default.FormPackageDocument)!;
+        using var serialized = JsonDocument.Parse(
+            JsonSerializer.Serialize(package, FormPackageJsonContext.Default.FormPackageDocument));
+        using var original = JsonDocument.Parse(source);
+
+        var field = serialized.RootElement.GetProperty("fields")[0];
+        foreach (var property in original.RootElement.GetProperty("fields")[0].EnumerateObject())
+        {
+            field.TryGetProperty(property.Name, out var value).Should().BeTrue(
+                "native package storage must retain {0}", property.Name);
+            value.GetString().Should().Be(property.Value.GetString());
+        }
+    }
+
     private static FormPackageDocument ExpressionPackage()
         => JsonSerializer.Deserialize("""
             {

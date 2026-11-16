@@ -158,7 +158,11 @@ public sealed class FormPackageValidator
 
     private static void ValidateExpressionLanguage(FormPackageDocument package, List<FormValidationIssue> issues)
     {
-        if (!string.IsNullOrEmpty(package.ExpressionLanguage))
+        if (!string.IsNullOrEmpty(package.ExpressionLanguage) ||
+            package.Fields.Any(static field =>
+                !string.IsNullOrEmpty(field.RelevanceExpression) ||
+                !string.IsNullOrEmpty(field.ConstraintExpression) ||
+                !string.IsNullOrEmpty(field.CalculatedExpression)))
         {
             AddError(issues, "expressionLanguageUnsupported", "The package expression language has no registered evaluation policy.", path: "expressionLanguage");
         }
