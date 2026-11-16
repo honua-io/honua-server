@@ -19,6 +19,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Tests.Features.Admin;
+using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -56,6 +57,8 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
         }).ConfigureServices(services =>
         {
             FolderPostgresTestHost.Configure(services, () => _fixture.CurrentSchema);
+            services.AddHttpClient(AdminApiOperationExecutor.HttpClientName)
+                .AddHttpMessageHandler(() => new RejectFolderMutationLoopbackHandler());
             services.AddSingleton<IPrincipalMembershipSource>(_memberships);
             services.AddSingleton<ILicenseEntitlementService>(_licensing);
             services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
@@ -199,6 +202,20 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
         (await SnapshotAsync()).Etag.Should().Be(before.Etag);
         (await SnapshotAsync()).Graph.Services.Where(service => service.Metadata.Name == "test")
             .Should().OnlyContain(service => service.FolderId == null);
+    }
+
+    private sealed class RejectFolderMutationLoopbackHandler : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            var isFolderMutation = request.Method != HttpMethod.Get &&
+                (path.StartsWith("/api/v1/admin/folders", StringComparison.Ordinal) ||
+                 path.StartsWith("/api/v1/admin/services/", StringComparison.Ordinal) && path.EndsWith("/folder", StringComparison.Ordinal));
+            if (isFolderMutation)
+                throw new InvalidOperationException("Folder operations must use the shared mutation service.");
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     private sealed class ReplayServiceAuthorization(IOperatorAuthorizationEvaluator evaluator) : IOperatorAuthorizationEvaluator
