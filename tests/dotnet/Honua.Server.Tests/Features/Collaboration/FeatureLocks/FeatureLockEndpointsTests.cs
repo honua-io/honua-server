@@ -26,14 +26,14 @@ public sealed class FeatureLockEndpointsTests
     private const string AdminPassword = "feature-lock-test-key";
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/feature-locks/claim")]
     public async Task Claim_WithAuthorizedEditor_ReturnsLease()
     {
         using var factory = CreateFactory(allowWrite: true);
         using var client = CreateClient(factory);
 
         using var response = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/feature-locks/claim",
+            "/api/v1/maps/saved-map:ops/collaboration/feature-locks/claim",
             JsonBody(Request("alice", "session-a")));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -45,17 +45,17 @@ public sealed class FeatureLockEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/feature-locks/claim")]
     public async Task Claim_WhenFeatureAlreadyLocked_ReturnsTypedConflict()
     {
         using var factory = CreateFactory(allowWrite: true);
         using var client = CreateClient(factory);
 
         using var first = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/feature-locks/claim",
+            "/api/v1/maps/saved-map:ops/collaboration/feature-locks/claim",
             JsonBody(Request("alice", "session-a")));
         using var second = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/feature-locks/claim",
+            "/api/v1/maps/saved-map:ops/collaboration/feature-locks/claim",
             JsonBody(Request("bob", "session-b")));
 
         first.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -69,22 +69,22 @@ public sealed class FeatureLockEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/feature-locks/release")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/feature-locks/renew")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/feature-locks/release")]
     public async Task RenewAndRelease_WithSameHolder_ReturnSuccess()
     {
         using var factory = CreateFactory(allowWrite: true);
         using var client = CreateClient(factory);
         var request = Request("alice", "session-a");
         using var claim = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/feature-locks/claim",
+            "/api/v1/maps/saved-map:ops/collaboration/feature-locks/claim",
             JsonBody(request));
 
         using var renew = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/feature-locks/renew",
+            "/api/v1/maps/saved-map:ops/collaboration/feature-locks/renew",
             JsonBody(request));
         using var release = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/feature-locks/release",
+            "/api/v1/maps/saved-map:ops/collaboration/feature-locks/release",
             JsonBody(request));
 
         claim.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -95,14 +95,14 @@ public sealed class FeatureLockEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/feature-locks/claim")]
     public async Task Claim_WithoutFeatureLockAuthorization_ReturnsForbidden()
     {
         using var factory = CreateFactory(allowWrite: false);
         using var client = CreateClient(factory);
 
         using var response = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/feature-locks/claim",
+            "/api/v1/maps/saved-map:ops/collaboration/feature-locks/claim",
             JsonBody(Request("alice", "session-a")));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);

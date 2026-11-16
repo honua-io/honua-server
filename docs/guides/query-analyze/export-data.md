@@ -7,7 +7,7 @@ description: "Pull a layer's features out of Honua as GeoJSON, CSV, GeoParquet, 
 
 Pull a layer's features out of Honua as GeoJSON, CSV, GeoParquet, GeoArrow, FlatGeobuf, GeoPackage, or Shapefile — straight from the query endpoints or as a bulk admin export.
 
-**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)). The bulk export in step 4 needs an admin API key ([authentication](../secure/authentication.md)).
+**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)). The bulk export in step 5 needs an admin API key ([authentication](../secure/authentication.md)).
 
 Which formats are available depends on the surface: OGC API Features items serve `geojson`, `json`, `gml`, `csv`, and `html` via the `f` parameter; FeatureServer `query` serves `json`, `pjson`, `geojson`, and `pbf` everywhere, plus `fgb` (FlatGeobuf), `geobuf`, `parquet` (GeoParquet), and `arrow` (GeoArrow / Arrow IPC stream) on layers whose feature store supports encoded output (PostGIS-backed layers) — the layer metadata's `supportedQueryFormats` field is authoritative.
 

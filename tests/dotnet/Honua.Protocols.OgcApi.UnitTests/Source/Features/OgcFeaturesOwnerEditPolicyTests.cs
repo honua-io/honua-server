@@ -130,7 +130,8 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         foreach (var item in executed)
         {
             item.Result.IsSuccess.Should().BeTrue();
-            item.Reader.QueryCount.Should().Be(0);
+            item.Reader.OwnerQueryCount.Should().Be(0);
+            item.Reader.QueryCount.Should().Be(1);
             item.Writer.ApplyCount.Should().Be(1);
             item.Writer.LastBatch.Updates[0].Attributes.ContainsKey("owner").Should().BeFalse();
         }
@@ -156,7 +157,8 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         {
             item.Result.IsSuccess.Should().BeTrue();
             item.Writer.ApplyCount.Should().Be(1);
-            item.Reader.QueryCount.Should().Be(0);
+            item.Reader.OwnerQueryCount.Should().Be(0);
+            item.Reader.QueryCount.Should().Be(1);
         }
 
         foreach (var item in stamped)
@@ -362,12 +364,19 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
     {
         public int QueryCount { get; private set; }
 
+        public int OwnerQueryCount { get; private set; }
+
         public Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         {
             QueryCount++;
+            if (query.OutFields is { } fields && fields.SequenceEqual(["owner"]))
+            {
+                OwnerQueryCount++;
+            }
+
             var features = ImmutableArray.CreateBuilder<Feature>();
             if (query.ObjectIds is { } ids)
             {

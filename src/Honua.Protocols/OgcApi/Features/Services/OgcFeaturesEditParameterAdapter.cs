@@ -24,6 +24,9 @@ internal readonly record struct OgcFeaturesBatchEditOperation
     public Feature? Feature { get; init; }
 
     public long? ObjectId { get; init; }
+
+    // The row as read before a delete, so a delete hook can judge it.
+    public Feature? StoredFeature { get; init; }
 }
 
 internal readonly record struct OgcFeaturesEditRequest
@@ -41,6 +44,14 @@ internal readonly record struct OgcFeaturesEditRequest
     public string? IfMatch { get; init; }
 
     public bool ClearAllProperties { get; init; }
+
+    // The service and published layer the collection was addressed through, as plugin edit hooks see them.
+    public string? ServiceName { get; init; }
+
+    public int? PublicLayerId { get; init; }
+
+    // The row as read before a delete, so a delete hook can judge it.
+    public Feature? StoredFeature { get; init; }
 
     public string? ExpectedStateToken { get; init; }
 }
