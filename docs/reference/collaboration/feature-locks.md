@@ -160,7 +160,9 @@ and are removed by retention sweeps.
 
 Hosts without the shared database use `InMemoryFeatureLockService`. Its leases remain local
 to the node that granted them and disappear when that process restarts. Use the PostgreSQL
-store when collaborative editing must span nodes.
+store when collaborative editing must span nodes. The capability manifest reports
+`collaboration.feature-locks.cross-node` as available only for the PostgreSQL store; a custom
+`IFeatureLockService` is reported as `dependency-unavailable` even if its own leases span nodes.
 
 During the rolling upgrade that first brings the PostgreSQL store, nodes still on the earlier
 release keep their in-process leases, so a lease taken on an upgraded node does not block a
