@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Server.Features.Admin.PairedPublications;
 using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.DataProtection;
@@ -250,7 +251,6 @@ var redisConnectionString = builder.Configuration.GetConnectionString("redis")
 var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(
     builder.Configuration,
     builder.Environment);
-var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var systemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"));
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
@@ -273,21 +273,6 @@ var tracingEnabled = tracingSection.GetValue<bool>(nameof(TracingOptions.Enabled
 if (tracingSection.Exists() || tracingEnabled)
 {
     builder.AddTelemetryDefaults();
-}
-
-// Add Redis if configured, otherwise fallback to in-memory cache
-if (!string.IsNullOrWhiteSpace(redisCacheConnectionString))
-{
-    var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
-    builder.Services.AddStackExchangeRedisCache(options =>
-    {
-        options.Configuration = redisCacheConnectionString;
-        options.InstanceName = cacheKeyPrefix;
-    });
-}
-else
-{
-    builder.Services.AddDistributedMemoryCache();
 }
 
 if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
@@ -753,6 +738,9 @@ if (systemDatabaseConfigured && builder.Services.Any(service =>
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
+builder.Services.AddScoped<Honua.Infrastructure.Attachments.AttachmentUploadContentVerifier>();
+builder.Services.AddScoped<Honua.Core.Features.Attachments.Abstractions.IAttachmentUploadPublisher,
+    Honua.Infrastructure.Attachments.AttachmentUploadPublisher>();
 
 // Federated-query planning and source configuration (#341).
 // Experimental gate (PA-001): federated query is off by default. Set
@@ -1642,7 +1630,6 @@ app.UseHonuaClientCertificateAuthentication();
 
 // Authenticate the default scheme before hydrating additional credential types.
 app.UseAuthentication();
-app.UseBrowserSessionSecurity();
 
 // Bridge ArcGIS-style portal tokens (?token=, form POST token, X-Esri-Authorization,
 // Authorization: Bearer)
@@ -1650,6 +1637,7 @@ app.UseBrowserSessionSecurity();
 // UseAuthentication and before authorization and tenant resolution
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
+app.UseBrowserSessionSecurity();
 
 // Mark MCP callers and agent-grant API keys before authorization, so approval gates and the
 // operation policy treat them as agents on every path.
@@ -2094,6 +2082,7 @@ if (offlineSyncEnabled)
     app.MapFieldCollectionSyncEndpoints();
 }
 app.MapTileOperationsEndpoints();
+app.MapPairedPublicationReadEndpoints();
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();
