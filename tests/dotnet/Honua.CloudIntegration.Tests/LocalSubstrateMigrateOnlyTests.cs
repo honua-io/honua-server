@@ -15,15 +15,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Migrate-only mode against a real PostgreSQL/PostGIS database (honua-server#6470). The first case
-/// runs the real server entry point out of process, in the Production environment and without an
-/// admin password, encryption key, licence or Redis, and proves it applies the real numbered
-/// migrations, prints one summary line and exits 0 without ever listening. The others drive the
-/// same command in process over synthetic migration assemblies to prove every MigrationSafety gate
-/// still applies and refuses with its own exit code. Every test <c>[SkippableFact]</c>-skips when
-/// Docker is unavailable.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
 public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstratePostgresFixture>
 {

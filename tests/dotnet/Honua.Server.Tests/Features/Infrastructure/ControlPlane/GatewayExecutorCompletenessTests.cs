@@ -19,13 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Coverage for honua-server#2563 (gateway executor completeness): the
-/// <see cref="MetadataReleaseOperationExecutor"/> adapts
-/// <see cref="MetadataReleaseControlService.CreateAsync"/> ONLY, Seed stays genuinely
-/// unregistered (NotSupported, not a fake success), and <see cref="IOperationExecutorCatalog"/>
-/// truthfully reports the registered set so discovery consumers never hit a dead end.
-/// </summary>
 public sealed class GatewayExecutorCompletenessTests
 {
     // ── MetadataReleaseOperationExecutor: payload validation ───────────────────
@@ -275,7 +268,6 @@ public sealed class GatewayExecutorCompletenessTests
         IGuardrailLadder ladder)
         => CanonicalOperationGatewayTestComposition.Build(proposalStore, ladder, executors);
 
-    /// <summary>Executor stand-in for classes not under test here (AdminConfigChange/Deploy).</summary>
     private sealed class StubExecutor(OperationClass operationClass) : IOperationExecutor
     {
         public OperationClass OperationClass => operationClass;
@@ -287,7 +279,6 @@ public sealed class GatewayExecutorCompletenessTests
             => Task.FromResult<string?>("stub-op-id");
     }
 
-    /// <summary>Thread-safe in-memory workflow-operation store (mirrors the fixture used elsewhere in this folder).</summary>
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
@@ -359,7 +350,6 @@ public sealed class GatewayExecutorCompletenessTests
         }
     }
 
-    /// <summary>Thread-safe in-memory proposal store with CAS semantics (mirrors the state-machine tests fixture).</summary>
     private sealed class InMemoryProposalStore : IOperationProposalStore
     {
         private readonly ConcurrentDictionary<string, OperationProposal> _proposals = new(StringComparer.Ordinal);

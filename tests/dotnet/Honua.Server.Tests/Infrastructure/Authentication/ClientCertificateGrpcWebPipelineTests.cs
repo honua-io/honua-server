@@ -13,14 +13,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Full-pipeline regression tests for the interaction between <c>UseGrpcWeb</c> and
-/// <c>UseHonuaClientCertificateAuthentication</c>. <c>UseGrpcWeb</c> rewrites
-/// <c>Content-Type</c> from <c>application/grpc-web*</c> to <c>application/grpc</c>
-/// before the client-certificate middleware runs, so the capture middleware in
-/// <c>Program.cs</c> must record the original protocol via <c>HttpContext.Items</c>
-/// for required-native mTLS to correctly skip browser/gRPC-Web callers.
-/// </summary>
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Security)]
 public sealed class ClientCertificateGrpcWebPipelineTests

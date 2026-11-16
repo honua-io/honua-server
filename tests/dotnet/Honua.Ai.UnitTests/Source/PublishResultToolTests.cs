@@ -22,17 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies the MCP <c>honua_publish_result</c> tool (honua-server#2482): it
-/// resolves a completed analysis job's result package through the canonical
-/// <see cref="IGeoprocessingJobService"/>, reads the selected artifact's
-/// materialized-table coordinates, and routes the promotion through the very
-/// same <c>service.publish</c> operation (<see cref="IOperationInvoker"/>) as
-/// <c>honua_publish_service</c> — returning a structured handle whose
-/// <c>serviceId</c> + <c>layerId</c> chain straight into
-/// <c>honua_query_features</c>. Structured errors (job not terminal, unsupported
-/// artifact kind, unauthenticated) surface through the shared exception channel.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class PublishResultToolTests
 {

@@ -9,10 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Pins the client-verifiable content hash (honua-server#5449) and the publication URL on the
-/// publish-request read (honua-server#5788), both through the source-generated (AOT) context.
-/// </summary>
 public sealed class StudioContentHashInputTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 10, 10, 12, 0, 0, TimeSpan.Zero);

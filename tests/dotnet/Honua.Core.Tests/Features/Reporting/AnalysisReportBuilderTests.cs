@@ -17,11 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Reporting;
 
-/// <summary>
-/// Verifies the canonical analysis-report builder behavior: contract versioning,
-/// deterministic narrative composition, LLM enrichment, and clean fallback
-/// when the LLM provider fails.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class AnalysisReportBuilderTests
 {

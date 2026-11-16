@@ -13,9 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 
-/// <summary>
-/// Integration tests for the read-only OGC API Records catalog surface.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiRecords)]
 public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTestsFixture>
@@ -500,11 +497,6 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
            hrefElement.GetString()?.Contains(value, StringComparison.OrdinalIgnoreCase) == true;
 }
 
-/// <summary>
-/// Per-class fixture wrapper that builds the Pro-licensed <see cref="WebAppFixture"/> once for the
-/// whole <see cref="OgcRecordsEndpointTests"/> class. All record tests are read-only, so they can
-/// safely share a single server/schema instance.
-/// </summary>
 public sealed class OgcRecordsEndpointTestsFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);

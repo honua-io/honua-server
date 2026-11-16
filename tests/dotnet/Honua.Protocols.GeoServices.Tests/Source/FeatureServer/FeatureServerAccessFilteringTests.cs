@@ -50,23 +50,6 @@ public sealed class FeatureServerAccessFilteringTests
         layers[0].GetProperty("id").GetInt32().Should().Be(ServiceRbacTestFixture.AlphaLayerId);
     }
 
-    /// <summary>
-    /// #4386: the disclosure question this fixture exists to answer, finally asked.
-    /// <para>
-    /// The three sibling tests above prove <b>metadata</b> filtering for the role-gated hidden
-    /// layer — it is absent from <c>getEstimates</c>, its domains are filtered, relationships to
-    /// it are hidden. None of them ever issued
-    /// <c>GET /rest/services/{svc}/FeatureServer/{hiddenLayerId}/query</c> as the <c>reader</c>
-    /// principal, so nothing proved that the layer's <i>rows</i> are refused rather than merely
-    /// its listing suppressed.
-    /// </para>
-    /// <para>
-    /// The entitled read runs first and is asserted to return the seeded rows and their markers.
-    /// That is the positive control: it establishes that this route, on this layer, with this
-    /// data, does return records — so the denial below measures the authorization decision and
-    /// not an empty layer, an unroutable path or a broken query.
-    /// </para>
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -133,10 +116,6 @@ public sealed class FeatureServerAccessFilteringTests
         }
     }
 
-    /// <summary>
-    /// The number of records a FeatureServer <c>query</c> body actually carries. A body that is
-    /// not a success-shaped payload carries none, which is what the denial case asserts.
-    /// </summary>
     private static int ReadFeatureCount(string body)
     {
         if (string.IsNullOrWhiteSpace(body))
@@ -164,10 +143,6 @@ public sealed class FeatureServerAccessFilteringTests
         }
     }
 
-    /// <summary>
-    /// Captures the host's warning-and-above log records so a failing assertion reports the
-    /// server-side cause rather than only the generic GeoServices error envelope.
-    /// </summary>
     private sealed class CapturingLoggerProvider : ILoggerProvider
     {
         private readonly List<string> _records = [];
@@ -368,11 +343,6 @@ public sealed class FeatureServerAccessFilteringTests
             });
 }
 
-/// <summary>
-/// Builds a Metadata v2 graph with one reader-accessible layer and one role-gated hidden layer
-/// (both attachment-enabled, each carrying a coded-value domain) so the FeatureServer
-/// access-filtering tests can assert hidden layers/domains are filtered for unprivileged callers.
-/// </summary>
 internal sealed class FeatureServerAccessFilteringCatalog : ITestMetadataV2GraphSource
 {
     private static readonly string[] SupportedFormats = ["JSON", "GeoJSON"];

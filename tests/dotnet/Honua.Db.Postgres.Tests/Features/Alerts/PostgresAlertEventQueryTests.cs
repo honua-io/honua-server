@@ -14,12 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Alerts;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresAlertEventQuery"/> and
-/// <see cref="PostgresAlertLifecycleStore"/> using the shared Testcontainers
-/// Postgres fixture. Mirrors migration 013 (alert events) and migration 034
-/// (alert event lifecycle) inside an isolated per-test schema (#1168).
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
 {

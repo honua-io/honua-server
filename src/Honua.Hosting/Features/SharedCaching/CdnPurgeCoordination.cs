@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Honua.Infrastructure.SharedCaching;
 
 // What a task needs to coordinate its purges with the request being handled and with the other tasks; each part is optional.
-internal sealed class CdnPurgeCoordination
+internal sealed record CdnPurgeCoordination
 {
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 
@@ -19,4 +19,6 @@ internal sealed class CdnPurgeCoordination
     public ILeaseStore? LeaseStore { get; init; }
 
     public ICdnPurgeBudget? Budget { get; init; }
+
+    public CdnPurgeReliability? Reliability { get; init; }
 }

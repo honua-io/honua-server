@@ -9,9 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.PointCloud;
 
-/// <summary>
-/// Unit tests for the deterministic PNTS point-tile writer (#1201).
-/// </summary>
 public sealed class PntsTileWriterTests
 {
     [UnitTest]

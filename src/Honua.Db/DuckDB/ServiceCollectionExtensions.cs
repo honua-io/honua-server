@@ -61,9 +61,8 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<ISqlDialect>(DuckDbSqlDialect.Instance);
         // Honua.Hosting's shared FilterExpressionTranslator (wired unconditionally in
         // AddValidationServices) requires ISqlFilterTranslator regardless of provider;
-        // without this every FeatureServer/OGC API Features request failed DI activation
-        // outright, not just ones using a CQL2 filter (honua-server#2947; translator
-        // implemented with CQL2 spatial support in #2963).
+        // without this every FeatureServer/OGC API Features request fails DI activation
+        // outright, not just ones using a CQL2 filter.
         services.AddScoped<ISqlFilterTranslator, DuckDbSqlFilterTranslator>();
 
         // Register infrastructure singletons
@@ -146,7 +145,7 @@ internal static class ServiceCollectionExtensions
         // ICrsDetectionService regardless of provider. Only Postgres ever registered one
         // (CRS detection from WKT/.prj/GeoJSON needs its spatial_ref_sys catalog), so every
         // FeatureServer query under DataSource:Provider=duckdb failed DI activation outright
-        // before this fix (honua-server#2947).
+        // before this fix.
         services.AddScoped<ICrsDetectionService>(_ => new NoOpCrsDetectionService());
         // Same gap, same fix shape: SpatialReferenceResolver also requires ICrsRegistry.
         // WellKnownCrsRegistry covers CRS84/EPSG:4326/EPSG:3857 (the practical case for a
@@ -158,15 +157,14 @@ internal static class ServiceCollectionExtensions
         // ISecureConnectionRegistry to resolve any publication's storage-binding
         // connection. DuckDB has no honua.data_connections-equivalent catalog of its
         // own; a process-local in-memory registry keeps DI activation working and
-        // supports a secondary/additional provider (e.g. SQL Server) layered on top
-        // (honua-server#2947).
+        // supports a secondary/additional provider (e.g. SQL Server) layered on top.
         services.AddSingleton<ISecureConnectionRegistry, InMemorySecureConnectionRegistry>();
         // Honua.Protocols.OData's ODataSearchService (wired unconditionally regardless of
         // provider) requires IRelationshipStore; DuckDB documents relationship queries as
-        // unsupported (honua-server#2947).
+        // unsupported.
         services.AddScoped<IRelationshipStore>(_ => new ReadOnlyRelationshipStore("DuckDB"));
         // OGC API Features' shared geometry services (mandatory, wired unconditionally
-        // regardless of provider) require ICoordinateTransformService (honua-server#2947).
+        // regardless of provider) require ICoordinateTransformService.
         services.AddSingleton<ICoordinateTransformService>(_ => new WellKnownCoordinateTransformService());
         services.AddScoped<IGeoJsonFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
@@ -177,7 +175,7 @@ internal static class ServiceCollectionExtensions
         // IGeometryTopologyValidator; only Postgres registers a real (ST_IsValid-backed)
         // one. Without this stub every applyEdits request under DataSource:Provider=duckdb
         // failed DI activation with an opaque 500 instead of the documented read-only
-        // write rejection (honua-server#2983).
+        // write rejection.
         services.AddScoped<IGeometryTopologyValidator>(_ => new ReadOnlyGeometryTopologyValidator("DuckDB"));
 
         // ReadinessCheckService requires IDatabaseHealthChecker; without this registration

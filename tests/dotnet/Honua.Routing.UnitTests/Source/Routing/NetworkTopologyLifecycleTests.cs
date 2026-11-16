@@ -6,9 +6,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Provider-neutral topology generation lifecycle contract tests.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class NetworkTopologyLifecycleTests
 {

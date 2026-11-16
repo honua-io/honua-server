@@ -63,8 +63,7 @@ public static partial class MigrationReaderCompatibility
         {
             classification = MigrationReaderCompatibilityClassification.ReaderIncompatible;
         }
-        else if (MigrationSafetyClassifier.Classify(scriptName, text).IsBreaking
-            && !IsReviewedIndexRemoval(scriptName, text))
+        else if (MigrationSafetyClassifier.Classify(scriptName, text).IsBreaking)
         {
             classification = MigrationReaderCompatibilityClassification.Contract;
         }
@@ -165,14 +164,6 @@ public static partial class MigrationReaderCompatibility
 
     private static string NormalizeLineEndings(string sql) => sql.Replace("\r\n", "\n", StringComparison.Ordinal);
 
-    private static bool IsReviewedIndexRemoval(string scriptName, string text)
-    {
-        // These optional indexes do not define reader SQL or constraints. Upgrade safety
-        // still treats their removal as contract; only this exact script is reader-compatible.
-        return ReviewedIndexRemovalName().IsMatch(scriptName)
-            && ComputeScriptSha256(text) == "8FA24E8BA3C540117E5CE6061374AC6DF6525CF91F195BDDBCEDE38F65FBB9DD";
-    }
-
     private static (int MinReaderSchema, bool Malformed) ReadMinReaderSchema(string text)
     {
         var floors = ReaderCompatibleFromMarker().Matches(text)
@@ -205,7 +196,4 @@ public static partial class MigrationReaderCompatibility
 
     [GeneratedRegex(@"(?:^|[./\\])0*(\d+)_", RegexOptions.CultureInvariant)]
     private static partial Regex MigrationNumber();
-
-    [GeneratedRegex(@"\A(?:Honua\.Server\.Migrations\.|src/Honua\.Server/Migrations/)?[0-9]+_RemoveUnusedFeatureIndexes\.sql\z", RegexOptions.CultureInvariant)]
-    private static partial Regex ReviewedIndexRemovalName();
 }

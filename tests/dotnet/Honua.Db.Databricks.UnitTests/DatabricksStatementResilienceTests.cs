@@ -10,11 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Databricks.Tests;
 
-/// <summary>
-/// Verifies the Statement Execution submit/poll loop transparently retries transient
-/// workspace failures when the HTTP client is fronted by the shared resilience policy
-/// (mirroring the production DI registration), without retrying non-transient errors.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksStatementResilienceTests
 {

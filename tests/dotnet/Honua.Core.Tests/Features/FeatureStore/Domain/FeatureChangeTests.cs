@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Unit tests for FeatureChange and ReplicaRecord domain types
-/// </summary>
 public sealed class FeatureChangeTests
 {
     private static readonly int[] s_expectedLayerIds = [0, 1, 2];

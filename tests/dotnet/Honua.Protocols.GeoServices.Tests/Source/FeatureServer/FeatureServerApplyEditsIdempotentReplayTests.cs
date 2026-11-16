@@ -14,14 +14,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// At-most-once <c>applyEdits</c> proven by counting rows in PostGIS rather than by inspecting the
-/// response envelope (honua-server#4406). The existing <c>Idempotency-Key</c> suites
-/// (<see cref="FeatureServerApplyEditsIdempotencyReleaseTests"/> and its siblings) assert the error
-/// code a retry receives; a duplicate insert and a correctly deduplicated retry can produce the
-/// same body, so only a <c>SELECT count(*)</c> after the retry distinguishes them. Every test here
-/// runs the real Postgres writer.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerApplyEditsIdempotentReplayTests : IAsyncLifetime
@@ -157,10 +149,6 @@ public sealed class FeatureServerApplyEditsIdempotentReplayTests : IAsyncLifetim
             $"re-executing it would delete the row now occupying object id {objectId}");
     }
 
-    /// <summary>
-    /// Re-creates a row under an explicit object id, so a replayed delete has something to destroy
-    /// if replay protection fails.
-    /// </summary>
     private async Task ReinsertWithObjectIdAsync(long objectId, string name)
     {
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");

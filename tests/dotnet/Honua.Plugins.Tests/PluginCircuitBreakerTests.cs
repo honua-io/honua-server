@@ -101,7 +101,6 @@ public sealed class PluginCircuitBreakerTests
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
-    /// <summary>Minimal advanceable <see cref="TimeProvider"/> (the suite defines its own per-project).</summary>
     private sealed class MutableTimeProvider(DateTimeOffset start) : TimeProvider
     {
         private DateTimeOffset _now = start;

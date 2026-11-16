@@ -11,14 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for the pluggable IdP/OIDC federation of the OAuth2
-/// <c>client_credentials</c> grant (ADR-0053 Increment 3, #1889). These prove the
-/// delegation logic without a live IdP via a stubbed token endpoint: a successful
-/// federated exchange yields the operator-configured roles; an auth failure or a
-/// disabled configuration yields a federation miss (null) so the caller falls back
-/// to the in-tree credential path.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]

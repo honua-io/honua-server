@@ -37,7 +37,7 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 | GET | `/ogc/features/collections/{collectionId}` | Collection metadata. |
 | GET | `/ogc/features/collections/{collectionId}/queryables` | Filterable properties as JSON Schema. |
 | GET | `/ogc/features/collections/{collectionId}/items` | Feature query. |
-| GET | `/ogc/features/collections/{collectionId}/items/{featureId}` | Single feature. |
+| GET | `/ogc/features/collections/{collectionId}/items/{featureId}` | Single feature. Accepts `f`, `crs` and `token`; any other query parameter returns `400`. To project properties, query `/items?ids={featureId}&properties=...`. |
 | POST | `/ogc/features/collections/{collectionId}/items` | Create feature (GeoJSON). |
 | POST | `/ogc/features/collections/{collectionId}/items/batch` | Batch create (Honua extension). |
 | PUT, PATCH, DELETE | `/ogc/features/collections/{collectionId}/items/{featureId}` | Replace, merge-patch, delete. |

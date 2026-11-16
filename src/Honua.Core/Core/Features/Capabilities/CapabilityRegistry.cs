@@ -40,9 +40,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(context);
 
-        // #2339 (T2): the config-driven experimental feature-flag precedence. The
-        // registry supplies the descriptor (or null for an unknown id) and defers the
-        // maturity/flag/edition precedence to CapabilityGateResolver.
+        // Config-driven experimental feature-flag precedence: the registry supplies the
+        // descriptor (or null for an unknown id) and defers the maturity/flag/edition
+        // precedence to CapabilityGateResolver.
         return CapabilityGateResolver.Resolve(Find(id), context);
     }
 
@@ -113,9 +113,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_resolve_entity", "resolve_entity", "results"),
             ("honua_list_capabilities", "list_capabilities", "results"),
 
-            // Studio draft lifecycle + composition tools (honua-server#3002,
-            // AD-8). Honua-specific extensions — not (yet) part of the
-            // geospatial-mcp standard's composition/publish families, which
+            // Studio draft lifecycle + composition tools. Honua-specific
+            // extensions — not (yet) part of the geospatial-mcp standard's
+            // composition/publish families, which
             // McpGeospatialMcpSchemaConformanceTests tracks as a known gap.
             ("honua_studio_create_draft", "studio_create_draft", "lifecycle"),
             ("honua_studio_get_draft", "studio_get_draft", "lifecycle"),
@@ -220,30 +220,30 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     }
 
     // -----------------------------------------------------------------------
-    // #1186 capability-manifest capabilities — mirrors
+    // Capability-manifest capabilities — mirrors
     // CapabilityManifestService.BuildCapabilities (honua.capability_manifest.v1).
     // (id, category, entitlement key, kind)
     // -----------------------------------------------------------------------
     private static IEnumerable<CapabilityDescriptor> BuildManifestCapabilityDescriptors()
     {
         // PackageSchemaVersion is populated only for the `packages`-category
-        // capabilities (#2335 / B3): it is the package-family schema version the
-        // honua.capability_manifest.v1 wire advertises for that family, and the null
-        // seam B1 left. It mirrors CapabilityManifestService's package-family list so
-        // the derived Packages.Families[] and the descriptors cannot diverge.
-        // T10 (#2346): the built-experimental capabilities are flipped from
-        // Implemented to Experimental here. They are implemented server-side but
-        // gated OFF the first-release surface (ADR-0058): with the default config
-        // (Capabilities:Experimental:Enabled=false and no per-capability override)
-        // the T2 resolver reports them experimental-disabled, so the registry-derived
-        // manifest omits them (B3), the T5 endpoint gates 404 their route groups, and
-        // the feature catalog projects them as `experimental`. A customer opts in per
+        // capabilities: it is the package-family schema version the
+        // honua.capability_manifest.v1 wire advertises for that family, and null for
+        // every other category. It mirrors CapabilityManifestService's package-family
+        // list so the derived Packages.Families[] and the descriptors cannot diverge.
+        // The built-experimental capabilities are marked Experimental here. They are
+        // implemented server-side but gated OFF the first-release surface (ADR-0058):
+        // with the default config (Capabilities:Experimental:Enabled=false and no
+        // per-capability override) CapabilityGateResolver reports them
+        // experimental-disabled, so the registry-derived manifest omits them, the
+        // endpoint gates 404 their route groups, and the feature catalog projects
+        // them as `experimental`. A customer opts in per
         // capability via Capabilities:Experimental:{id}:Enabled=true. Concepts whose
         // built-experimental surface has no distinct registry descriptor (SIEM/investigations,
         // cross-environment promotion, rollback/auto-rollback, collaborative map sessions,
         // governance auth SSO/OIDC/SAML/SCIM, forms/form-packages, mobile field-collection
-        // beyond offline sync) are intentionally left as-is — there is no descriptor to flip.
-        // versioning.branch (VMS) is now gated here via its own descriptor (added below).
+        // beyond offline sync) are intentionally left as-is — there is no descriptor to mark.
+        // versioning.branch (VMS) is gated here via its own descriptor (below).
         (string Id, string Category, string? EntitlementKey, CapabilityKind Kind, string? PackageSchemaVersion, CapabilityMaturity Maturity)[] capabilities =
         [
             ("package.metadata-v2", "packages", null, CapabilityKind.Feature, MetadataV2Constants.SchemaVersion, CapabilityMaturity.Implemented),
@@ -258,26 +258,25 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("provider.snowflake", "provider", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("provider.databricks", "provider", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
 
-            // Temporal analytics — promoted to GA (Implemented) in #2429. Time filtering
+            // Temporal analytics is GA (Implemented): time filtering
             // (Community) + extent discovery (Community), date-bin histograms (Pro),
             // time-series tiles (Pro), and the SDK/admin animation-contract flag (Pro).
-            // The registry maturity flip un-gates the manifest omission and the
+            // Implemented maturity keeps these in the manifest and opens the
             // /api/v1/temporal/* route gate; edition entitlements (Community vs Pro,
             // FeatureCatalog) still apply — GA does not bypass licensing. Provider
             // support for the four execution surfaces is Postgres (all four) + DuckDB
             // (filtering/extent/histogram); the animation flag has no provider path.
             // Providers without temporal SQL fail loud (NotSupportedException), never silently
-            // return unfiltered rows — see the per-provider guards hardened in #2429.
+            // return unfiltered rows — see the per-provider guards.
             ("temporal.filtering", "temporal", "temporal.filtering", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.extent-discovery", "temporal", "temporal.extent-discovery", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.histogram", "temporal", "temporal.histogram", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.animation-api", "temporal", "temporal.animation-api", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // Disconnected-sync replica / conflict review — Preview in 2026.1 per the
-            // 2026-09-03 operator ruling (honua-release#266 / #264). It remains Pro-edition
-            // gated (fieldops.offline-sync entitlement); non-security parity is deferred to
-            // release/2026.2.
+            // Disconnected-sync replica / conflict review is Preview in 2026.1 by operator
+            // ruling. It is Pro-edition gated (fieldops.offline-sync entitlement);
+            // non-security parity is deferred to release/2026.2.
             ("serve.3d-tiles-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
             ("serve.i3s-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
             // OGC API - EDR is Preview in release 2026.1; remaining functional
@@ -297,11 +296,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // SensorThings uses the same canonical opt-in gate as its route registration;
             // it must never be present at runtime while absent from capability discovery.
             ("serve.sensorthings", "realtime", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
-            // ImageServer is GA (Implemented) in 2026.1 under the 2026-10-24 operator
-            // ruling, which supersedes the 2026-09-03 Preview ruling for ImageServer
-            // only (honua-release#266 / #264); #5238, #6492 and #3558 were pulled into
-            // 2026.1. It already serves by default, so only the maturity changes.
-            // WMTS and OGC API Coverages stay Preview in 2026.1 under the 2026-09-03 ruling.
+            // ImageServer is GA (Implemented) in 2026.1 by operator ruling.
+            // WMTS and OGC API Coverages are Preview in 2026.1.
             ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
             ("serve.wmts", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             ("serve.ogc-api-coverages", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
@@ -320,17 +316,15 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("transport.mcp", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
             ("transport.qgis", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
 
-            // Native mTLS (client-certificate) authentication — promoted to GA (Implemented) in
-            // #2431, then DEMOTED back to experimental in #2958 (release-safety follow-up to
-            // #2946/#2431): the always-on client-certificate scheme/RBAC layer interposed on
-            // every admin request regardless of bearer-token validity (a fully valid JWT could
-            // get a 403 from the cert layer in a host that never configured mTLS). It is now a
-            // built-experimental capability again, gated OFF by default; the auth-layer wiring
-            // (scheme registration, admin/ops-read policy scheme lists, and the enforcement
-            // middleware) reads this same flag directly — see
-            // ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled. Enterprise
-            // entitlement (FeatureCatalog.MtlsClientCertificateKey) still applies on top once
-            // the flag is on.
+            // Native mTLS (client-certificate) authentication is a built-experimental
+            // capability, gated OFF by default: an always-on client-certificate scheme/RBAC
+            // layer would interpose on every admin request regardless of bearer-token validity
+            // (a fully valid JWT could get a 403 from the cert layer in a host that never
+            // configured mTLS). The auth-layer wiring (scheme registration, admin/ops-read
+            // policy scheme lists, and the enforcement middleware) reads this same flag
+            // directly — see ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled.
+            // Enterprise entitlement (FeatureCatalog.MtlsClientCertificateKey) still applies
+            // on top once the flag is on.
             ("security.mtls", "security", FeatureCatalog.MtlsClientCertificateKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("preview.file-import", "preview", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("query.features", "query", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
@@ -342,22 +336,17 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("upload.file", "upload", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // Collaborative-editing leases (#4402). The lease itself IS enforced on every
+            // Collaborative-editing leases. The lease itself IS enforced on every
             // feature-write path, so this is Implemented/Served; what a deployment may or may
             // not have is an IFeatureLockAuthorizer, and that is reported as configured-or-not
             // rather than as support — the shipped authorizer grants no lease at all.
             ("collaboration.feature-locks", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // The two recorded 2026.1 feature-lock gaps (#4402), declared here so a client
-            // reads them off the manifest instead of off the docs page: a lease is node-local,
-            // and the GeoServices applyEdits surface honours no client-supplied version token.
-            // The version-token gap is named for the ONE surface that has it: OGC API Features
-            // enforces If-Match/412 on PUT, merge-PATCH and DELETE and the store-level
-            // precondition path is untouched, so a generically-named "edit.version-tokens"
-            // would tell a client to disable optimistic concurrency where it works.
-            // Planned maturity + the KnownGap status below is the same shape the unimplemented
-            // file-format writers already publish (supported=false, lifecycle "planned").
-            ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
+            // Shared PostgreSQL leases implement cross-node coordination; availability
+            // depends on the selected runtime store.
+            ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            // GeoServices applyEdits still has no client-supplied version-token support.
+
             ("edit.geoservices-version-tokens", "edit", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
             // Branch versioning (VMS REST surface) — built-experimental (ADR-0058 / BH6-001/BH6-002 fix).
             // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).

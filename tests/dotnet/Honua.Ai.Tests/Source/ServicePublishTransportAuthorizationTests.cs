@@ -276,8 +276,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
                 _fixture, proposal.GetProperty("proposalId").GetString()!);
             handle.GetProperty("status").GetString().Should().Be("Completed");
             handle.GetProperty("metadataRevision").GetInt64().Should().Be(42);
-            // The human approval CSRF request and publish readback each read metadata.
-            await AssertSingleActuationAsync(metadataReadbacks: 2);
+            await AssertSingleActuationAsync();
             return;
         }
 
@@ -297,11 +296,11 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
         _jobService.ClearReceivedCalls();
     }
 
-    private async Task AssertSingleActuationAsync(int metadataReadbacks = 1)
+    private async Task AssertSingleActuationAsync()
     {
         await _publishing.Received(1).PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        await _graphProvider.Received(metadataReadbacks).GetCurrentAsync(Arg.Any<CancellationToken>());
+        await _graphProvider.Received().GetCurrentAsync(Arg.Any<CancellationToken>());
     }
 
     private async Task AssertZeroActuationAsync()

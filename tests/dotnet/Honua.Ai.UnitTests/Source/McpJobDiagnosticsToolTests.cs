@@ -14,11 +14,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Unit coverage for the job diagnosis MCP tools (honua-server#6219): they forward the
-/// caller's principal and arguments to the server-side reader, bound their inputs, and
-/// surface the reader's observed / inferred / evidence payload unchanged.
-/// </summary>
 public sealed class McpJobDiagnosticsToolTests
 {
     [UnitTest]

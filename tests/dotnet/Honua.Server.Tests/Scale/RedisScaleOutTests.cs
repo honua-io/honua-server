@@ -8,9 +8,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Scale;
 
-/// <summary>
-/// Scale-out validation for multi-node deployments using Redis and the nginx load balancer.
-/// </summary>
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class RedisScaleOutTests
 {

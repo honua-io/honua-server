@@ -223,7 +223,7 @@ internal sealed class PreMigrationRestoreAssessmentService(
             InPlaceDatabase = inPlace,
         });
         if (decision.Kind == RestoreDecisionKind.RestoreBeforeStart
-            && target.TargetKind is DeployTargetKind.AzureContainerApps or DeployTargetKind.AzureFunctions or DeployTargetKind.AwsLambda)
+            && target.TargetKind is DeployTargetKind.AwsLambda)
         {
             return (Refuse(PreMigrationRestoreCodes.RetargetUnsupported, "This target has no product restore executor."), target, null);
         }

@@ -14,15 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.AnalysisContent;
 
-/// <summary>
-/// Postgres integration tests for <see cref="PostgresAnalysisContentStore"/> list paging
-/// (honua-server#1237 post-merge Codex P2): the SQL used <c>COUNT(*) OVER ()</c>, which only
-/// materialises on returned rows. When the requested offset is past the last matching row the
-/// page is empty and the window count never appears, leaving <c>TotalCount = 0</c> and diverging
-/// from the in-memory store (<c>InMemoryAnalysisContentStore</c>), which always reports the full
-/// filtered total. These tests assert TotalCount reflects the true filtered total on a populated
-/// page AND on an empty (past-the-end) page.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAnalysisContentStoreListPagingTests(PostgresFixture fixture)
 {

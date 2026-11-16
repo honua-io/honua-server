@@ -164,11 +164,6 @@ public sealed class AzureEventHubAlertDeliverySinkTests
     }
 }
 
-/// <summary>
-/// Captures log entries emitted to it for assertions; used to verify the
-/// previously-silent unhandled-exception path (PA-062) now emits a warning
-/// with the original exception attached.
-/// </summary>
 internal sealed class CapturingLogger<T> : ILogger<T>
 {
     public List<(LogLevel LogLevel, EventId EventId, string Message, Exception? Exception)> Entries { get; } = [];

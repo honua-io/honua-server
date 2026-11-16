@@ -12,10 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Verifies that DI registration for the DuckDB provider activates all required
-/// protocol-handler contracts, including the readiness-check health checker (PA-158).
-/// </summary>
 public sealed class DuckDBProviderResolutionTests
 {
     [Fact]

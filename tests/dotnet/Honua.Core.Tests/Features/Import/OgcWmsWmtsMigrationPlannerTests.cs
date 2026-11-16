@@ -9,14 +9,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Slice 3 of OGC migration planning: covers the deterministic
-/// <see cref="OgcWmsMigrationPlanner"/> and <see cref="OgcWmtsMigrationPlanner"/>
-/// behavior — automated layer metadata, assisted SLD/SE style references with
-/// diagnostics, automated trivial tile-matrix sets, manual-review non-trivial
-/// tile-matrix sets, explicit unsupported render-only data classification, and
-/// idempotent re-plan.
-/// </summary>
 public sealed class OgcWmsWmtsMigrationPlannerTests
 {
     private const string WmsContainerId = "service:wms";

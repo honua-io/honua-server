@@ -34,10 +34,6 @@ using Org.BouncyCastle.Crypto.Signers;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Exercises the real HTTP endpoint, service, provider adapters and signer with
-/// deterministic upstream fixtures. These tests do not certify a live model.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]

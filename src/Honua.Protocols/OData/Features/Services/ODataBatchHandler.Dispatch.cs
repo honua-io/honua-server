@@ -377,20 +377,14 @@ internal sealed partial class ODataBatchHandler
 
         if (scope == AccessScope.Write)
         {
-            // Per-operation authorization (BH3-001/BH3-014): map the batch sub-request method to
-            // its canonical operation so an insert-only grantee cannot Update/Delete via $batch.
             var operation = MapMethodToOperation(method);
-            var rbacResult = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                validation.Resource,
-                validation.Service,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-            if (rbacResult != null)
+            var accessError = await RequireBatchWriteAccessAsync(
+                context, (validation, operation), cancellationToken).ConfigureAwait(false);
+            if (accessError != null)
             {
                 return (null, CreateErrorResponseFromResult(
                     requestId,
-                    rbacResult,
+                    accessError,
                     StatusCodes.Status403Forbidden,
                     "Forbidden",
                     "Access to one or more requested layers is forbidden."));
@@ -466,6 +460,18 @@ internal sealed partial class ODataBatchHandler
             validation.Resource,
             validation.Service,
             reader), null);
+    }
+
+    private static async Task<IResult?> RequireBatchWriteAccessAsync(
+        HttpContext context,
+        (LayerValidationHelpers.MetadataV2ValidationResult Validation, AuthorizationOperation Operation) write,
+        CancellationToken cancellationToken)
+    {
+        var (validation, operation) = write;
+        var accessError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context, validation.Resource!, validation.Service, operation, cancellationToken).ConfigureAwait(false);
+        return accessError ?? await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
+            context, (validation, operation), cancellationToken).ConfigureAwait(false);
     }
 
     private static ODataBatchResponseItem CreateErrorResponseFromResult(

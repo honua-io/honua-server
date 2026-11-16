@@ -11,10 +11,6 @@ using static Honua.Server.Tests.Features.Geoprocessing.Execution.ManagedExecutor
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the proximity tool pack (#2139): Near and
-/// GenerateNearTable. Distances are planar in CRS units; no Docker.
-/// </summary>
 public sealed class ProximityExecutorTests
 {
     private static double Dist(IFeature f) => Convert.ToDouble(f.Attributes.GetOptionalValue("NEAR_DIST"), CultureInfo.InvariantCulture);

@@ -20,30 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// End-to-end conformance for the ArcGIS Portal/Sharing facade discovery flow that
-/// packaged Esri clients (ArcGIS Pro "Add Portal", Field Maps) drive (epic #1240,
-/// child #1372). Where <see cref="SharingRestReadTests"/> proves the anonymous read
-/// surface and <see cref="SharingRestTokenTests"/> proves token issuance, this suite
-/// closes the two coverage gaps the epic acceptance criteria call out:
-/// <list type="number">
-/// <item>
-/// the full <c>public</c>/<c>org</c>/<c>private</c> RBAC-projected access ladder — the
-/// existing read tests only exercise <c>public</c> and role-restricted items
-/// <em>anonymously</em>, never the <c>org</c> tier nor a token-authenticated caller; and
-/// </item>
-/// <item>
-/// the exact Esri wire shapes a real client is strict about: <c>generateToken</c>'s
-/// <c>expires</c> as Unix <em>milliseconds</em> (not seconds), and the
-/// <c>portals/self</c>/<c>community/self</c> user blocks that only appear once a token
-/// authenticates the request.
-/// </item>
-/// </list>
-/// The access tier is a projection of the shared RBAC evaluator, so the fixture uses a
-/// <c>portal-admin</c>-restricted private service to prove the admin-issued token sees
-/// <c>public</c> + <c>org</c> content but is still denied the role-gated <c>private</c>
-/// item — i.e. the Portal <c>access</c> string cannot drift from the real access decision.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
@@ -329,10 +305,6 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
             ?? throw new InvalidOperationException("Empty token response body.");
     }
 
-    /// <summary>
-    /// Stamps a fixed remote IP onto each request so IP-bound token flows behave as they
-    /// do behind Kestrel, where Connection.RemoteIpAddress is always populated.
-    /// </summary>
     private sealed class RemoteIpStartupFilter(IPAddress remoteIp) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)

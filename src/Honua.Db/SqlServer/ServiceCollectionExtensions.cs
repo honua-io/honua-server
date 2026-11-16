@@ -36,7 +36,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<SqlServerFeatureStore>());
 
-        // Capability provider for the feature-change transactional outbox (#692). SQL Server
+        // Capability provider for the feature-change transactional outbox. SQL Server
         // is read-only in this slice and reports SupportsTransactionalOutbox = false so the
         // server skips dispatcher startup for SQL-Server-only deployments. Registered with
         // TryAdd so PostgreSQL's true-capability provider wins when both providers are active.

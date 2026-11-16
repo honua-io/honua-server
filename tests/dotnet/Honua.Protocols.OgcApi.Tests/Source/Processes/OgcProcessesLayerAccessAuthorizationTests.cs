@@ -20,20 +20,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// End-to-end per-layer read authorization tests for layer-sourced geoprocessing
-/// (honua-server#3046) on the OGC API Processes surface. A caller holding only the
-/// baseline <c>Process.Execute</c> grant must not be able to read a layer it is denied
-/// on by routing that read through a geoprocessing job, and the denial must be a genuine
-/// per-layer decision rather than a blanket rejection of layer-sourced plans.
-/// </summary>
-/// <remarks>
-/// The fixture publishes two layers: <c>alpha</c> (layer 0) carries a read
-/// <c>AccessPolicy</c> restricted to <see cref="LayerReaderRole"/>, and <c>beta</c>
-/// (layer 1) carries none. The submitting principal always holds
-/// <c>process:*:execute</c>, so a 403 here can only come from the layer gate — proved by
-/// the positive controls, which submit the SAME plans and are not forbidden.
-/// </remarks>
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesLayerAccessAuthorizationTests
 {
@@ -41,10 +27,8 @@ public sealed class OgcProcessesLayerAccessAuthorizationTests
     private const string LayerReaderRole = "layer-reader";
     private const string ExecutionPath = "/ogc/processes/processes/honua-geoprocessing/execution";
 
-    /// <summary>Layer 0 (alpha) — restricted to <see cref="LayerReaderRole"/>.</summary>
     private const int RestrictedLayerId = ServiceRbacTestFixture.AlphaLayerId;
 
-    /// <summary>Layer 1 (beta) — no access policy, readable by any authenticated caller.</summary>
     private const int OpenLayerId = ServiceRbacTestFixture.BetaLayerId;
 
     [IntegrationTest]
@@ -202,11 +186,6 @@ public sealed class OgcProcessesLayerAccessAuthorizationTests
             "source.honua-layer",
             "\"layerId\":\"" + Id(layerId) + "\"");
 
-    /// <summary>
-    /// Builds a single-step canonical plan submission. Concatenated rather than interpolated
-    /// because the payload's trailing brace run collides with raw-string interpolation
-    /// delimiters at every <c>$</c> depth.
-    /// </summary>
     private static string BuildPlan(string planId, string processId, string inputsJson)
         => "{\"inputs\":{\"plan\":{\"planId\":\"" + planId
             + "\",\"steps\":[{\"stepId\":\"s1\",\"kind\":\"geoprocess\",\"processId\":\"" + processId
@@ -231,12 +210,6 @@ public sealed class OgcProcessesLayerAccessAuthorizationTests
             new JobCallableProcessCatalog(new BuiltInProcessCatalog(), "source.honua-layer"));
     }
 
-    /// <summary>
-    /// Minimal role store granting <see cref="ProcessRunnerRole"/> only
-    /// <c>process:*:execute</c>. It deliberately grants NOTHING on the alpha/beta data
-    /// services, so per-layer authorization falls through to the layer's coarse
-    /// <c>AccessPolicy</c> — the same path the synchronous query surfaces take.
-    /// </summary>
     private sealed class ProcessExecuteOnlyRoleStore : IRoleStore
     {
         private static readonly PermissionGrant ExecuteGrant = new()

@@ -62,7 +62,7 @@ internal static partial class GdalToolExecution
             return JobExecutionResult.Failed($"{tool} produced an empty output.");
         }
 
-        // Shared publication seam (#3089): staged reference above the inline ceiling
+        // Shared publication seam: staged reference above the inline ceiling
         // when output staging is enabled, bounded inline publication otherwise.
         var publishError = await GdalArtifactPublisher.PublishFileAsync(
             context, options, logger, operationId, outputPath, contentType, artifactLabel, cancellationToken)

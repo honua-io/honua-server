@@ -464,7 +464,7 @@ internal sealed partial class StreamingFileImportService
 
         var geometry = feature.Geometry;
 
-        // Hard memory guard (#1626): reject oversized geometries on vertex/ring count BEFORE
+        // Hard memory guard: reject oversized geometries on vertex/ring count BEFORE
         // materializing coordinate arrays or writing WKB. A single island-scale multipolygon can
         // carry millions of vertices; copying its coordinates and serializing its WKB can allocate
         // hundreds of MB and OOM-crash a memory-constrained serverless host. This guard runs
@@ -496,7 +496,7 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        // Shared topology validity gate (#2743): mirrors the edit paths' GeometryValidationOptions
+        // Shared topology validity gate: mirrors the edit paths' GeometryValidationOptions
         // (Accept/Strict/Repair). Repair uses the managed NetTopologySuite GeometryFixer, which is
         // also what the geometry.make-valid GP executor uses. This is NOT identical to the edit
         // path: the edit path repairs via PostGIS ST_MakeValid (GEOS), whereas import repairs via

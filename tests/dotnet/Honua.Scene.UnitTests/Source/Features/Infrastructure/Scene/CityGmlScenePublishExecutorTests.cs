@@ -14,13 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Hermetic unit tests for the wired CityGML/BIM ingest executor (#1207). They
-/// exercise the full parse → tile → register → promote pipeline against a temp
-/// output root and an in-memory registration stub, proving the produced tileset
-/// is written to a servable asset root with Building Scene Layer semantics
-/// without standing up Postgres or an HTTP host.
-/// </summary>
 public sealed class CityGmlScenePublishExecutorTests : IDisposable
 {
     private readonly string _outputRoot;
