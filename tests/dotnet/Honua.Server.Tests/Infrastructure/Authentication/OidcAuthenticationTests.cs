@@ -4,14 +4,17 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Honua.Server.Tests;
 using Honua.TestKit;
@@ -1940,6 +1943,47 @@ public class OidcAuthenticationTests
 
         // Assert - Should always be accessible
         Assert.Equal(200, (int)response.StatusCode);
+    }
+
+    [IntegrationTheory]
+    [InlineData(null, null)]
+    [InlineData(null, "other-tenant")]
+    [InlineData("directory-tenant", "other-tenant")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task FeatureServerQuery_DefaultSingleTenant_SignedBearerUsesPublicTenant(
+        string? tokenTenant,
+        string? headerTenant)
+    {
+        string? observedTenant = null;
+        using var factory = CreateOidcTestFactory(oidcSettings: CreateEnabledOidcSettings())
+            .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IFeatureReader>();
+                services.AddScoped<IFeatureReader>(provider =>
+                {
+                    observedTenant = provider.GetRequiredService<ITenantContext>().TenantId;
+                    return provider.GetRequiredService<TestFeatureStore>();
+                });
+            }));
+        using var client = factory.CreateClient();
+        var tenantOptions = factory.Services.GetRequiredService<IOptions<TenantContextOptions>>().Value;
+        Assert.False(tenantOptions.Enabled);
+        Assert.Equal("public", tenantOptions.DefaultTenantId);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            "/rest/services/test/FeatureServer/0/query?where=1%3D1&outFields=*&f=json");
+        request.Headers.Add("Authorization", $"Bearer {GenerateTestJwtToken(roles: ["admin"], tenantId: tokenTenant)}");
+        if (headerTenant is not null)
+        {
+            request.Headers.Add(TenantContextOptions.TenantHeaderName, headerTenant);
+        }
+
+        using var response = await client.SendAsync(request);
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(body.RootElement.TryGetProperty("error", out _));
+        Assert.NotEmpty(body.RootElement.GetProperty("features").EnumerateArray());
+        Assert.Equal("public", observedTenant);
     }
 
     [IntegrationTest]
