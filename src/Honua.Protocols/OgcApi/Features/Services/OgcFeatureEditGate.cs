@@ -55,8 +55,15 @@ internal static partial class OgcFeatureEditGate
             return (prepared.Batch, OwnerEditPolicyFieldAccess.DeniedEditResult(prepared.Batch, "Edit not permitted."));
         }
 
-        var checkedBatch = effective.Value.Batch;
-        var effectiveRows = effective.Value.Rows;
+        return await CheckEffectiveBatchAsync(target, effective.Value.Batch, effective.Value.Rows, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<(FeatureEditBatch Batch, FeatureEditResult? Ended)> CheckEffectiveBatchAsync(
+        Target target,
+        FeatureEditBatch checkedBatch,
+        IReadOnlyDictionary<long, IReadOnlyDictionary<string, object?>> effectiveRows,
+        CancellationToken cancellationToken)
+    {
         var rejections = await FeatureEditGate.CheckAsync(
             ResolveHooks(target.Context),
             new FeatureEditCheck(target.Resource, Scope(target), checkedBatch)
