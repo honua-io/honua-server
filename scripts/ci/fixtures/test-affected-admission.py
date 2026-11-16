@@ -102,8 +102,8 @@ class AdmissionTests(unittest.TestCase):
 CANCELLATION = re.compile(r"gh run cancel|actions/runs/\S*/(force-)?cancel|cancelWorkflowRun|supersede_trailing_runs\.cancel\b"
                           r"|from supersede_trailing_runs import[^\n]*\bcancel\b|from supersede_trailing_runs import \([^)]*\bcancel\b")
 # Only these may cancel trunk CI: a full run cancels selective runs it covers, a
-# selective run cancels itself, and the native-image check lists the pattern as forbidden.
-ALLOWED_CANCELLERS = {"supersede_trailing_runs.py", "resolve-trailing-base.py", "native-image-impact.py"}
+# selective run cancels itself.
+ALLOWED_CANCELLERS = {"supersede_trailing_runs.py", "resolve-trailing-base.py"}
 
 
 class CoexistenceTests(unittest.TestCase):

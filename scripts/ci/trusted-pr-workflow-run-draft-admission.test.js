@@ -1,8 +1,6 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const fsModule = require('node:fs');
-const pathModule = require('node:path');
 const test = require('node:test');
 
 const { resolvePrGateForObservation, resolveTrustedPullRequestWorkflowRun } = require('./trusted-pr-workflow-run');
@@ -133,51 +131,6 @@ test('draft admission rejects duplicate heavy jobs', async () => {
     ...options(github, { runConclusion: 'failure' }), core: recordingCore(), label: 'impact',
   }), /canonical PR Gate \/ Build and tests job/);
 });
-
-function observerCollectScript(workflow, stepName) {
-  const yaml = fsModule.readFileSync(pathModule.join(__dirname, '../../.github/workflows', workflow), 'utf8');
-  const step = yaml.slice(yaml.indexOf(`name: ${stepName}`));
-  assert.ok(step.length < yaml.length, 'observer collect step exists');
-  const lines = step.slice(step.indexOf('script: |\n') + 'script: |\n'.length).split('\n');
-  const indent = lines[0].match(/^ +/)[0].length;
-  const body = [];
-  for (const line of lines) {
-    if (line.trim() && (line.match(/^ */)[0].length < indent)) break;
-    body.push(line.slice(indent));
-  }
-  return body.join('\n');
-}
-
-for (const [workflow, stepName] of [
-  ['native-image-impact-observe.yml', 'Resolve canonical exact-head PR Gate subject'],
-]) {
-  for (const draft of [true, false]) {
-    test(`${workflow} excludes exact-attempt draft admission when current draft=${draft}`, async () => {
-      const { github } = draftAdmissionFixtures('skipped', { draft });
-      github.rest.repos = { get: async () => ({ data: { default_branch: 'trunk', id: 1 } }) };
-      const core = recordingCore();
-      const files = {};
-      const fakeRequire = (name) => {
-        if (name === 'fs') return { writeFileSync: (file, body) => { files[file] = body; } };
-        if (name === './policy/scripts/ci/trusted-pr-workflow-run') return require('./trusted-pr-workflow-run');
-        return require(name);
-      };
-      const vm = require('node:vm');
-      const script = `(async () => { ${observerCollectScript(workflow, stepName)} })()`;
-      await vm.runInNewContext(script, {
-        require: fakeRequire, github, core,
-        context: { repo: { owner: 'honua-io', repo: 'honua-server' }, ref: 'refs/heads/trunk', sha: POLICY },
-        process: { env: { RUNNER_TEMP: '/tmp/observer', SOURCE_RUN_ID: '123',
-          SOURCE_RUN_ATTEMPT: '2', SOURCE_RUN_CONCLUSION: 'failure' } },
-      });
-      assert.equal(core.outputs.skip_code, 'source-run-draft-admission');
-      assert.deepEqual(Object.keys(files), ['/tmp/observer/observation-skipped.json']);
-      const marker = JSON.parse(files['/tmp/observer/observation-skipped.json']);
-      assert.equal(marker.source_run_attempt, '2');
-      assert.equal(marker.code, 'source-run-draft-admission');
-    });
-  }
-}
 
 function draftAggregateFixtures(name) {
   const fixture = fixtures({});
