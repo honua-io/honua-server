@@ -91,28 +91,27 @@ public sealed class ApiKeyStoreOutageTests
     [UnitTest]
     public async Task InvalidOperationFault_IsNotRetried_OnHeaderAndPortalPaths()
     {
-        // The registry is a database table, so a client-pipe fault is not retried: one call per
-        // presentation, and the fault surfaces instead of a second store round trip.
+        // The registry is a database table, so a client-pipe fault is not retried: each path
+        // makes one store call and the fault surfaces, leaving the queued key unread.
         var store = new ScriptedStore();
-        store.Enqueue(new InvalidOperationException(RedisClientFault.CompletedReaderMessage));
+        store.Enqueue(new InvalidOperationException("header fault"));
+        store.Enqueue(new InvalidOperationException("portal fault"));
         store.Enqueue(ManagedKey());
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var header = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
                 new ApiKeyPresentation("managed-key", "ApiKey", null),
                 Dependencies(store), NullLogger.Instance, CancellationToken.None));
-        var verifier = new AdminPortalCredentialVerifier(
-            Options.Create(new ApiKeyAuthenticationOptions { AdminPassword = BreakGlassPassword, EnvironmentName = "Test" }),
-            adminApiKeyStore: store,
-            logger: NullLogger<AdminPortalCredentialVerifier>.Instance);
-        var principal = await verifier.VerifyAsync("journey", "managed-key", CancellationToken.None);
+        var portal = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            PortalVerifier(store).VerifyAsync("journey", "managed-key", CancellationToken.None));
 
-        Assert.NotNull(principal);
+        Assert.Equal("header fault", header.Message);
+        Assert.Equal("portal fault", portal.Message);
         Assert.Equal(2, store.Calls);
     }
 
     [UnitTest]
-    public async Task Cancellation_IsNotTreatedAsStoreOutage()
+    public async Task Cancellation_IsNotTreatedAsStoreOutage_OnHeaderAndPortalPaths()
     {
         var store = UnavailableStore(new OperationCanceledException("caller cancelled"));
 
@@ -120,6 +119,8 @@ public sealed class ApiKeyStoreOutageTests
             ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
                 new ApiKeyPresentation(BreakGlassPassword, "ApiKey", null),
                 Dependencies(store), NullLogger.Instance, CancellationToken.None));
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            PortalVerifier(store).VerifyAsync("journey", BreakGlassPassword, CancellationToken.None));
     }
 
     [UnitTest]
@@ -147,6 +148,12 @@ public sealed class ApiKeyStoreOutageTests
         Assert.Equal(StatusCodes.Status500InternalServerError, other.StatusCode);
         Assert.Equal(StatusCodes.Status401Unauthorized, identityModel.StatusCode);
     }
+
+    private static AdminPortalCredentialVerifier PortalVerifier(IAdminApiKeyStore store)
+        => new(
+            Options.Create(new ApiKeyAuthenticationOptions { AdminPassword = BreakGlassPassword, EnvironmentName = "Test" }),
+            adminApiKeyStore: store,
+            logger: NullLogger<AdminPortalCredentialVerifier>.Instance);
 
     private static AdminApiKeyValidationResult ManagedKey()
     {
