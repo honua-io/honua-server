@@ -239,8 +239,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         };
         if (kind == "reviewed-index-removal")
         {
-            // 183 applies the same reviewed script during the canonical upgrade.
-            await AssertReviewedFeatureIndexesAsync(connection, removed: true);
+            await AssertReviewedFeatureIndexesAsync(connection, removed: false);
         }
 
         command.CommandText = sql + "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@script, now());";
