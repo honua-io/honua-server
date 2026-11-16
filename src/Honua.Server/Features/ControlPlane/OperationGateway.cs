@@ -347,6 +347,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 }
                 else
                 {
+                    var replayRoles = await ReplayRolesAsync(proposal, cancellationToken).ConfigureAwait(false);
                     canonicalDispatchStarted = true;
                     handle = await invoker.SubmitAsync(
                         replay?.Request ?? new OperationRequest
@@ -359,7 +360,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                             OperationInstanceId = proposal.Audit.OperationInstanceId,
                             CorrelationId = proposal.Audit.CorrelationId,
                             PrincipalId = proposal.RequestedBy ?? proposal.RequestedByAgent,
-                            Roles = await ReplayRolesAsync(proposal, cancellationToken).ConfigureAwait(false),
+                            Roles = replayRoles,
                             TenantId = replayTenantId,
                             SchemaName = replay?.SchemaName,
                             AuthorizationOutcome = "approved",
@@ -400,13 +401,10 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (OperationCanceledException)
         {
-            await CompensateClaimedProposalAsync(
+            await CancelClaimedProposalAsync(
                     proposal,
                     approvedBy,
-                    OperationProposalStatus.Cancelled,
-                    "Approved replay was cancelled before actuation began; no side effect occurred.",
-                    "operation.cancelled",
-                    AuditOutcome.Failure)
+                    canonicalDispatchStarted ? null : OperationHandleStatus.Cancelled)
                 .ConfigureAwait(false);
             throw;
         }
@@ -1130,25 +1128,29 @@ internal sealed partial class OperationGateway : IOperationGateway
             "The proposal changed while approval was being claimed. Reopen its review before approving again.");
     }
 
-    private async Task CompensateClaimedProposalAsync(
+    private async Task CancelClaimedProposalAsync(
         OperationProposal proposal,
         string actor,
-        OperationProposalStatus status,
-        string reason,
-        string auditAction,
-        AuditOutcome auditOutcome)
+        OperationHandleStatus? canonicalResolution)
     {
         var now = DateTimeOffset.UtcNow;
         var resolved = proposal with
         {
-            Status = status,
+            Status = OperationProposalStatus.Cancelled,
             ResolvedBy = actor,
             ResolvedAt = now,
             UpdatedAt = now,
-            ResolutionReason = reason,
+            ResolutionReason = canonicalResolution is null
+                ? "Approved replay was cancelled after canonical dispatch began."
+                : "Approved replay was cancelled before actuation began; no side effect occurred.",
         };
         await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, CancellationToken.None).ConfigureAwait(false);
-        await WriteAuditAsync(resolved, auditAction, actor, auditOutcome, CancellationToken.None)
+        if (canonicalResolution is { } canonicalStatus)
+        {
+            await PersistCanonicalResolutionAsync(resolved, canonicalStatus, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        await WriteAuditAsync(resolved, "operation.cancelled", actor, AuditOutcome.Failure, CancellationToken.None)
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, CancellationToken.None).ConfigureAwait(false);
     }
@@ -1190,7 +1192,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         var resolved = request with { TenantId = ResolveTenantId(request.TenantId) };
         if (context?.User.Identity?.IsAuthenticated != true || !Honua.Infrastructure.Authentication.AgentPrincipal.IsAgentRequest(context))
             return resolved;
-        var actor = AuditContextResolver.ResolveActor(context, out _);
+        var actor = AuditContextResolver.ResolveCanonicalActor(context).Actor;
         return resolved with { RequestedBy = actor, RequestedByAgent = actor };
     }
 
@@ -1684,7 +1686,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                 Timestamp = DateTimeOffset.UtcNow,
                 EventType = AuditEventType.AdminAction,
                 Actor = string.IsNullOrWhiteSpace(actor) ? AuditEvent.AnonymousActor : actor,
-                ActorType = AuditActorType.UserId,
+                ActorType = string.IsNullOrWhiteSpace(actor) ? AuditActorType.Anonymous : AuditActorType.UserId,
+                ActorAgent = action == "operation.proposed" ? proposal.RequestedByAgent : null,
                 ResourceType = "operation_proposal",
                 ResourceId = proposal.ProposalId,
                 Action = action,
@@ -1710,7 +1713,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             ? AuditActorType.System
             : request.RequestedBy is null
                 ? AuditActorType.Anonymous
-            : AuditActorType.UserId;
+                : AuditActorType.UserId;
         await auditLog.RecordAsync(
             new AuditEvent
             {
@@ -1718,6 +1721,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 EventType = AuditEventType.AdminAction,
                 Actor = string.IsNullOrWhiteSpace(actor) ? AuditEvent.AnonymousActor : actor,
                 ActorType = actorType,
+                ActorAgent = request.RequestedByAgent,
                 ResourceType = "operation_autonomy",
                 ResourceId = request.AutonomyContext?.FindingId ?? request.IdempotencyKey ?? request.Kind.ToString(),
                 Action = action,

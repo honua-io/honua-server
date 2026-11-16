@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -32,12 +33,13 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 /// Integration tests for GPServer REST endpoints operating as a protocol adapter
 /// over the canonical process runtime.
 /// </summary>
-// The class fixture keeps the reference-counted PostgreSQL infrastructure alive between cases;
-// the default application starts only in cases that use it, and each case owns its hosts,
-// schemas, and job store.
+// PostgresFixture keeps the reference-counted PostgreSQL infrastructure alive between cases.
+// Default-host cases share one isolated host. Cases that replace other services
+// build their own host.
+// The shared job store is emptied at the start of each default-host case so listings stay exact.
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, IAsyncLifetime
+public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, IClassFixture<GPServerEndpointTests.DefaultHost>, IAsyncLifetime
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
@@ -48,32 +50,57 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, IAsy
     private const string ServiceId = WebAppFixture.TestServiceId;
     private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
 
-    private readonly InMemoryExecutionJobStore _jobStore = new();
-    private readonly WebAppFixture _fixture;
+    private readonly DefaultHost _host;
+    private WebAppFixture _fixture => _host.Fixture;
     private HttpClient _client = null!;
     private bool _defaultApplicationStarted;
 
-    public GPServerEndpointTests()
+    public GPServerEndpointTests(DefaultHost host)
     {
-        _fixture = new WebAppFixture()
-            .ReplaceService<IExecutionJobStore>(_jobStore);
+        _host = host;
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
 
-    private async Task StartDefaultApplicationAsync()
+    private Task StartDefaultApplicationAsync()
     {
         if (_defaultApplicationStarted)
         {
-            return;
+            return Task.CompletedTask;
         }
 
+        // The host is already up. Drop jobs left by the previous case.
+        _host.ClearJobs();
         _defaultApplicationStarted = true;
-        await _fixture.InitializeAsync();
         _client = _fixture.Client;
+        return Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => _defaultApplicationStarted ? _fixture.DisposeAsync() : Task.CompletedTask;
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    // One isolated host for the default GPServer cases. ReplaceService forces an
+    // isolated host, so sharing has to be a class fixture rather than the process-wide server.
+    public sealed class DefaultHost : IAsyncLifetime
+    {
+        private readonly InMemoryExecutionJobStore _jobs = new();
+
+        public WebAppFixture Fixture { get; }
+
+        public DefaultHost()
+        {
+            Fixture = new WebAppFixture()
+                .ReplaceService<IExecutionJobStore>(_jobs);
+        }
+
+        public void ClearJobs() => _jobs.Clear();
+
+        public Task<ExecutionJobRecord?> GetJobAsync(string operationId, CancellationToken cancellationToken = default)
+            => _jobs.GetAsync(operationId, cancellationToken);
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTheory]
     [InlineData("env:workspace", "scratch")]
@@ -985,7 +1012,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, IAsy
         var jobId = doc.RootElement.GetProperty("jobId").GetString();
         jobId.Should().NotBeNullOrEmpty();
 
-        var job = await _jobStore.GetAsync(jobId!);
+        var job = await _host.GetJobAsync(jobId!);
         job.Should().NotBeNull("the admitted job must be persisted under its jobId");
         var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
         job!.Spec.Parameters.Keys.Should().NotContain(prefix + "srid");
@@ -2672,7 +2699,10 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, IAsy
 
     private sealed class InMemoryExecutionJobStore : IExecutionJobStore
     {
-        private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+        // Host background services list jobs while cases write them; the host outlives each case.
+        private readonly ConcurrentDictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+
+        public void Clear() => _jobs.Clear();
 
         public Task<bool> TryAcquireLeaseAsync(
             string operationId,
@@ -2698,15 +2728,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, IAsy
             ExecutionJobRecord job,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
-        {
-            if (_jobs.ContainsKey(job.OperationId))
-            {
-                return Task.FromResult(false);
-            }
-
-            _jobs[job.OperationId] = job;
-            return Task.FromResult(true);
-        }
+            => Task.FromResult(_jobs.TryAdd(job.OperationId, job));
 
         public Task<ExecutionJobRecord?> GetAsync(
             string operationId,

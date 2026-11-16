@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Spec.Services;
+
 namespace Honua.Core.Features.Spec.Domain;
 
 /// <summary>
@@ -80,11 +82,6 @@ public sealed record SpecPlanNode
     public IReadOnlyList<SpecWarning> Warnings { get; init; } = [];
 }
 
-/// <summary>
-/// Cost estimate for a single <see cref="SpecPlanNode"/>. Populated by
-/// <see cref="Honua.Core.Features.Spec.Abstractions.ISpecCostEstimator"/>
-/// using catalog metadata only — never by invoking the process family.
-/// </summary>
 public sealed record SpecCostEstimate
 {
     /// <summary>

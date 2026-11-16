@@ -3,9 +3,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { ATTESTING_REVIEWERS, evaluateCodexEvidence } = require('./review-gate-evidence');
 const head = 'abc123';
-const review = (state, submittedAt = '2026-01-02T00:00:00Z', updatedAt = submittedAt) => ({ author: { login: 'chatgpt-codex-connector' }, body: '### Codex Review\nReviewed commit', submittedAt, updatedAt, commit: { oid: head }, state });
+const review = (state, submittedAt = '2026-01-02T00:00:00Z', updatedAt = submittedAt) => ({ author: { login: 'chatgpt-codex-connector', __typename: 'Bot' }, body: '### Codex Review\nReviewed commit', submittedAt, updatedAt, commit: { oid: head }, state });
 const cleanComment = (commit = head, overrides = {}) => ({
-  author: { login: 'chatgpt-codex-connector' },
+  author: { login: 'chatgpt-codex-connector', __typename: 'Bot' },
   body: `Codex Review: Didn't find any major issues. Hooray!\n\n**Reviewed commit:** \`${commit}\``,
   createdAt: '2026-01-02T00:00:00Z',
   updatedAt: '2026-01-02T00:00:00Z',
@@ -253,7 +253,7 @@ test('a genuinely LATER review from the OBJECTING reviewer is accepted', () => {
 test('the exported login set matches the registry', () => {
   const m = require('./review-gate-evidence');
   assert.deepEqual(m.ATTESTING_LOGINS,
-    ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]', 'claude[bot]', 'claude']);
+    ['chatgpt-codex-connector[bot]', 'chatgpt-codex-connector', 'claude[bot]', 'claude']);
   assert.equal(m.isAttestingReviewer('github-code-quality[bot]'), false);
 });
 
@@ -304,7 +304,7 @@ test('an objection with an unparseable timestamp stays open (fails closed)', () 
 // Codex rate-limit notice -- "You have reached your Codex usage limits for code
 // review", which this repo emits in normal operation -- clear a live objection.
 const codexProseComment = (at) => ({
-  author: { login: 'chatgpt-codex-connector' },
+  author: { login: 'chatgpt-codex-connector', __typename: 'Bot' },
   body: 'You have reached your Codex usage limits for code review.',
   createdAt: at, updatedAt: at, includesCreatedEdit: false,
 });
@@ -396,7 +396,7 @@ test('a markerless review does not withdraw, even when other head evidence exist
       { ...claudeReview('COMMENTED', '2026-01-10T00:00:00Z'), body: 'here are more findings' },
     ],
     cleanComments: [{
-      author: { login: 'chatgpt-codex-connector' },
+      author: { login: 'chatgpt-codex-connector', __typename: 'Bot' },
       body: `Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** \`${claudeHead}\``,
       createdAt: '2026-01-11T00:00:00Z', updatedAt: '2026-01-11T00:00:00Z', includesCreatedEdit: false,
     }],
@@ -413,7 +413,7 @@ test('an edited clean comment does not withdraw, even when other head evidence e
     cleanComments: [
       claudeCleanComment({ createdAt: '2026-01-10T00:00:00Z', updatedAt: '2026-01-11T00:00:00Z' }),
       {
-        author: { login: 'chatgpt-codex-connector' },
+        author: { login: 'chatgpt-codex-connector', __typename: 'Bot' },
         body: `Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** \`${claudeHead}\``,
         createdAt: '2026-01-12T00:00:00Z', updatedAt: '2026-01-12T00:00:00Z', includesCreatedEdit: false,
       },
@@ -517,4 +517,17 @@ test('hasOpenObjection is exposed and identity-scoped for inverted admission', (
     reviews: [], cleanComments: [cleanComment()], unresolvedCount: 0, head,
   });
   assert.equal(clean.hasOpenObjection, false);
+});
+
+// The suffix-less Codex login is a name any account could hold (today it is a registered
+// Organization), so like `claude` it attests only when GitHub types the author as a Bot.
+test('a suffix-less Codex login attests only as a Bot', () => {
+  const m = require('./review-gate-evidence');
+  assert.equal(m.isAttestingReviewer('chatgpt-codex-connector', 'Bot'), true);
+  assert.equal(m.isAttestingReviewer('chatgpt-codex-connector[bot]'), true);
+  for (const typename of [undefined, 'User', 'Organization', 'bot']) {
+    assert.equal(m.isAttestingReviewer('chatgpt-codex-connector', typename), false, String(typename));
+  }
+  const impostor = { ...review('COMMENTED'), author: { login: 'chatgpt-codex-connector', __typename: 'User' } };
+  assert.equal(evaluateCodexEvidence({ head, reviews: [impostor], cleanComments: [] }).exactReview, false);
 });

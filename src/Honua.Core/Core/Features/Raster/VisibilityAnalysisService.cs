@@ -7,7 +7,7 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Raster;
 
-public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
+public sealed class VisibilityAnalysisService
 {
     private const int Wgs84Srid = SpatialConstants.DefaultSrid;
 
