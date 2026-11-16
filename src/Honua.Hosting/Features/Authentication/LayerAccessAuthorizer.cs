@@ -259,8 +259,8 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
                 // unpublishing or retiring a restricted service must never WIDEN access to
                 // it: evaluating `(resource, null)` here dropped the service policy, the
                 // per-service RBAC grants and the service-scoped API-key check, and let any
-                // authenticated caller read or mutate a role-restricted layer
-                // (honua-server#6102). Every publication's service still governs the data,
+                // authenticated caller read or mutate a role-restricted layer.
+                // Every publication's service still governs the data,
                 // so EACH must allow — ANY-grant is reserved for live publications, where the
                 // caller could already reach the layer interactively through that service.
                 return await EvaluateAllPublicationsAsync(

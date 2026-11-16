@@ -18,7 +18,7 @@ internal static class CollaborationSessionServices
     {
         services.AddHttpContextAccessor();
         services.TryAddSingleton<ICollaborationSessionClock, SystemCollaborationSessionClock>();
-        // Studio-lifecycle-backed authorization (#2999): joins/edits/checkpoints are scoped to a
+        // Studio-lifecycle-backed authorization: joins/edits/checkpoints are scoped to a
         // Studio draft or content item and follow the Studio identity model (admin family plus
         // owner semantics under the end-user flag). Unresolvable map ids stay fail-closed.
         services.TryAddSingleton<ISavedMapCollaborationAuthorizer, StudioSavedMapCollaborationAuthorizer>();
@@ -61,7 +61,7 @@ internal static class CollaborationSessionServices
         services.AddFeatureLockCollaboration();
         services.AddSavedMapOperationLog();
         // Checkpoint-facing facade pairing the full-log replay with the replica-continuity
-        // proof that gates it (honua-server#2999); keeps the endpoint within DI limits.
+        // proof that gates it; keeps the endpoint within DI limits.
         services.TryAddSingleton<Checkpoints.SavedMapCheckpointOperationLog>();
         return services;
     }

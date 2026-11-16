@@ -5,12 +5,12 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Console.Models;
 
-// Wire DTOs for the Console catalog discovery-endpoints registry read API
-// (honua-server#1279). These shapes mirror the consumer contract defined in
+// Wire DTOs for the Console catalog discovery-endpoints registry read API.
+// These shapes mirror the consumer contract defined in
 // honua-console's Honua.Console.Contracts/CatalogDiscoveryShims.cs
 // (IHonuaCatalogDiscoveryClient) so the live binding activates the moment this
 // API publishes. This surface is DISTINCT from the singular content catalog
-// (/api/v1/console/content, #1162): it describes *which discovery dialects the
+// (/api/v1/console/content): it describes *which discovery dialects the
 // server publishes to consumers* (Esri catalog, OGC API Records, OData, STAC,
 // DCAT), not the content items themselves.
 

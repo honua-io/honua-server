@@ -9,7 +9,6 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> AdminAlertEndpoints =>
     [
-        // v1 gitops watch endpoints removed in #1035 cutover.
         new("GET", "/api/v1/admin/alerts/zones"),
         new("GET", "/api/v1/admin/alerts/zones/{zoneId}"),
         new("POST", "/api/v1/admin/alerts/zones"),
@@ -24,7 +23,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/alerts/rules/{ruleId}/health"),
         new("GET", "/api/v1/admin/alerts/rules/{ruleId}/events"),
         new("DELETE", "/api/v1/admin/alerts/rules/{ruleId}"),
-        // Alert dispatch self-healing ops actuators (#2561).
+        // Alert dispatch self-healing ops actuators.
         new("POST", "/api/v1/admin/alerts/dispatch/redrive"),
         new("GET", "/api/v1/admin/alerts/channels"),
         new("POST", "/api/v1/admin/alerts/channels/{channel}/pause"),

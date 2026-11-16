@@ -293,7 +293,7 @@ internal static partial class FeatureStreamEndpoints
         // clears grace so subsequent overflows are genuine slow consumers.
         // For fresh live sessions (no cursor), onFirstRead is null and the first
         // message flows straight to normal delivery.
-        // Default-subscription delivery fence (honua-server#6104): replayCursor is the
+        // Default-subscription delivery fence: replayCursor is the
         // durable-store sweep floor; live sends are remembered per cursor rather than
         // raising a high-water mark, so an out-of-order lower cursor is still delivered.
         var defaultDelivered = new FeatureStreamDeliveredCursorWindow(replayCursor);
@@ -591,8 +591,8 @@ internal static partial class FeatureStreamEndpoints
                     // sends do not raise that floor: they are remembered per cursor in
                     // defaultDelivered, so a queued frame is dropped only when it was swept
                     // or already sent live. A lower cursor that arrives after a higher one
-                    // (thread-pool or cross-node reordering) is still delivered
-                    // (honua-server#6104). Send-time dedup (TryClaimSubscriptionDelivery)
+                    // (thread-pool or cross-node reordering) is still delivered.
+                    // Send-time dedup (TryClaimSubscriptionDelivery)
                     // alone is not enough: the recent-event LRU is bounded at
                     // RecentEventIdCapacity (128). SSE applies the same fence at its drain.
                     // Non-default subscriptions are protected by their pause/unpause/post-
@@ -652,7 +652,7 @@ internal static partial class FeatureStreamEndpoints
                     // Record the live send. For the default subscription the cursor is
                     // remembered (not used as a high-water mark) so the next durable sweep,
                     // which resumes from the swept floor, skips it while still recovering any
-                    // lower cursor whose live broadcast never arrived (honua-server#6104).
+                    // lower cursor whose live broadcast never arrived.
                     // Non-default subscriptions advance their per-subscription poll
                     // watermark so the next sweep does not re-emit frames whose dedup keys
                     // were evicted from the bounded RecentEventIdCapacity LRU.
@@ -955,7 +955,7 @@ internal static partial class FeatureStreamEndpoints
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
                 // Same in-band contract as the query-string path: the subscription is removed and
-                // the condition is named, never left as an aborted socket (honua-server#3181).
+                // the condition is named, never left as an aborted socket.
                 FeatureStreamLog.SnapshotEmitFailed(logger, session.SessionId, subscriptionId, exception);
                 deps.SessionManager.TryRemoveSubscription(session.SessionId, subscriptionId);
                 await TrySendWebSocketTerminalErrorAsync(

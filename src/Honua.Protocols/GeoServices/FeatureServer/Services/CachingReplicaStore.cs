@@ -142,7 +142,7 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         // Serve the enumeration from the authoritative repository so /replicas reflects
         // createReplica / unRegisterReplica immediately. Writes go through Postgres first
         // (write-through), so the repository is the live registry; the distributed cache cannot
-        // enumerate keys and would otherwise lag (#1775).
+        // enumerate keys and would otherwise lag.
         var records = await _repository.ListByServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
         if (records.Count == 0)
         {

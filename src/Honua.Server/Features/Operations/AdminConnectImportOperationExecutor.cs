@@ -35,7 +35,7 @@ internal sealed class AdminConnectImportOperationExecutor(
             .Select(parameter => $"Required parameter '{parameter.Name}' is missing.").ToArray();
         var messages = missing.ToList();
         // Read-only connection tests take the same credential body as create/update. An inline
-        // password is rejected there too (#4880); callers pass secretReference instead.
+        // password is rejected there too; callers pass secretReference instead.
         // The check is case-insensitive so "Password" cannot bypass the ordinal dictionary lookup.
         if (AdminConnectImportApprovalPayload.HasInlinePassword(request.Parameters))
         {

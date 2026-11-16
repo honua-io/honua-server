@@ -105,7 +105,7 @@ internal static class OperationsServiceCollectionExtensions
             {
                 services.AddHostedService<OperationRuntimeStartupValidator>();
                 // Janitor sweeps open Redis and the database on an interval. The event-handler
-                // Lambdas are invoked to run one tick, then release their pool (honua-server#6515).
+                // Lambdas are invoked to run one tick, then release their pool.
                 if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
                 {
                     services.AddHostedService<PlannedProposalReconciler>();

@@ -162,7 +162,7 @@ internal class SpatialReferenceResolver
         // canonical EPSG:3857 before registry validation. The registry only advertises the
         // canonical codes, so without this the query path rejected inSR/outSR/bboxSR=102100
         // that ArcGIS Pro and the ArcGIS JS API send, even though the edits and import paths
-        // already normalize the same aliases (#2736). Returning the canonical SRID also lets
+        // already normalize the same aliases. Returning the canonical SRID also lets
         // the shared query/transform pipeline short-circuit when the layer is stored as 3857
         // and the client requested a Web Mercator alias (no spurious ST_Transform).
         var normalized = SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid.Value);

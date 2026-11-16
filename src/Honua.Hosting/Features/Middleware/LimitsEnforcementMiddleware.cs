@@ -63,7 +63,7 @@ internal sealed class LimitsEnforcementMiddleware(
                 // The status line and part of a streamed body are already on the wire, so a 408 can
                 // no longer be sent. Returning normally would let the server close the response with
                 // valid framing and the client would read the truncated body as a complete success;
-                // abort so the HTTP/1.1 chunked body or HTTP/2 stream terminates abnormally (#5472).
+                // abort so the HTTP/1.1 chunked body or HTTP/2 stream terminates abnormally.
                 context.Abort();
                 return;
             }

@@ -53,7 +53,7 @@ internal static class GeoservicesCatalogEndpoints
     {
         // ArcGIS Server answers the site root, the /rest prefix, and the /arcgis web-adaptor
         // prefix by redirecting to the services directory. arcpy's MakeWCSLayer probe is a
-        // HEAD / that 404s when those paths are absent (#5158).
+        // HEAD / that 404s when those paths are absent.
         // HEAD is rewritten to GET before matching, so a GET mapping also answers arcpy's HEAD probe.
         // Trailing-slash twins are not registered separately: they match the same candidate and
         // make the root ambiguous.
@@ -865,7 +865,7 @@ internal static class GeoservicesCatalogEndpoints
         // A graph can contain more than one publication/service record that projects to
         // the same Esri directory name and type. ArcGIS clients treat the directory key as
         // (name,type); returning duplicates makes authenticated discovery ambiguous and can
-        // cause SDKs to open the same service twice (#4130).
+        // cause SDKs to open the same service twice.
         entries = DeduplicateServiceDirectoryEntries(entries);
 
         IResult? accessError = null;
@@ -1158,7 +1158,7 @@ internal static class GeoservicesCatalogEndpoints
                 directoryType = "VectorTileServer";
                 return true;
             case SceneServerProtocolName:
-                // Esri I3S SceneServer (#1807). Hosted scenes are not part of the
+                // Esri I3S SceneServer. Hosted scenes are not part of the
                 // MetadataV2 graph (they live in the scene registry), so this
                 // case is only reachable if a future graph-backed scene producer
                 // sets SceneServer as its primary protocol; the scene-registry

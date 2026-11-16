@@ -50,8 +50,8 @@ internal static class RecoveryGrantFence
 
         // Identity binding is enforced whether or not the caller supplied a fence: once an activation
         // has sealed a grant, only that actor/tenant may actuate its compensation. An unfenced caller
-        // cannot opt out of the binding by staying silent, and a platform role is no exemption
-        // (honua-server#4987): PlatformDeployAuthority requires that role of every tenant-bound deploy
+        // cannot opt out of the binding by staying silent, and a platform role is no exemption:
+        // PlatformDeployAuthority requires that role of every tenant-bound deploy
         // caller, so exempting it let another tenant's administrator actuate this tenant's grant.
         if (protection != null)
         {
@@ -92,8 +92,8 @@ internal static class RecoveryGrantFence
                 "an expired grant preauthorizes nothing.");
         }
 
-        // A declared actor or tenant is bound to the sealed grant as well as to the caller
-        // (honua-server#4987). Checking only the caller let a body quote another principal's grantId,
+        // A declared actor or tenant is bound to the sealed grant as well as to the caller.
+        // Checking only the caller let a body quote another principal's grantId,
         // revisions and digest under the caller's own identity.
         if (!string.IsNullOrWhiteSpace(request.Actor) && !ValuesMatch(request.Actor, authenticatedActor))
         {

@@ -48,7 +48,7 @@ internal static class GeoServicesRequestValueHelpers
             "time",
             // The ArcGIS API for Python (arcgis 2.4.x) serializes the query(time_filter=)
             // kwarg to the "timeFilter" query parameter. Accept it as an alias of "time"
-            // so the Python SDK's time-aware queries are not rejected with HTTP 400 (#1775).
+            // so the Python SDK's time-aware queries are not rejected with HTTP 400.
             "timeFilter",
             "timeRelation",
             "geometryPrecision",
@@ -64,7 +64,7 @@ internal static class GeoServicesRequestValueHelpers
             "coordinateEpoch",
             // Standard Esri layer-query parameters that ArcGIS clients (ArcGIS Pro,
             // ArcGIS API for Python) send by default. Accepted so those clients can
-            // query Honua; unsupported ones are ignored rather than rejected (#1276).
+            // query Honua; unsupported ones are ignored rather than rejected.
             "returnAllRecords",
             "datumTransformations",
             "historicMoment",
@@ -74,7 +74,7 @@ internal static class GeoServicesRequestValueHelpers
             "rangeValues",
             // The Esri .NET Runtime SDK (ServiceFeatureTable.LoadAsync) sends
             // returnAdvancedSymbols on layer queries; accept-and-ignore so the
-            // entire .NET FeatureServer client is not blocked with a 400 (#1455).
+            // entire .NET FeatureServer client is not blocked with a 400.
             "returnAdvancedSymbols",
             // ArcGIS portal-token auth passes the token as a query parameter.
             // Auth middleware (PortalTokenAuthenticationHandler) consumes it before

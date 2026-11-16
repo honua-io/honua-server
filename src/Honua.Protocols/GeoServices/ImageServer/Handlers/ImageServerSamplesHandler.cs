@@ -104,7 +104,7 @@ internal sealed class ImageServerSamplesHandler
             // multidimensionalDefinition selects a per-slice (time/StdZ/elevation coordinate) view
             // of a registered multidimensional cube. The requested dimension coordinate is resolved
             // to a Zarr slice index and the pinned cell is read through the shared Zarr subset
-            // pipeline (#1869). Layers without a servable Zarr store stay metadata-only and return
+            // pipeline. Layers without a servable Zarr store stay metadata-only and return
             // an honest 501 rather than silently sampling the dimension-collapsed raster.
             if (!ImageServerMultidimensionalDefinition.TryParse(
                     ImageServerRequestValues.GetString(values, "multidimensionalDefinition"), out var dimensionConstraints, out var multidimError))
