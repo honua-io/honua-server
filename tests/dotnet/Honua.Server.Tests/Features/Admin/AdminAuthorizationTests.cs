@@ -17,15 +17,19 @@ namespace Honua.Server.Tests.Features.Admin;
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class AdminAuthorizationTests : IAsyncLifetime
+public sealed class AdminAuthorizationTests : IClassFixture<AdminAuthorizationTests.AnonymousHost>
 {
     private const string AdminPassword = "admin-auth-test-key";
-    private readonly WebAppFixture _fixture;
-    private HttpClient _unauthenticatedClient = null!;
+    private readonly HttpClient _unauthenticatedClient;
 
-    public AdminAuthorizationTests()
+    public AdminAuthorizationTests(AnonymousHost host) => _unauthenticatedClient = host.UnauthenticatedClient;
+
+    // Every case sends an anonymous request and expects it to be refused or answered
+    // without side effects, so one host serves the class. No case sends credentials, so
+    // the authentication-failure limiter never counts against the shared host.
+    public sealed class AnonymousHost : IAsyncLifetime
     {
-        _fixture = new WebAppFixture()
+        private readonly WebAppFixture _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {
@@ -33,15 +37,21 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             });
-    }
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _unauthenticatedClient = _fixture.CreateClient(); // No admin headers
-    }
+        public HttpClient UnauthenticatedClient { get; private set; } = null!;
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public async Task InitializeAsync()
+        {
+            await _fixture.InitializeAsync();
+            UnauthenticatedClient = _fixture.CreateClient(); // No admin headers
+        }
+
+        public async Task DisposeAsync()
+        {
+            UnauthenticatedClient?.Dispose();
+            await _fixture.DisposeAsync();
+        }
+    }
 
     // --- AdminEndpoints (config, openapi, version, capabilities, tables) ---
     // v1 manifest endpoints were removed in #1035 cutover; their auth tests removed with them.

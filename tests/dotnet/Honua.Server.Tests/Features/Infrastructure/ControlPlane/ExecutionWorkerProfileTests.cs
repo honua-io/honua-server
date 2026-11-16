@@ -635,9 +635,6 @@ public sealed class ExecutionWorkerProfileTests
         services.AddSingleton(Substitute.For<IProcessCatalog>());
         services.AddSingleton(Substitute.For<IGeoprocessingResultPackageStore>());
         services.AddSingleton(Substitute.For<IOperatorApprovalEvaluator>());
-        services.AddSingleton(Substitute.For<IContainerRuntimeClient>());
-        services.AddSingleton(Substitute.For<IProxyStateSwapper>());
-        services.AddSingleton(Substitute.For<ILocalReplicaHealthProbe>());
         services.AddHonuaLicensing(configuration, environment);
         Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(services, configuration);
         services.AddJobOrchestration();
