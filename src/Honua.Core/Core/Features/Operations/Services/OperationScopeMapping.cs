@@ -152,7 +152,8 @@ public static class OperationScopeMapping
 
         // Access-family reads expose key, user, tenant and provider inventories, so a
         // scope-governed bearer needs read authority for them and not merely discover/create.
-        if (operationId.EndsWith(".list", StringComparison.Ordinal) ||
+        if (operationId is "admin.oidc-provider.revisions" or "admin.rate-limit-policy.revisions" ||
+            operationId.EndsWith(".list", StringComparison.Ordinal) ||
             operationId.EndsWith(".get", StringComparison.Ordinal) ||
             operationId.EndsWith(".status", StringComparison.Ordinal) ||
             operationId.EndsWith(".test", StringComparison.Ordinal) ||
