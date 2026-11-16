@@ -1032,9 +1032,9 @@ def _validate_native(
     if value.get("gate_run_head_sha") != head or value.get("gate_run_conclusion") not in TERMINAL_CONCLUSIONS:
         raise ValueError("native-image gate result identity is invalid")
     digests = value.get("image_input_digests")
-    # A receipt from a superseded policy generation may name image classes and
-    # serving variants this generation no longer has. Its own values are still
-    # validated so that it reaches the drift decision below.
+    # A receipt from a superseded policy generation may name other image
+    # classes and serving variants. Its own values are validated so that it
+    # reaches the drift decision below.
     if not isinstance(digests, dict) or not (drifted or set(digests) == set(IMAGE_INPUT_CLASSES)):
         raise ValueError("native-image image input digests are invalid")
     digests = {
