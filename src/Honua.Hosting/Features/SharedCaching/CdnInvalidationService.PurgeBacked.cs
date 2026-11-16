@@ -109,7 +109,7 @@ internal sealed partial class CdnInvalidationService
     }
 
     // A settle repeat is itself never repeated.
-    private void AfterSubmitted(IReadOnlyCollection<string> sent, CdnPurgeCause cause)
+    private void AfterSubmitted(string[] sent, CdnPurgeCause cause)
     {
         if (cause.Kind is CdnPurgeKind.Settle || ActivePurgeBacked is null)
         {
@@ -130,7 +130,7 @@ internal sealed partial class CdnInvalidationService
 
         if (stopping)
         {
-            Log.ShutdownPurgesNotSent(logger, sent.Count, string.Join(' ', sent));
+            Log.ShutdownPurgesNotSent(logger, sent.Length, string.Join(' ', sent));
         }
         else if (due is { } settleAt)
         {
