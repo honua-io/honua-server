@@ -428,7 +428,7 @@ internal sealed partial class Wfs20Handler
             var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, featureElement.Name.LocalName);
             var validationError = await ValidateTransactionLayerWriteAccessAsync(
                 context,
-                descriptor,
+                (descriptor, descriptors),
                 AuthorizationOperation.Insert,
                 validatedLayerIds,
                 cancellationToken).ConfigureAwait(false);
@@ -489,7 +489,7 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor,
+            (descriptor, descriptors),
             AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
@@ -587,7 +587,7 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor,
+            (descriptor, descriptors),
             AuthorizationOperation.Delete,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
@@ -674,7 +674,7 @@ internal sealed partial class Wfs20Handler
         // Replace modifies an existing feature, so it authorizes as an Update (BH3-001/BH3-014).
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor,
+            (descriptor, descriptors),
             AuthorizationOperation.Update,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
@@ -1192,11 +1192,12 @@ internal sealed partial class Wfs20Handler
 
     private static async Task<IResult?> ValidateTransactionLayerWriteAccessAsync(
         HttpContext context,
-        WfsFeatureTypeDescriptor descriptor,
+        (WfsFeatureTypeDescriptor Requested, IReadOnlyList<WfsFeatureTypeDescriptor> Visible) featureType,
         AuthorizationOperation operation,
         HashSet<(int LayerId, AuthorizationOperation Operation)> validatedLayerIds,
         CancellationToken cancellationToken)
     {
+        var descriptor = featureType.Requested;
         var layerId = descriptor.StorageLayerId;
         if (!validatedLayerIds.Add((layerId, operation)))
         {
@@ -1235,7 +1236,7 @@ internal sealed partial class Wfs20Handler
         // Transaction action, including on anonymously writable layers (SEC-5).
         var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(
             descriptor.Service,
-            descriptor.Publication,
+            ResolveEditCapabilityPublication(descriptor, featureType.Visible),
             operation);
         return undeclared is null
             ? null
@@ -1246,6 +1247,31 @@ internal sealed partial class Wfs20Handler
                 "Transaction");
     }
 
+
+    // The STAC collection publication that publishing writes beside a layer's feature publication
+    // was the advertised feature type, so clients hold its name. A Transaction through it is bound
+    // by the feature publication of the same layer in the same service. The candidates are the
+    // feature types this caller can see, so another tenant's or service's publication never applies.
+    private static MetadataV2Layer ResolveEditCapabilityPublication(
+        WfsFeatureTypeDescriptor descriptor,
+        IReadOnlyList<WfsFeatureTypeDescriptor> visibleFeatureTypes)
+    {
+        var publication = descriptor.Publication;
+        if (publication.PublicationType != MetadataV2LayerType.StacCollection)
+        {
+            return publication;
+        }
+
+        return visibleFeatureTypes
+            .Where(candidate => candidate.StorageLayerId == descriptor.StorageLayerId)
+            .Select(static candidate => candidate.Publication)
+            .Where(candidate =>
+                candidate.PublicationType != MetadataV2LayerType.StacCollection &&
+                string.Equals(candidate.ServiceId, publication.ServiceId, StringComparison.Ordinal))
+            .OrderByDescending(static candidate => candidate.IsPrimary)
+            .ThenBy(static candidate => candidate.Metadata.Id, StringComparer.Ordinal)
+            .FirstOrDefault() ?? publication;
+    }
 
     private static WfsFeatureTypeDescriptor ResolveTransactionFeatureTypeDescriptor(
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,

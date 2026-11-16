@@ -44,6 +44,14 @@ public sealed class Wfs20DeclaredEditCapabilityTests
 {
     private const string PublicationId = "svc-cities-layer-1";
 
+    // Sorts before PublicationId, like the published "pub-stac-..." beside "pub-svc-...".
+    private const string StacPublicationId = "stac-svc-cities-layer-1";
+
+    private static readonly Publications StacSibling = new(["Query", "Create"], StacServiceId: "svc-cities");
+
+    // The feature publication's capabilities, and the service of a STAC publication of the same layer.
+    private sealed record Publications(string[]? Capabilities, string? StacServiceId = null);
+
     private const string InsertAction =
         "<wfs:Insert><honua:svc-cities-layer-1><honua:name>created</honua:name></honua:svc-cities-layer-1></wfs:Insert>";
 
@@ -164,6 +172,46 @@ public sealed class Wfs20DeclaredEditCapabilityTests
         await writer.ReceivedWithAnyArgs(1).ApplyEditsAsync(default, default!, default);
     }
 
+    // Publishing writes a STAC collection publication beside the feature publication, and its id
+    // sorts first. It must not be the advertised type, and its name must not lose the edits.
+    [UnitTest]
+    public async Task HandleGetCapabilitiesAsync_LayerWithStacSibling_AdvertisesTheFeaturePublication()
+    {
+        var provider = CreateProvider(StacSibling);
+        var handler = CreateHandler(provider, Substitute.For<IFeatureWriter>());
+
+        var capabilities = await handler.HandleGetCapabilitiesAsync(
+            CreateContext(provider, InsertAction), null, null, "http://localhost");
+
+        capabilities.FeatureTypeList!.FeatureTypes.Select(static type => type.Name)
+            .Should().Equal("honua:" + PublicationId);
+    }
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_StacSiblingTypeName_UsesTheFeaturePublicationCapabilities()
+    {
+        var insert = InsertAction.Replace(PublicationId, StacPublicationId, StringComparison.Ordinal);
+        var (insertStatus, insertWriter) = await ExecuteAsync(insert, StacSibling);
+        insertStatus.Should().Be(StatusCodes.Status200OK);
+        await insertWriter.ReceivedWithAnyArgs(1).ApplyEditsAsync(default, default!, default);
+
+        var delete = DeleteAction.Replace(PublicationId, StacPublicationId, StringComparison.Ordinal);
+        var (deleteStatus, deleteWriter) = await ExecuteAsync(delete, StacSibling);
+        deleteStatus.Should().Be(StatusCodes.Status403Forbidden);
+        deleteWriter.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_StacPublicationOfAnotherService_KeepsItsOwnCapabilities()
+    {
+        var insert = InsertAction.Replace(PublicationId, StacPublicationId, StringComparison.Ordinal);
+        var (status, writer) = await ExecuteAsync(
+            insert, new Publications(["Query", "Create"], StacServiceId: "svc-cities-catalog"));
+
+        status.Should().Be(StatusCodes.Status403Forbidden);
+        writer.ReceivedCalls().Should().BeEmpty();
+    }
+
     private static string ReplaceAction(string properties)
         => "<wfs:Replace><honua:svc-cities-layer-1>" + properties +
            "</honua:svc-cities-layer-1><fes:Filter><fes:ResourceId rid=\"svc-cities-layer-1.1\"/></fes:Filter></wfs:Replace>";
@@ -174,9 +222,12 @@ public sealed class Wfs20DeclaredEditCapabilityTests
             Geometry: null,
             ImmutableDictionary<string, object?>.Empty.WithComparers(StringComparer.OrdinalIgnoreCase).Add(field, value));
 
-    private static async Task<(int Status, IFeatureWriter Writer)> ExecuteAsync(string action, string[]? capabilities)
+    private static Task<(int Status, IFeatureWriter Writer)> ExecuteAsync(string action, string[]? capabilities)
+        => ExecuteAsync(action, new Publications(capabilities));
+
+    private static async Task<(int Status, IFeatureWriter Writer)> ExecuteAsync(string action, Publications publications)
     {
-        var provider = CreateProvider(capabilities);
+        var provider = CreateProvider(publications);
         var writer = Substitute.For<IFeatureWriter>();
         writer.ApplyEditsAsync(default, default!, default)
             .ReturnsForAnyArgs(FeatureEditResult.Success(
@@ -241,7 +292,11 @@ public sealed class Wfs20DeclaredEditCapabilityTests
         ];
 
     private static TestMetadataV2GraphProvider CreateProvider(string[]? capabilities)
+        => CreateProvider(new Publications(capabilities));
+
+    private static TestMetadataV2GraphProvider CreateProvider(Publications publications)
     {
+        var capabilities = publications.Capabilities;
         var builder = new TestMetadataV2GraphBuilder()
             .AddResource("res-layer-1", "cities", MetadataV2ObjectType.FeatureDataset, fields: Fields())
             .AddStorageBinding("binding-layer-1", "res-layer-1", "test.layers.1", storageLayerId: 1)
@@ -258,6 +313,11 @@ public sealed class Wfs20DeclaredEditCapabilityTests
             builder = builder.WithPublicationCapabilities(PublicationId, capabilities);
         }
 
+        if (publications.StacServiceId is { } stacServiceId)
+        {
+            builder = AddStacPublication(builder, stacServiceId);
+        }
+
         var graph = builder.Build();
         return new TestMetadataV2GraphProvider(graph with
         {
@@ -266,6 +326,24 @@ public sealed class Wfs20DeclaredEditCapabilityTests
                 Editing = new MetadataV2ObjectEditing { GlobalIdField = "globalid" }
             }).ToArray()
         });
+    }
+
+    private static TestMetadataV2GraphBuilder AddStacPublication(TestMetadataV2GraphBuilder builder, string serviceId)
+    {
+        if (serviceId != "svc-cities")
+        {
+            builder = builder.AddService(serviceId, "cities-catalog", protocols: [MetadataV2ServiceProtocols.Wfs20]);
+        }
+
+        return builder
+            .AddPublication(
+                StacPublicationId,
+                serviceId,
+                "res-layer-1",
+                layerIndex: 1,
+                storageBindingId: "binding-layer-1",
+                publicationType: MetadataV2LayerType.StacCollection)
+            .WithPublicationCapabilities(StacPublicationId, "Query", "Extract");
     }
 
     private static IFeatureReader CreateReader()
