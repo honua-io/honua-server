@@ -144,7 +144,7 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
     {
         var failed = result.TryGetProperty("isError", out var isError) && isError.GetBoolean();
         failed.Should().BeFalse();
-        var proposal = result.GetProperty("structuredContent");
+        var proposal = result.GetProperty("structuredContent").GetProperty("operation");
         proposal.GetProperty("status").GetString().Should().Be("RequiresApproval");
         var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(
             _fixture, proposal.GetProperty("proposalId").GetString()!);
