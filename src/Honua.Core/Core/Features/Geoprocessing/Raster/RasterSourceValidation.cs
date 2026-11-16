@@ -127,7 +127,7 @@ public static class RasterSourceDescriptorValidator
         ValidateSelection(descriptor.Selection, options, errors, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(descriptor.Version)
-            && (!IsSafeText(descriptor.Version, 512)
+            && (!RasterDescriptorChecks.IsSafeText(descriptor.Version, 512)
                 || descriptor.Version.Contains("://", StringComparison.Ordinal)
                 || descriptor.Version.Contains('?')
                 || descriptor.Version.Contains('#')))
@@ -283,19 +283,19 @@ public static class RasterSourceDescriptorValidator
                 "Content sizeBytes must be positive.");
         }
 
-        if (!IsMediaType(content.MediaType))
+        if (!RasterDescriptorChecks.IsMediaType(content.MediaType))
         {
             Add(errors, RasterSourceValidationCodes.InvalidContentIdentity, "content.mediaType",
                 "Content mediaType must be a simple IANA media type without parameters.");
         }
 
-        if (content.Checksum is { } checksum && !IsChecksum(checksum))
+        if (content.Checksum is { } checksum && !RasterDescriptorChecks.IsChecksum(checksum))
         {
             Add(errors, RasterSourceValidationCodes.InvalidContentIdentity, "content.checksum",
                 "Checksum must be a sha256 or sha512 hex digest.");
         }
 
-        if (content.ETag is { } etag && (!IsSafeText(etag, 256) || etag.Contains('?')))
+        if (content.ETag is { } etag && (!RasterDescriptorChecks.IsSafeText(etag, 256) || etag.Contains('?')))
         {
             Add(errors, RasterSourceValidationCodes.InvalidContentIdentity, "content.eTag",
                 "ETag contains unsafe characters.");
@@ -307,8 +307,8 @@ public static class RasterSourceDescriptorValidator
         List<RasterSourceValidationError> errors)
     {
         if (securityContext is null
-            || !IsOpaqueReference(securityContext.TenantId)
-            || !IsOpaqueReference(securityContext.AuthorizationSnapshotReference))
+            || !RasterDescriptorChecks.IsOpaqueReference(securityContext.TenantId)
+            || !RasterDescriptorChecks.IsOpaqueReference(securityContext.AuthorizationSnapshotReference))
         {
             Add(errors, RasterSourceValidationCodes.InvalidSecurityContext, "securityContext",
                 "Tenant and authorization snapshot references must be opaque identifiers.");
@@ -389,7 +389,7 @@ public static class RasterSourceDescriptorValidator
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (dimension is null
-                    || !IsOpaqueReference(dimension.Dimension)
+                    || !RasterDescriptorChecks.IsOpaqueReference(dimension.Dimension)
                     || dimension.Start < 0
                     || dimension.Stop <= dimension.Start
                     || dimension.Step <= 0
@@ -408,7 +408,7 @@ public static class RasterSourceDescriptorValidator
         string field,
         List<RasterSourceValidationError> errors)
     {
-        if (!IsOpaqueReference(value))
+        if (!RasterDescriptorChecks.IsOpaqueReference(value))
         {
             Add(errors, RasterSourceValidationCodes.UnsafeLocator, field,
                 $"{field} must be an opaque identifier, not a URI or path.");
@@ -432,32 +432,16 @@ public static class RasterSourceDescriptorValidator
         string field,
         List<RasterSourceValidationError> errors)
     {
-        if (!IsSafeObjectStoreKey(value))
+        if (!RasterDescriptorChecks.IsSafeObjectStoreKey(value))
         {
             Add(errors, RasterSourceValidationCodes.UnsafeLocator, field,
                 $"{field} must be a bounded object key without traversal, URI, query, or control syntax.");
         }
     }
 
-    private static bool IsOpaqueReference(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 160)
-        {
-            return false;
-        }
-
-        if (value.Any(character =>
-                !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':')))
-        {
-            return false;
-        }
-
-        return value[0] != '.' && !value.Contains("..", StringComparison.Ordinal);
-    }
-
     private static bool IsSafeRelativeLocator(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 || !IsSafeText(value, 2048))
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 || !RasterDescriptorChecks.IsSafeText(value, 2048))
         {
             return false;
         }
@@ -483,7 +467,7 @@ public static class RasterSourceDescriptorValidator
             return false;
         }
 
-        if (!IsSafeText(decoded, 2048)
+        if (!RasterDescriptorChecks.IsSafeText(decoded, 2048)
             || decoded.StartsWith('/')
             || decoded.StartsWith('\\')
             || decoded.Contains('\\')
@@ -507,84 +491,12 @@ public static class RasterSourceDescriptorValidator
             && !decoded.StartsWith("http", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsSafeObjectStoreKey(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 || !IsSafeText(value, 2048))
-        {
-            return false;
-        }
-
-        // S3 keys and Azure blob names legally contain spaces, '#', ':', repeated slashes, and
-        // words such as "http-data". They remain inside the execution-owned provider/bucket VSI
-        // envelope, so reject only syntax that can change that envelope or smuggle traversal.
-        if (value[0] is '/' or '\\'
-            || value.Contains('\\')
-            || value.Contains('?')
-            || value.Contains("://", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        string decoded;
-        try
-        {
-            decoded = Uri.UnescapeDataString(value);
-        }
-        catch (UriFormatException)
-        {
-            return false;
-        }
-
-        if (!IsSafeText(decoded, 2048)
-            || decoded[0] is '/' or '\\'
-            || decoded.Contains('\\')
-            || decoded.Contains('?')
-            || decoded.Contains("://", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return decoded
-            .Split('/', StringSplitOptions.None)
-            .All(segment => segment is not "." and not "..");
-    }
-
-    private static bool IsMediaType(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 127 || value.Contains(';'))
-        {
-            return false;
-        }
-
-        var slash = value.IndexOf('/');
-        return slash > 0
-            && slash == value.LastIndexOf('/')
-            && slash < value.Length - 1
-            && value.All(character => char.IsAsciiLetterOrDigit(character)
-                || character is '/' or '-' or '+' or '.' or '_');
-    }
-
-    private static bool IsChecksum(RasterChecksum checksum)
-    {
-        var length = checksum.Algorithm switch
-        {
-            "sha256" => 64,
-            "sha512" => 128,
-            _ => 0,
-        };
-
-        return length > 0
-            && checksum.Value is { } value
-            && value.Length == length
-            && value.All(Uri.IsHexDigit);
-    }
-
     private static void ValidateInlineChecksum(
         byte[] payload,
         RasterChecksum? checksum,
         List<RasterSourceValidationError> errors)
     {
-        if (checksum is null || !IsChecksum(checksum))
+        if (checksum is null || !RasterDescriptorChecks.IsChecksum(checksum))
         {
             Add(errors, RasterSourceValidationCodes.InvalidContentIdentity, "content.checksum",
                 "Inline raster payloads require a valid sha256 or sha512 checksum.");
@@ -603,10 +515,6 @@ public static class RasterSourceDescriptorValidator
                 "Inline raster payload does not match its declared checksum.");
         }
     }
-
-    private static bool IsSafeText(string value, int maximumLength) =>
-        value.Length is > 0 && value.Length <= maximumLength
-        && value.All(character => !char.IsControl(character));
 
     private static void Add(
         List<RasterSourceValidationError> errors,

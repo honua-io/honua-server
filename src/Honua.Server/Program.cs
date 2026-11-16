@@ -337,13 +337,15 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     var keyRing = builder.Services.AddDataProtection().SetApplicationName("Honua.Server");
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
-    // certificate is mandatory so a database reader or backup cannot carry both halves. Lambda
-    // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
-    System.Security.Cryptography.X509Certificates.X509Certificate2 keyRingCertificate;
+    // certificate, or a random secret where no certificate can be made, is mandatory so a database
+    // reader or backup cannot carry both halves. Lambda cannot mount the file, so a Secrets Manager
+    // bundle is written to a private temp file first.
+    OperationKeyRingProtector keyRingProtector;
     try
     {
         await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
-        keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+        await StartupConfigurationHelpers.EnsureKeyRingSecretResolvedAsync(builder.Configuration);
+        keyRingProtector = OperationSecretKeyRingProtection.ResolveProtector(builder.Configuration);
     }
     catch (System.Security.Cryptography.CryptographicException ex)
     {
@@ -356,17 +358,23 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     }
     catch (InvalidOperationException ex)
     {
-        // A missing or unreadable certificate is an operator error. Left unhandled it aborts the
+        // A missing or unreadable certificate, or a short secret, is an operator error. Left unhandled it aborts the
         // runtime ("signal: aborted" on Lambda, exit 139 on the AOT image) with no usable status
         // (honua-server#6500). Report it and leave with a plain exit status.
         Honua.Server.Hosting.StartupRefusal.Exit(ex.Message);
         return;
     }
 
-    builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
-        new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+    if (keyRingProtector.Certificate is { } keyRingCertificate)
+    {
+        builder.Services.AddSingleton(new Honua.Infrastructure.Monitoring.OpsKeyRingCertificateLifetime(
+            new DateTimeOffset(keyRingCertificate.NotAfter.ToUniversalTime())));
+    }
 
-    keyRing.ProtectKeysWithRsaAesGcm(keyRingCertificate);
+    keyRing.ProtectKeysWith(keyRingProtector);
+    builder.Services.AddOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>()
+        .Configure<PostgresDataProtectionKeyRepository>((_, keyRepository) =>
+            keyRepository.EnsureWrappedKeysAreReadable(keyRingProtector));
 }
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
@@ -738,6 +746,9 @@ if (systemDatabaseConfigured && builder.Services.Any(service =>
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
+builder.Services.AddScoped<Honua.Infrastructure.Attachments.AttachmentUploadContentVerifier>();
+builder.Services.AddScoped<Honua.Core.Features.Attachments.Abstractions.IAttachmentUploadPublisher,
+    Honua.Infrastructure.Attachments.AttachmentUploadPublisher>();
 
 // Federated-query planning and source configuration (#341).
 // Experimental gate (PA-001): federated query is off by default. Set
@@ -1922,6 +1933,7 @@ app.MapFeatureOverviewEndpoints();
 // quota policies. Admin-authorized; the policies are consumed by the rate limiting
 // middleware registered above.
 app.MapRateLimitEndpoints();
+app.MapAgentAuthorityEndpoints();
 
 // Tenant lifecycle/provisioning administration (issue #2156): create/suspend/resume/delete plus
 // the per-tenant billing usage export. Admin-authorized.

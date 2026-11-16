@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
@@ -32,8 +33,9 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
     public OperationHumanApprovalTestHost(
         IDataProtectionProvider? protection = null,
         ISecurityTokenStore? sharedSessions = null,
-        string audience = "https://server.example.com")
+        OperationHumanApprovalTestOptions? options = null)
     {
+        options ??= new OperationHumanApprovalTestOptions();
         Clock = new ApprovalTestClock();
         Permissions = Substitute.For<IPermissionResolver>();
         Permissions.AuthorizeAsync(
@@ -44,13 +46,13 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
         services.AddLogging();
         services.AddMemoryCache();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(
-            new Dictionary<string, string?> { ["Public:BaseUrl"] = audience }).Build());
+            new Dictionary<string, string?> { ["Public:BaseUrl"] = options.Audience }).Build());
         services.AddSingleton<IHttpContextAccessor>(_requests);
         services.AddSingleton<TimeProvider>(Clock);
         services.AddSingleton<IDataProtectionProvider>(protection ?? new EphemeralDataProtectionProvider());
         services.AddSingleton(Permissions);
         services.AddSingleton<AdminAuthSessionStore>();
-        services.AddSingleton<IClaimsTransformation, NoopClaimsTransformation>();
+        services.AddSingleton<IClaimsTransformation>(new ManagedMembershipClaimsTransformation(options.Memberships));
         services.AddScoped<RequestTenantContext>();
         services.AddScoped<ITenantContext>(provider => provider.GetRequiredService<RequestTenantContext>());
         services.AddAuthorization(options => options.AddPolicy(
@@ -69,7 +71,11 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
     public async Task<ApprovalTestHuman> CreateHumanAsync(
         string subject = "person", AdminAuthSessionOrigin origin = AdminAuthSessionOrigin.InteractiveOidc)
     {
-        AdminAuthSessionClaim[] claims =
+        AdminAuthSessionClaim[] claims = origin == AdminAuthSessionOrigin.Builtin
+            ? [new() { Type = ClaimTypes.NameIdentifier, Value = subject },
+               new() { Type = ClaimTypes.Name, Value = "admin" },
+               new() { Type = ClaimTypes.Role, Value = "admin" }]
+            :
         [
             new() { Type = "sub", Value = subject },
             new() { Type = "iss", Value = "https://idp.example.com" },
@@ -80,15 +86,16 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
         var id = await Sessions.CreateAuthenticatedSessionAsync(
             new AdminAuthAuthenticatedSession
             {
-                ProviderKey = "oidc",
-                AccessToken = "access-token",
-                IdToken = "id-token",
+                ProviderKey = origin == AdminAuthSessionOrigin.Builtin ? "builtin" : "oidc",
+                AccessToken = origin == AdminAuthSessionOrigin.Builtin ? string.Empty : "access-token",
+                IdToken = origin == AdminAuthSessionOrigin.Builtin ? null : "id-token",
                 Claims = claims,
                 ExpiresAt = Clock.GetUtcNow().AddMinutes(30),
                 Origin = origin
             }, CancellationToken.None);
         return new ApprovalTestHuman(id, AdminAuthClaimsProjector.CreatePrincipal(
-            claims, OidcAuthenticationExtensions.AdminSessionScheme));
+            claims, OidcAuthenticationExtensions.AdminSessionScheme,
+            origin == AdminAuthSessionOrigin.Builtin ? "admin" : "oidc"));
     }
 
     public void ReviewRequest(ApprovalTestHuman human) => SetRequest(human, AdminHumanApprovalEndpointMetadata.Review);
@@ -187,4 +194,10 @@ internal sealed class ApprovalTestClock : TimeProvider
     private DateTimeOffset _now = DateTimeOffset.UtcNow;
     public override DateTimeOffset GetUtcNow() => _now;
     public void Advance(TimeSpan elapsed) => _now += elapsed;
+}
+
+internal sealed record OperationHumanApprovalTestOptions
+{
+    public string Audience { get; init; } = "https://server.example.com";
+    public IPrincipalMembershipSource? Memberships { get; init; }
 }

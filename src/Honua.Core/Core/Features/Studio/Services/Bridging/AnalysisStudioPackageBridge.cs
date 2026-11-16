@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
@@ -118,6 +119,7 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
             // Content Publication Registry (ADR-0069 divergence).
             PublishedVersionId = null,
             OwnerId = item.OwnerId,
+            TenantId = item.TenantId,
         };
     }
 
@@ -212,6 +214,9 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
                 Name = draft.PackageKey,
                 Title = null,
                 OwnerId = draft.OwnerId,
+                // The draft's tenant was stamped from the creating request; the native item
+                // keeps it so Studio's tenant rail authorizes the bridged item like any other.
+                TenantId = TenantOwnership.Normalize(draft.TenantId),
                 CurrentVersion = 1,
                 CurrentVersionId = version.VersionId,
                 CreatedAt = now,
@@ -336,6 +341,7 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
         CurrentVersionId = VersionGuid(item.CurrentVersionId),
         PublishedVersionId = null,
         OwnerId = item.OwnerId,
+        TenantId = item.TenantId,
         CreatedBy = item.CreatedBy,
         UpdatedBy = null,
         CreatedAt = item.CreatedAt,
@@ -361,6 +367,7 @@ public sealed class AnalysisStudioPackageBridge : IStudioFamilyPersistenceBridge
             PackageKey = SafePackageKey(item.Name, item.ItemId),
             WorkspaceId = null,
             OwnerId = item.OwnerId,
+            TenantId = item.TenantId,
             VersionId = VersionGuid(version.VersionId),
             VersionNumber = version.Version,
             ContentHash = version.ContentHash,

@@ -663,6 +663,13 @@ internal static class ConfigurationValidationService
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+    private static readonly FrozenSet<string> _resolvedAtStartupPrefixes = new[]
+        {
+            "env",
+            "aws"
+        }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     private static readonly FrozenSet<string> _connectionSecretPrefixes = new[]
         {
             "env",
@@ -694,6 +701,7 @@ internal static class ConfigurationValidationService
             // the password above. External sources only; aws/azure are allowed as well as env
             // because the point of the key is to reference a secret bundle Lambda can read.
             ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = _connectionSecretPrefixes,
+            ["Operations:SecretChannel:KeyRingSecret"] = _resolvedAtStartupPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Email:Password"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Slack:WebhookUrl"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Webhook:Url"] = _envOnlyPrefixes,

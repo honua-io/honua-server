@@ -946,15 +946,6 @@ internal sealed class DegradedImportJobManager : IDistributedImportJobManager
     public Task RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
-internal sealed class NoopDistributedJobQueue : IDistributedJobQueueService
-{
-    public Task EnqueueAsync(string jobId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task<string?> DequeueAsync(TimeSpan timeout, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
-    public Task CompleteAsync(string jobId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task RecoverInFlightAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task<long> GetQueueLengthAsync(CancellationToken cancellationToken = default) => Task.FromResult(0L);
-}
-
 internal sealed class NoopDistributedLeaderElection : IDistributedLeaderElection
 {
     public bool IsLeader => false;

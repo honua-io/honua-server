@@ -47,7 +47,6 @@ public sealed record AiAdmissionPolicy
     public const int DrainSeconds = 30;
     public const int MaximumLedgerEntries = 8192;
     public const int StopPollMilliseconds = 1000;
-    public const int RedisBootstrapCooldownSeconds = MaximumOperationSeconds + DrainSeconds;
 
     public int WindowSeconds { get; init; } = 60;
     // The admitted duration is independent of the provider timeout.

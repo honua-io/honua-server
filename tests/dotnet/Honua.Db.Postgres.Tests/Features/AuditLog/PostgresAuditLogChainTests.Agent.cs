@@ -14,6 +14,8 @@ namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
 public sealed partial class PostgresAuditLogChainTests
 {
+    private const string AgentActor = "ApiKey:api-key:canonical-agent";
+
     [IntegrationTest]
     public async Task AgentActions_ExecuteAndDeny_RetainIdentityInVerifiedAuditChain()
     {
@@ -21,7 +23,7 @@ public sealed partial class PostgresAuditLogChainTests
         try
         {
             await EnsureAuditLogTableAsync(schema);
-            const string actor = "ApiKey:api-key:canonical-agent";
+            const string actor = AgentActor;
             var context = new OperationPolicyContext { PrincipalId = actor, Roles = ["agent"] };
             var (dispatcher, executor, descriptor) = AgentDispatcher(schema);
             var request = new OperationRequest { OperationId = descriptor.OperationId };
@@ -98,7 +100,17 @@ public sealed partial class PostgresAuditLogChainTests
         var policy = Substitute.For<IOperationPolicyDecisionPoint>();
         policy.EvaluateAsync(descriptor, Arg.Any<OperationRequest>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>())
             .Returns(PolicyDecision.Allowed, new PolicyDecision { Kind = PolicyDecisionKind.Deny, Reason = "Denied by policy." });
-        var dispatcher = new OperationDispatcher(catalog, [executor], policy, TimeProvider.System, auditLog: KeyedSink(schema));
+        // The agent holds a ceiling that covers this action; without one, an agent's change becomes a proposal.
+        var ceilings = Substitute.For<IAgentAuthorityStore>();
+        ceilings.GetAsync(null, AgentActor, Arg.Any<CancellationToken>()).Returns(new AgentAuthorityCeiling
+        {
+            PrincipalId = AgentActor,
+            AllowedOperationIds = [descriptor.OperationId],
+            MaximumBlastRadius = descriptor.Policy.BlastRadiusClass,
+            MaximumSideEffect = descriptor.Policy.SideEffectClass,
+        });
+        var dispatcher = new OperationDispatcher(catalog, [executor], policy, TimeProvider.System, auditLog: KeyedSink(schema),
+            guards: new OperationActuationGuards { AgentAuthorityStore = ceilings });
         return (dispatcher, executor, descriptor);
     }
 

@@ -18,7 +18,7 @@ Submit and poll jobs through OGC API - Processes.
 | Edition | Community |
 | Surface maturity | 10 preview |
 | Registry entries | 10 |
-| Proving tests | 197 |
+| Proving tests | 198 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

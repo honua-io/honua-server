@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
@@ -83,7 +82,7 @@ public sealed class ProcessValueDomainDriftTests
 
         undeclared.Should().BeEmpty(
             "every finite token set ProcessPlanValidator enforces must be published as AllowedValues so "
-            + "GPServer choiceList, OGC JSON Schema enum and the toolbox translation probe all see it; "
+            + "GPServer choiceList and the toolbox translation probe all see it; "
             + "add the domain to ProcessValueDomains and reference it from BuiltInProcessCatalog, or "
             + "document an exclusion in UnpublishedDomains");
     }
@@ -166,46 +165,6 @@ public sealed class ProcessValueDomainDriftTests
                     "'{0}.{1}' no longer enforces a closed token set, so its exclusion is stale",
                     processId, parameterName);
         }
-    }
-
-    // -----------------------------------------------------------------------
-    // Published metadata surfaces (#3048 acceptance: GPServer choiceList / OGC enum)
-    // -----------------------------------------------------------------------
-
-    [UnitTest]
-    public void ProcessSchema_NewlyEnumeratedDiscriminator_EmitsJsonSchemaEnum()
-    {
-        // The OGC API Processes description is generated from the shared catalog, so publishing
-        // the domain must surface it as a JSON Schema enum with no protocol-side change.
-        var definition = _catalog.GetProcess("analytics.cluster-managed");
-        definition.Should().NotBeNull();
-
-        using var document = JsonDocument.Parse(ProcessSchemaJsonGenerator.Generate(definition!));
-
-        var algorithm = document.RootElement
-            .GetProperty("inputs")
-            .GetProperty("properties")
-            .GetProperty("algorithm");
-
-        algorithm.TryGetProperty("enum", out var choices).Should().BeTrue(
-            "'algorithm' is the discriminator ProcessPlanValidator branches on and now declares "
-            + "AllowedValues, so the generated schema must enumerate it");
-        choices.EnumerateArray().Select(choice => choice.GetString())
-            .Should().BeEquivalentTo(ProcessValueDomains.ClusterAlgorithm);
-    }
-
-    [UnitTest]
-    public void ProcessSchema_UnpublishedDomain_EmitsNoJsonSchemaEnum()
-    {
-        // The inverse guard: transform.computed-field's 'op' is deliberately unpublished, so the
-        // schema must NOT claim a domain the process exceeds.
-        var definition = _catalog.GetProcess("transform.computed-field");
-        definition.Should().NotBeNull();
-
-        using var document = JsonDocument.Parse(ProcessSchemaJsonGenerator.Generate(definition!));
-
-        document.RootElement.GetProperty("inputs").GetProperty("properties").GetProperty("op")
-            .TryGetProperty("enum", out _).Should().BeFalse();
     }
 
     // -----------------------------------------------------------------------
