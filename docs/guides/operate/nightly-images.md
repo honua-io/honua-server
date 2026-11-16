@@ -30,8 +30,10 @@ certified.
 
 The default serving images contain the PostGIS store. Import and export formats remain
 available, including GeoPackage, Shapefile, GeoTIFF and Parquet. SQLite supports file I/O;
-it is not an additional server data store. The runtime is chiseled-extra, with ICU,
-rendering fonts and required native libraries, and no shell or package manager.
+it is not an additional server data store. The JIT runtime is chiseled-extra, with ICU,
+rendering fonts and required native libraries, and no shell or package manager. The
+native-AOT PostGIS image uses the plain chiseled runtime in invariant globalization mode,
+with time-zone data and the same fonts and native libraries, and no ICU.
 
 Use the JIT full variant for additional stores: `nightly-jit-full`,
 `nightly-jit-<candidate-sha7>-full`, or a release's `-ecs-jit-full` tag. Pin the selected
