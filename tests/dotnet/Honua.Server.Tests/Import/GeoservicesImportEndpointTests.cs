@@ -609,7 +609,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("durable background job storage");
+        content.Should().Contain("Durable import storage is unavailable");
     }
 
     [IntegrationTest]
