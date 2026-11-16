@@ -92,22 +92,7 @@ public sealed partial class GrpcFeatureServiceTests
     {
         ArrangeAttachmentEditing();
         var store = Substitute.For<IAttachmentUploadSessionStore>();
-        var request = new AttachmentUploadRequest
-        {
-            OwnerId = "owner",
-            ServiceId = "test",
-            LayerId = 99,
-            PublishedLayerId = 7,
-            FeatureId = 900,
-            Operation = "chunked",
-            IdempotencyKey = "test-upload",
-            Filename = "photo.txt",
-            ContentType = "text/plain",
-            ExpectedSize = 4,
-            Sha256 = SHA256.HashData("test"u8),
-            MaxChunkBytes = 1024 * 1024,
-            Lifetime = TimeSpan.FromHours(24)
-        };
+        var request = TestUploadRequest(layerId: 99);
         var session = NewAttachmentSession(request);
         store.GetAsync(Arg.Any<AttachmentUploadSessionKey>(), Arg.Any<CancellationToken>()).Returns(session);
         var publisher = Substitute.For<IAttachmentUploadPublisher>();
@@ -190,22 +175,7 @@ public sealed partial class GrpcFeatureServiceTests
     {
         ArrangeAttachmentEditing("another-user");
         var store = Substitute.For<IAttachmentUploadSessionStore>();
-        var session = NewAttachmentSession(new AttachmentUploadRequest
-        {
-            OwnerId = "owner",
-            ServiceId = "test",
-            LayerId = 42,
-            PublishedLayerId = 7,
-            FeatureId = 900,
-            Operation = "chunked",
-            IdempotencyKey = "test-upload",
-            Filename = "photo.txt",
-            ContentType = "text/plain",
-            ExpectedSize = 4,
-            Sha256 = SHA256.HashData("test"u8),
-            MaxChunkBytes = 1024 * 1024,
-            Lifetime = TimeSpan.FromHours(24)
-        });
+        var session = NewAttachmentSession(TestUploadRequest());
         store.GetAsync(Arg.Any<AttachmentUploadSessionKey>(), Arg.Any<CancellationToken>()).Returns(session);
         var publisher = Substitute.For<IAttachmentUploadPublisher>();
         using var context = CreateCallContext(CreateAuthenticatedUser("data-editor"), null, null, services =>
@@ -272,22 +242,7 @@ public sealed partial class GrpcFeatureServiceTests
     {
         ArrangeAttachmentEditing();
         var store = Substitute.For<IAttachmentUploadSessionStore>();
-        var session = NewAttachmentSession(new AttachmentUploadRequest
-        {
-            OwnerId = "owner",
-            ServiceId = "test",
-            LayerId = 42,
-            PublishedLayerId = 7,
-            FeatureId = 900,
-            Operation = "chunked",
-            IdempotencyKey = "test-upload",
-            Filename = "photo.txt",
-            ContentType = "text/plain",
-            ExpectedSize = 4,
-            Sha256 = SHA256.HashData("test"u8),
-            MaxChunkBytes = 1024 * 1024,
-            Lifetime = TimeSpan.FromHours(24)
-        });
+        var session = NewAttachmentSession(TestUploadRequest());
         store.GetAsync(Arg.Any<AttachmentUploadSessionKey>(), Arg.Any<CancellationToken>()).Returns(session);
         var publisher = Substitute.For<IAttachmentUploadPublisher>();
         using var context = CreateCallContext(null, null, null, services =>
@@ -315,22 +270,8 @@ public sealed partial class GrpcFeatureServiceTests
     private static void ArrangeAcceptedAttachmentChunk(IAttachmentUploadSessionStore store)
     {
         store.AppendAsync(Arg.Any<AttachmentUploadChunk>(), Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult(NewAttachmentSession(new AttachmentUploadRequest
-            {
-                OwnerId = call.Arg<AttachmentUploadChunk>().Key.OwnerId,
-                ServiceId = "test",
-                LayerId = 42,
-                PublishedLayerId = 7,
-                FeatureId = 900,
-                Operation = "unary",
-                IdempotencyKey = "test-upload",
-                Filename = "photo.txt",
-                ContentType = "text/plain",
-                ExpectedSize = 4,
-                Sha256 = SHA256.HashData("test"u8),
-                MaxChunkBytes = 1024 * 1024,
-                Lifetime = TimeSpan.FromHours(24)
-            }) with
+            .Returns(call => Task.FromResult(NewAttachmentSession(
+                TestUploadRequest(call.Arg<AttachmentUploadChunk>().Key.OwnerId, "unary")) with
             { NextOffsetBytes = 4 }));
     }
 
@@ -363,6 +304,24 @@ public sealed partial class GrpcFeatureServiceTests
         IdempotencyKey = "test-upload",
         SizeBytes = 4,
         Sha256 = ByteString.CopyFrom(SHA256.HashData("test"u8))
+    };
+
+    private static AttachmentUploadRequest TestUploadRequest(
+        string ownerId = "owner", string operation = "chunked", int layerId = 42) => new()
+    {
+        OwnerId = ownerId,
+        ServiceId = "test",
+        LayerId = layerId,
+        PublishedLayerId = 7,
+        FeatureId = 900,
+        Operation = operation,
+        IdempotencyKey = "test-upload",
+        Filename = "photo.txt",
+        ContentType = "text/plain",
+        ExpectedSize = 4,
+        Sha256 = SHA256.HashData("test"u8),
+        MaxChunkBytes = 1024 * 1024,
+        Lifetime = TimeSpan.FromHours(24)
     };
 
     private static AttachmentUploadSession NewAttachmentSession(AttachmentUploadRequest request) => new()
