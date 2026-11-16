@@ -29,10 +29,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 425,
-      "provingTestCount": 1835,
+      "entryCount": 424,
+      "provingTestCount": 1832,
       "maturity": {
-        "implemented": 422,
+        "implemented": 421,
         "experimental": 3
       },
       "noSurface": null,
@@ -841,7 +841,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 6,
-      "provingTestCount": 177,
+      "provingTestCount": 181,
       "maturity": {
         "implemented": 6
       },
@@ -2623,7 +2623,7 @@
       "edition": "Pro",
       "status": "experimental",
       "entryCount": 7,
-      "provingTestCount": 140,
+      "provingTestCount": 146,
       "maturity": {
         "experimental": 7
       },

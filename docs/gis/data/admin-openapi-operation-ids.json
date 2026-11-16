@@ -1197,12 +1197,6 @@
       "path": "/operations/cache/health"
     },
     {
-      "operationId": "getOperationsCacheRedisMetrics",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/operations/cache/redis"
-    },
-    {
       "operationId": "getOperationsCacheStatistics",
       "catalogOperationId": null,
       "method": "GET",

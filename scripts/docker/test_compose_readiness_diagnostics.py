@@ -1,4 +1,5 @@
 """Failure evidence must survive cleanup without publishing generated secrets."""
+from contextlib import ExitStack
 import importlib.util
 import json
 from pathlib import Path
@@ -86,6 +87,36 @@ class ReadinessDiagnosticTests(unittest.TestCase):
                 manual.test_manual_catalog_rc1_rollback_and_return(Path('/unused'))
         self.assertEqual('evidence', events[-2])
         self.assertEqual(['down', '--volumes', '--remove-orphans'], events[-1][-3:])
+
+    def test_manual_upgrade_and_return_migrate_after_legacy_stop_before_start(self):
+        events = []
+        env = {'COMPOSE_PROJECT_NAME': 'fixture'}
+        def command(arguments, **kwargs):
+            if arguments[0] == 'legacy':
+                events.append(('legacy', arguments[1]))
+            elif 'up' in arguments and arguments[-1] == 'honua':
+                events.append(('candidate', 'up'))
+            if '-c' in arguments:
+                return 'retained' if 'SELECT value' in arguments[-1] else '140'
+            return 'fixture-image'
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(manual.os.environ, {'HONUA_LIFECYCLE_IMAGE': 'candidate'}))
+            stack.enter_context(patch.object(manual, 'run', side_effect=command))
+            stack.enter_context(patch.object(manual, 'manual_install', return_value=(Path('/unused'), 1234, env)))
+            stack.enter_context(patch.object(manual, 'legacy_configuration', return_value=(['legacy'], env)))
+            for name in ('assert_revision', 'assert_secret_isolation', 'assert_current_schema',
+                         'save_database_backup', 'restore_database_backup'):
+                stack.enter_context(patch.object(manual, name))
+            readiness = stack.enter_context(patch.object(manual, 'wait_ready_with_diagnostics'))
+            stack.enter_context(patch.object(manual, 'migrate_reviewed_contracts',
+                                             side_effect=lambda *args: events.append(('migrate', 'verified'))))
+            manual.test_manual_catalog_rc1_rollback_and_return(Path('/unused'))
+        self.assertEqual([('legacy', 'up'), ('legacy', 'stop'), ('migrate', 'verified'),
+                          ('candidate', 'up'), ('legacy', 'up'), ('legacy', 'stop'),
+                          ('migrate', 'verified'), ('candidate', 'up')], events)
+        self.assertEqual(['initial published rc.1 startup', 'candidate upgrade',
+                          'restored published rc.1 startup', 'candidate return'],
+                         [call.args[1] for call in readiness.call_args_list])
 
     def test_success_does_not_collect_diagnostics(self):
         with patch.object(manual, 'wait_ready'), \

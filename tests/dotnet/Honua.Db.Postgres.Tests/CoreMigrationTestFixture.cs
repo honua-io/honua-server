@@ -30,7 +30,14 @@ internal static class CoreMigrationTestFixture
             fixture,
             schema,
             "src", "Honua.Server", "Migrations", "155_CreateMetadataFieldHistory.sql");
+        await ApplyGlobalIdIntegrityAsync(fixture, schema);
     }
+
+    public static Task ApplyGlobalIdIntegrityAsync(PostgresFixture fixture, string schema) =>
+        ApplyAsync(
+            fixture,
+            schema,
+            "src", "Honua.Server", "Migrations", "198_EnforceMetadataGlobalIdUniqueness.sql");
 
     public static Task ApplyRasterLayerStatisticsAsync(PostgresFixture fixture, string schema) =>
         ApplyAsync(
