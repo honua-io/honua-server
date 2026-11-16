@@ -38,7 +38,8 @@ def terminal_recovery_evidence(job, sha, size, committed_sha=None):
         raise AssertionError("gp-terminal-recovery.sh evidence program not found")
     before = {"operationId": job, "status": 3, "claimedBy": "worker-1", "version": 4, "attemptCount": 1,
               "artifactReferences": [committed_descriptor(job, committed_sha or sha, size)]}
-    fence = {"operationId": job, "barrier": "terminal-committed-registration-pending", "redis_reply": ":1",
+    fence = {"operationId": job, "barrier": "terminal-committed-registration-pending",
+             "postgres_command_tag": "UPDATE 1", "postgres_transaction_status": "I",
              "reply_forwarded": False, "workerId": "worker-1", "terminal_record": before}
     package = {"resultPackageId": f"{job}:v4", "status": 5, "artifacts": [{"artifactId": f"{job}:artifact:1",
                "metadata": {"raster.output.checksum": "sha256:" + sha, "raster.output.sizeBytes": str(size)}}]}
@@ -75,7 +76,8 @@ def crash_summary():
                 "disruptions": [{"component": mode, "boundary": boundary,
                                  "action": "SIGKILL" if mode == "worker" else "hide-marker-and-bytes"}],
                 "evidence": {"fence": {"barrier": boundary, "operationId": "fixture-job",
-                                       "reply_forwarded": False, "redis_reply": ":1"},
+                                       "reply_forwarded": False, "postgres_command_tag": "UPDATE 1",
+                                       "postgres_transaction_status": "I"},
                              "sha256_before": "a" * 64, "sha256_after": "a" * 64,
                              "job_before": {"status": 3}, "job_after": {"artifactReferences": [{}]},
                              "result_package_before": 0, "result_package_after": 1}})
@@ -107,17 +109,24 @@ class CandidateBindingTests(unittest.TestCase):
             "recovery": {"substrates": [{"store": store, "original_destroyed": True,
                                          "restored_into_empty_store": True,
                                          "files_before": "checksum file", "files_after": "checksum file"}
-                                        for store in ("postgres", "redis", "gp-output")]}}
+                                        for store in ("postgres", "gp-output")]}}
         self.assertEqual(pin, binding.verify(pin, summary)["candidate"])
         with self.assertRaisesRegex(ValueError, "another candidate"):
             binding.verify({**pin, "server_image": "server@sha256:" + "4" * 64}, summary)
-        for mutation in ("missing-store", "retained-original", "corrupt-bytes", "wrong-worker", "skipped"):
+        for mutation in ("missing-store", "retained-original", "dirty-destination",
+                         "changed-inventory", "legacy-store", "corrupt-bytes", "wrong-worker", "skipped"):
             bad = copy.deepcopy(summary)
             proof = bad["scenarios"][2]["evidence"]
             if mutation == "missing-store":
                 proof["recovery"]["substrates"].pop()
             elif mutation == "retained-original":
-                proof["recovery"]["substrates"][2]["original_destroyed"] = False
+                proof["recovery"]["substrates"][1]["original_destroyed"] = False
+            elif mutation == "dirty-destination":
+                proof["recovery"]["substrates"][0]["restored_into_empty_store"] = False
+            elif mutation == "changed-inventory":
+                proof["recovery"]["substrates"][1]["files_after"] = "changed"
+            elif mutation == "legacy-store":
+                proof["recovery"]["substrates"].append({"store": "redis"})
             elif mutation == "corrupt-bytes":
                 proof["artifact"]["sha256_after"] = "b" * 64
             elif mutation == "wrong-worker":
@@ -149,11 +158,27 @@ class CandidateBindingTests(unittest.TestCase):
             elif mutation == "inline":
                 case["output"]["bytes"] = 512
             elif mutation == "uncommitted":
-                case["evidence"]["fence"]["redis_reply"] = ":0"
+                case["evidence"]["fence"]["postgres_command_tag"] = "UPDATE 0"
             else:
                 case["evidence"]["result_package_before"] = 1
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 binding.verify_crashes(pin, bad)
+
+    def test_both_terminal_crash_modes_require_committed_postgres_transaction(self):
+        pin, summary = crash_summary()
+        for mode in ("worker", "store"):
+            for field, value in (("postgres_command_tag", "UPDATE 0"),
+                                 ("postgres_command_tag", None),
+                                 ("postgres_transaction_status", "T"),
+                                 ("postgres_transaction_status", "E"),
+                                 ("postgres_transaction_status", None),
+                                 ("reply_forwarded", True)):
+                bad = copy.deepcopy(summary)
+                case = next(s for s in bad["scenarios"] if s["scenario"] ==
+                            f"crash-terminal-committed-registration-pending-{mode}")
+                case["evidence"]["fence"][field] = value
+                with self.subTest(mode=mode, field=field, value=value), self.assertRaises(ValueError):
+                    binding.verify_crashes(pin, bad)
 
     def test_terminal_worker_cell_consumes_the_terminal_recovery_producer(self):
         """The producer's real layout (no sha256_before/job_before) passes; each broken fact fails."""
@@ -164,7 +189,11 @@ class CandidateBindingTests(unittest.TestCase):
         binding.verify_terminal_recovery(scenario, scenario["evidence"])
         mutations = {
             "acknowledged": lambda p, s: p["fence"].__setitem__("reply_forwarded", True),
-            "uncommitted": lambda p, s: p["fence"].__setitem__("redis_reply", ":0"),
+            "uncommitted": lambda p, s: p["fence"].__setitem__("postgres_command_tag", "UPDATE 0"),
+            "uncommitted-transaction": lambda p, s: p["fence"].__setitem__("postgres_transaction_status", "T"),
+            "failed-transaction": lambda p, s: p["fence"].__setitem__("postgres_transaction_status", "E"),
+            "legacy-receipt": lambda p, s: (p["fence"].pop("postgres_command_tag"),
+                                             p["fence"].__setitem__("redis_reply", ":1")),
             "other-job": lambda p, s: p["fence"].__setitem__("operationId", "job-2"),
             "fence-record": lambda p, s: p["fence"]["terminal_record"].__setitem__("version", 5),
             "record-changed": lambda p, s: p["terminal_final"].__setitem__("version", 5),

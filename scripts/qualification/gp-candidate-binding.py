@@ -61,7 +61,7 @@ def verify(pin, summary):
             or artifact["sha256_before"] != artifact["sha256_after"]):
         raise ValueError("restored GP bytes do not match the server-read checksum")
     stores = recovery["recovery"]["substrates"]
-    if len(stores) != 3 or {s["store"] for s in stores} != {"postgres", "redis", "gp-output"}:
+    if len(stores) != 2 or {s["store"] for s in stores} != {"postgres", "gp-output"}:
         raise ValueError("recovery did not restore every GP durable store")
     for store in stores:
         if (store["original_destroyed"] is not True or store["restored_into_empty_store"] is not True
@@ -89,7 +89,8 @@ def verify_terminal_recovery(scenario, proof):
     sha, size = proof["sha256"], proof["bytes"]
     artifacts = package.get("artifacts") if isinstance(package, dict) else None
     if (fence["barrier"] != "terminal-committed-registration-pending" or fence["operationId"] != job
-            or fence["reply_forwarded"] is not False or fence["redis_reply"] != ":1"
+            or fence["reply_forwarded"] is not False or fence.get("postgres_command_tag") != "UPDATE 1"
+            or fence.get("postgres_transaction_status") != "I"
             or fence.get("terminal_record") != before
             or proof["submitted_job"] != job or scenario["job"]["terminal_state"] != "successful"
             or before.get("status") not in (3, "succeeded") or len(before.get("artifactReferences") or []) != 1
@@ -147,7 +148,8 @@ def verify_crashes(pin, summary):
                 or proof["result_package_after"] != 1):
             raise ValueError("crash recovery did not prove one registered, byte-identical staged artifact")
         if boundary == "terminal-committed-registration-pending":
-            if (proof["fence"]["reply_forwarded"] is not False or proof["fence"]["redis_reply"] != ":1"
+            if (proof["fence"]["reply_forwarded"] is not False or proof["fence"].get("postgres_command_tag") != "UPDATE 1"
+                    or proof["fence"].get("postgres_transaction_status") != "I"
                     or proof["job_before"]["status"] not in (3, "succeeded") or proof["result_package_before"] != 0):
                 raise ValueError("terminal crash did not precede result registration")
     return summary
