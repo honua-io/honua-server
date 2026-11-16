@@ -84,19 +84,17 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
 
     private async Task<MetadataV2GraphSnapshot> RestrictServiceToCurrentRequesterRoleAsync()
     {
-        using (var scope = _fixture.Services.CreateScope())
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var current = await store.GetCurrentAsync();
+        return await store.SaveAsync(current.Graph with
         {
-            var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
-            var current = await store.GetCurrentAsync();
-            return await store.SaveAsync(current.Graph with
-            {
-                Services = current.Graph.Services.Select(service => service.Metadata.Name == "test"
-                    ? service with { AccessPolicy = new AccessPolicy
-                    {
-                        AllowedRoles = ["original-membership"], AllowedWriteRoles = ["original-membership"]
-                    } } : service).ToArray()
-            }, current.Etag);
-        }
+            Services = current.Graph.Services.Select(service => service.Metadata.Name == "test"
+                ? service with { AccessPolicy = new AccessPolicy
+                {
+                    AllowedRoles = ["original-membership"], AllowedWriteRoles = ["original-membership"]
+                } } : service).ToArray()
+        }, current.Etag);
     }
 
     private async Task<MetadataV2GraphSnapshot> RestrictLastServiceFacetAsync()
