@@ -1231,27 +1231,11 @@ internal sealed partial class Wfs20Handler
             }
         }
 
-        // Writes through a secondary publication also need the canonical service's grant, as on
-        // OGC API Features and single-entity OData writes. The canonical service is judged on its
-        // own policy: anonymous writes on the secondary service do not open the shared resource.
-        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
-            context,
-            new LayerValidationHelpers.CanonicalWriteSource(
-                layerValidation.Publication!, layerValidation.Resource!, layerValidation.Snapshot),
-            cancellationToken).ConfigureAwait(false);
-        if (canonical is { } target &&
-            !IsAnonymousWriteAllowed(context, layerValidation.Resource!, target.Service))
+        var canonicalError = await RequireCanonicalTransactionWriteAccessAsync(
+            context, layerValidation, operation, cancellationToken).ConfigureAwait(false);
+        if (canonicalError != null)
         {
-            var canonicalError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                layerValidation.Resource!,
-                target.Service,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-            if (canonicalError != null)
-            {
-                return canonicalError;
-            }
+            return canonicalError;
         }
 
         // Declared capabilities of the advertised feature type's publication bound every
@@ -1269,6 +1253,34 @@ internal sealed partial class Wfs20Handler
                 "Transaction");
     }
 
+
+    private static async Task<IResult?> RequireCanonicalTransactionWriteAccessAsync(
+        HttpContext context,
+        LayerValidationHelpers.MetadataV2ValidationResult layerValidation,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken)
+    {
+        // Writes through a secondary publication also need the canonical service's grant, as on
+        // OGC API Features and single-entity OData writes. The canonical service is judged on its
+        // own policy: anonymous writes on the secondary service do not open the shared resource.
+        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
+            context,
+            new LayerValidationHelpers.CanonicalWriteSource(
+                layerValidation.Publication!, layerValidation.Resource!, layerValidation.Snapshot),
+            cancellationToken).ConfigureAwait(false);
+        if (canonical is { } target &&
+            !IsAnonymousWriteAllowed(context, layerValidation.Resource!, target.Service))
+        {
+            return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                layerValidation.Resource!,
+                target.Service,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return null;
+    }
 
     private static WfsFeatureTypeDescriptor ResolveTransactionFeatureTypeDescriptor(
         IReadOnlyList<WfsFeatureTypeDescriptor> descriptors,

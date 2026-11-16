@@ -280,33 +280,5 @@ public sealed class Wfs20DeclaredEditCapabilityTests
     }
 
     private static Wfs20Handler CreateHandler(IMetadataV2GraphProvider provider, IFeatureWriter writer)
-    {
-        var coordinateTransform = Substitute.For<ICoordinateTransformService>();
-        var reader = CreateReader();
-        var queryServices = new Wfs20QueryServices(
-            reader,
-            Substitute.For<IGmlFeatureStore>(),
-            provider,
-            Substitute.For<IFilterExpressionService>(),
-            new Wfs20QueryParameterAdapter(NullLogger<Wfs20QueryParameterAdapter>.Instance),
-            new QueryProcessor(Substitute.For<IFilterExpressionTranslator>(), reader, NullLogger<QueryProcessor>.Instance, provider),
-            Options.Create(new Wfs20Options()),
-            Substitute.For<IConfiguration>());
-        var editServices = new Wfs20EditServices(
-            writer,
-            new Wfs20EditParameterAdapter(NullLogger<Wfs20EditParameterAdapter>.Instance),
-            new EditProcessor(NullLogger<EditProcessor>.Instance),
-            new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
-            new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()),
-            Options.Create(new LimitsOptions()));
-        var spatialServices = new Wfs20SpatialServices(
-            new OgcFeaturesGeometryServices(
-                Substitute.For<IGeometryService>(),
-                coordinateTransform,
-                Options.Create(new LimitsOptions()),
-                NullLogger<OgcFeaturesGeometryServices>.Instance),
-            coordinateTransform,
-            Substitute.For<ICrsRegistry>());
-        return new Wfs20Handler(NullLogger<Wfs20Handler>.Instance, queryServices, editServices, spatialServices);
-    }
+        => Wfs20WriteTestHandler.Create(provider, writer, CreateReader());
 }

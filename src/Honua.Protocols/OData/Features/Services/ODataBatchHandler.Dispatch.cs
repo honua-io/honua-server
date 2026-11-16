@@ -377,37 +377,14 @@ internal sealed partial class ODataBatchHandler
 
         if (scope == AccessScope.Write)
         {
-            // Per-operation authorization (BH3-001/BH3-014): map the batch sub-request method to
-            // its canonical operation so an insert-only grantee cannot Update/Delete via $batch.
             var operation = MapMethodToOperation(method);
-            var rbacResult = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                validation.Resource,
-                validation.Service,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-            if (rbacResult != null)
+            var accessError = await RequireBatchWriteAccessAsync(
+                context, validation, operation, cancellationToken).ConfigureAwait(false);
+            if (accessError != null)
             {
                 return (null, CreateErrorResponseFromResult(
                     requestId,
-                    rbacResult,
-                    StatusCodes.Status403Forbidden,
-                    "Forbidden",
-                    "Access to one or more requested layers is forbidden."));
-            }
-
-            // Writes through a secondary publication also need the canonical service's grant,
-            // as on single-entity OData writes.
-            var canonicalResult = await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
-                context,
-                validation,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-            if (canonicalResult != null)
-            {
-                return (null, CreateErrorResponseFromResult(
-                    requestId,
-                    canonicalResult,
+                    accessError,
                     StatusCodes.Status403Forbidden,
                     "Forbidden",
                     "Access to one or more requested layers is forbidden."));
@@ -483,6 +460,18 @@ internal sealed partial class ODataBatchHandler
             validation.Resource,
             validation.Service,
             reader), null);
+    }
+
+    private static async Task<IResult?> RequireBatchWriteAccessAsync(
+        HttpContext context,
+        LayerValidationHelpers.MetadataV2ValidationResult validation,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken)
+    {
+        var accessError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context, validation.Resource!, validation.Service, operation, cancellationToken).ConfigureAwait(false);
+        return accessError ?? await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
+            context, validation, operation, cancellationToken).ConfigureAwait(false);
     }
 
     private static ODataBatchResponseItem CreateErrorResponseFromResult(

@@ -1249,6 +1249,35 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         GrpcLayerContext layer,
         FeatureEditBatch editBatch)
     {
+        // Match the REST ApplyEdits seam: conversion first establishes the bounded
+        // set of requested edit kinds, then every present kind must independently
+        // pass the canonical resource data-editor gate before reads, outbox
+        // resolution, or writes begin.
+        if (!editBatch.Creates.IsEmpty)
+        {
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Insert).ConfigureAwait(false);
+        }
+
+        if (!editBatch.Updates.IsEmpty)
+        {
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Update).ConfigureAwait(false);
+        }
+
+        if (!editBatch.Deletes.IsEmpty)
+        {
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Delete).ConfigureAwait(false);
+        }
+
+        // Preserve the prior authorization ceiling for an empty no-op request.
+        if (editBatch.Creates.IsEmpty && editBatch.Updates.IsEmpty && editBatch.Deletes.IsEmpty)
+        {
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Update).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task EnsureOperationAccessAsync(
+        ServerCallContext context, GrpcLayerContext layer, AuthorizationOperation operation)
+    {
         var httpContext = context.GetHttpContext();
 
         // Writes through a secondary publication also need the canonical service's grant,
@@ -1258,53 +1287,25 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot),
             context.CancellationToken).ConfigureAwait(false);
 
-        // Match the REST ApplyEdits seam: conversion first establishes the bounded
-        // set of requested edit kinds, then every present kind must independently
-        // pass the canonical resource data-editor gate before reads, outbox
-        // resolution, or writes begin.
-        if (!editBatch.Creates.IsEmpty)
-        {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
-        }
+        var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+            httpContext,
+            layer.Resource,
+            layer.Service,
+            operation,
+            context.CancellationToken).ConfigureAwait(false);
 
-        if (!editBatch.Updates.IsEmpty)
-        {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
-        }
+        ThrowIfAccessDenied(decision);
 
-        if (!editBatch.Deletes.IsEmpty)
+        if (canonical is { } target)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
-        }
-
-        // Preserve the prior authorization ceiling for an empty no-op request.
-        if (editBatch.Creates.IsEmpty && editBatch.Updates.IsEmpty && editBatch.Deletes.IsEmpty)
-        {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
-        }
-
-        async Task EnsureOperationAccessAsync(AuthorizationOperation operation)
-        {
-            var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+            var canonicalDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
                 httpContext,
                 layer.Resource,
-                layer.Service,
+                target.Service,
                 operation,
                 context.CancellationToken).ConfigureAwait(false);
 
-            ThrowIfAccessDenied(decision);
-
-            if (canonical is { } target)
-            {
-                var canonicalDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-                    httpContext,
-                    layer.Resource,
-                    target.Service,
-                    operation,
-                    context.CancellationToken).ConfigureAwait(false);
-
-                ThrowIfAccessDenied(canonicalDecision);
-            }
+            ThrowIfAccessDenied(canonicalDecision);
         }
     }
 
