@@ -17,9 +17,6 @@ REVIEW_BRIDGE = ROOT / ".github/workflows/review-event-bridge.yml"
 EVIDENCE_LEDGER = ROOT / ".github/workflows/review-first-evidence-ledger.yml"
 PROMOTION_POLICY = ROOT / ".github/review-first-promotion.json"
 WORKFLOW_DIR = ROOT / ".github/workflows"
-PREBUILD_BENCHMARK = WORKFLOW_DIR / "server-test-prebuild-benchmark.yml"
-PREBUILD_OBSERVE = WORKFLOW_DIR / "server-test-prebuild-observe.yml"
-PREBUILD_PARITY = WORKFLOW_DIR / "server-test-prebuild-parity.yml"
 AGENTS = ROOT / "AGENTS.md"
 GATE_MODEL = ROOT / "docs/internal/ci/gate-model.md"
 # validate-review-first-dispatch.sh projects this head's inventory into a scratch
@@ -115,9 +112,6 @@ def main() -> None:
     # asserted below so they cannot quietly come back.
     action_workflows = {
         REVIEW_GATE: review_gate,
-        PREBUILD_BENCHMARK: read_text(PREBUILD_BENCHMARK),
-        PREBUILD_OBSERVE: read_text(PREBUILD_OBSERVE),
-        PREBUILD_PARITY: read_text(PREBUILD_PARITY),
     }
 
     pr_mode = mode(pr_gate, PR_GATE)

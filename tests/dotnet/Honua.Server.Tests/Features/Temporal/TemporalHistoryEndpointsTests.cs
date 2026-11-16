@@ -171,6 +171,43 @@ public sealed class TemporalHistoryEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of")]
+    public async Task AsOf_WhenChangesArriveAfterGenerationCapture_DefersThemToNextWindow()
+    {
+        _changeTracker.CurrentGeneration = 5;
+        _changeTracker.ChangesSince = _ =>
+        [
+            new FeatureChange
+            {
+                ChangeId = 1, Generation = 4, LayerId = TemporalLayerId, ObjectId = 200,
+                Operation = FeatureChangeOperation.Delete, ChangedAt = DateTimeOffset.UtcNow
+            },
+            new FeatureChange
+            {
+                ChangeId = 2, Generation = 6, LayerId = TemporalLayerId, ObjectId = 300,
+                Operation = FeatureChangeOperation.Delete, ChangedAt = DateTimeOffset.UtcNow
+            }
+        ];
+
+        var response = await _client.GetAsync(
+            $"/api/v1/temporal/services/{ServiceId}/layers/{TemporalLayerId}/as-of?generation=2");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var first = await ReadJsonAsync(response);
+        first.RootElement.GetProperty("currentGeneration").GetInt64().Should().Be(5);
+        first.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("objectId").GetInt64()).Should().Equal(200);
+        _changeTracker.ThroughGeneration.Should().Be(5);
+
+        _changeTracker.CurrentGeneration = 6;
+        var nextResponse = await _client.GetAsync(
+            $"/api/v1/temporal/services/{ServiceId}/layers/{TemporalLayerId}/as-of?generation=5");
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var next = await ReadJsonAsync(nextResponse);
+        next.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("objectId").GetInt64()).Should().Equal(300);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of")]
     public async Task AsOf_WhenUnchanged_ReturnsEmptyDeterministically()
     {
         _changeTracker.CurrentGeneration = 7;
@@ -283,6 +320,22 @@ public sealed class TemporalHistoryEndpointsTests : IAsyncLifetime
         public long CurrentGeneration { get; set; }
 
         public Func<long, IReadOnlyList<FeatureChange>> ChangesSince { get; set; } = _ => [];
+
+        public long? ThroughGeneration { get; private set; }
+
+        public Task<IReadOnlyList<FeatureChange>> GetChangesInWindowAsync(
+            long sinceGeneration,
+            long throughGeneration,
+            int[] layerIds,
+            string? excludeOriginReplicaId,
+            CancellationToken cancellationToken = default)
+        {
+            ThroughGeneration = throughGeneration;
+            IReadOnlyList<FeatureChange> changes = ChangesSince(sinceGeneration)
+                .Where(change => change.Generation > sinceGeneration && change.Generation <= throughGeneration)
+                .ToArray();
+            return Task.FromResult(changes);
+        }
 
         public Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(CurrentGeneration);

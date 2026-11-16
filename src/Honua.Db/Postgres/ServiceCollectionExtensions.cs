@@ -248,7 +248,8 @@ internal static partial class ServiceCollectionExtensions
         // Register alert persistence services
         services.AddScoped<IAlertChangeReader>(static serviceProvider => new PostgresAlertChangeReader(
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-            new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider))));
+            new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider)),
+            serviceProvider.GetRequiredService<IChangeTracker>()));
         // One scoped store serves admission and the monthly notice outbox.
         services.AddScoped(provider => new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
             provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));

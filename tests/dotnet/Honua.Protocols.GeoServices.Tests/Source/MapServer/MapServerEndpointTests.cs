@@ -126,7 +126,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Metadata_MapsGovernanceToDocumentInfo()
     {
         var provider = Fixture.GetService<TestMetadataV2GraphProvider>();
-        var snapshot = await provider.GetCurrentAsync();
+        var snapshot = Fixture.GetCurrentV2GraphSnapshot();
         var services = snapshot.Graph.Services
             .Select(service =>
                 string.Equals(service.Metadata.Name, WebAppFixture.TestServiceId, StringComparison.OrdinalIgnoreCase) &&
@@ -146,7 +146,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         {
             Revision = snapshot.Graph.Revision + 1,
             Services = services,
-        });
+        }, schema: Fixture.CurrentSchema);
 
         var response = await Fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
 
@@ -314,7 +314,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Handlers_WithSameIdStacPublication_IgnoreProtocolDuplicate()
     {
         var provider = Fixture.GetService<TestMetadataV2GraphProvider>();
-        var snapshot = await provider.GetCurrentAsync();
+        var snapshot = Fixture.GetCurrentV2GraphSnapshot();
         var esriPublication = snapshot.Graph.Publications
             .Where(publication =>
                 publication.LayerIndex == WebAppFixture.TestLayerId &&
@@ -353,7 +353,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
                 .Append(stacPublication)
                 .Append(danglingMapPublication)
                 .ToArray(),
-        });
+        }, schema: Fixture.CurrentSchema);
 
         using var exportResponse = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=png32&f=image");

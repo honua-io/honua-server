@@ -36,7 +36,7 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
 
         // A preview does not execute the operation; preserve its configured policy and let
         // the dispatcher produce the dry-run result before requiring approval to execute.
-        var requiresAgentApproval = !request.DryRun && AgentApprovalRule.Applies(request.OperationId, context.Roles);
+        var requiresAgentApproval = !request.DryRun && AgentApprovalRule.Applies(descriptor, context.Roles);
 
         Task<PolicyDecision> Complete(PolicyDecision decision) => Task.FromResult(
             requiresAgentApproval && decision.Kind is not (PolicyDecisionKind.Deny or PolicyDecisionKind.DryRunFirst)

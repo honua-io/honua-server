@@ -44,6 +44,7 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual('true', honua['environment']['ForwardedHeaders__Enabled'])
             self.assertEqual(edge, honua['environment']['ForwardedHeaders__KnownProxies__0'])
             self.assertEqual('https://localhost:18083/admin/auth/callback', honua['environment']['Oidc__AdminAuthCallbackUri'])
+            self.assertEqual('https://localhost:18083/console/', honua['environment']['Mcp__ApprovalConsoleUrl'])
             for name, service in services.items():
                 if name not in ('console', 'honua'):
                     self.assertNotIn('console-edge', service.get('networks', {}), name)

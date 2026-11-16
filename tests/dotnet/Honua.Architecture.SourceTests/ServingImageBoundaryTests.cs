@@ -292,6 +292,35 @@ public sealed class ServingImageBoundaryTests
         gateScript.Should().Contain("--ignore-unfixed", "the gate blocks only findings with an upstream fix, by design");
     }
 
+    [ArchitectureTest]
+    public void NightlyComposeExecutor_ShouldBeScannedBeforeItIsTaggedOrPackaged()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var workflow = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml")).ReplaceLineEndings("\n");
+        var job = workflow[workflow.IndexOf("\n  compose-executor:\n", StringComparison.Ordinal)..];
+        job = job[..job.IndexOf("\n  manifest-jit:\n", StringComparison.Ordinal)];
+
+        var build = job.IndexOf("- name: Build executor candidate by digest", StringComparison.Ordinal);
+        var gate = job.IndexOf("- name: Gate executor on fixable HIGH/CRITICAL vulnerabilities", StringComparison.Ordinal);
+        var tags = job.IndexOf("- name: Publish executor tags from the scanned digest", StringComparison.Ordinal);
+        var package = job.IndexOf("- name: Package immutable customer quickstart", StringComparison.Ordinal);
+        var attest = job.IndexOf("- name: Attest executor index", StringComparison.Ordinal);
+
+        build.Should().BeGreaterThan(-1);
+        gate.Should().BeGreaterThan(build, "the executor is scanned after it is built");
+        tags.Should().BeGreaterThan(gate, "no executor tag is assigned before the scan");
+        package.Should().BeGreaterThan(gate, "the quickstart pins only a scanned executor");
+        attest.Should().BeGreaterThan(gate, "only a scanned executor is attested");
+        job[build..gate].Should().Contain("push-by-digest=true").And.NotContain("tags:");
+        job[gate..tags].Should().Contain("scripts/ci/trivy-release-gate.sh \"$CANDIDATE\"")
+            .And.Contain("CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}")
+            .And.Contain("TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:")
+            .And.NotContain("continue-on-error")
+            .And.NotContain("if:", "the gate also scans an executor published by an earlier run");
+        job[tags..].Should().Contain("scripts/ci/promote-verified-image.py");
+        job.Should().NotContain("push: true", "executor tags come only from the scanned digest");
+    }
+
     private static (string Candidate, string Gate, string Publication) SliceTagReleaseLeg(string workflow, TagReleaseLeg leg)
     {
         var candidateIndex = workflow.IndexOf(leg.Candidate, StringComparison.Ordinal);
