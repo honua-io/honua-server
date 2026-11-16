@@ -58,7 +58,7 @@ internal static class StudioAiProxyEndpoints
 
     private static async Task<IResult> HandleGetCapabilities(
         HttpContext context,
-        IStudioAiProxyService service,
+        StudioAiProxyService service,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
@@ -68,9 +68,10 @@ internal static class StudioAiProxyEndpoints
             StudioAiProxyEndpointsJsonContext.Default.ApiResponseStudioAiCapabilitiesResponse);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "The prepared call is owned by the await using below the admission try/catch, which returns only when nothing was prepared.")]
     private static async Task<IResult> HandleChat(
         HttpContext context,
-        IStudioAiProxyService service,
+        StudioAiProxyService service,
         IOptions<StudioAiProxyConfiguration> options,
         IStudioAuthorizationService authorizationService,
         IAuditLog auditLog,

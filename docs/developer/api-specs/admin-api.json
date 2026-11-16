@@ -120,7 +120,7 @@
     },
     {
       "name": "Operations",
-      "description": "Operational monitoring and control: cache health/statistics/invalidation, Redis connection metrics, geocoding provider health and configuration, streaming subscribers, and unified operation progress/cancellation."
+      "description": "Operational monitoring and control: cache health/statistics/invalidation, geocoding provider health and configuration, streaming subscribers, and unified operation progress/cancellation."
     },
     {
       "name": "Performance",
@@ -11487,7 +11487,7 @@
           "Operations"
         ],
         "summary": "Get Cache Health",
-        "description": "Reports the health and effective configuration of the cache on the node that serves the request. Redis server info is included only when a Redis connection multiplexer is registered.",
+        "description": "Reports the health and effective configuration of the cache on the node that serves the request.",
         "operationId": "getOperationsCacheHealth",
         "responses": {
           "200": {
@@ -11515,7 +11515,7 @@
           "Operations"
         ],
         "summary": "Get Cache Statistics",
-        "description": "Returns aggregate cache hit/miss/eviction counters with per-cache-type breakdowns plus backend storage metrics (local key count, Redis DB size and memory usage).",
+        "description": "Returns cache hit/miss/eviction counters with per-cache-type breakdowns and the local and distributed key counts for the node that serves the request.",
         "operationId": "getOperationsCacheStatistics",
         "responses": {
           "200": {
@@ -11524,34 +11524,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseOpsCacheStatisticsResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/operations/cache/redis": {
-      "get": {
-        "tags": [
-          "Operations"
-        ],
-        "summary": "Get Redis Connection Metrics",
-        "description": "Returns Redis connection state and server info. When no Redis connection multiplexer is registered the call still succeeds with `isConfigured` and `isConnected` both false.",
-        "operationId": "getOperationsCacheRedisMetrics",
-        "responses": {
-          "200": {
-            "description": "Redis connection metrics.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseOpsRedisConnectionMetricsResponse"
                 }
               }
             }
@@ -22589,6 +22561,58 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/live": {
+      "get": {
+        "tags": [
+          "Observability"
+        ],
+        "operationId": "GetAdminLive",
+        "summary": "Stream administrator live events",
+        "description": "Requires administrator authorization. Streams server-sent events for selected admin topics. A status frame precedes events; heartbeat comments keep the connection active. Supply Last-Event-ID to resume within the 24-hour replay window. On a reset frame, refresh the corresponding REST state. Slow consumers may be disconnected; reconnect using the last processed event ID.",
+        "parameters": [
+          {
+            "name": "topics",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated selection of proposals, ops-health, operate-events and deploy-operations. Omission selects all topics.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "description": "Replay cursor from a previously processed event, formatted admin:<sequence>.",
+            "schema": {
+              "type": "string",
+              "pattern": "^admin:[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-sent events containing status, topic event and reset frames. Delivery is at least once; deduplicate events by ID.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid topic selection or replay cursor."
+          },
+          "401": {
+            "description": "Administrator authentication required."
+          },
+          "403": {
+            "description": "Administrator authorization or live-stream access denied."
           }
         }
       }
@@ -39798,40 +39822,6 @@
           }
         }
       },
-      "OpsRedisServerInfo": {
-        "type": "object",
-        "description": "Redis server connection and statistics information.",
-        "properties": {
-          "isConnected": {
-            "type": "boolean"
-          },
-          "redisVersion": {
-            "type": "string",
-            "nullable": true
-          },
-          "usedMemory": {
-            "type": "string",
-            "nullable": true,
-            "description": "Human-readable memory usage reported by Redis."
-          },
-          "connectedClients": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "databaseSize": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "description": "Number of keys in the current database."
-          },
-          "uptimeSeconds": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          }
-        }
-      },
       "OpsCacheHealthResponse": {
         "type": "object",
         "description": "Cache health and effective cache configuration.",
@@ -39853,14 +39843,6 @@
           "defaultTtlSeconds": {
             "type": "integer",
             "format": "int32"
-          },
-          "redisServerInfo": {
-            "nullable": true,
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/OpsRedisServerInfo"
-              }
-            ]
           },
           "metricsEndpoint": {
             "type": "string",
@@ -39962,20 +39944,6 @@
             "format": "int64",
             "nullable": true
           },
-          "redisDatabaseSize": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          },
-          "redisUsedMemoryBytes": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          },
-          "redisUsedMemoryHuman": {
-            "type": "string",
-            "nullable": true
-          },
           "types": {
             "type": "object",
             "description": "Per-cache-type counters keyed by cache type name.",
@@ -39993,63 +39961,6 @@
           },
           "data": {
             "$ref": "#/components/schemas/OpsCacheStatisticsResponse"
-          },
-          "message": {
-            "type": "string",
-            "nullable": true
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "OpsRedisConnectionMetricsResponse": {
-        "type": "object",
-        "description": "Redis connection metrics. When Redis is not configured only `generatedAt`, `isConfigured` and `isConnected` are present.",
-        "properties": {
-          "generatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "isConfigured": {
-            "type": "boolean"
-          },
-          "isConnected": {
-            "type": "boolean"
-          },
-          "clientName": {
-            "type": "string",
-            "nullable": true
-          },
-          "totalOutstanding": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          },
-          "endpointCount": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "serverInfo": {
-            "nullable": true,
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/OpsRedisServerInfo"
-              }
-            ]
-          }
-        }
-      },
-      "ApiResponseOpsRedisConnectionMetricsResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/OpsRedisConnectionMetricsResponse"
           },
           "message": {
             "type": "string",

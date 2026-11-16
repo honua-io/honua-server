@@ -1591,12 +1591,12 @@ jobs:
             'GeoServices GPServer and NAServer '[0-9]*| \
             'Caching File Storage Styling and Infrastructure'| \
             'Operator Eval Harness '[0-9]*| \
-            'gRPC Protocol and Scene'| \
+            'gRPC Protocol and Scene '[0-9]*| \
             'MCP and Sessions '[0-9]*| \
             'Server Features Admin Runtime Operations'| \
             'Server Features Admin Authorization '[0-9]*| \
             'Server Features Admin Authorization Matrix'| \
-            'Server Features Admin Network and Jobs'| \
+            'Server Features Admin Network and Jobs '[0-9]*| \
             'Server Features Admin Integrations and Automation '[0-9]*| \
             'Server Features Admin Alert Endpoints'| \
             'Server Features Streaming Snapshot and Conformance'| \

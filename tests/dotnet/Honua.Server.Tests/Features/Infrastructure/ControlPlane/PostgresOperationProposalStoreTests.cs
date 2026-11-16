@@ -2,17 +2,18 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Core.Features.Guardrails.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
-using NSubstitute;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -20,6 +21,35 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class PostgresOperationProposalStoreTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
+    [IntegrationTest]
+    public async Task Writes_RealtimeAppendFails_RollBackAuthoritativeState()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var failing = harness.CreateProposalStore(new RejectingRealtimeWriter());
+        var proposal = Proposal();
+        var create = () => failing.TryCreateAsync(proposal);
+        await create.Should().ThrowAsync<InvalidOperationException>();
+        (await failing.GetAsync(proposal.ProposalId)).Should().BeNull();
+
+        var original = harness.CreateProposalStore();
+        (await original.TryCreateAsync(proposal)).Should().BeTrue();
+        var stored = (await original.GetAsync(proposal.ProposalId))!;
+        var update = () => failing.TrySetAsync(stored with { Status = OperationProposalStatus.Submitted });
+        await update.Should().ThrowAsync<InvalidOperationException>();
+        (await original.GetAsync(proposal.ProposalId)).Should().BeEquivalentTo(stored);
+    }
+
+    private sealed class RejectingRealtimeWriter : IControlPlaneRealtimeWriter
+    {
+        public void NotifyCommitted() => throw new InvalidOperationException("Unexpected notification after failed append");
+
+        public Task AppendTransitionAsync(WorkflowOperationTransition transition, ControlPlaneWriteContext context)
+            => throw new InvalidOperationException("Simulated realtime append failure");
+
+        public Task AppendProposalAsync(OperationProposal proposal, ControlPlaneWriteContext context)
+            => throw new InvalidOperationException("Simulated realtime append failure");
+    }
+
     [IntegrationTest]
     public async Task TryCreateAsync_SameIdOnTwoStores_SecondIsRefused()
     {

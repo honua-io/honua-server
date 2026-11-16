@@ -48,20 +48,21 @@ public sealed partial class PublishedOperationToolTests
     }
 
     [UnitTheory]
-    [InlineData("admin.services.access-policy.set")]
-    [InlineData("admin.layer.publish")]
-    public async Task Invoke_AgentGatedMutation_FilesProposalWithoutExecuting(string operationId)
+    [InlineData("admin.services.access-policy.set", """{"serviceName":"roads","allowAnonymous":true}""")]
+    [InlineData("admin.layer.publish", """{"connectionId":"conn-1"}""")]
+    public async Task Invoke_AgentGatedMutation_FilesProposalWithoutExecuting(string operationId, string arguments)
     {
         var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
         var executor = new RecordingExecutor(operationId);
         var bridge = new CapturingProposalBridge();
+        using var catalog = new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System);
         var dispatcher = new OperationDispatcher(
-            new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System), [executor],
+            catalog, [executor],
             new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
         var tool = new PublishedOperationTool(descriptor, "cat-agent", NullLogger.Instance);
         var http = Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin", "agent"]);
 
-        var result = await tool.InvokeAsync(http, Args("""{"serviceName":"roads","allowAnonymous":true}"""), default);
+        var result = await tool.InvokeAsync(http, Args(arguments), default);
 
         var content = result.StructuredContent!.Value;
         content.GetProperty("status").GetString().Should().Be("RequiresApproval");
