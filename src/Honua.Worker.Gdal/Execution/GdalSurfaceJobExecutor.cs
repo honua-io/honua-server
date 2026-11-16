@@ -10,39 +10,21 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile <see cref="IJobExecutor"/> for the <c>surface.*</c> DEM-derived
-/// processes (<c>slope</c>, <c>aspect</c>, <c>hillshade</c>, <c>rugosity-tri</c>,
-/// <c>rugosity-tpi</c>, <c>roughness</c>) backed by the GDAL <c>gdaldem</c> CLI.
-///
-/// One executor handles the whole family because the gdaldem invocation shape is
-/// identical (input + output + mode-specific switches); the per-id differences
-/// reduce to the subcommand and a handful of switch values. Runs only inside the
-/// GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is <c>{ "native" }</c>
-/// so the substrate claim fence keeps the lean managed worker from claiming
-/// surface.* jobs and keeps this worker from claiming managed jobs.
-/// </summary>
 internal sealed partial class GdalSurfaceJobExecutor(
     IGdalCommandRunner runner,
     IOptionsMonitor<GdalWorkerOptions> options,
     ILogger<GdalSurfaceJobExecutor> logger) : IProcessExecutor
 {
-    /// <summary>Process id for slope.</summary>
     public const string SlopeProcessId = "surface.slope";
 
-    /// <summary>Process id for aspect.</summary>
     public const string AspectProcessId = "surface.aspect";
 
-    /// <summary>Process id for hillshade.</summary>
     public const string HillshadeProcessId = "surface.hillshade";
 
-    /// <summary>Process id for terrain ruggedness index.</summary>
     public const string RugosityTriProcessId = "surface.rugosity-tri";
 
-    /// <summary>Process id for topographic position index.</summary>
     public const string RugosityTpiProcessId = "surface.rugosity-tpi";
 
-    /// <summary>Process id for roughness.</summary>
     public const string RoughnessProcessId = "surface.roughness";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
@@ -60,19 +42,14 @@ internal sealed partial class GdalSurfaceJobExecutor(
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
 
-    /// <summary>Process ids this executor routes.</summary>
     public static IReadOnlyCollection<string> SupportedProcessIds => HandledProcessIds;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds => HandledProcessIds;
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,
@@ -202,12 +179,6 @@ internal sealed partial class GdalSurfaceJobExecutor(
         }
     }
 
-    /// <summary>
-    /// Maps the canonical surface.* parameters onto the gdaldem subcommand and
-    /// switch list. The base 3-arg gdaldem invocation (<c>SUBCOMMAND IN OUT</c>) is
-    /// added by the caller; this just returns the subcommand and any mode-specific
-    /// switches.
-    /// </summary>
     private static bool TryBuildArguments(
         string processId,
         IReadOnlyDictionary<string, string> parameters,
@@ -296,11 +267,6 @@ internal sealed partial class GdalSurfaceJobExecutor(
         }
     }
 
-    /// <summary>
-    /// gdaldem TRI/TPI/roughness always operate on a fixed 3x3 neighborhood; the
-    /// catalog mirrors that constraint as windowRadius=1. Reject any other value
-    /// at the executor boundary so the worker error matches the validator error.
-    /// </summary>
     private static bool TryEnforceUnitWindow(
         IReadOnlyDictionary<string, string> parameters,
         out string failure)

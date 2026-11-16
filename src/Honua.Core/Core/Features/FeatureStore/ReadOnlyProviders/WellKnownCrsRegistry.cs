@@ -7,34 +7,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 
-/// <summary>
-/// CRS registry that resolves only the three universally well-known CRSes (OGC:CRS84,
-/// EPSG:4326, EPSG:3857) with no backing catalog. Registered by read-only feature
-/// providers (DuckDB, MySQL/MariaDB) so DI activation succeeds for
-/// <c>Honua.Infrastructure.Services.SpatialReferenceResolver</c> — a mandatory, scoped
-/// dependency of the FeatureServer, ImageServer, GeometryService, and gRPC protocol
-/// adapters regardless of the active data-source provider.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Found and fixed alongside <see cref="NoOpCrsDetectionService"/> under honua-server#2947
-/// (secondary-provider HTTP-stack GA proof): with no <see cref="ICrsRegistry"/>
-/// registration at all, any request that resolved <c>SpatialReferenceResolver</c> under
-/// <c>DataSource:Provider=duckdb</c> or <c>mysql</c> failed DI activation outright, even
-/// for the overwhelmingly common case of a layer stored (and queried) in its own default
-/// SRID. Only <c>Honua.Postgres.Shared.PostgresCrsRegistry</c> ever registered an
-/// implementation, because arbitrary-SRID resolution beyond the three well-known
-/// definitions genuinely depends on Postgres's <c>spatial_ref_sys</c> catalog.
-/// </para>
-/// <para>
-/// This is intentionally the same three built-in definitions
-/// <c>PostgresCrsRegistry.TryGetBuiltInDefinition</c> falls back to before ever consulting
-/// <c>spatial_ref_sys</c> — DuckDB/MySQL layers are essentially always configured in
-/// WGS84 (4326) or Web Mercator (3857), so this covers the practical case honestly. Any
-/// other SRID reports "not supported" rather than fabricating a definition, which is the
-/// correct, capability-scoped answer for a provider with no CRS catalog to consult.
-/// </para>
-/// </remarks>
 public sealed class WellKnownCrsRegistry : ICrsRegistry
 {
     private const string Crs84Uri = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
@@ -52,7 +24,6 @@ public sealed class WellKnownCrsRegistry : ICrsRegistry
     private static readonly CrsDefinition _epsg3857Definition =
         new($"{EpsgUriPrefix}3857", 3857, AxisOrder.EastNorth, false) { Wkt = WellKnownCrsWkt.Epsg3857 };
 
-    /// <inheritdoc />
     public ValueTask<CrsDefinition?> ResolveAsync(string? crsIdentifier, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(crsIdentifier))
@@ -71,7 +42,6 @@ public sealed class WellKnownCrsRegistry : ICrsRegistry
             : ResolveBySridAsync(srid, cancellationToken);
     }
 
-    /// <inheritdoc />
     public ValueTask<CrsDefinition?> ResolveBySridAsync(int srid, CancellationToken cancellationToken = default)
         => ValueTask.FromResult(srid switch
         {
@@ -80,7 +50,6 @@ public sealed class WellKnownCrsRegistry : ICrsRegistry
             _ => null,
         });
 
-    /// <inheritdoc />
     public async ValueTask<bool> IsSridSupportedAsync(int srid, CancellationToken cancellationToken = default)
         => (await ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false)).HasValue;
 

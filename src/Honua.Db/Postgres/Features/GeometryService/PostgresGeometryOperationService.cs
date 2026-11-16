@@ -14,9 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.GeometryService;
 
-/// <summary>
-/// PostGIS-backed implementation of geometry operations (buffer, simplify, project, union).
-/// </summary>
 internal sealed class PostgresGeometryOperationService(
     IAdoNetDatabaseConnectionProvider connectionProvider) : IGeometryOperationService
 {
@@ -151,11 +148,6 @@ internal sealed class PostgresGeometryOperationService(
     private static bool IsWebMercatorSrid(int srid)
         => SpatialReferenceExtensions.IsWebMercatorSrid(srid);
 
-    /// <summary>
-    /// Clamps geographic latitudes before a Web Mercator projection. Every geographic
-    /// source is clamped, not only EPSG:4326, so polar vertices in NAD83/ETRS89/GDA94
-    /// do not reach an unclamped <c>ST_Transform</c> (#6132).
-    /// </summary>
     internal static byte[] ClampSourceForWebMercator(byte[] wkb, int fromSrid, int toSrid)
     {
         if (!GeographicSridClassifier.IsGeographicSrid(fromSrid) || !IsWebMercatorSrid(toSrid))

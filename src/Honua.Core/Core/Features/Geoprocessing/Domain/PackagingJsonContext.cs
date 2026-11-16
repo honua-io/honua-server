@@ -7,9 +7,6 @@ using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
-/// <summary>
-/// Source-generated JSON serialization context for packaging domain models.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

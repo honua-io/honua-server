@@ -7,17 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.DuckDB.Features.HealthCheck;
 
-/// <summary>
-/// DuckDB implementation of <see cref="IDatabaseHealthChecker"/>.
-/// </summary>
-/// <remarks>
-/// Routes through the shared <see cref="IAdoNetDatabaseConnectionProvider"/> so the
-/// readiness probe exercises the same pooled DuckDB connection the feature store uses.
-/// Mirrors the MySQL and Postgres implementations: cheap <c>SELECT 1</c> with a 5 s
-/// command timeout. Required so <c>/healthz/ready</c> does not throw
-/// <see cref="InvalidOperationException"/> when <c>DataSource:Provider=duckdb</c>
-/// (PA-158).
-/// </remarks>
 internal sealed partial class DuckDBDatabaseHealthChecker(
     IAdoNetDatabaseConnectionProvider connectionProvider,
     ILogger<DuckDBDatabaseHealthChecker> logger)
@@ -29,9 +18,6 @@ internal sealed partial class DuckDBDatabaseHealthChecker(
     private readonly ILogger<DuckDBDatabaseHealthChecker> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
-    /// <summary>
-    /// Checks DuckDB connectivity and responsiveness via a lightweight probe query.
-    /// </summary>
     public async Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
     {
         try
