@@ -127,9 +127,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var layers = await ReadPublishedLayersAsync(
-                connection,
-                transaction: null,
-                normalizedService,
+                new PublishedLayerReadScope(connection, null,
+                    new ConnectionLayerScope(normalizedService, connectionId, ManagedDataConnection.Id)),
                 cancellationToken)
             .ConfigureAwait(false);
         return await ApplyListedLayerScopeAsync(
@@ -170,12 +169,14 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     private const string PublishedLayerSelect = PublishedLayerColumns + ",\n        COUNT(f.field_name)::int AS field_count";
 
-    private static async Task<List<PublishedLayerSummary>> ReadPublishedLayersAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
-        string normalizedService,
+    private readonly record struct PublishedLayerReadScope(
+        NpgsqlConnection Connection, NpgsqlTransaction? Transaction, ConnectionLayerScope Ownership);
+
+    private async Task<List<PublishedLayerSummary>> ReadPublishedLayersAsync(
+        PublishedLayerReadScope scope,
         CancellationToken cancellationToken)
     {
+        var normalizedService = scope.Ownership.ServiceName;
         var layers = new List<PublishedLayerSummary>();
         const string sql = $"""
             SELECT
@@ -186,13 +187,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             LEFT JOIN honua.layer_fields f
                 ON f.layer_id = l.layer_id
             WHERE sl.service_name = @serviceName
+              AND {PublishedLayerConnectionPredicate}
             GROUP BY
                 {PublishedLayerColumns}
             ORDER BY l.layer_id;
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, scope.Connection, scope.Transaction);
         command.Parameters.AddWithValue("@serviceName", normalizedService);
+        await AddPublishedLayerConnectionParametersAsync(
+            command, scope.Ownership, cancellationToken).ConfigureAwait(false);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -1008,9 +1012,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
         var layers = await ReadPublishedLayersAsync(
-                connection,
-                transaction,
-                normalizedService,
+                new PublishedLayerReadScope(connection, transaction,
+                    new ConnectionLayerScope(normalizedService, null, ManagedDataConnection.Id)),
                 cancellationToken)
             .ConfigureAwait(false);
         var hydratedLayers = await HydrateSourceGovernanceAsync(layers, normalizedService, storageScope, cancellationToken)
