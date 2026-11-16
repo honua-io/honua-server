@@ -76,7 +76,9 @@ class StoreProfileWorkflowTests(unittest.TestCase):
                       if step.get('name') == 'Resolve the attestation-free platform manifest')
         script = script.replace('${{ steps.names.outputs.asset_name }}', 'release-test')
         manifest_type = 'application/vnd.oci.image.manifest.v1+json'
-        manifest = {'mediaType': manifest_type, 'layers': []}
+        manifest = {'schemaVersion': 2, 'mediaType': manifest_type,
+                    'config': {'mediaType': 'application/vnd.oci.image.config.v1+json',
+                               'digest': 'sha256:' + 'c' * 64, 'size': 2}, 'layers': []}
         repository = 'ghcr.io/honua-io/honua-server@'
         platform_digest = 'sha256:' + 'a' * 64
         index = {'mediaType': 'application/vnd.oci.image.index.v1+json', 'manifests': [

@@ -856,33 +856,9 @@ jobs:
         with:
           github-token: ${{ secrets.SECURITY_FINDINGS_TOKEN }}
           script: |
-            const fs = require('fs');
-            const destination = process.env.SECURITY_FINDINGS_REPO || '';
-            if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(destination)) {
-              throw new Error('Security findings require an owner/repository destination');
-            }
-            const [owner, repo] = destination.split('/');
-            const { data: repository } = await github.rest.repos.get({ owner, repo });
-            if (repository.private !== true) {
-              throw new Error('Security findings require a private destination repository');
-            }
-            const { findings } = JSON.parse(fs.readFileSync('release-private.json', 'utf8'));
-            const run = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-            const open = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', per_page: 100 });
-            for (const f of findings) {
-              const title = `[release image] ${f.release} ${f.platform}: ${f.VulnerabilityID} in ${f.PkgName}`;
-              if (open.some(issue => issue.title === title)) continue;
-              open.push({ title });
-              const body = [
-                `Release: ${f.release}`, `Image: ${f.image}`, `Platform: ${f.platform}`,
-                `Advisory: ${f.VulnerabilityID} (${f.Severity})`,
-                `Package: ${f.PkgName} ${f.InstalledVersion}, fixed in ${f.FixedVersion}`,
-                `Fix due by: ${f.dueBy} (SECURITY.md: critical 7 days, high 30 days from detection)`,
-                `Detected by: ${run}`, '',
-                'Close by shipping a patch release (docs/internal/security/security-patch-releases.md) or by recording a reasoned not_affected decision in eng/security/vex-statements.json.',
-              ].join('\n');
-              await github.rest.issues.create({ owner, repo, title, body });
-            }
+            await require('./scripts/security/private-findings.js')({
+              github, env: process.env, readFileSync: require('fs').readFileSync,
+            });
       - name: Open a public maintenance issue without finding detail
         if: steps.report.outputs.needing_patch != '0' && env.HAS_FINDINGS_BRIDGE != 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
