@@ -20,12 +20,16 @@ public class PostgresFixtureMigrationDiscoveryTests
         migrations.Should().Contain("Honua.Server.Migrations.193_AllowIncidentInvestigationReferences.sql");
         var observabilityStore = Array.IndexOf(migrations, "Honua.Server.Migrations.034_CreateOperateObservability.sql");
         var alertStore = Array.IndexOf(migrations, "Honua.Server.Migrations.013_AddSpatialAlerts.sql");
+        var alertChannels = Array.IndexOf(migrations, "Honua.Server.Migrations.014_AddCloudAlertChannels.sql");
+        var alertSource = Array.IndexOf(migrations, "Honua.Server.Migrations.075_AddAlertOpsSource.sql");
         var auditStore = Array.IndexOf(migrations, "Honua.Server.Migrations.033_CreateAuditLog.sql");
         var incidentReferences = Array.IndexOf(migrations, "Honua.Server.Migrations.193_AllowIncidentInvestigationReferences.sql");
         alertStore.Should().BeGreaterThanOrEqualTo(0);
+        alertChannels.Should().BeGreaterThan(alertStore);
+        alertSource.Should().BeGreaterThan(alertChannels);
         auditStore.Should().BeGreaterThanOrEqualTo(0);
         observabilityStore.Should().BeGreaterThan(alertStore).And.BeGreaterThan(auditStore);
-        incidentReferences.Should().BeGreaterThan(observabilityStore);
+        incidentReferences.Should().BeGreaterThan(observabilityStore).And.BeGreaterThan(alertSource);
         var lastStore = Array.IndexOf(migrations, "Honua.Server.Migrations.167_CreateWorkflowStores.sql");
         var firstImportFunction = Array.IndexOf(migrations, "Honua.Server.Migrations.070_AddImportLoadModes.sql");
         var typedColumns = Array.IndexOf(migrations, "Honua.Server.Migrations.143_PromoteImportTypedColumns.sql");
