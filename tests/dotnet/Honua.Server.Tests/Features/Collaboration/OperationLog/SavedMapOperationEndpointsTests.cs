@@ -31,8 +31,8 @@ public sealed class SavedMapOperationEndpointsTests
     private const string MapId = "saved-map:ops";
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Append_AssignsMonotonicCursors_AndReplayReturnsThem()
     {
         using var factory = CreateFactory(allowEdit: true);
@@ -50,7 +50,7 @@ public sealed class SavedMapOperationEndpointsTests
         secondBody.GetProperty("data").GetProperty("operation").GetProperty("serverCursor").GetInt64().Should().Be(2);
 
         using var replay = await client.GetAsync(
-            $"/api/v1/saved-maps/{MapId}/collaboration/operations?since=0");
+            $"/api/v1/maps/{MapId}/collaboration/operations?since=0");
         replay.StatusCode.Should().Be(HttpStatusCode.OK);
         var replayBody = await ReadJsonAsync(replay);
         replayBody.GetProperty("data").GetProperty("status").GetString().Should().Be("ok");
@@ -59,7 +59,7 @@ public sealed class SavedMapOperationEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Append_DuplicateOperationId_IsIdempotent()
     {
         using var factory = CreateFactory(allowEdit: true);
@@ -79,7 +79,7 @@ public sealed class SavedMapOperationEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Append_ForgedActorId_StoresAndBroadcastsCallerIdentity()
     {
         // ApiKeyAuthenticationHandler stamps this id on the bootstrap admin password principal.
@@ -103,7 +103,7 @@ public sealed class SavedMapOperationEndpointsTests
         body.GetProperty("data").GetProperty("operation").GetProperty("actorId").GetString().Should().Be(callerId);
 
         using var replay = await client.GetAsync(
-            $"/api/v1/saved-maps/{MapId}/collaboration/operations?since=0");
+            $"/api/v1/maps/{MapId}/collaboration/operations?since=0");
         replay.StatusCode.Should().Be(HttpStatusCode.OK);
         var replayBody = await ReadJsonAsync(replay);
         replayBody.GetProperty("data").GetProperty("operations")[0].GetProperty("actorId").GetString()
@@ -114,7 +114,7 @@ public sealed class SavedMapOperationEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Append_SameOperationIdDifferentPayload_Returns409AndLeavesHeadUnchanged()
     {
         using var factory = CreateFactory(allowEdit: true);
@@ -134,7 +134,7 @@ public sealed class SavedMapOperationEndpointsTests
         mismatchBody.GetProperty("data").GetProperty("isDuplicate").GetBoolean().Should().BeFalse();
 
         using var replay = await client.GetAsync(
-            $"/api/v1/saved-maps/{MapId}/collaboration/operations?since=0");
+            $"/api/v1/maps/{MapId}/collaboration/operations?since=0");
         replay.StatusCode.Should().Be(HttpStatusCode.OK);
         var replayBody = await ReadJsonAsync(replay);
         replayBody.GetProperty("data").GetProperty("headCursor").GetInt64().Should().Be(head);
@@ -144,7 +144,7 @@ public sealed class SavedMapOperationEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Append_WithoutAuthentication_ReturnsUnauthorized()
     {
         using var factory = CreateFactory(allowEdit: true);
@@ -155,7 +155,7 @@ public sealed class SavedMapOperationEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Append_WithoutSavedMapCapability_ReturnsForbidden()
     {
         // No permissive authorizer registered, so the default fail-closed authorizer denies an
@@ -168,14 +168,14 @@ public sealed class SavedMapOperationEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Replay_WithoutSavedMapCapability_ReturnsForbidden()
     {
         using var factory = CreateFactory(allowEdit: false);
         using var client = CreateAdminClient(factory);
 
         using var response = await client.GetAsync(
-            $"/api/v1/saved-maps/{MapId}/collaboration/operations?since=0");
+            $"/api/v1/maps/{MapId}/collaboration/operations?since=0");
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
@@ -199,7 +199,7 @@ public sealed class SavedMapOperationEndpointsTests
             }
             """;
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        return await client.PostAsync($"/api/v1/saved-maps/{MapId}/collaboration/operations", content)
+        return await client.PostAsync($"/api/v1/maps/{MapId}/collaboration/operations", content)
             .ConfigureAwait(false);
     }
 

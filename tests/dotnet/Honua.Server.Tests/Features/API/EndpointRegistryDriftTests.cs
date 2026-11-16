@@ -500,7 +500,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
             // GetFromJsonAsync<T> (e.g. GET /api/v1/admin/oauth-scopes) is reported as
             // uncovered even though it has a backing HTTP request.
             // ConnectAsync(...) matches a WebSocket upgrade, which the server routes as an
-            // HTTP GET endpoint (e.g. GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream);
+            // HTTP GET endpoint (e.g. GET /api/v1/maps/{mapId}/collaboration/sessions/stream);
             // those routes are exercised by ws-client ConnectAsync rather than a plain GetAsync.
             "GET" => @"(?:\.Get(?:FromJson)?|Get\w*)Async(?:<[^()]*>)?\s*\(|\.ConnectAsync\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Get\s*,",
             "POST" => @"(?:\.Post(?:AsJson)?|Post\w*)Async(?:<[^()]*>)?\s*\(|new\s+HttpRequestMessage\s*\(\s*HttpMethod\.Post\s*,",

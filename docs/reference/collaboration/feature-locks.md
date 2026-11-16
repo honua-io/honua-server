@@ -64,9 +64,9 @@ Intersecting the two again is harmless. A capability with no mapped route is unc
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim` | Take (or renew) a lease. |
-| `POST` | `/api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew` | Extend a lease you hold. |
-| `POST` | `/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release` | Give a lease back. |
+| `POST` | `/api/v1/maps/{mapId}/collaboration/feature-locks/claim` | Take (or renew) a lease. |
+| `POST` | `/api/v1/maps/{mapId}/collaboration/feature-locks/renew` | Extend a lease you hold. |
+| `POST` | `/api/v1/maps/{mapId}/collaboration/feature-locks/release` | Give a lease back. |
 
 Request body:
 

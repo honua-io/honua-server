@@ -36,7 +36,7 @@ internal static class FeatureLockEndpoints
 
     public static void MapFeatureLockEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/feature-locks")
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/maps/{mapId}/collaboration/feature-locks")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Saved Maps", "Collaboration", "Feature Locks")

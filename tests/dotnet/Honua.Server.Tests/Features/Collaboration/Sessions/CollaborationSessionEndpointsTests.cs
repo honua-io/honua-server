@@ -24,13 +24,13 @@ public sealed class CollaborationSessionEndpointsTests
     private const string AdminPassword = "collaboration-session-test-key";
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/sessions/join")]
     public async Task Join_WithAuthorizedSavedMapCapability_ReturnsSessionSnapshot()
     {
         using var factory = CreateFactory(allowJoin: true);
         using var client = CreateClient(factory);
         using var response = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/join",
+            "/api/v1/maps/saved-map:ops/collaboration/sessions/join",
             JsonBody(new CollaborationJoinRequest { DisplayName = "Ada", ClientInstanceId = "browser-1" }));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -45,26 +45,26 @@ public sealed class CollaborationSessionEndpointsTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/sessions/join")]
     public async Task Join_WithoutSavedMapCapability_ReturnsUnauthorized()
     {
         using var factory = CreateFactory(allowJoin: false);
         using var client = factory.CreateClient();
         using var response = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/join",
+            "/api/v1/maps/saved-map:ops/collaboration/sessions/join",
             JsonBody(new CollaborationJoinRequest { DisplayName = "Ada" }));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/leave")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/sessions/leave")]
     public async Task Leave_JoinedSession_RemovesPresence()
     {
         using var factory = CreateFactory(allowJoin: true);
         using var client = CreateClient(factory);
         using var joinResponse = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/join",
+            "/api/v1/maps/saved-map:ops/collaboration/sessions/join",
             JsonBody(new CollaborationJoinRequest { DisplayName = "Ada" }));
         joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var joinDocument = JsonDocument.Parse(await joinResponse.Content.ReadAsStringAsync());
@@ -72,7 +72,7 @@ public sealed class CollaborationSessionEndpointsTests
 
         using var leaveContent = new StringContent($$"""{"sessionId":"{{sessionId}}"}""", Encoding.UTF8, "application/json");
         using var leaveResponse = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/leave",
+            "/api/v1/maps/saved-map:ops/collaboration/sessions/leave",
             leaveContent);
 
         leaveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -82,7 +82,7 @@ public sealed class CollaborationSessionEndpointsTests
         // A second leave is a no-op: the session is already gone.
         using var repeatContent = new StringContent($$"""{"sessionId":"{{sessionId}}"}""", Encoding.UTF8, "application/json");
         using var repeatResponse = await client.PostAsync(
-            "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/leave",
+            "/api/v1/maps/saved-map:ops/collaboration/sessions/leave",
             repeatContent);
         repeatResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var repeatDocument = JsonDocument.Parse(await repeatResponse.Content.ReadAsStringAsync());
