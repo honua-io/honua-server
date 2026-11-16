@@ -49,6 +49,7 @@ public sealed class PinnedDnsConnector(
         => new()
         {
             AllowAutoRedirect = false,
+            UseProxy = false,
             MaxConnectionsPerServer = maxConnectionsPerServer,
             ConnectCallback = ConnectAsync,
         };

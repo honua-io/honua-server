@@ -21,16 +21,19 @@ const NEGATIVE_REVIEW_STATES = new Set(['CHANGES_REQUESTED', 'DISMISSED']);
 // The gate reads GraphQL (review-gate-snapshot.js), so the suffix-less spelling
 // is the one that actually shows up in production. `logins` matches on the login
 // alone; `botLogins` matches ONLY when GitHub also types the author as a `Bot`.
-// That distinction is load-bearing for Claude: `claude` is a real GitHub User
-// too, and a User can hold a PAT, which would break the
-// bot-distinct-from-author property this list depends on.
+// That distinction is load-bearing for both reviewers: `claude` is a real
+// GitHub User and `chatgpt-codex-connector` is an ordinary account name, and an
+// account can hold a PAT, which would break the bot-distinct-from-author
+// property this list depends on.
 const ATTESTING_REVIEWERS = [
   {
     id: 'codex',
-    // Both spellings are accepted unconditionally: no `chatgpt-codex-connector`
-    // User exists, so the suffix-less form cannot be impersonated by a PAT.
-    logins: ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]'],
-    botLogins: [],
+    // REST spelling: a `[bot]` login cannot be registered by an account.
+    logins: ['chatgpt-codex-connector[bot]'],
+    // GraphQL spelling. The bare name is an ordinary account name (a registered
+    // Organization today), so it attests only when GitHub types the author as a
+    // Bot, the same rule as `claude` below.
+    botLogins: ['chatgpt-codex-connector'],
     reviewMarker: /Codex Review|Reviewed commit/i,
     cleanMarker: /Codex Review:\s+Didn't find any major issues\./i,
   },

@@ -18,13 +18,13 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 {
     private readonly IGeocodeProviderRegistry _providerRegistry;
     private readonly GeocodingConfiguration _configuration;
-    private readonly IGeocodeLimitEnforcer _limitEnforcer;
+    private readonly GeocodeLimitEnforcer _limitEnforcer;
     private readonly ILogger<GeocodeCoordinatorService> _logger;
 
     public GeocodeCoordinatorService(
         IGeocodeProviderRegistry providerRegistry,
         IOptions<GeocodingConfiguration> configuration,
-        IGeocodeLimitEnforcer limitEnforcer,
+        GeocodeLimitEnforcer limitEnforcer,
         ILogger<GeocodeCoordinatorService> logger)
     {
         _providerRegistry = providerRegistry ?? throw new ArgumentNullException(nameof(providerRegistry));
