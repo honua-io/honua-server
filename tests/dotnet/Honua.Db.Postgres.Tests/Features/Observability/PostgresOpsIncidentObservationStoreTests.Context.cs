@@ -20,7 +20,8 @@ public sealed partial class PostgresOpsIncidentObservationStoreTests
             var active = await AppendSignalAsync(provider, original);
             var recovered = await AppendSignalAsync(provider, original with
             {
-                ObservationId = "recovered", ObservedAt = original.ObservedAt.AddSeconds(1),
+                ObservationId = "recovered",
+                ObservedAt = original.ObservedAt.AddSeconds(1),
                 State = OpsIncidentObservationState.Recovered
             });
             await AppendSignalAsync(provider, original with { ObservationId = "recurrence", ObservedAt = original.ObservedAt.AddSeconds(2) });
@@ -47,7 +48,8 @@ public sealed partial class PostgresOpsIncidentObservationStoreTests
             var active = await AppendSignalAsync(provider, original);
             await AppendSignalAsync(provider, original with
             {
-                ObservationId = "unknown", ObservedAt = original.ObservedAt.AddSeconds(1),
+                ObservationId = "unknown",
+                ObservedAt = original.ObservedAt.AddSeconds(1),
                 State = OpsIncidentObservationState.Unknown
             });
             var context = await restarted.GetRequiredService<IOpsIncidentContextReader>()
@@ -102,8 +104,10 @@ public sealed partial class PostgresOpsIncidentObservationStoreTests
 
     private static OpsIncidentEpisodeSignal ToSignal(OpsIncidentObservation observation) => new()
     {
-        AuthorityScope = observation.AuthorityScope, FindingId = observation.FindingId,
-        ObservationId = observation.ObservationId, ObservedAt = observation.ObservedAt,
+        AuthorityScope = observation.AuthorityScope,
+        FindingId = observation.FindingId,
+        ObservationId = observation.ObservationId,
+        ObservedAt = observation.ObservedAt,
         State = observation.State switch
         {
             OpsIncidentObservationState.Active => OpsIncidentEpisodeState.Active,

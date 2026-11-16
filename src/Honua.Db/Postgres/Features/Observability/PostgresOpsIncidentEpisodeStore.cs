@@ -77,9 +77,13 @@ internal sealed class PostgresOpsIncidentEpisodeStore(
 
     private static OpsIncidentEpisode ReadEpisode(NpgsqlDataReader reader) => new()
     {
-        AuthorityScope = reader.GetString(0), EpisodeId = reader.GetGuid(1), FindingId = reader.GetString(2),
-        LifecycleVersion = reader.GetInt64(3), State = (OpsIncidentEpisodeState)reader.GetInt16(4),
-        StartedAt = reader.GetFieldValue<DateTimeOffset>(5), ObservedAt = reader.GetFieldValue<DateTimeOffset>(6),
+        AuthorityScope = reader.GetString(0),
+        EpisodeId = reader.GetGuid(1),
+        FindingId = reader.GetString(2),
+        LifecycleVersion = reader.GetInt64(3),
+        State = (OpsIncidentEpisodeState)reader.GetInt16(4),
+        StartedAt = reader.GetFieldValue<DateTimeOffset>(5),
+        ObservedAt = reader.GetFieldValue<DateTimeOffset>(6),
         ClosedAt = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)
     };
 

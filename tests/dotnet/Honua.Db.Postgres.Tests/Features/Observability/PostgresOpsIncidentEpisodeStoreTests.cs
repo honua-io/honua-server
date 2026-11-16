@@ -134,7 +134,8 @@ public sealed class PostgresOpsIncidentEpisodeStoreTests(PostgresFixture fixture
             (await store.ReadAsync(new("other", active.EpisodeId))).Should().BeNull();
             var stale = (await store.ObserveAsync(Signal() with
             {
-                FindingId = "stale-finding", ObservedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+                FindingId = "stale-finding",
+                ObservedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
             }))!;
             (await resolver.ResolveAsync(Reference(stale))).Should().BeNull();
         });
@@ -204,7 +205,9 @@ public sealed class PostgresOpsIncidentEpisodeStoreTests(PostgresFixture fixture
 
     private static OpsIncidentEpisodeSignal Signal() => new()
     {
-        AuthorityScope = "platform", FindingId = "finding-one", ObservationId = "observation-zero",
+        AuthorityScope = "platform",
+        FindingId = "finding-one",
+        ObservationId = "observation-zero",
         ObservedAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeMilliseconds()),
         State = OpsIncidentEpisodeState.Active
     };

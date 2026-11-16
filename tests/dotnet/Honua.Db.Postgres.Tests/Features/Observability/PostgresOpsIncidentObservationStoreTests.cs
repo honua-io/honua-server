@@ -118,13 +118,15 @@ public sealed partial class PostgresOpsIncidentObservationStoreTests(PostgresFix
             await store.AppendAsync(original);
             await store.AppendAsync(original with
             {
-                ObservationId = "recovered", ObservedAt = recoveredAt,
+                ObservationId = "recovered",
+                ObservedAt = recoveredAt,
                 State = OpsIncidentObservationState.Recovered
             });
             await store.AppendAsync(original with { ObservationId = "recurrence", ObservedAt = recoveredAt.AddSeconds(1) });
             var page = await store.ReadAsync(new("authority-a", original.ObservedAt, 1)
             {
-                FindingId = original.FindingId, Until = recoveredAt
+                FindingId = original.FindingId,
+                Until = recoveredAt
             });
             page.TotalCount.Should().Be(2);
             page.Truncated.Should().BeTrue();

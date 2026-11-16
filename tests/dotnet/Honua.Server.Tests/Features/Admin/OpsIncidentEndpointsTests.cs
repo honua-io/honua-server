@@ -137,9 +137,13 @@ public sealed class OpsIncidentEndpointsTests : IAsyncLifetime
     private static OpsIncidentContext CreateContext(OpsIncidentEvidenceAvailability availability) => new(
         new OpsIncidentEpisode
         {
-            AuthorityScope = "platform", EpisodeId = IncidentId, FindingId = "alarm-finding",
-            LifecycleVersion = 7, State = OpsIncidentEpisodeState.Unknown,
-            StartedAt = DateTimeOffset.UtcNow.AddDays(-2), ObservedAt = DateTimeOffset.UtcNow.AddDays(-1)
+            AuthorityScope = "platform",
+            EpisodeId = IncidentId,
+            FindingId = "alarm-finding",
+            LifecycleVersion = 7,
+            State = OpsIncidentEpisodeState.Unknown,
+            StartedAt = DateTimeOffset.UtcNow.AddDays(-2),
+            ObservedAt = DateTimeOffset.UtcNow.AddDays(-1)
         }, new OpsIncidentObservationPage(availability == OpsIncidentEvidenceAvailability.Missing ? [] :
         [new OpsIncidentObservation
         {
