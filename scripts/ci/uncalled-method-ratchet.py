@@ -108,8 +108,8 @@ def string_literal_end(text: str, start: int) -> int | None:
     return quoted_literal_end(text, quote_index, '"')
 
 
-def strip_comments(s: str) -> str:
-    """Remove C# comments, leaving string and char literals intact."""
+def strip_comments(s: str, *, mask_literals: bool = False) -> str:
+    """Remove C# comments; optionally mask literals while preserving offsets."""
     out, i, n = [], 0, len(s)
     while i < n:
         c = s[i]
@@ -128,7 +128,8 @@ def strip_comments(s: str) -> str:
         elif c in '$@"':
             end = string_literal_end(s, i)
         if end is not None:
-            out.append(s[i:end])
+            literal = s[i:end]
+            out.append(re.sub(r"[^\r\n]", " ", literal) if mask_literals else literal)
             i = end
             continue
         out.append(c)
@@ -137,6 +138,7 @@ def strip_comments(s: str) -> str:
 
 
 def type_spans(text: str) -> list[tuple[int, int, list[str]]]:
+    text = strip_comments(text, mask_literals=True)
     spans = []
     for header in TYPE_HEADER.finditer(text):
         open_index, depth, index = header.end() - 1, 0, header.end() - 1
@@ -194,6 +196,11 @@ def scan(root: Path) -> list[str]:
 
 
 def self_test() -> int:
+    for literal in ('"}"', "'}'", '@"}"', '$"}}"', '"""}"""'):
+        source = f"class Writer : IBufferWriter<byte> {{ object value = {literal}; void Advance() {{ }} }}"
+        if not has_external_base(type_spans(source), source.index("void Advance"), set()):
+            print(f"self-test failed: literal {literal} truncated the containing type", file=sys.stderr)
+            return 1
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         (root / "src").mkdir()
@@ -212,6 +219,7 @@ def self_test() -> int:
             "    private void EscapedCaller() { Escaped(); var closing = \"*/\"; }\n"
             "}\n"
             "public class Writer : System.Buffers.IBufferWriter<byte>\n{\n"
+            "    private const string ClosingBrace = \"}\";\n"
             "    public void Advance(int count) { }\n"
             "    private void Helper() { }\n"
             "}\n",
