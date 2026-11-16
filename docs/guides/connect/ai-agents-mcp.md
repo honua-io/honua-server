@@ -386,7 +386,7 @@ layer over an illustrative extent in EPSG:4326:
 
 Replace the example pair and extent with the selected layer and the requested area.
 
-Layer display and spatial configuration are available through the admin `full` catalog as
+Layer display and spatial configuration tools are discoverable through the authenticated `full` catalog as
 `honua_admin_layer_display_get`, `honua_admin_layer_display_set`,
 `honua_admin_layer_spatial_get`, and `honua_admin_layer_spatial_set`.
 Use the storage layer ID from connection-layer discovery. Read the current configuration
@@ -398,7 +398,7 @@ A view is **discovery, not authority**:
 
 - Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.
 - Every `tools/call` is independently reauthenticated and reauthorized against the current actor, tenant, roles/grants, OAuth scope, and policy — whether or not the tool was discovered through a view.
-- The complete paginated catalog is an explicit admin operation: pass the reserved name `full`, which overrides a session or profile default and requires an admin role. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
+- To discover the complete paginated catalog, authenticate and pass the reserved name `full`, which overrides a session or profile default. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
 - `honua_list_capabilities` returns at most 12 tools and 12 resources by default. Follow `nextToolCursor` and `nextResourceCursor`; `fullExport: true` is admin-only.
 - `resources/read` returns at most 64,000 characters by default. A caller may explicitly request `maxChars` up to the hard ceiling of 1,000,000.
 - Members carry the **exact** canonical description, annotations, and input/output schemas the full catalog serves; nothing is truncated or re-described.
