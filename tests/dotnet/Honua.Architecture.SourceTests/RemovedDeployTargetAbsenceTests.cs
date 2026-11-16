@@ -53,7 +53,7 @@ public sealed partial class RemovedDeployTargetAbsenceTests
     }
 
     [ArchitectureTest]
-    public void Projects_ShouldNotReferenceTheYarpReverseProxyPackage()
+    public void Projects_ShouldNotReferenceEmbeddedReverseProxyPackages()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var projectFiles = ProjectFilePatterns
@@ -63,7 +63,7 @@ public sealed partial class RemovedDeployTargetAbsenceTests
             .ToArray();
 
         projectFiles.Should().NotBeEmpty();
-        projectFiles.Where(path => File.ReadAllText(path).Contains("Yarp.ReverseProxy", StringComparison.OrdinalIgnoreCase))
+        projectFiles.Where(path => File.ReadAllText(path).Contains(".ReverseProxy", StringComparison.OrdinalIgnoreCase))
             .Should().BeEmpty("the embedded reverse proxy package may not be referenced by any project or props file");
     }
 
@@ -77,6 +77,6 @@ public sealed partial class RemovedDeployTargetAbsenceTests
     [GeneratedRegex(@"\b(class|record|struct|interface|enum)\s+I?Azure(Functions|ContainerApps)\w*", RegexOptions.CultureInvariant)]
     private static partial Regex AzureTargetType();
 
-    [GeneratedRegex(@"YarpRolling|SelfHostedRolling|SelfHostedProxy|SelfHostedDeploy", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\b\w*RollingDeployBackend\b|SelfHostedRolling|SelfHostedProxy|SelfHostedDeploy", RegexOptions.CultureInvariant)]
     private static partial Regex RollingProxyName();
 }
