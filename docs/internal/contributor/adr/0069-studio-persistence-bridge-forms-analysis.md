@@ -13,7 +13,7 @@ Console's live editors persist through three different server surfaces:
    rollback, with draft `generation` optimistic concurrency, item-level
    current/published pointers, and the honua-server#3001/#3018 ownership +
    fail-closed authorization model.
-2. **Forms package API** (`/api/v1/admin/forms/packages`, `IFormPackageStore`,
+2. **Forms API** (`/api/v1/admin/forms`, `IFormPackageStore`,
    `form_packages` / `form_package_versions` tables): `honua.form-package.v1`
    documents, monotonic integer versions with `draft`/`published`/`archived`
    status, strong ETag + `If-Match` draft concurrency, a DB trigger that makes
@@ -34,6 +34,9 @@ for lifecycle-native families. Without unification, the console retirement
 schedule for form/analysis editors (honua-console#324) has no persistence path.
 
 ## Decision
+
+The Form route above reflects the later vocabulary migration in #7854; the
+bridge decision below preserves the native persistence and wire contracts.
 
 **Both families are BRIDGED, not migrated.** The Studio lifecycle API becomes
 the single client-visible contract for enumerating, opening, drafting, and
