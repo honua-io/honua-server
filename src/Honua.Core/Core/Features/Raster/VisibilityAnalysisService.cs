@@ -167,8 +167,7 @@ public sealed class VisibilityAnalysisService
         {
             var azimuth = ray * 360.0 / rayCount;
             var (endLon, endLat) = RasterAnalysisGeometry.DestinationPoint(
-                observer.Longitude,
-                observer.Latitude,
+                (observer.Longitude, observer.Latitude),
                 azimuth,
                 options.RadiusMeters);
 
@@ -316,7 +315,7 @@ public sealed class VisibilityAnalysisService
         RasterMergeStrategy mergeStrategy,
         CancellationToken cancellationToken)
     {
-        var lineWkb = RasterAnalysisGeometry.BuildLineWkb(startLon, startLat, endLon, endLat);
+        var lineWkb = RasterAnalysisGeometry.BuildLineWkb((startLon, startLat), (endLon, endLat));
         var options = new ProfileSamplingOptions
         {
             SampleCount = sampleCount,

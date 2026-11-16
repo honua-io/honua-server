@@ -204,12 +204,12 @@ internal static class ServiceResourceValidationHelpers
         => exception is DbException { SqlState: "42P01" };
 
     public static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateAdminStorageLayerAsync(
-        int storageLayerId, HttpContext context, IResourceValidator resourceValidator, CancellationToken cancellationToken)
+        (int StorageLayerId, HttpContext Context) request, IResourceValidator resourceValidator, CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
+        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(request.StorageLayerId, cancellationToken).ConfigureAwait(false);
         if (!layerResult.IsValid || layerResult.Resource == null)
         {
-            return (null, CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
+            return (null, CreateAdminValidationProblem(request.Context, layerResult, $"Layer {request.StorageLayerId} not found."));
         }
 
         return (layerResult.Resource, null);

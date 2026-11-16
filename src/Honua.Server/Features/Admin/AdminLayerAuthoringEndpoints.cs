@@ -78,7 +78,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         int storageLayerId, string key, HttpContext context,
         IResourceValidator resourceValidator, IMetadataV2GraphStore graphStore, CancellationToken cancellationToken)
     {
-        var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (problem != null || resource == null)
         {
             return problem!;
@@ -104,7 +104,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         IResourceValidator resourceValidator, IMetadataV2GraphStore graphStore,
         OutputCacheInvalidationService cacheInvalidator, CancellationToken cancellationToken)
     {
-        var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (problem != null || resource == null)
         {
             return problem!;

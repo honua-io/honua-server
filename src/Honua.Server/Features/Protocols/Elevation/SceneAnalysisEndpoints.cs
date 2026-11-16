@@ -104,7 +104,8 @@ internal static partial class SceneAnalysisEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Request body is required.");
         }
 
-        if (!ElevationAnalysisValidation.TryResolveCoordinate(request.ObserverLon, request.ObserverLat, out var observerLon, out var observerLat))
+        var (observerLonValid, observerLon, observerLat) = ElevationAnalysisValidation.ResolveCoordinate(request.ObserverLon, request.ObserverLat);
+        if (!observerLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -118,7 +119,8 @@ internal static partial class SceneAnalysisEndpoints
                 "'timestamp' is required and must be an ISO 8601 date/time.");
         }
 
-        if (!ElevationAnalysisValidation.TryResolveHeight(request.ObserverHeight, out var observerHeight))
+        var (observerHeightValid, observerHeight) = ElevationAnalysisValidation.ResolveHeight(request.ObserverHeight);
+        if (!observerHeightValid)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
@@ -237,14 +239,16 @@ internal static partial class SceneAnalysisEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Request body is required.");
         }
 
-        if (!ElevationAnalysisValidation.TryResolveCoordinate(request.StartLon, request.StartLat, out var startLon, out var startLat))
+        var (startLonValid, startLon, startLat) = ElevationAnalysisValidation.ResolveCoordinate(request.StartLon, request.StartLat);
+        if (!startLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "Slice 'startLon' and 'startLat' are required and must be finite WGS 84 coordinates within longitude [-180, 180] and latitude [-90, 90].");
         }
 
-        if (!ElevationAnalysisValidation.TryResolveCoordinate(request.EndLon, request.EndLat, out var endLon, out var endLat))
+        var (endLonValid, endLon, endLat) = ElevationAnalysisValidation.ResolveCoordinate(request.EndLon, request.EndLat);
+        if (!endLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,

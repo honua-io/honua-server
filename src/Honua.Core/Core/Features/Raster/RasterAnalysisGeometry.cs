@@ -7,30 +7,31 @@ namespace Honua.Core.Features.Raster;
 
 internal static class RasterAnalysisGeometry
 {
-    internal static byte[] BuildLineWkb(double startLon, double startLat, double endLon, double endLat)
+    internal static byte[] BuildLineWkb(
+        (double Longitude, double Latitude) start,
+        (double Longitude, double Latitude) end)
     {
         // Byte order (1) + type (4) + numPoints (4) + 2 * (x,y as float8) = 41 bytes.
         var buffer = new byte[41];
         buffer[0] = 1; // little-endian
         buffer[1] = 0x02; // geometry type = 2 (LineString)
         buffer[5] = 0x02; // numPoints = 2
-        BitConverter.TryWriteBytes(buffer.AsSpan(9, 8), startLon);
-        BitConverter.TryWriteBytes(buffer.AsSpan(17, 8), startLat);
-        BitConverter.TryWriteBytes(buffer.AsSpan(25, 8), endLon);
-        BitConverter.TryWriteBytes(buffer.AsSpan(33, 8), endLat);
+        BitConverter.TryWriteBytes(buffer.AsSpan(9, 8), start.Longitude);
+        BitConverter.TryWriteBytes(buffer.AsSpan(17, 8), start.Latitude);
+        BitConverter.TryWriteBytes(buffer.AsSpan(25, 8), end.Longitude);
+        BitConverter.TryWriteBytes(buffer.AsSpan(33, 8), end.Latitude);
         return buffer;
     }
 
     internal static (double Longitude, double Latitude) DestinationPoint(
-        double startLon,
-        double startLat,
+        (double Longitude, double Latitude) start,
         double azimuthDegrees,
         double distanceMeters)
     {
         var angular = distanceMeters / SpatialConstants.EarthRadius;
         var theta = DegToRad(azimuthDegrees);
-        var phi1 = DegToRad(startLat);
-        var lambda1 = DegToRad(startLon);
+        var phi1 = DegToRad(start.Latitude);
+        var lambda1 = DegToRad(start.Longitude);
 
         var sinPhi2 = Math.Sin(phi1) * Math.Cos(angular)
             + Math.Cos(phi1) * Math.Sin(angular) * Math.Cos(theta);

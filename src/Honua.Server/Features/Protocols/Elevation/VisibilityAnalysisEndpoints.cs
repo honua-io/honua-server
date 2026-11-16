@@ -112,22 +112,25 @@ internal static partial class VisibilityAnalysisEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Request body is required.");
         }
 
-        if (!ElevationAnalysisValidation.TryResolveCoordinate(request.ObserverLon, request.ObserverLat, out var observerLon, out var observerLat))
+        var (observerLonValid, observerLon, observerLat) = ElevationAnalysisValidation.ResolveCoordinate(request.ObserverLon, request.ObserverLat);
+        if (!observerLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "Observer 'observerLon' and 'observerLat' are required and must be finite WGS 84 coordinates within longitude [-180, 180] and latitude [-90, 90].");
         }
 
-        if (!ElevationAnalysisValidation.TryResolveCoordinate(request.TargetLon, request.TargetLat, out var targetLon, out var targetLat))
+        var (targetLonValid, targetLon, targetLat) = ElevationAnalysisValidation.ResolveCoordinate(request.TargetLon, request.TargetLat);
+        if (!targetLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "Target 'targetLon' and 'targetLat' are required and must be finite WGS 84 coordinates within longitude [-180, 180] and latitude [-90, 90].");
         }
 
-        if (!ElevationAnalysisValidation.TryResolveHeight(request.ObserverHeight, out var observerHeight)
-            || !ElevationAnalysisValidation.TryResolveHeight(request.TargetHeight, out var targetHeight))
+        var (observerHeightValid, observerHeight) = ElevationAnalysisValidation.ResolveHeight(request.ObserverHeight);
+        var (targetHeightValid, targetHeight) = ElevationAnalysisValidation.ResolveHeight(request.TargetHeight);
+        if (!observerHeightValid || !targetHeightValid)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
@@ -240,7 +243,8 @@ internal static partial class VisibilityAnalysisEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Request body is required.");
         }
 
-        if (!ElevationAnalysisValidation.TryResolveCoordinate(request.ObserverLon, request.ObserverLat, out var observerLon, out var observerLat))
+        var (observerLonValid, observerLon, observerLat) = ElevationAnalysisValidation.ResolveCoordinate(request.ObserverLon, request.ObserverLat);
+        if (!observerLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -254,8 +258,9 @@ internal static partial class VisibilityAnalysisEndpoints
                 "'radiusMeters' is required and must be a positive finite distance in meters.");
         }
 
-        if (!ElevationAnalysisValidation.TryResolveHeight(request.ObserverHeight, out var observerHeight)
-            || !ElevationAnalysisValidation.TryResolveHeight(request.TargetHeight, out var targetHeight))
+        var (observerHeightValid, observerHeight) = ElevationAnalysisValidation.ResolveHeight(request.ObserverHeight);
+        var (targetHeightValid, targetHeight) = ElevationAnalysisValidation.ResolveHeight(request.TargetHeight);
+        if (!observerHeightValid || !targetHeightValid)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,

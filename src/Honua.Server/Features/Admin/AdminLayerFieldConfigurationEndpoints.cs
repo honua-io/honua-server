@@ -51,7 +51,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         [FromServices] ILayerFieldConfigurationStore fieldConfigurationStore,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -75,7 +75,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;

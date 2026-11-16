@@ -9,45 +9,39 @@ namespace Honua.Server.Features.Protocols.Elevation;
 
 internal static class ElevationAnalysisValidation
 {
-    internal static bool TryResolveCoordinate(double? lon, double? lat, out double resolvedLon, out double resolvedLat)
+    internal static (bool IsValid, double Longitude, double Latitude) ResolveCoordinate(double? lon, double? lat)
     {
-        resolvedLon = 0;
-        resolvedLat = 0;
         if (lon is not { } x || lat is not { } y)
         {
-            return false;
+            return (false, 0, 0);
         }
 
         if (!double.IsFinite(x) || !double.IsFinite(y))
         {
-            return false;
+            return (false, 0, 0);
         }
 
         if (x < -180 || x > 180 || y < -90 || y > 90)
         {
-            return false;
+            return (false, 0, 0);
         }
 
-        resolvedLon = x;
-        resolvedLat = y;
-        return true;
+        return (true, x, y);
     }
 
-    internal static bool TryResolveHeight(double? height, out double resolvedHeight)
+    internal static (bool IsValid, double Height) ResolveHeight(double? height)
     {
-        resolvedHeight = 0;
         if (height is not { } value)
         {
-            return true;
+            return (true, 0);
         }
 
         if (!double.IsFinite(value) || value < 0)
         {
-            return false;
+            return (false, 0);
         }
 
-        resolvedHeight = value;
-        return true;
+        return (true, value);
     }
 
     internal static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(

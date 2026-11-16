@@ -116,8 +116,7 @@ public sealed class SceneAnalysisService
             MaxShadowSamples);
 
         var (endLon, endLat) = RasterAnalysisGeometry.DestinationPoint(
-            observer.Longitude,
-            observer.Latitude,
+            (observer.Longitude, observer.Latitude),
             shadowAzimuth,
             options.MaxShadowLengthMeters);
 
@@ -404,7 +403,7 @@ public sealed class SceneAnalysisService
         RasterMergeStrategy mergeStrategy,
         CancellationToken cancellationToken)
     {
-        var lineWkb = RasterAnalysisGeometry.BuildLineWkb(startLon, startLat, endLon, endLat);
+        var lineWkb = RasterAnalysisGeometry.BuildLineWkb((startLon, startLat), (endLon, endLat));
         var options = new ProfileSamplingOptions
         {
             SampleCount = sampleCount,

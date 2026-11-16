@@ -46,7 +46,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         [FromServices] IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -68,7 +68,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
