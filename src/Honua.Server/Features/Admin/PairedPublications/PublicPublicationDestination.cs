@@ -1,8 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Server.Features.Admin.PairedPublications;
 
@@ -45,6 +48,7 @@ internal sealed class PublicPublicationDestination : IPublicPublicationDestinati
             SizeBytes = artifact.SizeBytes ?? (artifact.Content.CanSeek ? artifact.Content.Length - artifact.Content.Position : null),
             ObjectKeyOverride = key,
             CachePolicy = StoredObjectCachePolicy.PublicReplacedInPlace,
+            Metadata = MetadataFor(artifact.Provenance),
             TimeToLive = null
         }, cancellationToken).ConfigureAwait(false);
         if (!result.Success)
@@ -57,10 +61,29 @@ internal sealed class PublicPublicationDestination : IPublicPublicationDestinati
 
     public async Task DeleteAsync(PublicPublicationArtifactKey key, CancellationToken cancellationToken)
     {
-        if (!await _storage.DeleteAsync(ObjectKey(key), cancellationToken).ConfigureAwait(false))
+        var objectKey = ObjectKey(key);
+        if (!await _storage.DeleteAsync(objectKey, cancellationToken).ConfigureAwait(false) &&
+            await _storage.ExistsAsync(objectKey, cancellationToken).ConfigureAwait(false))
         {
             throw new InvalidOperationException("Deleting the public publication artifact failed.");
         }
+    }
+
+    private static ImmutableDictionary<string, string> MetadataFor(PublicPublicationProvenance? provenance)
+    {
+        if (provenance is null)
+        {
+            return ImmutableDictionary<string, string>.Empty;
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(provenance.ServiceId);
+        ArgumentOutOfRangeException.ThrowIfNegative(provenance.LayerIndex);
+        ArgumentOutOfRangeException.ThrowIfNegative(provenance.MetadataRevision);
+        var layer = provenance.LayerIndex.ToString(CultureInfo.InvariantCulture);
+        var tags = CdnCacheTags.ForResponse(new(provenance.ServiceId, layer), new PathString("/rest/services"), provenance.ServiceId);
+        return ImmutableDictionary<string, string>.Empty
+            .Add("cache-tag", string.Join(',', tags))
+            .Add("metadata-revision", provenance.MetadataRevision.ToString(CultureInfo.InvariantCulture));
     }
 
     private static string ObjectKey(PublicPublicationArtifactKey key)

@@ -4,8 +4,10 @@
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Server.Features.Admin.PairedPublications;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -40,7 +42,62 @@ public sealed class PublicPublicationDestinationTests
         uploaded!.ObjectKeyOverride.Should().Be("data/publications/roads/v1/roads.pmtiles");
         uploaded.CachePolicy.Should().Be(StoredObjectCachePolicy.PublicReplacedInPlace);
         uploaded.TimeToLive.Should().BeNull();
+        uploaded.Metadata.Should().BeEmpty();
         uploaded.Content.Should().BeSameAs(content);
+    }
+
+    [Theory]
+    [InlineData(" City Roads ")]
+    [InlineData("long-service-name-that-exceeds-the-normalized-tag-name-budget-and-must-use-the-shared-tag-digest-instead-of-growing-unbounded")]
+    [Trait("Tier", "Fast")]
+    public async Task PutAsync_Provenance_UsesMatchingBoundedSubjectTagsAndExplicitMetadataRevision(string service)
+    {
+        var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
+        FileUploadRequest? uploaded = null;
+        storage.Setup(s => s.UploadAsync(It.IsAny<FileUploadRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<FileUploadRequest, CancellationToken>((request, _) => uploaded = request)
+            .ReturnsAsync(UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = "public-artifact", FileName = Key.FileName, StoragePath = "public-artifact",
+                ContentType = "application/vnd.pmtiles", SizeBytes = 1, UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.AwsS3
+            }, TimeSpan.Zero));
+        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var content = new MemoryStream([1]);
+
+        await destination.PutAsync(new(Key, content, "application/vnd.pmtiles")
+        {
+            Provenance = new(service, 7, 42)
+        }, CancellationToken.None);
+
+        var expectedTags = CdnCacheTags.ForResponse(new(service, "7"), new PathString("/rest/services"), service);
+        uploaded!.Metadata["cache-tag"].Split(',').Should().Equal(expectedTags);
+        expectedTags.Should().HaveCount(3).And.OnlyContain(tag => tag.Length <= CdnCacheTags.MaxTagLength);
+        CdnCacheTags.InvalidationsForEditedLayer(900, [service])
+            .Select(tag => tag[CdnCacheTags.InvalidationPrefix.Length..])
+            .Any(expectedTags.Contains).Should().BeTrue();
+        uploaded.Metadata["metadata-revision"].Should().Be("42");
+        uploaded.Metadata.Keys.Should().NotContain("release");
+    }
+
+    [Theory]
+    [InlineData(" ", 0, 1)]
+    [InlineData("roads", -1, 1)]
+    [InlineData("roads", 0, -1)]
+    [Trait("Tier", "Fast")]
+    public async Task PutAsync_InvalidProvenance_RefusesBeforeStorage(string service, int layer, long revision)
+    {
+        var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
+        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var content = new MemoryStream([1]);
+
+        var action = () => destination.PutAsync(new(Key, content, "application/vnd.pmtiles")
+        {
+            Provenance = new(service, layer, revision)
+        }, CancellationToken.None);
+
+        await action.Should().ThrowAsync<ArgumentException>();
+        storage.VerifyNoOtherCalls();
     }
 
     [Theory]
@@ -84,11 +141,41 @@ public sealed class PublicPublicationDestinationTests
         var storage = new Mock<ICloudFileStorage>();
         storage.Setup(s => s.DeleteAsync("data/publications/roads/v1/roads.pmtiles", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
+        storage.Setup(s => s.ExistsAsync("data/publications/roads/v1/roads.pmtiles", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
         var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
 
         var action = () => destination.DeleteAsync(Key, CancellationToken.None);
 
         await action.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [UnitTest]
+    public async Task DeleteAsync_AlreadyAbsent_CompletesRetriedDeletion()
+    {
+        var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
+        storage.Setup(s => s.DeleteAsync("data/publications/roads/v1/roads.pmtiles", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        storage.Setup(s => s.ExistsAsync("data/publications/roads/v1/roads.pmtiles", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+
+        await destination.DeleteAsync(Key, CancellationToken.None);
+    }
+
+    [UnitTest]
+    public async Task DeleteAsync_AbsenceCheckFails_DoesNotConfirmRevocation()
+    {
+        var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
+        storage.Setup(s => s.DeleteAsync("data/publications/roads/v1/roads.pmtiles", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        storage.Setup(s => s.ExistsAsync("data/publications/roads/v1/roads.pmtiles", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("Storage unavailable"));
+        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+
+        var action = () => destination.DeleteAsync(Key, CancellationToken.None);
+
+        await action.Should().ThrowAsync<IOException>();
     }
 
     [UnitTest]
