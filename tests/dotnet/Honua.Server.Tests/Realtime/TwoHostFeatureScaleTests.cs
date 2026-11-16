@@ -87,30 +87,10 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
         using var clientA = SubscriberClient(_taskA);
         using var clientB = SubscriberClient(_taskB);
         var subscribers = new List<Subscriber>(_profile.Subscribers);
-        var checkpoints = new List<string>();
         Task[] reading = [];
         try
         {
-            for (var i = 0; i < _profile.Subscribers; i++)
-            {
-                if (i > 0 && i % 500 == 0)
-                {
-                    checkpoints.Add($"at {i}: {await DescribeDatabaseSessionsAsync()}");
-                }
-                HttpResponseMessage response;
-                try
-                {
-                    response = await TwoHostFeatureHarness.OpenStreamAsync(i % 2 == 0 ? clientA : clientB, null, run.Token);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    throw new InvalidOperationException(
-                        $"Opening subscriber {i} of {_profile.Subscribers} failed; database sessions: {await DescribeDatabaseSessionsAsync()}; " +
-                        $"earlier: {string.Join(" | ", checkpoints)}",
-                        exception);
-                }
-                subscribers.Add(new Subscriber(response));
-            }
+            await OpenSubscribersAsync(clientA, clientB, subscribers, run.Token);
             _output.WriteLine($"after opening subscribers: {await DescribeDatabaseSessionsAsync()}");
             var context = new DeliveryContext(_marker, startedAt, latencies);
             reading = subscribers.Select(subscriber => subscriber.ReadAsync(context, total, run.Token)).ToArray();
@@ -118,21 +98,7 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
             var writeClock = Stopwatch.StartNew();
             await WriteAtRateAsync(startedAt, run.Token);
             var writeElapsed = writeClock.Elapsed;
-            using (var settle = CancellationTokenSource.CreateLinkedTokenSource(run.Token))
-            {
-                settle.CancelAfter(SettleTimeout);
-                try
-                {
-                    await Task.WhenAll(reading).WaitAsync(settle.Token);
-                }
-                catch (OperationCanceledException exception)
-                {
-                    throw new TimeoutException(
-                        $"Subscribers received between {subscribers.Min(subscriber => subscriber.Received)} and " +
-                        $"{subscribers.Max(subscriber => subscriber.Received)} of {total} edits.", exception);
-                }
-            }
-
+            await AwaitDeliveryAsync(reading, subscribers, total, run.Token);
             _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
                 $"subscribers={_profile.Subscribers} edits={total} write_seconds={writeElapsed.TotalSeconds:F1} " +
                 $"achieved_eps={total / writeElapsed.TotalSeconds:F1} p50_ms={latencies.Percentile(0.50)} " +
@@ -146,16 +112,7 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
             {
                 latencies.Percentile(0.95).Should().BeLessThanOrEqualTo((long)DeliveryTarget.TotalMilliseconds);
             }
-            // One listener connection per task for the whole run, independent of subscriber count.
-            listeners.Should().OnlyContain(listener => listener.IsConnected);
-            listeners.Select(listener => listener.ProcessId).Should().OnlyHaveUniqueItems();
-            listeners.Select(listener => listener.Reconnects).Should().Equal(reconnectsBefore);
-            var listenerSessionsAfter = await CountListenerSessionsAsync();
-            if (listenerSessionsAfter != listenerSessionsBefore)
-            {
-                listenerSessionsAfter.Should().Be(listenerSessionsBefore,
-                    $"listener connections must not grow with subscribers; sessions: {await DescribeDatabaseSessionsAsync()}");
-            }
+            await AssertOneListenerPerTaskAsync(listeners, reconnectsBefore, listenerSessionsBefore);
         }
         finally
         {
@@ -166,6 +123,68 @@ public sealed class TwoHostFeatureScaleTests : IAsyncLifetime
                 subscriber.Dispose();
             }
             await Task.WhenAll(reading).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+    }
+
+    // Opens the subscribers alternately on both tasks, adding each to the caller's list as it opens
+    // so a failure part-way still leaves every already-open stream for the caller to dispose.
+    private async Task OpenSubscribersAsync(
+        HttpClient clientA, HttpClient clientB, List<Subscriber> subscribers, CancellationToken cancellationToken)
+    {
+        var checkpoints = new List<string>();
+        for (var i = 0; i < _profile.Subscribers; i++)
+        {
+            if (i > 0 && i % 500 == 0)
+            {
+                checkpoints.Add($"at {i}: {await DescribeDatabaseSessionsAsync()}");
+            }
+            HttpResponseMessage response;
+            try
+            {
+                response = await TwoHostFeatureHarness.OpenStreamAsync(i % 2 == 0 ? clientA : clientB, null, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                throw new InvalidOperationException(
+                    $"Opening subscriber {i} of {_profile.Subscribers} failed; database sessions: {await DescribeDatabaseSessionsAsync()}; " +
+                    $"earlier: {string.Join(" | ", checkpoints)}",
+                    exception);
+            }
+            subscribers.Add(new Subscriber(response));
+        }
+    }
+
+    // Waits up to the settle timeout for every subscriber to receive every edit, reporting the
+    // received range when some fall short.
+    private static async Task AwaitDeliveryAsync(
+        Task[] reading, List<Subscriber> subscribers, int total, CancellationToken cancellationToken)
+    {
+        using var settle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        settle.CancelAfter(SettleTimeout);
+        try
+        {
+            await Task.WhenAll(reading).WaitAsync(settle.Token);
+        }
+        catch (OperationCanceledException exception)
+        {
+            throw new TimeoutException(
+                $"Subscribers received between {subscribers.Min(subscriber => subscriber.Received)} and " +
+                $"{subscribers.Max(subscriber => subscriber.Received)} of {total} edits.", exception);
+        }
+    }
+
+    // One listener connection per task for the whole run, independent of subscriber count.
+    private async Task AssertOneListenerPerTaskAsync(
+        RealtimeListener[] listeners, long[] reconnectsBefore, long listenerSessionsBefore)
+    {
+        listeners.Should().OnlyContain(listener => listener.IsConnected);
+        listeners.Select(listener => listener.ProcessId).Should().OnlyHaveUniqueItems();
+        listeners.Select(listener => listener.Reconnects).Should().Equal(reconnectsBefore);
+        var listenerSessionsAfter = await CountListenerSessionsAsync();
+        if (listenerSessionsAfter != listenerSessionsBefore)
+        {
+            listenerSessionsAfter.Should().Be(listenerSessionsBefore,
+                $"listener connections must not grow with subscribers; sessions: {await DescribeDatabaseSessionsAsync()}");
         }
     }
 

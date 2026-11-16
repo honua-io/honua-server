@@ -174,26 +174,8 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
             var relayed = await relayTimes;
             await probing;
             AssertCompleteOrderedDelivery(frames, committed.Keys);
-            // Measure from before the HTTP edit, so this includes request and commit time
-            // rather than understating latency when SSE beats the edit response back.
-            var latencies = frames.Select(frame => Stopwatch.GetElapsedTime(committed[frame.ObjectId], frame.ReceivedAt))
-                .Order().ToArray();
-            // Split each delivery at the moment task B's relay passed the frame's generation, so a
-            // miss says whether the wait was in the provider (commit to relay) or the stream (relay to frame).
-            var toRelay = frames.Select(frame => Stopwatch.GetElapsedTime(committed[frame.ObjectId], RelayedAt(relayed, frame)))
-                .Order().ToArray();
-            var toFrame = frames.Select(frame => Stopwatch.GetElapsedTime(RelayedAt(relayed, frame), frame.ReceivedAt))
-                .Order().ToArray();
-            var p95 = (int)Math.Ceiling(Edits * 0.95) - 1;
-            var listenerB = _taskB.GetService<RealtimeListener>();
-            var logHeadB = await _taskB.GetService<PostgresFeatureChangeLog>().ReadHeadAsync(timeout.Token);
-            latencies[p95].Should().BeLessThanOrEqualTo(latencyTarget,
-                $"p95 commit-to-relay was {toRelay[p95].TotalMilliseconds:F0} ms and relay-to-frame {toFrame[p95].TotalMilliseconds:F0} ms; " +
-                $"relay moved {relayed.Count} times ({DescribeRelay(relayed)}) for frame generations " +
-                $"{frames[0].Generation}..{frames[^1].Generation}; {Volatile.Read(ref notifications)} feature notifications seen by a probe; " +
-                $"task B feature log head {logHeadB}, " +
-                $"listener connected {listenerB.IsConnected} (pid {listenerB.ProcessId}, reconnects {listenerB.Reconnects}, " +
-                $"poll-only reason {listenerB.PollOnlyReason ?? "none"})");
+            await AssertLatencyWithinTargetAsync(
+                frames, committed, relayed, Volatile.Read(ref notifications), latencyTarget, timeout.Token);
         }
         finally
         {
@@ -201,6 +183,34 @@ public sealed class TwoHostFeatureHttpTests : IAsyncLifetime
             await sampling.CancelAsync();
             await Task.WhenAll(reading, relayTimes, probing).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
+    }
+
+    // Fails with the commit-to-relay and relay-to-frame split, so a missed target says whether
+    // the wait was in the provider or in the stream.
+    private async Task AssertLatencyWithinTargetAsync(
+        IReadOnlyList<FeatureFrame> frames, Dictionary<long, long> committed, List<(long Position, long At)> relayed,
+        int notifications, TimeSpan latencyTarget, CancellationToken cancellationToken)
+    {
+        // Measure from before the HTTP edit, so this includes request and commit time
+        // rather than understating latency when SSE beats the edit response back.
+        var latencies = frames.Select(frame => Stopwatch.GetElapsedTime(committed[frame.ObjectId], frame.ReceivedAt))
+            .Order().ToArray();
+        // Split each delivery at the moment task B's relay passed the frame's generation, so a
+        // miss says whether the wait was in the provider (commit to relay) or the stream (relay to frame).
+        var toRelay = frames.Select(frame => Stopwatch.GetElapsedTime(committed[frame.ObjectId], RelayedAt(relayed, frame)))
+            .Order().ToArray();
+        var toFrame = frames.Select(frame => Stopwatch.GetElapsedTime(RelayedAt(relayed, frame), frame.ReceivedAt))
+            .Order().ToArray();
+        var p95 = (int)Math.Ceiling(Edits * 0.95) - 1;
+        var listenerB = _taskB.GetService<RealtimeListener>();
+        var logHeadB = await _taskB.GetService<PostgresFeatureChangeLog>().ReadHeadAsync(cancellationToken);
+        latencies[p95].Should().BeLessThanOrEqualTo(latencyTarget,
+            $"p95 commit-to-relay was {toRelay[p95].TotalMilliseconds:F0} ms and relay-to-frame {toFrame[p95].TotalMilliseconds:F0} ms; " +
+            $"relay moved {relayed.Count} times ({DescribeRelay(relayed)}) for frame generations " +
+            $"{frames[0].Generation}..{frames[^1].Generation}; {notifications} feature notifications seen by a probe; " +
+            $"task B feature log head {logHeadB}, " +
+            $"listener connected {listenerB.IsConnected} (pid {listenerB.ProcessId}, reconnects {listenerB.Reconnects}, " +
+            $"poll-only reason {listenerB.PollOnlyReason ?? "none"})");
     }
 
     // Records when task B's feature relay first reached each position, sampled every few
