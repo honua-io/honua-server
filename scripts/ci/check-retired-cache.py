@@ -22,10 +22,17 @@ ROUTING_DATA_FILES = {
 }
 
 
+# NuGet lock files record the resolved closure of references that the checked project
+# files and Directory.Packages.props already declare, directly or transitively, so a cache
+# package appears there only while a checked file still pulls it in.
+GENERATED_DEPENDENCY_RECORDS = {"packages.lock.json"}
+
+
 def exempt(path: str) -> bool:
     name = PurePosixPath(path)
     return (path in POLICY_FILES
             or path in ROUTING_DATA_FILES
+            or name.name in GENERATED_DEPENDENCY_RECORDS
             or name.name.casefold() in {"changelog", "changelog.md", "changelog.rst", "changelog.txt",
                                         "third-party-notices.md", "third-party-notices.txt"}
             or path.casefold().startswith("docs/changelog/"))
