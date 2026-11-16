@@ -1261,6 +1261,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             var maxY = sql.AddParameter(filter.EnvelopeMaxY.Value);
             var srid = filter.Srid ?? _storageSrid;
             var envelope = $"ST_MakeEnvelope({minX}, {minY}, {maxX}, {maxY}, {srid})";
+            if (filter.EnvelopeMaxX.Value <= filter.EnvelopeMinX.Value ||
+                filter.EnvelopeMaxY.Value <= filter.EnvelopeMinY.Value)
+            {
+                // A box collapsed to a point or line (an OGC bbox=x,y,x,y) makes ST_MakeEnvelope
+                // a zero-area polygon that GEOS treats as intersecting nothing, dropping the
+                // features exactly on it. ST_Envelope reduces it to the POINT or LINESTRING it is.
+                envelope = $"ST_Envelope({envelope})";
+            }
+
             return TransformFilterGeometryIfNeeded(envelope, srid, query.SpatialFilterDatumTransformation);
         }
 
