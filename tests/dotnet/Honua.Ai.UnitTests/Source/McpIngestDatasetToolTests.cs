@@ -630,18 +630,23 @@ public sealed class McpIngestDatasetToolTests
         ServiceProvider services,
         string argumentsJson,
         CancellationToken cancellationToken = default)
-        => DispatchAsync(McpTestFactory.AuthenticatedHttpContext(), services, argumentsJson, cancellationToken);
+    {
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        context.RequestServices = services;
+        return DispatchAsync(context, argumentsJson, cancellationToken);
+    }
 
     private Task<McpJsonRpcResponse?> DispatchAsAgentAsync(ServiceProvider services, string argumentsJson)
     {
         var context = McpTestFactory.AuthenticatedHttpContext();
         ((ClaimsIdentity)context.User.Identity!).AddClaim(new Claim(ClaimTypes.Role, AgentApprovalRule.AgentRole));
-        return DispatchAsync(context, services, argumentsJson, CancellationToken.None);
+        context.RequestServices = services;
+        return DispatchAsync(context, argumentsJson, CancellationToken.None);
     }
 
+    // The context carries the request services the tool resolves.
     private static async Task<McpJsonRpcResponse?> DispatchAsync(
         HttpContext context,
-        ServiceProvider services,
         string argumentsJson,
         CancellationToken cancellationToken)
     {
@@ -649,8 +654,6 @@ public sealed class McpIngestDatasetToolTests
             [new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance)],
             [],
             NullLogger<McpDataAccessSurface>.Instance);
-
-        context.RequestServices = services;
 
         return await surface.DispatchAsync(
             context,
