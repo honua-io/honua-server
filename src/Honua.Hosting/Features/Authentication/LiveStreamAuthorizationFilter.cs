@@ -221,7 +221,7 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         }
     }
 
-    private sealed class RetainedWebSocket(WebSocket inner) : WebSocket
+    internal sealed class RetainedWebSocket(WebSocket inner) : WebSocket
     {
         private readonly SemaphoreSlim _send = new(1, 1);
         private readonly TaskCompletionSource _receiveEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -236,8 +236,22 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         internal void Release() { inner.Dispose(); _send.Dispose(); }
         public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) =>
             inner.CloseAsync(closeStatus, statusDescription, cancellationToken);
-        public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) =>
-            inner.CloseOutputAsync(closeStatus, statusDescription, cancellationToken);
+        public override async Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
+        {
+            await _send.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                // A policy Close may have won while this caller waited for the writer.
+                if (inner.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                {
+                    await inner.CloseOutputAsync(closeStatus, statusDescription, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _send.Release();
+            }
+        }
         public override async Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
         {
             try
