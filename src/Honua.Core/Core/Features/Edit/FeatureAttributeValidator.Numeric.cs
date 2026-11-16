@@ -46,7 +46,7 @@ public static partial class FeatureAttributeValidator
         }
         if (ReadDouble(value) is { } number)
         {
-            return number is 0 or 1 ? number == 1 : null;
+            return number switch { 0 => false, 1 => true, _ => null };
         }
         return null;
     }
