@@ -782,23 +782,23 @@ def check_failure_injections(config: dict[str, Any]) -> None:
     """
     original = selector.select
 
-    def ignores_the_cap(**kwargs):
-        return original(**{**kwargs, "cap": len(kwargs["config"]["shards"])})
+    def ignores_the_cap(config, changed_files, inputs):
+        return original(config, changed_files, inputs._replace(cap=len(config["shards"])))
 
-    def forgets_advisory(**kwargs):
-        stripped = copy.deepcopy(kwargs["config"])
+    def forgets_advisory(config, changed_files, inputs):
+        stripped = copy.deepcopy(config)
         for shard in stripped["shards"]:
             shard.pop("advisory", None)
-        return original(**{**kwargs, "config": stripped})
+        return original(stripped, changed_files, inputs)
 
-    def never_narrows(**kwargs):
-        return original(**{**kwargs, "affected_projects": None})
+    def never_narrows(config, changed_files, inputs):
+        return original(config, changed_files, inputs._replace(affected_projects=None))
 
-    def ranks_by_duration_only(**kwargs):
-        return original(**{**kwargs, "changed_files": []})
+    def ranks_by_duration_only(config, changed_files, inputs):
+        return original(config, [], inputs)
 
-    def ignores_test_ownership(**kwargs):
-        return original(**{**kwargs, "test_class_hits": None})
+    def ignores_test_ownership(config, changed_files, inputs):
+        return original(config, changed_files, inputs._replace(test_class_hits=None))
 
     injections = (
         ("cap", ignores_the_cap, lambda: check_cap_is_enforced(config)),
