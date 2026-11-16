@@ -482,6 +482,83 @@ public sealed class DurableRestoreLifecycleIntegrationTests
         }
     }
 
+    [IntegrationTest]
+    public async Task LocalDeploy_RefusedAtTheContractGate_ReportsTheGateNotAnIncompleteRestore()
+    {
+        var state = await SharedControlPlaneState.GetAsync();
+        var proposals = state.CreateProposalStore();
+        var proposalId = "proposal-" + Guid.NewGuid().ToString("N");
+        await ReleaseCellOwnershipAsync(state);
+        try
+        {
+            var workflows = state.CreateWorkflowOperationStore();
+            var (service, _, monitor) = CreateLocalDeployFixture(workflows, proposals);
+            using var worker = new DurableRestoreWorker(workflows, proposals, null!, new DeployOperationExecutor(service), null!, null!,
+                NullLogger<DurableRestoreWorker>.Instance, monitor, Substitute.For<IComposeExecutorClient>());
+            var now = DateTimeOffset.UtcNow;
+            var id = "restore-local-" + Guid.NewGuid().ToString("N");
+            var workflowId = DeployWorkflowService.CreateOperationId(id);
+            var payload = new DeployExecutionPayload { TargetId = "local", DesiredRevision = "sha256:" + new string('a', 64), CurrentRevision = "sha256:" + new string('b', 64) };
+            var request = new OperationGatewayRequest
+            {
+                Kind = OperationClass.Deploy,
+                RequestedBy = "proposer",
+                ApprovedBy = "approver",
+                ApprovedProposalId = proposalId,
+            };
+            Assert.True(await proposals.TryCreateAsync(CreateClaimedLegacyApproval(request, payload.Serialize(), id)
+                with
+            { Status = OperationProposalStatus.Submitted }));
+            Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
+            {
+                OperationId = workflowId,
+                Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.Failed,
+                CurrentPhase = ComposeExecutorCodes.ContractApprovalRequired,
+                Deploy = new DeployOperationSpec
+                {
+                    TargetId = "local",
+                    TargetKind = DeployTargetKind.LocalCompose,
+                    Backend = "test",
+                    Environment = "test",
+                    TargetName = "test",
+                    DesiredRevision = payload.DesiredRevision
+                },
+                CreatedAt = now,
+                UpdatedAt = now
+            }));
+            Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
+            {
+                OperationId = id,
+                Kind = WorkflowOperationKind.PreMigrationRestore,
+                Status = WorkflowOperationStatus.Reconciling,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Audit = new OperationAuditInfo { RequestedBy = request.RequestedBy, ProposalId = proposalId },
+                PreMigrationRestore = new PreMigrationRestoreContext
+                {
+                    Phase = "awaiting-local-deploy",
+                    DeployOperationId = workflowId,
+                    ApprovedBy = "approver",
+                    Payload = payload.Serialize()
+                }
+            }));
+
+            await worker.ReconcileAsync(id, CancellationToken.None);
+
+            var restore = await workflows.GetAsync(id);
+            Assert.Equal(WorkflowOperationStatus.Failed, restore?.Status);
+            Assert.Equal(ComposeExecutorCodes.ContractApprovalRequired, restore?.ErrorMessage);
+        }
+        finally
+        {
+            var proposal = await proposals.GetAsync(proposalId);
+            if (proposal is not null)
+                await proposals.TrySetAsync(proposal with { Status = OperationProposalStatus.Cancelled });
+            await ReleaseCellOwnershipAsync(state);
+        }
+    }
+
     // The cell owner is one well-known operation, so each test starts and ends without it.
     private static Task ReleaseCellOwnershipAsync(ControlPlaneStateHarness state)
         => state.ExecuteAsync(
