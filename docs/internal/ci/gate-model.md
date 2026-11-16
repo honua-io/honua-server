@@ -1746,3 +1746,21 @@ Its one-process test execution fell from 458 to 363 seconds, saving 95 seconds
 376.298 seconds. The other three classes are unchanged. This overlaps the
 class measurement and is not added to it. Complete CI-job setup and build
 duration remain unmeasured.
+
+### OData endpoint read-only host lifetime
+
+`ODataEndpointTests` builds its Pro-licensed, `odata.yaml`-seeded application once
+per class through the `ReadOnlyProHost` class fixture. The read-only GET cases use
+that host's client and schema. The theory that changes the metadata graph and
+inserts a feature still builds, seeds and disposes a private Pro host per case.
+Assertions, endpoint attributes and case counts are unchanged.
+
+Paired build-host runs of the class on trunk 47eb3bc9ba passed the same 65 cases
+with no skips. VSTest execution fell from 16m16s to 48s and the TRX interval from
+977.6 to 73.5 seconds. The build host was heavily loaded, so each private Pro host
+cost about 15 seconds there; full run 43709972683 spent 183 seconds of per-case
+fixture time in this class (2.8 seconds per case), which is the expected CI saving.
+Full CI job savings are unmeasured.
+All cases remain in the OData core endpoints shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
