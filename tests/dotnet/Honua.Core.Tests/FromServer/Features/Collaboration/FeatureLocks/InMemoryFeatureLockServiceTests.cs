@@ -17,6 +17,41 @@ public sealed class InMemoryFeatureLockServiceTests
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
 
     [UnitTest]
+    [Operation(Operations.Security)]
+    public async Task Renew_LeaseWithoutPrincipal_KeepsItWithoutPrincipal()
+    {
+        var service = new InMemoryFeatureLockService(new MutableTimeProvider(Instant()));
+        var access = FeatureLockAccessContext.AuthorizedWrite;
+        await service.ClaimAsync(Feature, Alice, LeaseDuration, access);
+
+        var renewed = await service.RenewAsync(Feature, Alice with { PrincipalName = "bob@example.test" }, LeaseDuration, access);
+
+        renewed.Status.Should().Be(FeatureLockRenewStatus.Renewed);
+        renewed.Lease!.Holder.PrincipalName.Should().BeNull("a renewal cannot bind the lease to the renewing principal");
+        (await service.RenewAsync(Feature, Alice, LeaseDuration, access)).Status.Should().Be(FeatureLockRenewStatus.Renewed);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    public async Task Mutations_DifferentPrincipal_PreserveOriginalLease()
+    {
+        var service = new InMemoryFeatureLockService(new MutableTimeProvider(Instant()));
+        var owner = Alice with { PrincipalName = "alice@example.test" };
+        var other = owner with { PrincipalName = "other@example.test" };
+        var access = FeatureLockAccessContext.AuthorizedWrite;
+        var claimed = await service.ClaimAsync(Feature, owner, LeaseDuration, access);
+
+        (await service.ClaimAsync(Feature, other, LeaseDuration, access)).Status
+            .Should().Be(FeatureLockClaimStatus.HeldByOther);
+        (await service.RenewAsync(Feature, other, LeaseDuration, access)).Status
+            .Should().Be(FeatureLockRenewStatus.HeldByOther);
+        (await service.ReleaseAsync(Feature, other, access)).Status
+            .Should().Be(FeatureLockReleaseStatus.HeldByOther);
+        (await service.GetActiveLeaseAsync(Feature)).Should().BeEquivalentTo(claimed.Lease);
+        (await service.ReleaseAsync(Feature, owner, access)).Status.Should().Be(FeatureLockReleaseStatus.Released);
+    }
+
+    [UnitTest]
     [Operation(Operations.Update)]
     public async Task ClaimAsync_AuthorizedWriteAccess_ClaimsLease()
     {

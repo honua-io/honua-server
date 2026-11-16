@@ -7,14 +7,8 @@ internal sealed class OgcFeaturesOptions
 {
     public const string SectionName = "OgcFeatures";
 
-    /// <summary>
-    /// Controls whether the items endpoint computes an exact numberMatched value.
-    /// </summary>
     public OgcFeaturesNumberMatchedPolicy NumberMatchedPolicy { get; set; } = OgcFeaturesNumberMatchedPolicy.Exact;
 
-    /// <summary>
-    /// Controls whether items responses include per-feature links.
-    /// </summary>
     public bool IncludeFeatureLinks { get; set; } = true;
 }
 
