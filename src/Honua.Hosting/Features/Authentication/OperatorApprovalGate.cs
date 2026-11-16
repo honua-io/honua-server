@@ -42,6 +42,11 @@ internal sealed class OperatorApprovalGate(
             },
             context.RequestAborted).ConfigureAwait(false);
 
+        return CreateAuthorizationDeniedResult(context, decision);
+    }
+
+    internal static IResult? CreateAuthorizationDeniedResult(HttpContext context, AccessDecision decision)
+    {
         if (decision.IsAllowed) return null;
 
         if (decision.RequiresAuthentication)

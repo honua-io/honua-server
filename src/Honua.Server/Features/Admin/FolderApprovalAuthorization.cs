@@ -81,8 +81,22 @@ internal static class FolderApprovalAuthorization
             ExpiresAt = await EvidenceExpiryAsync(context).ConfigureAwait(false)
         };
         var revision = await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false);
-        var authorizationContext = CreateAuthorizationContext(context, request, cancellationToken);
-        if (await FolderEndpoints.AuthorizeAffectedServices(authorizationContext, snapshot.Graph, mutation).ConfigureAwait(false) is not null)
+        var authorizationContext = new FolderAuthorizationContext
+        {
+            Original = snapshot.Graph,
+            Mutation = mutation,
+            Services = context.RequestServices,
+            OperatorPrincipal = context.User,
+            FolderTenant = request.Parameters.TryGetValue("namespace", out var selectedNamespace) && selectedNamespace is not null ? MetadataV2ServicePaths.NormalizeTenant(operation.TenantId) : null,
+            RequesterAccess = new ServiceAccessContext
+            {
+                Services = context.RequestServices,
+                Principal = context.User,
+                TenantId = TenantScopeHelpers.ResolveRequestTenantId(context),
+                Operation = AuthorizationOperation.Admin
+            }
+        };
+        if ((await FolderServiceAuthorization.EvaluateAsync(authorizationContext, cancellationToken).ConfigureAwait(false)).Failure is not null)
             throw new FolderProposalRefusal("The requester does not have access to every affected service.");
         if (revision != await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false))
             throw new FolderProposalRefusal(FreshProposalRequired);
@@ -155,13 +169,6 @@ internal static class FolderApprovalAuthorization
                 parameters.TryGetValue("folderId", out var id) ? new MetadataV2FolderSelection(id) : default, tenant),
             _ => throw new FolderProposalRefusal(FreshProposalRequired)
         };
-    }
-
-    private static DefaultHttpContext CreateAuthorizationContext(HttpContext context, OperationRequest request, CancellationToken cancellationToken)
-    {
-        var authorization = new DefaultHttpContext { RequestServices = context.RequestServices, User = context.User, RequestAborted = cancellationToken };
-        FolderReplayRequest.BindRoute(request, authorization.Request);
-        return authorization;
     }
 
     private static async Task WriteCredentialPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,

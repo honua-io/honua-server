@@ -16,6 +16,7 @@ using Honua.Server.Features.Admin;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -104,6 +105,105 @@ public sealed class FolderServiceAuthorizationTests
         result.Should().NotBeNull();
         evaluatedUsers.Should().Equal("operator", "requester");
         context.User.Should().BeSameAs(operatorPrincipal);
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SharedAuthorization_RequiresEveryFacetWithRequesterAdminAccess(bool denyLastFacet)
+    {
+        var operatorPrincipal = Principal("operator");
+        var requester = Principal("requester");
+        var operatorEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
+        operatorEvaluator.EvaluateAsync(operatorPrincipal, Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Allowed()));
+        var policyEvaluator = Substitute.For<IAccessPolicyEvaluator>();
+        var first = new AccessPolicy();
+        var last = new AccessPolicy();
+        policyEvaluator.Evaluate(requester, Arg.Any<AccessPolicy?>(), Arg.Any<AccessPolicy?>(), AccessScope.Write)
+            .Returns(call => denyLastFacet && ReferenceEquals(call.ArgAt<AccessPolicy?>(2), last)
+                ? AccessDecision.Forbidden() : AccessDecision.Allowed());
+        await using var services = new ServiceCollection().AddSingleton(policyEvaluator)
+            .AddSingleton(new OperatorApprovalGate(operatorEvaluator, Substitute.For<IOperatorApprovalEvaluator>(),
+                NullLogger<OperatorApprovalGate>.Instance)).BuildServiceProvider();
+        var graph = new MetadataV2Graph
+        {
+            Services = [
+                new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "map", Name = "survey" }, AccessPolicy = first },
+                new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "feature", Name = "survey" }, AccessPolicy = last }
+            ]
+        };
+
+        var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
+        {
+            Original = graph,
+            Mutation = new FolderMutation(graph, null) { ServiceIds = ["map", "feature"] },
+            Services = services,
+            OperatorPrincipal = operatorPrincipal,
+            RequesterAccess = new ServiceAccessContext
+            {
+                Services = services, Principal = requester,
+                // The folder policy must enforce admin access regardless of caller-supplied scope.
+                Operation = AuthorizationOperation.Read
+            }
+        });
+
+        authorization.RequesterEvaluations.Should().HaveCount(2);
+        (authorization.Failure is FolderAuthorizationFailure.Requester).Should().Be(denyLastFacet);
+        await operatorEvaluator.Received(1).EvaluateAsync(operatorPrincipal,
+            Arg.Is<OperatorAuthorizationRequest>(request => request.ResourceId == "survey" && request.Operation == OperatorOperation.Update),
+            Arg.Any<CancellationToken>());
+        policyEvaluator.Received(1).Evaluate(requester, null, Arg.Is<AccessPolicy?>(policy => ReferenceEquals(policy, first)), AccessScope.Write);
+        policyEvaluator.Received(1).Evaluate(requester, null, Arg.Is<AccessPolicy?>(policy => ReferenceEquals(policy, last)), AccessScope.Write);
+    }
+
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SharedAuthorization_RefusesTenantOrOperatorDenialBeforeRequesterPolicy(bool tenantMismatch)
+    {
+        var principal = Principal("requester");
+        var operatorEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
+        operatorEvaluator.EvaluateAsync(principal, Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Forbidden()));
+        var policyEvaluator = Substitute.For<IAccessPolicyEvaluator>();
+        await using var services = new ServiceCollection().AddSingleton(policyEvaluator)
+            .AddSingleton(new OperatorApprovalGate(operatorEvaluator, Substitute.For<IOperatorApprovalEvaluator>(),
+                NullLogger<OperatorApprovalGate>.Instance)).BuildServiceProvider();
+        var graph = new MetadataV2Graph
+        {
+            Services = [new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "survey", Tenant = "tenant-a" }
+            }]
+        };
+
+        var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
+        {
+            Original = graph,
+            Mutation = new FolderMutation(graph, null) { ServiceIds = ["service"] },
+            Services = services,
+            OperatorPrincipal = principal,
+            FolderTenant = tenantMismatch ? "tenant-b" : "tenant-a",
+            RequesterAccess = new ServiceAccessContext
+            {
+                Services = services, Principal = principal, Operation = AuthorizationOperation.Admin, TenantId = "tenant-a"
+            }
+        });
+
+        authorization.RequesterEvaluations.Should().BeEmpty();
+        if (tenantMismatch)
+        {
+            authorization.Failure.Should().BeOfType<FolderAuthorizationFailure.Tenant>();
+            await operatorEvaluator.DidNotReceive().EvaluateAsync(Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>());
+        }
+        else
+        {
+            authorization.Failure.Should().BeOfType<FolderAuthorizationFailure.Operator>();
+        }
+        policyEvaluator.DidNotReceive().Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<AccessPolicy?>(),
+            Arg.Any<AccessPolicy?>(), Arg.Any<AccessScope>());
     }
 
     private static ClaimsPrincipal Principal(string name)

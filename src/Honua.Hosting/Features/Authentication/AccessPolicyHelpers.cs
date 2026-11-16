@@ -19,7 +19,7 @@ using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Infrastructure.Authentication;
 
-internal static class AccessPolicyHelpers
+internal static partial class AccessPolicyHelpers
 {
     internal const string AuthRequiredMessage = "Authentication is required to access this resource.";
     internal const string AccessForbiddenMessage = "Access to this resource is forbidden.";
@@ -157,44 +157,15 @@ internal static class AccessPolicyHelpers
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(service);
-
-        if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
+        var decision = await EvaluateServiceAccessCoreAsync(new ServiceAccessContext
         {
-            return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
-        }
-
-        var serviceName = service.Metadata.Name;
-        var scopedKeyDecision = EvaluateScopedKeyAccess(context.User, serviceName, null, operation);
-        if (scopedKeyDecision is { } decision)
-        {
-            return CreateAccessDeniedResult(context, decision);
-        }
-
-        if (!string.IsNullOrWhiteSpace(serviceName))
-        {
-            var grantDecision = await EvaluateGrantAsync(
-                context,
-                serviceName,
-                layerName: null,
-                operation,
-                cancellationToken).ConfigureAwait(false);
-
-            if (grantDecision.IsAllowed)
-            {
-                if (!NarrowsWithRoleList(grantDecision.MatchedGrant))
-                {
-                    return null;
-                }
-
-                var granted = ApplyRoleListToGrant(
-                    context.RequestServices, context.User, resourcePolicy: null, service, operation);
-                return granted.IsAllowed ? null : CreateAccessDeniedResult(context, granted);
-            }
-        }
-
-        return CreateAccessDeniedResult(context, EvaluateServicePolicy(
-            context.RequestServices, context.User, null, service, ScopeForOperation(operation), operation));
+            Services = context.RequestServices,
+            Principal = context.User,
+            TenantId = TenantScopeHelpers.ResolveRequestTenantId(context),
+            Operation = operation,
+            RequestCache = context.Items
+        }, service, cancellationToken).ConfigureAwait(false);
+        return CreateServiceAccessDeniedResult(context, decision);
     }
 
     public static async Task<AccessDecision> EvaluateResourceAccessAsync(
@@ -317,21 +288,6 @@ internal static class AccessPolicyHelpers
             ? AccessDecision.Allowed()
             : AccessDecision.Forbidden("API key permission does not grant access to this resource.");
     }
-
-    private static Task<GrantEvaluation> EvaluateGrantAsync(
-        HttpContext context,
-        string serviceName,
-        string? layerName,
-        AuthorizationOperation operation,
-        CancellationToken cancellationToken)
-        => EvaluateGrantCoreAsync(
-            context.RequestServices,
-            context.User,
-            serviceName,
-            layerName,
-            operation,
-            cancellationToken,
-            context.Items);
 
     private static async Task<GrantEvaluation> EvaluateGrantCoreAsync(
         IServiceProvider services,

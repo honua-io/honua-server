@@ -114,44 +114,48 @@ internal static class FolderEndpoints
 
     internal static async Task<IResult?> AuthorizeAffectedServices(HttpContext context, MetadataV2Graph original, FolderMutation mutation)
     {
-        var affected = mutation.AffectedServices(original)
-            .GroupBy(service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase);
-        foreach (var services in affected)
+        var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
         {
-            var denied = await AuthorizeLogicalService(context, services).ConfigureAwait(false);
+            Original = original,
+            Mutation = mutation,
+            Services = context.RequestServices,
+            OperatorPrincipal = context.User,
+            RequesterAccess = ServiceAccess(context),
+            FolderTenant = Tenant(context)
+        }, context.RequestAborted).ConfigureAwait(false);
+        foreach (var evaluation in authorization.RequesterEvaluations)
+        {
+            var denied = AccessPolicyHelpers.CreateServiceAccessDeniedResult(context, evaluation);
             if (denied is not null) return denied;
         }
-        return null;
-    }
-
-    private static async Task<IResult?> AuthorizeLogicalService(HttpContext context, IGrouping<string, MetadataV2Service> services)
-    {
-        if (services.Any(service => !MetadataV2ServicePaths.SameTenant(service.Metadata.Tenant, Tenant(context)))) return Results.NotFound();
-        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var denied = await gate.EvaluateAuthorizationAsync(context, OperatorResourceType.PublishedService,
-            OperatorOperation.Update, services.Key).ConfigureAwait(false);
-        if (denied is not null) return denied;
-        foreach (var service in services)
+        return authorization.Failure switch
         {
-            denied = await RequireServiceAccessAsync(context, service).ConfigureAwait(false);
-            if (denied is not null) return denied;
-        }
-        return null;
+            null => null,
+            FolderAuthorizationFailure.Tenant => Results.NotFound(),
+            FolderAuthorizationFailure.Operator denied => OperatorApprovalGate.CreateAuthorizationDeniedResult(context, denied.Decision),
+            FolderAuthorizationFailure.Requester denied => AccessPolicyHelpers.CreateServiceAccessDeniedResult(context, denied.Evaluation),
+            _ => throw new InvalidOperationException("Unknown folder authorization failure.")
+        };
     }
 
     internal static async Task<IResult?> RequireServiceAccessAsync(HttpContext context, MetadataV2Service service)
     {
-        var operatorPrincipal = context.User;
-        context.User = context.Features.Get<FolderReplayServicePrincipal>()?.Principal ?? operatorPrincipal;
-        try
+        var decision = await AccessPolicyHelpers.EvaluateServiceAccessCoreAsync(ServiceAccess(context), service,
+            context.RequestAborted).ConfigureAwait(false);
+        return AccessPolicyHelpers.CreateServiceAccessDeniedResult(context, decision);
+    }
+
+    private static ServiceAccessContext ServiceAccess(HttpContext context)
+    {
+        var replay = context.Features.Get<FolderReplayServicePrincipal>();
+        return new ServiceAccessContext
         {
-            return await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Admin,
-                context.RequestAborted).ConfigureAwait(false);
-        }
-        finally
-        {
-            context.User = operatorPrincipal;
-        }
+            Services = context.RequestServices,
+            Principal = replay?.Principal ?? context.User,
+            TenantId = TenantScopeHelpers.ResolveRequestTenantId(context),
+            Operation = AuthorizationOperation.Admin,
+            RequestCache = replay is null ? context.Items : null
+        };
     }
 
     private static IResult? ValidateScope(HttpContext context)
