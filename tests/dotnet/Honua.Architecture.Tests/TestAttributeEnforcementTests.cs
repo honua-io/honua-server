@@ -10,9 +10,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ensures all integration tests have proper attributes for discoverability and organization.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class TestAttributeEnforcementTests
 {

@@ -7,12 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Spec.Domain;
 
-/// <summary>
-/// Unit coverage for <see cref="SpecGrammarVersion.TryParse"/> and the shipped
-/// version constants. These values participate in compatibility checks and the
-/// content-hash cache key, so the parser must not silently accept malformed
-/// version literals (#1144).
-/// </summary>
 public sealed class SpecGrammarVersionTests
 {
     [Trait("Tier", "Fast")]

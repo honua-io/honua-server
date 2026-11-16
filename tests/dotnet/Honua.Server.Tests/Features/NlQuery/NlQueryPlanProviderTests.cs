@@ -12,16 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.NlQuery;
 
-/// <summary>
-/// Registration and configuration coverage for the NlQuery plan-provider seam.
-/// </summary>
-/// <remarks>
-/// The OpenAI-backed provider and its HTTP behaviour tests were removed with the
-/// server-side generation families (ADR-0076): it was the last path on which the
-/// server initiated model inference of its own accord. What survives is the seam
-/// itself, the deterministic provider behind it, and the configuration rules that
-/// now reject any provider other than <c>deterministic</c>.
-/// </remarks>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class NlQueryPlanProviderTests
 {

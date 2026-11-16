@@ -28,37 +28,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Cog;
 
-/// <summary>
-/// Serves a real cloud-hosted COG over the ImageServer HTTP surface and compares the
-/// served pixels against GDAL's own decode of the same file (#4394).
-/// </summary>
-/// <remarks>
-/// Before this file every COG test stopped short of the serving layer: the CRUD tests
-/// wrote bucket/key strings to Postgres and never fetched a byte, and
-/// <c>CogTileResolverTests</c> substituted <see cref="ICloudRangeReader"/>,
-/// <see cref="ICogStore"/> and <c>ICogMetadataReader</c>, so the "tile" was a
-/// four-byte literal. Here the object really lives in a LocalStack S3 bucket, the
-/// production <c>AwsS3RangeReader</c> issues real ranged GETs against it, and the
-/// tile is requested through <c>GET /rest/services/{id}/ImageServer/tile/...</c>.
-///
-/// <para><b>Oracle.</b> The fixture is <c>lzw_pred2_uint8_multitile.tif</c> from
-/// <c>tests/dotnet/Honua.Core.Tests/Raster/CogParser/Fixtures</c>, produced by GDAL
-/// 3.12.1 via <c>scripts/raster/generate-cog-fixtures.py</c>. Its sibling
-/// <c>.bin</c> holds GDAL's own decode of that file in TIFF tile order, so the
-/// expected pixel values are computed by a second implementation rather than
-/// snapshotted from ours.</para>
-///
-/// <para><b>Tile alignment.</b> The fixtures are georeferenced to EPSG:3857 at the
-/// Web Mercator origin with a 1222.992452562495 m pixel. A 128-pixel COG tile
-/// therefore spans 128 x 1222.992452562495 = 156543.034 m, which is exactly the
-/// width of a slippy tile at zoom 8 (40075016.686 / 2^8). This fixture is 256 x 256
-/// pixels in 128-pixel blocks, so slippy tiles (z8, row 0..1, col 0..1) map onto its
-/// four COG tiles with no resampling, which is what
-/// <c>CogTileResolver.TryResolveAlignedTileIndex</c> requires. The test asks for
-/// (row 1, col 1) so that the tile it wants is neither the first tile nor adjacent
-/// to the header, and a read of the tile's own byte range is distinguishable from a
-/// read of the file's metadata.</para>
-/// </remarks>
 [Collection("Emulators")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class CogHttpTileServingTests : IAsyncLifetime
@@ -82,33 +51,14 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
     private const int ExpectedTileBytes = TileSize * TileSize; // one uint8 band
     private const int TileCount = 4;
 
-    /// <summary>
-    /// The slippy tile requested, and the COG tile it must resolve to. The fixture is
-    /// two tiles across, and CogTileResolver indexes tiles row-major, so slippy
-    /// (col 1, row 1) is COG tile 3 — the last 16,384 bytes of the reference blob.
-    /// </summary>
     private const int RequestedTileCol = 1;
     private const int RequestedTileRow = 1;
     private const int RequestedTileIndex = 3;
 
     private static readonly string FixtureDirectory = Path.Join(AppContext.BaseDirectory, "CogFixtures");
 
-    /// <summary>
-    /// The layer the COG is registered against. It has to satisfy three constraints
-    /// at once: positive (the admin endpoint rejects layer 0 with "LayerId must be a
-    /// positive integer"), present in <c>honua.layers</c> (the registration row
-    /// carries a foreign key, so an invented id fails the insert), and free of
-    /// PostGIS raster rows (otherwise <c>ImageServerTileHandler</c> serves from
-    /// PostGIS and never reaches the COG fallback). Seeded layer 1 is all three; the
-    /// V2 graph below republishes it as an ImageServer raster layer so the tile route
-    /// resolves it.
-    /// </summary>
     private const int CogLayerId = 1;
 
-    /// <summary>
-    /// A second seeded, raster-free layer carrying only the registration whose object
-    /// does not exist, so the failure case has no healthy COG to fall back to.
-    /// </summary>
     private const int MissingCogLayerId = 2;
 
     private readonly string _objectKey = $"cog-proof/{Guid.NewGuid():N}/{Fixture}.tif";
@@ -441,17 +391,6 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         await s3.PutBucketAsync(new PutBucketRequest { BucketName = _bucket });
     }
 
-    /// <summary>
-    /// Reads one tile's file offset and compressed byte count out of the fixture's own
-    /// TIFF directory (tags 324 <c>TileOffsets</c> and 325 <c>TileByteCounts</c> of the
-    /// full-resolution IFD), so a recorded range can be identified as the tile transfer.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately a local reader over the GDAL-written bytes: asking the parser under
-    /// test where its tile lives, and then asserting it read from there, would be
-    /// circular. Only the little-endian, single-IFD shape these fixtures actually have
-    /// is handled, and anything else fails loudly rather than guessing.
-    /// </remarks>
     private static (long Offset, int ByteCount) ReadTileExtent(byte[] tiff, int tileIndex)
     {
         (tiff[0], tiff[1]).Should().Be(((byte)'I', (byte)'I'), "the fixtures are little-endian TIFFs");
@@ -497,10 +436,6 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
 
     private sealed record RangeRead(long Offset, int Length);
 
-    /// <summary>
-    /// Passes every call through to the real reader while recording the ranges asked
-    /// for, so the test can prove that serving a tile issued bounded reads.
-    /// </summary>
     private sealed class RecordingRangeReader(ICloudRangeReader inner) : ICloudRangeReader
     {
         private readonly List<RangeRead> _reads = [];

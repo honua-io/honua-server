@@ -11,48 +11,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Real-AWS certification lane (#2164) — the ECS/ALB weighted-cutover cell. Drives the REAL
-/// <see cref="AwsEcsAlbDeployBackend"/> wired with its PRODUCTION seams (<see cref="AwsSdkAlbClient"/>
-/// and <see cref="AwsSdkEcsClient"/> — the exact clients production injects) against the standing
-/// certification substrate (honua-iac <c>examples/aws-cert</c>): a smallest-Fargate ECS service
-/// attached to both target groups behind an internal ALB whose listener default rule is a weighted
-/// forward action (stable=100/canary=0). It certifies the weighted-cutover control-plane MECHANICS
-/// the deploy controller rides — shift → observe convergence → promote → rollback → settle — end to
-/// end through live ELBv2 <c>ModifyRule</c>/<c>DescribeRules</c> and ECS <c>UpdateService</c>/
-/// <c>DescribeServices</c> calls.
-///
-/// SAME-REVISION BY DESIGN (documented rationale): the cell resolves the service's CURRENT task
-/// definition ARN and submits THAT as the desired revision. A genuine two-revision upgrade would need
-/// a freshly-built/pushed container image and a second task-definition registration on every weekly
-/// run, which mutates production-relevant artifacts and adds standing build infrastructure for no
-/// extra coverage of the traffic-shifting seam. Deploying the same revision means ECS is already at
-/// steady state on the desired task definition, so <c>UpdateService</c> converges immediately and the
-/// observe/promote/rollback assertions exercise the ALB weight primitive and the convergence-decision
-/// logic without waiting on an image roll. The cell therefore certifies weighted-cutover +
-/// convergence + rollback mechanics, NOT a functional application upgrade.
-///
-/// PLANASYNC IS BYPASSED (documented decision): <see cref="AwsEcsAlbDeployBackend.PlanAsync"/> blocks
-/// any canary-weighted submit on a <c>telemetry.connection</c> parameter so the production workflow
-/// can auto-promote/roll-back from telemetry — a workflow-orchestration concern with no bearing on the
-/// SDK cutover mechanics this cell certifies, and one the backend's unit tests already cover
-/// (<c>AwsEcsAlbDeployBackendTests.PlanAsync_*</c>). Like the other certification cells, which drive
-/// their backends directly, this cell calls <c>StartAsync</c> without a telemetry connection and
-/// performs the promotion decision itself.
-///
-/// TEARDOWN INVARIANT: the listener rule is a STANDING resource (not created here), so there is
-/// nothing to tag or reap — correctness is a guaranteed restore to a KNOWN BASELINE. The cell asserts
-/// the resolved weighted rule is at the baseline (stable=100/canary=0) at test START and fails loudly
-/// if it has drifted (surfacing a prior poisoned run), then restores that KNOWN baseline (NOT a
-/// captured snapshot) plus the original service task definition UNCONDITIONALLY in a <c>finally</c>
-/// block, even when an assertion throws. Restoring the fixed baseline rather than a snapshot is
-/// deliberate: a run killed between promote and restore must never be able to leave canary=100 and
-/// have the next run snapshot+restore that poison — the substrate always converges back to
-/// stable=100/canary=0 for the next weekly run.
-///
-/// SAFETY: OFF unless <see cref="RealAwsCertificationFixture.EcsAlbConfigured"/>; the single fact
-/// <c>[SkippableFact]</c>-skips otherwise (forks, PRs without secrets, ordinary local runs).
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.RealAwsCertification)]
 public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCertificationFixture>
 {

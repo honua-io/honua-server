@@ -20,9 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Admin;
 
-/// <summary>
-/// Regression tests for layer publishing exception-to-status-code mapping.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class LayerPublishingExceptionMappingTests

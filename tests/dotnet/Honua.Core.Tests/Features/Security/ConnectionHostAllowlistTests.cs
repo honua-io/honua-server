@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Security;
 
-/// <summary>
-/// Unit tests for the outbound data-source connection host allowlist (#354).
-/// </summary>
 public sealed class ConnectionHostAllowlistTests
 {
     private static ConnectionHostAllowlist Create(

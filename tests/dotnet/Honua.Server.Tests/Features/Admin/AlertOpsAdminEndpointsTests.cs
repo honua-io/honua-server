@@ -16,12 +16,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the alert dispatch self-healing ops endpoints (#2561):
-/// dead-letter redrive and per-channel pause/resume. Rows are seeded through the
-/// real alert stores against the shared <c>honua.alert_dispatch</c> outbox and
-/// asserted row-specifically by event id.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -203,10 +197,6 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Appends an ops-source alert event (no rule reference) and enqueues one pending
-    /// dispatch row for <paramref name="channel"/>. Returns the persisted event id.
-    /// </summary>
     private async Task<long> SeedDispatchAsync(AlertChannelType channel)
     {
         var eventStore = _fixture.GetService<IAlertEventStore>();

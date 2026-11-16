@@ -13,9 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.FileStorage;
 
-/// <summary>
-/// Integration tests for AwsS3FileStorage using a local emulator.
-/// </summary>
 [Collection("Emulators")]
 public sealed class AwsS3FileStorageTests
 {

@@ -11,12 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Grounding;
 
-/// <summary>
-/// Unit tests for <see cref="IntentDrafter"/>. Covers the shape of the
-/// canonical <see cref="DraftIntent"/> envelope for every workflow family,
-/// including the BuildApp / AutomateDeploy stubs that ship as schema-stable
-/// envelopes pending their typed-intent domains.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class IntentDrafterTests
 {

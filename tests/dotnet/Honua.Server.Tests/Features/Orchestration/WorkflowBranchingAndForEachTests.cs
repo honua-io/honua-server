@@ -10,12 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Orchestration;
 
-/// <summary>
-/// Engine-level behavior tests for conditional branching and ForEach/iteration
-/// (issue #2146). Each test drives <see cref="WorkflowOrchestrationEngine"/> through
-/// explicit reconcile ticks with in-memory stores so the data-dependent path and the
-/// per-item fan-out are observable without background timers.
-/// </summary>
 public sealed class WorkflowBranchingAndForEachTests
 {
     private static readonly ClaimsPrincipal Operator = new(

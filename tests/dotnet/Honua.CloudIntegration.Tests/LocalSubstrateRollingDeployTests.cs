@@ -17,24 +17,6 @@ using Yarp.ReverseProxy.Configuration;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// ADR-0060 substrate-neutral SERVING lane (#2166, #2457). Proves the single-host, zero-cloud
-/// (containers only — no Kubernetes, no cloud) zero-downtime traffic-cutover primitive end-to-end by
-/// driving the REAL <see cref="YarpRollingDeployBackend"/> against real <c>docker</c> replica
-/// containers, with the REAL <see cref="YarpInMemoryProxyStateSwapper"/> wired to a REAL
-/// embedded-YARP <see cref="InMemoryConfigProvider"/> fronting the traffic. A continuous request loop
-/// through the proxied endpoint measures the zero-downtime property across the atomic cutover.
-///
-/// <b>Scope (honua-server#4415):</b> the two replicas standing in for "revision A" and "revision B" are
-/// both the same generic busybox HTTP server (see <see cref="LocalSubstrateDockerFixture"/>'s remarks)
-/// — this proves the YARP standby-launch/health-gate/atomic-swap/drain mechanics, not that a real Honua
-/// upgrade or rollback preserves data or behavior. Do not cite this class as upgrade/rollback safety
-/// evidence; that obligation belongs to honua-release's <c>gate-upgrade.yml</c> <c>kind-upgrade</c> job.
-///
-/// Every test <c>[SkippableFact]</c>-skips (never fails) when Docker is unavailable, mirroring the
-/// existing kind/LocalStack lanes. cloud-integration-harness.yml's TRX-based counts tripwire (#4415)
-/// fails the workflow if every case in this lane skips on a CI runner.
-/// </summary>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
 public sealed class LocalSubstrateRollingDeployTests : IClassFixture<LocalSubstrateDockerFixture>
 {
@@ -194,11 +176,6 @@ public sealed class LocalSubstrateRollingDeployTests : IClassFixture<LocalSubstr
             $"Rolling deploy did not satisfy the expected condition within {timeout}. Last status: {last.Status} ({last.Message}).");
     }
 
-    /// <summary>
-    /// One self-hosted rolling-deploy scenario's live environment: the co-located v1 active replica,
-    /// the running embedded-YARP proxy fronting it, the real proxy-swap seam, and the backend under
-    /// test. Owns cleanup of every container it launched plus the proxy host.
-    /// </summary>
     private sealed class RollingDeployEnvironment : IAsyncDisposable
     {
         private readonly LocalSubstrateDockerFixture _docker;
@@ -387,10 +364,6 @@ public sealed class LocalSubstrateRollingDeployTests : IClassFixture<LocalSubstr
         }
     }
 
-    /// <summary>
-    /// Continuous request generator against the proxied endpoint. Records failures and which revision
-    /// bodies were observed so a scenario can assert the zero-downtime and traffic-flip properties.
-    /// </summary>
     private sealed class RequestLoop : IDisposable
     {
         private readonly HttpClient _client;

@@ -8,7 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.SensorThings;
 
-/// <summary>Store-side <c>@iot.id</c> parsing rejects values that are not positive integers.</summary>
 public sealed class SensorThingsEntityIdTests
 {
     [UnitTest]

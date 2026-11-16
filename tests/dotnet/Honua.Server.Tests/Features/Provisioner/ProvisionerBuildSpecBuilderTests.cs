@@ -8,13 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Provisioner;
 
-/// <summary>
-/// Unit coverage for the geocoder/router build execution-job spec encode/decode contract.
-/// Every behavior-changing build parameter (feedstock source/product, area, table, schema,
-/// artifact name/key, artifact kind) must round-trip from the build request through
-/// <see cref="ExecutionJobSpec.Parameters"/> and back so the GP-on-Batch worker builds
-/// exactly the locator/graph the caller requested for the area.
-/// </summary>
 public sealed class ProvisionerBuildSpecBuilderTests
 {
     private static ProvisionerArea MauiCounty()

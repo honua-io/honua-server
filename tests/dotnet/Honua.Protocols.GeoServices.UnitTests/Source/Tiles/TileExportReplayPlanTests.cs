@@ -14,9 +14,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Tiles;
 
-/// <summary>
-/// Replay-safety and bounded-grid tests for durable tile-export contract version 2.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class TileExportReplayPlanTests
 {

@@ -8,9 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Tests for the retention policy evaluator.
-/// </summary>
 public class RetentionPolicyEvaluatorTests
 {
     private static readonly DateTimeOffset BaseTime = new(2026, 4, 11, 12, 0, 0, TimeSpan.Zero);

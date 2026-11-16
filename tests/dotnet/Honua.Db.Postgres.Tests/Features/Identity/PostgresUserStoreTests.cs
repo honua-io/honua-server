@@ -9,14 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Identity;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresUserStore"/> (#3141) using the shared
-/// Testcontainers Postgres fixture. Exercises CRUD parity with the in-memory store,
-/// stable-identifier resolution (SCIM <c>userName</c> vs OIDC subject / <c>externalId</c>),
-/// restart durability, and the cross-replica revocation scenario (two store instances over
-/// one database simulating replicas) against an isolated per-test schema mirroring
-/// migration 106.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresUserStoreTests(PostgresFixture fixture)
 {

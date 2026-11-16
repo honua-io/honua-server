@@ -15,10 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Hosting;
 
-/// <summary>
-/// Resolution precedence and header behaviour of the per-instance identity the release harness
-/// uses to prove a cross-replica read (owner decision 2, 2026-10-10).
-/// </summary>
 [Operation(Operations.TestInfrastructure)]
 public sealed class ServerInstanceIdentityTests
 {

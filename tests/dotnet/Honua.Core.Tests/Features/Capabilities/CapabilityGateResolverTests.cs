@@ -11,12 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Capabilities;
 
-/// <summary>
-/// Unit coverage for the config-driven experimental feature-flag resolver
-/// (#2339 / T2): the maturity/flag/edition precedence in
-/// <see cref="CapabilityGateResolver"/>, plus the <see cref="CapabilityFlagOptions"/>
-/// config binding for the <c>Capabilities:Experimental</c> schema.
-/// </summary>
 public sealed class CapabilityGateResolverTests
 {
     // A still-experimental capability id for the synthetic resolver descriptors below.

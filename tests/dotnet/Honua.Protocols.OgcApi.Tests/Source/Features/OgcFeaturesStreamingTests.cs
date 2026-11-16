@@ -287,18 +287,6 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
         connections.Should().Be(1, "both complete pages must reuse the same keep-alive connection");
     }
 
-    /// <summary>
-    /// Regression for BH4-008: streaming responses must expose an advisory
-    /// <c>numberMatched</c> snapshot count in the JSON <c>FeatureCollection</c>
-    /// body — the spec-compliant location (OGC 17-069r4 §7.14.4). The value is a
-    /// pre-flight snapshot estimate — advisory per OGC API Features Part 1 §7.7,
-    /// not an authoritative exact count — but it must always be a non-negative
-    /// integer, never absent or negative.
-    ///
-    /// The non-standard <c>OGC-NumberMatched</c> response header was removed in
-    /// #2418 (PA-122/PA-168); this test now guards that it stays absent so the
-    /// count is carried only in its spec-compliant body location.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_LargeLimit_Streaming_ProvidesAdvisorySnapshotNumberMatched()

@@ -12,9 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// Verifies the public URL environment alias with the shipped blank primary setting.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class HostValidationEnvironmentAliasTests : IAsyncLifetime

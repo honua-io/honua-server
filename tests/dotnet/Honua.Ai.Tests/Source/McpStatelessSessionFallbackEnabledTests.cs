@@ -15,15 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Integration tests for the opt-in development convenience
-/// <c>Mcp:StatelessSessionFallback=true</c> (honua-server#3027). Outside
-/// Development the default is the strict Streamable-HTTP posture (HTTP 404 on
-/// an id no instance holds, so the client re-initializes; covered by
-/// <c>McpEndpointIntegrationTests</c>). This fixture opts in and proves the
-/// fallback still serves a well-formed unknown id session-less, i.e. with the
-/// default view and no session echo.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStatelessSessionFallbackEnabledTests : IAsyncLifetime

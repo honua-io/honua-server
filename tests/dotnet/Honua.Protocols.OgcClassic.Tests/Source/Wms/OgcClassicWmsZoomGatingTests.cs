@@ -11,19 +11,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Integration coverage for honua-server#2868: WMS GetMap must derive a MapLibre zoom from
-/// BBOX + WIDTH/HEIGHT + CRS and apply each style layer's minzoom/maxzoom gate. Before the fix
-/// GetMap passed no zoom at all, so every layer drew at every scale.
-/// </summary>
-/// <remarks>
-/// Both requests below use the same EPSG:3857 envelope and differ only in image size, so the
-/// geographic window (and therefore the features in view) is identical and the only variable is
-/// the derived zoom. The envelope is the Web Mercator projection of -123,37 .. -122,38, which
-/// contains the seeded point features. Derived zoom is min over the two axes of
-/// log2(pixels / (512 * mercatorSpan)): 7.158 at 256px and 9.158 at 1024px, so a minzoom/maxzoom
-/// of 8 falls cleanly between them with ~0.84 of margin on either side.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
 public sealed class OgcClassicWmsZoomGatingTests : IAsyncLifetime

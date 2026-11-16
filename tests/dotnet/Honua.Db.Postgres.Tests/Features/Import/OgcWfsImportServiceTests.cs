@@ -21,9 +21,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Integration tests for <see cref="OgcWfsImportService"/> backed by a real Postgres + PostGIS container.
-/// </summary>
 [Collection("Database")]
 public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
 {
@@ -755,7 +752,6 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         return schemas.ToArray();
     }
 
-    /// <summary>Names of the GiST indexes PostgreSQL's catalog records on the table (pg_index/pg_class).</summary>
     private async Task<string[]> ReadGistIndexNamesAsync(string schemaName, string tableName)
     {
         var names = new List<string>();

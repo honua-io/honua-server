@@ -20,11 +20,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// HTTP-level REST/MCP owner-policy parity proof for #3412. The generic MCP
-/// operator gate is explicitly admitted so the test isolates the loaded-owner
-/// decision both protocols share through <c>IStudioAuthorizationService</c>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime

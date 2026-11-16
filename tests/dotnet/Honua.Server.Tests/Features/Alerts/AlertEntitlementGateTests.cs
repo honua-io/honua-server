@@ -14,22 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Entitlement-gate tests for the alerts/channels surface (#2998). The alert edition policy is
-/// license-derived: <c>alerts.enter-exit</c>/<c>alerts.evaluation</c>/<c>channels.webhook</c>
-/// are Pro; <c>alerts.dwell</c>/<c>alerts.threshold</c> and the remaining channels are
-/// Enterprise. <c>Alerts:Edition</c> is a downward-only cap — it can restrict below the
-/// license-derived tier but never grants features the license does not include.
-/// </summary>
-/// <remarks>
-/// Naming constraint (ADR-0037): test methods here must say "Edition", never "License".
-/// "Server Features Admin and Console" in .github/ci-shards.json is the only shard claiming
-/// <c>Honua.Server.Tests.Features.Alerts.*</c>, and it carries
-/// <c>FullyQualifiedName!~License</c> so that <c>Features.Admin</c> licensing classes route to
-/// "Server Features Admin Platform and Governance" instead. A "License" token anywhere in an
-/// Alerts test's fully-qualified name therefore drops that test out of every CI shard and it
-/// silently never runs.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -110,12 +94,6 @@ public sealed class AlertEntitlementGateTests
         Assert.Contains($"requires an active {requiredEdition} entitlement", body, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A denial caused only by the downward <c>Alerts:Edition</c> cap must not masquerade as a
-    /// missing entitlement: the license grants the feature, so a 402 naming the key would send an
-    /// operator to buy or reinstall a license they already own. It must surface as the ordinary
-    /// configured-edition validation failure instead.
-    /// </summary>
     private static async Task AssertBlockedByEditionCapAsync(HttpClient client, object payload, string expectedFragment)
     {
         using var response = await client.PostAsJsonAsync(RulesRoute, payload);
@@ -282,11 +260,6 @@ public sealed class AlertEntitlementGateTests
         }
     }
 
-    /// <summary>
-    /// An expired Pro or Enterprise snapshot still carries <c>RequiredEdition</c>, but the gate
-    /// replaces the catalog upgrade sentence with a renewal sentence. The 402 must name both
-    /// the renewal and the edition the missing key requires.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
     [Endpoint("POST /api/v1/admin/alerts/rules/test")]

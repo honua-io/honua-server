@@ -17,12 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Endpoint coverage for ImageServer WMTS support of configured non-WebMercator tile matrix sets
-/// (#2665). Exercises GetCapabilities/GetTile/GetFeatureInfo for the shared WorldCRS84Quad gridset
-/// and the rejection paths for unknown/out-of-bounds matrix set, matrix, row, and column. The
-/// default (unconfigured) behavior remains WebMercatorQuad-only, preserving the WMTS CITE baseline.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerWmtsMatrixSetTests : IDisposable
@@ -31,7 +25,6 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
     private const string WorldCrs84Quad = "WorldCRS84Quad";
     private readonly DirectoryInfo _storageDirectory = Directory.CreateTempSubdirectory("honua-wmts-matrix-");
 
-    /// <inheritdoc />
     public void Dispose()
     {
         // Every test disposes its host in finally before xUnit releases this owned directory.

@@ -14,14 +14,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.SpatialAnalytics;
 
-/// <summary>
-/// Integration tests for the Pro-tier spatial analytics REST endpoints mirrored
-/// under <c>/rest/services/{serviceId}/FeatureServer/{layerId}</c>. Uses the shared
-/// <see cref="WebAppFixture"/> PostGIS test fixture so clustering / join / buffer /
-/// density operations run against a real database populated by the server seed.
-/// The default test host runs as Pro edition so the edition gate passes; the gated
-/// behavior is verified in the unit-tests elsewhere.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsRestTests : IAsyncLifetime

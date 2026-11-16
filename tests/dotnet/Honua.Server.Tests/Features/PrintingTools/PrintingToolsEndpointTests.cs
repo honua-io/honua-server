@@ -12,9 +12,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
 
-/// <summary>
-/// Integration tests for the GeoServices PrintingTools endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.PrintingTools)]
 public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, IDisposable
@@ -680,9 +677,6 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
 
     // --- Helper Methods ---
 
-    /// <summary>
-    /// Creates a minimal web map JSON for testing with a simple extent.
-    /// </summary>
     private static string CreateMinimalWebMapJson()
     {
         return JsonSerializer.Serialize(new

@@ -7,14 +7,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Minimal in-memory <see cref="ICloudFileStorage"/> used by the scene asset
-/// hydration/publish tests. Objects are keyed by the explicit
-/// <see cref="FileUploadRequest.ObjectKeyOverride"/> the scene upload path always
-/// supplies, so a deterministic prefix-scoped key round-trips through upload and
-/// download exactly as it would against S3/Azure. Only the members the scene path
-/// exercises are implemented; the rest throw so unexpected usage is loud.
-/// </summary>
 internal sealed class InMemoryCloudFileStorage : ICloudFileStorage
 {
     private readonly ConcurrentDictionary<string, byte[]> _objects = new(StringComparer.Ordinal);
@@ -26,13 +18,10 @@ internal sealed class InMemoryCloudFileStorage : ICloudFileStorage
         _downloadDelay = downloadDelay ?? TimeSpan.Zero;
     }
 
-    /// <summary>Number of <see cref="DownloadBytesAsync"/> calls observed.</summary>
     public int DownloadCount => Volatile.Read(ref _downloadCount);
 
-    /// <summary>Object keys currently held, for assertions.</summary>
     public IReadOnlyCollection<string> Keys => _objects.Keys.ToArray();
 
-    /// <summary>Overwrites an object's bytes to simulate a republish.</summary>
     public void Put(string key, byte[] bytes) => _objects[key] = bytes;
 
     public CloudStorageProvider Provider => CloudStorageProvider.Local;

@@ -17,20 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// WCS 1.0.0 compatibility surface (honua-server#5020).
-/// </summary>
-/// <remarks>
-/// These assertions are deliberately written against what the stock QGIS WCS provider
-/// reads rather than only against the schema, because the whole point of serving 1.0.0 is
-/// that QGIS - which ships a 1.0/1.1 client and rejects 2.0.1 outright - can open a
-/// coverage. The element names asserted here (<c>WCS_Capabilities</c>,
-/// <c>ContentMetadata/CoverageOfferingBrief</c> with <c>name</c>/<c>label</c>/
-/// <c>description</c>, the GetCoverage <c>OnlineResource</c>, and the DescribeCoverage
-/// <c>RectifiedGrid</c>/<c>GridEnvelope</c> limits plus <c>supportedCRSs</c> and
-/// <c>supportedFormats</c>) are the exact ones the provider looks for; dropping any of
-/// them makes the layer unopenable even though the document still validates.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs10)]
 public sealed class Wcs10EndpointsTests : IClassFixture<Wcs10EndpointsTests.RasterApplication>

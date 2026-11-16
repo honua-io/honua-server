@@ -9,9 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Integration tests for advanced OData endpoints required by API surface coverage.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public class ODataAdvancedOperationsTests : IClassFixture<WebAppFixture>
