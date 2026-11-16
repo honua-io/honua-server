@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <!--
-      GP Devkit P6 (#2127): self-tests for the golden-file GP test SDK. They drive the
+      GP Devkit P6: self-tests for the golden-file GP test SDK. They drive the
       SDK over real managed executors (buffer/clip) and a faked GDAL CLI runner, fully
       offline (no Redis/job-store/control-plane). Honua.Worker.Gdal supplies the GDAL
       executor + FakeGdalCommandRunner for the scalar/structural-diff proof.

@@ -19,7 +19,7 @@ Verify a known point in the client and in server results. Preserve the advertise
 
 ## Edit and resolve concurrent changes
 
-Use a disposable layer and separate test identities with the intended permissions. Create a feature, read it back, change an attribute and geometry, and delete it. Check server-assigned IDs and persisted values after each operation. A successful connection does not prove that a client implements every write operation.
+Use a disposable editable layer (published with `storageMode` `managed` and the edit capabilities, see [editable layers](../../reference/admin-api/connections-and-layers.md#editable-layers); a default publication is read-only) and separate test identities with the intended permissions. Create a feature, read it back, change an attribute and geometry, and delete it. Check server-assigned IDs and persisted values after each operation. A successful connection does not prove that a client implements every write operation.
 
 For OGC API Features, retain each item's `ETag` when reading and send it as `If-Match` on subsequent writes. Simulate two clients reading the same feature, then save from the first. The second client's stale PUT, PATCH, or DELETE must receive `412 Precondition Failed`; the first edit must survive. Fetch the current item, show both versions, and ask the operator to reconcile before resubmitting with the current version. Clients that cannot retain and submit versions need a controlled reconciliation workflow before editing shared data.
 

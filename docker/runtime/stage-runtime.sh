@@ -25,6 +25,12 @@ for library in $libraries; do
 done
 cp -a /usr/share/fonts/truetype/dejavu "$additions/usr/share/fonts/truetype/"
 printf '%s\n' fonts-dejavu-core >> "$packages"
+# The plain chiseled base (no ICU) has no time-zone data; IANA zone IDs still need it.
+if [ ! -e "$runtime_root/usr/share/zoneinfo/UTC" ]; then
+    mkdir -p "$additions/usr/share"
+    cp -a /usr/share/zoneinfo "$additions/usr/share/"
+    printf '%s\n' tzdata >> "$packages"
+fi
 sh docker/runtime/write-package-status.sh "$runtime_root" "$additions" "$packages"
 sort -u "$packages" | while IFS= read -r package; do
     copyright="/usr/share/doc/${package%%:*}/copyright"

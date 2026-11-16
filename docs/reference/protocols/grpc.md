@@ -44,6 +44,21 @@ certified operations.
 | Message size | 16 MiB send/receive default; `Grpc:MaxReceiveMessageSize` / `Grpc:MaxSendMessageSize` to override. |
 | Streaming page size | `Grpc:StreamBatchSize` (default 1000 features per message). |
 
+## Browser authentication
+
+Same-origin gRPC-Web clients can authenticate with the Console's browser session
+over HTTPS. Obtain a fresh token from `GET /api/v1/admin/auth/csrf` after sign-in
+and send it in `X-Honua-CSRF` on each gRPC-Web request, including read RPCs that use
+HTTP POST. Keep the token in memory. Missing or invalid CSRF protection returns
+gRPC status `7` (`PermissionDenied`) with a `grpc-message` explaining the required
+header.
+
+Clients using an explicit API key or bearer validate that credential independently
+of any ambient session cookie. Successful explicit authentication reaches the RPC
+without a session CSRF token; invalid credentials do not fall back to the cookie.
+See [browser administrator sessions](../../guides/secure/authentication.md#browser-administrator-sessions)
+for session lifecycle and CSRF requirements.
+
 ## Services (geospatial.v1)
 
 | Service | RPCs | Purpose |
@@ -122,6 +137,30 @@ Notes:
   is absent (proto3 implicit default) and the client should fall back to the
   native `DescribeLayer` RPC for the missing descriptor. Current `geospatial.v1`
   carries all four fields.
+
+## Managed global-ID integrity
+
+Declaring `editing.globalIdField` on an unbound managed feature layer creates a
+per-layer unique UUID expression index. Explicit connections to the managed
+database require the same index before the layer advertises managed writes;
+metadata activation does not provision indexes through connection references.
+A missing or mismatched index disables writes while branch reads remain available.
+Uppercase and braced spellings identify the same UUID. Missing and empty values
+do not conflict. The index also serves UUID
+lookups and enforces uniqueness for concurrent writes and rows hidden by row
+security. Object-ID-mode update and delete results carry the stored global ID
+when the caller may see its field.
+
+Migration and metadata activation refuse existing duplicate UUIDs or invalid
+UUID values without rewriting features. Repair those values explicitly before
+retrying. A failed activation leaves the previous metadata revision current.
+The first activation that declares a global-ID field builds its index inside the
+activation transaction, so feature writes to the managed table wait until that
+build commits. On a large table, declare the field during a quiet period.
+Later activations find the existing index and do not lock the table.
+Once created, identity indexes remain in place across metadata changes, including
+removal of a declaration. This preserves identity while older readers continue
+serving during a rolling update.
 
 ## Versioning and deprecation policy
 
