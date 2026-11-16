@@ -12,6 +12,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Validation;
 using Honua.Server.Features.Admin;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
