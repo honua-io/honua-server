@@ -10,13 +10,13 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-// FlatGeobuf / Geobuf output for source-backed (provider-routed) PostGIS layers
-// (honua-server#1938). The canonical PostgresFeatureStoreRefactored reader implements
+// FlatGeobuf / Geobuf output for source-backed (provider-routed) PostGIS layers.
+// The canonical PostgresFeatureStoreRefactored reader implements
 // both markers against the shared 'features' table; this storage-mapped reader is the
 // production read path for any layer compiled through the Metadata v2 compat snapshot.
 //
 // FlatGeobuf uses the canonical feature SELECT and the shared managed writer because
-// the PostGIS aggregate corrupts nullable property indices and temporal values (#6724).
+// the PostGIS aggregate corrupts nullable property indices and temporal values.
 // Geobuf remains a PostGIS aggregate over a row whose geometry column carries the
 // name passed as the final argument; we build an inner SELECT projecting objectid, the
 // (optionally reprojected) geometry as a real geometry column, and each requested

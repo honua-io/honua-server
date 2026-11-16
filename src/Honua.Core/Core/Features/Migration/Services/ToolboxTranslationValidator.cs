@@ -184,7 +184,7 @@ public static class ToolboxTranslationValidator
             // geometry.dissolve without 'groupKeys', so downgrading that mapping would report an
             // executable tool as unproven.
             //
-            // Where the discriminator's domain IS published (#3048), the probe enumerates every
+            // Where the discriminator's domain IS published, the probe enumerates every
             // branch and the answer is exact: 'k' is required under algorithm=kmeans and under
             // nothing else, so the report names the branch instead of shrugging. The conservative
             // downgrade survives only for a genuinely unenumerable domain
@@ -245,8 +245,7 @@ public static class ToolboxTranslationValidator
         // so each group individually looks escapable even when the groups TOGETHER cover every
         // branch — e.g. a mapping supplying only `input` and `algorithm` omits `eps`/`minPoints`
         // on dbscan and `k` on kmeans, and then no value of `algorithm` executes at all.
-        // Coverage is therefore computed across ALL requirements before the claim is made
-        // (honua-server#3048 review).
+        // Coverage is therefore computed across ALL requirements before the claim is made.
         var (remedy, exhaustsAllBranches) = DescribeBranchRemedy(definition, requirements);
 
         foreach (var group in requirements.GroupBy(

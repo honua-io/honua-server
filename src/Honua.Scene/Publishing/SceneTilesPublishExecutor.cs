@@ -252,7 +252,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 var geometricError = ComputeGeometricError(bounds, minHeight, maxHeight);
 
                 // Choose single-tile (byte-stable v1 layout) or quadtree LOD
-                // partitioning (#1200). The LOD path activates once the dataset
+                // partitioning. The LOD path activates once the dataset
                 // crosses the configured threshold so existing small/medium
                 // datasets keep their deterministic single-tile output.
                 int tileCount;
@@ -307,7 +307,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
                 // Replicate the fully-staged tileset tree to the shared object
                 // store BEFORE registering so the recorded storage prefix always
-                // implies the bytes exist (#2459, ADR-0060). The dataset id is
+                // implies the bytes exist (ADR-0060). The dataset id is
                 // minted up front so the local hydration marker and the durable
                 // registry row agree on the content version. When no object store
                 // is available the prefix is null and the scene stays node-local

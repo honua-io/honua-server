@@ -288,7 +288,7 @@ internal sealed partial class GeoservicesImportService
             Outcome = MigrationCatalogWriteOutcome.AlreadyExists,
             Message = message,
             TargetRelationshipRef = refValue,
-            // #4600: mark the omission explicitly. AlreadyExists is also what a successful
+            // Mark the omission explicitly. AlreadyExists is also what a successful
             // idempotent re-apply reports, so without this flag the fidelity gate cannot tell a
             // persisted relationship from a dropped one.
             Deferred = true

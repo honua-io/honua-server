@@ -39,8 +39,8 @@ internal static partial class GdalArtifactPublisher
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // Fail closed on a single-object Zarr fiction before any bytes move (#3103
-        // owns the multi-object protocol).
+        // Fail closed on a single-object Zarr fiction before any bytes move: this
+        // publisher handles single objects only, and native Zarr is a multi-object hierarchy.
         if (RasterOutputDescriptorValidator.LooksLikeZarr(contentType, info.Name))
         {
             Log.ZarrOutputRefused(logger, operationId);
@@ -69,7 +69,7 @@ internal static partial class GdalArtifactPublisher
         // An output with a post-success registration intent must be staged regardless
         // of size: only staged objects can register into the COG catalog, and an
         // inline descriptor would deterministically fail registration on every results
-        // read, permanently wedging a Succeeded job (#3089 review).
+        // read, permanently wedging a Succeeded job.
         var hasRegistrationIntent = staged.Job.Spec.Parameters.ContainsKey(
             GdalWorkerParameterKeys.OutputRegistrationPrefix + outputName);
 

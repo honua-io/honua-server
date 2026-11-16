@@ -133,15 +133,14 @@ internal static class ServiceCollectionExtensions
         // ISecureConnectionRegistry to resolve any publication's storage-binding
         // connection. MySql has no honua.data_connections-equivalent catalog of its
         // own; a process-local in-memory registry keeps DI activation working and
-        // supports a secondary/additional provider (e.g. SQL Server) layered on top
-        // (honua-server#2947).
+        // supports a secondary/additional provider (e.g. SQL Server) layered on top.
         services.AddSingleton<ISecureConnectionRegistry, InMemorySecureConnectionRegistry>();
         // Honua.Protocols.OData's ODataSearchService (wired unconditionally regardless of
         // provider) requires IRelationshipStore; MySql/MariaDB documents relationship
-        // queries as unsupported (honua-server#2947).
+        // queries as unsupported.
         services.AddScoped<IRelationshipStore>(_ => new ReadOnlyRelationshipStore("MySQL/MariaDB"));
         // OGC API Features' shared geometry services (mandatory, wired unconditionally
-        // regardless of provider) require ICoordinateTransformService (honua-server#2947).
+        // regardless of provider) require ICoordinateTransformService.
         services.AddSingleton<ICoordinateTransformService>(_ => new WellKnownCoordinateTransformService());
         services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("MySQL/MariaDB"));
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("MySQL/MariaDB"));
@@ -150,7 +149,7 @@ internal static class ServiceCollectionExtensions
         // IGeometryTopologyValidator; only Postgres registers a real (ST_IsValid-backed)
         // one. Without this stub every applyEdits request under DataSource:Provider=mysql
         // failed DI activation with an opaque 500 instead of the documented read-only
-        // write rejection (honua-server#2983).
+        // write rejection.
         services.AddScoped<IGeometryTopologyValidator>(_ => new ReadOnlyGeometryTopologyValidator("MySQL/MariaDB"));
 
         services.AddSingleton<ISqlDialect>(MySqlSqlDialect.Instance);

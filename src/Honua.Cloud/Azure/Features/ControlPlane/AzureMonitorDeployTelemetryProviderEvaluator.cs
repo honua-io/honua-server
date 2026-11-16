@@ -160,7 +160,7 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
         }
 
         // A health/error/latency gate query is expected to project exactly one row (a scalar). More
-        // than one is an ambiguous-cardinality configuration error (#4617): silently reading rows[0]
+        // than one is an ambiguous-cardinality configuration error: silently reading rows[0]
         // can promote or hold a deploy on an arbitrary, unintended row.
         if (rows.GetArrayLength() > 1)
         {
@@ -187,7 +187,7 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
             _ => (double?)null
         };
 
-        // Guard the same non-finite class as every other provider (#4617): an undefined Log
+        // Guard the same non-finite class as every other provider: an undefined Log
         // Analytics expression must not silently satisfy a threshold comparison.
         return parsedValue.HasValue && double.IsFinite(parsedValue.Value)
             ? new AzureMonitorScalarReading(parsedValue.Value, NoRows: false)
@@ -263,7 +263,7 @@ internal sealed class AzureMonitorDeployTelemetryProviderEvaluator(
             errorRate = (await metricClient.GetScalarReadingAsync(workspaceId, policy.ErrorRateQuery, Window, endpointOverride, cancellationToken).ConfigureAwait(false)).Value;
         }
 
-        // Same bounded rule as the CloudWatch provider (honua-server#6474): only an error-count
+        // Same bounded rule as the CloudWatch provider: only an error-count
         // numerator keeps the "no rows" outcome for the shared gate to read as zero errors.
         var errorCount = AzureMonitorScalarReading.Unavailable;
         if (!string.IsNullOrWhiteSpace(policy.ErrorCountQuery) && policy.ErrorRateThreshold.HasValue)

@@ -119,7 +119,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         if (!string.IsNullOrWhiteSpace(candidate))
         {
             // A token subject is unique only within its issuer, and one issuer can mint the same
-            // subject into several tenants (#3429, #3412). Bind issuer-bearing subjects to the
+            // subject into several tenants. Bind issuer-bearing subjects to the
             // validated issuer and the request's resolved tenant so neither an equal subject from
             // another issuer nor the same subject in another tenant ever owns the same draft.
             // Issuer-less principals (API keys, framework sessions) keep their immutable id.
@@ -186,7 +186,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         }
 
         // Tenant ownership is an unconditional boundary over role, grant and ownership
-        // authority (honua-server#4905). It sits ahead of the admin bypass on purpose: the
+        // authority. It sits ahead of the admin bypass on purpose: the
         // platform "admin" role is tenant-scoped, so a tenant-scoped administrator must never
         // read, enumerate or propose another tenant's Studio content. Only the configured
         // MultiTenancy:MultiTenantAdminRoles operate across tenants.
@@ -197,8 +197,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
                 "The Studio resource belongs to another tenant.");
         }
 
-        // Admins always have full, unscoped access -- unchanged before and after #3001, and
-        // independent of the feature flag.
+        // Admins always have full, unscoped access, independent of the feature flag.
         if (IsAdmin(principal))
         {
             return StudioAuthorizationDecision.Allow();
@@ -225,7 +224,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             or StudioAuthorizationOperation.ReadContentItem
             or StudioAuthorizationOperation.ListOwn;
         // Fail closed on an ownerless *existing* resource: owner_id is a nullable column
-        // (legacy rows created before honua-server#3001's ownership migration may still be
+        // (legacy rows created before the ownership migration may still be
         // unbackfilled), so treating a null owner as "owned by whoever asks" would let any
         // authenticated caller claim it. A null owner here means "no owner assigned yet" --
         // only an admin may act on it until an owner is assigned. Endpoints that create a

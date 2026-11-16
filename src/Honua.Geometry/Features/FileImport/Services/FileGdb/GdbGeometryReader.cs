@@ -124,7 +124,7 @@ internal sealed class GdbGeometryReader
         }
 
         // Carry the M (measure) ordinate so XYM/XYZM points round-trip instead of
-        // being silently flattened (#1981). Point M values are unsigned varints.
+        // being silently flattened. Point M values are unsigned varints.
         double? m = null;
         if (hasM && offset < blob.Length)
         {
@@ -401,7 +401,7 @@ internal sealed class GdbGeometryReader
         double[]? zValues = hasZ ? ReadZCoordinates(blob, ref offset, numPoints) : null;
 
         // Read M (measure) if present instead of skipping it, so XYM/XYZM
-        // multipoints round-trip their measures (#1981).
+        // multipoints round-trip their measures.
         double[]? mValues = hasM ? ReadMCoordinates(blob, ref offset, numPoints) : null;
 
         ApplyZm(coords, zValues, mValues);
