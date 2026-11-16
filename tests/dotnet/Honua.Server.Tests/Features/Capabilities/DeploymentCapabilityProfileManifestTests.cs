@@ -71,9 +71,7 @@ public sealed class DeploymentCapabilityProfileManifestTests
             "a capability with no mapped route is unchanged by the profile");
 
         var crossNode = Capability(root, "collaboration.feature-locks.cross-node");
-        crossNode.GetProperty("supported").GetBoolean().Should().BeFalse();
-        crossNode.GetProperty("available").GetBoolean().Should().BeFalse();
-        crossNode.GetProperty("reasonCode").GetString().Should().Be("unsupported");
+        crossNode.GetProperty("supported").GetBoolean().Should().BeTrue();
     }
 
     [IntegrationTheory]

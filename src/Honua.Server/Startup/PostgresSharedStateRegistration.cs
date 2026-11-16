@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Features.Collaboration.FeatureLocks;
+using Honua.Server.Features.Collaboration.FeatureLocks;
 using Honua.Ai.Protocols.Mcp;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -88,9 +90,28 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton<IMcpSessionStore>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
+        services.AddFeatureLockStore();
+
         services.AddRetentionSweeps();
         services.AddRealtimeEventLog(configuration);
         return services;
+    }
+
+    private static void AddFeatureLockStore(this IServiceCollection services)
+    {
+        // Replace only the built-in default when protocol registration ran first.
+        // Explicit customer stores and repeated shared-state composition remain intact.
+        foreach (var descriptor in services.Where(item =>
+            item.ServiceType == typeof(IFeatureLockService) &&
+            item.ImplementationType == typeof(InMemoryFeatureLockService)).ToArray())
+        {
+            services.Remove(descriptor);
+        }
+        services.TryAddSingleton<PostgresFeatureLockService>();
+        services.TryAddSingleton<IFeatureLockService>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null
+                ? provider.GetRequiredService<PostgresFeatureLockService>()
+                : new InMemoryFeatureLockService(provider.GetService<TimeProvider>()));
     }
 
     private static void AddSharedCacheCoordination(this IServiceCollection services)
@@ -120,6 +141,7 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweep<PostgresIdempotencyReservationStore>();
         services.AddRetentionSweep<PostgresPackageDraftBacking>();
         services.AddRetentionSweep<PostgresMcpSessionStore>();
+        services.AddRetentionSweep<PostgresFeatureLockService>();
         services.TryAddSingleton<PostgresWorkflowRunStore>();
         services.AddRetentionSweep<PostgresWorkflowRunStore>();
     }
