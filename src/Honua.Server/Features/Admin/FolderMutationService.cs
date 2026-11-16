@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -76,6 +77,11 @@ internal static class FolderMutationService
                 ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
             FolderAuditLog.Mutated(logger, execution.Command.OperationId, saved.Graph.Revision);
             return new(saved, mutation, null, authorization);
+        }
+        catch (ServiceUnavailableException)
+        {
+            return new(null, null, new FolderExecutionFailure.Mutation(
+                new(503, "Folder mutation dependencies are temporarily unavailable. Retry when service is restored.")));
         }
         catch (Exception exception) when (FolderMutationFailure.Handles(exception))
         {
