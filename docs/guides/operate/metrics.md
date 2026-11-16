@@ -59,6 +59,18 @@ attempt cannot refresh the observation, only a successful collection can.
 | GP queue | ops-health `geoprocessing` and findings | durable queue buckets; no Prometheus series is required to authorize the scenario |
 | Deploy/release readiness | ops-health `deploy`, platform-release/deploy-operation reads | evidence envelope and typed operation receipt, not a free-form metric |
 
+## Alert snooze limits
+
+Native alert snooze uses the existing suppression lifecycle. Critical alerts
+cannot be snoozed; acknowledgement and resolution remain available. A snooze
+deadline must be in the future and no more than seven days after the action.
+These limits also apply to internal lifecycle-store callers.
+
+PostgreSQL validates suppression in the same transaction as the lifecycle change
+and its audit intent. A rejected snooze preserves the previous lifecycle and
+creates no success audit intent. Replaying an already committed action keeps its
+original intent and deadline.
+
 ## Platform SLO and local diagnostics
 
 The corrected `schemaVersion=1.1` contract for `GET /api/v1/operate/status`
