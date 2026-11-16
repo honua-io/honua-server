@@ -165,7 +165,7 @@ class AssertionTests(unittest.TestCase):
         fallback = denied.format("honua-postgis-proj-grids") + building + "container private-db is unhealthy"
         self.assertEqual(["container-unhealthy"], proof.failure_signals(fallback))
         # Docker shortens official Hub images to a bare name; a real denial must still count.
-        for output in (denied.format("redis") + building, denied.format("ghcr.io/honua-io/private") + building,
+        for output in (denied.format("busybox") + building, denied.format("ghcr.io/honua-io/private") + building,
                        building + denied.format("honua-postgis-proj-grids"),
                        denied.format("honua-postgis-proj-grids") + " Image honua-postgis-proj-grids Rebuilding"):
             with self.subTest(output=output):
@@ -191,6 +191,15 @@ class AssertionTests(unittest.TestCase):
                         if image:
                             built.add(image.group(1).split(":")[0])
         self.assertEqual(set(proof.LOCALLY_BUILT_IMAGES), built)
+
+    def test_container_start_failure_is_reported_without_its_path(self):
+        for runtime in ("OCI runtime create failed: runc create failed", "OCI runtime exec failed"):
+            with self.subTest(runtime=runtime):
+                stderr = ("Error response from daemon: failed to create task for container: " + runtime +
+                          ': exec: "/app/private": no such file or directory\n')
+                error = proof.CommandFailure(["python3", "quickstart.py"], subprocess.CompletedProcess([], 1, "", stderr))
+                self.assertEqual(["docker-daemon-error", "container-start-failed"], error.diagnostic["signals"])
+                self.assertNotIn("private", json.dumps(error.diagnostic))
 
     def test_non_list_or_non_object_service_rows_are_withheld(self):
         withheld = dict.fromkeys(("service", "state", "health", "exitCode"), "withheld")

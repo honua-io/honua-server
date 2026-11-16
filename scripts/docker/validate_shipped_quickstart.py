@@ -109,6 +109,8 @@ FAILURE_SIGNALS = {
     "image-registration-failed": "failed to register layer",
     "docker-api-version": "client version",
     "docker-daemon-error": "error response from daemon",
+    # The container runtime refused to create or start a container (e.g. an entrypoint the image lacks).
+    "container-start-failed": "oci runtime",
     "buildkit-unavailable": "buildkit is enabled but the buildx component is missing",
     "build-context-failed": "unable to prepare context",
     "dockerfile-missing": "failed to read dockerfile",
