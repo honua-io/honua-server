@@ -1826,6 +1826,8 @@ duration remain unmeasured.
 
 The disabled Native Image Impact Observation workflow and its report-only policy
 were retired after the measured graph-derived selector showed no routing savings.
+The workflow had been disabled since 9 November, so retirement saves 0 current
+runner-minutes.
 Image-input selection, policy/trigger drift checks, and v3 content digests remain
 in `scripts/ci/native-image-impact.py` for authoritative serving-image verification.
 No required check or nightly/release/deploy verification moved. Content-addressed
