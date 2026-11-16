@@ -32,7 +32,9 @@ internal sealed class OperationInitiationResolver(IHttpContextAccessor requests)
             {
                 var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, OidcAuthenticationExtensions.AdminSessionScheme);
                 if (CanonicalSecurityActor.Resolve(principal)?.ActorId == actor.ActorId)
-                    return (OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc);
+                    return (OperationInitiationKind.Human, session.Origin == AdminAuthSessionOrigin.Builtin
+                        ? OperationInitiationChannel.InteractivePassword
+                        : OperationInitiationChannel.InteractiveOidc);
             }
         }
 

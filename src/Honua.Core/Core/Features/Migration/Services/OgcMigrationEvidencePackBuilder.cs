@@ -30,17 +30,17 @@ public static class OgcMigrationEvidencePackBuilder
 
         var redactedInventory = inputs.Inventory with
         {
-            Source = RedactSource(inputs.Inventory.Source)
+            Source = MigrationSourceUrls.RedactSource(inputs.Inventory.Source)
         };
 
         var redactedWfs = inputs.WfsImport is null
             ? null
             : inputs.WfsImport with
             {
-                SourceServiceUrl = RedactUrl(inputs.WfsImport.SourceServiceUrl),
+                SourceServiceUrl = MigrationSourceUrls.RedactUrl(inputs.WfsImport.SourceServiceUrl),
                 Manifest = inputs.WfsImport.Manifest with
                 {
-                    Source = RedactSource(inputs.WfsImport.Manifest.Source)
+                    Source = MigrationSourceUrls.RedactSource(inputs.WfsImport.Manifest.Source)
                 }
             };
 
@@ -48,10 +48,10 @@ public static class OgcMigrationEvidencePackBuilder
             ? null
             : inputs.TileCacheExport with
             {
-                SourceServiceUrl = RedactUrl(inputs.TileCacheExport.SourceServiceUrl),
+                SourceServiceUrl = MigrationSourceUrls.RedactUrl(inputs.TileCacheExport.SourceServiceUrl),
                 Manifest = inputs.TileCacheExport.Manifest with
                 {
-                    Source = RedactSource(inputs.TileCacheExport.Manifest.Source)
+                    Source = MigrationSourceUrls.RedactSource(inputs.TileCacheExport.Manifest.Source)
                 }
             };
 
@@ -68,7 +68,7 @@ public static class OgcMigrationEvidencePackBuilder
         var bundle = new OgcMigrationEvidencePackBundle
         {
             SourceKind = redactedInventory.SourceKind,
-            Source = RedactSource(redactedInventory.Source),
+            Source = MigrationSourceUrls.RedactSource(redactedInventory.Source),
             Summary = summary,
             Inventory = redactedInventory,
             WfsImport = redactedWfs,
@@ -101,42 +101,6 @@ public static class OgcMigrationEvidencePackBuilder
             OgcMigrationEvidencePackJsonContext.Default.OgcMigrationEvidencePackBundle);
         var hash = SHA256.HashData(payload);
         return $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}";
-    }
-
-    private static MigrationSourceIdentity RedactSource(MigrationSourceIdentity source)
-    {
-        return new MigrationSourceIdentity
-        {
-            DisplayName = source.DisplayName,
-            BaseUrl = RedactUrl(source.BaseUrl),
-            Product = source.Product,
-            Version = source.Version,
-            Build = source.Build,
-            ServiceType = source.ServiceType
-        };
-    }
-
-    private static string RedactUrl(string baseUrl)
-    {
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            return baseUrl;
-        }
-
-        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        {
-            return baseUrl;
-        }
-
-        var builder = new UriBuilder(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty,
-            Query = string.Empty,
-            Fragment = string.Empty
-        };
-
-        return builder.Uri.AbsoluteUri;
     }
 
     private static OgcMigrationEvidencePackRenderStage BuildRenderStage(
