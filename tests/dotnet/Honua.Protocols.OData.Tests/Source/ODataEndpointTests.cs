@@ -35,9 +35,9 @@ public sealed class ODataEndpointTests : IClassFixture<ODataEndpointTests.ReadOn
 
     public Task DisposeAsync() => _mutableFixture?.DisposeAsync() ?? Task.CompletedTask;
 
+    // All segments are relative literal path fragments (not user input), so none can be
+    // rooted and silently drop earlier arguments.
     private static WebAppFixture CreateProFixture()
-        // All segments are relative literal path fragments (not user input), so none can be
-        // rooted and silently drop earlier arguments.
         => new WebAppFixture().WithTestLicense(HonuaEdition.Pro).UseSeed(Path.Join("tests", "seed", "odata.yaml"));
 
     // Cases that change metadata or features own a private host and schema.
