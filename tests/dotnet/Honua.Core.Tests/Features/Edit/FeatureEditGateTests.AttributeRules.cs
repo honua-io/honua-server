@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.AttributeRules;
@@ -164,6 +165,78 @@ public sealed partial class FeatureEditGateTests
         prepared.Batch.Creates.Single().Attributes["size"].Should().Be("S");
     }
 
+    [UnitTheory]
+    [InlineData("range", false)]
+    [InlineData("range", true)]
+    [InlineData("null", false)]
+    [InlineData("type", false)]
+    [InlineData("length", false)]
+    public async Task AttributeRules_InvalidCalculatedValue_RejectsItsRowBeforeHooks(string invalid, bool rollback)
+    {
+        var field = new MetadataV2Field
+        {
+            Name = "size", Type = MetadataV2FieldType.String, Nullable = false, Length = 1,
+        };
+        var expression = invalid switch
+        {
+            "range" => "$feature.n * 2",
+            "null" => "return null;",
+            "type" => "return 12;",
+            _ => "return 'too long';",
+        };
+        if (invalid == "range")
+        {
+            field = field with
+            {
+                Type = MetadataV2FieldType.Double,
+                Domain = new() { Type = "range", Range = [JsonSerializer.SerializeToElement(0), JsonSerializer.SerializeToElement(10)] },
+            };
+        }
+        var resource = Rules(CalculateSize() with { ScriptExpression = expression }) with
+        {
+            SchemaFields = [field], ContingentValueGroups = [],
+        };
+        var batch = FeatureEditBatch.Create(creates:
+        [Row("bad", "S") with { Attributes = Row("bad", "S").Attributes.Add("n", 6) }], rollbackOnFailure: rollback);
+        var check = new FeatureEditCheck(resource, Scope, batch);
+        var prepared = FeatureEditGate.ApplyAttributeRules(check);
+        var hooks = new RejectingHooks("none");
+
+        var rejected = await FeatureEditGate.CheckAsync(hooks, check with
+        {
+            Batch = prepared.Batch, Rejections = prepared.Rejections,
+        }, CancellationToken.None);
+
+        rejected.Should().ContainSingle().Which.Index.Should().Be(0);
+        prepared.Batch.Creates[0].Attributes["size"].Should().Be("S");
+        hooks.Seen.Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData(AttributeRuleEditEvent.Insert)]
+    [InlineData(AttributeRuleEditEvent.Update)]
+    public void AttributeRules_GlobalIdCalculation_RejectsWithoutReplacingIdentity(AttributeRuleEditEvent editEvent)
+    {
+        const string identity = "fe83cc1f-58cd-40cc-a935-d4acdd105336";
+        var resource = Rules(CalculateSize() with
+        {
+            FieldName = "GLOBALID", ScriptExpression = "return 'f27137b9-ea20-40c1-a76f-cd474bd43387';",
+        }) with
+        {
+            Editing = new() { GlobalIdField = "globalid" },
+            SchemaFields = [new() { Name = "globalid", Type = MetadataV2FieldType.Uuid }],
+        };
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("globalid", identity);
+
+        var result = AttributeRuleEngine.Apply(resource, attributes, editEvent);
+
+        result.IsValid.Should().BeFalse();
+        result.CalculatedFields.Should().BeEmpty();
+        result.Attributes["globalid"].Should().Be(identity);
+        MetadataV2GraphValidator.Validate(new() { Resources = [resource] }).Errors
+            .Should().Contain(error => error.Contains("cannot target the global ID field", StringComparison.Ordinal));
+    }
+
     private static MetadataV2AttributeRule CalculateSize() => new()
     {
         Name = "size", Type = MetadataV2AttributeRuleType.Calculation, FieldName = "size",
@@ -171,5 +244,9 @@ public sealed partial class FeatureEditGateTests
     };
 
     private static MetadataV2Object Rules(params MetadataV2AttributeRule[] rules)
-        => Resource() with { AttributeRules = rules };
+        => Resource() with
+        {
+            AttributeRules = rules,
+            SchemaFields = [new() { Name = "size", Type = MetadataV2FieldType.String, Nullable = true }],
+        };
 }

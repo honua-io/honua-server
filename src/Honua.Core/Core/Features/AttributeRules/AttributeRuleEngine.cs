@@ -78,6 +78,14 @@ public static class AttributeRuleEngine
                             continue;
                         }
 
+                        // Identity is assigned before preparation and must match responses and
+                        // durable replay receipts. Calculations cannot replace it on any event.
+                        if (rule.FieldName.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))
+                        {
+                            (violations ??= []).Add(new(rule.Name, "Calculation rules cannot write the global ID field."));
+                            break;
+                        }
+
                         var result = AttributeRuleExpression.Evaluate(rule.ScriptExpression, Current(), expectBoolean: false);
                         if (result.Status == AttributeRuleExpressionStatus.Unsupported)
                         {

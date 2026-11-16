@@ -42,7 +42,17 @@ public static partial class FeatureEditGate
             }
             else if (row.Feature is { } feature && result.CalculatedFields.Count > 0)
             {
-                replacements[(row.Kind, row.Index)] = WithCalculatedFields(feature, result);
+                var calculated = result.CalculatedFields.Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(field => field, field => result.Attributes[field], StringComparer.OrdinalIgnoreCase);
+                // These are server-derived writes, so editable-on-update does not apply. All
+                // declared type, domain, length and nullability constraints still apply.
+                var validation = FeatureAttributeValidator.Validate(check.Resource, calculated);
+                if (!validation.IsValid)
+                {
+                    rejected.Add(new(row.Kind, row.Index, validation.ErrorMessage!));
+                    continue;
+                }
+                replacements[(row.Kind, row.Index)] = WithCalculatedFields(feature, validation.Value!);
             }
         }
 
@@ -58,13 +68,13 @@ public static partial class FeatureEditGate
             .Select(static group => group.Key)
             .ToHashSet();
 
-    private static Feature WithCalculatedFields(Feature feature, AttributeRuleApplicationResult result)
+    private static Feature WithCalculatedFields(Feature feature, IReadOnlyDictionary<string, object?> values)
     {
         var attributes = feature.Attributes.ToBuilder();
-        var calculated = result.CalculatedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var calculated = values.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var field in calculated)
         {
-            attributes[field] = result.Attributes[field];
+            attributes[field] = values[field];
         }
 
         return feature with
