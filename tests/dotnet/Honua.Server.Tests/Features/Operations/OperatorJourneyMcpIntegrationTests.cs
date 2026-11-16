@@ -16,9 +16,9 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-[Collection(RedisFixture.CollectionName)]
+[Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
+public sealed class OperatorJourneyMcpIntegrationTests
 {
     private const string SecretVariable = "HONUA_OPERATOR_ROSTER_PG";
     private const string SourceUrl = "https://s3.amazonaws.com/sample-bucket/parcels.geojson";
@@ -32,11 +32,10 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
     [Endpoint("POST /mcp")]
     public async Task AdminKey_ConfiguresThroughMcp_AndNonAdminCreatesNoRow()
     {
-        var fixture = new WebAppFixture().WithProductionJobSubstrate()
+        var fixture = PostgresJobHost.Create()
             .UseKestrel()
             .ConfigureWebHost(builder =>
             {
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
@@ -57,6 +56,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         await fixture.InitializeAsync();
         try
         {
+            PostgresJobHost.AssertPostgresJobs(fixture);
             Environment.SetEnvironmentVariable(SecretVariable, fixture.Postgres.ConnectionString);
             using var admin = fixture.CreateAdminClient();
             var deniedName = $"denied{suffix}";
