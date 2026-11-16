@@ -37,7 +37,7 @@ public sealed partial class GrpcIntegrationTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/UploadAttachment")]
     [Endpoint("POST /geospatial.v1.FeatureService/UploadAttachmentChunk")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/UploadAttachmentChunk")]
-    public async Task ContractRpc_WithoutImplementation_ReturnsUnimplemented(string method)
+    public async Task AttachmentRpc_EmptyRequest_ReturnsInvalidArgument(string method)
     {
         Func<Task> call = method switch
         {
@@ -53,6 +53,6 @@ public sealed partial class GrpcIntegrationTests
         };
 
         var failure = await call.Should().ThrowAsync<RpcException>();
-        failure.Which.StatusCode.Should().Be(StatusCode.Unimplemented);
+        failure.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 }

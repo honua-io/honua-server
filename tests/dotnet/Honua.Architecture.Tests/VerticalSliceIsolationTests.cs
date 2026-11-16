@@ -111,6 +111,10 @@ public sealed class VerticalSliceIsolationTests
                                 // endpoints and the MCP package-review tool (the AI surface), so
                                 // the latter doesn't couple to the former's endpoint class.
             "Helpers",          // Hosting carve preserves Honua.Infrastructure.Helpers.*
+            "Attachments",      // Hosting-resident attachment upload verifier and publisher
+                                // (Honua.Infrastructure.Attachments): they bind upload sessions to
+                                // ICloudFileStorage from the FileStorage base above; the native
+                                // attachment RPCs stay in Honua.Server/Features/Protocols/Grpc.
             // Cross-cutting subsystems.
             "Analytics",
             "AuditLog",

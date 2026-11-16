@@ -159,6 +159,10 @@ public sealed record GeoservicesImportRequest
     public GeoservicesCredentialDescriptor? Credentials { get; init; }
 
     public bool ImportAttachments { get; init; } = true;
+
+    // The worker supplies this after deserialization; callback failure rolls back the import.
+    [JsonIgnore]
+    public ImportCommitParticipant? CommitParticipant { get; init; }
 }
 
 public sealed record GeoservicesImportResult
