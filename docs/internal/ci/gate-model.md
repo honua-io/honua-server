@@ -2019,9 +2019,13 @@ unchanged; the existing database collection keeps cases serialized.
 The 52 cases remain in the existing gRPC Protocol and Scene 3–7 shards on
 selected PR runs and twice-daily full trunk runs. Each selected shard process
 creates its own fixture. No runner, required check, aggregate dependency,
-workflow or shard definition changes. Historical full run 43709972683 recorded
-185.7 seconds of per-case fixture work across this class; actual shard wall-time
-savings remain unmeasured.
+workflow or shard definition changes. Paired build-host runs passed the same 52
+cases without skips: VSTest execution fell from 306 to 4 seconds, and the
+fixture-inclusive TRX interval fell from 318.9 to 28.9 seconds. That saves 302
+execution seconds (5.0 runner-minutes), or 290.0 seconds including fixture lifetime
+(4.8 runner-minutes), with zero added runners. Full CI shard wall-time savings
+remain unmeasured. Historical full run 43709972683 separately recorded 185.7
+seconds of per-case fixture work across this class.
 
 ### FeatureServer maintenance host lifetime
 
