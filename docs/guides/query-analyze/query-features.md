@@ -85,7 +85,7 @@ Expected (trimmed): a GeoJSON FeatureCollection with at most one feature. The CL
 ## Troubleshoot
 
 - **400 `Unknown query parameter`** — each endpoint validates its parameter set strictly; check spelling (`filter-lang`, not `filterLang`; `resultRecordCount`, not `count`).
-- **400 on `filter`** — CQL2 syntax error; the response names the offending token. Property names are case-sensitive — check `GET /ogc/features/collections/{collectionId}/queryables`.
+- **400 on `filter`** — a CQL2 syntax error returns "Failed to parse CQL2 expression" without pointing at the position, so check operators and quoting by hand; an unknown property returns "Unknown field '…' in filter expression". Property names are case-sensitive — check `GET /ogc/features/collections/{collectionId}/queryables`.
 - **Empty results with a spatial filter** — coordinates are lon,lat order for `bbox` and WKT; FeatureServer envelopes need `inSR` when not in the layer's SRID.
 - **FeatureServer returns fewer rows than expected** — server page limits apply; the response sets `exceededTransferLimit: true` when truncated, so keep paging.
 - **OData 404 on `/odata/Layers(...)`** — the path value is the numeric layer id, not the collection name. See [troubleshooting](../deploy/troubleshooting.md).

@@ -3,6 +3,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -93,6 +94,91 @@ public sealed class PostgresAnalysisContentStoreListPagingTests(PostgresFixture 
         }
     }
 
+    [IntegrationTest]
+    public async Task CreateItemAsync_RecordsTenant_AndReadsItBackOnGetAndList()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAnalysisContentStoreListPagingTests) + "Tenant");
+        try
+        {
+            await EnsureTableAsync(schema);
+            var store = new PostgresAnalysisContentStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            await store.CreateItemAsync(BuildItem("tenant-b-item") with { TenantId = " tenant-b " }, BuildVersion("tenant-b-item"));
+            await store.CreateItemAsync(BuildItem("unassigned-item"), BuildVersion("unassigned-item"));
+
+            (await store.GetItemAsync("tenant-b-item"))!.TenantId.Should().Be("tenant-b");
+            (await store.GetItemAsync("unassigned-item"))!.TenantId.Should().BeNull();
+
+            var page = await store.ListItemsAsync(new AnalysisContentItemQuery { Limit = 10, Offset = 0 });
+            page.TotalCount.Should().Be(2);
+            page.Items.Single(item => item.ItemId == "tenant-b-item").TenantId.Should().Be("tenant-b");
+            page.Items.Single(item => item.ItemId == "unassigned-item").TenantId.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Migration199_BackfillsTenantFromStudioShadowRowThenTenantQualifiedOwner()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAnalysisContentStoreListPagingTests) + "Backfill");
+        try
+        {
+            await EnsureTableAsync(schema);
+            var bridgedStudioId = Guid.NewGuid();
+            var bridgedItemId = $"analysis-content-{bridgedStudioId:N}";
+            await ExecuteAsync($"""
+                ALTER TABLE "{schema}".analysis_content_items DROP COLUMN tenant_id;
+                CREATE TABLE IF NOT EXISTS "{schema}".studio_content_items (
+                    item_id     UUID PRIMARY KEY,
+                    package_key TEXT NOT NULL,
+                    family      TEXT NOT NULL,
+                    owner_id    TEXT NULL,
+                    tenant_id   TEXT NULL
+                );
+                INSERT INTO "{schema}".studio_content_items (item_id, package_key, family, tenant_id)
+                VALUES ('{bridgedStudioId}', 'bridged', 'analysis', 'tenant-b');
+                INSERT INTO "{schema}".analysis_content_items (item_id, kind, name, owner_id, current_version, current_version_id)
+                VALUES ('{bridgedItemId}', 'AnalysisPackage', 'bridged', 'apikey:reporting', 1, 'v1'),
+                       ('qualified-owner', 'SavedQuery', 'qualified', 'subject:https://idp:user@tenant:tenant-c', 1, 'v1'),
+                       ('plain-owner', 'SavedQuery', 'plain', 'user', 1, 'v1');
+                """);
+
+            var migration = await ReadMigrationAsync("199_AddAnalysisContentTenantOwnership.sql", schema);
+            await ExecuteAsync(migration);
+            await ExecuteAsync(migration);
+
+            var store = new PostgresAnalysisContentStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            (await store.GetItemAsync(bridgedItemId))!.TenantId.Should().Be("tenant-b");
+            (await store.GetItemAsync("qualified-owner"))!.TenantId.Should().Be("tenant-c");
+            (await store.GetItemAsync("plain-owner"))!.TenantId.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private async Task ExecuteAsync(string sql)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<string> ReadMigrationAsync(string fileName, string schema)
+    {
+        var assembly = Assembly.Load("Honua.Server");
+        await using var stream = assembly.GetManifestResourceStream($"Honua.Server.Migrations.{fileName}")
+            ?? throw new InvalidOperationException($"Embedded migration {fileName} not found.");
+        using var reader = new StreamReader(stream);
+        var sql = await reader.ReadToEndAsync();
+        return sql.Replace("$HonuaSchema$", $"\"{schema}\"", StringComparison.Ordinal);
+    }
+
     private static AnalysisContentItem BuildItem(
         string itemId,
         AnalysisContentLifecycle lifecycle = AnalysisContentLifecycle.Active)
@@ -138,7 +224,8 @@ public sealed class PostgresAnalysisContentStoreListPagingTests(PostgresFixture 
                 lifecycle          TEXT        NOT NULL DEFAULT 'Active',
                 created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                created_by         TEXT        NULL
+                created_by         TEXT        NULL,
+                tenant_id          TEXT        NULL
             );
 
             CREATE TABLE IF NOT EXISTS "{schema}".analysis_content_versions (
