@@ -8,8 +8,10 @@ using FluentAssertions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Attachments;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Attachments;
@@ -117,6 +119,59 @@ public sealed partial class AttachmentUploadSessionStoreTests(PostgresFixture fi
         });
     }
 
+    [IntegrationTest]
+    public async Task MaintenanceAsync_RepeatedFailures_ReleaseWrappedConnections()
+    {
+        var provider = new FixtureConnectionProvider(fixture);
+        var attachments = new PostgresAttachmentStore(provider, null,
+            NullLogger<PostgresAttachmentStore>.Instance);
+        var maintenance = new PostgresAttachmentMaintenance(provider, "honua", attachments);
+
+        // A missing migration contract fails after opening the connection and transaction.
+        // Background retries must return both the physical connection and admission slot.
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => maintenance.RunOnceAsync());
+            failure.Message.Should().Be("Attachment migration identities were not supplied by the host.");
+            provider.ActiveConnections.Should().Be(0);
+            provider.ReleasedConnections.Should().Be(attempt + 1);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task PublicationAsync_FailedCommitAndDelete_ReleaseWrappedConnections()
+    {
+        await WithStoreAsync(async (_, schema) =>
+        {
+            var provider = new FixtureConnectionProvider(fixture);
+            var attachments = new PostgresAttachmentStore(provider, null,
+                NullLogger<PostgresAttachmentStore>.Instance, schema);
+            var store = new PostgresAttachmentUploadSessionStore(provider, schema, attachments);
+            var session = await store.BeginAsync(CreateRequest());
+            var key = new AttachmentUploadSessionKey("owner", session.SessionId);
+            var failure = await Assert.ThrowsAsync<AttachmentUploadException>(() => store.CommitAsync(key, "unused"));
+            failure.Failure.Should().Be(AttachmentUploadFailure.InvalidState);
+            provider.ActiveConnections.Should().Be(0);
+            provider.ReleasedConnections.Should().Be(2);
+
+            var mutations = new PostgresAttachmentMutationStore(provider, schema, attachments);
+            var delete = new AttachmentDeleteRequest
+            {
+                OwnerId = "owner", ServiceId = "service", LayerId = 0, FeatureId = 42,
+                AttachmentId = 1, IdempotencyKey = "delete", Lifetime = TimeSpan.FromHours(1)
+            };
+            var deletion = await Assert.ThrowsAsync<InvalidOperationException>(() => mutations.DeleteAsync(delete));
+            deletion.Message.Should().Be("Attachment migration identities were not supplied by the host.");
+            provider.ActiveConnections.Should().Be(0);
+            provider.ReleasedConnections.Should().Be(3);
+
+            // The failed delete must also roll back the receipt before returning its lease.
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand($"SELECT count(*) FROM \"{schema}\".attachment_mutation_receipts", connection);
+            (await command.ExecuteScalarAsync()).Should().Be(0L);
+        });
+    }
+
     private static AttachmentUploadRequest CreateRequest() => new()
     {
         OwnerId = "owner",
@@ -166,9 +221,22 @@ public sealed partial class AttachmentUploadSessionStoreTests(PostgresFixture fi
 
     private sealed class FixtureConnectionProvider(PostgresFixture fixture) : IAdoNetDatabaseConnectionProvider
     {
+        private int _activeConnections;
+        private int _releasedConnections;
+        public int ActiveConnections => Volatile.Read(ref _activeConnections);
+        public int ReleasedConnections => Volatile.Read(ref _releasedConnections);
         public string GetConnectionString() => fixture.ConnectionString;
         public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
-            => await fixture.DataSource.OpenConnectionAsync(cancellationToken);
+        {
+            var connection = await fixture.DataSource.OpenConnectionAsync(cancellationToken);
+            Interlocked.Increment(ref _activeConnections);
+            return new SemaphoreReleasingConnection(connection, () =>
+            {
+                connection.State.Should().Be(ConnectionState.Closed);
+                Interlocked.Decrement(ref _activeConnections);
+                Interlocked.Increment(ref _releasedConnections);
+            });
+        }
         public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
             IsolationLevel isolationLevel = IsolationLevel.RepeatableRead, CancellationToken cancellationToken = default)
         {
