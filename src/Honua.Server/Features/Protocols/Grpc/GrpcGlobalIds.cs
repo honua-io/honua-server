@@ -23,7 +23,7 @@ internal static partial class GrpcGlobalIds
     public static string Normalize(string value) => InsertGlobalIds.Normalize(value);
 
     // Selectors one bound predicate can carry: text columns match four spellings per ID.
-    public static int MaxSelectorsPerPredicate(MetadataV2Resource resource, string field)
+    public static int MaxSelectorsPerPredicate(MetadataV2Object resource, string field)
         => MaxPredicateValues / (IsUuidColumn(resource, field) ? 1 : 4);
 
     // One wire selector; throws ArgumentException (INVALID_ARGUMENT) for anything else.
@@ -80,7 +80,7 @@ internal static partial class GrpcGlobalIds
     }
 
     // The layer's declared global-ID field, or null when it declares none.
-    public static string? ResolveField(MetadataV2Resource resource)
+    public static string? ResolveField(MetadataV2Object resource)
     {
         var declared = resource.Editing?.GlobalIdField;
         return string.IsNullOrWhiteSpace(declared)
@@ -91,7 +91,7 @@ internal static partial class GrpcGlobalIds
     // A where predicate selecting ids. Every id is a parsed UUID and the field a plain identifier,
     // so the text needs no escaping; it is bound on its own and ANDed with the caller's filter.
     // Text columns may hold braced or uppercase forms, so those spellings are matched too.
-    public static string Predicate(MetadataV2Resource resource, string field, ImmutableArray<string> ids)
+    public static string Predicate(MetadataV2Object resource, string field, ImmutableArray<string> ids)
     {
         if (!PlainIdentifier().IsMatch(field))
         {
@@ -123,7 +123,7 @@ internal static partial class GrpcGlobalIds
         return null;
     }
 
-    private static bool IsUuidColumn(MetadataV2Resource resource, string field)
+    private static bool IsUuidColumn(MetadataV2Object resource, string field)
         => resource.SchemaFields
             .FirstOrDefault(candidate => candidate.Name.Equals(field, StringComparison.OrdinalIgnoreCase))?.Type
             is MetadataV2FieldType.Uuid;

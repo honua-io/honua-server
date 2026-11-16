@@ -5,7 +5,6 @@ using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using System.Net.Http.Json;
@@ -67,13 +66,11 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
 
     // Browser sessions accept cookie-authenticated writes only over HTTPS, so a real-socket fixture also
     // listens with a test certificate. API-key clients stay on plain HTTP, and approved operations replayed
-    // over the TLS loopback trust the same certificate.
+    // over the TLS loopback use the production client, which trusts only the certificate the server served.
     public static WebAppFixture ConfigureKestrel(
         WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider) =>
         Configure(fixture, provider)
             .ConfigureWebHost(builder => builder.UseSetting("Security:DisableHttpsRedirection", "true"))
-            .ConfigureServices(services => services.AddHttpClient(AdminApiOperationExecutor.HttpClientName)
-                .ConfigurePrimaryHttpMessageHandler(CreateLoopbackTlsHandler))
             .UseKestrel(listeners =>
             {
                 listeners.Listen(IPAddress.Loopback, 0);
@@ -104,25 +101,51 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
                 state,
             });
             token.StatusCode.Should().Be(HttpStatusCode.NoContent);
-            using var sessionResponse = await client.GetAsync("/api/v1/admin/auth/session");
-            sessionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
-            session!.IsAuthenticated.Should().BeTrue();
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(session.Claims.Select(
-                claim => new Claim(claim.Type, claim.Value)), OidcAuthenticationExtensions.AdminSessionScheme));
-            var actor = CanonicalSecurityActor.Resolve(principal);
-            actor.Should().NotBeNull();
-            using var csrfResponse = await client.GetAsync("/api/v1/admin/auth/csrf");
-            csrfResponse.EnsureSuccessStatusCode();
-            using var csrf = JsonDocument.Parse(await csrfResponse.Content.ReadAsStringAsync());
-            client.DefaultRequestHeaders.Add("X-Honua-CSRF", csrf.RootElement.GetProperty("requestToken").GetString());
-            return new HumanApprovalHttpClient(client, actor!.ActorId);
+            return await ReadAuthenticatedSessionAsync(client);
         }
         catch
         {
             client.Dispose();
             throw;
         }
+    }
+
+    public static Task<HumanApprovalHttpClient> AuthenticateWithPasswordAsync(
+        WebAppFixture fixture, string password)
+        => AuthenticateWithPasswordAsync(() => CreateHttpsClient(fixture), password);
+
+    public static async Task<HumanApprovalHttpClient> AuthenticateWithPasswordAsync(
+        Func<HttpClient> createClient, string password)
+    {
+        var client = createClient();
+        if (client.BaseAddress?.Scheme != Uri.UriSchemeHttps)
+            client.BaseAddress = new Uri("https://localhost");
+        try
+        {
+            await BrowserCsrf.SetHeaderAsync(client);
+            using var response = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password });
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            return await ReadAuthenticatedSessionAsync(client);
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+    }
+
+    private static async Task<HumanApprovalHttpClient> ReadAuthenticatedSessionAsync(HttpClient client)
+    {
+        using var sessionResponse = await client.GetAsync("/api/v1/admin/auth/session");
+        sessionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+        session!.IsAuthenticated.Should().BeTrue();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(session.Claims.Select(
+            claim => new Claim(claim.Type, claim.Value)), OidcAuthenticationExtensions.AdminSessionScheme));
+        var actor = CanonicalSecurityActor.Resolve(principal);
+        actor.Should().NotBeNull();
+        await BrowserCsrf.SetHeaderAsync(client);
+        return new HumanApprovalHttpClient(client, actor!.ActorId);
     }
 
     public async Task<OperationHumanApprovalReview> OpenReviewAsync(string proposalId)

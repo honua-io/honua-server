@@ -36,6 +36,10 @@ internal static class AdminApiOperationCatalog
     [
         new("admin.layer.publish", "Publish layer", HttpMethod.Post, "/connections/{connectionId}/layers", "publishLayer", true, true, "/connections/{connectionId}/tables/validate"),
         new("admin.layer.set-enabled", "Set layer enabled", HttpMethod.Put, "/connections/{connectionId}/layers/{storageLayerId}/enabled", "setLayerEnabled", true, QueryParameters: new HashSet<string>(["serviceName"], StringComparer.Ordinal)),
+        new("admin.layer.display.get", "Get layer display", HttpMethod.Get, "/metadata/layers/{storageLayerId}/display", "getAdminLayerDisplay", false),
+        new("admin.layer.display.set", "Set layer display", HttpMethod.Put, "/metadata/layers/{storageLayerId}/display", "setAdminLayerDisplay", true),
+        new("admin.layer.spatial.get", "Get layer spatial configuration", HttpMethod.Get, "/metadata/layers/{storageLayerId}/spatial", "getAdminLayerSpatial", false),
+        new("admin.layer.spatial.set", "Set layer spatial configuration", HttpMethod.Put, "/metadata/layers/{storageLayerId}/spatial", "setAdminLayerSpatial", true),
         new("admin.layer.fields.get", "Get layer fields", HttpMethod.Get, "/metadata/layers/{storageLayerId}/fields", "getAdminLayerFields", false),
         new("admin.layer.fields.set", "Set layer fields", HttpMethod.Put, "/metadata/layers/{storageLayerId}/fields", "updateAdminLayerFields", true),
         new("admin.layer.filter.get", "Get layer filter", HttpMethod.Get, "/metadata/layers/{storageLayerId}/filter", "getAdminLayerFilter", false),
@@ -206,6 +210,7 @@ internal static class AdminApiOperationCatalog
             },
             AllowsNull = allowsNull,
             Format = resolved.TryGetProperty("format", out var format) ? format.GetString() : null,
+            Minimum = resolved.TryGetProperty("minimum", out var minimum) ? minimum.GetDecimal() : null,
             EnumValues = resolved.TryGetProperty("enum", out var values) ? values.EnumerateArray().Select(static value => value.ValueKind == JsonValueKind.Null ? null : value.ToString()).ToArray() : [],
             Items = resolved.TryGetProperty("items", out var items) ? ConvertSchema(root, items) : null,
             Properties = resolved.TryGetProperty("properties", out var properties)

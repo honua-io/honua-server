@@ -207,6 +207,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         .ToImmutableArray()
                 };
             }
+            if (!string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
+                query.OutFields is { } storageFields && resource.FindPrimaryIdField() is { } identifier &&
+                !storageFields.Contains(identifier.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                // Fetch identity for the top-level ID without expanding the requested response properties.
+                query = query with { OutFields = storageFields.Add(identifier.Name) };
+            }
             var outputAxisOrder = unifiedQuery.OutputCrs?.AxisOrder ?? AxisOrder.EastNorth;
             var outputCrsUri = unifiedQuery.OutputCrs?.Uri ?? "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
@@ -941,7 +948,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static GeoJsonFeature ToOgcFeature(
         Feature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
@@ -958,7 +965,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static GeoJsonFeature ToOgcFeature(
         EncodedGeoJsonFeature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
@@ -973,7 +980,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             links: links,
             schema: schema), resource);
 
-    private static GeoJsonFeature OmitHiddenIdentifierProperty(GeoJsonFeature feature, MetadataV2Resource resource)
+    private static GeoJsonFeature OmitHiddenIdentifierProperty(GeoJsonFeature feature, MetadataV2Object resource)
     {
         // The shared builder preserves custom identifier properties. Publisher visibility
         // still applies to that attribute; the top-level feature identity remains intact.
@@ -985,12 +992,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
         return feature;
     }
 
-    private static ImmutableHashSet<string> GetHiddenFields(MetadataV2Resource resource)
+    private static ImmutableHashSet<string> GetHiddenFields(MetadataV2Object resource)
         => resource.SchemaFields.Where(field => field.Hidden)
             .Select(field => field.Name).ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
 
     private static string[] ResolveCsvFieldNames(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableHashSet<string>? projectedProperties)
     {
         IEnumerable<string> fieldNames = resource.SchemaFields
@@ -1113,8 +1120,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private async Task<IFeatureReader> ResolveReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
+        MetadataV2Object resource,
+        MetadataV2Layer publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
@@ -1129,7 +1136,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             .ConfigureAwait(false);
     }
 
-    private static bool ShouldRouteProviderReader(MetadataV2Publication publication)
+    private static bool ShouldRouteProviderReader(MetadataV2Layer publication)
         => !string.IsNullOrEmpty(publication.StorageBindingId);
 
     /// <summary>
@@ -1143,7 +1150,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     internal static ReadOnlyMemory<byte> CreateRawFeatureCollectionPayload(
         ImmutableArray<RawGeoJsonFeature> features,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableArray<Link> links,
         long? numberMatched)
     {
@@ -1199,7 +1206,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     internal static ReadOnlyMemory<byte> CreateRawPointFeatureCollectionPayload(
         ImmutableArray<RawGeoServicesFeature> features,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableArray<Link> links,
         long? numberMatched)
     {
@@ -1253,7 +1260,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         return buffer.WrittenMemory;
     }
 
-    private static string? ResolveRawPublicIdPropertyName(MetadataV2Resource resource)
+    private static string? ResolveRawPublicIdPropertyName(MetadataV2Object resource)
     {
         var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
         var visibleFields = resource.SchemaFields
@@ -1529,7 +1536,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private static async Task StreamFeatureCollectionAsync(
         HttpContext context,
         IAsyncEnumerable<Feature> features,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string collectionId,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
@@ -1621,7 +1628,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private sealed class StreamingItemsResult : IResult
     {
         private readonly IStreamingFeatureStore _streamingFeatureStore;
-        private readonly MetadataV2Resource _resource;
+        private readonly MetadataV2Object _resource;
         private readonly int _storageLayerId;
         private readonly FeatureQuery _query;
         private readonly string _collectionId;
@@ -1640,7 +1647,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         public StreamingItemsResult(
             IStreamingFeatureStore streamingFeatureStore,
-            MetadataV2Resource resource,
+            MetadataV2Object resource,
             int storageLayerId,
             FeatureQuery query,
             string collectionId,

@@ -139,6 +139,7 @@ internal static class OperationsServiceCollectionExtensions
 
         services.TryAddDeferredOperationExecutor<StylePresetExecutor>(StylePresetOperation.OperationId);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
+        AddStagedImportOperations(services);
 
         // Enumerate operation identities without resolving unrelated actuator dependencies.
         services.TryAddDeferredOperationExecutor<DeferredServicePublishExecutor>(ServicePublishOperation.OperationId);
@@ -185,7 +186,7 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<OperationLineageAttestationStore>(),
                     sp.GetService<Honua.Core.Features.FileImport.Abstractions.IImportJobService>()));
             }
-            services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
+            AdminOperationLoopbackTls.AddClient(services, AdminConnectImportOperationExecutor.HttpClientName);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 
@@ -215,7 +216,7 @@ internal static class OperationsServiceCollectionExtensions
             services.AddHttpClient(AdminApiOperationExecutor.HttpClientName, client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(30);
-            });
+            }).ConfigurePrimaryHttpMessageHandler(AdminOperationLoopbackTls.CreateHandler);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 
@@ -249,18 +250,11 @@ internal static class OperationsServiceCollectionExtensions
                         definition,
                         sp.GetRequiredService<IOperationSecretStore>()));
             }
-            services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminOperateOperationExecutor(
-                definition,
-                descriptor,
-                sp.GetRequiredService<IHttpClientFactory>(),
-                sp.GetRequiredService<IHttpContextAccessor>(),
-                sp.GetService<IAdminApiKeyStore>(),
-                sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<OperationLineageAttestationStore>(),
-                sp.GetRequiredService<IOperationSecretStore>()));
+            services.AddDeferredOperationExecutor(definition.OperationId,
+                sp => AdminOperateOperationExecutor.Create(sp, definition, descriptor));
         }
 
-        services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
+        AdminOperationLoopbackTls.AddClient(services, AdminOperateOperationExecutor.HttpClientName);
         services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
         // One policy seam combines typed operation rules with the legacy guardrail ladder.
@@ -296,10 +290,14 @@ internal static class OperationsServiceCollectionExtensions
                 environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
-                !Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
-                    sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>())
-                    ? null
-                    : sp.GetRequiredService<IOperationApprovalReplayVerifier>()));
+                new OperationActuationGuards
+                {
+                    ApprovalReplayVerifier = !Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
+                        sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>())
+                        ? null
+                        : sp.GetRequiredService<IOperationApprovalReplayVerifier>(),
+                    AgentAuthorityStore = sp.GetService<IAgentAuthorityStore>(),
+                }));
 
         return services;
     }
@@ -336,4 +334,17 @@ internal static class OperationsServiceCollectionExtensions
     internal sealed class AdminConnectImportRegistrationMarker;
     internal sealed class AdminApiOperationRegistrationMarker;
     internal sealed class WorkflowRollbackApprovalRegistrationMarker;
+
+    // Preview a job artifact, then import it into fresh server-owned staging after approval.
+    private static void AddStagedImportOperations(IServiceCollection services)
+    {
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider, StagedImportOperationDescriptorProvider>());
+        services.TryAddDeferredOperationExecutor<Honua.Geoprocessing.StagedImportPreviewExecutor>(
+            Honua.Geoprocessing.StagedImportOperation.PreviewOperationId);
+        services.TryAddDeferredOperationExecutor<Honua.Geoprocessing.StagedImportExecutor>(
+            Honua.Geoprocessing.StagedImportOperation.ImportOperationId);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper,
+            Honua.Geoprocessing.StagedImportApprovalMapper>());
+        services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+    }
 }

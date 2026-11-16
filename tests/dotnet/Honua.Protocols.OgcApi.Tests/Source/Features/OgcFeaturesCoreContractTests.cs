@@ -36,7 +36,7 @@ public sealed class OgcFeaturesCoreContractTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         _fixture.UpdateV2ResourceMetadata(
             TestLayerId,
-            spatial: new MetadataV2ResourceSpatial
+            spatial: new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.None,
             },

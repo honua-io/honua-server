@@ -285,10 +285,8 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_CiteAutosLayer_WithTimeCurrent_BypassesGenericParser()
     {
-        // CITE Autos rendering parses TIME directly (current/CSV/intervals) in
-        // TryHandleCiteWmsGetMap; the generic OgcTemporalFilterParser must be
-        // bypassed when the request targets that layer or it would reject
-        // CITE-supported tokens like "current" before the CITE branch runs.
+        // The generic OgcTemporalFilterParser must be bypassed when the request
+        // targets cite:Autos, or it would reject tokens like "current".
         // V2 cutover: the bypass keys on the V2 resource name.
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
         // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
@@ -319,9 +317,8 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_CiteAutosMixedWithRegularLayer_RejectsUnparseableTime()
     {
-        // The CITE Autos parse-error bypass lets TIME forms like "current" or
-        // CSV instants reach TryHandleCiteWmsGetMap unchanged when the *entire*
-        // request targets cite:Autos. A mixed request (cite:Autos + a normal
+        // The CITE Autos parse-error bypass leaves TIME forms like "current" or
+        // CSV instants unparsed when the *entire* request targets cite:Autos. A mixed request (cite:Autos + a normal
         // layer) cannot rely on the bypass — TIME=current does not apply to a
         // regular layer's temporal column, so silently dropping TIME for the
         // normal layer would diverge from the documented temporal contract.
@@ -379,12 +376,12 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
 
     private Task ConfigureLayerAsTimeAwareAsync()
     {
-        // V2 cutover (#1035 72/N): time-info now lives on MetadataV2Resource.Temporal.
+        // Time info lives on MetadataV2Object.Temporal.
         // Use the seeded "timestamp" DateTime field on the shared test layer; resolvers
         // emit an extent only when the field resolves to a real Date/DateTime attribute.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal { StartTimeField = "timestamp" });
+            temporal: new MetadataV2ObjectTemporal { StartTimeField = "timestamp" });
         return Task.CompletedTask;
     }
 
@@ -392,7 +389,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     {
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal
+            temporal: new MetadataV2ObjectTemporal
             {
                 StartTimeField = "timestamp",
                 EndTimeField = "event_date",
@@ -408,7 +405,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // capabilities/request gate must treat this layer as not time-aware.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal
+            temporal: new MetadataV2ObjectTemporal
             {
                 StartTimeField = "timestamp",
                 EndTimeField = "name",
@@ -423,7 +420,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // the metadata update path allows today.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal { StartTimeField = "name" });
+            temporal: new MetadataV2ObjectTemporal { StartTimeField = "name" });
         return Task.CompletedTask;
     }
 

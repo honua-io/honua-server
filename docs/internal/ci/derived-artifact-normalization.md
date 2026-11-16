@@ -19,6 +19,13 @@ It does not format source, apply patches, run AI, or accept a path selected by a
 pull request. PR Gate reports drift as advisory; the trunk generated-files writer
 (`generated-files-on-trunk.md`) and the merge-train regeneration remain authoritative.
 
+The producer runs on pull requests that change its recipe: the producer
+workflow, the .NET setup action, the envelope builder, a pinned generator input
+(`GENERATOR_INPUTS`) or one of the three projections. Ordinary source changes
+regenerate the projections in PR Gate's architecture job instead, which reports
+the same drift; see [gate-model.md](gate-model.md#optional-pr-workflow-input-boundaries)
+for the coverage argument.
+
 ## Trust split
 
 `Derived Artifact Normalization` is an ordinary untrusted `pull_request`
@@ -239,7 +246,7 @@ missing payload, review re-request, and credential probe). The workflow only
 decides and delegates; the validator rejects inline `createBlob`/`createTree`/
 `createCommit`/`updateRef` calls in YAML so this logic stays tested.
 
-The read-only consumer binds the producer's head repository and branch to the
+The read-only validation job binds the producer's head repository and branch to the
 current PR and requires its base to remain the repository default branch.
 Before minting, branch protection and ruleset reads must succeed. The default
 branch, release namespaces, merge-train namespaces, protected branches and

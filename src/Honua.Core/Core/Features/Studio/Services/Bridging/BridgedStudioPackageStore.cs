@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Linq;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
@@ -41,6 +42,13 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
     /// <inheritdoc />
     public Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
         => _inner.GetDraftAsync(draftId, cancellationToken);
+
+    public Task<StudioDraftRevision?> GetDraftRevisionAsync(Guid draftId, long generation, CancellationToken cancellationToken = default)
+        => _inner.GetDraftRevisionAsync(draftId, generation, cancellationToken);
+
+    public Task<IReadOnlyList<StudioDraftRevisionSummary>> ListDraftRevisionsAsync(
+        StudioDraftRevisionQuery query, CancellationToken cancellationToken = default)
+        => _inner.ListDraftRevisionsAsync(query, cancellationToken);
 
     /// <inheritdoc />
     public Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default)
@@ -299,6 +307,22 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         return null;
     }
 
+    // Bridged items carry the tenant their native store recorded (analysis items) or none
+    // (forms). A row with no tenant is treated exactly as a tenant-unassigned Studio row is:
+    // enumerable only by a caller whose scope covers the deployment's default tenant.
+    private static bool MatchesTenantScope(string? recordTenantId, TenantScopeFilter? scope)
+    {
+        if (scope is null)
+        {
+            return true;
+        }
+
+        var recorded = TenantOwnership.Normalize(recordTenantId);
+        return recorded is null
+            ? scope.IncludeUnassigned
+            : string.Equals(recorded, scope.TenantId, StringComparison.Ordinal);
+    }
+
     private static bool MatchesQuery(StudioContentItemSummary item, StudioContentItemQuery query)
     {
         if (!string.IsNullOrWhiteSpace(query.WorkspaceId) &&
@@ -313,11 +337,7 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
             return false;
         }
 
-        // Bridged families persist in their own native stores, which record no Studio tenant.
-        // They are therefore treated exactly as a tenant-unassigned Studio row is
-        // (honua-server#4905): enumerable only by a caller whose scope covers the deployment's
-        // default tenant, never by another tenant.
-        if (query.Tenant is { IncludeUnassigned: false })
+        if (!MatchesTenantScope(item.TenantId, query.Tenant))
         {
             return false;
         }

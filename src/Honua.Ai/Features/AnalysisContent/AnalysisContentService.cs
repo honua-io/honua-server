@@ -11,6 +11,8 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -33,7 +35,8 @@ internal sealed partial class AnalysisContentService(
     IGeoprocessingJobService geoprocessingJobService,
     IEnumerable<IExecutionLogStore> logStores,
     TimeProvider timeProvider,
-    ILogger<AnalysisContentService> logger) : IAnalysisContentService
+    ILogger<AnalysisContentService> logger,
+    ILayerAccessAuthorizer layerAccessAuthorizer)
 {
     private const int DefaultPreviewLimit = 25;
     private const int MaxPreviewLimit = 200;
@@ -157,14 +160,13 @@ internal sealed partial class AnalysisContentService(
             }).ConfigureAwait(false);
 
     public async Task<AnalysisContentEstimateResult> EstimateVersionAsync(
-        string itemId,
-        int version,
+        AnalysisContentVersionAccess access,
         CancellationToken cancellationToken)
         => await AnalysisContentTelemetry.TrackAsync(
             AnalysisContentTelemetry.OperationsNames.EstimateVersion,
             async activity =>
             {
-                var contentVersion = await GetRequiredVersionAsync(itemId, version, cancellationToken).ConfigureAwait(false);
+                var contentVersion = await GetRequiredVersionAsync(access.ItemId, access.Version, cancellationToken).ConfigureAwait(false);
                 var package = contentVersion.AnalysisPackage
                     ?? throw new AnalysisContentValidationException("The requested version is not an analysis package.", "analysis.content.kind.mismatch", "/kind");
                 AnalysisContentTelemetry.SetContentTags(
@@ -174,6 +176,14 @@ internal sealed partial class AnalysisContentService(
                     contentVersion.Version,
                     contentVersion.VersionId);
 
+                foreach (var step in package.Plan.Steps)
+                {
+                    if (TryResolveLayerInput(step, out var layerId))
+                    {
+                        await EnsureLayerAccessAsync(access.Principal, layerId, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
                 var estimate = await ComputePackageEstimateAsync(package, cancellationToken).ConfigureAwait(false);
                 activity?.SetTag("honua.analysis_content.estimated_compute_units", estimate.EstimatedComputeUnits);
                 return new AnalysisContentEstimateResult(
@@ -182,6 +192,16 @@ internal sealed partial class AnalysisContentService(
                     contentVersion.VersionId,
                     estimate);
             }).ConfigureAwait(false);
+
+    private async Task EnsureLayerAccessAsync(ClaimsPrincipal principal, int layerId, CancellationToken cancellationToken)
+    {
+        var decision = await layerAccessAuthorizer.AuthorizeLayerAsync(
+            principal, layerId, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+        if (!decision.IsAllowed)
+        {
+            throw new AnalysisContentNotFoundException($"Layer '{layerId}' was not found.");
+        }
+    }
 
     private async Task<AnalysisContentEstimate> ComputePackageEstimateAsync(
         AnalysisPackageContent package,
@@ -368,15 +388,14 @@ internal sealed partial class AnalysisContentService(
             }).ConfigureAwait(false);
 
     public async Task<SavedQueryPreviewResult> PreviewSavedQueryAsync(
-        string itemId,
-        int version,
+        AnalysisContentVersionAccess access,
         int? limit,
         CancellationToken cancellationToken)
         => await AnalysisContentTelemetry.TrackAsync(
             AnalysisContentTelemetry.OperationsNames.PreviewSavedQuery,
             async activity =>
             {
-                var contentVersion = await GetRequiredVersionAsync(itemId, version, cancellationToken).ConfigureAwait(false);
+                var contentVersion = await GetRequiredVersionAsync(access.ItemId, access.Version, cancellationToken).ConfigureAwait(false);
                 var savedQuery = contentVersion.SavedQuery
                     ?? throw new AnalysisContentValidationException("The requested version is not a saved query.", "analysis.content.kind.mismatch", "/kind");
                 AnalysisContentTelemetry.SetContentTags(
@@ -385,6 +404,8 @@ internal sealed partial class AnalysisContentService(
                     contentVersion.Kind,
                     contentVersion.Version,
                     contentVersion.VersionId);
+
+                await EnsureLayerAccessAsync(access.Principal, savedQuery.LayerId, cancellationToken).ConfigureAwait(false);
 
                 var snapshot = await metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
                 if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(savedQuery.LayerId, out var resource))
@@ -439,7 +460,7 @@ internal sealed partial class AnalysisContentService(
                 var binding = new ArtifactBindingRef
                 {
                     ArtifactId = artifactId,
-                    SourceItemId = itemId,
+                    SourceItemId = access.ItemId,
                     SourceVersion = contentVersion.Version,
                     SourceVersionId = contentVersion.VersionId,
                     Role = "preview",
@@ -451,9 +472,9 @@ internal sealed partial class AnalysisContentService(
                 await store.UpsertArtifactAsync(new ResultArtifactRecord
                 {
                     ArtifactId = artifactId,
-                    ResultPackageId = $"{itemId}:v{contentVersion.Version}:preview",
+                    ResultPackageId = $"{access.ItemId}:v{contentVersion.Version}:preview",
                     JobId = "preview",
-                    SourceItemId = itemId,
+                    SourceItemId = access.ItemId,
                     SourceVersion = contentVersion.Version,
                     SourceVersionId = contentVersion.VersionId,
                     Kind = ArtifactKind.FeatureLayer,
@@ -471,12 +492,12 @@ internal sealed partial class AnalysisContentService(
                     ExpiresAt = now.Add(PreviewRetention)
                 }, cancellationToken).ConfigureAwait(false);
 
-                Log.SavedQueryPreviewed(logger, itemId, contentVersion.Version, result.Items.Length);
+                Log.SavedQueryPreviewed(logger, access.ItemId, contentVersion.Version, result.Items.Length);
 
                 return new SavedQueryPreviewResult
                 {
                     PreviewArtifactId = artifactId,
-                    ItemId = itemId,
+                    ItemId = access.ItemId,
                     Version = contentVersion.Version,
                     LayerId = savedQuery.LayerId,
                     Features = result.Items.Select(SavedQueryPreviewFeature.FromFeature).ToArray(),

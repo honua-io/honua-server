@@ -60,7 +60,8 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
             new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System), [executor],
             new AllowPolicyDecisionPoint(), TimeProvider.System,
             new AdminOperationApprovalBridge(sp, [mapper], NullLogger<AdminOperationApprovalBridge>.Instance),
-            instances, audit, new OperationApprovalReplayVerifier(proposals)));
+            instances, audit,
+            new OperationActuationGuards { ApprovalReplayVerifier = new OperationApprovalReplayVerifier(proposals) }));
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<IOperationInvoker>();
         var original = $"apikey:api-key:{issued.Record.Id:D}";

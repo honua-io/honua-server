@@ -30,7 +30,7 @@ extract it into a dedicated local directory, and run `python3 quickstart.py` the
 Docker Compose, Python 3.11+, and OpenSSL 3 are required; use WSL on Windows.
 No compiler or host Docker CLI bind mounts are needed.
 
-The archive contains `compose.yaml`, `compose.executor.yaml`, `compose.console.yaml`, `console.nginx.conf`, `quickstart.py`,
+The archive contains the `docker/proj-grids` build context, `compose.yaml`, `compose.executor.yaml`, `compose.console.yaml`, `console.nginx.conf`, `quickstart.py`,
 `images.json`, a README, and `AGENTS.md`, the operating rules for AI coding agents
 working in the install directory (also published as
 [Work with AI coding agents](../guides/connect/working-with-ai-agents.md)). `images.json` pins the serving and executor images as
@@ -203,7 +203,11 @@ recovery checks scripted, see [Linux](linux-packages.md) or
 
 ## 1. Create the project
 
-Make a directory and put this in it as `compose.yaml`:
+Use the extracted customer package directory, which includes the
+`docker/proj-grids` build context, and put this in it as `compose.yaml`. The first
+start builds PostGIS with the regional datum grids and needs access to the image
+registry, Debian package repositories and PROJ CDN. Runtime transformations use
+the installed grids offline:
 
 <!-- docs-validation:install.compose mode=run -->
 ```yaml
@@ -266,7 +270,12 @@ services:
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
     secrets: [postgres_password, honua_admin_password, honua_audit_chain_key, honua_master_key, honua_keyring_password]
   postgres:
-    image: pgrouting/pgrouting:17-3.5-3.7.3
+    image: honua-postgis-proj-grids:17-3.5-3.7.3
+    build:
+      context: ./docker/proj-grids
+      args:
+        BASE_IMAGE: pgrouting/pgrouting:17-3.5-3.7.3
+    pull_policy: missing
     environment:
       POSTGRES_DB: honua
       POSTGRES_USER: honua
@@ -448,7 +457,7 @@ python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activa
 pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1'
 ```
 
-Save this as `quickstart.py`. It registers that database as a connection,
+Save this as `publish-quickstart.py`, keeping the package's `quickstart.py` initializer. It registers that database as a connection,
 publishes the table as a layer, and queries it back:
 
 <!-- docs-validation:install.publish mode=run -->
@@ -485,7 +494,7 @@ print(json.dumps(result["features"], indent=2))
 
 <!-- docs-validation:install.query mode=run -->
 ```bash
-python quickstart.py
+python publish-quickstart.py
 ```
 
 The first line is the service name and layer id. Two features follow, with their
@@ -497,7 +506,8 @@ is how you publish a table you did not create yourself.
 
 The layer is now served over every protocol the deployment advertises, from that
 one publish — OGC API Features at `/ogc/features/collections`, GeoServices REST at
-`/rest/services/quickstart/FeatureServer/0`, plus WMS, WFS, vector tiles and the
+`/rest/services/quickstart/FeatureServer/<layer id>` (the id printed above; layer ids
+are deployment-wide, not zero-based), plus WMS, WFS, vector tiles and the
 rest. `admin.list_services()` and `admin.get_capabilities()` report what this
 deployment actually exposes, rather than what the list above assumes.
 

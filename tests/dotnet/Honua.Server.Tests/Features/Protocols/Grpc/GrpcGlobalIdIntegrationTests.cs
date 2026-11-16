@@ -35,9 +35,10 @@ public sealed class GrpcGlobalIdIntegrationTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         await _fixture.UpdateV2ResourceAsync(WebAppFixture.TestLayerId, resource => resource with
         {
-            Editing = (resource.Editing ?? new MetadataV2ResourceEditing()) with { GlobalIdField = GlobalIdField },
+            Editing = (resource.Editing ?? new MetadataV2ObjectEditing()) with { GlobalIdField = GlobalIdField },
             SchemaFields = [.. resource.SchemaFields, new MetadataV2Field { Name = GlobalIdField, Type = MetadataV2FieldType.Uuid, Nullable = true }],
         });
+        await ProvisionGlobalIdIndexAsync(GlobalIdField);
         _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
         {
             HttpHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, _fixture.CreateHandler())
@@ -54,6 +55,38 @@ public sealed class GrpcGlobalIdIntegrationTests : IAsyncLifetime
     {
         _channel?.Dispose();
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task MissingGlobalIdIndex_DisablesCapabilitiesAndRefusesEditsBeforeWriting()
+    {
+        var request = new Proto.DescribeLayerRequest { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId };
+        (await _client!.DescribeLayerAsync(request, _headers)).Layer.Capabilities.Create.Should().BeTrue();
+        var count = await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId);
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                DO $test$ BEGIN
+                    EXECUTE format('DROP INDEX %I', 'idx_features_gid_' || md5('0:globalid'));
+                END $test$;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var capabilities = (await _client.DescribeLayerAsync(request, _headers)).Layer.Capabilities;
+        capabilities.Create.Should().BeFalse();
+        capabilities.Update.Should().BeFalse();
+        capabilities.Delete.Should().BeFalse();
+        capabilities.Query.Should().BeTrue();
+        var edit = new Proto.ApplyEditsRequest { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId };
+        edit.Adds.Add(new Proto.Feature { Attributes = { ["name"] = new Proto.AttributeValue { StringValue = AddedName } } });
+        var action = async () => await _client.ApplyEditsAsync(edit, _headers);
+        (await action.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        (await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId)).Should().Be(count);
     }
 
     [IntegrationTest]
@@ -80,6 +113,34 @@ public sealed class GrpcGlobalIdIntegrationTests : IAsyncLifetime
         delete.DeleteGlobalIds.Add(globalId);
         (await _client.ApplyEditsAsync(delete, _headers)).DeleteResults.Should().ContainSingle().Which.GlobalId.Should().Be(globalId);
         (await QueryAsync(globalId, outFields: "*")).Features.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ObjectIdEdits_ReportTheStoredGlobalId()
+    {
+        const string customGlobalIdField = "native_identity";
+        await _fixture.UpdateV2ResourceAsync(WebAppFixture.TestLayerId, resource => resource with
+        {
+            Editing = resource.Editing! with { GlobalIdField = customGlobalIdField },
+            SchemaFields = [.. resource.SchemaFields, new MetadataV2Field { Name = customGlobalIdField, Type = MetadataV2FieldType.Uuid, Nullable = true }]
+        });
+        await ProvisionGlobalIdIndexAsync(customGlobalIdField);
+        var globalId = await AddAsync();
+        var objectId = (await QueryAsync(globalId, "name")).Features.Should().ContainSingle().Subject.Id;
+        var update = new Proto.ApplyEditsRequest { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId };
+        update.Updates.Add(new Proto.Feature { Id = objectId, Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "object ID update" } } });
+
+        var updated = await _client!.ApplyEditsAsync(update, _headers);
+
+        updated.UpdateResults.Should().ContainSingle().Which.Should().Match<Proto.EditResult>(result => result.Success && result.GlobalId == globalId);
+        var delete = new Proto.ApplyEditsRequest { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId };
+        delete.Deletes.Add(objectId);
+        var deleted = await _client.ApplyEditsAsync(delete, _headers);
+        deleted.DeleteResults.Should().ContainSingle().Which.Should().Match<Proto.EditResult>(result => result.Success && result.GlobalId == globalId);
+        (await QueryAsync(globalId, "name")).Features.Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -123,6 +184,49 @@ public sealed class GrpcGlobalIdIntegrationTests : IAsyncLifetime
         var act = async () => await _client!.QueryFeaturesAsync(request, _headers);
 
         (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.FeatureService/QueryFeaturesStream")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task GlobalIdStream_ReportsIdentityWithProjectedAttributes()
+    {
+        var globalId = await AddAsync();
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            ReturnGeometry = false,
+            OutFields = { "name" },
+            GlobalIds = { globalId }
+        };
+        using var stream = _client!.QueryFeaturesStream(request, _headers);
+
+        (await stream.ResponseStream.MoveNext(CancellationToken.None)).Should().BeTrue();
+        var page = stream.ResponseStream.Current;
+        page.GlobalIdFieldName.Should().Be(GlobalIdField);
+        var feature = page.Features.Should().ContainSingle().Subject;
+        feature.GlobalId.Should().Be(globalId);
+        feature.Attributes.Should().ContainKey("name").And.NotContainKey(GlobalIdField);
+        (await stream.ResponseStream.MoveNext(CancellationToken.None)).Should().BeFalse();
+    }
+
+    private async Task ProvisionGlobalIdIndexAsync(string field)
+    {
+        // The fixture mutates an in-memory graph, bypassing the production metadata
+        // store that provisions this index when a GlobalID declaration is activated.
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT format('CREATE UNIQUE INDEX %I ON features (((NULLIF(attributes ->> %L, %L))::uuid)) WHERE layer_id = %s',
+                'idx_features_gid_' || md5(@layer::text || ':' || @field), @field, '', @layer)
+            """;
+        command.Parameters.AddWithValue("layer", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("field", field);
+        command.CommandText = (string)(await command.ExecuteScalarAsync())!;
+        command.Parameters.Clear();
+        await command.ExecuteNonQueryAsync();
     }
 
     private async Task<string> AddAsync(Proto.AttributeValue? createdDate = null)

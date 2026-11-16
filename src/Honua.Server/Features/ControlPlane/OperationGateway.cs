@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Exceptions;
 using Honua.Alerts.Ops;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -68,7 +69,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        request = request with { TenantId = ResolveTenantId(request.TenantId) };
+        request = ResolveRequestIdentity(request);
         var actionDiscriminator = request.ActionDiscriminator
             ?? (request.Kind == OperationClass.AdminConfigChange
                 ? TryReadActionDiscriminator(request.ExecutionPayload)
@@ -98,6 +99,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                     CorrelationId = request.CorrelationId,
                     TenantId = request.TenantId,
                     PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
+                    Roles = request.RequestedByAgent is null ? [] : ["agent"],
                     AuthorizationOutcome = "gateway-authorized",
                     RootProvisioningOperationId = request.RootProvisioningOperationId,
                 },
@@ -252,6 +254,11 @@ internal sealed partial class OperationGateway : IOperationGateway
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
         }
 
+        if (OperationProposalApprovalWindow.IsElapsed(proposal, DateTimeOffset.UtcNow))
+        {
+            throw new InvalidOperationException("The proposal approval window has expired. Create a new proposal.");
+        }
+
         await VerifyHumanApprovalAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
 
         try
@@ -261,7 +268,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             await OperationApprovalDenialRecorder.RecordAsync(
-                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.CurrentAuthority, cancellationToken)
+                _scopeFactory,
+                new() { Proposal = proposal, Actor = approvedBy, Reason = OperationApprovalDenialReason.CurrentAuthority, Decision = OperationApprovalDecision.Approve },
+                cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -283,7 +292,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             await OperationApprovalDenialRecorder.RecordAsync(
-                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.EvidenceInvalid, cancellationToken)
+                _scopeFactory,
+                new() { Proposal = proposal, Actor = approvedBy, Reason = OperationApprovalDenialReason.EvidenceInvalid, Decision = OperationApprovalDecision.Approve },
+                cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -317,7 +328,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             var previousTenantSource = tenantContext?.Source ?? TenantContextSource.Anonymous;
             var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
             var previousSchema = schemaContext?.CurrentSchema;
-            tenantContext?.Set(replay?.TenantId, TenantContextSource.Claim);
+            var replayTenantId = replay is null ? proposal.TenantId : replay.TenantId;
+            tenantContext?.Set(replayTenantId, TenantContextSource.Claim);
             if (schemaContext is not null)
             {
                 schemaContext.CurrentSchema = replay?.SchemaName;
@@ -335,6 +347,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 }
                 else
                 {
+                    var replayRoles = await ReplayRolesAsync(proposal, cancellationToken).ConfigureAwait(false);
                     canonicalDispatchStarted = true;
                     handle = await invoker.SubmitAsync(
                         replay?.Request ?? new OperationRequest
@@ -346,8 +359,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                         {
                             OperationInstanceId = proposal.Audit.OperationInstanceId,
                             CorrelationId = proposal.Audit.CorrelationId,
-                            PrincipalId = proposal.RequestedBy,
-                            TenantId = replay?.TenantId,
+                            PrincipalId = proposal.RequestedBy ?? proposal.RequestedByAgent,
+                            Roles = replayRoles,
+                            TenantId = replayTenantId,
                             SchemaName = replay?.SchemaName,
                             AuthorizationOutcome = "approved",
                             ApprovedProposalId = proposal.ProposalId,
@@ -387,13 +401,10 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (OperationCanceledException)
         {
-            await CompensateClaimedProposalAsync(
+            await CancelClaimedProposalAsync(
                     proposal,
                     approvedBy,
-                    OperationProposalStatus.Cancelled,
-                    "Approved replay was cancelled before actuation began; no side effect occurred.",
-                    "operation.cancelled",
-                    AuditOutcome.Failure)
+                    canonicalDispatchStarted ? null : OperationHandleStatus.Cancelled)
                 .ConfigureAwait(false);
             throw;
         }
@@ -454,6 +465,17 @@ internal sealed partial class OperationGateway : IOperationGateway
                 cancellationToken)
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string[]> ReplayRolesAsync(OperationProposal proposal, CancellationToken cancellationToken)
+    {
+        if (proposal.RequestedByAgent is not null) return ["agent"];
+        if (!OperationProposerApiKeyAuthority.IsApiKeyActor(proposal.RequestedBy)) return [];
+        if (_proposerKeyAuthority is null)
+            throw new InvalidOperationException(OperationProposerApiKeyAuthority.Refusal);
+        var current = await _proposerKeyAuthority.GetCurrentRecordAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
+        return current.Permissions.Any(permission => string.Equals(permission.Trim(), "agent", StringComparison.OrdinalIgnoreCase))
+            ? ["agent"] : [];
     }
 
     private async Task ValidateCurrentProposerAsync(string? actor, CancellationToken cancellationToken)
@@ -570,6 +592,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                     CorrelationId = request.CorrelationId,
                     TenantId = request.TenantId,
                     PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
+                    Roles = request.RequestedByAgent is null ? [] : ["agent"],
                     AuthorizationOutcome = "autonomy-authorized",
                     RootProvisioningOperationId = request.RootProvisioningOperationId,
                 },
@@ -610,7 +633,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         GuardrailDecision decision,
         CancellationToken cancellationToken)
     {
-        request = request with { TenantId = ResolveTenantId(request.TenantId) };
+        request = ResolveRequestIdentity(request);
         var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
         if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
             plan = plan with { ExecutionPayload = request.ExecutionPayload };
@@ -652,6 +675,35 @@ internal sealed partial class OperationGateway : IOperationGateway
             }
         }
 
+        if (hasIdempotencyKey && request.ActionDiscriminator == OpsActionNames.RedriveDeadLetters
+            && request.AutonomyContext?.FindingId != null)
+        {
+            if (_proposalStore is not IOperationProposalBatchStore batches)
+            {
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = decision,
+                    Message = "Durable approval batch storage is unavailable."
+                };
+            }
+
+            var batchKey = DeriveProposalId(request.Kind, request.OperationId, request.IdempotencyKey!, request.TenantId);
+            var candidateKey = $"{request.IdempotencyKey}:batch:{Guid.NewGuid():N}";
+            var candidateId = DeriveProposalId(request.Kind, request.OperationId, candidateKey, request.TenantId);
+            var reservedKey = await batches.ReserveBatchAsync(new(batchKey, candidateKey, candidateId), cancellationToken)
+                .ConfigureAwait(false);
+            request = request with { IdempotencyKey = reservedKey };
+            var existing = await FindActiveByIdempotencyKeyAsync(request.Kind, request.OperationId, reservedKey, request.TenantId, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing != null)
+            {
+                return RequiresNewFolderIdempotencyKey(existing, new FolderProposalReuseContext(request, plan, clock))
+                    ? NewIdempotencyKeyRequiredResult(decision)
+                    : ExistingProposalResult(existing, decision, reservedKey);
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(request.OperationInstanceId))
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
@@ -664,6 +716,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                         IdempotencyKey = request.IdempotencyKey,
                         TenantId = request.TenantId,
                         PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
+                        Roles = request.RequestedByAgent is null ? [] : ["agent"],
                         AuthorizationOutcome = "gateway-authorized",
                         RootProvisioningOperationId = request.RootProvisioningOperationId,
                     },
@@ -742,24 +795,34 @@ internal sealed partial class OperationGateway : IOperationGateway
             Initiation = await CreateInitiationEvidenceAsync(proposal, cancellationToken).ConfigureAwait(false),
         };
 
-        var created = await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        if (!created)
+        for (var renewal = 0; ; renewal++)
         {
-            // Lost a race (or an idempotent replay landed) under the same id: fetch and
-            // return the winning proposal instead of failing the caller.
-            if (hasIdempotencyKey)
+            if (await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
             {
-                var winner = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false);
-                if (winner != null)
-                {
-                    return RequiresNewFolderIdempotencyKey(winner, new FolderProposalReuseContext(request, plan, clock))
-                        ? NewIdempotencyKeyRequiredResult(decision)
-                        : ExistingProposalResult(winner, decision, request.IdempotencyKey!);
-                }
+                break;
             }
 
-            throw new InvalidOperationException("Failed to durably persist the operation proposal.");
+            // Lost a race (or an idempotent replay landed) under the same id: return the winner,
+            // unless its approval window expired, in which case the next id asks for a fresh approval.
+            var winner = hasIdempotencyKey
+                ? await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false)
+                : null;
+            if (winner is null)
+            {
+                throw new InvalidOperationException("Failed to durably persist the operation proposal.");
+            }
+
+            // Renewal ordinals live outside the caller-key hash namespace. A literal
+            // caller key ending in "#1" must never alias another key's renewal.
+            var renewedId = $"{proposalId}-renewal-{(renewal + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            if (!await TryRetargetOpenBatchAsync(winner, renewedId, cancellationToken).ConfigureAwait(false))
+            {
+                return RequiresNewFolderIdempotencyKey(winner, new FolderProposalReuseContext(request, plan, clock))
+                    ? NewIdempotencyKeyRequiredResult(decision)
+                    : ExistingProposalResult(winner, decision, request.IdempotencyKey!);
+            }
+
+            proposal = proposal with { ProposalId = renewedId, Audit = proposal.Audit with { ProposalId = renewedId } };
         }
 
         string? auditId = null;
@@ -850,6 +913,28 @@ internal sealed partial class OperationGateway : IOperationGateway
         }, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task<bool> TryRetargetOpenBatchAsync(
+        OperationProposal winner, string renewedId, CancellationToken cancellationToken)
+    {
+        if (_proposalStore is not IOperationProposalBatchStore batches)
+        {
+            return winner.Status == OperationProposalStatus.Expired;
+        }
+
+        if (winner.Status == OperationProposalStatus.Succeeded)
+        {
+            await batches.CompleteOpenBatchAsync(winner.ProposalId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (winner.Status != OperationProposalStatus.Expired)
+        {
+            return false;
+        }
+
+        await batches.RetargetOpenBatchAsync(winner.ProposalId, renewedId, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     private async Task TryFailPlannedProposalAsync(
         string proposalId,
         string? auditId,
@@ -931,8 +1016,8 @@ internal sealed partial class OperationGateway : IOperationGateway
     }
 
     // Derive a stable proposal id from (kind, descriptor, idempotency key) so a repeated proposal
-    // maps to the same durable record. This makes TryCreate collide on a duplicate,
-    // giving the gateway a race-safe fetch-and-return instead of a second proposal.
+    // maps to the same durable record, or to the same next link once that record expired. This
+    // makes TryCreate collide on a duplicate, giving the gateway a race-safe fetch-and-return.
     private static string DeriveProposalId(OperationClass kind, string? operationId, string idempotencyKey, string? tenantId)
     {
         var key = $"{kind}:{operationId}:{idempotencyKey}";
@@ -1010,8 +1095,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (InvalidOperationException exception) when (exception is not ServiceUnavailableException)
         {
-            await OperationApprovalDenialRecorder.RecordAsync(_scopeFactory, proposal, approval.ApprovedBy,
-                OperationApprovalDenialReason.HumanSessionRequired, cancellationToken).ConfigureAwait(false);
+            await OperationApprovalDenialRecorder.RecordAsync(_scopeFactory,
+                new() { Proposal = proposal, Actor = approval.ApprovedBy, Reason = OperationApprovalDenialReason.HumanSessionRequired, Decision = OperationApprovalDecision.Approve },
+                cancellationToken).ConfigureAwait(false);
             throw;
         }
     }
@@ -1042,25 +1128,29 @@ internal sealed partial class OperationGateway : IOperationGateway
             "The proposal changed while approval was being claimed. Reopen its review before approving again.");
     }
 
-    private async Task CompensateClaimedProposalAsync(
+    private async Task CancelClaimedProposalAsync(
         OperationProposal proposal,
         string actor,
-        OperationProposalStatus status,
-        string reason,
-        string auditAction,
-        AuditOutcome auditOutcome)
+        OperationHandleStatus? canonicalResolution)
     {
         var now = DateTimeOffset.UtcNow;
         var resolved = proposal with
         {
-            Status = status,
+            Status = OperationProposalStatus.Cancelled,
             ResolvedBy = actor,
             ResolvedAt = now,
             UpdatedAt = now,
-            ResolutionReason = reason,
+            ResolutionReason = canonicalResolution is null
+                ? "Approved replay was cancelled after canonical dispatch began."
+                : "Approved replay was cancelled before actuation began; no side effect occurred.",
         };
         await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, CancellationToken.None).ConfigureAwait(false);
-        await WriteAuditAsync(resolved, auditAction, actor, auditOutcome, CancellationToken.None)
+        if (canonicalResolution is { } canonicalStatus)
+        {
+            await PersistCanonicalResolutionAsync(resolved, canonicalStatus, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        await WriteAuditAsync(resolved, "operation.cancelled", actor, AuditOutcome.Failure, CancellationToken.None)
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, CancellationToken.None).ConfigureAwait(false);
     }
@@ -1095,6 +1185,17 @@ internal sealed partial class OperationGateway : IOperationGateway
         return null;
     }
 
+    private OperationGatewayRequest ResolveRequestIdentity(OperationGatewayRequest request)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var context = scope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
+        var resolved = request with { TenantId = ResolveTenantId(request.TenantId) };
+        if (context?.User.Identity?.IsAuthenticated != true || !Honua.Infrastructure.Authentication.AgentPrincipal.IsAgentRequest(context))
+            return resolved;
+        var actor = AuditContextResolver.ResolveCanonicalActor(context).Actor;
+        return resolved with { RequestedBy = actor, RequestedByAgent = actor };
+    }
+
     private string? ResolveTenantId(string? suppliedTenantId)
     {
         using var scope = _scopeFactory.CreateScope();
@@ -1124,6 +1225,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             {
                 FindingId = proposal.AutonomyMetadata.FindingId,
                 Rule = proposal.AutonomyMetadata.Rule,
+                Severity = proposal.AutonomyMetadata.Severity,
                 ActionDiscriminator = proposal.AutonomyMetadata.ActionDiscriminator,
                 ActionMarkedAutoSafe = proposal.AutonomyMetadata.ActionMarkedAutoSafe,
                 BlastRadius = proposal.AutonomyMetadata.BlastRadius,
@@ -1584,7 +1686,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                 Timestamp = DateTimeOffset.UtcNow,
                 EventType = AuditEventType.AdminAction,
                 Actor = string.IsNullOrWhiteSpace(actor) ? AuditEvent.AnonymousActor : actor,
-                ActorType = AuditActorType.UserId,
+                ActorType = string.IsNullOrWhiteSpace(actor) ? AuditActorType.Anonymous : AuditActorType.UserId,
+                ActorAgent = action == "operation.proposed" ? proposal.RequestedByAgent : null,
                 ResourceType = "operation_proposal",
                 ResourceId = proposal.ProposalId,
                 Action = action,
@@ -1610,7 +1713,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             ? AuditActorType.System
             : request.RequestedBy is null
                 ? AuditActorType.Anonymous
-            : AuditActorType.UserId;
+                : AuditActorType.UserId;
         await auditLog.RecordAsync(
             new AuditEvent
             {
@@ -1618,6 +1721,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 EventType = AuditEventType.AdminAction,
                 Actor = string.IsNullOrWhiteSpace(actor) ? AuditEvent.AnonymousActor : actor,
                 ActorType = actorType,
+                ActorAgent = request.RequestedByAgent,
                 ResourceType = "operation_autonomy",
                 ResourceId = request.AutonomyContext?.FindingId ?? request.IdempotencyKey ?? request.Kind.ToString(),
                 Action = action,
@@ -1667,6 +1771,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             FindingId = context.FindingId,
             Rule = context.Rule,
+            Severity = context.Severity,
             ActionDiscriminator = IsBoundedIdentifier(actionDiscriminator ?? context.ActionDiscriminator, 128)
                 ? actionDiscriminator ?? context.ActionDiscriminator
                 : null,

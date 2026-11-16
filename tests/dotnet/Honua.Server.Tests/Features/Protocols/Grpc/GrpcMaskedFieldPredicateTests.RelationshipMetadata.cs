@@ -23,8 +23,8 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         var triple = DestinationRelationshipTriple();
         _resourceValidator.ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(triple));
-        _fieldMaskSource.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
-            .Returns(call => ImmutableArray.Create(call.Arg<MetadataV2Resource>().Metadata.Id == _resource.Metadata.Id
+        _fieldMaskSource.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
+            .Returns(call => ImmutableArray.Create(call.Arg<MetadataV2Object>().Metadata.Id == _resource.Metadata.Id
                 ? localMask : relatedMask));
         using var context = CreateCallContext();
 

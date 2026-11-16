@@ -36,6 +36,8 @@ on:
       - 'docs/gis/data/capability-matrix.v1.json'
       - 'docs/okf/**'
       - 'docs/llms.txt'
+      - 'docs/guides/workflows/stage-map.v1.json'
+      - 'docs/developer/api-specs/admin-api.json'
       - 'docs/.gitbook.yaml'
       # Shipped config the anchor manifest sweeps for runtime docs URLs.
       - 'docs/guides/deploy/examples/**'
@@ -52,10 +54,15 @@ on:
       - 'scripts/ci/check-okf-bundle.test.py'
       - 'scripts/ci/okf_frontmatter.py'
       - 'scripts/ci/gis_workflow.py'
+      - 'scripts/ci/check-workflow-stage-map.py'
+      - 'scripts/ci/check-workflow-stage-map.test.py'
+      - 'scripts/ci/retired-terms.v1.json'
       - 'scripts/ci/generate-okf-graph.py'
       - 'scripts/ci/generate-okf-graph.test.py'
       - 'scripts/ci/okf-requirements.txt'
       - 'scripts/ci/okf-bundle.v1.json'
+      - 'scripts/ci/generate-workflow-inventory.py'
+      - 'scripts/ci/workflow-inventory.template.md'
       - 'scripts/ci/generate-capability-concepts.py'
       - 'scripts/ci/generate-llms-txt.py'
       - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
@@ -81,14 +88,21 @@ jobs:
     # cold run is seconds, not minutes. The ceiling is a bound, not a budget.
     timeout-minutes: 10
     steps:
+      # A pull request is validated as its merge into trunk (the default ref),
+      # so the checkers, the files they read and this workflow definition come
+      # from one tree and the verdict is for what would land. Full history
+      # serves the additions-only example gate and the exact-head graph.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          # The additions-only example gate diffs the PR head against its base.
           fetch-depth: 0
 
       - name: Install the safe OKF YAML reader
         run: python3 -m pip install -r scripts/ci/okf-requirements.txt
+
+      - name: Regenerate trunk-owned documentation for validation
+        run: |
+          python3 scripts/ci/generate-workflow-inventory.py
+          python3 scripts/ci/generate-capability-concepts.py
 
       # The checker's own tests run first and are self-contained (synthetic docs
       # trees in temp directories). A checker that wrongly reports clean is the
@@ -127,16 +141,36 @@ jobs:
       - name: Check the OKF concept bundle
         run: python3 scripts/ci/check-okf-bundle.py --summary
 
+      - name: Check the workflow stage vocabulary and source bindings
+        run: |
+          python3 scripts/ci/check-workflow-stage-map.test.py
+          python3 scripts/ci/check-workflow-stage-map.py --gaps
+
       - name: Check the derived OKF agent graph
         run: |
           python3 scripts/ci/generate-okf-graph.py --output "${RUNNER_TEMP}/domain-graph.v1.json"
           python3 scripts/ci/generate-okf-graph.py --check --output "${RUNNER_TEMP}/domain-graph.v1.json"
 
+      # The published graph describes the pull request head alone: that head's
+      # committed documents, read by that head's own generator in its own tree.
+      # It is the one step judged on the head, so a head whose generator cannot
+      # run as called here fails although its merge would be valid.
+      - name: Generate exact-head OKF agent graph
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # A reused runner workspace can still register a tree from an earlier job.
+          git worktree prune
+          git worktree add --detach "${RUNNER_TEMP}/exact-head-tree" "${HEAD_SHA}"
+          mkdir -p "${RUNNER_TEMP}/exact-head"
+          python3 "${RUNNER_TEMP}/exact-head-tree/scripts/ci/generate-okf-graph.py" \
+            --output "${RUNNER_TEMP}/exact-head/domain-graph.v1.json"
+
       - name: Upload exact-head OKF agent graph
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: okf-agent-graph-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/domain-graph.v1.json
+          path: ${{ runner.temp }}/exact-head/domain-graph.v1.json
           if-no-files-found: error
           retention-days: 30
 
@@ -163,4 +197,6 @@ jobs:
         run: python3 scripts/ci/generate-llms-txt.py --check
 
       - name: Reject raw curl additions in documentation
-        run: python3 scripts/ci/check-doc-example-surfaces.py --base "${{ github.event.pull_request.base.sha || 'origin/trunk' }}"
+        # On a pull request the first parent of the merge is the trunk commit
+        # it was merged into, so the diff is exactly what this change adds.
+        run: python3 scripts/ci/check-doc-example-surfaces.py --base "${{ github.event_name == 'pull_request' && 'HEAD^1' || 'origin/trunk' }}"

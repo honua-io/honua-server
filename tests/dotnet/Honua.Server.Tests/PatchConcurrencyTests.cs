@@ -604,7 +604,7 @@ public sealed class PatchConcurrencyTests
     private sealed class MutableFieldMask : IFieldMaskSource
     {
         public ImmutableArray<string> Fields { get; set; } = ImmutableArray<string>.Empty;
-        public Task<ImmutableArray<string>> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        public Task<ImmutableArray<string>> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
             => Task.FromResult(Fields);
     }
 

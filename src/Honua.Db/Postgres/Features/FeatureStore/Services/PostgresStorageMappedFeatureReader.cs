@@ -38,7 +38,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
-    private readonly MetadataV2Resource _resource;
+    private readonly MetadataV2Object _resource;
     private readonly FeatureStorageMapping _mapping;
     private readonly DataConnection? _connection;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
@@ -65,7 +65,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     public PostgresStorageMappedFeatureReader(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ObjectPool<Dictionary<string, object?>> dictionaryPool,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureStorageMapping mapping,
         DataConnection? connection,
         IConnectionEncryptionService? connectionEncryptionService,
@@ -1261,6 +1261,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             var maxY = sql.AddParameter(filter.EnvelopeMaxY.Value);
             var srid = filter.Srid ?? _storageSrid;
             var envelope = $"ST_MakeEnvelope({minX}, {minY}, {maxX}, {maxY}, {srid})";
+            if (filter.EnvelopeMaxX.Value <= filter.EnvelopeMinX.Value ||
+                filter.EnvelopeMaxY.Value <= filter.EnvelopeMinY.Value)
+            {
+                // A box collapsed to a point or line (an OGC bbox=x,y,x,y) makes ST_MakeEnvelope
+                // a zero-area polygon that GEOS treats as intersecting nothing, dropping the
+                // features exactly on it. ST_Envelope reduces it to the POINT or LINESTRING it is.
+                envelope = $"ST_Envelope({envelope})";
+            }
+
             return TransformFilterGeometryIfNeeded(envelope, srid, query.SpatialFilterDatumTransformation);
         }
 
@@ -1406,24 +1415,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private string ParseWhereClause(string whereClause, SqlBuilder sql)
     {
         var trimmed = whereClause.Trim();
-        if (TrueLiteralRegex().IsMatch(trimmed))
+        if (LegacyWhereClauseParser.IsTrueLiteral(trimmed))
         {
             return "TRUE";
         }
 
         var expressions = SplitOnAnd(trimmed);
-        if (expressions.Count == 0)
-        {
-            throw new ArgumentException(UnsupportedWhereClauseMessage);
-        }
-
         var parameterizedExpressions = new List<string>(expressions.Count);
-        // Not rewritten as .Select(e => e.Trim()): the trim is only the first step of a multi-branch
-        // per-expression parse (null-check vs. comparison), not a pure 1:1 mapping.
-        foreach (var part in (expressions).Select(expression => expression.Trim()))
+        foreach (var expression in LegacyWhereClauseParser.Parse(expressions, LegacyWhereGrammar.StorageMapped, UnsupportedWhereClauseMessage))
         {
-            var nullMatch = NullCheckRegex().Match(part);
-            if (nullMatch.Success)
+            var nullMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.NullCheck)
             {
                 var nullColumn = ResolveWhereColumnExpression(nullMatch.Groups["field"].Value, sql);
                 var notClause = string.IsNullOrWhiteSpace(nullMatch.Groups["not"].Value) ? string.Empty : "NOT ";
@@ -1431,25 +1433,21 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 continue;
             }
 
-            var inMatch = InRegex().Match(part);
-            if (inMatch.Success)
+            var inMatch = expression.Match;
+            if (expression.Kind == LegacyWhereExpressionKind.In)
             {
                 var inField = inMatch.Groups["field"].Value;
                 var inColumn = ResolveWhereColumnExpression(inField, sql);
-                var placeholders = SplitValueTokens(inMatch.Groups["values"].Value)
+                var placeholders = LegacyWhereClauseParser.SplitValueTokens(inMatch.Groups["values"].Value)
                     .Select(valueToken => AddWhereValueParameter(inField, valueToken, forceText: false, sql));
                 parameterizedExpressions.Add($"{inColumn} IN ({string.Join(", ", placeholders)})");
                 continue;
             }
 
-            var comparisonMatch = ComparisonRegex().Match(part);
-            if (!comparisonMatch.Success)
-            {
-                throw new ArgumentException(UnsupportedWhereClauseMessage);
-            }
+            var comparisonMatch = expression.Match;
 
             var fieldName = comparisonMatch.Groups["field"].Value;
-            var normalizedOperator = NormalizeOperator(comparisonMatch.Groups["op"].Value);
+            var normalizedOperator = LegacyWhereClauseParser.NormalizeOperator(comparisonMatch.Groups["op"].Value, LegacyWhereGrammar.StorageMapped, UnsupportedWhereClauseMessage);
             var forceText = normalizedOperator.Contains("LIKE", StringComparison.OrdinalIgnoreCase);
             var column = forceText ? ResolveColumnExpression(fieldName, sql) : ResolveWhereColumnExpression(fieldName, sql);
             var valueParameter = AddWhereValueParameter(fieldName, comparisonMatch.Groups["value"].Value, forceText, sql);
@@ -1476,7 +1474,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private string AddWhereValueParameter(string fieldName, string valueToken, bool forceText, SqlBuilder sql)
     {
-        var parameter = sql.AddParameter(ParseValueToken(valueToken, forceText));
+        var parameter = sql.AddParameter(LegacyWhereClauseParser.ParseValueToken(valueToken, forceText ? LegacyWhereValuePolicy.Text : LegacyWhereValuePolicy.NumericOrText));
         // A quoted numeric literal is bound as text; cast it too so both quoted and
         // unquoted operands use the declared numeric field's comparison semantics.
         return !forceText && IsJsonNumericField(fieldName) ? $"{parameter}::numeric" : parameter;
@@ -1953,44 +1951,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private static bool IsSafeIdentifier(string identifier)
         => SchemaSearchPath.IsValidIdentifier(identifier);
 
-    private static string NormalizeOperator(string operatorValue)
-    {
-        return operatorValue.Trim().ToUpperInvariant() switch
-        {
-            "NOT LIKE" => "NOT LIKE",
-            "LIKE" => "LIKE",
-            ">=" => ">=",
-            "<=" => "<=",
-            "!=" => "!=",
-            "<>" => "!=",
-            "=" => "=",
-            ">" => ">",
-            "<" => "<",
-            _ => throw new ArgumentException(UnsupportedWhereClauseMessage)
-        };
-    }
-
-    private static object ParseValueToken(string valueToken, bool forceText)
-    {
-        if (valueToken.StartsWith('\'') && valueToken.EndsWith('\''))
-        {
-            return UnescapeSqlString(valueToken);
-        }
-
-        if (!forceText && decimal.TryParse(valueToken, NumberStyles.Float, CultureInfo.InvariantCulture, out var decimalValue))
-        {
-            return decimalValue;
-        }
-
-        return valueToken;
-    }
-
-    private static string UnescapeSqlString(string valueToken)
-    {
-        var content = valueToken[1..^1];
-        return content.Replace("''", "'", StringComparison.Ordinal);
-    }
-
     private string BuildDistanceSelectExpression(FeatureQuery query, SqlBuilder sql)
     {
         var spatialFilter = query.SpatialFilter;
@@ -2100,40 +2060,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return parts;
     }
 
-    private static List<string> SplitValueTokens(string values)
-    {
-        var tokens = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
-
-        for (var index = 0; index < values.Length; index++)
-        {
-            var value = values[index];
-            if (value == '\'' && inQuotes && index + 1 < values.Length && values[index + 1] == '\'')
-            {
-                current.Append("''");
-                index++;
-            }
-            else if (value == '\'')
-            {
-                inQuotes = !inQuotes;
-                current.Append(value);
-            }
-            else if (value == ',' && !inQuotes)
-            {
-                tokens.Add(current.ToString().Trim());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(value);
-            }
-        }
-
-        tokens.Add(current.ToString().Trim());
-        return tokens;
-    }
-
     private static bool IsAndTokenAt(string whereClause, int index)
     {
         if (index + 3 > whereClause.Length)
@@ -2154,26 +2080,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private static bool IsIdentifierChar(char value)
         => char.IsLetterOrDigit(value) || value == '_';
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ComparisonRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex InRegex();
-
-    [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NullCheckRegex();
-
-    [GeneratedRegex(
-        @"^(?:1\s*=\s*1|TRUE)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex TrueLiteralRegex();
 
     [GeneratedRegex(
         @"@p(?<index>\d+)",

@@ -23,12 +23,26 @@ from test_console_quickstart import ConsoleLifecycleTests  # noqa: F401
 
 
 class ComposeQuickstartTests(QuickstartFixture, unittest.TestCase):
+    def test_package_includes_default_offline_datum_grid_build_context(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            postgres = json.loads(result.stdout)['services']['postgres']
+            self.assertEqual('missing', postgres['pull_policy'])
+            self.assertEqual('pgrouting/pgrouting:17-3.5-3.7.3', postgres['build']['args']['BASE_IMAGE'])
+            for name in ('Dockerfile', 'grids.txt', 'fetch-grids.sh'):
+                self.assertEqual((ROOT / 'docker/proj-grids' / name).read_bytes(),
+                                 (path / 'docker/proj-grids' / name).read_bytes())
+
     def test_package_explains_human_session_approval_instead_of_approver_api_keys(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             package(path, PACKAGE_IMAGES, '2026.1-rc.2')
             readme = (path / 'README.md').read_text()
-            self.assertIn('interactive OIDC session', readme)
+            self.assertIn('interactive browser session (password or OIDC)', readme)
+            self.assertIn('Do not give that password to an agent', readme)
             self.assertIn('requester may approve', readme)
             self.assertNotIn('approver API keys', readme)
             self.assertNotIn('Self approval is refused', readme)

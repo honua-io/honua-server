@@ -127,9 +127,10 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal(attributes["name"], created.Attributes["name"]);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("12345678901234567890.1000", "2026-11-14T08:30:00.5000-08:00")]
     [InlineData("-0.00", "2026-11-14T08:30:00.0000001+05:45")]
+    [Operation(Operations.ContractTesting)]
     public async Task CreateAsync_ExactTypedAttributes_QueryPreservesDecimalScaleAndOffset(string amount, string offsetText)
     {
         var request = new Geospatial.V1.ApplyEditsRequest();
@@ -142,7 +143,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
             new() { Name = "amount", TypeValue = MetadataV2FieldType.Decimal },
             new() { Name = "signed", TypeValue = MetadataV2FieldType.TimestampOffset }
         };
-        var resource = new MetadataV2Resource { SchemaFields = fields };
+        var resource = new MetadataV2Object { SchemaFields = fields };
         var batch = GrpcTypedValues.EnsureStorable(resource,
             GrpcConversionHelpers.ToFeatureEditBatch(request));
 
@@ -168,7 +169,8 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.False(projectedFeature.Attributes.ContainsKey("signed"));
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
     public async Task QueryAsync_ExactValues_CompareNumericallyAndByInstantWithoutChangingText()
     {
         var fields = new MetadataV2Field[]
@@ -176,7 +178,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
             new() { Name = "amount", Type = MetadataV2FieldType.Decimal },
             new() { Name = "signed", Type = MetadataV2FieldType.TimestampOffset }
         };
-        var resource = new MetadataV2Resource { SchemaFields = fields };
+        var resource = new MetadataV2Object { SchemaFields = fields };
         foreach (var (amount, offsetText) in new[]
         {
             ("2.00", "2026-11-14T09:00:00+05:00"),
@@ -199,13 +201,14 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal("10.000", Assert.Single(filtered.Items).Attributes["amount"]);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(MetadataV2FieldType.TimestampOffset, "2026-11-15T00:00:00.0000002Z", "2026-11-15T01:00:00.0000001+01:00")]
     [InlineData(MetadataV2FieldType.Time, "12:00:00.0000002", "12:00:00.0000001")]
+    [Operation(Operations.ContractTesting)]
     public async Task QueryAsync_ExactTemporalValues_PreservesSeventhDigitInComparisons(
         MetadataV2FieldType type, string later, string earlier)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new MetadataV2Field { Name = "exact_time", Type = type }]
         };
@@ -221,7 +224,8 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Equal(new[] { earlier, later }, ordered.Items.Select(row => row.Attributes["exact_time"]));
         var distinct = await _featureStore.QueryAsync(TestLayerId, new FeatureQuery
         {
-            Distinct = true, OutFields = ["exact_time"],
+            Distinct = true,
+            OutFields = ["exact_time"],
             OrderBy = [new OrderByClause("exact_time", true, type)]
         });
         Assert.Equal(new[] { earlier, later }, distinct.Items.Select(row => row.Attributes["exact_time"]));

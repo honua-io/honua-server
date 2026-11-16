@@ -328,6 +328,11 @@ internal static class SearchEndpoints
                 isPostSearch,
                 cogArtifactLocator);
         }
+        catch (UnevaluableLikePatternException)
+        {
+            StacTelemetry.SetFailed(activity, "unevaluable_like_pattern");
+            return StandardErrorHelpers.CreateBadRequest(context, "LIKE pattern could not be evaluated.");
+        }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
@@ -456,7 +461,7 @@ internal static class SearchEndpoints
             // property, so a typo is never silently answered with an empty result set.
             string? inapplicableFilterError = null;
             var appliedToAnyCollection = false;
-            IReadOnlyList<MetadataV2Resource>? crossCollectionResources = targets.Length > 1
+            IReadOnlyList<MetadataV2Object>? crossCollectionResources = targets.Length > 1
                 ? targets.Select(target => target.Resource).ToArray()
                 : null;
             foreach (var target in targets)
@@ -907,14 +912,14 @@ internal static class SearchEndpoints
 
     private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, FilterExpression? CandidateFilter, string? Error, bool IsCollectionInapplicable)> TryBuildLayerQuery(
         StacSearchRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableArray<string>? requestedItemIds,
         IGeometryService geometryService,
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         string collectionId,
         bool isStorageBound,
-        IReadOnlyList<MetadataV2Resource>? crossCollectionResources,
+        IReadOnlyList<MetadataV2Object>? crossCollectionResources,
         CancellationToken cancellationToken)
     {
         var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
@@ -1052,11 +1057,11 @@ internal static class SearchEndpoints
 
     private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, FilterExpression? Expression, string? Error, bool IsUnknownField)> TryResolveFilterQuery(
         StacSearchRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         string collectionId,
-        IReadOnlyList<MetadataV2Resource>? crossCollectionResources,
+        IReadOnlyList<MetadataV2Object>? crossCollectionResources,
         CancellationToken cancellationToken)
     {
         var result = await filterProcessor.ProcessFilterAsync(
@@ -1075,7 +1080,7 @@ internal static class SearchEndpoints
     }
 
     internal static bool TryBuildSortOrder(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableArray<StacSortDefinition> sortby,
         out ImmutableArray<OrderByClause> orderBy,
         out string? error)
@@ -1123,7 +1128,7 @@ internal static class SearchEndpoints
     }
 
     private static bool TryResolveCanonicalSortField(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string requestedField,
         Dictionary<string, MetadataV2Field> availableFields,
         out string fieldName,
@@ -1188,7 +1193,7 @@ internal static class SearchEndpoints
     }
 
     // TODO(#1035 follow-up): the V2 fields lookup is now keyed on
-    // <see cref="MetadataV2Resource.SchemaFields"/>, so query parameters like
+    // <see cref="MetadataV2Object.SchemaFields"/>, so query parameters like
     // <c>fields=+properties.foo</c> only resolve when the V2 graph carries <c>foo</c>
     // as a schema field. Tests that mutate the v1 <c>honua.layer_fields</c> table
     // (e.g. WebAppFixture UpsertLayerFieldAsync) currently bypass the V2 snapshot
@@ -1196,7 +1201,7 @@ internal static class SearchEndpoints
     // from the v1 catalog or the fixtures are ported to publish via the V2 builder
     // directly. See task #55 (Port test fixtures off v1).
     internal static bool TryBuildFieldSelection(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         StacFieldsExtension fields,
         out ImmutableArray<string> outFields,
         out StacFieldProjection? projection,

@@ -12,11 +12,15 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
+internal enum OpsAutonomyProfile { ProposeOnly, Unattended }
+
 internal sealed class OpsAutonomyOptions
 {
     public const string SectionName = "Observability:OpsFindings:Autonomy";
 
     public bool Enabled { get; set; } = true;
+
+    public OpsAutonomyProfile Profile { get; set; } = OpsAutonomyProfile.Unattended;
 
     public bool KillSwitchEnabled { get; set; }
 

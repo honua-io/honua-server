@@ -5,7 +5,6 @@ using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -82,8 +81,6 @@ public static class PortalTokenAuthenticationExtensions
         // Registered unconditionally, including when an operator supplies a custom issuer, so
         // the binding is never silently absent.
         services.TryAddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(
-            sp.GetRequiredService<IMemoryCache>(),
-            sp.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(),
             sp,
             sp.GetService<TimeProvider>()));
 
@@ -202,7 +199,7 @@ public static class PortalTokenAuthenticationExtensions
 
     private static void TryAddPortalAccessProjection(this IServiceCollection services, IConfiguration configuration)
     {
-        services.TryAddSingleton<IPortalAccessProjection>(_ =>
+        services.TryAddSingleton<PortalAccessProjection>(_ =>
         {
             // The Portal access/visibility projection is off-by-default so the
             // facade never exposes a discovery surface unless an operator opts in,

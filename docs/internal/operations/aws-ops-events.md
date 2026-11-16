@@ -29,11 +29,40 @@ alarm event by event time is presented for an alarm resource. These templates do
 not authorize remediation or spending. Unknown event types are retained without
 creating a finding. Invalid envelopes remain unacknowledged.
 
+Watchdog incident envelopes use source `honua.watchdog`, detail type
+`Honua watchdog incident`, and detail schema version `1`. Valid incidents preserve
+the watchdog's severity, plain-language message, incident id and UTC event time.
+The dashboard shows the latest stage for each incident on each ECS service;
+a recovered incident does not hide another incident on the same service.
+Redelivery uses the existing event ledger and finding identity. Unknown schema
+versions, incomplete incident details, messages over 1,024 characters and stages
+over 128 characters do not create findings. This projection
+does not send another email or request remediation; the watchdog owns its direct
+notification and recovery paths.
+
 `IOpsExternalEventConsumer` runs after persistence and before acknowledgment,
 including on duplicate deliveries. Handlers receive the original envelope with
 its identity and UTC event time, even if a replay supplies a different body. They must deduplicate their own side effects and
 fence the current service/release identity before acting. An old receiving task
 is not evidence that its release completed. Handler failures retry through SQS.
+
+CloudWatch alarm state-change envelopes also persist an
+[incident observation](incident-observation-history.md) and update the
+[incident episode lifecycle](incident-episode-lifecycle.md) before acknowledgment.
+The collector derives platform authority on the server and correlates observations
+by the alarm resource ARN, rather than accepting authority from the event detail.
+A missing or ambiguous alarm resource, or a missing state object or state timestamp,
+leaves the message unacknowledged. `ALARM` activates an episode, `OK` records
+recovery, and a missing or unrecognized state value records Unknown. Late evidence remains in history without reopening an episode
+that has already recovered. A later activation starts a distinct episode.
+
+Duplicate deliveries across tasks retain one immutable observation and one episode
+transition. If the episode write fails after observation persistence, replay uses
+the stored observation to finish that transition. Queue acknowledgment failure
+also retries safely. Observation history survives server restarts and the event
+inbox retention window; no automatic observation deletion is enabled. This
+collector does not expose incident context, create investigations, send email or
+enable remediation. It needs the incident observation and episode schema migrations.
 
 For the isolated test stack, MAIN can run `scripts/ops/check-event-ingestion.py`
 with its queue and DLQ URLs and `--execute`. It sends one failing Batch envelope
@@ -43,3 +72,5 @@ and the poison body in the DLQ after five visibility periods. The script checks
 the DLQ without deleting its message. MAIN also verifies the finding through the
 normal Ops interface and records the result before the release freeze. No test
 stack is created by this script.
+
+For watchdog stages with the same event timestamp, causal stage order breaks ties: observation, probe, diagnosis, action, human escalation, then recovery. Severity breaks ties within a stage; delivery order cannot replace a recovery with an earlier stage.

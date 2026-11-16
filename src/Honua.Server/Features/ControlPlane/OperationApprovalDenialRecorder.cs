@@ -4,6 +4,7 @@
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.ControlPlane;
 
@@ -14,30 +15,50 @@ internal enum OperationApprovalDenialReason
     CurrentAuthority
 }
 
+internal enum OperationApprovalDecision
+{
+    Approve,
+    Reject
+}
+
+internal readonly record struct OperationApprovalDenial
+{
+    public required OperationProposal Proposal { get; init; }
+    public required string Actor { get; init; }
+    public required OperationApprovalDenialReason Reason { get; init; }
+    public required OperationApprovalDecision Decision { get; init; }
+}
+
 internal static class OperationApprovalDenialRecorder
 {
     internal const string UnavailableMessage = "The approval decision audit is unavailable.";
 
     public static async Task RecordAsync(
         IServiceScopeFactory scopeFactory,
-        OperationProposal proposal,
-        string actor,
-        OperationApprovalDenialReason reason,
+        OperationApprovalDenial denial,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var (proposal, actor, reason, decision) = (denial.Proposal, denial.Actor, denial.Reason, denial.Decision);
         var reasonCode = reason switch
         {
             OperationApprovalDenialReason.HumanSessionRequired => "human_session_required",
             OperationApprovalDenialReason.EvidenceInvalid => "evidence_invalid",
             OperationApprovalDenialReason.CurrentAuthority => "current_authority",
-            _ => throw new ArgumentOutOfRangeException(nameof(reason))
+            _ => throw new ArgumentOutOfRangeException(nameof(denial), reason, "Unknown approval denial reason.")
+        };
+        var decisionCode = decision switch
+        {
+            OperationApprovalDecision.Approve => "approve",
+            OperationApprovalDecision.Reject => "reject",
+            _ => throw new ArgumentOutOfRangeException(nameof(denial), decision, "Unknown approval decision.")
         };
         var kind = Enum.IsDefined(proposal.Kind) ? proposal.Kind.ToString() : "Unknown";
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();
             var audit = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+            var context = scope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
             if (!audit.IsPersisted) throw new ServiceUnavailableException(UnavailableMessage);
             var receipt = await audit.RecordAsync(new AuditEvent
             {
@@ -45,12 +66,14 @@ internal static class OperationApprovalDenialRecorder
                 EventType = AuditEventType.AdminAction,
                 Actor = actor,
                 ActorType = AuditActorType.UserId,
+                ActorAgent = context is null ? null : AuditContextResolver.ResolveAgent(context),
                 ResourceType = "operation_proposal",
                 ResourceId = proposal.ProposalId,
                 Action = "operation.approval_denied",
                 Outcome = AuditOutcome.Denied,
                 CorrelationId = proposal.Audit.CorrelationId ?? proposal.ProposalId,
-                Details = "{\"kind\":\"" + kind + "\",\"reason\":\"" + reasonCode + "\"}"
+                Details = "{\"kind\":\"" + kind + "\",\"reason\":\"" + reasonCode
+                    + "\",\"decision\":\"" + decisionCode + "\"}"
             }, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(receipt)) throw new ServiceUnavailableException(UnavailableMessage);

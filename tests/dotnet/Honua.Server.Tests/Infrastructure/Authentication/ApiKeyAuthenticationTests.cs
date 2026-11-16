@@ -44,10 +44,12 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     private static readonly string[] FeatureServerCapabilities = ["Query", "Extract"];
     private static readonly string[] FeatureServerSupportedFormats = ["JSON", "GeoJSON"];
     private readonly ITestOutputHelper _output;
+    private readonly DatabaseFixtureAdapter _database;
     private readonly WebAppFixture _fixture = new();
 
-    public ApiKeyAuthenticationTests(ITestOutputHelper output)
+    public ApiKeyAuthenticationTests(DatabaseFixtureAdapter database, ITestOutputHelper output)
     {
+        _database = database;
         _output = output;
     }
 
@@ -64,7 +66,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     /// <summary>
     /// Helper method to configure WebApplicationFactory with proper test environment settings.
     /// </summary>
-    private static WebApplicationFactory<Program> CreateTestFactory(
+    private WebApplicationFactory<Program> CreateTestFactory(
         string environmentName,
         Action<IWebHostBuilder> configure)
     {
@@ -143,7 +145,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
             .AddResource(
                 "res-test-layer-0",
                 "Test Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Alias = "Object ID" },
@@ -152,7 +154,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                     new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Category", Length = 255 },
                     new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime, Nullable = true, Alias = "Timestamp" }
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,
@@ -181,11 +183,11 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                 "res-test-layer-0",
                 layerIndex: 0,
                 storageBindingId: "binding-test-layer-0",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .BuildProvider();
     }
 
-    private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
+    private string TestPostgresConnectionString => _database.ConnectionString;
 
     private sealed class AlwaysCompatibleDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
     {

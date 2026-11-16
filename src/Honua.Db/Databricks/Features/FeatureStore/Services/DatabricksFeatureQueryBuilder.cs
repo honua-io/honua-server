@@ -15,54 +15,14 @@ using Honua.Db.Databricks.Queries.Filters;
 
 namespace Honua.Db.Databricks.Features.FeatureStore.Services;
 
-/// <summary>
-/// Builds Databricks SQL (Spark SQL) text for the read-only feature provider.
-/// </summary>
-/// <remarks>
-/// <para>Geometry is selected as a WKB hex string via
-/// <c>hex(st_asbinary(`geom`))</c> so the data-access layer can decode it to the
-/// canonical <see cref="Feature.Geometry"/> byte array without an external geometry
-/// library. The <c>ST_*</c> functions require a Databricks runtime / DBSQL with
-/// spatial-function support; see the provider documentation for the limitation.</para>
-/// <para>Filtering re-parses the canonical <see cref="FeatureQuery.Where"/> clause into
-/// parameterized Spark SQL. Axis-aligned envelopes stay on the inline
-/// <c>st_geomfromtext</c> fast path. Polygon, line, and point filters bind WKB and call
-/// <c>st_intersects</c>, <c>st_contains</c>, <c>st_within</c>, <c>st_disjoint</c>, or
-/// envelope-intersects. Parameterized SQL fragments, temporal filters, distance, and
-/// nearest-neighbor filters are rejected rather than silently dropped.</para>
-/// </remarks>
-internal interface IDatabricksFeatureQueryBuilder
-{
-    /// <summary>Builds a paged feature SELECT returning id, WKB-hex geometry, and attributes.</summary>
-    DatabricksSqlStatement BuildSelect(DatabricksLayerMapping mapping, FeatureQuery query);
-
-    /// <summary>Builds a COUNT query honoring the same filters as the SELECT.</summary>
-    DatabricksSqlStatement BuildCount(DatabricksLayerMapping mapping, FeatureQuery query);
-
-    /// <summary>Builds an envelope-extent query over the filtered subset.</summary>
-    DatabricksSqlStatement BuildExtent(DatabricksLayerMapping mapping, FeatureQuery? query);
-
-    /// <summary>Builds a query returning only primary-key values.</summary>
-    DatabricksSqlStatement BuildObjectIds(DatabricksLayerMapping mapping, FeatureQuery query);
-
-    /// <summary>
-    /// Builds an aggregate statistics query (<c>outStatistics</c> + optional
-    /// <c>groupByFieldsForStatistics</c>) honoring the same WHERE/spatial filters as the SELECT.
-    /// </summary>
-    DatabricksSqlStatement BuildStatistics(DatabricksLayerMapping mapping, FeatureQuery query);
-}
-
-/// <summary>
-/// Default <see cref="IDatabricksFeatureQueryBuilder"/> implementation.
-/// </summary>
-internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBuilder
+internal static class DatabricksFeatureQueryBuilder
 {
     private const string GeometryHexAlias = "__honua_geom_hex";
     private const string IdAlias = "__honua_id";
     private static readonly DatabricksSqlDialect Dialect = DatabricksSqlDialect.Instance;
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildSelect(DatabricksLayerMapping mapping, FeatureQuery query)
+    public static DatabricksSqlStatement BuildSelect(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(query);
@@ -87,7 +47,7 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
     }
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildCount(DatabricksLayerMapping mapping, FeatureQuery query)
+    public static DatabricksSqlStatement BuildCount(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(query);
@@ -101,7 +61,7 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
     }
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildExtent(DatabricksLayerMapping mapping, FeatureQuery? query)
+    public static DatabricksSqlStatement BuildExtent(DatabricksLayerMapping mapping, FeatureQuery? query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         var effectiveQuery = query ?? default;
@@ -121,7 +81,7 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
     }
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildObjectIds(DatabricksLayerMapping mapping, FeatureQuery query)
+    public static DatabricksSqlStatement BuildObjectIds(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(query);
@@ -274,7 +234,7 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
     }
 
     /// <inheritdoc />
-    public DatabricksSqlStatement BuildStatistics(DatabricksLayerMapping mapping, FeatureQuery query)
+    public static DatabricksSqlStatement BuildStatistics(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
         EnsureSupported(query);

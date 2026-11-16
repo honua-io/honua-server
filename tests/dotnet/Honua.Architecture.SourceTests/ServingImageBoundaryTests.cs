@@ -514,8 +514,11 @@ public sealed class ServingImageBoundaryTests
                 "release builds must share the same variant scope before appending their architecture");
         }
 
-        workflow.Should().Contain("--variable HONUA_BOUNDARY_SMOKE_PORT --ci-default 8080");
-        workflow.Should().Contain("SERVER_URL=\"http://127.0.0.1:$SERVER_PORT\"");
+        workflow.Should().Contain("--variable HONUA_BOUNDARY_HTTP_PORT --ci-default 0",
+            "concurrent runner jobs must allocate an available host port");
+        workflow.Should().Contain("-p \"127.0.0.1:${SERVER_PORT}:8080\"",
+            "the allocated loopback port must publish the canonical container listener");
+        workflow.Should().Contain("SERVER_URL=\"http://127.0.0.1:${SERVER_PORT}\"");
         workflow.Should().Contain("wait --container \"$CONTAINER\" --container-port 8080 --url \"$SERVER_URL/healthz/ready\"");
         workflow.Should().Contain("file: docker/Dockerfile.aot",
             "the optional generic AOT image must retain its native migration refusal proof");

@@ -1,12 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Claims;
-using System.Text.Json;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
+using System.Text.Json;
 
 namespace Honua.Server.Features.Forms;
 
@@ -52,7 +52,7 @@ internal sealed class FormPackageLifecycleService
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body must be a valid form package document.");
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var version = await _store.SaveDraftAsync(package, actor, context.RequestAborted).ConfigureAwait(false);
         ApplyVersionHeaders(context.Response, version, noStore: true);
         await RecordAuditAsync(context, "forms.package.save_draft", version.FormId, AuditOutcome.Success, $"{{\"version\":{version.Version}}}")
@@ -101,7 +101,7 @@ internal sealed class FormPackageLifecycleService
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body must be a valid form package document.");
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var updated = await _store.UpdateDraftAsync(formId, version, package, expectedETag, actor, context.RequestAborted)
             .ConfigureAwait(false);
         if (updated is null)
@@ -151,7 +151,7 @@ internal sealed class FormPackageLifecycleService
             return Results.Json(validation, FormPackageJsonContext.Default.FormPackageValidationResult, statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var published = await _store.PublishAsync(formId, version, validation, actor, context.RequestAborted).ConfigureAwait(false);
         if (published is null)
         {
@@ -166,7 +166,7 @@ internal sealed class FormPackageLifecycleService
 
     public async Task<IResult> ReopenAsync(HttpContext context, string formId, int version)
     {
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var draft = await _store.ReopenAsync(formId, version, actor, context.RequestAborted).ConfigureAwait(false);
         if (draft is null)
         {
@@ -377,11 +377,6 @@ internal sealed class FormPackageLifecycleService
         response.Headers.Pragma = "no-cache";
     }
 
-    private static string ResolveActor(HttpContext context)
-        => context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-           ?? context.User.Identity?.Name
-           ?? AuditEvent.AnonymousActor;
-
     private Task<string?> RecordAuditAsync(
         HttpContext context,
         string action,
@@ -392,7 +387,7 @@ internal sealed class FormPackageLifecycleService
         {
             Timestamp = DateTimeOffset.UtcNow,
             EventType = AuditEventType.AdminAction,
-            Actor = ResolveActor(context),
+            Actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName),
             ActorType = context.User.Identity?.IsAuthenticated == true ? AuditActorType.UserId : AuditActorType.Anonymous,
             ResourceType = "form_package",
             ResourceId = formId,

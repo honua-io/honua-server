@@ -59,7 +59,7 @@ internal sealed partial class OperationHumanApprovalAuthority(
         {
             Version = OperationHumanApprovalEvidence.CurrentVersion,
             ActorId = verified.ActorId,
-            Channel = OperationHumanApprovalEvidence.InteractiveOidcChannel,
+            Channel = verified.Channel,
             SessionReference = verified.SessionReference,
             CapabilityReference = verified.CapabilityReference,
             PlanHash = proposal.SealedPlanHash!,
@@ -68,6 +68,20 @@ internal sealed partial class OperationHumanApprovalAuthority(
             ProposalVersion = proposal.Version,
             ApprovedAt = verified.ApprovedAt,
         };
+    }
+
+    // A rejection only closes the proposal, so it needs no review capability, but it needs the same
+    // verified person in an interactive browser session as an approval.
+    public async Task VerifyRejectionAsync(OperationProposal proposal, HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+        ArgumentNullException.ThrowIfNull(context);
+        RefuseNonHumanTransport(context);
+        // No capability is issued, so the binding digest is not needed and unsealed proposals can be rejected.
+        var human = await LoadHumanAsync(context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName],
+            ProposalTarget(proposal, bindingDigest: string.Empty), context.RequestAborted).ConfigureAwait(false);
+        if (CanonicalSecurityActor.Resolve(context.User)?.ActorId != human.ActorId)
+            throw new HumanApprovalRequiredException();
     }
 
     private async Task<HumanApprovalGrant> OpenCapabilityAsync(HumanApprovalTarget target, HttpContext context)
@@ -139,8 +153,14 @@ internal sealed partial class OperationHumanApprovalAuthority(
             || capability.ExpiresAt > human.ExpiresAt
             || (target.ExpiresAt is { } targetExpiry && capability.ExpiresAt > targetExpiry))
             throw new HumanApprovalRequiredException();
-        return new VerifiedHumanDecision(human.ActorId, human.SessionReference,
-            Hash(Encoding.UTF8.GetBytes(capability.Nonce)), now);
+        return new VerifiedHumanDecision
+        {
+            ActorId = human.ActorId,
+            SessionReference = human.SessionReference,
+            Channel = human.Channel,
+            CapabilityReference = Hash(Encoding.UTF8.GetBytes(capability.Nonce)),
+            ApprovedAt = now,
+        };
     }
 
     private static string? ResolveRequestTenant(HumanApprovalTarget target, HttpContext context)
@@ -158,9 +178,12 @@ internal sealed partial class OperationHumanApprovalAuthority(
             ? null : string.IsNullOrEmpty(tenantId) ? null : tenantId;
     }
 
-    private static HumanApprovalTarget ProposalTarget(OperationProposal proposal) => new(
+    private static HumanApprovalTarget ProposalTarget(OperationProposal proposal) =>
+        ProposalTarget(proposal, ComputeBindingDigest(proposal));
+
+    private static HumanApprovalTarget ProposalTarget(OperationProposal proposal, string bindingDigest) => new(
         "operation-proposal", proposal.ProposalId, proposal.Version, proposal.TenantId,
-        ComputeBindingDigest(proposal), proposal.Evidence?.ExpiresAt,
+        bindingDigest, proposal.Evidence?.ExpiresAt,
         principal => OperationApprovalAuthorization.PermitsOperationScope(principal, proposal));
 
     public static void RefuseNonHumanTransport(HttpContext context)
@@ -184,7 +207,8 @@ internal sealed partial class OperationHumanApprovalAuthority(
         if (session is null || session.Claims.Length == 0) throw new HumanApprovalRequiredException();
 
         services.GetService<RequestTenantContext>()?.Set(target.TenantId, TenantContextSource.Claim);
-        var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, OidcAuthenticationExtensions.AdminSessionScheme);
+        var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, OidcAuthenticationExtensions.AdminSessionScheme,
+            session.Origin == AdminAuthSessionOrigin.Builtin ? "admin" : "oidc");
         principal = await services.GetRequiredService<IClaimsTransformation>().TransformAsync(principal).ConfigureAwait(false);
         var actor = CanonicalSecurityActor.Resolve(principal);
         var authorization = new OperationApprovalAuthorization(
@@ -196,10 +220,17 @@ internal sealed partial class OperationHumanApprovalAuthority(
             throw new HumanApprovalRequiredException();
         }
 
-        return new VerifiedHumanSession(
-            actor.ActorId, Hash(Encoding.UTF8.GetBytes(sessionId!)),
-            Hash(JsonSerializer.SerializeToUtf8Bytes(session.Claims,
-                AdminAuthSessionStoreJsonContext.Default.AdminAuthSessionClaimArray)), session.ExpiresAt);
+        return new VerifiedHumanSession
+        {
+            ActorId = actor.ActorId,
+            SessionReference = Hash(Encoding.UTF8.GetBytes(sessionId!)),
+            Channel = session.Origin == AdminAuthSessionOrigin.Builtin
+                ? OperationHumanApprovalEvidence.InteractivePasswordChannel
+                : OperationHumanApprovalEvidence.InteractiveOidcChannel,
+            ClaimsDigest = Hash(JsonSerializer.SerializeToUtf8Bytes(session.Claims,
+                AdminAuthSessionStoreJsonContext.Default.AdminAuthSessionClaimArray)),
+            ExpiresAt = session.ExpiresAt,
+        };
     }
 
     private static void ValidateBoundProposal(OperationProposal proposal)
@@ -250,10 +281,24 @@ internal sealed partial class OperationHumanApprovalAuthority(
     private sealed record HumanApprovalTarget(string Kind, string Id, long Version, string? TenantId,
         string BindingDigest, DateTimeOffset? ExpiresAt, Func<ClaimsPrincipal, bool> PermitsScope);
     private sealed record HumanApprovalGrant(DateTimeOffset ExpiresAt, string Capability);
-    private sealed record VerifiedHumanDecision(string ActorId, string SessionReference,
-        string CapabilityReference, DateTimeOffset ApprovedAt);
-    private sealed record VerifiedHumanSession(string ActorId, string SessionReference, string ClaimsDigest, DateTimeOffset ExpiresAt);
+    private sealed record VerifiedHumanDecision
+    {
+        public required string ActorId { get; init; }
+        public required string SessionReference { get; init; }
+        public required string Channel { get; init; }
+        public required string CapabilityReference { get; init; }
+        public required DateTimeOffset ApprovedAt { get; init; }
+    }
+
+    private sealed record VerifiedHumanSession
+    {
+        public required string ActorId { get; init; }
+        public required string SessionReference { get; init; }
+        public required string Channel { get; init; }
+        public required string ClaimsDigest { get; init; }
+        public required DateTimeOffset ExpiresAt { get; init; }
+    }
 }
 
 internal sealed class HumanApprovalRequiredException() : InvalidOperationException(
-    "Human approval requires a live interactive OIDC session and a valid review capability. Open the proposal in Console; MCP tokens and API keys cannot approve it.");
+    "Human approval requires a live interactive browser session and a valid review capability. Open the proposal in Console; MCP tokens and API keys cannot approve it.");

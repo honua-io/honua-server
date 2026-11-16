@@ -149,20 +149,20 @@ policies, field masks and row-level filters apply to wildcard reads exactly as t
 a named `read:` grant. The full grammar is in
 [Users, roles and licensing](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
 
-For a focused read/reject automation client, mint a named key with:
+For a focused proposal-reading automation client, mint a named key with:
 
 ```json
 {
-  "name": "proposal-read-reject",
+  "name": "proposal-reader",
   "permissions": ["admin:read", "admin:approve"],
   "expiresAt": null
 }
 ```
 
-`admin:approve` remains read-level on the general admin surface and permits
-`POST /api/v1/admin/proposals/{proposalId}/reject`. The approval route additionally
-requires a verified interactive human session and private review capability;
-an API key cannot approve. This grant does not permit other mutations. In particular, some read-like workflows use POST and are unavailable
+`admin:approve` remains read-level on the general admin surface. Approving or
+rejecting a proposal requires a verified interactive human session in Console;
+an API key gets 403 on both routes and the refusal is audited as
+`human_session_required`. This grant does not permit other mutations. In particular, some read-like workflows use POST and are unavailable
 to this key: `connections/test`, `external-services/discover`, and
 `import/geoservices/start`. It also grants no service or layer data reads; add
 `read:{service}` or `read:*` grants if the client must read data. This scope
@@ -173,8 +173,7 @@ enforcement. Console users who sign in with an operator bearer
 token are authorized by operator RBAC instead of this API-key recipe.
 
 Approval and execution remain separate authorities. Console uses its private
-verified human session and review capability for approval, retaining ordinary
-read/reject grants for those actions. After approval, Honua
+verified human session for both decisions, and a review capability for approval. After approval, Honua
 mints a short-lived, single-use credential bound to the exact approved Admin API
 method, path, and sealed tenant, uses it for the replay, and revokes it immediately.
 The tenant binding is restored from the persisted credential during authentication
@@ -212,6 +211,13 @@ Successful sign-in sets an opaque HttpOnly, Secure, SameSite=Strict cookie lasti
 to the current identity. Cookie-authenticated writes, bearer issuance, and logout
 require that token in the `X-Honua-CSRF` header. Logout removes the server-side
 session as well as the browser cookie.
+
+An explicit API key or bearer is validated independently when a browser session
+cookie is also present. Successful explicit authentication does not require the
+session's CSRF token for API operations, including gRPC-Web calls. Session sign-in,
+bearer issuance, logout, and provider authorization still enforce browser CSRF
+protection when they use the session. Invalid explicit credentials do not fall
+back to the browser session.
 
 Password sign-in requires HTTPS and accepts the configured administrator password,
 not managed API keys. It works without enabling OIDC. Existing OIDC sign-in uses
@@ -322,6 +328,16 @@ recorded tenant binding. Explicitly enabling
 `MultiTenancy:Enabled` opts into claim/header resolution; bearer calls to
 tenant-bound routes then require a valid tenant claim or an authorized override.
 
+With multi-tenancy enabled, global credential, identity-provider, certificate,
+license, tenant-lifecycle and metadata-release administration also requires
+platform authority. Tenant-bound administrators need a role listed in
+`MultiTenancy:MultiTenantAdminRoles` (defaults: `multi_tenant_admin` and
+`platform_admin`). The same authority rule applies to deployment and coordinated
+release operations. An administrator credential without a tenant binding retains
+platform access; single-tenant deployments retain their existing administration
+behavior. A tenant header does not grant platform authority. A refusal returns
+`403` with code `platform_admin_required`.
+
 To grant admin access through Cognito groups, configure the additional role claim
 and the group names that confer admin access (role claim selection requires Pro):
 
@@ -427,7 +443,7 @@ Redis shares replay registrations across nodes. When a configured Redis connecti
 #### Human operation approval
 
 A pending operation proposal requires one authorized person using a live
-interactive OIDC session in Console. The requester may approve their own proposal.
+interactive browser session (password or OIDC) in Console. The requester may approve their own proposal.
 Sign in to the server that owns the proposal, open its current review, and use
 **Approve**. Existing operation permissions, tenant restrictions and the original
 requester's current authority remain required. API keys, generic or operator
@@ -442,8 +458,10 @@ the session or applicable proposal evidence. Changing environment, changing the
 plan, logging out or losing authority requires a new review. A lost decision
 response requires reading the durable proposal status before deciding again.
 
-Configure the server's canonical `Public:BaseUrl`, the existing OIDC provider,
-and shared protected keys and session storage for replicas. Approval refuses
+Configure the server's canonical `Public:BaseUrl`, password sign-in or an OIDC
+provider, and shared protected keys and session storage for replicas. Approval
+evidence records `console-interactive-password` or `console-interactive-oidc`
+from the stored session's origin. Approval refuses
 when live shared-session authority cannot be verified. Copying bearer claims
 such as an authentication-method or session claim does not create an interactive
 session. Keep capability values, upstream cookies and one-time operation secrets
@@ -482,7 +500,7 @@ they remain valid until revoked or expired. Revoke tokens that may have been iss
 from constrained keys and require affected clients to authenticate again. Upgrade
 all token-issuance nodes before resuming those exchanges.
 
-The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the GIS client SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. An API key is accepted on the same transports, on the GeoServices surfaces and on every other surface that honours the `token` query parameter (OGC services included), so a client that sends a key as its `token` works without custom headers. The key keeps its own scope, exactly as in `X-API-Key`, and is recorded as an API-key credential; the Admin API still requires `X-API-Key`. A key with administrative authority is refused in the `token` query parameter (send it in a header), and a key's referrer and IP restrictions apply on this transport too, so restrict any key you hand to clients that can only use `?token=` (see [Restrict keys used from browsers or in URLs](#restrict-keys-used-from-browsers-or-in-urls)). Per RFC 6750 §2.3, every response to a request authenticated by a `token` query parameter carries `Cache-Control: private` (credentialed responses are additionally `no-store`), so shared caches and CDNs do not store responses keyed by a URL that contains the credential. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400) **and to the expiry of the credential the token was issued from**, so a key that expires in five minutes never yields a ten-day token. The issued token is also tied to that credential for its whole life: revoking or rotating the API key it came from, or rotating the admin password, stops it on the next request without needing the token value. The credential is re-read at most once per `Authentication__PortalToken__SourceRevalidationSeconds` (default 10) per instance, which is also the worst-case delay before a revocation takes effect; set it to `0` to re-read on every request. Tokens issued before an upgrade to this behaviour carry no credential reference and are refused — affected clients simply call `generateToken` again. An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider. It needs `Oidc__Enabled=true`, a valid provider (`Oidc__Generic__Enabled`, `Oidc__Generic__Authority`, `Oidc__Generic__ClientId`, and that provider's client secret), and every client redirect registered in `Authentication__PortalToken__OAuth2__AllowedRedirectUris`. The callback validates the IdP token with the OIDC verifier whenever that bridge is configured. `Authentication__PortalCredentialVerifier__UseOidc` is not required for the bridge; it still selects OIDC for `generateToken` password checks. After the redirect URI has been accepted, a later authorization failure is returned to it as `error` and `state`, not as a JSON body on the callback.
+The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side, and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the GIS client SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. An API key is accepted on the same transports, on the GeoServices surfaces and on every other surface that honours the `token` query parameter (OGC services included), so a client that sends a key as its `token` works without custom headers. The key keeps its own scope, exactly as in `X-API-Key`, and is recorded as an API-key credential; the Admin API still requires `X-API-Key`. A key with administrative authority is refused in the `token` query parameter (send it in a header), and a key's referrer and IP restrictions apply on this transport too, so restrict any key you hand to clients that can only use `?token=` (see [Restrict keys used from browsers or in URLs](#restrict-keys-used-from-browsers-or-in-urls)). Per RFC 6750 §2.3, every response to a request authenticated by a `token` query parameter carries `Cache-Control: private` (credentialed responses are additionally `no-store`), so shared caches and CDNs do not store responses keyed by a URL that contains the credential. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400) **and to the expiry of the credential the token was issued from**, so a key that expires in five minutes never yields a ten-day token. The issued token is also tied to that credential for its whole life: revoking or rotating the API key it came from, or rotating the admin password, stops it on the next request without needing the token value. Every token restore re-reads the credential authority (including cloud-backed admin-password secrets, without using cached secret values), including when a token moves between server instances. An unavailable credential store refuses restoration. The legacy `Authentication__PortalToken__SourceRevalidationSeconds` setting no longer affects validation. Tokens issued before an upgrade to this behaviour carry no credential reference and are refused — affected clients simply call `generateToken` again. An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider. It needs `Oidc__Enabled=true`, a valid provider (`Oidc__Generic__Enabled`, `Oidc__Generic__Authority`, `Oidc__Generic__ClientId`, and that provider's client secret), and every client redirect registered in `Authentication__PortalToken__OAuth2__AllowedRedirectUris`. The callback validates the IdP token with the OIDC verifier whenever that bridge is configured. `Authentication__PortalCredentialVerifier__UseOidc` is not required for the bridge; it still selects OIDC for `generateToken` password checks. After the redirect URI has been accepted, a later authorization failure is returned to it as `error` and `state`, not as a JSON body on the callback.
 
 Named-user OAuth authorization-code tokens for registered native redirects (loopback
 HTTP URLs or custom app schemes) work with `Authorization: Bearer` without a
@@ -540,10 +558,16 @@ per-tenant cap, fails startup validation. `RetryAfterSeconds` (default 30) sets 
 hint returned with a refusal. A refused request never opens a stream: the problem
 response is returned before the SSE headers or the WebSocket upgrade.
 
-Upgrade every observation-stream node together. Scoped fan-out uses a new Redis
-channel, so old and updated nodes do not exchange observations during a rolling
-upgrade. Reconnect clients to updated nodes; streams remain best-effort, with no
-replay guarantee. Disable the old stream endpoints until their nodes are updated.
+Observation streams use the shared PostgreSQL event log. Each subscription
+filters committed batches by its exact tenant and schema scope. SSE exposes an
+`observations:<sequence>` event ID; WebSocket batches expose a `cursor`. Reconnect
+to any updated node with that cursor and the same scope to replay retained
+batches. A subscription without a cursor starts live. A `reset` frame means the
+client must refresh observations through OData before subscribing again.
+
+When upgrading, update every observation-stream node before enabling the new
+endpoints. All serving nodes must support delivery and replay of PostgreSQL
+event-log batches.
 
 ## Verify
 

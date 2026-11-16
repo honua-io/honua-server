@@ -121,7 +121,7 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
         var original = await _sut.ApplyEdits(request, CallContext("insert"));
         original.AddResults.Single().GlobalId.Should().NotBeEmpty();
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray.Create("globalid")));
         var service = serviceFactory(original);
 
@@ -241,7 +241,7 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
     public async Task MaskedGlobalIdField_ExposesNoIdsAndRefusesSelectors()
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray.Create("GLOBALID")));
         _featureWriter.ApplyEditsAsync(default, default, default).ReturnsForAnyArgs(Task.FromResult(
             FeatureEditResult.Success(1, 0, 0, createResults: [EditOperationResult.Success(7, GlobalId)])));
@@ -261,7 +261,7 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
     public async Task MaskedGlobalIdField_IsAbsentFromQueryResults()
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray.Create("globalid")));
 
         var response = await _sut.QueryFeatures(
@@ -269,7 +269,9 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
             MaskedContext(masks));
 
         response.GlobalIdFieldName.Should().BeEmpty();
-        response.Features.Should().OnlyContain(feature => feature.GlobalId.Length == 0);
+        var feature = response.Features.Should().ContainSingle().Subject;
+        feature.GlobalId.Should().BeEmpty();
+        feature.Attributes.Should().NotContainKey("globalid");
     }
 
     private GrpcFeatureServiceTests.TestServerCallContext MaskedContext(IFieldMaskSource masks, params string[] operations)
@@ -283,7 +285,7 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
         return context;
     }
 
-    private void UseLayer(MetadataV2Resource resource, IReadOnlyList<string>? capabilities)
+    private void UseLayer(MetadataV2Object resource, IReadOnlyList<string>? capabilities)
     {
         var triple = GrpcFeatureServiceTests.CreateTriple(GrpcFeatureServiceTests.CreateService("test"), resource);
         if (capabilities is not null)
@@ -295,22 +297,22 @@ public sealed partial class GrpcGlobalIdEditTests : IDisposable
             .Returns(ResourceValidationResult.Success(triple));
     }
 
-    private static MetadataV2Resource GlobalIdResource()
+    private static MetadataV2Object GlobalIdResource()
         => ResourceWith(new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid, Nullable = true });
 
-    private static MetadataV2Resource HiddenGlobalIdResource()
+    private static MetadataV2Object HiddenGlobalIdResource()
         => ResourceWith(new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid, Nullable = true, Hidden = true });
 
-    private static MetadataV2Resource ResourceWith(MetadataV2Field globalIdField)
+    private static MetadataV2Object ResourceWith(MetadataV2Field globalIdField)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-test", Name = "test" },
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = MetadataV2SpatialReference.Wgs84
             },
-            Editing = new MetadataV2ResourceEditing { GlobalIdField = "GlobalID" },
+            Editing = new MetadataV2ObjectEditing { GlobalIdField = "GlobalID" },
             SchemaFields =
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },

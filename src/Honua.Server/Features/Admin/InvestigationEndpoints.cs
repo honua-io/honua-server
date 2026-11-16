@@ -1,15 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Text.Json;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
-using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
+using System.Text.Json;
 
 namespace Honua.Server.Features.Admin;
 
@@ -101,7 +101,7 @@ internal static class InvestigationEndpoints
             return BadRequest($"'summary' must not exceed {MaxSummaryLength} characters.");
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.Name);
         var record = await store.CreateAsync(body.Title.Trim(), actor, body.Summary, DateTimeOffset.UtcNow, cancellationToken)
             .ConfigureAwait(false);
 
@@ -165,7 +165,7 @@ internal static class InvestigationEndpoints
             status = parsed;
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.Name);
         var record = await store.UpdateAsync(investigationId, body.Title?.Trim(), body.Summary, status, DateTimeOffset.UtcNow, cancellationToken)
             .ConfigureAwait(false);
         if (record is null)
@@ -202,7 +202,7 @@ internal static class InvestigationEndpoints
             return BadRequest($"'note' must not exceed {MaxNoteLength} characters.");
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.Name);
         var now = DateTimeOffset.UtcNow;
         var eventRef = body.EventRef.Trim();
         var record = await store.AddPinAsync(investigationId, eventRef, kind, body.OccurredAt, body.Note, actor, now, cancellationToken)
@@ -229,7 +229,7 @@ internal static class InvestigationEndpoints
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.Name);
         var record = await store.RemovePinAsync(investigationId, pinId, DateTimeOffset.UtcNow, cancellationToken)
             .ConfigureAwait(false);
         if (record is null)
@@ -260,7 +260,7 @@ internal static class InvestigationEndpoints
 
         if (!QueryFilterParsers.TryParseDefinedEnum<InvestigationResourceKind>(body.ResourceKind, out var kind))
         {
-            return BadRequest($"'resourceKind' must be one of alert, job, release, changeSet.");
+            return BadRequest($"'resourceKind' must be one of alert, job, release, changeSet, incident.");
         }
 
         if (body.Note is { Length: > MaxNoteLength })
@@ -268,7 +268,7 @@ internal static class InvestigationEndpoints
             return BadRequest($"'note' must not exceed {MaxNoteLength} characters.");
         }
 
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.Name);
         var resourceId = body.ResourceId.Trim();
         var record = await store.AddLinkAsync(investigationId, kind, resourceId, body.Note, actor, DateTimeOffset.UtcNow, cancellationToken)
             .ConfigureAwait(false);
@@ -298,7 +298,7 @@ internal static class InvestigationEndpoints
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var actor = ResolveActor(context);
+        var actor = ActorResolver.Resolve(context, ActorResolution.Name);
         var record = await store.RemoveLinkAsync(investigationId, linkId, DateTimeOffset.UtcNow, cancellationToken)
             .ConfigureAwait(false);
         if (record is null)
@@ -417,9 +417,6 @@ internal static class InvestigationEndpoints
 
         return char.ToLowerInvariant(value[0]) + value[1..];
     }
-
-    private static string ResolveActor(HttpContext context)
-        => context.User?.Identity?.Name ?? AuditEvent.AnonymousActor;
 
     private static Task<string?> RecordAuditAsync(
         IAuditLog auditLog,

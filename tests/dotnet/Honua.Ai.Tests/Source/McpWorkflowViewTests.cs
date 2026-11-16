@@ -1032,18 +1032,19 @@ public sealed partial class McpWorkflowViewTests
     // ------------------------------------------------------------------
 
     [UnitTest]
-    public void ProfileChange_BroadcastsToolsListChanged()
+    public async Task ProfileChange_BroadcastsToolsListChanged()
     {
-        var sessions = new McpSessionManager();
-        sessions.CreateSession();
-        var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance);
+        var publisher = Substitute.For<IMcpNotificationPublisher>();
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
+        publisher.BroadcastToolsListChanged().Returns(new ValueTask<int>(1));
+#pragma warning restore CA2012
         var monitor = new StubOptionsMonitor(new McpWorkflowViewOptions());
-        var notifier = new McpWorkflowViewChangeNotifier(monitor, publisher);
-        notifier.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var notifier = new McpWorkflowViewChangeNotifier(monitor, publisher, NullLogger<McpWorkflowViewChangeNotifier>.Instance);
+        await notifier.StartAsync(CancellationToken.None);
 
-        notifier.OnOptionsChanged(new McpWorkflowViewOptions { DefaultView = "setup" })
+        (await notifier.OnOptionsChangedAsync(new McpWorkflowViewOptions { DefaultView = "setup" }))
             .Should().Be(1, "every live session must be told to re-read its tool list");
-        notifier.OnOptionsChanged(new McpWorkflowViewOptions { DefaultView = "setup" })
+        (await notifier.OnOptionsChangedAsync(new McpWorkflowViewOptions { DefaultView = "setup" }))
             .Should().Be(0, "an unchanged profile must not churn the client's prompt cache");
 
         notifier.Dispose();
@@ -1148,9 +1149,17 @@ public sealed partial class McpWorkflowViewTests
             "honua_admin_connection_tables_list",
         ]);
         var operate = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Operate, catalog);
-        operate.Members.Select(member => member.ToolName).Should().Contain(["honua_ops_health", "honua_propose_finding"]);
+        AssertOperateViewContainsOperatorTools(operate);
         var analyze = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Analyze, catalog);
         analyze.Members.Select(member => member.ToolName).Should().Contain(["honua_execute_plan", "honua_geocode_address"]);
+    }
+
+    private static void AssertOperateViewContainsOperatorTools(McpWorkflowViewProjection operate)
+    {
+        operate.Members.Select(member => member.ToolName).Should().Contain(["honua_ops_health", "honua_propose_finding"]);
+        operate.Members.Select(member => member.ToolName).Should().Contain(
+            ["honua_propose_platform_release_convergence", "honua_propose_rollback"],
+            "AGENTS.md and the honua-ops skill send upgrade and rollback to the operate view");
     }
 
     [UnitTest]

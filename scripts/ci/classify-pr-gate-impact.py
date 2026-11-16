@@ -48,9 +48,6 @@ LEAN_GATE_GOVERNED_DOCS = frozenset(
         # documented GeocodeServer route roster against feature-catalog.json in
         # both directions.
         "docs/internal/spikes/geocode-server-matrix.md",
-        # validate-early-failure-observe.sh (a lean-gate step) greps this file
-        # for two exact phrases.
-        "docs/internal/ci/merge-train-early-failure-observe.md",
         # base-image-mirrors.sh --verify-inventory-doc parses this inventory in
         # the always-on "Verify .NET base-image security inventory" step. That
         # step is guarded to stay unconditional, but the document is listed here

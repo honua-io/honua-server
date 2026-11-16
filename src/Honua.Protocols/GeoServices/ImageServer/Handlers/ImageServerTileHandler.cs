@@ -125,7 +125,7 @@ internal sealed class ImageServerTileHandler
                 resolvedLayer.Resource,
                 context.Request.Query["mosaicRule"]);
 
-            var tileGeometry = CreateTileEnvelope(level, row, col);
+            var tileGeometry = ImageServerMosaicHelpers.CreateTileEnvelope(level, row, col);
             var selectedRasters = await _rasterStore.QueryRastersAsync(
                 layerId,
                 new RasterSelectionQuery
@@ -473,7 +473,7 @@ internal sealed class ImageServerTileHandler
 
     private static bool HasExpectedPublicationBinding(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         int expectedStorageLayerId,
         int? expectedCacheLayerId,
         string? expectedPublicationId)
@@ -514,17 +514,6 @@ internal sealed class ImageServerTileHandler
         // (ImageServerLayerResolver defaults to Query), so both checks admit the same principals.
         return await AccessPolicyHelpers.RequireResourceAccessAsync(
             context, resolvedLayer.Resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static byte[] CreateTileEnvelope(int level, int row, int col)
-    {
-        const double worldExtent = 20037508.342789244;
-        var tileSpan = (worldExtent * 2d) / (1 << level);
-        var minX = -worldExtent + (col * tileSpan);
-        var maxX = minX + tileSpan;
-        var maxY = worldExtent - (row * tileSpan);
-        var minY = maxY - tileSpan;
-        return ImageServerMosaicHelpers.CreateEnvelopeGeometry(minX, minY, maxX, maxY);
     }
 
     private static class WebMercatorTileCoordinates

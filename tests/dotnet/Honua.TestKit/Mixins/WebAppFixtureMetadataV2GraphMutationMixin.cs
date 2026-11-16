@@ -92,8 +92,8 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WebAppFixture fixture,
         int layerIndex,
         AccessPolicy? accessPolicy,
-        MetadataV2ResourceTemporal? temporal,
-        MetadataV2ResourceSpatial? spatial,
+        MetadataV2ObjectTemporal? temporal,
+        MetadataV2ObjectSpatial? spatial,
         MetadataV2PermanentFilter? permanentFilter,
         MetadataV2ExtrusionInfo? extrusion,
         JsonElement? stacExtension,
@@ -187,6 +187,14 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             Revision = snapshot.Graph.Revision + 1,
         };
         WriteGraph(fixture, provider, updatedGraph);
+    }
+
+    internal static void MutateGraph(WebAppFixture fixture, Func<MetadataV2Graph, MetadataV2Graph> mutate)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        var provider = RequireProvider(fixture);
+        var snapshot = ReadCurrent(fixture, provider);
+        WriteGraph(fixture, provider, mutate(snapshot.Graph) with { Revision = snapshot.Graph.Revision + 1 });
     }
 
     internal static void MutateResourceObjectMetadata(
@@ -304,7 +312,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     internal static void UpdateResourceEditing(
         WebAppFixture fixture,
         int layerIndex,
-        MetadataV2ResourceEditing? editing)
+        MetadataV2ObjectEditing? editing)
     {
         var provider = RequireProvider(fixture);
         var snapshot = ReadCurrent(fixture, provider);
@@ -390,7 +398,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     internal static Task UpdateResourceAsync(
         WebAppFixture fixture,
         int layerIndex,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate)
+        Func<MetadataV2Object, MetadataV2Object> mutate)
     {
         var provider = RequireProvider(fixture);
         var snapshot = ReadCurrent(fixture, provider);
@@ -624,13 +632,11 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WriteGraph(fixture, provider, updatedGraph);
     }
 
-    /// <summary>
-    /// Sets the edit capabilities advertised by every publication on the service(s) named
-    /// <paramref name="serviceName"/> in the Metadata v2 graph. The FormPackage validator
-    /// (and other capability gates) read <see cref="MetadataV2Publication.Capabilities"/>
-    /// from the graph — not the legacy <c>honua.services</c> table — so this is how a test
-    /// makes a service advertise Create/Update/Delete for edit-path coverage.
-    /// </summary>
+    // Sets the edit capabilities advertised by every publication on the service(s) named
+    // serviceName in the Metadata v2 graph. The FormPackage validator
+    // (and other capability gates) read MetadataV2Layer.Capabilities
+    // from the graph, not the honua.services table, so this is how a test
+    // makes a service advertise Create/Update/Delete for edit-path coverage.
     internal static void EnableServiceEditingCapabilities(
         WebAppFixture fixture,
         string serviceName,

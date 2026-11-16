@@ -770,6 +770,13 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
             return await inner.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
         }
 
+        public bool SupportsDurableReceipts => inner.SupportsDurableReceipts;
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            FeatureWriterTransactionReceipt receipt,
+            CancellationToken cancellationToken = default)
+            => inner.CommitAsync(receipt, cancellationToken);
+
         public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default)
             => inner.CommitAsync(cancellationToken);
 
@@ -1157,7 +1164,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
     private Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(int layerId, CancellationToken cancellationToken)
         => _readSecurity.ResolveEnforcedSqlFilterAsync(layerId, cancellationToken);
 
-    private async Task<MetadataV2Resource> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
+    private async Task<MetadataV2Object> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_v2Provider == null)
         {

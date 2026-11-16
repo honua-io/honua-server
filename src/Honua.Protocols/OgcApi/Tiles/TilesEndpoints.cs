@@ -149,12 +149,16 @@ internal static partial class TilesEndpoints
         var tileLimits = limitsOptions.Value.Tiles;
         var titleBase = BuildDatasetTitleBase(selectedLayers!);
         var querySuffix = BuildCollectionsQuerySuffix(collections, selectedLayers!);
+        var tileQuerySuffix = BuildDatasetTileQuerySuffix(
+            collections,
+            selectedLayers!.Select(layer => layer.CollectionId).ToArray(),
+            MaxCollectionsPerDatasetRasterTileRequest);
         // Landing pages advertise the unfiltered dataset as map tiles, regardless
         // of how many collections this caller can see. Explicit selections retain
         // their existing vector metadata when a single collection supports it.
         var advertiseVectorTiles = !string.IsNullOrWhiteSpace(collections) && selectedLayers!.Length == 1 &&
             await SupportsVectorTilesAsync(selectedLayers[0], context, cancellationToken).ConfigureAwait(false);
-        var tilesets = BuildDatasetTileSetItems(titleBase, baseUrl, tileLimits, querySuffix, advertiseVectorTiles, tileMatrixSetRegistry).ToImmutableArray();
+        var tilesets = BuildDatasetTileSetItems(titleBase, baseUrl, tileLimits, querySuffix, tileQuerySuffix, advertiseVectorTiles, tileMatrixSetRegistry).ToImmutableArray();
         return BuildTilesetsListResponse(
             request,
             $"{baseUrl}/ogc/tiles/tiles{querySuffix}",
@@ -204,8 +208,12 @@ internal static partial class TilesEndpoints
 
         var tileLimits = limitsOptions.Value.Tiles;
         var querySuffix = BuildCollectionsQuerySuffix(collections, layers!);
+        var tileQuerySuffix = BuildDatasetTileQuerySuffix(
+            collections,
+            layers!.Select(layer => layer.CollectionId).ToArray(),
+            MaxCollectionsPerDatasetRasterTileRequest);
         var tilesetHref = $"{baseUrl}/ogc/tiles/tiles/{tileMatrixSetId}{querySuffix}";
-        var tileTemplate = $"{baseUrl}/ogc/tiles/tiles/{tileMatrixSetId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{querySuffix}";
+        var tileTemplate = $"{baseUrl}/ogc/tiles/tiles/{tileMatrixSetId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{tileQuerySuffix}";
         var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{tileMatrixSetId}";
         var geodataHref = layers!.Length == 1
             ? $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(layers[0].CollectionId)}"
@@ -216,7 +224,7 @@ internal static partial class TilesEndpoints
         var titleBase = BuildDatasetTitleBase(layers);
         var description = layers.Length == 1
             ? layers[0].Description
-            : $"Dataset tiles across {layers.Length} collections.";
+            : DescribeDatasetTiles(collections, layers.Length, MaxCollectionsPerDatasetRasterTileRequest);
         var advertiseVectorTiles = !string.IsNullOrWhiteSpace(collections) && layers.Length == 1 &&
             await SupportsVectorTilesAsync(layers[0], context, cancellationToken).ConfigureAwait(false);
 
@@ -1055,6 +1063,7 @@ internal static partial class TilesEndpoints
         string baseUrl,
         TileLimits tileLimits,
         string querySuffix,
+        string tileQuerySuffix,
         bool advertiseVectorTiles,
         ITileMatrixSetRegistry? registry = null)
     {
@@ -1063,7 +1072,7 @@ internal static partial class TilesEndpoints
             yield return BuildTileSetItemCore(
                 $"{titleBase} ({descriptor.Id})",
                 $"{baseUrl}/ogc/tiles/tiles/{descriptor.Id}{querySuffix}",
-                $"{baseUrl}/ogc/tiles/tiles/{descriptor.Id}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{querySuffix}",
+                $"{baseUrl}/ogc/tiles/tiles/{descriptor.Id}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{tileQuerySuffix}",
                 $"{baseUrl}/ogc/tiles/tileMatrixSets/{descriptor.Id}",
                 "Dataset tileset metadata",
                 tileLimits,
@@ -1078,7 +1087,7 @@ internal static partial class TilesEndpoints
             yield return BuildCustomTileSetItem(
                 $"{titleBase} ({entry.Id})",
                 $"{baseUrl}/ogc/tiles/tiles/{entry.Id}{querySuffix}",
-                $"{baseUrl}/ogc/tiles/tiles/{entry.Id}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{querySuffix}",
+                $"{baseUrl}/ogc/tiles/tiles/{entry.Id}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{tileQuerySuffix}",
                 $"{baseUrl}/ogc/tiles/tileMatrixSets/{entry.Id}",
                 "Dataset tileset metadata",
                 entry,
@@ -1576,7 +1585,7 @@ internal static partial class TilesEndpoints
         return new TileRequestLayerResolution(layer, null);
     }
 
-    private static MetadataV2Publication? FindCollectionPublication(
+    private static MetadataV2Layer? FindCollectionPublication(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         string collectionId,
@@ -1611,11 +1620,11 @@ internal static partial class TilesEndpoints
         return selected;
     }
 
-    private static MetadataV2Publication? SelectTileCollectionPublication(
+    private static MetadataV2Layer? SelectTileCollectionPublication(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         bool requireProtocol,
-        Func<MetadataV2Publication, bool> matches)
+        Func<MetadataV2Layer, bool> matches)
     {
         return LayerValidationHelpers.SelectMatchingCollectionPublication(
             snapshot.Graph.Publications,
@@ -1641,7 +1650,7 @@ internal static partial class TilesEndpoints
 
     private static bool MatchesCollectionId(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         string collectionId)
     {
         if (string.Equals(publication.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
@@ -1662,9 +1671,9 @@ internal static partial class TilesEndpoints
 
     private static TileRequestLayer? CreateTileRequestLayer(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication publication,
+        MetadataV2Layer publication,
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var storageLayerId = snapshot.ResolveStorageLayerId(publication) ?? snapshot.ResolveStorageLayerId(resource);
         if (!storageLayerId.HasValue)
@@ -1760,7 +1769,7 @@ internal static partial class TilesEndpoints
             "which does not support vector tile generation."));
     }
 
-    private static string ResolveCollectionId(MetadataV2Publication publication, MetadataV2Resource resource)
+    private static string ResolveCollectionId(MetadataV2Layer publication, MetadataV2Object resource)
     {
         var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource.Metadata.Name;
         return string.IsNullOrWhiteSpace(collectionId) ? resource.Metadata.Id : collectionId;
@@ -1788,6 +1797,33 @@ internal static partial class TilesEndpoints
             layers.Select(layer => Uri.EscapeDataString(layer.CollectionId)));
         return $"?collections={canonicalCollections}";
     }
+
+    // Over the PNG composite cap an unfiltered template would always fail, so it names the first
+    // maxCollections distinct ids that survive the comma-split collections parser.
+    internal static string BuildDatasetTileQuerySuffix(
+        string? requestedCollections,
+        IReadOnlyList<string> orderedCollectionIds,
+        int maxCollections)
+    {
+        var unfiltered = string.IsNullOrWhiteSpace(requestedCollections);
+        if (orderedCollectionIds.Count == 0 || (unfiltered && orderedCollectionIds.Count <= maxCollections))
+        {
+            return string.Empty;
+        }
+
+        var advertised = unfiltered
+            ? orderedCollectionIds
+                .Where(id => !id.Contains(',', StringComparison.Ordinal))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(maxCollections)
+            : orderedCollectionIds;
+        return $"?collections={string.Join(",", advertised.Select(Uri.EscapeDataString))}";
+    }
+
+    internal static string DescribeDatasetTiles(string? requestedCollections, int collectionCount, int maxCollections)
+        => string.IsNullOrWhiteSpace(requestedCollections) && collectionCount > maxCollections
+            ? $"Dataset tiles across {collectionCount} collections. The tile template covers the first {maxCollections}; use the collections parameter to choose up to {maxCollections}."
+            : $"Dataset tiles across {collectionCount} collections.";
 
     private static string? ExtractCollectionId(string value)
     {
@@ -2028,8 +2064,8 @@ internal static partial class TilesEndpoints
         int StorageLayerId,
         string DisplayName,
         string? Description,
-        MetadataV2Resource Resource,
-        MetadataV2Publication Publication,
+        MetadataV2Object Resource,
+        MetadataV2Layer Publication,
         MetadataV2Service Service,
         MetadataV2GraphSnapshot Snapshot)
     {

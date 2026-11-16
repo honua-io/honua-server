@@ -200,7 +200,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         var authorizedSnapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = authorizedSnapshot.Graph.Publications.First(candidate =>
             candidate.LayerIndex == WebAppFixture.TestLayerId &&
-            candidate.PublicationType == MetadataV2PublicationType.StacCollection);
+            candidate.PublicationType == MetadataV2LayerType.StacCollection);
         var authorizedBinding = authorizedSnapshot.Index.StorageBindingsById[publication.StorageBindingId!];
         var activatedBinding = authorizedBinding with
         {
@@ -251,6 +251,25 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
 
         _capturedQueries.Should().NotBeEmpty();
         _capturedQueries.Should().OnlyContain(query => query.SqlFilter == null);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithIdsAndUnevaluableLike_ReturnsSanitizedBadRequest()
+    {
+        const string marker = "private-pattern-marker";
+        var pattern = marker + new string('%', 33);
+        var filter = Uri.EscapeDataString($"properties.name LIKE '{pattern}'");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={WebAppFixture.TestLayerId}&ids={FilterMatchId},{FilterNonMatchId}&filter-lang=cql2-text&filter={filter}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("LIKE pattern could not be evaluated.");
+        content.Should().NotContain(marker);
+        _capturedQueries.Should().NotBeEmpty("a candidate must reach in-memory evaluation");
     }
 
     [IntegrationTest]

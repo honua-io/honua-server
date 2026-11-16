@@ -209,8 +209,6 @@ GATE_INPUT_SOURCE_GLOBS = (
     "scripts/ci/fixtures/validate-lean-gate.py",
     "scripts/ci/check-markdown-command-policy.ps1",
     "scripts/ci/openapi-drift-check.py",
-    "scripts/ci/merge-train/fixtures/validate-timeout-retry.sh",
-    "scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh",
 )
 
 LITERAL_DOC_PATTERN = re.compile(

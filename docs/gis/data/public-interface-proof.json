@@ -999,6 +999,60 @@
       ]
     },
     {
+      "surfaceId": "native-local-process-workspaces",
+      "displayName": "Native local process workspaces",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/agent/workspaces/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/agent/workspaces"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry and authenticated endpoint integration tests cover workspace identity and all native local process routes",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Studio.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AgentWorkspace/LocalProcessWorkspaceEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7437"
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Postgres-backed endpoint tests assert immutable owner, tenant and target boundaries and reject machine principals; transport tests assert trusted headers, source preconditions, bounded artifact receipts and no retries after uncertain mutations",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/AgentWorkspace/LocalProcessWorkspaceEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AgentWorkspace/LocalProcessWorkspaceGatewayTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7437"
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated local process JSON contracts and typed gateway tests preserve native route request and receipt shapes; the feature document records identity, authorization and private sandbox configuration",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/AgentWorkspace/LocalProcessWorkspaceGateway.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AgentWorkspace/LocalProcessWorkspaceGatewayTests.cs",
+            "docs/internal/features/native-local-processes.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7437"
+        }
+      ]
+    },
+    {
       "surfaceId": "migration-scan",
       "displayName": "Migration source inventory scan",
       "surfaceKind": "http-route-family",
@@ -3725,6 +3779,34 @@
       ]
     },
     {
+      "surfaceId": "paired-publication-read",
+      "displayName": "Paired publication read (PMTiles + GeoParquet)",
+      "surfaceKind": "http-route",
+      "protocol": "Paired Publication HTTP",
+      "canonicalIdentifier": "/api/v1/publications/{publicationId}/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/publications/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and PairedPublishReadEndpointTests integration tests assert authentication, resource export access, read-policy refusal, current.json redirect, pinned-version allow-list and byte-range reads.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Admin/PairedPublications/PairedPublicationReadEndpoints.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/PairedPublishReadEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#4597"
+        }
+      ]
+    },
+    {
       "surfaceId": "cog-range-proxy",
       "displayName": "Published Cloud Optimized GeoTIFF range proxy",
       "surfaceKind": "http-route-family",
@@ -4129,7 +4211,17 @@
       "operationKeys": [
         "Grpc::geospatial.v1.FeatureService/QueryFeatures",
         "Grpc::geospatial.v1.FeatureService/QueryFeaturesStream",
-        "Grpc::geospatial.v1.FeatureService/ApplyEdits"
+        "Grpc::geospatial.v1.FeatureService/ApplyEdits",
+        "Grpc::geospatial.v1.FeatureService/AbortAttachmentUpload",
+        "Grpc::geospatial.v1.FeatureService/BeginAttachmentUpload",
+        "Grpc::geospatial.v1.FeatureService/CommitAttachmentUpload",
+        "Grpc::geospatial.v1.FeatureService/DeleteAttachment",
+        "Grpc::geospatial.v1.FeatureService/DescribeLayer",
+        "Grpc::geospatial.v1.FeatureService/DescribeService",
+        "Grpc::geospatial.v1.FeatureService/GetAttachmentUrl",
+        "Grpc::geospatial.v1.FeatureService/ListAttachments",
+        "Grpc::geospatial.v1.FeatureService/UploadAttachment",
+        "Grpc::geospatial.v1.FeatureService/UploadAttachmentChunk"
       ],
       "proofs": [
         {
@@ -4277,7 +4369,9 @@
         "Mcp::resources/templates/list",
         "Mcp::resources/read",
         "Mcp::prompts/list",
-        "Mcp::prompts/get"
+        "Mcp::prompts/get",
+        "Mcp::skills/list",
+        "Mcp::skills/get"
       ],
       "proofs": [
         {

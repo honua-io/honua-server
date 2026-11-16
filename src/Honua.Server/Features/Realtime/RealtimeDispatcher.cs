@@ -3,19 +3,30 @@
 
 using System.Threading.Channels;
 using Honua.Core.Features.Realtime;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Realtime;
 
+internal readonly record struct RealtimeReadAfter(
+    string Family,
+    long After,
+    IReadOnlyCollection<string>? ScopeKeys,
+    int Limit);
+
 // Follows the realtime log for this task and hands each new event to this task's subscriptions
 // (specification section 6.1). One probe reads every family's head; every family with
 // subscriptions and a head ahead of its dispatched position is read in batches, in order.
-// Dispatch never waits for a subscriber: a full channel closes that subscription.
+// Dispatch never waits for a subscriber: a full channel closes that subscription. Families kept
+// outside the log (features) are read through their IRealtimeFamilySource.
 internal sealed partial class RealtimeDispatcher(
     PostgresRealtimeEventLog log,
+    IEnumerable<IRealtimeFamilySource> sources,
     IOptions<RealtimeOptions> options,
-    ILogger<RealtimeDispatcher> logger)
+    ILogger<RealtimeDispatcher> logger) : IRealtimeWakeSignal
 {
+    private readonly Dictionary<string, IRealtimeFamilySource> _sources =
+        sources.ToDictionary(source => source.Family.Name, StringComparer.Ordinal);
     private readonly Lock _gate = new();
     private readonly Dictionary<string, long> _dispatched = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RealtimeSubscription[]> _subscriptions = new(StringComparer.Ordinal);
@@ -26,7 +37,20 @@ internal sealed partial class RealtimeDispatcher(
 
     public RealtimeOptions Options => options.Value;
 
-    internal PostgresRealtimeEventLog Log => log;
+    // Sequences of a logged family have no gaps except those retention leaves; a source's may.
+    public bool IsContiguous(string family) => !_sources.ContainsKey(family);
+
+    public Task<IReadOnlyList<RealtimeEvent>> ReadAfterAsync(
+        RealtimeReadAfter request,
+        CancellationToken cancellationToken)
+        => _sources.TryGetValue(request.Family, out var source)
+            ? source.ReadAfterAsync(request.After, request.ScopeKeys, request.Limit, cancellationToken)
+            : log.ReadAfterAsync(new(request.Family, request.After, request.Limit, request.ScopeKeys), cancellationToken);
+
+    public Task<RealtimeLogWindow> ReadWindowAsync(string family, CancellationToken cancellationToken)
+        => _sources.TryGetValue(family, out var source)
+            ? source.ReadWindowAsync(cancellationToken)
+            : log.ReadWindowAsync(family, cancellationToken);
 
     // Asks for a probe as soon as possible; any number of calls before it runs coalesce.
     public void Wake() => _wake.Writer.TryWrite(true);
@@ -60,7 +84,8 @@ internal sealed partial class RealtimeDispatcher(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Writer);
-        if (!RealtimeLogFamilies.Logged.Contains(request.Family.Name, StringComparer.Ordinal))
+        if (!RealtimeLogFamilies.Logged.Contains(request.Family.Name, StringComparer.Ordinal)
+            && !_sources.ContainsKey(request.Family.Name))
         {
             throw new NotSupportedException($"The realtime log does not carry the '{request.Family.Name}' family.");
         }
@@ -81,7 +106,7 @@ internal sealed partial class RealtimeDispatcher(
     // Sets every family's dispatched position to its head, so live subscribers never see history.
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        var heads = await log.ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
+        var heads = await ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
         Dictionary<string, RealtimeSubscription[]> early;
         lock (_gate)
         {
@@ -121,7 +146,7 @@ internal sealed partial class RealtimeDispatcher(
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var heads = await log.ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
+        var heads = await ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
         var delivered = 0;
         foreach (var (family, head) in heads)
         {
@@ -136,17 +161,21 @@ internal sealed partial class RealtimeDispatcher(
         var delivered = 0;
         var dispatched = GetDispatchStart(family, head);
         var currentHead = head;
+        RecordPosition(family, head, dispatched);
+        RealtimeMetrics.DispatchLagEvents.Record(Math.Max(0, head - dispatched), new KeyValuePair<string, object?>("family", family));
         while (dispatched < currentHead)
         {
-            var batch = await log.ReadAfterAsync(new(family, dispatched, options.Value.ReadBatchSize), cancellationToken)
+            var batch = await ReadAfterAsync(new(family, dispatched, null, options.Value.ReadBatchSize), cancellationToken)
                 .ConfigureAwait(false);
-            RealtimeSubscription[] subscribers;
-            lock (_gate)
+            var subscribers = GetSubscribers(family);
+
+            if (batch.Count == 0 && !IsContiguous(family))
             {
-                subscribers = _subscriptions.GetValueOrDefault(family) ?? [];
+                dispatched = head;
+                break;
             }
 
-            if (batch.Count == 0 || batch[0].Sequence != dispatched + 1)
+            if (IsContiguous(family) && (batch.Count == 0 || batch[0].Sequence != dispatched + 1))
             {
                 currentHead = await DeliverRetentionGapAsync(new(family, batch, subscribers), cancellationToken).ConfigureAwait(false);
                 if (batch.Count == 0)
@@ -157,17 +186,41 @@ internal sealed partial class RealtimeDispatcher(
                 }
             }
 
+            RealtimeMetrics.DispatchLagSeconds.Record(
+                Math.Max(0, (DateTimeOffset.UtcNow - batch[0].CreatedAt).TotalSeconds),
+                new KeyValuePair<string, object?>("family", family));
             DeliverBatch(batch, subscribers, currentHead);
 
             delivered += batch.Count;
             dispatched = batch[^1].Sequence;
         }
 
+        CompleteDispatch(family, currentHead, dispatched);
+        return delivered;
+    }
+
+    private void CompleteDispatch(string family, long currentHead, long dispatched)
+    {
         lock (_gate)
         {
             _dispatched[family] = Math.Max(_dispatched.GetValueOrDefault(family), dispatched);
         }
-        return delivered;
+        RecordPosition(family, currentHead, dispatched);
+    }
+
+    private static void RecordPosition(string family, long head, long dispatched)
+    {
+        var tag = new KeyValuePair<string, object?>("family", family);
+        RealtimeMetrics.LogHead.Record(head, tag);
+        RealtimeMetrics.DispatchPosition.Record(dispatched, tag);
+    }
+
+    private RealtimeSubscription[] GetSubscribers(string family)
+    {
+        lock (_gate)
+        {
+            return _subscriptions.GetValueOrDefault(family) ?? [];
+        }
     }
 
     private long GetDispatchStart(string family, long head)
@@ -192,7 +245,7 @@ internal sealed partial class RealtimeDispatcher(
 
     private async Task<long> DeliverRetentionGapAsync(RetentionGap gap, CancellationToken cancellationToken)
     {
-        var window = await log.ReadWindowAsync(gap.Family, cancellationToken).ConfigureAwait(false);
+        var window = await ReadWindowAsync(gap.Family, cancellationToken).ConfigureAwait(false);
         var firstAfterGap = gap.Batch.Count == 0 ? window.Oldest : gap.Batch[0].Sequence;
         foreach (var subscriber in gap.Subscribers)
         {
@@ -212,6 +265,24 @@ internal sealed partial class RealtimeDispatcher(
                 subscriber.Deliver(realtimeEvent, head);
             }
         }
+    }
+
+    // The head of every logged family and of every source.
+    private async Task<IReadOnlyDictionary<string, long>> ReadHeadsAsync(CancellationToken cancellationToken)
+    {
+        var logged = await log.ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
+        if (_sources.Count == 0)
+        {
+            return logged;
+        }
+
+        var heads = new Dictionary<string, long>(logged, StringComparer.Ordinal);
+        foreach (var (family, source) in _sources)
+        {
+            heads[family] = await source.ReadHeadAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return heads;
     }
 
     internal void Remove(RealtimeSubscription subscription)

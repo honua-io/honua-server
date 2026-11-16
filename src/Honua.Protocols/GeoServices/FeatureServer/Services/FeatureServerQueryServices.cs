@@ -8,12 +8,12 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 internal sealed class FeatureServerQueryServices(
-    IQueryFormatter queryFormatter,
-    IFeatureQueryValidator queryValidator,
+    QueryFormatter queryFormatter,
+    FeatureQueryValidator queryValidator,
     FeatureServerSpatialReferenceResolver spatialReferenceResolver) : IFeatureServerQueryServices
 {
-    private readonly IQueryFormatter _queryFormatter = queryFormatter ?? throw new ArgumentNullException(nameof(queryFormatter));
-    private readonly IFeatureQueryValidator _queryValidator = queryValidator ?? throw new ArgumentNullException(nameof(queryValidator));
+    private readonly QueryFormatter _queryFormatter = queryFormatter ?? throw new ArgumentNullException(nameof(queryFormatter));
+    private readonly FeatureQueryValidator _queryValidator = queryValidator ?? throw new ArgumentNullException(nameof(queryValidator));
     private readonly FeatureServerSpatialReferenceResolver _spatialReferenceResolver =
         spatialReferenceResolver ?? throw new ArgumentNullException(nameof(spatialReferenceResolver));
 
@@ -37,7 +37,7 @@ internal sealed class FeatureServerQueryServices(
 
     public ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string format,
         bool returnGeometry,
         int? outputSrid,
