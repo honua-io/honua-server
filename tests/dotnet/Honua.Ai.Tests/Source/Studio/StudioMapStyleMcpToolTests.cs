@@ -24,7 +24,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _mcp = new StudioMcpHttpClient(_fixture.Client);
+        _mcp = new StudioMcpHttpClient(await HumanApprovedOperation.CreateProposerClientAsync(_fixture));
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -39,7 +39,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
         var (draftId, generation) = await CreateStyledMapDraftAsync();
         var restyled = MapSpec.Replace("\"source\":\"parcels\"", "\"source\":\"parcels\",\"paint\":{\"fill-color\":\"#112233\"}", StringComparison.Ordinal);
 
-        await _mcp.CallToolAsync(
+        await _mcp.CallApprovedToolAsync(_fixture,
             "honua_studio_set_map_style",
             "{\"draftId\":\"" + draftId + "\",\"generation\":" + generation + ",\"mapSpec\":" + restyled + "}");
 
@@ -71,7 +71,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
 
     private async Task<(Guid DraftId, long Generation)> CreateStyledMapDraftAsync()
     {
-        var created = await _mcp.CallToolAsync(
+        var created = await _mcp.CallApprovedToolAsync(_fixture,
             "honua_studio_create_draft",
             """{"packageKey":"parcels-style-map","family":"map","schemaVersion":"1.0"}""");
         var draftId = created.GetProperty("draftId").GetGuid();
@@ -82,7 +82,7 @@ public sealed class StudioMapStyleMcpToolTests : IAsyncLifetime
              "mapSpec":
             """ + MapSpec + "}";
 
-        var seeded = await _mcp.CallToolAsync(
+        var seeded = await _mcp.CallApprovedToolAsync(_fixture,
             "honua_studio_update_draft",
             "{\"draftId\":\"" + draftId + "\",\"generation\":" + created.GetProperty("generation").GetInt64()
             + ",\"packageKey\":\"parcels-style-map\",\"schemaVersion\":\"1.0\",\"body\":" + body + "}");

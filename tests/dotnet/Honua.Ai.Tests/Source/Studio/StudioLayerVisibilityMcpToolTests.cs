@@ -35,7 +35,7 @@ public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _mcp = new StudioMcpHttpClient(_fixture.Client);
+        _mcp = new StudioMcpHttpClient(await HumanApprovedOperation.CreateProposerClientAsync(_fixture));
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -236,7 +236,7 @@ public sealed class StudioLayerVisibilityMcpToolTests : IAsyncLifetime
         StudioCompositionBodyEditor.ReadBody(await _mcp.SyncEnvelopeAsync(draftId));
 
     private Task<JsonElement> CallToolAsync(string toolName, string argumentsJson) =>
-        _mcp.CallToolAsync(toolName, argumentsJson);
+        _mcp.CallApprovedToolAsync(_fixture, toolName, argumentsJson);
 
     private Task<JsonElement> CallToolRawAsync(string toolName, string argumentsJson) =>
         _mcp.CallToolRawAsync(toolName, argumentsJson);
