@@ -1299,8 +1299,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         var canonicalDecision = await LayerValidationHelpers.EvaluateCanonicalServiceWriteAccessAsync(
             httpContext,
-            new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot),
-            operation,
+            (new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot), operation),
             context.CancellationToken).ConfigureAwait(false);
         ThrowIfAccessDenied(canonicalDecision);
     }

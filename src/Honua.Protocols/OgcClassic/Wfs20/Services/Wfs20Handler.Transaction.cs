@@ -1229,7 +1229,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var canonicalError = await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
-            context, layerValidation, operation, cancellationToken).ConfigureAwait(false);
+            context, (layerValidation, operation), cancellationToken).ConfigureAwait(false);
         if (canonicalError != null)
         {
             return canonicalError;

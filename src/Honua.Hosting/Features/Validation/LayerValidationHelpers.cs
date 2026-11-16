@@ -888,8 +888,7 @@ internal static partial class LayerValidationHelpers
         // data-editor on the canonical service.
         var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
             context,
-            validation,
-            operation,
+            (validation, operation),
             cancellationToken).ConfigureAwait(false);
         if (canonicalError != null)
         {
@@ -1054,10 +1053,10 @@ internal static partial class LayerValidationHelpers
     // A write through a non-primary publication also requires data-editor authorization on the canonical service.
     internal static async Task<IResult?> EnforceCanonicalServiceWriteAccessAsync(
         HttpContext context,
-        MetadataV2ValidationResult validation,
-        AuthorizationOperation? operation,
+        (MetadataV2ValidationResult Validation, AuthorizationOperation? Operation) write,
         CancellationToken cancellationToken)
     {
+        var (validation, operation) = write;
         if (!validation.IsValid || validation.Resource is null || validation.Publication is null)
         {
             return null;
@@ -1065,8 +1064,7 @@ internal static partial class LayerValidationHelpers
 
         var decision = await EvaluateCanonicalServiceWriteAccessAsync(
             context,
-            new CanonicalWriteSource(validation.Publication, validation.Resource, validation.Snapshot),
-            operation,
+            (new CanonicalWriteSource(validation.Publication, validation.Resource, validation.Snapshot), operation),
             cancellationToken).ConfigureAwait(false);
         return AccessPolicyHelpers.CreateAccessDeniedResult(context, decision);
     }
@@ -1074,10 +1072,10 @@ internal static partial class LayerValidationHelpers
     // Every protocol uses the same canonical write decision and translates it to its own errors.
     internal static async Task<AccessDecision> EvaluateCanonicalServiceWriteAccessAsync(
         HttpContext context,
-        CanonicalWriteSource source,
-        AuthorizationOperation? operation,
+        (CanonicalWriteSource Source, AuthorizationOperation? Operation) write,
         CancellationToken cancellationToken)
     {
+        var (source, operation) = write;
         var canonical = await ResolveCanonicalWriteServiceAsync(context, source, cancellationToken).ConfigureAwait(false);
         return canonical is { } target
             ? await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
@@ -1179,8 +1177,7 @@ internal static partial class LayerValidationHelpers
 
         var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
             context,
-            validation,
-            operation,
+            (validation, operation),
             cancellationToken).ConfigureAwait(false);
         if (canonicalError != null)
         {

@@ -471,7 +471,7 @@ internal sealed partial class ODataBatchHandler
         var accessError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context, validation.Resource!, validation.Service, operation, cancellationToken).ConfigureAwait(false);
         return accessError ?? await LayerValidationHelpers.EnforceCanonicalServiceWriteAccessAsync(
-            context, validation, operation, cancellationToken).ConfigureAwait(false);
+            context, (validation, operation), cancellationToken).ConfigureAwait(false);
     }
 
     private static ODataBatchResponseItem CreateErrorResponseFromResult(

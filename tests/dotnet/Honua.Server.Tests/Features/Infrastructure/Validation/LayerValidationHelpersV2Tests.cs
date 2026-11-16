@@ -249,22 +249,22 @@ public sealed class LayerValidationHelpersV2Tests
     }
 
     [Theory]
-    [InlineData(false, null, false, true)]
-    [InlineData(false, "reader", false, false)]
-    [InlineData(false, "editor", true, false)]
-    [InlineData(true, null, true, false)]
+    [InlineData(null, "challenge")]
+    [InlineData("reader", "forbidden")]
+    [InlineData("editor", "allowed")]
+    [InlineData("anonymous", "allowed")]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [Operation(Operations.ApplyEdits)]
     public async Task EvaluateCanonicalServiceWriteAccess_UsesCanonicalPolicy(
-        bool allowAnonymous, string? role, bool allowed, bool requiresAuthentication)
+        string? role, string expected)
     {
         var (context, graph) = BuildCanonicalContext(new AccessPolicy
         {
-            AllowAnonymousWrite = allowAnonymous,
+            AllowAnonymousWrite = role == "anonymous",
             AllowedWriteRoles = ["editor"]
         });
-        if (role is not null)
+        if (role is not null and not "anonymous")
         {
             context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "Test"));
         }
@@ -272,12 +272,12 @@ public sealed class LayerValidationHelpersV2Tests
         var secondary = graph.Publications.Single(publication => publication.Metadata.Id == "pub-secondary");
         var decision = await LayerValidationHelpers.EvaluateCanonicalServiceWriteAccessAsync(
             context,
-            new LayerValidationHelpers.CanonicalWriteSource(secondary, graph.Resources[0]),
-            Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Insert,
+            (new LayerValidationHelpers.CanonicalWriteSource(secondary, graph.Resources[0]),
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Insert),
             CancellationToken.None);
 
-        decision.IsAllowed.Should().Be(allowed);
-        decision.RequiresAuthentication.Should().Be(requiresAuthentication);
+        decision.IsAllowed.Should().Be(expected == "allowed");
+        decision.RequiresAuthentication.Should().Be(expected == "challenge");
     }
 
     private static (HttpContext Context, MetadataV2Graph Graph) BuildCanonicalContext(AccessPolicy? canonicalPolicy = null)
