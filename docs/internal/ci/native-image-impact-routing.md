@@ -64,7 +64,7 @@ own countable subset agrees (17 countable heads, `serving_narrowed_heads: 0`,
 `worker_avoided_heads: 0`).
 
 `{variant}_final_rootfs` subsumes `server_aot_compile`, so managed changes in
-that dependency closure select all three serving variants. The legacy workflow
+that dependency closure select both serving variants. The legacy workflow
 already routes variant-only Dockerfile edits per variant. Projects outside the
 serving closure may avoid a serving build; the selector computes the closure
 from current project references.

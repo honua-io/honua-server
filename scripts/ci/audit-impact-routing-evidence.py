@@ -1032,11 +1032,14 @@ def _validate_native(
     if value.get("gate_run_head_sha") != head or value.get("gate_run_conclusion") not in TERMINAL_CONCLUSIONS:
         raise ValueError("native-image gate result identity is invalid")
     digests = value.get("image_input_digests")
-    if not isinstance(digests, dict) or set(digests) != set(IMAGE_INPUT_CLASSES):
+    # A receipt from a superseded policy generation may name image classes and
+    # serving variants this generation no longer has. Its own values are still
+    # validated so that it reaches the drift decision below.
+    if not isinstance(digests, dict) or not (drifted or set(digests) == set(IMAGE_INPUT_CLASSES)):
         raise ValueError("native-image image input digests are invalid")
     digests = {
         name: exact_digest(digests[name], f"native-image {name} input digest")
-        for name in IMAGE_INPUT_CLASSES
+        for name in (sorted(digests) if drifted else IMAGE_INPUT_CLASSES)
     }
     tree_kind = value.get("image_input_tree")
     if tree_kind not in IMAGE_INPUT_TREES:
@@ -1051,7 +1054,7 @@ def _validate_native(
         raise ValueError("native-image routing decision is invalid")
     serving = candidate.get("serving_variants")
     legacy_serving_variants = legacy.get("serving_variants")
-    variant_names = set(SERVING_VARIANTS)
+    variant_names = set(serving) if drifted and isinstance(serving, dict) and serving else set(SERVING_VARIANTS)
     if not isinstance(serving, dict) or set(serving) != variant_names:
         raise ValueError("native-image serving decision is invalid")
     if (

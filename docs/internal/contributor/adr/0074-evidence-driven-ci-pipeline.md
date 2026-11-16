@@ -298,7 +298,7 @@ Observation resolved which half of that pays. Path routing does not: across 74
 distinct trusted heads the graph-derived selector reproduced the legacy path
 filters exactly, with zero narrowed, zero avoided, and zero candidate-only
 heads, because the serving closure covers 27 of 33 `src/**` projects and every
-managed change selects all three serving variants. Re-push churn does: 60% of
+managed change selects both serving variants. Re-push churn does: 60% of
 serving-impacted heads and 71% of worker-impacted heads repeat an input set
 already built on the same pull request, against a median 140-minute serving
 build. The router therefore stays in observe mode and the promotion savings gate

@@ -359,7 +359,7 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 | `POST /api/v1/admin/deploy/operations/{operationId}/rollback` | Roll the operation back |
 | `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all server deployments in one call |
 
-Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
+Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), plus GitOps passthrough variants. `AzureContainerApps` and `AzureFunctions` are not target kinds: the server refuses to start while a `ControlPlane__DeployTargets__*__TargetKind` entry names one, so remove such entries before upgrading. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
 
 ### Converge the whole platform release in one call
 
@@ -474,7 +474,7 @@ A rollout does not auto-promote (cut over to the new revision) until its **promo
 
 | Gate (`deployment.promotion_gate`) | Default for | What must pass to promote | Telemetry backend required? |
 |---|---|---|---|
-| `telemetry` | all cloud backends (ECS/ALB, Lambda, ACA, Functions, Argo Rollouts) | The configured metrics gate (`telemetry.connection` + error-rate/latency thresholds) must clear after warmup. | Yes — a reachable Prometheus/CloudWatch connection. |
+| `telemetry` | all cloud backends (ECS/ALB, Lambda, Argo Rollouts) | The configured metrics gate (`telemetry.connection` + error-rate/latency thresholds) must clear after warmup. | Yes — a reachable Prometheus/CloudWatch connection. |
 | `health` | `honua-yarp-rolling` (self-hosted rolling, on-prem/air-gapped) | The backend's own health gate. The rolling backend health-probes the new standby replica locally and cuts over once it is healthy. A metrics gate is optional; if `telemetry.connection` is also set its rollback signals and waits still apply. | No. |
 | `manual` | — (opt-in) | Nothing automatic. The rollout bakes and holds until an operator calls the promote endpoint. | No. |
 
@@ -523,7 +523,7 @@ helm rollback honua --namespace honua
 kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 ```
 
-For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back, reverse slot swap). Single-instance Docker: restart the previous image tag.
+For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back). Single-instance Docker: restart the previous image tag.
 
 For an RDS-backed cell using the product restore executor, configure the cell's authorized
 database security group IDs in `ControlPlane:Restore:RdsSecurityGroupIds`, alongside its

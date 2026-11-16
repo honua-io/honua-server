@@ -28,7 +28,7 @@ public sealed partial class AzureDeployTargetAbsenceTests
             .Where(path => !IsBuildOutput(path))
             .ToArray();
 
-        files.Where(path => AzureTargetName().IsMatch(Path.GetFileName(path)))
+        files.Where(path => AzureTargetName().IsMatch(Path.GetRelativePath(repositoryRoot, path)))
             .Should().BeEmpty("no file under src/ or docker/ may be named for an Azure Functions or Container Apps deploy target");
         files.Where(path => path.EndsWith(".cs", StringComparison.Ordinal))
             .Where(path => AzureTargetType().IsMatch(File.ReadAllText(path)))
@@ -39,7 +39,7 @@ public sealed partial class AzureDeployTargetAbsenceTests
         => path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
            || path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
 
-    [GeneratedRegex(@"Azure[-_]?(Functions|ContainerApps)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"Azure[-_]?(Functions|Container[-_]?Apps)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AzureTargetName();
 
     [GeneratedRegex(@"\b(class|record|struct|interface|enum)\s+I?Azure(Functions|ContainerApps)\w*", RegexOptions.CultureInvariant)]

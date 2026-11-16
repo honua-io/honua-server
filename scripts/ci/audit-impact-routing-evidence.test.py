@@ -1581,6 +1581,28 @@ def test_malformed_image_input_evidence_fails_closed() -> None:
             assert expected in ledger["integrity_failures"][0]["reason"], expected
 
 
+def test_receipt_with_retired_variants_is_cohort_drift() -> None:
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    variants = {"generic": True, "lambda": False, "functions": False}
+    inputs = {
+        name: hashlib.sha256(name.encode("utf-8")).hexdigest()
+        for name in (*MODULE.IMAGE_INPUT_CLASSES, "serving_functions")
+    }
+    retired = native_receipt(
+        blobs, pr=11, head=HEAD_B, worker=True,
+        serving=variants, legacy_serving=dict.fromkeys(variants, True), image_inputs=inputs,
+    )
+    with tempfile.TemporaryDirectory() as temporary:
+        current = reuse_ledger([retired], [], [], Path(temporary))
+        assert not current["gates"]["integrity_clean"]
+    retired["policy_blob_sha"] = "f" * 40
+    with tempfile.TemporaryDirectory() as temporary:
+        ledger = reuse_ledger([retired], [], [], Path(temporary))
+        assert ledger["counts"]["integrity_failures"] == 0
+        assert ledger["counts"]["receipts_superseded_policy_generation"] == 1
+        assert ledger["gates"]["integrity_clean"] is True
+
+
 def test_full_mode_pr_gate_receipts_are_not_receipt_loss() -> None:
     """#3343: the >50% receipt loss was the reader, not the producer.
 
@@ -2106,6 +2128,7 @@ test_reuse_keys_are_scoped_per_variant()
 test_head_tree_receipts_are_never_reuse_evidence()
 test_supersession_can_be_witnessed_by_a_later_receipt()
 test_malformed_image_input_evidence_fails_closed()
+test_receipt_with_retired_variants_is_cohort_drift()
 test_full_mode_pr_gate_receipts_are_not_receipt_loss()
 test_loss_separates_missing_from_not_yet_indexed()
 test_tombstones_quarantine_explicitly_and_expire()
