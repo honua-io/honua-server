@@ -176,7 +176,7 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
         var httpRequestSnapshotProvider = scope.ServiceProvider.GetRequiredService<IHttpRequestMetricsSnapshotProvider>();
         var baseline = httpRequestSnapshotProvider.GetHttpRequestMetricsSnapshot();
 
-        // ErrorRate (#2809) is no longer TotalErrors/TotalQueries; ProductionMetricsCollector.GetHealthMetrics
+        // ErrorRate is no longer TotalErrors/TotalQueries; ProductionMetricsCollector.GetHealthMetrics
         // now sources it from CalculateWindowedErrorRate(), which sums RequestCount/ErrorCount across all
         // protocols in HonuaTelemetry's rolling serving-latency window. RecordHttpRequest (below) only
         // updates the IHttpRequestMetricsSnapshotProvider counters, not that window, so the windowed rate

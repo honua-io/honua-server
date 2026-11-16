@@ -123,7 +123,7 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
             .Should().BeEquivalentTo("band_2", "band_3");
     }
 
-    // Enabled once #3184 landed (#3189): EdrHandler validates parameter-name against the
+    // Enabled once #3184 landed: EdrHandler validates parameter-name against the
     // collection's enumerated names instead of falling back to band_1 data.
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
@@ -166,7 +166,7 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
             .Should().Equal(EdrDepthTestsFixture.RasterCreatedAtIso, EdrDepthTestsFixture.RasterCreatedAtIso);
     }
 
-    // #4151: the raster's only temporal geometry is 2026-01-05T00:00:00Z. Each datetime below
+    // The raster's only temporal geometry is 2026-01-05T00:00:00Z. Each datetime below
     // intersects that instant, so the pixel values are returned and the t-axis carries the
     // raster's own time — never the requested instant or interval start.
     [IntegrationTest]
@@ -484,7 +484,7 @@ public sealed class EdrDepthTestsFixture : IAsyncLifetime
         rasterStore.GetExtentAsync(WebAppFixture.TestLayerId, TestRasterId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<RasterExtent?>(raster.Extent));
 
-        // #4424: the sample is a function of the requested coordinate, not a constant, so a
+        // The sample is a function of the requested coordinate, not a constant, so a
         // coordinate-transposition, datum or off-by-one-pixel defect changes the answer. The
         // designated nodata longitude still reports no band values at all.
         rasterStore.IdentifyAsync(

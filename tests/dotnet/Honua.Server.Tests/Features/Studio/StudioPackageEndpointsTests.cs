@@ -377,7 +377,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         publishedRow.State.Should().Be(StudioContentItemState.Published);
         publishedRow.CreatedBy.Should().NotBeNullOrWhiteSpace();
 
-        // `owner` filters the item's real owner_id column (honua-server#3001). The published
+        // `owner` filters the item's real owner_id column. The published
         // draft above was created with an explicit OwnerId of "alice", so the item's owner_id
         // is "alice" (not the creating admin actor recorded as createdBy).
         var byOwner = await _client.GetAsync("/api/v1/studio/content-items?owner=alice");
@@ -559,7 +559,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/app-packages/generate")]
     public async Task GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler()
     {
-        // honua-server#3023: the end-user flag no longer hard-blocks non-admins at the route
+        // The end-user flag no longer hard-blocks non-admins at the route
         // policy; instead each generate handler denies a grant-less non-admin at the elevated
         // authorization gate, before the request body is parsed or any draft is created.
         // Without a StudioDraft Execute operator grant the outcome stays 403.
@@ -758,9 +758,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/package-drafts")]
     public async Task AdminReadOnlyKey_CanReadButNotMutateStudio()
     {
-        // PR #3018 review: the StudioLifecycle policy replaced RequireAdminAuthorization() for
+        // The StudioLifecycle policy replaced RequireAdminAuthorization() for
         // this group, and must preserve the scoped admin-permission boundary that gate enforced
-        // (#1985) -- an admin:read-scoped key is still stamped with the admin role (it carries an
+        // -- an admin:read-scoped key is still stamped with the admin role (it carries an
         // admin: grant) and must keep read access while losing write, exactly as it could not
         // mutate any other admin-gated surface. This runs against the class fixture (flag off),
         // matching NFR-001's "byte-identical, including scoped-key denial semantics".
@@ -826,7 +826,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}")]
     public async Task ListAndGetVersions_FlagOn_NonOwnerSeesOnlyThePublishedVersion()
     {
-        // PR #3018 review: a published pointer must not open the item's entire immutable
+        // A published pointer must not open the item's entire immutable
         // history to a non-owner. Alice's item has two saved versions; only the first is
         // published. Bob (non-owner) must see exactly the published version in the list and
         // must be able to fetch it by id, but must be denied the second (current, unpublished)
@@ -1525,7 +1525,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/map-packages/generate")]
     public async Task CreateMapPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier()
     {
-        // ADR-0076 (#3255): the route is a deterministic draft-creation entry point. It takes
+        // ADR-0076: the route is a deterministic draft-creation entry point. It takes
         // structured composition input, calls no model, and must hand back a real package with a
         // stable map_ identifier -- the behavioural guard the ADR asks for, at the REST surface.
         // sourceBindings was previously rejected outright and initialView was published in the
@@ -1631,7 +1631,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/app-packages/generate")]
     public async Task CreateAppPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier()
     {
-        // ADR-0076 (#3255) counterpart of the map route: deterministic, model-free, and returning
+        // ADR-0076 counterpart of the map route: deterministic, model-free, and returning
         // a real package with a stable app_ identifier.
         using var body = new StringContent(
             """{"templateId":"basic-app","mapPackageId":"map_00000000000000000000000000000000"}""",
@@ -1701,7 +1701,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_NoRenderableTypeface_ReturnsServiceUnavailableWithMachineReadableCode()
     {
-        // honua-server#4908: when the composer cannot render (no font on the host resolves
+        // When the composer cannot render (no font on the host resolves
         // glyphs), the export must fail loudly with a non-200 status and a machine-readable
         // reason -- never a 200 over a blank artifact. Route the whole export surface through a
         // fake exporter on a dedicated fixture so the assertion does not depend on this test
@@ -1852,7 +1852,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     private static readonly byte[] PngMagic = [0x89, 0x50, 0x4E, 0x47];
     private static readonly byte[] PdfMagic = [0x25, 0x50, 0x44, 0x46]; // %PDF
 
-    // honua-server#4907: an approved publication reported activeUrl = its intent route
+    // An approved publication reported activeUrl = its intent route
     // ("/maps/<key>"), which nothing served (404). activeUrl must now be followable: it resolves
     // to the item's Active (published-pointer) version, so a republish and a rollback both move
     // what it serves and a superseded version is never returned.
@@ -1926,7 +1926,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         (await ReadPublishedAsync(anonymous, movedUrl)).VersionId.Should().Be(version.VersionId);
     }
 
-    // honua-server#5788: the publish-request read a client polls to Active must carry the final
+    // The publish-request read a client polls to Active must carry the final
     // publication URL -- the same activeUrl the operation handle names -- and only once the
     // request is accepted; a pending or rejected request has no URL.
     [IntegrationTest]
@@ -1969,7 +1969,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         }
     }
 
-    // honua-server#5449: the version read returns the exact bytes the server hashed, so a client
+    // The version read returns the exact bytes the server hashed, so a client
     // recomputes contentHash as their SHA-256 instead of only checking that two readers agree.
     // The where clause carries non-ASCII and HTML-sensitive characters the serializer escapes.
     [IntegrationTest]

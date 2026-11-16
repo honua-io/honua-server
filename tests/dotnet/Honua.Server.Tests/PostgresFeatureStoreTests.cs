@@ -415,7 +415,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
 
         var result = await _featureStore.QueryAsync(TestLayerId, query);
 
-        // Distinct totals follow the projected tuples (#6196): TypeA and TypeB, not the
+        // Distinct totals follow the projected tuples: TypeA and TypeB, not the
         // three source rows. Continuation stays on the extra-row probe, so a full last
         // page does not report another page.
         Assert.Equal(2, result.TotalCount);

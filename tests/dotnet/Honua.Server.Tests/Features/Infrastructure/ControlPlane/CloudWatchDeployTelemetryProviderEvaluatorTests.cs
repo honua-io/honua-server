@@ -244,7 +244,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
         client.Config.RegionEndpoint.Should().BeNull();
 
         // Without a pinned signing region the SDK resolves one from the ambient chain, ending in
-        // EC2 instance metadata, which hangs every request inside a container (#4998).
+        // EC2 instance metadata, which hangs every request inside a container.
         client.Config.AuthenticationRegion.Should().Be("us-east-1");
     }
 
@@ -263,7 +263,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
     [InlineData(-1.0)]
     public async Task EvaluateAsync_InvalidLatencyReading_IsTreatedAsAbsentNotHealthy(double invalidReading)
     {
-        // #4617: metric math over an undefined ratio can return NaN/±Inf; the gate treats it as absent.
+        // Metric math over an undefined ratio can return NaN/±Inf; the gate treats it as absent.
         var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleExpression] = 50,
@@ -282,7 +282,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
     [Fact]
     public void SelectSignalValue_MultipleSeries_IsAmbiguousAndRejected()
     {
-        // #4617: a SEARCH or GROUP BY expression returns one result per series for the single query.
+        // A SEARCH or GROUP BY expression returns one result per series for the single query.
         var response = new GetMetricDataResponse
         {
             MetricDataResults =
@@ -392,7 +392,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
     [UnitTest]
     public async Task EvaluateAsync_ErrorCountSeriesAbsentWithSampleFloorMet_PromotesWithZeroErrors()
     {
-        // honua-server#6474: a healthy ALB target group publishes no HTTPCode_Target_5XX_Count datapoint.
+        // A healthy ALB target group publishes no HTTPCode_Target_5XX_Count datapoint.
         var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleExpression] = 120,

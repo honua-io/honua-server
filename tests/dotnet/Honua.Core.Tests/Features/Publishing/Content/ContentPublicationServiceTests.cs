@@ -51,7 +51,7 @@ public sealed class ContentPublicationServiceTests
     [UnitTest]
     public async Task GetLatestRouteStatesBySourceContentIds_ReturnsNewestVersionsRouteAndOmitsUnmatchedIds()
     {
-        // honua-server#3003: Studio's content-item list endpoint batch-resolves publication
+        // Studio's content-item list endpoint batch-resolves publication
         // badges by the convention sourceContentId == Studio itemId. This exercises the store
         // method directly: the newest version's route wins per source content id, ids with no
         // matching version are omitted, and an unrelated publication for a different source

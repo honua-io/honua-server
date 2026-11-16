@@ -175,7 +175,7 @@ public sealed class MaterialAmbiguityEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
-    // Auto-resolve unambiguous single-candidate bindings (#1949)
+    // Auto-resolve unambiguous single-candidate bindings
     // -----------------------------------------------------------------------
 
     [UnitTest]

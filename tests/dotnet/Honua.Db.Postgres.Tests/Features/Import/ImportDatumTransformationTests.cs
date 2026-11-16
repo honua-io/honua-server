@@ -281,7 +281,7 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
         }
     }
 
-    // honua-server#6114: a FileGDB feature class in NAD83 / California zone 3 (ftUS), stored as
+    // A FileGDB feature class in NAD83 / California zone 3 (ftUS), stored as
     // ESRI WKT without an AUTHORITY node (as ArcGIS writes it). Every feature used to be stamped
     // EPSG:4326 by the reader, so an explicit SourceSrid was ignored and State Plane feet were
     // stored as degrees.

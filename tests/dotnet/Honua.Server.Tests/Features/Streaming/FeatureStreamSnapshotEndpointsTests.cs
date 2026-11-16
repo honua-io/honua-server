@@ -715,7 +715,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             data.GetProperty("maxSnapshotFeatures").GetInt32().Should().BeGreaterThan(0);
             data.GetProperty("maxSnapshotScanRows").GetInt32().Should().BeGreaterThan(0);
             // The payload budget is a bound a client can observe — a large-geometry layer reaches
-            // it long before the feature cap — so capabilities must state it (#3181).
+            // it long before the feature cap — so capabilities must state it.
             data.GetProperty("maxSnapshotBytes").GetInt32().Should().BeGreaterThan(0);
 
             data.GetProperty("serverVersion").GetString().Should().NotBeNullOrWhiteSpace();
@@ -803,7 +803,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         // the delta replay silently restarts at the new oldest cursor instead of failing — so
         // the client converged on a baseline missing changes while snapshot-end said
         // complete: true. Re-reading the retained floor after the scan is the only point where
-        // that gap is observable (#3038 review).
+        // that gap is observable.
         //
         // The store is decorated to report a floor far above the baseline, which is exactly the
         // state a mid-scan trim leaves behind, without having to win a race against the scan.
@@ -959,7 +959,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
             // A truncated baseline must not become a resumable checkpoint either: the features
             // it omitted did not change, so no later delta will ever mention them and a delta
-            // resume from this cursor would strand the client permanently (#3038 review).
+            // resume from this cursor would strand the client permanently.
             baseline.EventIds.Should().OnlyContain(id => id == null,
                 "no frame of an incomplete snapshot may publish a resumable SSE id");
         }
@@ -977,7 +977,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         // A feature admitted into the baseline can be updated so it no longer matches a bbox,
         // attribute, or temporal predicate, and both replay and live fan-out evaluate the
         // POST-mutation image — so the leaving update is filtered out and the client keeps a
-        // stale feature no delta can ever correct. Refused rather than advertised (#3038 review).
+        // stale feature no delta can ever correct. Refused rather than advertised.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         foreach (var query in new[]
@@ -985,7 +985,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             "/api/v1/streaming/features?layers=0&mode=snapshot&bbox=-180,-90,180,90",
             // 'filter' is the attribute-expression parameter the subscription parser reads;
             // 'where' is silently ignored, which would have made this a layer-only snapshot
-            // returning 200 and the case would have asserted nothing (#3038 review).
+            // returning 200 and the case would have asserted nothing.
             "/api/v1/streaming/features?layers=0&mode=snapshot&filter=status%3D%27active%27",
         })
         {
@@ -1020,7 +1020,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         await StartDefaultApplicationAsync();
         // Driven off the capability document rather than a hardcoded layer: the contract is
         // "every layer advertised as canSubscribe can be snapshotted", so a seed change that adds
-        // a layer the baseline path cannot serve must fail here instead of shipping (#3181).
+        // a layer the baseline path cannot serve must fail here instead of shipping.
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
 
         var layerIds = await ReadSubscribableLayerIdsAsync(_client, cts.Token);
@@ -1095,7 +1095,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         // a layer of large geometries produces a baseline orders of magnitude bigger than the
         // same count of small ones. A response path that buffers (a serverless invoke response is
         // typically capped at 6 MB) discards the over-large 200 and substitutes its own untyped
-        // 500, so the client never sees the baseline the server considered successful (#3181).
+        // 500, so the client never sees the baseline the server considered successful.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var fixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>
@@ -1150,7 +1150,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         // guarantee is not merely "truncation is reported" but "the bytes actually written stay
         // inside the advertised budget", which is what keeps the response under the ceiling a
         // downstream hop enforces. Asserted on the wire, in the same UTF-8 SSE framing the
-        // server charges against MaxSnapshotBytes (#3181 REQ-001).
+        // server charges against MaxSnapshotBytes.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
 
         // Measure the unconstrained baseline first so the budget is derived from the seed
@@ -1238,7 +1238,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 "no frame of an incomplete baseline may publish a resumable SSE id");
 
             // And the client is told which advertised bound truncated it, rather than being left
-            // to infer it from a silent close (#3181 REQ-002).
+            // to infer it from a silent close.
             var terminal = await ReadUntilEventAsync(reader, "status", cts.Token);
             terminal.Should().NotBeNull();
             var terminalValue = terminal.GetValueOrDefault();
@@ -1260,11 +1260,11 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         // A baseline read that the backing store refuses used to escape after the SSE handshake,
         // which leaves no way to answer with a problem document — the caller (or a buffering
         // intermediary) reports an untyped 500 instead. Servability is now decided ahead of the
-        // handshake, where a typed RFC 7807 response is still possible (#3181 REQ-002).
+        // handshake, where a typed RFC 7807 response is still possible.
         foreach (var allowObjectIdProbe in new[] { false, true })
         {
             // Cover both provider failure seams: the cheap id sweep and the full row
-            // materialization probe that follows it when ids are readable (#3206 review).
+            // materialization probe that follows it when ids are readable.
             var fixture = CreateFixtureWithUnreadableFeatureReader(allowObjectIdProbe);
             await fixture.InitializeAsync();
             try
@@ -1360,7 +1360,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     public async Task Sse_SnapshotMode_ReplayableCursor_SkipsTheSnapshotStorePreflight()
     {
         // A replayable resume is served entirely from the event store. Feature-store availability
-        // is irrelevant until the retained window requires a replacement snapshot (#3206 review).
+        // is irrelevant until the retained window requires a replacement snapshot.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var fixture = CreateFixtureWithUnreadableFeatureReader();

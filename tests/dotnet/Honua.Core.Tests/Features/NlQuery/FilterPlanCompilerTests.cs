@@ -606,7 +606,7 @@ public sealed class FilterPlanCompilerTests
     public void Deserialize_WithNullClauses_CoalescesToEmptyArrayInsteadOfNull()
     {
         // STJ overwrites the [] default with null for a literal "clauses": null, so
-        // plan.Clauses.Length would NRE out of the provider's parse path (#1986).
+        // plan.Clauses.Length would NRE out of the provider's parse path.
         var plan = Deserialize("""{ "combinator": "and", "clauses": null }""");
 
         plan.Clauses.Should().NotBeNull();

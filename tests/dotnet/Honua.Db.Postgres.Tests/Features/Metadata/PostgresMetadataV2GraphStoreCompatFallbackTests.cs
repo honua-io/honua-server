@@ -489,7 +489,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     [IntegrationTest]
     public async Task GetCurrentAsync_ActivatedSnapshotFailsToMaterialize_StillThrows()
     {
-        // The empty-snapshot fallback (honua-server#1619) must apply ONLY when no snapshot
+        // The empty-snapshot fallback must apply ONLY when no snapshot
         // exists. A snapshot that IS activated in the database but cannot be materialized
         // (corrupt/empty document) is a genuine failure and must keep erroring — silently
         // serving an empty catalog would mask data loss.
@@ -577,7 +577,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
 
     private static async Task CreateV1CatalogTablesAsync(NpgsqlDataSource dataSource, string schema)
     {
-        // #2020: CREATE EXTENSION is database-global, but this static helper only has a raw
+        // CREATE EXTENSION is database-global, but this static helper only has a raw
         // dataSource/schema and no PostgresFixture handle to reach the shared seed advisory
         // lock. It is idempotent (postgis is pre-created by the test container), so it is left
         // unlocked here rather than threading a fixture through every call site.

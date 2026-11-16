@@ -269,7 +269,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     [UnitTest]
     public async Task StreamAsync_TopLevelSystemAndSystemRoleMessage_BothForwardAsSystemRoleMessages()
     {
-        // honua-server#3010 review: documents/locks in the contract the Anthropic adapter's system-
+        // Documents/locks in the contract the Anthropic adapter's system-
         // prompt handling is aligned to -- the top-level `system` field becomes a leading "system"
         // chat message, and any messages[] entry already carrying role=system is forwarded as its
         // own "system"-role message, in request order, with no restriction on position.
@@ -307,7 +307,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     [UnitTest]
     public async Task StreamAsync_ToolResultMessage_PreservesToolCallIdInRequestBody()
     {
-        // honua-server#3010 review: OpenAI-compatible tool loops correlate a tool result back to
+        // OpenAI-compatible tool loops correlate a tool result back to
         // the call it answers via tool_call_id; dropping it breaks every turn after the first tool
         // call.
         var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);

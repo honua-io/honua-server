@@ -978,7 +978,7 @@ public sealed class ImageryInferenceJobExecutorTests
     {
         // The same CRS spelled five ways — the four identifier forms the process
         // contract names, plus a lowercase authority. Tightening the declared-CRS
-        // check to exact identifier matching (#3053) must not start refusing a
+        // check to exact identifier matching must not start refusing a
         // backend that spells WGS 84 differently from the one form the first test
         // used.
         string[] spellings =

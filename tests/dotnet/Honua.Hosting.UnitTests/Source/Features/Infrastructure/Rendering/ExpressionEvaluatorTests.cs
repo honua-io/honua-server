@@ -727,7 +727,7 @@ public class ExpressionEvaluatorTests
     }
 
     // ---------------------------------------------------------------------------------------
-    // ["zoom"] as an expression input (honua-server#2873).
+    // ["zoom"] as an expression input.
     //
     // Every expected value below is the output of MapLibre GL JS's own reference implementation
     // (@maplibre/maplibre-gl-style-spec v26.1.0) for the same expression at the same zoom, obtained

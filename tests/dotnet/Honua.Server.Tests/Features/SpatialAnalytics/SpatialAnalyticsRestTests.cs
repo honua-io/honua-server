@@ -583,9 +583,9 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin")]
     public async Task SpatialJoin_DWithinOverKnownGeometry_ReturnsExactRowLevelMatchCountsAndAggregates()
     {
-        // Depth pack 2 (honua-server#2982): prior spatial-join coverage only asserted
+        // Depth pack 2: prior spatial-join coverage only asserted
         // matchCount >= 0 / "some row has X" (the same "shape, not value" gap class depth
-        // pack 1 (#2960) closed for viewshed/line-of-sight/sun-shadow). This test inserts its
+        // pack 1 closed for viewshed/line-of-sight/sun-shadow). This test inserts its
         // own deterministic target/join points at lat=0 so every pairwise distance is an exact,
         // hand-computable equatorial geodesic (radius * deltaLonRadians on the WGS84 ellipsoid —
         // the equator is a great circle, so this is exact, not an approximation), with wide
@@ -731,9 +731,9 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate")]
     public async Task QueryBufferAggregate_GroupByCategoryWithNumericOutStatistics_ReturnsExactAggregatesPerBand()
     {
-        // Depth pack 2 (honua-server#2982): prior buffer-aggregate coverage only asserted
+        // Depth pack 2: prior buffer-aggregate coverage only asserted
         // featureCount > 0 / row-count ranges (the same "shape, not value" gap class depth
-        // pack 1 (#2960) closed for viewshed/line-of-sight/sun-shadow). Layer 0's 5 seeded
+        // pack 1 closed for viewshed/line-of-sight/sun-shadow). Layer 0's 5 seeded
         // features (tests/seed/server.yaml) split into exactly two geometried "bands" by
         // category: 'test' = {objectid 1, 5} and 'sample' = {objectid 2, 4} (objectid 3 has a
         // NULL geometry and is excluded by every spatial-analytics query). A known numeric

@@ -1444,7 +1444,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task LaneA_Validation_RequiresSecretReference_ForConnectionDraftTest()
     {
-        // honua-server#4880: every connection operation requires a secret reference, including
+        // Every connection operation requires a secret reference, including
         // the read-only draft test, so a plaintext password never enters an operation request.
         var definition = AdminConnectImportOperationCatalog.Definitions.Single(
             item => item.OperationId == "admin.connections.test-draft");
@@ -1479,7 +1479,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task LaneA_ReadOnlyPostOperation_ForReadScopedCaller_UsesCredentialBoundToTheExactRoute()
     {
-        // honua-server#4880: a read-only operation served by a POST route is authorized on its
+        // A read-only operation served by a POST route is authorized on its
         // semantic read class. The loopback call carries that decision with a single-use
         // credential bound to the one method and path, instead of the caller's read-only key.
         var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);

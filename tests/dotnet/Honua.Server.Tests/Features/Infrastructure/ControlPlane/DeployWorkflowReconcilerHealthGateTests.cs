@@ -61,7 +61,7 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
     [Fact]
     public async Task Reconcile_GoldenQueryCorrupt_BlocksAutoPromotionAndDrivesRollback()
     {
-        // Healthy-but-corrupt (#2811): the synthetic health probe is healthy AND the backend recommends
+        // Healthy-but-corrupt: the synthetic health probe is healthy AND the backend recommends
         // promotion (status 200, 5xx/p95 nominal), but the golden-query correctness gate detects a
         // wrong/garbled response body. The corrupt release must NOT be promoted; it must roll back.
         var store = new InMemoryWorkflowOperationStore();
@@ -119,7 +119,7 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
         updated!.Status.Should().NotBe(WorkflowOperationStatus.RollbackRequested);
     }
 
-    // ---- traffic exposure, bounded evidence and controller restart (#4617) ----
+    // ---- traffic exposure, bounded evidence and controller restart ----
 
     private static readonly IReadOnlyDictionary<string, string> HealthOnlyParameters =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -323,7 +323,7 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
         updated!.CurrentPhase.Should().Contain("error envelope");
     }
 
-    // ---- backends that stage the candidate without traffic (#4617) ----------
+    // ---- backends that stage the candidate without traffic ----------
 
     private static readonly IReadOnlyDictionary<string, string> StagedMetricsParameters =
         new Dictionary<string, string>(StringComparer.Ordinal)

@@ -226,7 +226,7 @@ internal static class FeatureCatalogGenerator
         }
 
         // Realtime feature streaming remains opt-in Preview until exact-candidate
-        // transport qualification passes (#3810).
+        // transport qualification passes.
         if (route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase) ||
             route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase))
         {

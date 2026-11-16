@@ -411,7 +411,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     public async Task GetCollection_MapServingCollection_ReturnsDescriptionWhoseMapLinksRender()
     {
-        // #4991: GDAL's OGCAPI driver (QGIS's OGC API - Maps provider) reads the collection
+        // GDAL's OGCAPI driver (QGIS's OGC API - Maps provider) reads the collection
         // resource before it requests /map, so a collection that renders must also describe
         // itself. GDAL takes the map URL only from the http:// relation with a media type; for any
         // other link it keeps whichever comes last, so without it QGIS requested the
@@ -479,7 +479,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     public async Task GetCollection_ProtectedCollection_RefusesAnonymousWith401AndAdmitsEntitledCaller()
     {
-        // #4991: a protected collection answers anonymous callers with 401, on the collection
+        // A protected collection answers anonymous callers with 401, on the collection
         // resource and on its map, instead of the 404 that told clients it did not exist.
         const string entitledRole = "maps-reader";
         const string referer = "https://ogcapi-maps-collection-proof.example/";

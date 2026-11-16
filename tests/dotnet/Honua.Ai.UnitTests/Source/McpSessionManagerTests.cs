@@ -39,7 +39,7 @@ public sealed class McpSessionManagerTests
     [UnitTest]
     public void SupportsElicitation_ReflectsCapabilityRecordedAtCreation()
     {
-        // honua-server#2484: the elicitation capability advertised at initialize is
+        // The elicitation capability advertised at initialize is
         // bound to the session and read back by clarification-emitting tools.
         var manager = new McpSessionManager();
         manager.TryCreateSession("sub:alice", elicitationSupported: true, out var elicit)

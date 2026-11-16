@@ -1226,7 +1226,7 @@ public sealed partial class ExecutionJobReconcilerTests
     [Trait("Tier", "Fast")]
     public async Task ReconcileExecutionJob_TransientRedisTimeoutWhileObserving_LeavesTheRunningJobAlone()
     {
-        // honua-server#6507: a Redis timeout during a sweep used to stamp a healthy, heartbeating
+        // A Redis timeout during a sweep used to stamp a healthy, heartbeating
         // Batch import terminal Failed, so its worker lost the execution lease 30 s in.
         var backend = Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns("aws-batch");

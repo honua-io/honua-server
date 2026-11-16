@@ -325,7 +325,7 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
     public async Task ExtractChanges_BaselineReplicaLargerThanQueryRecordLimit_DeliversEveryFeature()
     {
-        // #4019: a generation-0 extract over more rows than Limits:Query:MaxRecordCount used to be a
+        // A generation-0 extract over more rows than Limits:Query:MaxRecordCount used to be a
         // permanent 400 ("exceeds the configured per-layer ... limit"). Feature payloads are now read in
         // pages of that cap, so the extract carries every row. The expected rows come back from SQL.
         var limitedFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>

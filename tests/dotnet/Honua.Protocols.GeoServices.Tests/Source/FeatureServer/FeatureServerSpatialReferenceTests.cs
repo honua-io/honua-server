@@ -427,7 +427,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_CollinearPolygonOnPolygonLayer_IsRejectedNotStoredAsLine()
     {
-        // #6108: ST_MakeValid collapses a zero-area ring to a LINESTRING. The shared mutation
+        // ST_MakeValid collapses a zero-area ring to a LINESTRING. The shared mutation
         // validator re-checks the post-repair geometry type, so the polygon layer must not
         // receive a line.
         var request = new ApplyEditsRequest

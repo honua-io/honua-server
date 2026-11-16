@@ -197,7 +197,7 @@ public sealed class ExperimentalProviderGateTests
             because: "when Snowflake:Enabled is not set, the fail-closed gate must not trigger");
     }
 
-    // ---- Databricks fail-closed (#2436) ----
+    // ---- Databricks fail-closed ----
 
     [Fact]
     public void Databricks_ExplicitlyEnabledWithoutExperimentalFlag_ThrowsAtStartup()

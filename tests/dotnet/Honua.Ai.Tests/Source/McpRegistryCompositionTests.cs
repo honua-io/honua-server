@@ -245,7 +245,7 @@ public sealed class McpRegistryCompositionTests
         published.Should().NotContain("honua_admin_connections_test_draft",
             "connection draft tests accept connection credentials and are an audited secret-input exclusion");
 
-        // #3813/#3819: publication does not restore default full enumeration — no
+        // Publication does not restore default full enumeration — no
         // published Admin tool joins the bounded default view.
         published.Should().OnlyContain(
             name => Honua.Ai.Protocols.Mcp.Views.McpWorkflowViewCatalog.Default.FindStageIndex(name) < 0);
@@ -366,7 +366,7 @@ public sealed class McpRegistryCompositionTests
     [UnitTest]
     public async Task ProductionOperationsComposition_WithFullCatalogOptIn_PublishesNoSecretLikeInputs()
     {
-        // honua-server#4880: the full-catalog opt-in must not publish a tool whose input schema
+        // The full-catalog opt-in must not publish a tool whose input schema
         // accepts secret material. Secret references (names ending in "Reference") are allowed.
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {

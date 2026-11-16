@@ -305,7 +305,7 @@ public sealed class StudioAuthorizationServiceTests
     [UnitTest]
     public async Task AuthorizeAsync_FlagOn_NonAdminOwnResource_GenerateUsesExecuteOperatorOperation()
     {
-        // honua-server#3023: AI generation is elevated and maps to the Execute operator
+        // AI generation is elevated and maps to the Execute operator
         // operation. A Publish or Rollback grant must not authorize generation -- each
         // elevated operation is independently policy-gated.
         var service = BuildService(enabled: true, out var evaluator);
@@ -483,7 +483,7 @@ public sealed class StudioAuthorizationServiceTests
             StudioAuthorizationOperation.ReadDraft,
             resourceOwnerId: ownerId,
             // Deliberately the caller's OWN tenant: honua-server#4905's tenant boundary would
-            // otherwise answer first, and this case is about the owner key alone (#3429) --
+            // otherwise answer first, and this case is about the owner key alone --
             // an equal subject minted into another tenant must never own the same draft, even
             // when the record itself sits in the caller's tenant.
             resourceTenantId: "tenant-b");

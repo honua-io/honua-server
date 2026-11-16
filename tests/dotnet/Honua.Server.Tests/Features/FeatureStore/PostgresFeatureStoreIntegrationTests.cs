@@ -71,7 +71,7 @@ public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        // #2020: serialize the CASCADE drop on the shared advisory lock (catalog churn).
+        // Serialize the CASCADE drop on the shared advisory lock (catalog churn).
         await _fixture.DropSchemaAsync(_testSchema);
     }
 
@@ -151,7 +151,7 @@ public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
                 srid = EXCLUDED.srid;
             """;
 
-        // #2020: the catalog INSERT mutates the global honua.layers table; route it through the
+        // The catalog INSERT mutates the global honua.layers table; route it through the
         // shared schema-mutation advisory lock (like the DDL above) so it serializes with parallel
         // seeders instead of racing the catalog (40P01).
         await _fixture.ApplyGlobalSeedSqlAsync(insertSql);

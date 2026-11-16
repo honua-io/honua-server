@@ -43,7 +43,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
-        // PA-070/PA-117 (#2418): a capability error is now signalled as HTTP 200 +
+        // PA-070/PA-117: a capability error is now signalled as HTTP 200 +
         // {"error":{...}} (formerly 501/503), so distinguish success from a capability
         // error by the presence of an "error" member, not the HTTP status.
         var isError = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out _);
@@ -126,7 +126,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
-        // PA-070/PA-117 (#2418): a capability error is now HTTP 200 + {"error":{...}}
+        // PA-070/PA-117: a capability error is now HTTP 200 + {"error":{...}}
         // (formerly 501/503); branch on the "error" member, not the HTTP status.
         var isError = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out _);
         if (response.StatusCode == HttpStatusCode.OK && !isError)

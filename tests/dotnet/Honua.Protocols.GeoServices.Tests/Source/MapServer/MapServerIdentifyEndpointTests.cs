@@ -59,7 +59,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         identify.Results!.Length.Should().BeGreaterThan(0);
     }
 
-    // QGIS 3.44.3 and Esri's Identify documentation use unquoted x/y keys (#4520).
+    // QGIS 3.44.3 and Esri's Identify documentation use unquoted x/y keys.
     [IntegrationTheory]
     [InlineData("{x: -122.5, y: 37.5}", false)]
     [InlineData("{x: -122.5, y: 37.5}", true)]
@@ -167,7 +167,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
             $"{geometryType} identify tolerance applies around the geometry boundary");
     }
 
-    // Regression (#1429): the ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
+    // Regression: the ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
     // envelope ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}); it must be accepted, not 400.
     [IntegrationTest]
     [Operation(Operations.Identify)]

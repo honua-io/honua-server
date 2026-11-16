@@ -154,7 +154,7 @@ internal static class EntitlementProbeRegistry
             // AND a `spec` field (an empty object is accepted as "start a new spec" —
             // TryReadSpecDocument 400s on a missing/null spec before the gate runs). Both read
             // the body manually and validate-then-gate, so a body that fails validation
-            // short-circuits before the 402 check. ADR-0076 (#3255) retired
+            // short-circuits before the 402 check. ADR-0076 retired
             // ai.workflow-generation along with every server-side generation route it gated.
             new(FeatureCatalog.AiSpecApplyKey, HttpMethod.Post, "/v1/spec/apply",
                 SpecApplyDocument, AsEventStream),
@@ -167,7 +167,7 @@ internal static class EntitlementProbeRegistry
             new(FeatureCatalog.ScenePointCloudIngestKey, HttpMethod.Post,
                 "/api/v1/admin/scenes/ingest/pointcloud"),
 
-            // Identity: OIDC (#2997) — the provider admin group gates identity.oidc (Pro);
+            // Identity: OIDC — the provider admin group gates identity.oidc (Pro);
             // creating a provider when the store already holds one gates the Enterprise
             // identity.oidc-multi-provider first (the sweep fixture pre-seeds one provider so
             // that branch is reachable in a single request).
@@ -175,7 +175,7 @@ internal static class EntitlementProbeRegistry
             new(FeatureCatalog.OidcMultiProviderKey, HttpMethod.Post, "/api/v1/admin/oidc/providers",
                 """{"name":"sweep-second-provider","providerType":"Generic","authority":"https://idp2.example.com","clientId":"sweep-client-2"}"""),
 
-            // Alerts/Channels (#2998) — rule mutations 402 with one `entitlement: {key}` detail
+            // Alerts/Channels — rule mutations 402 with one `entitlement: {key}` detail
             // per missing alerts.*/channels.* key BEFORE zone/config validation, so a
             // nonexistent zone or unconfigured channel never masks the gate. At an entitled
             // edition the same request proceeds into validation and 400s (zone not found /

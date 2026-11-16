@@ -66,7 +66,7 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
             result.Success.Should().BeTrue();
             result.NeedsReview.Should().BeFalse();
 
-            // #1379: the catalog reconciliation report must be produced and bound to the artifact.
+            // The catalog reconciliation report must be produced and bound to the artifact.
             result.ReconciliationArtifact.Should().NotBeNull();
             var catalog = result.ReconciliationArtifact!.CatalogReconciliation;
             catalog.Should().NotBeNull("the Validating phase must run the catalog reconciler against the published entry");
@@ -238,7 +238,7 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
 
     private async Task CleanupCatalogAsync(string serviceName)
     {
-        // #2020: these DELETEs mutate the literal, process-global honua.* catalog
+        // These DELETEs mutate the literal, process-global honua.* catalog
         // tables (search_path isolation does not scope them), so route them through the
         // shared seed advisory lock to keep parallel [Collection("Database")] tests off
         // the 40P01 deadlock path.

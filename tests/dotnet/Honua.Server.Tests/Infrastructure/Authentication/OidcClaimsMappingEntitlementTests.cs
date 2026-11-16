@@ -447,7 +447,7 @@ public sealed class OidcClaimsMappingEntitlementTests
         // Provenance for anything that PERSISTS these roles. The portal token exchange copies
         // the transformed ClaimTypes.Role values into a durable record and the restore path
         // never re-runs this transformation, so without a marker an expired entitlement kept
-        // being honoured for the token's whole lifetime (honua-server#2997 review).
+        // being honoured for the token's whole lifetime.
         var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Enterprise);
 
         var result = await transformation.TransformAsync(CreateGroupsPrincipal());

@@ -66,7 +66,7 @@ public sealed class SavedMapOperationPayloadValidatorTests
     // Whitespace-only identifiers used to pass the length-only check, take a permanent cursor, and
     // then throw an UNMAPPED ArgumentException out of StudioCompositionBodyEditor at checkpoint
     // time — every later checkpoint 500s while the operation is retained, then fails the
-    // continuity guard once it is pruned (honua-server#2999 review).
+    // continuity guard once it is pruned.
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":" ","styleRef":"roads"}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"\t","styleRef":null}""")]
     [InlineData(SavedMapOperationKind.SetLayerVisibility, """{"layerId":"  ","visible":true}""")]
@@ -83,7 +83,7 @@ public sealed class SavedMapOperationPayloadValidatorTests
     // A whole-document replacement used to pass on shape alone. These three all took a permanent
     // cursor and then wedged every later checkpoint: a layer missing the required 'id' stops
     // deserialization dead in ReadBody, and duplicate ids throw an unmapped ArgumentException out
-    // of the reorder applier's ToDictionary (honua-server#2999 review).
+    // of the reorder applier's ToDictionary.
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels"},{"id":"parcels"}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":" "}]}""")]
@@ -106,7 +106,7 @@ public sealed class SavedMapOperationPayloadValidatorTests
     // Same class of gap on the scalars: double? accepts any magnitude, so {"zoom":25} used to
     // reach the unconditional success path and consume a cursor even though the shared Studio view
     // contract (StudioCompositionViewBounds, which the MCP tool schemas also advertise) caps zoom
-    // at 24 and pitch at 85 (honua-server#2999 review).
+    // at 24 and pitch at 85.
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":25}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":-1}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"pitch":90}""")]

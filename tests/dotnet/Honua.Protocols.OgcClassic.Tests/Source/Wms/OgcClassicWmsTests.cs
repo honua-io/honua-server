@@ -307,7 +307,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
                     North = 20037508.342789244,
                 },
             });
-        // #2020: route the global honua.services UPDATE through the schema-mutation advisory lock.
+        // Route the global honua.services UPDATE through the schema-mutation advisory lock.
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             """
             UPDATE honua.services
@@ -753,7 +753,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_OgcRoute_GetFeatureInfo_WithGmlFormat_CitesSchemaOnSameMountAndVersion()
     {
-        // honua-server#5019: the GML schema location must name the endpoint and WMS version that
+        // The GML schema location must name the endpoint and WMS version that
         // answered the request. With MapServer disabled the OGC mount is the only WMS endpoint, so
         // a schema location pinned to the MapServer mount at 1.1.1 cannot even be dereferenced.
         _fixture.UpdateV2ServiceMetadata(
@@ -1162,7 +1162,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         content.Length.Should().BeGreaterThan(0);
     }
 
-    // honua-server#2945: GetMap proving tests above only assert content-type/length; none
+    // GetMap proving tests above only assert content-type/length; none
     // exercised actual rendered pixel content. This binds a deterministic style to the
     // seeded point layer and asserts a matching pixel appears at the feature's real-world
     // location, plus that the response has the exact requested pixel dimensions.
@@ -1207,7 +1207,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
     // ---- OGC-native service route (/ogc/services/{serviceId}/wms) ----
     //
-    // honua-release#100: `serve.wms` is the capability key behind the OGC-native service
+    // `serve.wms` is the capability key behind the OGC-native service
     // route ONLY — the /rest/services/{id}/MapServer/WMS alias above belongs to the
     // GeoServices MapServer key, so none of the GetMap/GetFeatureInfo depth above counts as
     // proving evidence for `serve.wms`. Before this block the OGC route had GetCapabilities

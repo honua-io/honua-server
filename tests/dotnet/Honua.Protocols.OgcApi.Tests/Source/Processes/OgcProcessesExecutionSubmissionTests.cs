@@ -201,7 +201,7 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WithIdempotencyKeyHeader_ThreadsKeyOntoTheDurableJobRecord()
     {
-        // server#4627: OGC API Processes previously submitted with idempotencyKey: null
+        // OGC API Processes previously submitted with idempotencyKey: null
         // unconditionally, so a supported stable client-side key had no effect. This is a
         // documented, additive Honua extension (OGC API Processes has no native
         // idempotency-key concept) using the same Idempotency-Key header MCP already uses.

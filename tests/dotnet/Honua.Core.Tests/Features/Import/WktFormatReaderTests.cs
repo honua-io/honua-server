@@ -29,7 +29,7 @@ public sealed class WktFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_EwktWithSridPrefix_ParsesFeatureAndHonoursSrid()
     {
-        // #2363: a .wkt file exported with the standard PostGIS "SRID=<n>;" prefix previously
+        // A .wkt file exported with the standard PostGIS "SRID=<n>;" prefix previously
         // yielded zero features because the bare WKTReader cannot parse EWKT.
         var features = await ReadAllAsync("SRID=4326;POINT(-122.4194 37.7749)");
 
@@ -43,7 +43,7 @@ public sealed class WktFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_MultiLineGeometry_ParsesSingleFeature()
     {
-        // #2363: a single geometry pretty-printed across several lines must be accumulated
+        // A single geometry pretty-printed across several lines must be accumulated
         // before parsing rather than parsed (and dropped) line-by-line.
         var features = await ReadAllAsync("""
             POLYGON((
@@ -80,7 +80,7 @@ public sealed class WktFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_UnparseableRecord_IsRecordedInDiagnostics()
     {
-        // #2363: unparseable content must no longer be swallowed silently — the record is skipped
+        // Unparseable content must no longer be swallowed silently — the record is skipped
         // but counted so the import pipeline can surface a warning.
         var diagnostics = new WktGeometryDiagnostics();
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("""

@@ -468,7 +468,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         rollbackResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var rollbackDocument = JsonDocument.Parse(await rollbackResponse.Content.ReadAsStringAsync());
-        // #2811: the GitOps hand-off backend cannot perform a real revert, so a rollback request fails
+        // The GitOps hand-off backend cannot perform a real revert, so a rollback request fails
         // loudly (manual intervention) rather than falsely reporting RollbackRequested — the operator is
         // told to revert the pinned revision out of band instead of being led to believe it rolled back.
         rollbackDocument.RootElement.GetProperty("status").GetString().Should().Be("ManualInterventionRequired");
@@ -690,7 +690,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            // honua-server#4618: a forced manual promotion opens the same post-activation observation
+            // A forced manual promotion opens the same post-activation observation
             // window an automatic promotion does, so the operation stays Reconciling with a Protection
             // record rather than jumping straight to a terminal Succeeded.
             document.RootElement.GetProperty("status").GetString().Should().Be("Reconciling");

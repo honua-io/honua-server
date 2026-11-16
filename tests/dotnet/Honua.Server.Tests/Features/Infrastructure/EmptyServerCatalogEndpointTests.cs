@@ -63,8 +63,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
                 // Emptying only the graph left the registry reading shared state, so a scene
                 // registered elsewhere in a merge-train batch made this "empty" server advertise
                 // one service and the zero-services assertion flaked. Pin an empty scene registry
-                // so the catalog is deterministically empty regardless of edition or batch state
-                // (honua-server#1619).
+                // so the catalog is deterministically empty regardless of edition or batch state.
                 services.RemoveAll<ISceneRegistrationService>();
                 services.AddSingleton<ISceneRegistrationService>(new StubRegistrationService());
             });
@@ -90,7 +89,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/stac");
 
-        // Assert — must be 200, not 500 (honua-server#1619)
+        // Assert — must be 200, not 500
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "a fresh server with no datasets must return a valid empty STAC catalog, not 500");
 
@@ -138,7 +137,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
             "STAC catalog must be returned as JSON");
     }
 
-    // --- ArcGIS site root (#5158) ---
+    // --- ArcGIS site root ---
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
@@ -186,7 +185,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/rest/services");
 
-        // Assert — must be 200, not 500 (honua-server#1619)
+        // Assert — must be 200, not 500
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "a fresh server with no datasets must return a valid empty services directory, not 500");
 
@@ -240,7 +239,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/ogc/features");
 
-        // Assert — must be 200, not 500 (honua-server#1619)
+        // Assert — must be 200, not 500
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "a fresh server with no datasets must return a valid OGC API landing page, not 500");
 
@@ -266,7 +265,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/ogc/features/collections");
 
-        // Assert — must be 200, not 500 (honua-server#1619)
+        // Assert — must be 200, not 500
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "a fresh server with no datasets must return a valid empty collections document, not 500");
 
@@ -299,7 +298,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/odata");
 
-        // Assert — must be the documented 404 OData error, never 500 (honua-server#1619)
+        // Assert — must be the documented 404 OData error, never 500
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
             "a fresh server with no datasets must surface OData's documented not-enabled error, not 500");
 

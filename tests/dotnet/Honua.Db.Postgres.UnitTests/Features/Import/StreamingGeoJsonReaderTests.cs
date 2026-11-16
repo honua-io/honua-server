@@ -247,7 +247,7 @@ public sealed class StreamingGeoJsonReaderTests
     {
         // A bowtie polygon is topologically invalid but structurally well-formed. The validate/
         // preview surface must report it as a NON-fatal, row-level warning (repaired on import by
-        // the shared validity gate) rather than failing the whole file (#2743).
+        // the shared validity gate) rather than failing the whole file.
         const string geoJson = """
             {
               "type": "FeatureCollection",

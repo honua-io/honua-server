@@ -202,7 +202,7 @@ public sealed class McpLocationToolTests
         structured.GetProperty("message").GetString().Should().Contain(entitlementKey);
     }
 
-    // #2981: forward geocoding moved to Community — the demo/adoption showcase path — so the
+    // Forward geocoding moved to Community — the demo/adoption showcase path — so the
     // tool must succeed even when no license/entitlement service reports it active. This is the
     // MCP-side mirror of the HTTP GeocodingEntitlementGateTests forward/reverse assertions;
     // together they prove the HTTP and MCP surfaces agree on the re-tiered keys.

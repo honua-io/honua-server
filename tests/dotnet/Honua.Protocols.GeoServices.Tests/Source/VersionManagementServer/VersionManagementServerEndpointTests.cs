@@ -496,7 +496,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
         // VersionState.Reconciling == 1; honua.gdb_versions is the global versioning catalog and the
         // version_id GUID targets exactly the version created above.
-        // #2020: route the global honua.gdb_versions UPDATE through the schema-mutation advisory lock.
+        // Route the global honua.gdb_versions UPDATE through the schema-mutation advisory lock.
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             $"UPDATE honua.gdb_versions SET state = 1 WHERE version_id = '{guid}'::uuid");
 
@@ -581,7 +581,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     public async Task Reconcile_ByObjectDetection_CleanVersion_CanPost()
     {
         // A clean version reconciles cleanly under either detection mode; this exercises the
-        // conflictDetection=byObject parameter parsing on the reconcile endpoint (#2135).
+        // conflictDetection=byObject parameter parsing on the reconcile endpoint.
         var created = await CreateVersionAsync("admin.reconcile_byobject");
         var guid = created.GetProperty("versionGuid").GetString();
 
@@ -618,7 +618,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     public async Task Reconcile_WithPost_CleanVersion_PostsInline()
     {
         // withPost=true posts the version in the same operation after a clean reconcile; the response
-        // echoes the post outcome (#2135).
+        // echoes the post outcome.
         var created = await CreateVersionAsync("admin.reconcile_withpost");
         var guid = created.GetProperty("versionGuid").GetString();
 
@@ -706,7 +706,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         var created = await CreateVersionAsync("admin.reconcile_async");
         var guid = created.GetProperty("versionGuid").GetString();
 
-        // async=true starts a durable, pollable job and returns 202 with a job handle (#1553).
+        // async=true starts a durable, pollable job and returns 202 with a job handle.
         var response = await PostFormAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer/versions/{guid}/reconcile",
             ("async", "true"), ("f", "json"));
@@ -759,7 +759,7 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
         // VersionState.Reconciling == 1; pin the version into that state via SQL,
         // mirroring the pattern used by StartEditing_VersionMidReconcile_Returns409Locked.
-        // #2020: route the global honua.gdb_versions UPDATE through the schema-mutation advisory lock.
+        // Route the global honua.gdb_versions UPDATE through the schema-mutation advisory lock.
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             $"UPDATE honua.gdb_versions SET state = 1 WHERE version_id = '{guid}'::uuid");
 

@@ -189,7 +189,7 @@ public sealed class GeoServicesRestPaginationTests
         var client = new PagingGeoServicesRestFeatureClient(upstreamMaxRecordCount: 2, totalFeatures: 5);
         var reader = CreateReader(client, out _);
 
-        // #2943: the process-global ActivityListener means a sibling test class that
+        // The process-global ActivityListener means a sibling test class that
         // also matches "Honua.GeoServicesRest" can invoke this listener's ActivityStopped
         // callback concurrently from a different thread. A plain List<Activity> is not
         // thread-safe against a concurrent Add racing this test's own Assert.Single

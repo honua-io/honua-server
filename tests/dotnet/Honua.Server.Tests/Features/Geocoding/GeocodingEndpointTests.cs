@@ -141,7 +141,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         await invalidSingular.AssertGeoServicesErrorAsync(400);
     }
 
-    // Regression (#1428): findAddressCandidates must reproject candidate locations to a
+    // Regression: findAddressCandidates must reproject candidate locations to a
     // requested outSR (e.g. Web Mercator 3857) instead of rejecting it with 400.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -249,7 +249,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.False(attributes.TryGetProperty("Match_addr", out _));
     }
 
-    // Regression (#1442): reverseGeocode must read the INPUT location's own
+    // Regression: reverseGeocode must read the INPUT location's own
     // spatialReference (here Web Mercator 3857) and use outSR only for the OUTPUT
     // geometry. A location in 3857 with outSR=3857 must reproject to the provider SRID
     // for the query and back to 3857 for the response (rather than 404).
@@ -277,7 +277,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.InRange(locationElement.GetProperty("y").GetDouble(), 4706000, 4708000);
     }
 
-    // Regression (#1442): a location expressed in WGS84 (4326, the default input SR)
+    // Regression: a location expressed in WGS84 (4326, the default input SR)
     // with outSR=3857 must reproject the OUTPUT to Web Mercator without 404 and without
     // misinterpreting the input location as being in outSR.
     [IntegrationTest]
@@ -322,7 +322,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
 
         // candidateFields advertises the attributes every candidate emits; categories
         // advertises the address/place families candidates are classified into, now that
-        // category filtering is supported on the shared interface (#1867).
+        // category filtering is supported on the shared interface.
         var candidateFields = payload.RootElement.GetProperty("candidateFields");
         Assert.Equal(JsonValueKind.Array, candidateFields.ValueKind);
         Assert.Contains(
@@ -565,7 +565,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.True(locations[0].TryGetProperty("score", out _));
     }
 
-    // Regression (#1263): the ArcGIS Maps SDK for JavaScript locator.addressesToLocations
+    // Regression: the ArcGIS Maps SDK for JavaScript locator.addressesToLocations
     // (and ArcGIS Pro) serialize a configured output spatial reference as the canonical
     // Esri JSON object, e.g. outSR={"wkid":4326}, not a bare WKID integer. The batch
     // geocodeAddresses op must accept that JSON spatial-reference shape rather than
@@ -603,7 +603,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Equal(1, locations.GetArrayLength());
     }
 
-    // Regression (#1263): findAddressCandidates must likewise accept the Esri JSON
+    // Regression: findAddressCandidates must likewise accept the Esri JSON
     // spatial-reference object for outSR (latestWkid form), reprojecting candidate
     // locations to that WKID rather than rejecting the request with HTTP 400.
     [IntegrationTest]
@@ -1220,7 +1220,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Equal(51.5, fakeProvider.LastSuggestRequest.BiasLocation.Y, precision: 5);
     }
 
-    // #1867: magicKey suggest->candidate round-trip. The handler re-mints each suggestion's
+    // MagicKey suggest->candidate round-trip. The handler re-mints each suggestion's
     // magicKey as a self-issued, signed, opaque token; findAddressCandidates resolves it
     // deterministically. The provider's own magicKeys (fake-suggest-*) are never surfaced.
     [IntegrationTest]
@@ -1315,7 +1315,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Contains("magicKey", body, StringComparison.OrdinalIgnoreCase);
     }
 
-    // #1867: forward category filtering narrows candidates by the provider-supplied address type.
+    // Forward category filtering narrows candidates by the provider-supplied address type.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
@@ -1379,7 +1379,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Contains("Address", values);
     }
 
-    // #2147: SuggestedBatchSize is derived from the ACTIVE provider's MaxBatchSize, not a constant.
+    // SuggestedBatchSize is derived from the ACTIVE provider's MaxBatchSize, not a constant.
     // A provider with a non-default batch size advertises that exact value.
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -1426,7 +1426,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
     }
 
-    // #2147: SuggestedBatchSize differs across providers with differing MaxBatchSize, proving the
+    // SuggestedBatchSize differs across providers with differing MaxBatchSize, proving the
     // metadata is per-provider rather than a hard-coded 100.
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -1463,7 +1463,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
             largePayload.RootElement.GetProperty("locatorProperties").GetProperty("SuggestedBatchSize").GetInt32());
     }
 
-    // #2147: when the active provider does not support batch, SuggestedBatchSize is ABSENT rather
+    // When the active provider does not support batch, SuggestedBatchSize is ABSENT rather
     // than falsely advertised, keeping clients from attempting an unsupported batch call.
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -1489,7 +1489,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.DoesNotContain("BatchGeocode", payload.RootElement.GetProperty("capabilities").GetString()!, StringComparison.Ordinal);
     }
 
-    // #2148: findAddressCandidates accepts location/distance and passes them to the canonical
+    // FindAddressCandidates accepts location/distance and passes them to the canonical
     // forward request so a proximity-aware provider can bias results.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -1511,7 +1511,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Equal(500.0, fakeProvider.LastForwardRequest.BiasDistanceMeters);
     }
 
-    // #2148: a proximity bias re-ranks equally-matching candidates so the nearest is returned first.
+    // A proximity bias re-ranks equally-matching candidates so the nearest is returned first.
     // The fixture's POI candidate (-77.03361, 38.89466) is nearer the bias point than the address
     // candidate (-77.03655, 38.89768), so biasing flips the default ordering deterministically.
     [IntegrationTest]
@@ -1540,7 +1540,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
             biasedPayload.RootElement.GetProperty("candidates")[0].GetProperty("address").GetString());
     }
 
-    // #2148: a provider WITHOUT proximity support ignores the bias gracefully (no error, default
+    // A provider WITHOUT proximity support ignores the bias gracefully (no error, default
     // ordering preserved). The bias still reaches the canonical request; the provider chooses to
     // ignore it because SupportsBiasing is false.
     [IntegrationTest]
@@ -1568,7 +1568,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
             payload.RootElement.GetProperty("candidates")[0].GetProperty("address").GetString());
     }
 
-    // #2148: an invalid bias location is rejected with a clear error.
+    // An invalid bias location is rejected with a clear error.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
@@ -1584,7 +1584,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Contains("location", body, StringComparison.OrdinalIgnoreCase);
     }
 
-    // #2148: an invalid bias distance is rejected with a clear error.
+    // An invalid bias distance is rejected with a clear error.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
@@ -1600,7 +1600,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Contains("distance", body, StringComparison.OrdinalIgnoreCase);
     }
 
-    // #2148: suggest passes a bias distance through alongside the existing bias location.
+    // Suggest passes a bias distance through alongside the existing bias location.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
@@ -1636,7 +1636,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     private static WebApplicationFactory<Program> CreateDefaultFactory(bool grantEnterpriseForBatch = false)
         => CreateFactory(new FakeGeocodeProvider(DefaultCapabilities), grantEnterpriseForBatch);
 
-    // #2981: geocodeAddresses (batch) now requires the Enterprise geocoding.batch entitlement
+    // GeocodeAddresses (batch) now requires the Enterprise geocoding.batch entitlement
     // (GeocodingEntitlementGateTests proves the gate itself in both directions). Every batch test
     // here exercises the handler's own logic downstream of the gate, so it opts in via
     // grantEnterpriseForBatch — forward/reverse/suggest tests leave it off since those stayed
@@ -1670,7 +1670,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
                 services.AddGeocodeProvider(fakeProvider.Name, _ => fakeProvider, ServiceLifetime.Singleton);
                 // The lightweight geocoding test harness does not wire the provider
                 // infrastructure, so register a WGS84<->Web Mercator transform for the
-                // outSR reprojection path (#1428).
+                // outSR reprojection path.
                 services.RemoveAll<ICoordinateTransformService>();
                 services.AddSingleton<ICoordinateTransformService, WebMercatorCoordinateTransformService>();
             });
@@ -1772,7 +1772,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
 
             IReadOnlyList<CoreGeocodeCandidate> ordered = [addressCandidate, poiCandidate];
 
-            // Proximity bias (#2148): when the provider advertises biasing and a bias location is
+            // Proximity bias: when the provider advertises biasing and a bias location is
             // supplied, rank candidates nearest the bias point first. This proves the location/
             // distance bias flows through to the provider and changes ordering for a deterministic
             // fixture. A provider without biasing (SupportsBiasing=false) leaves ordering untouched.

@@ -28,7 +28,7 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
         _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .WithTestLicense(Edition)
-            // #2997: pre-seed one OIDC provider so the identity.oidc-multi-provider probe's
+            // Pre-seed one OIDC provider so the identity.oidc-multi-provider probe's
             // create request exercises the "second provider" branch (the Enterprise gate runs
             // before the Pro identity.oidc gate for creates that would grow the store past one
             // provider, so the 402 names the multi-provider key).

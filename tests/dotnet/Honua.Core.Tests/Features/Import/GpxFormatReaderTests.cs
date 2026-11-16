@@ -67,7 +67,7 @@ public sealed class GpxFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_RouteWithNameAndTwoPoints_ReturnsSingleLineString()
     {
-        // #2354: a <name> preceding the <rtept> points made the reader over-advance and drop the
+        // A <name> preceding the <rtept> points made the reader over-advance and drop the
         // first point; a two-point route then fell below the 2-coordinate minimum and yielded
         // zero features (silent data loss).
         const string gpx = """
@@ -96,7 +96,7 @@ public sealed class GpxFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_TrackWithNameAndSegments_PreservesLineAndIsolatedPoint()
     {
-        // #2354: tracks must collect trkpt points across <trkseg> nesting even when a <name>
+        // Tracks must collect trkpt points across <trkseg> nesting even when a <name>
         // precedes them, and even when trkpt carries child elements (<ele>).
         const string gpx = """
             <?xml version="1.0"?>
@@ -134,7 +134,7 @@ public sealed class GpxFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_MixedWaypointsRoutesTracks_ReturnsAllFeatures()
     {
-        // #2354: a document combining all three GPX geometry kinds must emit one feature each.
+        // A document combining all three GPX geometry kinds must emit one feature each.
         const string gpx = """
             <?xml version="1.0"?>
             <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">

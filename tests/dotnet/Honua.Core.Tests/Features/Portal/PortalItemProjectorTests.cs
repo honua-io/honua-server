@@ -293,7 +293,7 @@ public sealed class PortalItemProjectorTests
     public void ProjectVisibleItems_RegistryMarksConstructUnservable_OmitsItem()
     {
         // The facade serve decision is sourced from the shared capability
-        // registry (#1382). A registry whose feature-service descriptor is not
+        // registry. A registry whose feature-service descriptor is not
         // servable must omit the item even though the protocol→item-type table
         // still recognises FeatureServer — proving the verdict comes from the
         // registry, not the private mapping table.

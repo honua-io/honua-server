@@ -263,7 +263,7 @@ public sealed class GdalRasterDimensionGuardTests
         GdalRasterDimensionGuard.TryAdmit(normal, Options(), out _).Should().BeTrue();
     }
 
-    // --- positive raster-format allowlist (#2784) ------------------------------
+    // --- positive raster-format allowlist ------------------------------
 
     private static byte[] Jp2CodestreamMagic() => [0xFF, 0x4F, 0xFF, 0x51, 0x00, 0x2F, 0x00, 0x00];
 

@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 public sealed class ODataSkipTokenTests : IAsyncLifetime
 {
     // Server page smaller than the seeded feature count so skip-token continuations are
-    // exercised by server-driven paging; a client $top is a total ceiling (#5464).
+    // exercised by server-driven paging; a client $top is a total ceiling.
     private const int MaxPageSize = 5;
 
     private readonly WebAppFixture _fixture = new WebAppFixture()
@@ -120,7 +120,7 @@ public sealed class ODataSkipTokenTests : IAsyncLifetime
     {
         // A bare-integer skiptoken carries no query fingerprint, so accepting it alongside a
         // $filter would let a token minted for one query be reused as a raw offset against a
-        // different one. Require the opaque fingerprinted token when a filter is present (#1989).
+        // different one. Require the opaque fingerprinted token when a filter is present.
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features({TestLayerId})?$filter=ObjectId gt 0&$skiptoken=10");
 

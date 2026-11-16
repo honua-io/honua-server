@@ -113,7 +113,7 @@ public sealed class SceneGrpcMappingTests
     public void FormatMergeStrategy_RoundTripsThroughSharedMosaicResolver()
     {
         // The elevation gRPC adapter now resolves the mosaic rule through the
-        // shared RasterMosaicUtilities (#11) rather than a protocol-local parser.
+        // shared RasterMosaicUtilities rather than a protocol-local parser.
         // FormatMergeStrategy must emit a canonical token that the shared resolver
         // round-trips back to the same strategy.
         foreach (var strategy in new[]

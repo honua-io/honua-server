@@ -350,7 +350,7 @@ public sealed class PostgresDataSourceFactoryTests
     [Operation(Operations.TestInfrastructure)]
     public void Create_ExposedConnectionString_RetainsPasswordForReconnectPaths()
     {
-        // Regression guard for the FileImport-shard SASL failure (honua-server#1628 follow-up):
+        // Regression guard for the FileImport-shard SASL failure:
         // the post-import canonical-snapshot refresh and layer-publish materialize paths call
         // IDatabaseConnectionProvider.GetConnectionString() (which returns
         // NpgsqlDataSource.ConnectionString) and open a *fresh* NpgsqlConnection from it. Npgsql
@@ -392,7 +392,7 @@ public sealed class PostgresDataSourceFactoryTests
     [Operation(Operations.TestInfrastructure)]
     public void Configure_RoleDefaultsMode_EmitsNoSessionSettingsStartupOptions(string multiplexing, bool schemaHeaders)
     {
-        // role-defaults (honua-server#5870): no SET initializer and no options startup
+        // role-defaults: no SET initializer and no options startup
         // parameter in any mode; the database role's defaults apply instead.
         var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
         var limits = new ConnectionLimits { Multiplexing = multiplexing };

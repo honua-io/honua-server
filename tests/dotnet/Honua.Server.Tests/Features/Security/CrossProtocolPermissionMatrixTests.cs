@@ -976,7 +976,7 @@ public sealed class WfsReadVisibilitySeamTests
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task WfsReadSeam_QueryGrant_DoesNotSkipRoleList()
     {
-        // Coarse policy requires a role the principal lacks. A query grant must not skip it (#6358).
+        // Coarse policy requires a role the principal lacks. A query grant must not skip it.
         var context = CreateContext(
             roles: [GrantedRole],
             grant: new PermissionGrant { Service = ServiceName, Layer = "*", Operation = "query" });

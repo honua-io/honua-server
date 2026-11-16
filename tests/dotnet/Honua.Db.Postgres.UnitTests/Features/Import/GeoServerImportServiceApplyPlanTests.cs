@@ -688,7 +688,7 @@ public sealed class GeoServerImportServiceApplyPlanTests
             });
         }
 
-        // Slice 3 (#1015): apply-plan tests do not exercise style persistence
+        // Slice 3: apply-plan tests do not exercise style persistence
         // directly; record-and-noop so the interface remains satisfied.
         public Task<MigrationCatalogWriteOutcome> EnsureStyleAsync(
             string connectionString,

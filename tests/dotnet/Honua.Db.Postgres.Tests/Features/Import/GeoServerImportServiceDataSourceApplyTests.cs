@@ -279,7 +279,7 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             {
                 try
                 {
-                    // #2020: honua_data.* is a process-global schema (not search_path
+                    // Honua_data.* is a process-global schema (not search_path
                     // isolated), so route this DROP through the shared seed advisory lock to
                     // keep parallel [Collection("Database")] tests off the 40P01 deadlock path.
                     // The table name is interpolated (not a bind parameter), so use the plain
@@ -767,7 +767,7 @@ public sealed class GeoServerImportServiceDataSourceApplyTests
             });
         }
 
-        // Slice 3 (#1015): the data-source apply tests do not exercise styles,
+        // Slice 3: the data-source apply tests do not exercise styles,
         // but the interface now requires EnsureStyleAsync. Record-and-noop so
         // slice 2 fixtures with style entries do not throw.
         public Task<MigrationCatalogWriteOutcome> EnsureStyleAsync(

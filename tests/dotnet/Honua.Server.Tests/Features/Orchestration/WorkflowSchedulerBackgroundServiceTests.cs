@@ -610,8 +610,8 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
             Name = "scheduled",
             // Every workflow published through WorkflowPackageService carries this. A cron
             // firing has no requesting principal, so it is the only identity available both to
-            // pin the run's row/field security snapshot (#3068) and to authorize the run's
-            // layer/mutating targets (#3046); a definition without one is refused rather than
+            // pin the run's row/field security snapshot and to authorize the run's
+            // layer/mutating targets; a definition without one is refused rather than
             // falling back to the admin-carrying orchestrator.
             AuthorSecurityContext = new JobSecurityContext(
                 "workflow-author",

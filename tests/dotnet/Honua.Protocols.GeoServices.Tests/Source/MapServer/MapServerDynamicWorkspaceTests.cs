@@ -132,7 +132,7 @@ public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDyna
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
     public async Task DynamicLayer_WithQueryTableDataSource_ReturnsBadRequest()
     {
-        // queryTable (raw SQL query table) remains deferred (#1866) and must be rejected.
+        // queryTable (raw SQL query table) remains deferred and must be rejected.
         using var client = _hosts.Allowlisted.CreateClient();
 
         // A queryTable carries a raw SQL string; it is rejected either by the request-level

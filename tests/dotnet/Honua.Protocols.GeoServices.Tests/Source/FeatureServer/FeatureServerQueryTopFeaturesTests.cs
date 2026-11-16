@@ -91,7 +91,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     public async Task QueryTopFeatures_WithPbf_ReturnsProtobuf()
     {
-        // Regression (#1824): queryTopFeatures rejected f=pbf ("Supported formats: json,
+        // Regression: queryTopFeatures rejected f=pbf ("Supported formats: json,
         // pjson"). ArcGIS supports pbf here, so it must return application/x-protobuf.
         var topFilter = JsonSerializer.Serialize(new
         {
@@ -165,7 +165,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
         // A restrictive allowlist returned 400 ("Unknown query parameter:
         // returnIdsOnly"), making the operation unusable from the real Esri client.
         // It must honor returnIdsOnly: return the objectId-set form
-        // ({ objectIdFieldName, objectIds }) and no FeatureSet (#1906).
+        // ({ objectIdFieldName, objectIds }) and no FeatureSet.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -199,7 +199,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     public async Task QueryTopFeatures_WithReturnGeometryFalse_OmitsGeometry()
     {
         // returnGeometry=false is a standard query flag the Esri clients pass; it must
-        // be accepted (not 400) and must omit geometry from each feature (#1906).
+        // be accepted (not 400) and must omit geometry from each feature.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -230,7 +230,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     public async Task QueryTopFeatures_WithOutSr_ReturnsRequestedSpatialReference()
     {
         // outSR is a standard query param; it must be accepted (not 400) and the
-        // response spatialReference must reflect the requested WKID (#1906).
+        // response spatialReference must reflect the requested WKID.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -258,7 +258,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     public async Task QueryTopFeatures_WithPaging_AcceptsResultOffsetAndRecordCount()
     {
         // resultOffset/resultRecordCount are standard paging params; they must be
-        // accepted (not 400) and bound the returned page (#1906).
+        // accepted (not 400) and bound the returned page.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -287,7 +287,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     public async Task QueryTopFeatures_UnknownParameter_ReturnsBadRequest()
     {
         // Genuinely-unknown params must still be rejected with 400; only the standard
-        // query family was added to the allowlist (#1906).
+        // query family was added to the allowlist.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",

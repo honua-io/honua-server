@@ -52,7 +52,7 @@ public sealed class DeployWorkflowReconcilerPostActivationObservationTests
     [Fact]
     public void BeginPostActivationObservation_StampsExposureAtCutover_AndNeverMovesAnExistingStamp()
     {
-        // A backend that stages the candidate without traffic is first exposed by the cutover itself (#4617).
+        // A backend that stages the candidate without traffic is first exposed by the cutover itself.
         var promoted = CreateOperation(WorkflowOperationStatus.Succeeded);
         var beforeCutover = DateTimeOffset.UtcNow;
 
@@ -192,7 +192,7 @@ public sealed class DeployWorkflowReconcilerPostActivationObservationTests
         DeployProtectionPhase retainedPhase,
         string? retainedReasonCode)
     {
-        // honua-server#4989: a post-cutover rollback returns RollbackRequested first, and a later cycle
+        // A post-cutover rollback returns RollbackRequested first, and a later cycle
         // observes the settled RolledBack. The out-of-band path can also settle before its recovering
         // stamp lands, leaving the window still observing. Every settle to RolledBack clears the window.
         var store = new InMemoryWorkflowOperationStore();

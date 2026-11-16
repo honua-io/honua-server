@@ -278,7 +278,7 @@ public sealed class GeoservicesInventoryBaselineTests
         var named = resource.Fields.Single(f => f.Name == "ZONING");
         named.DomainType.Should().Be("codedValue");
 
-        // #4600: an over-cap coded-value domain is not persisted, so the classifier must not report the
+        // An over-cap coded-value domain is not persisted, so the classifier must not report the
         // domains construct as automated for this resource.
         artifact.FidelityClassifications.Should().ContainSingle(record =>
                 record.SourceId == resource.Id && record.Category == "domains")

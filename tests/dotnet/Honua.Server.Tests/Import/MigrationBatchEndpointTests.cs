@@ -339,7 +339,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         children[0].GetProperty("publishedLayerId").GetInt32().Should().Be(42);
         children[1].GetProperty("dependsOn")[0].GetString().Should().Be("resource:x:layer:0");
 
-        // #4600: the service-level verdict and its differences, and each child's verdict, are on the wire.
+        // The service-level verdict and its differences, and each child's verdict, are on the wire.
         doc.RootElement.GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
         var difference = doc.RootElement.GetProperty("fidelityDifferences").EnumerateArray().Should().ContainSingle().Subject;
         difference.GetProperty("code").GetString().Should().Be("fidelity.service.layer-unverified");

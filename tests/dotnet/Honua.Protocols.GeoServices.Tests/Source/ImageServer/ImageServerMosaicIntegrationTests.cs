@@ -94,7 +94,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-            // #6561: newest names the raster that supplied the pixel. overlap-newest (value 5)
+            // Newest names the raster that supplied the pixel. overlap-newest (value 5)
             // wins the contested sample; the other overlapping rasters stay in the catalog.
             var catalogFeatures = json.RootElement.GetProperty("catalogItems").GetProperty("features");
             catalogFeatures.GetArrayLength().Should().Be(2);
@@ -125,7 +125,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
         });
     }
 
-    // #4064: (1.5, 1) lies inside both "west" (constant 20) and "overlap-newest" (constant 5). The
+    // (1.5, 1) lies inside both "west" (constant 20) and "overlap-newest" (constant 5). The
     // unlocked mosaic returns the newest raster's 5; locking "west" must return west's own pixel
     // and objectId, exactly as exportImage honours lockRasterIds.
     [IntegrationTest]
@@ -151,7 +151,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
             using (var unlocked = await IdentifyJsonAsync(fixture, "geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326"))
             {
                 unlocked.RootElement.GetProperty("value").GetString().Should().Be("5");
-                // #6561: the default newest mosaic names the one raster that supplied the pixel.
+                // The default newest mosaic names the one raster that supplied the pixel.
                 unlocked.RootElement.GetProperty("objectId").GetInt64().Should().Be(overlapId);
                 unlocked.RootElement.GetProperty("name").GetString().Should().Be("overlap-newest");
             }
@@ -178,7 +178,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
         });
     }
 
-    // #4064: identify resolves the contested pixel at (1.5, 1) with the same ordering exportImage
+    // Identify resolves the contested pixel at (1.5, 1) with the same ordering exportImage
     // renders. "west" (constant 20, x in [0, 2], inserted first so it has the lower OBJECTID) and
     // "overlap-newest" (constant 5, x in [1, 3]) both cover the point with equal YMax.
     [IntegrationTest]
@@ -216,7 +216,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
         });
     }
 
-    // #4064: a real 4-band PostGIS raster with constant bands 17, 22.5, 39, 45 over lon/lat [0, 2].
+    // A real 4-band PostGIS raster with constant bands 17, 22.5, 39, 45 over lon/lat [0, 2].
     // Identifying the Web Mercator point for (0.5°, 1.5°) must return the Esri "v1, v2, v3, v4"
     // value and label the location with the request's spatial reference (3857), not a bare x/y.
     [IntegrationTest]
@@ -353,7 +353,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
     {
         await RunWithSeededMosaicAsync(async fixture =>
         {
-            // The first request backfills the persisted layer-level statistics snapshot (#1639).
+            // The first request backfills the persisted layer-level statistics snapshot.
             var first = await fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestLayerId}/ImageServer?f=json");
             first.StatusCode.Should().Be(HttpStatusCode.OK);
             using (var json = JsonDocument.Parse(await first.Content.ReadAsStringAsync()))
@@ -365,7 +365,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
             // Tamper with the persisted snapshot. The next request must serve the tampered
             // value verbatim, proving service metadata is read from persisted statistics and
             // never recomputed from the raster pixels per request.
-            // #2020: honua.raster_layer_statistics is a literal, process-global catalog table
+            // Honua.raster_layer_statistics is a literal, process-global catalog table
             // (not search_path isolated). RunWithSeededMosaicAsync already holds the shared seed
             // advisory lock, which keeps parallel [Collection("Database")] tests off the 40P01
             // deadlock path; taking it again on a second connection would block until the command
@@ -419,7 +419,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
         {
             // honua.raster_data is process-global. Hold the seed advisory lock across the
             // three-request comparison so another collection cannot replace the raster rows
-            // after GET and before POST (#3593).
+            // after GET and before POST.
             await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
             {
                 // bbox=1,0,3,2 straddles the overlap-newest raster (value 5, Feb 1). At time
@@ -479,7 +479,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
     [Operation(Operations.Export)]
     public async Task ExportImage_WithBboxBeyondRasterFootprint_CoversRequestedBboxWithNoDataOutsideData()
     {
-        // #4060: Esri clients paint the exported pixels across the requested bbox. The seeded rasters
+        // Esri clients paint the exported pixels across the requested bbox. The seeded rasters
         // cover x[0,4] y[0,2] (west 20, overlap-newest 5, east 40); bbox [-4,-2,4,2] at 80x40 is
         // 0.1-degree pixels, so the data is 40x20 = 800 pixels in the upper-right quarter and every
         // other pixel must be NoData. Before the fix the 80x40 image was the data alone, stretched.
@@ -553,7 +553,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
     [Operation(Operations.Identify)]
     public async Task Identify_WithEsriEpochMillisecondTime_SelectsSameSliceAsIsoInstant()
     {
-        // #4061: time-aware Esri clients send epoch milliseconds, the form timeInfo.timeExtent
+        // Time-aware Esri clients send epoch milliseconds, the form timeInfo.timeExtent
         // advertises. 2024-01-20 selects the newest batch at or before it, east (Jan 15), which is
         // the only raster at x=2.5 in that batch (value 40).
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro);
@@ -578,7 +578,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
     [Operation(Operations.Identify, Operations.ErrorHandling)]
     public async Task Identify_WithEsriTimeExtent_SelectsNewestBatchInsideWindow()
     {
-        // #4061: time=<start>,<end> (epoch ms, either bound may be null) selects the newest batch
+        // Time=<start>,<end> (epoch ms, either bound may be null) selects the newest batch
         // inside the window. Batches: west Jan 1 (20, x[0,2]), east Jan 15 (40, x[2,4]),
         // overlap-newest Feb 1 (5, x[1,3]).
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro);
@@ -648,7 +648,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
     [Operation(Operations.Export, Operations.Identify)]
     public async Task ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected()
     {
-        // #4061: before the fix every ImageServer operation answered 400 to time=<start>,<end>.
+        // Before the fix every ImageServer operation answered 400 to time=<start>,<end>.
         // The Jan 10 - Jan 20 window selects only east (constant 40).
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro);
         try
@@ -678,7 +678,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
         }
     }
 
-    // #4792: a layer that mixes native resolutions made every union-backed ImageServer operation
+    // A layer that mixes native resolutions made every union-backed ImageServer operation
     // answer 500 (PostGIS rt_raster_from_two_rasters alignment error), starting with the service
     // root. Fixture: "coarse" is 2x2 at 1.0 over x[0,2] y[0,2] = 20 (older); "fine" is 2x2 at 0.5
     // over x[1,2] y[1,2] = 5 (newer). Aligned onto the finest grid, the newest-wins mosaic is 16

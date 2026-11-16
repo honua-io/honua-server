@@ -199,7 +199,7 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     {
         var schemaName = CreateIsolatedIdentifier(testClassName);
 
-        // honua-server#1568 residual (#2028 follow-up): CREATE SCHEMA writes pg_namespace and
+        // honua-server#1568 residual: CREATE SCHEMA writes pg_namespace and
         // churns the shared pg_catalog (pg_class/pg_depend) exactly like the already-serialized
         // DROP SCHEMA ... CASCADE teardown. #2020/#2028 routed schema *drop* and the post-create
         // migration/seed through the advisory lock but left schema *creation* a non-participant,

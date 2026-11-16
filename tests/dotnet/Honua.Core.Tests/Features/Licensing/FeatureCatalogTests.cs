@@ -163,7 +163,7 @@ public sealed class FeatureCatalogTests
         feature.Category.Should().Be(FeatureCatalog.Categories.FieldOps);
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
 
-        // #5022: replica delivery produces Esri JSON only (createReplica rejects every
+        // Replica delivery produces Esri JSON only (createReplica rejects every
         // other dataFormat), so the description must not advertise a GeoPackage container.
         feature.Description.Should().Contain("Esri JSON");
         feature.Description.Should().NotContain("GeoPackage");

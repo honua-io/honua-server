@@ -32,7 +32,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     private static readonly long[] AllGeometryBearingIds = [1, 2, 4, 5];
 
     // -122.6,37.4,-122.0,37.9 keeps 1 and 5 and drops 2 (x < -122.6) and
-    // 4 (x > -122.0), so a bbox that is parsed and then ignored fails (#4393).
+    // 4 (x > -122.0), so a bbox that is parsed and then ignored fails.
     private const string ExcludingBbox = "-122.6,37.4,-122.0,37.9";
     private static readonly long[] ExcludingBboxIds = [1, 5];
     private static readonly long[] ExcludedByBboxIds = [2, 4];
@@ -499,7 +499,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
         // The proof: a bbox that excludes geometry-bearing features by position. The
         // previous worldwide-only assertion passed on a bbox that was parsed and then
-        // discarded (#4393).
+        // discarded.
         using var restricted = await GetItemsAsync($"bbox={ExcludingBbox}");
         var ids = FeatureIds(restricted.RootElement);
         ids.Should().Equal(ExcludingBboxIds);
@@ -541,14 +541,14 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         // Arrange - 3D bbox (minx, miny, minz, maxx, maxy, maxz). A 6-element bbox is
         // spec-legal per OGC API Features Part 1; this 2D feature surface ignores the
         // vertical (minZ/maxZ) component and filters on the horizontal extent instead of
-        // rejecting the request, so 3D-aware OGC/ArcGIS clients are not refused (#1987).
+        // rejecting the request, so 3D-aware OGC/ArcGIS clients are not refused.
         using var worldwide = await GetItemsAsync("bbox=-180,-90,-10,180,90,10");
         worldwide.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
         FeatureIds(worldwide.RootElement).Should().Equal(AllGeometryBearingIds);
 
         // "uses the horizontal extent" is now asserted rather than asserted-by-name:
         // the same horizontal envelope that excludes 2 and 4 in 2D must exclude them
-        // in 6-element form, while the vertical component is ignored (#4393).
+        // in 6-element form, while the vertical component is ignored.
         var parts = ExcludingBbox.Split(',');
         using var restricted = await GetItemsAsync(
             $"bbox={parts[0]},{parts[1]},-10,{parts[2]},{parts[3]},10");
@@ -607,7 +607,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         // Narrow the eastern bound to -122.4 so the wrapped envelope becomes
         // x >= 170 OR x <= -122.4: that keeps 1 (-122.5) and 2 (-122.7) and drops
         // 5 (-122.3) and 4 (-121.9). NotBeEmpty alone did not prove the bound was
-        // applied at all (#4393).
+        // applied at all.
         using var narrow = await GetItemsAsync("bbox=170,-90,-122.4,90");
         FeatureIds(narrow.RootElement).Should().Equal(1L, 2L);
     }

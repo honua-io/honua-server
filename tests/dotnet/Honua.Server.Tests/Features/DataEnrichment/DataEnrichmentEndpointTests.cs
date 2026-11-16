@@ -21,7 +21,7 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
 {
     private const string DatasetKey = "test-boundaries";
 
-    // Containment fixture object ids (honua-server#3069), outside the seeded ranges.
+    // Containment fixture object ids, outside the seeded ranges.
     private const int PointInsideObjectId = 7701;
     private const int PointOutsideObjectId = 7702;
     private const int PolygonContainerObjectId = 7703;
@@ -128,7 +128,7 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/enrich")]
     public async Task Enrich_PointInPolygonMethod_MatchesOnlySourcePointsInsideTheDatasetPolygon()
     {
-        // honua-server#3069: this assertion used to be "HTTP 200 and type ==
+        // This assertion used to be "HTTP 200 and type ==
         // FeatureCollection", which passed while the SQL path evaluated
         // ST_Contains(sourcePoint, datasetPolygon) — always false — so synchronous
         // point-in-polygon silently returned zero matches for every caller. The
@@ -171,7 +171,7 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/enrich")]
     public async Task Enrich_WithinMethod_MatchesDatasetFeaturesInsideTheSourcePolygon()
     {
-        // The inverse containment direction (honua-server#3069): `within` is
+        // The inverse containment direction: `within` is
         // dataset-subject too, so it matches dataset features that sit inside the
         // caller's source geometry. Asserting both directions with the same fixture
         // proves the operands are not simply symmetric.

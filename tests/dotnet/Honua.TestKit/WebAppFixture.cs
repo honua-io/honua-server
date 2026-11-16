@@ -147,7 +147,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         var postgres = _postgres ?? throw new InvalidOperationException("Postgres fixture is not initialized.");
 
         // Create and seed the fixture schema before the host is built so the host can
-        // configure it as an operational schema (#5391). Seeding touches only the database.
+        // configure it as an operational schema. Seeding touches only the database.
         if (_schemaOwner is not null)
         {
             _currentSchema = _schemaOwner.CurrentSchema

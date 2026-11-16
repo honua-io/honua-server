@@ -47,7 +47,7 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=0")]
     public async Task Top_Zero_ReturnsEmptyPage()
     {
-        // OData v4 conformance (#1989): $top=0 is a deliberately empty page and
+        // OData v4 conformance: $top=0 is a deliberately empty page and
         // returns 200 with an empty value array, not a 400. Negative $top is
         // still rejected.
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=0");
@@ -330,7 +330,7 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     // OData 4.01 Part 1 §11.2.6.3: $top=n limits the requested collection to at most n
     // items, and §11.2.6.7 next links only retrieve partial sets of that collection. A
     // $top smaller than the server page is therefore satisfied in one response with no
-    // @odata.nextLink (#5464). Server-driven paging below OData:MaxPageSize is covered by
+    // @odata.nextLink. Server-driven paging below OData:MaxPageSize is covered by
     // ODataServerPagingEndpointTests, which pins a small page size.
     [IntegrationTest]
     [Operation(Operations.Pagination)]
@@ -485,7 +485,7 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=0&$count=true")]
     public async Task TopZero_WithCount_ReturnsEmptyPageAndTrueCount()
     {
-        // OData v4 conformance (#1989): $top=0 with $count=true returns 200 with an
+        // OData v4 conformance: $top=0 with $count=true returns 200 with an
         // empty value array while @odata.count still reports the true total,
         // independent of the empty data page.
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=0&$count=true");

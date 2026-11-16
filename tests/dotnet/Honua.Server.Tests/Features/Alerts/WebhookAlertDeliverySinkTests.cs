@@ -241,7 +241,7 @@ public sealed class WebhookAlertDeliverySinkTests
             Dispatch = new AlertDispatchOptions
             {
                 // IP literal keeps the outbound SSRF guard off live DNS; see
-                // AlertTestFixtures.RoutableWebhookBaseUrl (#3056).
+                // AlertTestFixtures.RoutableWebhookBaseUrl.
                 DefaultWebhookUrl = AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook",
                 DefaultWebhookSecret = "signing-secret"
             }

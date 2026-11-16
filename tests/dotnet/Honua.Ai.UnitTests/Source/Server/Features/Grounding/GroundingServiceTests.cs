@@ -1189,7 +1189,7 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_SingleDominantDataset_AutoResolvesBindingWithoutClarification()
     {
-        // #1949: a cold LLM caller asking for an obvious single-candidate
+        // A cold LLM caller asking for an obvious single-candidate
         // match must NOT receive a clarification — the dominant catalog
         // candidate is auto-bound and recorded as an inspectable assumption.
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);

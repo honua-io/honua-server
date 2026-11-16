@@ -141,7 +141,7 @@ public class ImageServerCatalogQueryHandlerTests
         // Esri keeps MinPS at 0 and MaxPS at native cell * the default range factor (10).
         // Publishing MinPS = MaxPS = the cell makes the item visible at exactly one resolution.
         // Client Compat Coverage is ~0.0023 degrees; the Pro drive at 1:339,824 is ~0.001
-        // degrees per pixel, which is outside that point and draws nothing (#6563).
+        // degrees per pixel, which is outside that point and draws nothing.
         const double pixelX = 0.00234375;
         const double pixelY = 0.0021875;
         const double displayCellAtReportedScale = 0.001;
@@ -177,7 +177,7 @@ public class ImageServerCatalogQueryHandlerTests
     [Operation(Operations.Query)]
     public async Task QueryCatalogAsync_WithFieldMask_DropsMaskedAttributesAndFields()
     {
-        // RBAC field-level masking on the ImageServer read path (#2159): masked
+        // RBAC field-level masking on the ImageServer read path: masked
         // attributes must be absent from both the feature attributes AND the field
         // schema, even though no outFields restriction was requested (fail-secure,
         // matching the FeatureServer masking semantics from #2108).
@@ -205,7 +205,7 @@ public class ImageServerCatalogQueryHandlerTests
     [Operation(Operations.Query)]
     public async Task QueryCatalogAsync_WithFieldMask_DropsMaskedFieldEvenWhenExplicitlyRequested()
     {
-        // Fail-secure: a masked field requested via outFields is still dropped (#2159).
+        // Fail-secure: a masked field requested via outFields is still dropped.
         SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
         var handler = BuildHandlerWithMaskedFields("PixelType");
 
@@ -1013,7 +1013,7 @@ public class ImageServerCatalogQueryHandlerTests
     {
         // An explicit (non-envelope) geometry with the default intersects relationship must be
         // translated into an exact provider-side predicate: the neutral query carries the WKB
-        // geometry and an Intersects relation, not merely the envelope box (#2839).
+        // geometry and an Intersects relation, not merely the envelope box.
         SetupLayerWithRasters([
             CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: -1, yMax: 5),
             CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5),

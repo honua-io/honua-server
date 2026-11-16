@@ -153,7 +153,7 @@ public class GeoServicesSqlParserTests
     public void Parse_TimestampLiteralWithoutOffset_AcceptedAsUtc()
     {
         // The canonical SQL-92 TIMESTAMP literal the ArcGIS SDK emits carries no
-        // timezone offset; real ArcGIS accepts it (honua-server#1825). The parser
+        // timezone offset; real ArcGIS accepts it. The parser
         // must treat it as naive/UTC instead of rejecting it as ambiguous.
         var expression = _parser.Parse("event_date > TIMESTAMP '2024-06-01 12:30:00'");
 
@@ -425,7 +425,7 @@ public class GeoServicesSqlParserTests
     }
 
     // ------------------------------------------------------------------
-    // #1865 — extended grammar: LIKE ESCAPE, extra EXTRACT fields, CASE.
+    // Extended grammar: LIKE ESCAPE, extra EXTRACT fields, CASE.
     // ------------------------------------------------------------------
 
     [Trait("Tier", "Fast")]

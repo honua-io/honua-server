@@ -209,7 +209,7 @@ public sealed class HonuaLayerSinkExecutorTests
     [UnitTest]
     public async Task HonuaLayerSink_SpilledStreamReferenceInput_IsAcceptedLikeInlineInput()
     {
-        // server#4628: HonuaLayerSinkExecutor previously accepted only the inline
+        // HonuaLayerSinkExecutor previously accepted only the inline
         // data:application/geo+json;base64 URI, so a workflow's transform-to-sink success
         // depended on whether the transform's output happened to cross
         // FeatureStreamPublisher's inline threshold. A honua-feature-stream:v1 reference
@@ -273,7 +273,7 @@ public sealed class HonuaLayerSinkExecutorTests
     }
 
     // -------------------------------------------------------------------------
-    // #4625: destination authorization. sink.honua-layer accepted arbitrary
+    // Destination authorization. sink.honua-layer accepted arbitrary
     // caller-supplied schema/table text with no target-specific authorization —
     // generic Process.Execute permission says nothing about a specific destination.
     // -------------------------------------------------------------------------
@@ -282,7 +282,7 @@ public sealed class HonuaLayerSinkExecutorTests
     public async Task HonuaLayerSink_NoSubmitterSecurityContext_FailsClosed()
     {
         // No JobSecurityScope.Begin at all: mirrors source.honua-layer's fail-closed
-        // contract (honua-server#3068) — a job that cannot be constrained to a submitter
+        // contract — a job that cannot be constrained to a submitter
         // must be refused rather than writing under an unconstrained identity.
         var sink = new CapturingLayerSink();
         var executor = new HonuaLayerSinkExecutor(

@@ -56,7 +56,7 @@ public sealed class GeoServicesDocumentationTruthTests
     [ArchitectureTest]
     public void ProtocolReference_DescribesNaServerSolversAndGpContextContract()
     {
-        // #4037: the protocol reference must describe every served NAServer solver with the
+        // The protocol reference must describe every served NAServer solver with the
         // HTTP methods actually registered, and keep the VersionManagementServer
         // 404-by-default caveat. Route and ServiceArea have GET routes; if another solver
         // gains one, this fails so the docs are updated with it. #4030/#4034: the GP guide and
@@ -105,7 +105,7 @@ public sealed class GeoServicesDocumentationTruthTests
     [ArchitectureTest]
     public void ParityData_LayerApplyEditsControls_MatchTheServedContract()
     {
-        // #4105: the parity data once called every Esri applyEdits control "ignored" while the server
+        // The parity data once called every Esri applyEdits control "ignored" while the server
         // answered 400 for them. Each control's disposition is pinned here and proven on the wire by
         // FeatureServerEndpointTests: ApplyEdits_NoOpEsriClientControl_IsAcceptedAndEditApplies (ignored),
         // ApplyEdits_UnsupportedEsriControl_IsRejectedInsteadOfDropped (rejected), and

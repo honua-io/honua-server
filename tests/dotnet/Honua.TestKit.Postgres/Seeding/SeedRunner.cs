@@ -43,7 +43,7 @@ internal static class SeedRunner
 
     internal const long SeedApplicationLockKey = 7_893_641_160_553_452_791;
 
-    // honua-server#1359: the serially-seeded Database collections pay a per-test seed
+    // The serially-seeded Database collections pay a per-test seed
     // cost. Re-reading and re-parsing the seed YAML from disk on every isolated-schema
     // creation is pure, deterministic work whose result (an init-only SeedDefinition) is
     // immutable once loaded, so memoize it keyed by absolute path + last-write time.

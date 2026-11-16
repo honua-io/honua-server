@@ -5,7 +5,7 @@ using Honua.Server.Tests.Infrastructure;
 
 namespace Honua.Server.Tests;
 
-// Parallelism note (#1359):
+// Parallelism note:
 //
 // xUnit parallelizes ACROSS collections, never within a single collection. The
 // historical single [Collection("Database")] therefore forced every database-backed

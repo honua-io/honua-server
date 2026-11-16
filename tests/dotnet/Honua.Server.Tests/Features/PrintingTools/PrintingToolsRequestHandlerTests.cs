@@ -122,7 +122,7 @@ public class PrintingToolsRequestHandlerTests
         // Async print authorizes each layer against the principal restored from the job snapshot.
         // With the default OIDC role claim type ("roles") the restored scoped key used to read as
         // an ungoverned authenticated principal, so an auth-only, role-less layer outside its
-        // grant was rendered anyway (honua-server#6101).
+        // grant was rendered anyway.
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },

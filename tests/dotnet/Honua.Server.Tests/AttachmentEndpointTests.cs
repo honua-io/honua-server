@@ -36,7 +36,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     {
         await _fixture.InitializeAsync();
         // The default test graph declares no edit capabilities. applyEdits treats that as
-        // Query-only, and attachment writes now use the same resolver (#6135).
+        // Query-only, and attachment writes now use the same resolver.
         _fixture.EnableV2ServiceEditingCapabilities(
             TestServiceId,
             ["Query", "Create", "Update", "Delete"]);
@@ -228,7 +228,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         seededGroup.AttachmentInfos.Should().NotBeEmpty();
         seededGroup.AttachmentInfos.Should().OnlyContain(attachment => !string.IsNullOrWhiteSpace(attachment.Url));
 
-        // #4404: a non-blank URL was never dereferenced, so a wrong or unroutable URL passed.
+        // A non-blank URL was never dereferenced, so a wrong or unroutable URL passed.
         // Fetch the advertised URL for the seeded text attachment and compare the bytes.
         var textAttachment = seededGroup.AttachmentInfos.Single(attachment => attachment.Name == "test1.txt");
         var urlResponse = await _fixture.Client.GetAsync(ResolveAdvertisedUrl(textAttachment.Url!));
@@ -293,7 +293,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result!.AddAttachmentResult.Success.Should().BeTrue();
         result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
 
-        // #4404: a successful insert over a missing or garbled blob used to pass here.
+        // A successful insert over a missing or garbled blob used to pass here.
         // Read the bytes back through the public download route.
         var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
         downloaded.Should().Equal(fileContent);
@@ -411,7 +411,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result!.AddAttachmentResult.Success.Should().BeTrue();
         result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
 
-        // #4404: a successful insert over a missing or garbled blob used to pass here.
+        // A successful insert over a missing or garbled blob used to pass here.
         // Read the bytes back through the public download route.
         var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
         downloaded.Should().Equal(fileContent);
@@ -445,7 +445,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task AddAttachment_TextMimeTypeWithDefaultAllowList_IsStoredAndDownloadable(
         string contentType, string fileName, string text)
     {
-        // #5017: the default allow-list was image/*,application/pdf, so text notes, CSV tallies and
+        // The default allow-list was image/*,application/pdf, so text notes, CSV tallies and
         // JSON payloads were refused with "File type '...' is not allowed".
         var payload = Encoding.UTF8.GetBytes(text);
         var attachmentId = await AddAttachmentAsync(payload, fileName, contentType);
@@ -502,7 +502,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
             requestContent);
 
-        // #4404: 500 was previously accepted here, so an unhandled crash passed a media-type
+        // 500 was previously accepted here, so an unhandled crash passed a media-type
         // test. The endpoint must answer an unsupported media type with 415.
         await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
@@ -628,7 +628,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment",
             requestContent);
 
-        // #4404: 500 was previously accepted here, so an unhandled crash passed a media-type
+        // 500 was previously accepted here, so an unhandled crash passed a media-type
         // test. The endpoint must answer an unsupported media type with 415.
         await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
@@ -808,7 +808,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments",
             requestContent);
 
-        // #4404: 500 was previously accepted here, so an unhandled crash passed a media-type
+        // 500 was previously accepted here, so an unhandled crash passed a media-type
         // test. The endpoint must answer an unsupported media type with 415.
         await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
@@ -840,7 +840,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
     public async Task AttachmentInfos_WithFormPost_ReturnsSameAttachmentInfosAsGet()
     {
-        // honua-server#5012: ArcGIS Pro lists a feature's attachments with a form-encoded POST.
+        // ArcGIS Pro lists a feature's attachments with a form-encoded POST.
         // The GeoServices REST contract is that a resource answers GET and POST alike, so the
         // POST must return the same attachment infos as the GET rather than an error envelope.
         var getResponse = await _fixture.Client.GetAsync(
@@ -888,7 +888,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
     public async Task DownloadAttachment_WithFormPost_ReturnsFileContent()
     {
-        // honua-server#5012: the per-attachment download answers POST as well as GET.
+        // The per-attachment download answers POST as well as GET.
         const long attachmentId = 1;
 
         using var form = new FormUrlEncodedContent([]);
@@ -918,7 +918,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.BeSuccessful();
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
 
-        // #4404: `NotBeEmpty` passed for a truncated or wrong object. The seeded content is
+        // `NotBeEmpty` passed for a truncated or wrong object. The seeded content is
         // known exactly (AttachmentTestData), so assert it exactly.
         var bytes = await response.Content.ReadAsByteArrayAsync();
         bytes.Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());

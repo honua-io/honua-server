@@ -97,7 +97,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     {
         // arcpy.management.MakeWCSLayer copies the integer out of
         // /rest/services/{id}/ImageServer/WCS and probes {id}.MapServer. That integer is a
-        // storage-layer id, not a service name (#5036).
+        // storage-layer id, not a service name.
         foreach (var path in new[]
         {
             $"/admin/services/{WebAppFixture.TestLayerId}.MapServer?f=json",
@@ -291,7 +291,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_SupportedImageFormatTypes_DoesNotAdvertiseGif()
     {
-        // Regression (#1772): GIF was advertised in supportedImageFormatTypes but the
+        // Regression: GIF was advertised in supportedImageFormatTypes but the
         // SkiaSharp export renderer ships no GIF encoder, so export?format=gif was
         // rejected. Capabilities must match behavior -> GIF must not be advertised.
         var response = await Fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
@@ -933,7 +933,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         domains.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
-    // honua-server#1825: Esri services accept BOTH GET and POST for queryDomains; clients
+    // Esri services accept BOTH GET and POST for queryDomains; clients
     // POST large layers arrays that exceed URL limits. Previously POST returned 405.
     [IntegrationTest]
     [Operation(Operations.QueryDomains)]

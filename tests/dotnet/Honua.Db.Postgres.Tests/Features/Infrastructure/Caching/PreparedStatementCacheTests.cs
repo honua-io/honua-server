@@ -140,7 +140,7 @@ public class PreparedStatementCacheTests : IDisposable
     [Fact]
     public async Task GetOrCreatePreparedCommandAsync_ConfigureParametersGatedOnCommandText_BindsThroughCache()
     {
-        // Regression (honua-server#1749): the cache gathers parameter values on a scratch
+        // Regression: the cache gathers parameter values on a scratch
         // command before applying them onto the cloned execution command. Parameter-binding
         // callbacks that gate on CommandText (e.g. WFS GetFeature only binds OFFSET when the
         // emitted SQL actually contains an OFFSET clause) silently skipped their parameter when

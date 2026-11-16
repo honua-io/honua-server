@@ -295,7 +295,7 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     // PostSlice_OverSurface_ReturnsIntersectionMetadata above only seeds FLAT terrain
     // (elevationMeters constant everywhere), so minElevation/maxElevation/reliefMeters and
     // every per-station elevation are trivially identical — the same gap class depth pack 1
-    // (#2960) closed for viewshed/line-of-sight/sun-shadow. This fixture seeds a real 2-tile
+    // closed for viewshed/line-of-sight/sun-shadow. This fixture seeds a real 2-tile
     // "step" DEM (west tile at 10m, east tile at 50m, split at a known Web Mercator X) so the
     // slice profile has a genuine, hand-computable non-constant shape: the equator is an exact
     // circle on the WGS84 ellipsoid, so both PostGIS's ST_Length(geography) line length and the

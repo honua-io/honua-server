@@ -59,7 +59,7 @@ public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
             );
             """);
 
-        // honua-server#1568: honua.tile_caches/_entries are process-global (not search_path
+        // Honua.tile_caches/_entries are process-global (not search_path
         // scoped). These tests assert a first write is Inserted (not AlreadyPresent), so clear
         // the deterministic-cache-id rows up front. The class is one xUnit collection, so its
         // tests do not run concurrently with each other; this also makes the suite robust against

@@ -209,7 +209,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
         // Each per-layer entry becomes its own upload batch whose edit slots restart at zero, and
         // conflicts are keyed by (layerId, slot) when the client-state envelope is attached. A repeated
         // layer id collides two entries' slots, so both conflicts would be attached to the later
-        // payload and a resolution could write the wrong client state (#2430).
+        // payload and a resolution could write the wrong client state.
         var replicaId = await CreateReplicaAsync("DuplicateLayerEntries", "0");
 
         var edits = JsonSerializer.Serialize(new object[]
@@ -263,7 +263,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
         using var extractDoc = JsonDocument.Parse(await extractResponse.Content.ReadAsStringAsync());
         var layerChanges = extractDoc.RootElement.GetProperty("layerChanges");
 
-        // #4405: the loop below asserted nothing when layerChanges was empty, so a response that
+        // The loop below asserted nothing when layerChanges was empty, so a response that
         // reported no layers at all passed as "excluded its own edits". Require the replica's
         // layer to be present before asserting its counts.
         layerChanges.GetArrayLength().Should().BeGreaterThan(0,
@@ -331,7 +331,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
         recordValue.ObjectId.Should().Be(objectId);
         recordValue.Status.Should().Be(ReplicaConflictStatus.Pending);
 
-        // The record now carries the client (uploaded) and pre-apply server state snapshots (#1287),
+        // The record now carries the client (uploaded) and pre-apply server state snapshots,
         // so the conflict-review detail API can compute the field-level comparison. The server snapshot
         // must be the pre-conflict value, not the just-applied client value (last-write-wins).
         recordValue.ClientStateJson.Should().NotBeNullOrWhiteSpace();
@@ -355,7 +355,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_ManualReviewConflictHandling_WithholdsConflictingEdit()
     {
-        // conflictHandling=manualReview (#2430) is the Honua extension that makes the previously dead
+        // conflictHandling=manualReview is the Honua extension that makes the previously dead
         // manual-review branch reachable: the conflicting client edit is NOT committed, and the durable
         // record is the only carrier of the client intent until an operator resolves it.
         var objectId = await AddFeatureAsync("manual-review-base");
@@ -502,7 +502,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
         conflicts.GetArrayLength().Should().Be(1);
         var conflict = conflicts[0];
 
-        // The transient synchronize response reflects the refined geometry classification (#1287).
+        // The transient synchronize response reflects the refined geometry classification.
         conflict.GetProperty("conflictType").GetInt32().Should().Be((int)ReplicaConflictType.Geometry);
 
         // The durable conflict record is also refined to a geometry conflict.
@@ -647,7 +647,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_Bidirectional_AppliesUploadAndDeliversServerDelta()
     {
-        // Conformance (#2136): a bidirectional sync uploads the client's edits AND returns the
+        // Conformance: a bidirectional sync uploads the client's edits AND returns the
         // server-to-client delta in one call, excluding the client's own just-applied edits.
         var createRoot = await CreateReplicaWithResponseAsync("BidirectionalSync", "0");
         var replicaId = createRoot.GetProperty("replicaID").GetString()!;
@@ -697,7 +697,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_RollbackOnFailure_AbortsUploadLeavingStateUnchanged()
     {
-        // Conformance (#2136): with rollbackOnFailure=true, a layer batch that contains a failing edit
+        // Conformance: with rollbackOnFailure=true, a layer batch that contains a failing edit
         // is applied atomically — the whole batch rolls back, leaving the layer's server state unchanged.
         var replicaId = await CreateReplicaAsync("RollbackOnFailure", "0");
         await SynchronizeDownloadAsync(replicaId);
@@ -743,7 +743,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task ServiceMetadata_SyncEnabled_AdvertisesSyncCapabilities()
     {
-        // Conformance (#2136): a sync-enabled service advertises its sync capabilities (supported sync
+        // Conformance: a sync-enabled service advertises its sync capabilities (supported sync
         // directions, sync models, rollbackOnFailure, and supportedSyncDataOptions) so Esri clients can
         // discover the offline replica behavior before attempting createReplica / synchronizeReplica.
         var response = await _fixture.Client.GetAsync(
@@ -1107,7 +1107,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task SynchronizeReplica_BidirectionalReturnIdsForAdds_MapsServerIdsWithoutEchoingOwnAdds()
     {
-        // #4016: a bidirectional sync must hand the client the server-assigned ids of its uploaded adds
+        // A bidirectional sync must hand the client the server-assigned ids of its uploaded adds
         // (Esri returnIdsForAdds -> addResults) and must not echo those adds back in the download half,
         // otherwise the client cannot map its local rows and creates duplicates.
         var createRoot = await CreateReplicaWithResponseAsync("BidirectionalReturnIds", "0");
@@ -1258,7 +1258,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task SynchronizeReplica_UploadKeyReusedForDifferentEdits_RejectsWithoutApplying(bool keyInHeader)
     {
-        // #4026: a client key (Idempotency-Key header or Esri editsUploadID) replays its upload, and the
+        // A client key (Idempotency-Key header or Esri editsUploadID) replays its upload, and the
         // same key carrying different edits is refused instead of silently replaying or applying them.
         var replicaId = await CreateReplicaAsync($"UploadKey-{keyInHeader}", "0");
         const string key = "field-upload-0001";
@@ -1287,10 +1287,10 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task SynchronizeReplica_RetriedPartiallyFailedUpload_ReplaysFailureWithoutDuplicatingCommittedAdd()
     {
-        // #4026: in best-effort mode the valid add commits while the update of a missing object fails, so the
+        // In best-effort mode the valid add commits while the update of a missing object fails, so the
         // upload reports failure after committing a row. Its retry must replay that failure, not re-insert the
         // add once a short-lived reservation lapses. Best-effort is opt-in since rollbackOnFailure defaults to
-        // true (#4031), so the payload asks for it explicitly.
+        // true, so the payload asks for it explicitly.
         var replicaId = await CreateReplicaAsync("PartialFailureRetry", "0");
         const string committedName = "partial-retry-committed";
         var edits = JsonSerializer.Serialize(new object[]
@@ -1323,7 +1323,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task SynchronizeReplica_RetryThroughDifferentServicePathCasing_StillReplays()
     {
-        // #4026: the service resolves case-insensitively, so the replay key must not depend on path casing.
+        // The service resolves case-insensitively, so the replay key must not depend on path casing.
         var replicaId = await CreateReplicaAsync("RetryPathCasing", "0");
         var payload = new { replicaID = replicaId, syncDirection = "upload", edits = AddEdits("retry-path-casing"), f = "json" };
 
@@ -1341,7 +1341,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task SynchronizeReplica_IdenticalUploadAfterAnotherUpload_AppliesAgain()
     {
-        // #4026: without a key an identical upload replays only while the replica has acknowledged no
+        // Without a key an identical upload replays only while the replica has acknowledged no
         // later upload. Sent again after a different upload it is new data and must apply.
         var replicaId = await CreateReplicaAsync("RepeatAfterOtherUpload", "0");
         var repeated = AddEdits("repeat-after-other");

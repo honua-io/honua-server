@@ -153,7 +153,7 @@ public class TileMatrixSetRegistryTests
         entry!.IsBuiltIn.Should().BeTrue();
     }
 
-    // The WMTS GetFeatureInfo handler (#1873) computes the clicked pixel's world
+    // The WMTS GetFeatureInfo handler computes the clicked pixel's world
     // coordinate by interpolating (I+0.5)/TileWidth and (J+0.5)/TileHeight across the
     // tile bounds returned by GridGeometry.GetTileBounds. These tests pin that math for
     // both the built-in WebMercatorQuad grid (must stay byte-identical to the legacy

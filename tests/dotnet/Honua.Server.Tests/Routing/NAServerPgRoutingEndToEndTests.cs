@@ -205,7 +205,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     [RoutingTest(RoutingTestEnv)]
     public async Task RouteSolve_WebMercatorStopsFeatureSet_OverRealPgRouting_SolvesDeclaredLocations()
     {
-        // #4025: stops declared in EPSG:3857 on the FeatureSet (no inSR) are vertex 1 (0,0) and
+        // Stops declared in EPSG:3857 on the FeatureSet (no inSR) are vertex 1 (0,0) and
         // vertex 5 (.01,.01), projected with x = R*lon, y = R*ln(tan(pi/4 + lat/2)), R = 6378137.
         // Read as WGS84 degrees, (1113.19, 1113.19) snaps to the far corner, vertex 9, instead.
         const string webMercatorStops = """
@@ -375,7 +375,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     public async Task RouteSolve_RepeatedStop_OverRealPgRouting_ReturnsPath()
     {
         // The last two stops snap to vertex 2. That zero-cost leg must not fail the
-        // route from vertex 1 (#6157).
+        // route from vertex 1.
         using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
@@ -451,7 +451,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     public async Task ClosestFacility_FromFacility_OverRealPgRouting_StartsAtFacility()
     {
         // Incident at vertex 1, facility at vertex 2. FromFacility travel must
-        // orient the path facility -> incident (#6161).
+        // orient the path facility -> incident.
         using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),

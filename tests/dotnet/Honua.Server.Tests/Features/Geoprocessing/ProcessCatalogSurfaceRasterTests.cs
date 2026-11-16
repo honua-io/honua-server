@@ -31,7 +31,7 @@ public sealed class ProcessCatalogSurfaceRasterTests
         // 4 managed conversion idioms + gdal.ogr2ogr (the native-profile vector
         // conversion executed out-of-process by the GDAL worker) + pcloud.translate
         // (the native-profile LAZ/COPC decompress + projected-CRS reproject, #1854)
-        // + conversion.polygonize / conversion.rasterize (#2240).
+        // + conversion.polygonize / conversion.rasterize.
         _catalog.GetProcessesByCategory("conversion").Should().HaveCount(8);
     }
 
@@ -772,7 +772,7 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Validator_ProximityEuclideanAllocation_ShapeValid_PassesValidation()
     {
-        // Allocation (#2255) shares the distance op's parameter surface; a plan
+        // Allocation shares the distance op's parameter surface; a plan
         // supplying only the required 'source' must pass submit-time validation.
         var plan = CreateSingleStepPlan(
             "proximity.euclidean-allocation",
@@ -791,7 +791,7 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
     public void Validator_ProximityEuclideanAllocation_WithInvalidDistUnits_ProducesViolation()
     {
-        // Allocation reuses the distance semantic validator (#2255), so an
+        // Allocation reuses the distance semantic validator, so an
         // out-of-enum distUnits is rejected at submit time.
         var plan = CreateSingleStepPlan(
             "proximity.euclidean-allocation",

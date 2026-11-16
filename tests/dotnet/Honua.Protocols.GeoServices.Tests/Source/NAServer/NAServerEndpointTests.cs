@@ -51,7 +51,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         attributes.GetProperty("Total_Length").GetDouble().Should().BeGreaterThan(0);
         attributes.GetProperty("Total_TravelTime").GetDouble().Should().BeGreaterThan(0);
 
-        // #4035: Esri clients attach a direction set to the route whose Name equals its
+        // Esri clients attach a direction set to the route whose Name equals its
         // routeName; an unnamed set becomes a phantom second route result.
         var direction = root.GetProperty("directions").EnumerateArray().Should().ContainSingle().Subject;
         direction.GetProperty("routeId").GetInt32().Should().Be(1);
@@ -329,7 +329,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
     public async Task RouteSolve_StopsFeatureSetSpatialReference_ReachesProviderAsInputSrid()
     {
-        // #4025: an Esri client declares Web Mercator stops on the FeatureSet and sends no inSR. The
+        // An Esri client declares Web Mercator stops on the FeatureSet and sends no inSR. The
         // canonical request must carry EPSG:3857 with the ordinates untouched, not the WGS84 fallback.
         RouteSolveRequest? captured = null;
         var provider = new TestRoutingProvider(
@@ -374,7 +374,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
     public async Task RouteSolve_InSrConflictingWithFeatureSetSpatialReference_Returns400WithoutSolving()
     {
-        // #4025: a declared FeatureSet reference and a different inSR cannot both describe the same
+        // A declared FeatureSet reference and a different inSR cannot both describe the same
         // ordinates; the adapter must reject the request instead of solving one guess.
         RouteSolveRequest? captured = null;
         var provider = new TestRoutingProvider(

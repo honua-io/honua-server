@@ -230,7 +230,7 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
                 ON honua.migration_runs (source_kind);
             """);
 
-        // honua-server#1568: honua.migration_runs is process-global (not search_path scoped) and
+        // Honua.migration_runs is process-global (not search_path scoped) and
         // ListAsync_PagesMostRecentFirst asserts over the whole table, so clear it up front. The
         // class is one xUnit collection (its tests do not run concurrently with each other), and
         // this keeps the suite correct against a reused/persistent database (HONUA_TEST_DB_URL)

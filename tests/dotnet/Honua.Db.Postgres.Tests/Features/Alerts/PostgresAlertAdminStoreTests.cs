@@ -222,7 +222,7 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
             """);
     }
 
-    // #2020: every literal honua.* mutation (TRUNCATE teardown + INSERT helpers) routes
+    // Every literal honua.* mutation (TRUNCATE teardown + INSERT helpers) routes
     // through the shared schema-mutation advisory lock so this parallelized collection
     // serializes its global-schema writes with sibling collections instead of racing the
     // catalog and deadlocking (40P01). The DDL setup (EnsureAlertSchemaAsync) was already

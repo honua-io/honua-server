@@ -15,7 +15,7 @@ public class LegendClassifierTests
         => StyleTranslator.ParseStyleLayers(json).Single();
 
     // A legend swatch is resolved without a map viewport, so it carries no render zoom; these
-    // classes are attribute-driven, not zoom-driven, so paint resolves identically (honua-server#2873).
+    // classes are attribute-driven, not zoom-driven, so paint resolves identically.
     private static readonly RenderZoom _noZoom =
         RenderZoom.NotDerivable("legend classification resolves no zoom expression");
 

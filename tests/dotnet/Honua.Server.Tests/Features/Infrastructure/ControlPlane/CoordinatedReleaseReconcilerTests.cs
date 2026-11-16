@@ -152,7 +152,7 @@ public sealed class CoordinatedReleaseReconcilerTests
     [Fact]
     public async Task Reconcile_MidUnwind_ContainerRollbackThrowsAfterMetadataReverted_SplitBrainEscalatesToManualIntervention()
     {
-        // Failure-of-failure (#2161): the unwind order is metadata-first, container-second. If the
+        // Failure-of-failure: the unwind order is metadata-first, container-second. If the
         // METADATA unwind succeeds (prior revision + inverse script applied) but the subsequent
         // CONTAINER rollback THROWS, the coordinated release is split-brained — metadata is reverted
         // but the new container image is still live. The conductor must escalate to

@@ -90,8 +90,8 @@ public sealed class SecureConnectionResolverSslModeTests
         // A secret-reference connection created without a declared host/port (see
         // SecureConnectionEndpoints.CreateConnection, which leaves them blank rather than
         // asserting a value the caller never supplied) makes no host/port assertion to
-        // tamper-check against. The resolved secret's host/port stand unchallenged
-        // (honua-server#2949) — unlike the mismatch cases above, where the connection
+        // tamper-check against. The resolved secret's host/port stand unchallenged —
+        // unlike the mismatch cases above, where the connection
         // explicitly declares "db.example.com:5432" and a disagreeing secret is tamper.
         var connection = DataConnection.CreateWithSecretReference(
             name: "production-analytics",
@@ -130,7 +130,7 @@ public sealed class SecureConnectionResolverSslModeTests
         // exact placeholder as "no host declared" the same way it recognizes string.Empty;
         // comparing it against the resolved secret's real host would reject the documented/common
         // case of every secret-reference connection created through the admin API without a
-        // declared host (honua-server#2949).
+        // declared host.
         var connection = DataConnection.CreateWithSecretReference(
             name: "production-analytics",
             host: DataConnection.SecretReferenceMetadataPlaceholder,

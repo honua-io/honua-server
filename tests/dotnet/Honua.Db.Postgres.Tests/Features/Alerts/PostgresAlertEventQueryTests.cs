@@ -148,7 +148,7 @@ public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
         // Regression: migration 075 relaxed rule_id to NULL so ops notifications
         // (deploy/job terminal events) can reuse the alert outbox. The list mapper
         // previously called GetInt64 unconditionally and threw InvalidCastException
-        // when an ops row (NULL rule_id) surfaced (#2427).
+        // when an ops row (NULL rule_id) surfaced.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
         try
         {

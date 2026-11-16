@@ -79,7 +79,7 @@ public sealed class GeoServicesJsonWkbFormatDetectionTests
     [InlineData(false)] // big-endian (XDR)
     public void DetectFormatFromContent_RawWkbGeometry_ReturnsWkb(bool littleEndian)
     {
-        // #2353: a raw WKB payload uploaded without a recognisable extension must be detected
+        // A raw WKB payload uploaded without a recognisable extension must be detected
         // structurally instead of falling through to null (generic multipart error).
         var writer = new WKBWriter(littleEndian ? ByteOrder.LittleEndian : ByteOrder.BigEndian);
         var wkb = writer.Write(new Point(-122.4194, 37.7749));

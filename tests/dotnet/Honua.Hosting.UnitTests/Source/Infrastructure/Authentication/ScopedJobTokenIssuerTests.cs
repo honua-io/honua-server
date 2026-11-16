@@ -225,7 +225,7 @@ public sealed class ScopedJobTokenIssuerTests
     [UnitTest]
     public async Task IssueAsync_GrantBasedWriteSubmitter_TokenCarriesTheGrantedWrite()
     {
-        // #2192: the submitter's write authority comes purely from a layer-scoped
+        // The submitter's write authority comes purely from a layer-scoped
         // write:{service}/{layer} permission GRANT — they hold NO data-editor role.
         // Before the fix the issuer ignored grants, so this token was under-scoped
         // (the write was dropped). Now the mint intersects against the owner's grants

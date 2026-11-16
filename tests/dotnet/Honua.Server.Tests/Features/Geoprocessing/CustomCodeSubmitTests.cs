@@ -332,7 +332,7 @@ public sealed class CustomCodeSubmitTests
     }
 
     // -----------------------------------------------------------------------
-    // #2752: custom-code submission requires an elevated, custom-code-specific
+    // Custom-code submission requires an elevated, custom-code-specific
     // authorization (Process.ExecuteCustomCode) under EVERY repo policy — not just
     // Open. A baseline Process.Execute caller (which the built-in tool catalog uses)
     // must NOT be able to submit operator-supplied code.
@@ -621,7 +621,7 @@ public sealed class CustomCodeSubmitTests
     }
 
     // -----------------------------------------------------------------------
-    // param -> env contract (#2191): the customcode.* spec params must reach the
+    // param -> env contract: the customcode.* spec params must reach the
     // harness as env.CUSTOMCODE_* so AwsBatchComputeBackend surfaces them as the
     // CUSTOMCODE_* container env the harness reads. Pins the key map end-to-end.
     // -----------------------------------------------------------------------
@@ -688,7 +688,7 @@ public sealed class CustomCodeSubmitTests
     {
         // The harness (docker/worker-customcode-python/harness/jobspec.py) reads these
         // exact CUSTOMCODE_* names. Pinning the map here catches parallel-build drift
-        // between the server and harness halves of the contract (#2191).
+        // between the server and harness halves of the contract.
         CustomCodeJobContract.ParameterToEnvName.Should().BeEquivalentTo(new Dictionary<string, string>
         {
             ["customcode.runtime"] = "CUSTOMCODE_RUNTIME",

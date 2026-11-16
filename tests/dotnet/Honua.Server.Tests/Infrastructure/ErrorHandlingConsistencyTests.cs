@@ -44,8 +44,8 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
 
             // Assert
             // GeoServices REST (/rest/services) signals errors as HTTP 200 +
-            // {"error":{"code":404}} (#2418). /tiles is NOT an Esri protocol surface
-            // and returns a real HTTP 404 + problem+json (honua-server#2945). OGC/OData
+            // {"error":{"code":404}}. /tiles is NOT an Esri protocol surface
+            // and returns a real HTTP 404 + problem+json. OGC/OData
             // also keep real HTTP status codes.
             if (IsGeoServicesRestEndpoint(endpoint))
             {
@@ -73,7 +73,7 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
         var mvtResponse = await _fixture.Client.GetAsync(mvtEndpoint);
 
         // Assert - GeoServices REST keeps its 200-envelope format; OGC and the tiles
-        // surface (honua-server#2945) both use real HTTP status + RFC 7807.
+        // surface both use real HTTP status + RFC 7807.
         var geoContent = await geoResponse.Content.ReadAsStringAsync();
         var ogcContent = await ogcResponse.Content.ReadAsStringAsync();
         var mvtContent = await mvtResponse.Content.ReadAsStringAsync();
@@ -96,7 +96,7 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
         ogcProblem.GetProperty("status").GetInt32().Should().Be(404);
         ogcProblem.GetProperty("detail").GetString().Should().NotBeNullOrEmpty();
 
-        // Tiles surface (honua-server#2945): real 404 + RFC 7807, same shape as OGC.
+        // Tiles surface: real 404 + RFC 7807, same shape as OGC.
         mvtResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         mvtProblem.GetProperty("title").GetString().Should().Be("Not Found");
         mvtProblem.GetProperty("status").GetInt32().Should().Be(404);
@@ -321,7 +321,7 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
     [Fact]
     public async Task ErrorResponseFormat_UsesRfc7807ProblemDetails_OnTilesSurface()
     {
-        // honua-server#2945: /tiles is not an Esri GeoServices protocol surface, so
+        // /tiles is not an Esri GeoServices protocol surface, so
         // (unlike /rest/services) its layer-not-found error DOES use RFC 7807
         // problem+json with a real HTTP status, the opposite of the assertion above.
         var response = await _fixture.Client.GetAsync("/tiles/99999/1/0/0.mvt");

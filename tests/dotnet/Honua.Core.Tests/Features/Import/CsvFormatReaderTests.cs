@@ -17,7 +17,7 @@ public sealed class CsvFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_PostgisEwktExport_ImportsWithGeometry()
     {
-        // #2361: a standard PostGIS CSV export encodes the geometry column as EWKT
+        // A standard PostGIS CSV export encodes the geometry column as EWKT
         // ("SRID=<n>;WKT"). Previously a bare catch{} silently dropped it to NULL.
         var csv = """
             id,name,geom
@@ -39,7 +39,7 @@ public sealed class CsvFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_EwktProjectedSrid_KeepsEmbeddedSrid()
     {
-        // #6171: the per-value SRID is part of the geometry. Callers must not replace it
+        // The per-value SRID is part of the geometry. Callers must not replace it
         // with the 4326 factory default.
         var csv = """
             id,geom
@@ -92,7 +92,7 @@ public sealed class CsvFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_PostgisEwkbHexExport_ImportsWithGeometry()
     {
-        // #2361: PostGIS also exports geometry as WKB/EWKB hex. This must parse too.
+        // PostGIS also exports geometry as WKB/EWKB hex. This must parse too.
         var writer = new WKBWriter { Strict = false, HandleSRID = true };
         var hex = Convert.ToHexString(writer.Write(new Point(-122.4194, 37.7749) { SRID = 4326 }));
         var csv = $"""
@@ -111,7 +111,7 @@ public sealed class CsvFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_UnparseableGeometry_WarnsAndPreservesRawValueInsteadOfSilentNull()
     {
-        // #2361: a claimed geometry value that cannot be parsed must NOT silently import as a
+        // A claimed geometry value that cannot be parsed must NOT silently import as a
         // successful null-geometry row with the raw value discarded. It is recorded on the
         // diagnostics sink (surfaced as an import warning) and the raw value is preserved.
         var csv = """
@@ -153,7 +153,7 @@ public sealed class CsvFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_StrayQuoteInUnquotedField_DoesNotMergeFollowingRows()
     {
-        // #6173: an inch mark is not a quoted-field opener. Three physical rows stay three features.
+        // An inch mark is not a quoted-field opener. Three physical rows stay three features.
         var csv = """
             id,part,code
             1,12" pipe,a
@@ -204,7 +204,7 @@ public sealed class CsvFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_OpenQuoteWithManyContinuationLines_FinishesWithinOneSecond()
     {
-        // #6174: an unclosed quote must not rescan the whole record on every continuation line.
+        // An unclosed quote must not rescan the whole record on every continuation line.
         const int continuationLines = 200_000;
         var csv = new StringBuilder(continuationLines * 2 + 8);
         csv.Append('"');
@@ -234,7 +234,7 @@ public sealed class CsvFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_SingleCoordinateHeader_KeepsColumnAsAttribute()
     {
-        // #6172: one coordinate-like header is not half of a point, so its values must
+        // One coordinate-like header is not half of a point, so its values must
         // survive as an attribute beside a real geometry column.
         var csv = """
             id,x,wkt

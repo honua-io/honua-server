@@ -28,7 +28,7 @@ public sealed class AdminCapabilitiesRouteHonestyTests : IAsyncLifetime
         new Dictionary<string, Func<HashSet<string>, bool>>(StringComparer.Ordinal)
         {
             // SDK manifestExport selects this exact legacy operation. Package GitOps export
-            // is a different contract and cannot make the removed operation available (#4009).
+            // is a different contract and cannot make the removed operation available.
             ["manifestExport"] = routes => routes.Contains("GET /api/v1/admin/manifest") ||
                 routes.Contains("GET /api/v{version:apiVersion}/admin/manifest"),
             // Mutating manifest endpoints removed in #1035 — no registered route.

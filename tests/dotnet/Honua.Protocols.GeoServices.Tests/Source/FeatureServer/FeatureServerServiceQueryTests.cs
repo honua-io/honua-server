@@ -234,7 +234,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         return ids;
     }
 
-    // honua-server#1825: Esri services accept BOTH GET and POST for the service-level
+    // Esri services accept BOTH GET and POST for the service-level
     // query op; clients POST large layerDefs/layers arrays. Previously POST returned 405.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -262,7 +262,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
             .Contain(WebAppFixture.TestLayerId);
     }
 
-    // honua-server#1825: POST layerDefs (which can exceed URL limits) must apply per-layer.
+    // POST layerDefs (which can exceed URL limits) must apply per-layer.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/query")]
@@ -290,7 +290,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         targetLayer.GetProperty("features").GetArrayLength().Should().Be(0);
     }
 
-    // honua-server#1825: service-level queryDomains must accept POST (FeatureServer).
+    // Service-level queryDomains must accept POST (FeatureServer).
     [IntegrationTest]
     [Operation(Operations.QueryDomains)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/queryDomains")]

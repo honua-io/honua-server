@@ -407,7 +407,7 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Invoke_SameParams_DifferentPrincipal_MissesCacheAndTakesFreshPolicyRoundTrip()
     {
-        // Security regression (PR #2584 review): the cache key includes the full
+        // Security regression: the cache key includes the full
         // policy-relevant principal context, and a cache hit skips the policy
         // decision point — so a result cached under a policy-ALLOWED privileged
         // caller must NEVER be served to a different caller with the same params.
@@ -482,7 +482,7 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Invoke_SameParamsSamePrincipalDifferentTenant_MissesCache()
     {
-        // Security regression (#3430): the deterministic result cache is a process-wide
+        // Security regression: the deterministic result cache is a process-wide
         // singleton and OperationPolicyContext.PrincipalId is the canonical actor id,
         // which is deliberately NOT tenant-qualified. Before the tenant component was
         // added to the cache key, one caller with an identical actor/tier/role set and

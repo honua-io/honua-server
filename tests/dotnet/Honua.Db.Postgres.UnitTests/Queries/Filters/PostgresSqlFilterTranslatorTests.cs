@@ -470,7 +470,7 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_SpatialDistance_ContextNotGeographicButGeodesicSafeSrid_UsesGeographyFallback()
     {
-        // Fallback path (#2732): when the resource carries no explicit IsGeographic flag, the
+        // Fallback path: when the resource carries no explicit IsGeographic flag, the
         // translator routes ::geography casts for SRIDs on the narrow geodesic-safe bucket. ETRS89
         // (4258) is geodesic-safe, so DWithin transforms to WGS84 and evaluates on the ellipsoid.
         var resource = CreateResource(new MetadataV2SpatialReference
@@ -970,7 +970,7 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_ComparisonOnUpdatedSystemAlias_MapsToUpdatedAtColumn()
     {
-        // Regression (#1436): the OData $deltatoken "changed since" predicate
+        // Regression: the OData $deltatoken "changed since" predicate
         // targets the reserved audit-trail system alias "updated", which must
         // resolve to the bare physical "updated_at" column on managed feature
         // tables. #1415 mapped the alias to a bare "updated" column that does not
@@ -1275,7 +1275,7 @@ public class PostgresSqlFilterTranslatorTests
             SemanticRoles = semanticRoles,
         };
 
-    // ArcGIS SQL parity (#1660): clauses are parsed by the GeoServices SQL parser and
+    // ArcGIS SQL parity: clauses are parsed by the GeoServices SQL parser and
     // must translate to parameterized PostgreSQL — only allowlisted constructs ever
     // reach the database, and every literal becomes a bound parameter.
 
@@ -1341,7 +1341,7 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     // ------------------------------------------------------------------
-    // #1865 — LIKE ESCAPE, extended EXTRACT fields, CASE.
+    // LIKE ESCAPE, extended EXTRACT fields, CASE.
     // Every test asserts the literal payloads remain bound parameters so the
     // SQL-injection boundary is preserved.
     // ------------------------------------------------------------------

@@ -331,7 +331,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
 
     private async Task CleanupCatalogAsync(string serviceName)
     {
-        // #2020: these DELETEs mutate the literal, process-global honua.* catalog
+        // These DELETEs mutate the literal, process-global honua.* catalog
         // tables (search_path isolation does not scope them), so route them through the
         // shared seed advisory lock to keep parallel [Collection("Database")] tests off
         // the 40P01 deadlock path.

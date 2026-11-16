@@ -457,7 +457,7 @@ public class MySqlFeatureQueryBuilderTests
         // OGC tile viewport bbox) on a point layer must use the MBR predicate alone: MBR vs
         // point is the exact envelope-window semantic, and MySQL geographic SRSes treat a
         // pole-touching whole-hemisphere envelope ring as invalid so ST_Intersects would
-        // silently match zero rows (honua-server#2983).
+        // silently match zero rows.
         var mapping = new MySqlLayerMapping
         {
             LayerId = 2,
@@ -563,7 +563,7 @@ public class MySqlFeatureQueryBuilderTests
     {
         // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
         // geometry must be the FIRST operand: ST_Within(filter, feature). Leading with the
-        // feature column inverts the relationship and returns the wrong set (#2068, #2730).
+        // feature column inverts the relationship and returns the wrong set.
         var query = new FeatureQuery
         {
             SpatialFilter = SpatialFilter.Create(
@@ -583,7 +583,7 @@ public class MySqlFeatureQueryBuilderTests
     public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
     {
         // Esri esriSpatialRelContains = filter geometry contains feature geometry: the filter
-        // geometry must be the FIRST operand, ST_Contains(filter, feature) (#2068, #2730).
+        // geometry must be the FIRST operand, ST_Contains(filter, feature).
         var query = new FeatureQuery
         {
             SpatialFilter = SpatialFilter.Create(

@@ -325,7 +325,7 @@ public sealed class StudioCompositionBodyEditorTests
     [UnitTest]
     public void SetLayerVisibility_TogglesOnlyTheNamedLayer()
     {
-        // honua-server#3199: before this seam AddLayer was the only writer of `visible`, and it
+        // Before this seam AddLayer was the only writer of `visible`, and it
         // rejects duplicate ids -- so composition state had no way to change a layer's visibility.
         var body = StudioCompositionBodyEditor.AddLayer(
             StudioCompositionBody.Empty, new StudioCompositionLayer { Id = "parcels" });

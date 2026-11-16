@@ -49,7 +49,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CreateRun_MutatingStepWithoutRequestingPrincipalTier_ThrowsAndPersistsNoRun()
     {
-        // #2798: the reconcile loop submits step jobs under an admin-bypassing orchestrator
+        // The reconcile loop submits step jobs under an admin-bypassing orchestrator
         // principal, so the mutating-process tier must be evaluated against the REQUESTING
         // principal at run creation. A denial there must fail the run before any state is
         // persisted or any step job is submitted.
@@ -90,7 +90,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task ReconcileWorkflowRun_ReplaysRunRequestersSecurityContextOnStepSubmission()
     {
-        // #3068: each step job is submitted under OrchestrationSystemPrincipal, which carries
+        // Each step job is submitted under OrchestrationSystemPrincipal, which carries
         // role=admin so the reconcile loop can dispatch. If the step's row/field security
         // snapshot were captured from THAT principal, every workflow step would read with admin
         // row/field visibility — laundering away the requester's RLS predicate and field mask.
@@ -121,7 +121,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CreateRun_TriggeredFiring_AuthorizesTheAuthorRatherThanTheOrchestrator()
     {
-        // #3046: the scheduler and event-trigger services have no requesting principal, so they
+        // The scheduler and event-trigger services have no requesting principal, so they
         // call in as OrchestrationSystemPrincipal — role=admin, which passes every gate. Left
         // that way, the layer/mutating check at run creation would be a no-op on every tick and
         // the publication-time check would be the only one that ever ran, going stale the moment

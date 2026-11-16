@@ -161,7 +161,7 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
         // #3141 acceptance 1: deactivating a managed user on replica A must
         // deterministically stop deferred work executing on replica B. The deferred lane
         // resolves membership through IUserStore.GetUserAsync; an inactive user (or a
-        // resolution miss) fails closed (#3119).
+        // resolution miss) fails closed.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
         try
         {

@@ -269,7 +269,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
         await response.AssertGeoServicesErrorAsync(400);
     }
 
-    // #1308: ArcGIS clients wrap the single operating geometry as
+    // ArcGIS clients wrap the single operating geometry as
     // {"geometryType":"...","geometry":{...}}. The parser must unwrap it.
 
     [IntegrationTest]
@@ -779,7 +779,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
         // Point-vs-polygon is a legal Esri intersect input combination (the "geometry" operand's
         // dimension must be >= the "geometries" elements' dimension), and this point is disjoint
         // from the polygon, so the result is an empty point of the request type — Esri serializes
-        // empty points with null ordinates ({"x":null,"y":null}) — not a 400 (#2742).
+        // empty points with null ordinates ({"x":null,"y":null}) — not a 400.
         var body = """
         {
             "geometries": {
@@ -1147,7 +1147,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
         result.Error.Details!.Should().Contain(detail => detail.Contains("calculationType", StringComparison.Ordinal));
     }
 
-    // --- Empty results (#2742): disjoint intersect / full difference must be 200 + empty geometry ---
+    // --- Empty results: disjoint intersect / full difference must be 200 + empty geometry ---
 
     [IntegrationTest]
     [Operation(Operations.Intersect)]
@@ -1221,7 +1221,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
         rings.GetArrayLength().Should().Be(0);
     }
 
-    // --- Unknown unit token (#2742): must be 400, not silently defaulted to a meters multiplier ---
+    // --- Unknown unit token: must be 400, not silently defaulted to a meters multiplier ---
 
     [IntegrationTest]
     [Operation(Operations.Densify)]

@@ -89,7 +89,7 @@ public sealed class AwsBatchComputeBackendTests
             [AwsBatchParameterKeys.RetryAttempts] = "2",
             [AwsBatchParameterKeys.ShareIdentifier] = "tenant-a",
             ["env.EXTRA_FLAG"] = "value",
-            // Custom-code param->env contract (#2191): env.CUSTOMCODE_* keys the
+            // Custom-code param->env contract: env.CUSTOMCODE_* keys the
             // submit coordinator projects must surface to the container verbatim.
             ["env.CUSTOMCODE_REPO_URL"] = "https://github.com/honua-io/example.git"
         });
@@ -330,7 +330,7 @@ public sealed class AwsBatchComputeBackendTests
         client.Config.RegionEndpoint.Should().BeNull();
 
         // Without a pinned signing region the SDK resolves one from the ambient chain, ending in
-        // EC2 instance metadata, which hangs every request inside a container (#4998).
+        // EC2 instance metadata, which hangs every request inside a container.
         client.Config.AuthenticationRegion.Should().Be("us-west-2");
     }
 

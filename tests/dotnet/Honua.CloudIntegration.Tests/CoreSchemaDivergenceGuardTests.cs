@@ -182,8 +182,8 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
         reader.IsDBNull(1).Should().BeFalse("the physical guarded schema must remain present for diagnosis");
     }
 
-    // A fixture seed that pre-creates part of the migration-owned schema before the first boot
-    // (#4900): two of migration 031's seven metadata tables with a row, the raster baseline table
+    // A fixture seed that pre-creates part of the migration-owned schema before the first boot:
+    // two of migration 031's seven metadata tables with a row, the raster baseline table
     // without its migration-owned EXTERNAL storage, and migration 063's overview table.
     private const string PreSeededSchemaSql = """
         CREATE SCHEMA IF NOT EXISTS honua;

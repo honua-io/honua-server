@@ -76,7 +76,7 @@ public sealed class PMTilesArchiveEndpointTests(DatabaseFixtureAdapter database)
         var jobId = await StartArchiveJobAsync();
         var (finalStatus, lastJson) = await WaitForJobCompletionAsync(jobId);
 
-        // honua-server#4421: the size and file-id assertions used to sit inside
+        // The size and file-id assertions used to sit inside
         // `if (finalStatus == OperationStatus.Completed)`, so the test passed when the job FAILED.
         // Require completion, then assert unconditionally.
         finalStatus.Should().Be(

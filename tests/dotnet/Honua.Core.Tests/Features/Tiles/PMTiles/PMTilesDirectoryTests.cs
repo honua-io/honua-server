@@ -199,7 +199,7 @@ public class PMTilesDirectoryTests
 
         entries.Should().HaveCount(3);
 
-        // honua-server#4397: this used to look up the expected tile by payload LENGTH, so a writer
+        // This used to look up the expected tile by payload LENGTH, so a writer
         // that stored every tile at the wrong coordinate passed as long as the lengths were
         // distinct. Match on the Hilbert tile id derived from z/x/y instead.
         var expectedByTileId = new Dictionary<ulong, byte[]>

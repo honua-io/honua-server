@@ -1210,7 +1210,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
     // A self-intersecting "bowtie" polygon: the exterior ring crosses itself, so the geometry is
     // topologically invalid but structurally well-formed (closed ring, finite coordinates). Under
     // the shared validity gate (default Repair) it is fixed with ST_MakeValid-equivalent repair
-    // instead of failing the whole file the way the old GeoJSON topology preflight did (#2743).
+    // instead of failing the whole file the way the old GeoJSON topology preflight did.
     private const string SelfIntersectingPolygonGeoJson = """
         {
           "type": "FeatureCollection",
@@ -1334,7 +1334,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
     {
         // With GeometryValidityMode=Strict, SkipInvalidGeometry=false, and ContinueOnError=false the
         // shared validity gate rejects the invalid geometry and the import fails rather than storing
-        // or repairing it. Reachable end-to-end now that the config binding honors the mode (#2743).
+        // or repairing it. Reachable end-to-end now that the config binding honors the mode.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
         try
         {
@@ -1442,7 +1442,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
     {
         // With GeometryValidityMode=Accept the validity gate is bypassed: the invalid geometry is
         // stored as-is (no repair, no rejection). Reachable now that the config binding honors the
-        // mode (#2743).
+        // mode.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
         try
         {
@@ -1497,7 +1497,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
         // gpkg_spatial_ref_sys) and real writers stamp that local id into every geometry blob
         // header. The import must georeference rows with the resolved EPSG code — never the local
         // id — end to end: CRS detection resolves 27700, the reader stamps it over the blob header
-        // SRID, and the insert transforms 27700 -> 4326 (#2743).
+        // SRID, and the insert transforms 27700 -> 4326.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
         // The filename segment is a fixed literal + GUID token and can never be rooted, so
         // Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).

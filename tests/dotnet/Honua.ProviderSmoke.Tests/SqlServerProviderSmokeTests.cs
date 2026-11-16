@@ -122,7 +122,7 @@ public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProvide
         // needs no reprojection. Zoom 0 / row 0 / col 0 covers the western hemisphere
         // (-180..0 longitude), so the seeded parcels (~-122 longitude) always fall inside it.
         // PNG (not the MVT default): raster tiles route to SQL Server through
-        // FeatureProviderQueryRouter (honua-server#2962); vector/MVT tiles remain a separate,
+        // FeatureProviderQueryRouter; vector/MVT tiles remain a separate,
         // pre-existing capability gap (no provider besides PostGIS implements ITileProvider).
         var response = await Client.GetAsync(
             $"/ogc/tiles/collections/{ProviderSmokeGraph.LayerId}/tiles/WorldCRS84Quad/0/0/0?f=png");

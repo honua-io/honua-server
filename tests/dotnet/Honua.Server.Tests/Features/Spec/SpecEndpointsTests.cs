@@ -832,7 +832,7 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
         Assert.Equal(contentHash, doc.RootElement.GetProperty("contentHash").GetString());
     }
 
-    // ---- AI-operations guardrail ladder (#1631) -------------------------
+    // ---- AI-operations guardrail ladder -------------------------
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]

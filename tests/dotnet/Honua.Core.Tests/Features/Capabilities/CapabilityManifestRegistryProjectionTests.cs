@@ -100,7 +100,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         manifestIds.Should().Equal(ExpectedManifestCapabilityIds);
     }
 
-    // T10 (#2346): the built-experimental manifest capabilities flipped to
+    // T10: the built-experimental manifest capabilities flipped to
     // Experimental. With the default (flag-off) context these resolve
     // experimental-disabled, so the registry-derived manifest omits them.
     private static readonly string[] ExperimentalManifestCapabilityIds =
@@ -161,7 +161,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         }
     }
 
-    // Declared 2026.1 implementation gaps (#4402): present in the manifest roster on
+    // Declared 2026.1 implementation gaps: present in the manifest roster on
     // purpose so a client can read the gap off `capabilities[]`, but never served.
     private static readonly string[] KnownGapManifestCapabilityIds =
     [

@@ -136,7 +136,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync("/tiles/99999/1/0/0.mvt");
 
         // Assert
-        // honua-server#2945: /tiles is not an Esri protocol surface, so unlike
+        // /tiles is not an Esri protocol surface, so unlike
         // /rest/services it must return a real HTTP 404 with an RFC 7807
         // problem+json body rather than the GeoServices 200-envelope.
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -169,7 +169,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
     [Fact]
     public async Task GetTile_ErrorResponseFormat_DivergesFromGeoServicesRestByDesign()
     {
-        // honua-server#2945: the /tiles surface is a real HTTP-status protocol, not an
+        // The /tiles surface is a real HTTP-status protocol, not an
         // Esri GeoServices surface, so its 404 must NOT match the GeoServices REST
         // 200-envelope shape — this test locks in the intentional divergence (the
         // opposite of the old "ConsistentWith..." assertion this replaces).
@@ -192,7 +192,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
     [Fact]
     public async Task GetTile_AnonymousOnAuthRequiredLayer_ReturnsRealUnauthorizedWithProblemJson()
     {
-        // honua-server#2960 review: the ProblemJson opt-in must also govern
+        // The ProblemJson opt-in must also govern
         // authorization failures, not just layer-not-found — an unauthenticated
         // request against a layer that requires authentication must get a real
         // HTTP 401 problem+json response, not the GeoServices 200-envelope that
@@ -216,7 +216,7 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
     [Fact]
     public async Task GetTile_AuthenticatedWithoutRequiredRole_ReturnsRealForbiddenWithProblemJson()
     {
-        // honua-server#2960 review: a role-denied (but authenticated) request
+        // A role-denied (but authenticated) request
         // must also bypass the GeoServices envelope on /tiles and get a real
         // HTTP 403 problem+json response.
         using var factory = ServiceRbacTestFixture.CreateFactory(

@@ -149,7 +149,7 @@ public sealed class SceneTileCatalogTests
     {
         // A node whose footprint cannot be decoded (missing/short region) must
         // never be silently dropped from a filtered stream — the include-on-
-        // unbounded-node guard returns true even under a restrictive extent (#10).
+        // unbounded-node guard returns true even under a restrictive extent.
         var region = regionLength == 0 ? null : new double[regionLength];
         var node = new Domain.TileNode { BoundingVolume = new Domain.BoundingVolume { Region = region! } };
         var filter = new Proto.Extent3D { Extent = new Proto.Extent { Xmin = 100, Ymin = 100, Xmax = 110, Ymax = 110 } };

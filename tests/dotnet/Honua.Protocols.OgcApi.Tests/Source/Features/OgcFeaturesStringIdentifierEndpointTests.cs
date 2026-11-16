@@ -567,7 +567,7 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 services.RemoveAll<IMetadataV2GraphProvider>();
                 services.AddSingleton<IMetadataV2GraphProvider>(_ => BuildStringIdGraphProvider());
 
-                // OGC API Features writes are Community (#1591); these string-id tests should
+                // OGC API Features writes are Community; these string-id tests should
                 // reach validation and edit behavior without a paid edit entitlement.
             });
         });

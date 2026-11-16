@@ -126,7 +126,7 @@ public sealed class EditProcessorCreateValidationTests
 
     // Resource whose non-nullable "objectid" field carries NO semantic roles — mirrors the many
     // seeded/published layers (e.g. WebAppFixtureMetadataV2Mixin, ServiceRbacTestFixture) that
-    // declare objectid as Nullable=false without the "id.primary" role. BH2-014 (#2456) keyed its
+    // declare objectid as Nullable=false without the "id.primary" role. BH2-014 keyed its
     // primary-id skip exclusively on the role, so every create omitting objectid was rejected.
     private static MetadataV2Object CreateResourceWithUnroledObjectId() => new()
     {
@@ -156,7 +156,7 @@ public sealed class EditProcessorCreateValidationTests
         ]
     };
 
-    // Regression (#2456): a create that supplies every required NON-id field but omits the
+    // Regression: a create that supplies every required NON-id field but omits the
     // server-assigned "objectid" must validate, even when objectid lacks the "id.primary" role.
     // Before the fix this failed with "Required attribute(s) missing for create operation: objectid".
     [UnitTest]

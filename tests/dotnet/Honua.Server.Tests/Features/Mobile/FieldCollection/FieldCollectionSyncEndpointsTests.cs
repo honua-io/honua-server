@@ -234,7 +234,7 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         // delete-vs-delete has always been declared on the wire contract and was never produced:
         // a delete landing on an already-tombstoned row was reported as idempotently applied even
         // when a different actor had deleted it at a version this client never saw, silently hiding
-        // the divergence from the field client (#2430).
+        // the divergence from the field client.
         var featureId = $"feat-{Guid.NewGuid():N}";
         const int layerId = 137;
 
@@ -921,7 +921,7 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         using var scope = _fixture.Services.CreateScope();
         var dataSource = scope.ServiceProvider.GetRequiredService<NpgsqlDataSource>();
 
-        // #2020: the staged INSERT mutates the global honua.fieldcollection_pushed_changes table,
+        // The staged INSERT mutates the global honua.fieldcollection_pushed_changes table,
         // but the existing per-feature pg_advisory_xact_lock (FieldCollectionPushLockNamespace) is
         // load-bearing — it is the holder/loser race the test exercises — so it must be preserved.
         // Additionally take the shared schema-mutation advisory lock around the whole holder block so

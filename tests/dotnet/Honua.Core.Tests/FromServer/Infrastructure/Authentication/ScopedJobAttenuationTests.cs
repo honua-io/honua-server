@@ -171,7 +171,7 @@ public sealed class ScopedJobAttenuationTests
     [UnitTest]
     public void Intersect_GrantBasedWriteSubmitter_RetainsWrite_NoRoleNeeded()
     {
-        // #2192: the submitter's write authority comes purely from a layer-scoped
+        // The submitter's write authority comes purely from a layer-scoped
         // write:{service}/{layer} permission GRANT — they hold no data-editor role.
         // The intersection must retain that write (previously it was dropped because
         // only roles were considered).

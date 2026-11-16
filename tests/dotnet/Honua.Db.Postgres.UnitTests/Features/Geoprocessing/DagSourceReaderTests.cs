@@ -258,7 +258,7 @@ public sealed class DagSourceReaderTests
     [UnitTest]
     public async Task HonuaLayer_ObjectIdsRequest_BuildsExactObjectIdSet()
     {
-        // #4624: analytics.buffer-aggregate (and its layer-sourced siblings) advertise
+        // Analytics.buffer-aggregate (and its layer-sourced siblings) advertise
         // 'objectIds' but source.honua-layer previously never propagated it into the
         // FeatureQuery the streaming store filters by, so it was silently accepted and
         // ignored. Assert the built FeatureQuery.ObjectIds is EXACTLY the requested set
@@ -285,7 +285,7 @@ public sealed class DagSourceReaderTests
     [UnitTest]
     public async Task HonuaLayer_GeometryOrTimeSelector_WithoutCanonicalTranslator_FailsClosedBeforeReading()
     {
-        // #4624: a geometry/time selector the connector cannot interpret canonically must never be
+        // A geometry/time selector the connector cannot interpret canonically must never be
         // dropped — reading without it would hand back a broader feature set than requested.
         var store = Substitute.For<IStreamingFeatureStore>();
         var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42));

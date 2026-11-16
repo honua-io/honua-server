@@ -121,7 +121,7 @@ public sealed class FeatureMutationOutboxScopeTests
     [UnitTest]
     public async Task ResolveOutboxScopeAsync_OutboxEntry_CarriesMutationTimestampForDelayedDispatch()
     {
-        // Outbox payload-time guard (#692): when the mutation is committed at T1 but the
+        // Outbox payload-time guard: when the mutation is committed at T1 but the
         // dispatcher only appends the canonical event at T2 (e.g., Postgres claim lease
         // expired and recovery re-claimed the row hours later), replay/from filtering
         // should still see T1 — not T2. We capture the mutation timestamp once in
@@ -159,7 +159,7 @@ public sealed class FeatureMutationOutboxScopeTests
     [UnitTest]
     public async Task ResolveOutboxScopeAsync_ExplicitGeometryChangedTrue_EncodesTrue()
     {
-        // GeometryChanged contract (#692): the outbox payload mirrors the protocol-layer
+        // GeometryChanged contract: the outbox payload mirrors the protocol-layer
         // publish path's explicit geometryChanged signal — the source of truth for whether
         // the originating request intended to mutate geometry — rather than inferring from
         // the post-mutation snapshot.
@@ -188,7 +188,7 @@ public sealed class FeatureMutationOutboxScopeTests
     [UnitTest]
     public async Task ResolveOutboxScopeAsync_PatchPreservesGeometry_EncodesGeometryChangedFalse()
     {
-        // OData PATCH regression guard (#692): an attribute-only PATCH on a spatial
+        // OData PATCH regression guard: an attribute-only PATCH on a spatial
         // feature returns a snapshot with geometry (the prior WKB), but the protocol-
         // layer geometryChanged signal is false. The outbox payload must follow the
         // protocol signal, not the snapshot heuristic, otherwise PATCH is reported as
@@ -246,7 +246,7 @@ public sealed class FeatureMutationOutboxScopeTests
     [UnitTest]
     public async Task ResolveOutboxScopeAsync_BeginRowAttempt_AdvancesQueueOnFailedRows()
     {
-        // Partial-success regression guard (#692): non-rollback batches catch row mutation
+        // Partial-success regression guard: non-rollback batches catch row mutation
         // failures and continue. Without BeginRowAttempt, the failed row never reaches
         // EntryFactory, so its queued GeometryChanged / requestId stays at the head of the
         // queue and the next successful row of the same kind dequeues it. Calling
@@ -326,7 +326,7 @@ public sealed class FeatureMutationOutboxScopeTests
     [UnitTest]
     public async Task ResolveOutboxScopeAsync_PerOperationGeometryChanged_DequeuesInOrderAndFallsBack()
     {
-        // Atomic batch path (#692): per-row geometryChanged must dequeue from the kind-keyed
+        // Atomic batch path: per-row geometryChanged must dequeue from the kind-keyed
         // queue in input order. When the queue runs out, fall back to the scope-wide bool
         // (default false) so the row's GeometryChanged is never under-/over-reported by an
         // out-of-band heuristic.
@@ -376,7 +376,7 @@ public sealed class FeatureMutationOutboxScopeTests
     [UnitTest]
     public async Task ResolveOutboxScopeAsync_PerOperationRequestIds_DequeuesInOrderAndFallsBack()
     {
-        // Atomic batch correlation guard (#692): the entry factory must consume the
+        // Atomic batch correlation guard: the entry factory must consume the
         // per-operation queues in input order so each outbox row carries the originating
         // subrequest id; once a queue is exhausted, subsequent rows fall back to the
         // resolved scope-wide id (parent trace identifier when no requestId was provided).
@@ -426,7 +426,7 @@ public sealed class FeatureMutationOutboxScopeTests
     [UnitTest]
     public async Task ResolveOutboxScopeAsync_LayerSridFallback_PrefersLatestWkidForSridLessWkb()
     {
-        // Geodesy regression guard (#692): protocol handlers pass
+        // Geodesy regression guard: protocol handlers pass
         // layer.SpatialReference.ToSrid() (which prefers LatestWkid) through to
         // ResolveOutboxScopeAsync as the layerSrid fallback. Passing layer.Wkid alone
         // would publish the deprecated WKID — e.g., 102100 for a Web Mercator layer

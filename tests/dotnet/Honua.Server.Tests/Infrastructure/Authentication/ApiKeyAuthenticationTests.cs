@@ -266,7 +266,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Fact]
     public void AdminEndpoint_StagingEnvironment_DevAuthSet_StartupValidationRejects()
     {
-        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // SECURITY REGRESSION GUARD:
         // The dev-auth bypass must NEVER be configurable in Staging. Startup
         // configuration validation (ConfigurationValidationService) is the
         // first line of defence — setting HONUA_DEV_AUTH=true in a
@@ -290,7 +290,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Fact]
     public void AdminEndpoint_CustomEnvironment_DevAuthSet_StartupValidationRejects()
     {
-        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // SECURITY REGRESSION GUARD:
         // Custom/unknown environment names (e.g. QA, Preview) must default to
         // enforcing authentication. The dev-auth bypass cannot be configured
         // in any environment other than Development or Test.
@@ -311,7 +311,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Fact]
     public void AdminEndpoint_DevelopmentEnvironment_DevAuthSet_StartupValidationRejects()
     {
-        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // SECURITY REGRESSION GUARD:
         // The bypass is restricted to the Test environment. In Development,
         // HONUA_DEV_AUTH=true is REJECTED at startup — operators must
         // configure HONUA_ADMIN_PASSWORD for development access instead.

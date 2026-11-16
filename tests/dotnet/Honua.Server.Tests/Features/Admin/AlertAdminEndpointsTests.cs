@@ -815,7 +815,7 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         IReadOnlyCollection<AlertChannelType> allowedChannels,
         IReadOnlyCollection<AlertChannelType> configuredChannels)
     {
-        // #2998: rule mutations/evaluation are entitlement-gated; grant Enterprise so these
+        // Rule mutations/evaluation are entitlement-gated; grant Enterprise so these
         // tests keep exercising the stubbed IAlertEditionPolicy paths past the license gate.
         // The license gate itself is covered by AlertEntitlementGateTests.
         return new WebAppFixture()

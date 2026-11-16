@@ -389,7 +389,7 @@ public class OracleFeatureQueryBuilderTests
 
         // Esri esriSpatialRelWithin = filter geometry within feature geometry. SDO_RELATE masks
         // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
-        // the filter geometry must be the FIRST operand (#2068).
+        // the filter geometry must be the FIRST operand.
         Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=INSIDE+COVEREDBY') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
@@ -407,7 +407,7 @@ public class OracleFeatureQueryBuilderTests
 
         // Esri esriSpatialRelContains = filter geometry contains feature geometry. SDO_RELATE
         // masks are operand-order sensitive, so the filter geometry must be the FIRST operand:
-        // SDO_RELATE(filter, feature, 'mask=CONTAINS') (#2068).
+        // SDO_RELATE(filter, feature, 'mask=CONTAINS').
         Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=CONTAINS+COVERS') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
@@ -821,7 +821,7 @@ public class OracleFeatureQueryBuilderTests
     [Fact]
     public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
     {
-        // Temporal analytics went GA (#2429); providers that cannot translate a temporal
+        // Temporal analytics went GA; providers that cannot translate a temporal
         // predicate must fail loud rather than silently return rows outside the requested
         // window. The Oracle provider has no temporal translation in this slice.
         var query = new FeatureQuery

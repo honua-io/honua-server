@@ -45,7 +45,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
         // does not race a concurrent collection's locked DROP SCHEMA ... CASCADE and deadlock (40P01).
         await _fixture.CreateSchemaUnderLockAsync(_schema);
 
-        // honua-server#1568 follow-up: serialize the embedded migration set (it mutates the literal,
+        // Serialize the embedded migration set (it mutates the literal,
         // process-global honua schema, which per-test search_path isolation does NOT scope) under the
         // shared seed advisory lock so this upgrade does not race locked seeders on the shared catalog
         // and deadlock (40P01) the parallel [Collection("Database")] run.
@@ -54,7 +54,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
             Assembly.GetAssembly(typeof(Program))!);
         result.Successful.Should().BeTrue(result.Error?.ToString());
 
-        // #2020: route the literal honua.layers INSERT through the shared schema-mutation advisory
+        // Route the literal honua.layers INSERT through the shared schema-mutation advisory
         // lock so it serializes with parallel-collection seeders instead of racing the catalog (40P01).
         await _fixture.ApplyGlobalSeedSqlAsync($"""
             INSERT INTO honua.layers (layer_id, layer_name, table_schema, table_name, geometry_type, srid)
@@ -65,7 +65,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        // #2020: serialize the CASCADE drop on the shared advisory lock (catalog churn).
+        // Serialize the CASCADE drop on the shared advisory lock (catalog churn).
         await _fixture.DropSchemaAsync(_schema);
     }
 

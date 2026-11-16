@@ -657,7 +657,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
     }
 
-    // #1446: Esri's canonical validateSQL is at the SERVICE level (no layerId) and takes
+    // Esri's canonical validateSQL is at the SERVICE level (no layerId) and takes
     // sql + sqlType (one of where, orderBy, expression).
     [IntegrationTest]
     [Operation(Operations.ValidateSql)]
@@ -719,7 +719,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
     }
 
-    // #1858: Real Esri clients send the canonical sqlType enum
+    // Real Esri clients send the canonical sqlType enum
     // (esriSQLTypeWhere / esriSQLTypeOrderBy / esriSQLTypeExpression). These must be
     // accepted in addition to the short forms.
     [IntegrationTest]
@@ -769,7 +769,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
         document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
     }
 
-    // #1901: the ArcGIS API for Python sends sqlType=statement; both endpoints map it to
+    // The ArcGIS API for Python sends sqlType=statement; both endpoints map it to
     // expression validation.
     [IntegrationTest]
     [Operation(Operations.ValidateSql)]

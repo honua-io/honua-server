@@ -232,7 +232,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
     }
 
-    // ---- Ridge/occlusion terrain (honua-server#2945) ----
+    // ---- Ridge/occlusion terrain ----
     //
     // The tests above only seed FLAT terrain, so "visible" is trivially true for every
     // sample regardless of whether occlusion logic is correct (Core.Tests already covers
@@ -362,7 +362,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/viewshed")]
     public async Task PostViewshed_ObserverRaisedAboveRidgeRing_RestoresLongRangeVisibility()
     {
-        // honua-release#100: the ridge test above proves occlusion with a ground-level
+        // The ridge test above proves occlusion with a ground-level
         // observer, and the flat test proves the trivial all-visible case, but nothing
         // proved that observerHeight actually feeds the occlusion math at the endpoint — a
         // viewshed that ignored the observer offset entirely would pass both. Same terrain,
@@ -410,7 +410,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/viewshed")]
     public async Task PostViewshed_SampleGrid_MatchesRequestedRayFanAndRadius()
     {
-        // honua-release#100: the existing viewshed tests assert visibility verdicts but never
+        // The existing viewshed tests assert visibility verdicts but never
         // the sampling contract itself — that the response really is rayCount evenly-spaced
         // rays of samplesPerRay points, all inside the requested radius and positioned on the
         // ray they claim. A service that returned an arbitrary point cloud, or silently

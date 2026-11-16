@@ -648,7 +648,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         // Instant-only mode (no EndPropertyName): the predicate is
         // start_time >= queryStart AND start_time <= queryEnd.
         // start_time spans 2024-01-01..2024-01-10 (one per parcel).
-        // Window 2024-01-03..2024-01-05 should match parcels 3, 4, 5 (#379).
+        // Window 2024-01-03..2024-01-05 should match parcels 3, 4, 5.
         var query = new FeatureQuery
         {
             TemporalFilter = new TemporalFilter

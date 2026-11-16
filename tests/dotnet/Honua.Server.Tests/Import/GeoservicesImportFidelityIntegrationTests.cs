@@ -59,7 +59,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
 
     // Perf-parity budget the scorecard is graded against. Configurable via the
     // HONUA_TEST_PERF_PARITY_* environment variables so CI/operators can tighten or relax the
-    // latency budget without recompiling; falls back to the GeoServices default budget (#1249).
+    // latency budget without recompiling; falls back to the GeoServices default budget.
     private static readonly PerfParityBudget _perfParityBudget = LoadPerfParityBudget();
 
     private static PerfParityBudget LoadPerfParityBudget()
@@ -4058,7 +4058,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
 
         // Grade the already-measured latency ratios against the configurable perf budget and
         // embed the resulting verdict into the scorecard so the gate (and CI) can enforce it.
-        // This is the performance analogue of the correctness Checks above (issue #1249).
+        // This is the performance analogue of the correctness Checks above.
         var perfParity = GeoServicesPerfParityGate.Evaluate(
             latencyMetrics.SampleCount,
             latencyMetrics.HonuaToSourceP95Ratio,

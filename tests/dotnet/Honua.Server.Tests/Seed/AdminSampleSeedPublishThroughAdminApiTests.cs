@@ -187,7 +187,7 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
             return;
         }
 
-        // #2020: serialize the global honua.* cleanup deletes under the schema-mutation advisory
+        // Serialize the global honua.* cleanup deletes under the schema-mutation advisory
         // lock (parameterized multi-statement command spanning a TEMP staging table).
         await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {

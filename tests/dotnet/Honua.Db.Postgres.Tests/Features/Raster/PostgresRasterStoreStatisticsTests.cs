@@ -216,7 +216,7 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
             raw[0].MinValue.Should().Be(0);
             raw[0].MaxValue.Should().Be(300);
 
-            // A MinMax stretch (#1871) rescales the band to 8-bit, so the rendered statistics must
+            // A MinMax stretch rescales the band to 8-bit, so the rendered statistics must
             // be bounded to [0, 255] — proving the renderingRule was applied BEFORE stats.
             var rendering = new RasterIdentifyRendering(
                 new RasterStretch { StretchType = RasterStretchType.MinMax }, null, null);

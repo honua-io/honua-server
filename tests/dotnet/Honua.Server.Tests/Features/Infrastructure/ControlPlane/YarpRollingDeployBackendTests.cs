@@ -87,8 +87,8 @@ public sealed class YarpRollingDeployBackendTests
     public async Task StartAsync_MountsOperatorSuppliedFilesIntoTheReplica()
     {
         // A 2026.1 image that connects to Redis outside Development/Test refuses to start until
-        // Operations:SecretChannel:KeyRingCertificatePath names a real certificate (#4722, #4885).
-        // That is a file, so env vars alone cannot roll such an image out at all (#4617).
+        // Operations:SecretChannel:KeyRingCertificatePath names a real certificate.
+        // That is a file, so env vars alone cannot roll such an image out at all.
         var keyRing = Directory.CreateTempSubdirectory("honua-rolling-mount-test");
         try
         {
@@ -212,7 +212,7 @@ public sealed class YarpRollingDeployBackendTests
     [Fact]
     public async Task PromoteAsync_SwapsProxyAndRetainsOldReplica_ReturnsSucceeded()
     {
-        // honua-server#4618: the old replica must survive cutover so the durable post-activation
+        // The old replica must survive cutover so the durable post-activation
         // observation window has something to recover to. Stopping it here (the pre-fix behavior)
         // disconnected the advertised rollback protection window from reality.
         var backend = CreateBackend(out var runtime, out var proxy, out var probe);
@@ -420,7 +420,7 @@ public sealed class YarpRollingDeployBackendTests
     [Fact]
     public void ResolveRunningDestination_BothRunningNoDurableRecord_PrefersActive()
     {
-        // honua-server#4618: with retention, both replicas are legitimately running for the entire
+        // With retention, both replicas are legitimately running for the entire
         // observation window, not just pre-cutover. Without a durable operation to disambiguate, the
         // container-only heuristic must keep its pre-existing, conservative default (prefer active) —
         // it must never guess standby, which would blackhole traffic on a still-baking candidate.

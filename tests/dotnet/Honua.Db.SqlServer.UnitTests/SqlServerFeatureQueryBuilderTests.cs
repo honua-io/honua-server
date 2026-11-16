@@ -626,7 +626,7 @@ public class SqlServerFeatureQueryBuilderTests
     {
         // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
         // geometry must be the calling instance: filter.STWithin(feature). Leading with the
-        // feature column inverts the relationship and returns the wrong (empty) set (#2068).
+        // feature column inverts the relationship and returns the wrong (empty) set.
         var mapping = BuildMapping();
         var query = new FeatureQuery
         {
@@ -643,7 +643,7 @@ public class SqlServerFeatureQueryBuilderTests
     public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
     {
         // Esri esriSpatialRelContains = filter geometry contains feature geometry, so the filter
-        // geometry must be the calling instance: filter.STContains(feature) (#2068).
+        // geometry must be the calling instance: filter.STContains(feature).
         var mapping = BuildMapping();
         var query = new FeatureQuery
         {
@@ -942,7 +942,7 @@ public class SqlServerFeatureQueryBuilderTests
     [Fact]
     public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
     {
-        // Temporal analytics went GA (#2429); providers that cannot translate a temporal
+        // Temporal analytics went GA; providers that cannot translate a temporal
         // predicate must fail loud rather than silently return rows outside the requested
         // window. The SQL Server provider has no T-SQL temporal translation in this slice.
         var query = new FeatureQuery

@@ -89,7 +89,7 @@ public sealed class AddHonuaPluginsTests
     [Fact]
     public void Pipeline_DoesNotCaptureScopedDependencies_UnderValidateScopes()
     {
-        // Regression (#347): IAuditLog is registered scoped by the server (PostgresAuditLog needs
+        // Regression: IAuditLog is registered scoped by the server (PostgresAuditLog needs
         // a per-request connection). The pipeline must therefore not be a singleton, or it becomes
         // a captive dependency that fails ValidateScopes/ValidateOnBuild — which ASP.NET enables in
         // Development, breaking unrelated host-startup tests.

@@ -25,7 +25,7 @@ public sealed class GeographicSridClassifierTests
     [InlineData(4490)]  // CGCS2000
     [InlineData(6668)]  // JGD2011
     [InlineData(4674)]  // SIRGAS 2000
-    // Resolved divergences (#2732): previously missing from the broad axis-order list.
+    // Resolved divergences: previously missing from the broad axis-order list.
     [InlineData(4759)]  // NAD83(NSRS2007) — was geodesic-listed but not axis-listed.
     [InlineData(4619)]  // SWEREF99 — was only in the Postgres fallback.
     [InlineData(4617)]  // NAD83(CSRS) — Postgres fallback lacked it; now unified.
@@ -71,7 +71,7 @@ public sealed class GeographicSridClassifierTests
 
     [Trait("Tier", "Fast")]
     [Theory]
-    // Geographic, but intentionally OUTSIDE the geodesic-safe allowlist (#2731): the WGS 84 spheroid
+    // Geographic, but intentionally OUTSIDE the geodesic-safe allowlist: the WGS 84 spheroid
     // distance is not applied directly and the DuckDB provider rejects distance filters on these.
     [InlineData(4674)]  // SIRGAS 2000
     [InlineData(4230)]  // ED50

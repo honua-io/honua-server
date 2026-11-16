@@ -214,7 +214,7 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
             .Should().Be(HttpStatusCode.BadRequest);
     }
 
-    // ---- $filter literal typing (#4203) ----
+    // ---- $filter literal typing ----
 
     [IntegrationTest]
     [Operation(Operations.Query)]

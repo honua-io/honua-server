@@ -315,7 +315,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
     public async Task ClientCertificatesEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
     {
-        // #2958: security.mtls was promoted to GA in #2431, then DEMOTED back to experimental
+        // Security.mtls was promoted to GA in #2431, then DEMOTED back to experimental
         // (release-safety follow-up to #2946/#2431). The client-certificate trust-profile admin
         // group is gated Preview again: with experimental OFF the capability-gate filter must
         // short-circuit with 404 honua:capability-experimental-disabled before any handler runs.

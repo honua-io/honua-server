@@ -168,7 +168,7 @@ public sealed class LayerAccessAuthorizerTests
     [Trait("Tier", "Fast")]
     public async Task AuthorizeLayerAsync_DraftRestrictedService_KeepsServicePolicy(AuthorizationOperation operation)
     {
-        // honua-server#6102: staging a role-restricted service must not widen access to its
+        // Staging a role-restricted service must not widen access to its
         // storage layer by dropping the service policy on the (resource, null) fallback.
         var graph = BuildPublishedGraph(
             serviceLifecycle: MetadataV2LifecycleStatus.Draft,

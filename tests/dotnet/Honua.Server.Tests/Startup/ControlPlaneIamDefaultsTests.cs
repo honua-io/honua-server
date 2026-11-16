@@ -49,7 +49,7 @@ public sealed class ControlPlaneIamDefaultsTests
     [Fact]
     public void AddInMemoryControlPlaneIamDefaults_PreservesDurableUserStoresRegisteredEarlier()
     {
-        // #3141: the durable PostgresUserStore / PostgresScimGroupStore registered by
+        // The durable PostgresUserStore / PostgresScimGroupStore registered by
         // AddPostgreSqlServices (earlier in Program.cs) must win over the in-memory
         // defaults for ALL THREE user contracts, or SCIM provisioning and the admin
         // surface would silently split across different record sets.

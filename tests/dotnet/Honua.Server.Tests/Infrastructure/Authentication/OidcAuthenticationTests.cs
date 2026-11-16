@@ -673,11 +673,11 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/version")]
     public async Task AdminEndpoint_MtlsCapabilityDisabled_ValidBearerToken_ReturnsCleanOk()
     {
-        // honua-server#2958: native mTLS/client-certificate authentication is demoted to
+        // Native mTLS/client-certificate authentication is demoted to
         // experimental and gated behind Capabilities:Experimental:security.mtls:Enabled
         // (default off). Even when an operator has configured
         // Authentication:ClientCertificates:Mode (here RequiredForAdmin, which — before
-        // #2958 — made the always-on cert-RBAC layer interpose on every admin request
+        // Made the always-on cert-RBAC layer interpose on every admin request
         // regardless of bearer-token validity) but has NOT opted into the experimental
         // capability, the client-certificate scheme/policy-scheme entry/enforcement
         // middleware must not be registered at all, so a valid bearer-token admin request
@@ -1156,7 +1156,7 @@ public class OidcAuthenticationTests
     [Endpoint("POST /mcp")]
     public async Task AdminEndpoint_OidcEnabled_ReusedBearerToken_IsAdmittedWithinLifetimeButReplaysOnMcpWhenReplayProtectionEnabled()
     {
-        // honua-server#4899: replay protection must not make an ordinary access token
+        // Replay protection must not make an ordinary access token
         // single-use. The token stays reusable on the HTTP API it was first admitted on,
         // and presenting it to another surface (the MCP transport) is still a replay.
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>

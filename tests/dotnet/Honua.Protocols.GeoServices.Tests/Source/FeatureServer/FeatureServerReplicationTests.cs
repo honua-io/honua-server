@@ -269,7 +269,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task ReplicaInfo_PerLayerReplica_EmitsLayerServerGensAsArray()
     {
-        // #4020: layerServerGens was a JSON-encoded string, so info['layerServerGens'][0]['serverGen']
+        // LayerServerGens was a JSON-encoded string, so info['layerServerGens'][0]['serverGen']
         // failed in every client. The expected generations come from the createReplica and
         // synchronizeReplica responses, not from the info resource under test.
         var createPayload = JsonSerializer.Serialize(new
@@ -473,7 +473,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task ReplicaDownload_PointZMFeature_KeepsZMAndLayerSpatialReference()
     {
-        // #4027: every replica download used to flatten Z/M and carry no spatial reference, so a 3D or
+        // Every replica download used to flatten Z/M and carry no spatial reference, so a 3D or
         // measured layer synced offline lost its ordinates and wrote them back flattened on upload.
         // The expected ordinates are the literal values written below, and 4326 is the SRID the test
         // layer is seeded with (TestDataBuilder), not values read back from the server under test.
@@ -528,7 +528,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_RollbackOnFailureOmitted_RollsBackTheLayerBatch()
     {
-        // #4031: Esri documents rollbackOnFailure=true as the Synchronize Replica default. A client that
+        // Esri documents rollbackOnFailure=true as the Synchronize Replica default. A client that
         // omits it must not get the valid add committed next to the failing update.
         EnableSyncEditing();
         var replicaId = await CreateReplicaForEditsAsync("RollbackDefault");

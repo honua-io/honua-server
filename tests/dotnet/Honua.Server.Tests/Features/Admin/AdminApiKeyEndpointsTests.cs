@@ -160,7 +160,7 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/api-keys")]
     public async Task ReadOnlyScopedKey_CanReadAdminSurface()
     {
-        // #1985: a key scoped to admin:read must still be able to perform safe
+        // A key scoped to admin:read must still be able to perform safe
         // (GET) admin reads — scoped enforcement narrows, it does not lock out.
         var created = await CreateApiKeyAsync("scoped-read-key", permissions: ["admin:read"]);
         using var readKeyClient = CreateApiKeyClient(created.Key);
@@ -215,7 +215,7 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/api-keys")]
     public async Task FullAdminScopedKey_RetainsFullAdminAuthority()
     {
-        // #1985: the default-minted key carries admin:* and must keep full admin
+        // The default-minted key carries admin:* and must keep full admin
         // (read AND write) so existing keys are never locked out by enforcement.
         var created = await CreateApiKeyAsync("scoped-full-admin-key", permissions: ["admin:*"]);
         using var fullKeyClient = CreateApiKeyClient(created.Key);
@@ -361,7 +361,7 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
     {
         // A key whose grants are genuinely scoped — neither a full-admin grant
         // (admin / * / admin:*) nor a layer-scoped write: grant — must NOT be
-        // silently elevated to full admin (issue #1985). It authenticates but is
+        // silently elevated to full admin. It authenticates but is
         // forbidden from the admin surface guarded by RequireAdminAuthorization.
         var scoped = await CreateApiKeyAsync("scoped-read-key", permissions: ["read:layers"]);
         using var scopedClient = CreateApiKeyClient(scoped.Key);
@@ -418,7 +418,7 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
     {
         // Backward compatibility: a key carrying a full-admin grant (and the
         // default unscoped key, normalized to admin:*) still passes every admin
-        // endpoint (issue #1985).
+        // endpoint.
         var explicitAdmin = await CreateApiKeyAsync("explicit-admin-key", permissions: ["admin:*"]);
         var defaultAdmin = await CreateApiKeyAsync("default-admin-key");
         Assert.Equal("admin:*", Assert.Single(defaultAdmin.ApiKey.Permissions));

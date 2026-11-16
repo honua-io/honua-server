@@ -146,7 +146,7 @@ public sealed class ReadinessCheckServiceTests
     [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithFeatureChangeStoreInFallbackMode_StillReturnsReady()
     {
-        // Single-node deployment without Redis (#1618): the event store runs in
+        // Single-node deployment without Redis: the event store runs in
         // explicit in-memory mode and must report healthy-with-degraded-note.
         var logger = new MockLogger<ReadinessCheckService>();
         var migrationState = new MigrationState();
@@ -346,7 +346,7 @@ public sealed class ReadinessCheckServiceTests
     [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithStaleAlertDispatchHeartbeat_ReturnsNotReady()
     {
-        // Alert control loops surface on the paged readiness path (#2810): a hung dispatcher
+        // Alert control loops surface on the paged readiness path: a hung dispatcher
         // (stale poll heartbeat) must fail readiness.
         var dispatch = new StubDispatchHealth
         {

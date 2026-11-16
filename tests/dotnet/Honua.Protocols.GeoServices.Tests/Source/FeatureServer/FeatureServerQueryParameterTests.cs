@@ -114,7 +114,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     // returnExceededLimitFeatures is included here because the ArcGIS Maps SDK for
     // .NET ServiceFeatureTable.QueryFeaturesAsync always sends it, and its contract
     // ("return rows beyond maxRecordCount + report exceededTransferLimit") matches
-    // Honua's default behavior, so it is accept-and-ignore (#1460).
+    // Honua's default behavior, so it is accept-and-ignore.
     [Theory]
     [InlineData("gdbVersion=sde.DEFAULT")]
     [InlineData("quantizationParameters=1")]
@@ -160,7 +160,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // honua-server#1825: a resultRecordCount above maxRecordCount must be silently capped
+    // A resultRecordCount above maxRecordCount must be silently capped
     // to maxRecordCount (and the page returned) rather than rejected with a 400 — this is
     // what ArcGIS does, and clients routinely pass a large "give me everything" count. The
     // default maxRecordCount in the test host is 10000, so 100000 is over the limit.
@@ -646,7 +646,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithGeoParquetFormatAndResolvableNon4326OutSR_ReturnsParquetWithProjJsonCrs()
     {
-        // #2844: EPSG:3857 has a resolvable PROJJSON definition, so GeoParquet output reprojects
+        // EPSG:3857 has a resolvable PROJJSON definition, so GeoParquet output reprojects
         // through the shared query pipeline and emits the authoritative PROJJSON crs metadata.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=3857");
@@ -662,7 +662,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithGeoParquetFormatAndUnresolvableOutSR_ReturnsBadRequest()
     {
-        // #2844/#2907: EPSG:2000 (Anguilla 1957 / British West Indies Grid) is a valid CRS the
+        // EPSG:2000 (Anguilla 1957 / British West Indies Grid) is a valid CRS the
         // registry resolves from spatial_ref_sys, but it is NOT in the GeoParquet PROJJSON
         // catalog. This exercises the catalog-resolvability branch of the endpoint guard (a
         // made-up SRID would be rejected earlier by CRS-registry validation, never reaching it).
@@ -887,7 +887,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithPjsonFormat_ReturnsPrettyPrintedJson()
     {
-        // f=pjson must emit indented JSON, not the byte-identical compact f=json payload (#1824).
+        // f=pjson must emit indented JSON, not the byte-identical compact f=json payload.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=pjson");
 
@@ -914,7 +914,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     public async Task Query_WithoutFormatAndWildcardAccept_DefaultsToJson()
     {
         // Esri REST defaults f to json; a no-f request (even with a wildcard Accept that a
-        // browser/curl sends) must not silently return binary protobuf (#1824).
+        // browser/curl sends) must not silently return binary protobuf.
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1");
@@ -1108,7 +1108,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
 
     // Regression: returnDistinctValues must honor the caller's outFields verbatim.
     // Force-appending objectid would give every distinct row a unique OID and defeat
-    // de-duplication, so the OID must NOT appear in the returned attributes (#1427).
+    // de-duplication, so the OID must NOT appear in the returned attributes.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
@@ -1134,7 +1134,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
 
     // Esri's large-page JSON path used the streaming formatter before this regression:
     // returnDistinctValues was ignored there, so duplicate attributes and feature OIDs
-    // leaked into the response (#4091).
+    // leaked into the response.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
@@ -1232,7 +1232,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         content.Should().Contain("having");
     }
 
-    // #3372: when outStatistics is present the result columns ARE the statistic aliases plus
+    // When outStatistics is present the result columns ARE the statistic aliases plus
     // the groupByFieldsForStatistics columns, so ordering by an alias is the only way to order
     // aggregate output. ArcGIS Server accepts it; validating against the layer's source fields
     // (the non-aggregate denominator) rejected it. The test layer groups to test=3, sample=2.

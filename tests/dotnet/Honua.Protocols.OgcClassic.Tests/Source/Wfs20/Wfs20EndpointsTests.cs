@@ -1653,7 +1653,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_Transaction_Insert_WithUnparseableSrsName_ReturnsExceptionReport()
     {
         await using var fixture = await StartIsolatedApplicationAsync();
-        // #2737: a present but unparseable/unsupported srsName on an insert geometry is a
+        // A present but unparseable/unsupported srsName on an insert geometry is a
         // transaction failure (OGC exception), not a silent fall back to the layer CRS.
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
@@ -2061,7 +2061,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_Transaction_Replace_RoundTripsGmlDescriptionAndIdentifierCodeSpace()
     {
         await using var fixture = await StartIsolatedApplicationAsync();
-        // Mirrors the WFS 2.0 ETS ReplaceTests flow (#1433): the harness replaces a feature with
+        // Mirrors the WFS 2.0 ETS ReplaceTests flow: the harness replaces a feature with
         // standard gml:description / gml:identifier properties (the identifier carrying a CITE
         // codeSpace) and then asserts they survive a GetFeatureById read-back. gml:identifier is
         // gml:CodeWithAuthorityType, so the codeSpace authority must round-trip too.

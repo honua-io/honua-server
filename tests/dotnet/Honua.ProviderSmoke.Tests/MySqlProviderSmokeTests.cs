@@ -143,7 +143,7 @@ public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, ICl
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task FeatureServer_ApplyEdits_RetriedAfterReadOnlyRejection_Repeats405InsteadOfConflict()
     {
-        // honua-server#3052: the read-only rejection is raised as NotSupportedException AFTER the
+        // The read-only rejection is raised as NotSupportedException AFTER the
         // handler has reserved the Idempotency-Key. Before the fix nothing released that
         // reservation, so a client retrying inside the ~60s reservation window found no replay
         // value, lost TryReserveAsync, and was answered with the idempotency conflict instead of a

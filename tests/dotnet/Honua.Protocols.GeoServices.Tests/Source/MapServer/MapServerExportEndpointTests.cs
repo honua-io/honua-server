@@ -67,7 +67,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithGifFormat_ReturnsBadRequest()
     {
-        // Regression (#1772): format=gif must be rejected cleanly (400), and the
+        // Regression: format=gif must be rejected cleanly (400), and the
         // capability advertisement above must not promise it.
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=gif&f=image");
@@ -229,7 +229,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithGeoServicesProJsonEnvelope_MatchesCommaEnvelope(bool usePost)
     {
-        // Regression (#4501), captured from stock ArcGIS Pro 3.7.1: changing only bbox to CSV made
+        // Regression, captured from stock ArcGIS Pro 3.7.1: changing only bbox to CSV made
         // its blank-map HTTP400 become PNG200. Retain the native precision.
         const string bbox = """
             {"xmin":-122.42168401826947,"ymin":37.765347945206912,"xmax":-122.40797808219641,"ymax":37.786301369864447,"spatialReference":{"wkid":4326,"latestWkid":4326}}
@@ -548,7 +548,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
     public async Task MapServer_EstimateExportTilesSize_WholeWorldHighZoom_DoesNotMaterializeFullGrid()
     {
-        // #2065: a whole-world high-zoom estimate (~6.9e10 tiles at z18) previously built the full
+        // A whole-world high-zoom estimate (~6.9e10 tiles at z18) previously built the full
         // coordinate grid before applying maxTiles, allocating hundreds of GB -> OOM. The count must
         // be computed first and the build bounded by maxTiles, so this returns promptly with the true
         // count, ExceededTransferLimit=true, and no out-of-memory.
@@ -683,7 +683,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
     public async Task MapServer_ExportTiles_WithCompactStorageFormat_ReturnsBadRequest()
     {
-        // Compact Cache V2 / TPKX now negotiates the durable async path (#2706) rather than the old
+        // Compact Cache V2 / TPKX now negotiates the durable async path rather than the old
         // "unsupported" rejection: a single-level request is instead rejected by the TPKX
         // validation, which requires at least two zoom levels.
         var response = await Fixture.Client.GetAsync(
@@ -952,7 +952,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         content.Should().NotContain("System.Text.Json");
     }
 
-    // Regression (#1430): the Esri layerDefs array form [{"layerId":N,"where":...}]
+    // Regression: the Esri layerDefs array form [{"layerId":N,"where":...}]
     // must be accepted (previously rejected with "Invalid layer id").
     [IntegrationTest]
     [Operation(Operations.Export)]
@@ -1077,7 +1077,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // #1302: MapServer/export must accept the GeoServices-standard layers visibility
+    // MapServer/export must accept the GeoServices-standard layers visibility
     // prefixes (show:/hide:/include:/exclude:), not just a bare id list.
     [Theory]
     [InlineData("show")]

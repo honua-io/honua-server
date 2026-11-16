@@ -363,7 +363,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
 
-        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // The decisive content of each delimiter fixture is a QUOTED cell that contains the
         // delimiter. Asserting only the feature count let a reader that split that cell — and then
         // produced three rows anyway — pass. Read the attribute back instead.
         var rows = await ReadImportedRowsAsync("csv_import_table");
@@ -391,7 +391,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
 
-        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // The decisive content of each delimiter fixture is a QUOTED cell that contains the
         // delimiter. Asserting only the feature count let a reader that split that cell — and then
         // produced three rows anyway — pass. Read the attribute back instead.
         var rows = await ReadImportedRowsAsync("csv_semicolon_import_table");
@@ -419,7 +419,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
 
-        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // The decisive content of each delimiter fixture is a QUOTED cell that contains the
         // delimiter. Asserting only the feature count let a reader that split that cell — and then
         // produced three rows anyway — pass. Read the attribute back instead.
         var rows = await ReadImportedRowsAsync("csv_tab_import_table");
@@ -447,7 +447,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
 
-        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // The decisive content of each delimiter fixture is a QUOTED cell that contains the
         // delimiter. Asserting only the feature count let a reader that split that cell — and then
         // produced three rows anyway — pass. Read the attribute back instead.
         var rows = await ReadImportedRowsAsync("csv_pipe_import_table");
@@ -504,7 +504,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("kml_import_table");
         responseContent.Should().Contain("Kml");
 
-        // #4419: without this read-back an importer that dropped the second placemark, or that
+        // Without this read-back an importer that dropped the second placemark, or that
         // read KML's lon,lat pair as lat,lon, passed this test. Assert the envelope too, so a
         // failed or empty import names its own reason instead of surfacing as an empty table.
         var result = DeserializeImportResult(responseContent);
@@ -1059,7 +1059,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("flatgeobuf_import_test");
         responseContent.Should().Contain("\"success\":true");
 
-        // #4419: the sibling GeoJSON test already reads its table back; this one echoed only.
+        // The sibling GeoJSON test already reads its table back; this one echoed only.
         var rows = await ReadImportedRowsAsync("flatgeobuf_import_test");
         rows.Should().ContainSingle();
         rows[0].Name.Should().Be("FGB Import Test");

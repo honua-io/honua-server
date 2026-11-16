@@ -67,7 +67,7 @@ public sealed class MetadataV2EditCapabilitiesTests
     {
         // ["Query","Extract"] is what PostgreSqlLayerPublishingService stamps on every
         // publication it creates, and it is exactly the set that used to let an OGC API
-        // Features insert through unannounced (#4707).
+        // Features insert through unannounced.
         var service = new MetadataV2Service();
         var publication = new MetadataV2Layer { Capabilities = ["Query", "Extract"] };
 

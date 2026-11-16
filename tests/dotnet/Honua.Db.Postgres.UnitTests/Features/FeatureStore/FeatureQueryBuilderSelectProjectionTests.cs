@@ -110,7 +110,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
         // The optimized builder emits the LIMIT placeholder but does not append the pagination
         // value to WhereParameters — pagination is bound by AddQueryParameters, matching the
         // non-optimized BuildSelectQuery convention. Appending it here previously double-bound
-        // pagination at execution (honua-server#1749). Only the OutFields projection parameter
+        // pagination at execution. Only the OutFields projection parameter
         // ("category") belongs in WhereParameters.
         result.WhereParameters.Should().Equal("category");
     }
@@ -138,7 +138,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
         // ORDER BY objectid. Without it the database returns an arbitrary heap/plan order while
         // the next page (which injects ORDER BY objectid because it carries an Offset) is drawn
         // from a different ordering, silently skipping and duplicating rows across the page
-        // boundary (#2070). Mirrors the sibling MySQL provider, which has no LIKE carve-out.
+        // boundary. Mirrors the sibling MySQL provider, which has no LIKE carve-out.
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
         {
@@ -240,7 +240,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
     [Fact]
     public void BuildSelectQuery_WithPrefixedExtensionField_ProjectsFieldWithParameterBoundKey()
     {
-        // honua-server#3392: a declared, queryable STAC/EO extension property such as
+        // A declared, queryable STAC/EO extension property such as
         // `eo:cloud_cover` was rejected by the identifier-shaped validator and never
         // reached the projection, so the server advertised the field in /queryables, the
         // CSV header and the GeoServices `fields` array and then omitted it from every

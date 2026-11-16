@@ -924,7 +924,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetStylesheet_EveryAdvertisedCollectionStylesheet_ResolvesAndIsListed()
     {
-        // #4993: every OGC API Features collection advertises rel=stylesheet at
+        // Every OGC API Features collection advertises rel=stylesheet at
         // /ogc/styles/{resource name}. A collection that has never been styled renders with its
         // layer default, and that default is what the link must return — before the fix it was
         // 404 and /ogc/styles listed nothing, so MapLibre and QGIS could not style the layer.
@@ -1015,7 +1015,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetStylesheet_ProtectedCollectionDefaultStyle_RefusesAnonymousAndServesEntitledCaller()
     {
-        // #4993: the stylesheet a protected collection advertises answers anonymous callers with
+        // The stylesheet a protected collection advertises answers anonymous callers with
         // 401 and serves an entitled caller the style, even when no style has been stored.
         const string entitledRole = "styles-reader";
         const string referer = "https://ogcapi-styles-proof.example/";
@@ -1079,7 +1079,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     {
         await SeedTestLayerStyleAsync(adminClient);
 
-        // Every feature collection now publishes a style (#4993), so the list is not just the
+        // Every feature collection now publishes a style, so the list is not just the
         // seeded one: resolve the seeded layer's own style id and prove it is listed.
         var styleId = _fixture.GetCurrentV2GraphSnapshot()
             .Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId].Metadata.Name;

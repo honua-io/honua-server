@@ -569,7 +569,7 @@ public sealed class FeatureQueryBuilderAnalyticsTests
     [Fact]
     public void BuildSpatialJoinQuery_JoinContainsTarget_PutsTheJoinGeometryFirstInStContains()
     {
-        // honua-server#3069: the canonical member name fixes the operand order, so
+        // The canonical member name fixes the operand order, so
         // the point-in-polygon direction must emit ST_Contains(join, target). The
         // reversed form silently matched nothing for a point target layer.
         var queryBuilder = CreateQueryBuilder();

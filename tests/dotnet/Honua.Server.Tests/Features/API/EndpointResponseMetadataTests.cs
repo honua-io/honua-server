@@ -126,7 +126,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
     {
         using var _ = _factory.CreateClient();
 
-        // honua-server#4980: exportImage answers provider faults with an HTTP 200 error
+        // ExportImage answers provider faults with an HTTP 200 error
         // envelope and is keyed by an ad hoc bbox, so it must stay outside the output cache;
         // with no named policy only the base policy applies, and that never stores a route.
         var exportImageEndpoints = _factory.Services

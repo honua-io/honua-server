@@ -412,7 +412,7 @@ public sealed class GeoServicesFieldSerializationTests
         }
     }
 
-    // ----- Bug 3: array-valued columns must agree with esriFieldTypeString (#5171) -----
+    // ----- Bug 3: array-valued columns must agree with esriFieldTypeString -----
 
     [UnitTheory]
     [InlineData("[\"red\",\"blue\"]")]
@@ -551,7 +551,7 @@ public sealed class GeoServicesFieldSerializationTests
         property.GetRawText().Should().Be(rawJson);
     }
 
-    // ----- Bug 4: the query response must describe a field as the layer resource does (#5197) -----
+    // ----- Bug 4: the query response must describe a field as the layer resource does -----
 
     [UnitTest]
     public async Task Json_QueryFieldBlock_AgreesWithTheLayerResource()

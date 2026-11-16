@@ -677,7 +677,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         {
             var store = CreateStore(schemaName);
 
-            // esriMosaicAttribute over a non-date attribute (#1870): sort by the catalog "id"
+            // esriMosaicAttribute over a non-date attribute: sort by the catalog "id"
             // column. west and overlap-newest are inserted first/second so overlap-newest has the
             // higher id. Descending (Esri default, highest value wins) keeps overlap-newest (5) in
             // the x[1,2] overlap pixel.
@@ -724,7 +724,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         {
             await CreateSensorMetadataTableAsync(schemaName);
 
-            // esriMosaicNadir (#1870): rank by off-nadir angle, lowest (closest to straight-down)
+            // esriMosaicNadir: rank by off-nadir angle, lowest (closest to straight-down)
             // wins. Give west the most-nadir view (2 deg) and overlap-newest a steep off-nadir
             // (25 deg). Default newest-wins would keep overlap-newest (value 5) at the contested
             // pixel; the nadir ordering must instead keep west (value 20), proving off-nadir — not
@@ -870,7 +870,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = CreateStore(schemaName);
 
             // NDVI over band1 (visible) and band2 (infrared): the mosaic export previously ignored
-            // band math entirely (#1803). The output must be a single analytic band.
+            // band math entirely. The output must be a single analytic band.
             var result = await store.ExportMosaicAsync(
                     LayerId,
                     [first, second],
@@ -1145,7 +1145,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
-    // #4060: Esri clients paint exportImage pixels across the requested bbox, so a bbox reaching past
+    // Esri clients paint exportImage pixels across the requested bbox, so a bbox reaching past
     // the raster must return an image covering the whole bbox with NoData outside the data.
     // Fixture: a 2x2 8BUI raster over x[0,10] y[0,10] (5-degree pixels, NoData 255) holding 1 2 / 3 4.
     // bbox [-10,10] at 40x40 gives 0.5-degree output pixels whose grid lines land on 0, so the data is
@@ -1292,7 +1292,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
-    // #4890: a bbox strictly inside the raster must still come back at exactly the requested size and
+    // A bbox strictly inside the raster must still come back at exactly the requested size and
     // extent, fully covered. Fixture: the 2x2 quadrant raster over x[0,10] y[0,10] (5-degree pixels,
     // 1 2 / 3 4). bbox [3,9] at 12x12 gives 0.5-degree output pixels. Every edge of the bbox cuts
     // through a source pixel, and only the upper-right source pixel has its centre inside the bbox.
@@ -1432,7 +1432,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
-    // #4061: an Esri start,end time extent selects the newest acquisition batch inside the window.
+    // An Esri start,end time extent selects the newest acquisition batch inside the window.
     [IntegrationTest]
     public async Task QueryRastersAsync_WithTimeExtent_SelectsNewestBatchInsideWindow()
     {

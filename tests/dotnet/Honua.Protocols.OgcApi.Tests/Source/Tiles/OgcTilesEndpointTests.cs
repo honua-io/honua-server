@@ -633,7 +633,7 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task GetDatasetTile_WithoutFormatOrAccept_ReturnsPngMapTile()
     {
-        // The dataset tileset is a map tileset advertising only image/png (#5446).
+        // The dataset tileset is a map tileset advertising only image/png.
         var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);

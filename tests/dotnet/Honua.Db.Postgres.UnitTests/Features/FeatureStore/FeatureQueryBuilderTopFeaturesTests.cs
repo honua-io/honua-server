@@ -92,7 +92,7 @@ public sealed class FeatureQueryBuilderTopFeaturesTests
     {
         // resultRecordCount/resultOffset must page the top-feature result; the LIMIT/OFFSET
         // placeholders are bound after the where/topCount parameters, so they must be the
-        // trailing placeholders in numeric order (#1906).
+        // trailing placeholders in numeric order.
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
         {
@@ -133,7 +133,7 @@ public sealed class FeatureQueryBuilderTopFeaturesTests
     public void BuildTopFeaturesQuery_WithOutputSrid_TransformsGeometry()
     {
         // outSR (OutputSrid) must reproject output geometry via ST_Transform, mirroring
-        // the normal query path (#1906).
+        // the normal query path.
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
         {

@@ -76,7 +76,7 @@ public sealed class PlanAnalysisToolTests
     {
         // In fixture (demo) mode a caller relying on the returned plan would dead-end, so the
         // tool must hand back an actionable next step naming validate_plan and the process
-        // catalog for hand-authoring (#2815).
+        // catalog for hand-authoring.
         var tool = CreateTool(_jobService);
         var arguments = McpTestFactory.ParseJson(
             """{"intent":"Show open hospitals within 1 km of flood zones as a linked map, table, and chart."}""");
@@ -208,13 +208,13 @@ public sealed class PlanAnalysisToolTests
         reason.Should().NotBeNullOrWhiteSpace();
         reason.Should().Contain("fixture", "the miss reason must disclose fixture (demo) mode");
 
-        // ADR-0076 (#3255) removed the live server-side planner, so the escape hatch the
+        // ADR-0076 removed the live server-side planner, so the escape hatch the
         // reason must point at is now the caller's own model plus honua_validate_plan
         // rather than a server provider setting. The invariant is unchanged: a miss must
         // tell the caller where planning actually happens.
         reason.Should().ContainAny("client model", "honua_validate_plan");
 
-        // #2815: an unmatched intent is the genuine fixture-mode dead-end. The tool must
+        // An unmatched intent is the genuine fixture-mode dead-end. The tool must
         // still hand back an actionable next step (hand-author from the process catalog and
         // validate) so an agent is never left with a bare "rejected" and nowhere to go.
         var nextSteps = body.GetProperty("nextSteps").GetString();

@@ -141,7 +141,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/9999/1/0/0.mvt?time={start},{end}");
 
-        // honua-server#2945: /tiles is not an Esri protocol surface; layer-not-found is
+        // /tiles is not an Esri protocol surface; layer-not-found is
         // a real HTTP 404 + problem+json, not the GeoServices 200-envelope.
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

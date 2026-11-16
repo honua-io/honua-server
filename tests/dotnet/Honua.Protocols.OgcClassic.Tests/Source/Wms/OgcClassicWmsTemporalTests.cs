@@ -282,7 +282,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // targets cite:Autos, or it would reject tokens like "current".
         // V2 cutover: the bypass keys on the V2 resource name.
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
-        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
+        // Route the global honua.layers UPDATE through the schema-mutation advisory lock.
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
             command =>
@@ -322,7 +322,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // Rename layer 1 to cite:Autos so the request can mix both layers in
         // a single LAYERS= argument while keeping layer 0 time-aware.
         _fixture.UpdateV2ResourceName(1, "cite:Autos");
-        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
+        // Route the global honua.layers UPDATE through the schema-mutation advisory lock.
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
             command =>
@@ -350,7 +350,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // OgcTemporalFilterParser (only RFC 3339 instants/intervals). Verify
         // the bypass also covers this CITE-only form. V2 cutover: rename via V2.
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
-        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
+        // Route the global honua.layers UPDATE through the schema-mutation advisory lock.
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
             command =>

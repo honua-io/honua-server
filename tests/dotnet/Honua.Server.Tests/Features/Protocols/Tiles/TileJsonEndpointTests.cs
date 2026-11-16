@@ -75,7 +75,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json");
 
-        // honua-server#2945: /tiles is not an Esri protocol surface, so a real HTTP 404
+        // /tiles is not an Esri protocol surface, so a real HTTP 404
         // + problem+json body is expected here (AssertGeoServicesErrorAsync tolerates a
         // genuine >=400 status, so this also documents the exact shape below).
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

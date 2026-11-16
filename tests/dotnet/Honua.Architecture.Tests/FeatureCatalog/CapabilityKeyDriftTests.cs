@@ -250,12 +250,12 @@ public sealed class CapabilityKeyDriftTests
     [ArchitectureTest]
     public void GeoprocessingCatalog_IsPreviewFor2026_1WhileJobsAndAnalysisStayImplemented()
     {
-        // The 2026-10-25 founder re-tier (honua-release#376) makes the GP catalog Preview.
+        // The 2026-10-25 founder re-tier makes the GP catalog Preview.
         // The demotion is the overrides file: routes stay registered. jobs.runner stays
         // Implemented because it is the durable substrate for imports, tiles and workflows
         // as well as geoprocessing. analysis.spatial stays Implemented because it is spatial
         // analysis, not the GP catalog. Both keep the registry's default RequiresOptIn,
-        // which the gate ignores while maturity is Implemented (#6569).
+        // which the gate ignores while maturity is Implemented.
         var catalog = LoadCommittedCatalog();
         foreach (var capability in new[] { "process.geoprocessing", "process.ogc-api-processes", "serve.wps" })
         {

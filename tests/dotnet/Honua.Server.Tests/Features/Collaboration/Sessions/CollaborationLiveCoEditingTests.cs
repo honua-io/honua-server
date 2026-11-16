@@ -197,7 +197,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
     public async Task Join_StudioIdentityModel_OwnerAllowed_NonOwnerAndUnresolvableDenied()
     {
-        // End-user authorization on (honua-server#3001): two genuinely non-admin scoped API keys.
+        // End-user authorization on: two genuinely non-admin scoped API keys.
         using var factory = CreateFactory(endUserAuthorization: true);
         var apiKeyStore = factory.Services.GetRequiredService<IAdminApiKeyStore>();
         var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
@@ -276,7 +276,7 @@ public sealed class CollaborationLiveCoEditingTests
         var draft = await CreateMapDraftAsync(client);
 
         // Append through the "N" GUID route form, then checkpoint through the "D" form: both
-        // must resolve to ONE canonical op log (honua-server#2999 review).
+        // must resolve to ONE canonical op log.
         var nForm = draft.DraftId.ToString("N");
         var dForm = draft.DraftId.ToString("D");
         var first = await AppendOperationAsync(
@@ -359,7 +359,7 @@ public sealed class CollaborationLiveCoEditingTests
     public async Task EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable()
     {
         // Redis presence alone must NEVER imply multi-replica: a single instance commonly uses
-        // Redis for cache/jobs and must keep full live co-editing (honua-server#2999 review).
+        // Redis for cache/jobs and must keep full live co-editing.
         using var factory = CreateFactory(
             configuration: new Dictionary<string, string?>
             {
@@ -700,7 +700,7 @@ public sealed class CollaborationLiveCoEditingTests
         // open while a second request is assigned cursor 2 and completes. Without a
         // serialization point between cursor assignment and live fan-out the stream broadcasts
         // cursor 2 first, so live clients apply same-aspect edits in the reverse of the order
-        // replay and checkpointing use (honua-server#2999 review).
+        // replay and checkpointing use.
         DelayedFirstAppendOperationLog? delayedLog = null;
         using var factory = CreateFactory(decorateOperationLog: inner =>
             delayedLog = new DelayedFirstAppendOperationLog(inner, TimeSpan.FromSeconds(2)));
@@ -820,7 +820,7 @@ public sealed class CollaborationLiveCoEditingTests
         // Resuming from a pruned cursor: the client must be told to resync AND still receive the
         // retained-but-not-yet-checkpointed suffix. Advertising the head cursor with an empty
         // tail would advance it past operations 3 and 4, which the durable draft (checkpointed
-        // behind that head) does not contain either (honua-server#2999 review).
+        // behind that head) does not contain either.
         using var stale = await wsClient.ConnectAsync(
             new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?resumeFrom=1"),
             cts.Token);
@@ -929,7 +929,7 @@ public sealed class CollaborationLiveCoEditingTests
         // An id absent from the composition is a genuine STATE conflict, not a shape error: it
         // cannot be judged at admission time (an earlier pending operation may still introduce
         // the layer), so it must surface at checkpoint time instead of silently no-opping while
-        // the operation's cursor is marked persisted (honua-server#2999 review).
+        // the operation's cursor is marked persisted.
         _ = await AppendOperationAsync(
             client, mapId, "op-reorder", "ReorderLayers", baseCursor: 0,
             payload: """{"layerIds":["parcels","ghost-layer"]}""");
@@ -1113,7 +1113,7 @@ public sealed class CollaborationLiveCoEditingTests
         // A declared multi-replica deployment on a process-local log advertises Replay=false. Both
         // read paths must honour that: answering 200 from node-local state would let two replicas
         // hand the same client contradictory histories, each looking authoritative, which is
-        // strictly worse than refusing (honua-server#2999 review).
+        // strictly worse than refusing.
         using var factory = CreateFactory(configuration: new Dictionary<string, string?>
         {
             [SavedMapCollaborationTopology.MultiReplicaConfigurationKey] = "true"
@@ -1180,7 +1180,7 @@ public sealed class CollaborationLiveCoEditingTests
         // consumed a cursor, and then threw an UNMAPPED ArgumentException out of the shared Studio
         // composition editor at checkpoint time: every later checkpoint 500s while the operation is
         // retained, then fails the continuity guard once it is pruned — the map can never save
-        // another version (honua-server#2999 review).
+        // another version.
         foreach (var malformed in new[]
         {
             """{"operationId":"ws-style","kind":"PatchStyle","baseCursor":0,"payload":{"layerId":" ","styleRef":"roads"}}""",
@@ -1217,8 +1217,8 @@ public sealed class CollaborationLiveCoEditingTests
         // A competing Studio draft update lands between the checkpoint's apply and its version
         // save. The version save re-reads the draft, so without a generation check it versions the
         // COMPETING body — a version that omits the operations just replayed — while still marking
-        // their head cursor checkpointed, permanently hiding them from every later checkpoint
-        // (honua-server#2999 review). The checkpoint must instead fail closed and leave the cursor
+        // their head cursor checkpointed, permanently hiding them from every later checkpoint.
+        // The checkpoint must instead fail closed and leave the cursor
         // where it was.
         using var competing = JsonDocument.Parse(
             """{"layers":[{"id":"parcels","title":"Parcels"}],"title":"concurrent draft edit"}""");
@@ -1317,8 +1317,7 @@ public sealed class CollaborationLiveCoEditingTests
 
         // The shared Studio view contract caps zoom at 24 and pitch at 85 — the same bounds the MCP
         // composition tool schemas advertise. Payloads outside them used to reach an unconditional
-        // success path, consume a permanent cursor, and persist a view no client can render
-        // (honua-server#2999 review).
+        // success path, consume a permanent cursor, and persist a view no client can render.
         foreach (var malformed in new[]
         {
             """{"operationId":"zoom-high","kind":"SetViewport","baseCursor":0,"payload":{"zoom":25}}""",
@@ -1408,7 +1407,7 @@ public sealed class CollaborationLiveCoEditingTests
 
                     // Checkpointing requires a restart-durable op log: the shipped in-memory log
                     // loses acknowledged operations on restart and the endpoint fails closed
-                    // rather than mint a version it cannot prove is complete (#2999 review).
+                    // rather than mint a version it cannot prove is complete.
                     if (restartDurableOperationLog || retainedOperationCount is not null || decorateOperationLog is not null)
                     {
                         services.RemoveAll<ISavedMapOperationLogRepository>();

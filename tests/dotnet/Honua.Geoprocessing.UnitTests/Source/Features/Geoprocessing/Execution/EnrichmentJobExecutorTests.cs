@@ -230,7 +230,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_InlineSourceWithWhereFilter_FailsInsteadOfIgnoringTheFilter()
     {
-        // Codex P2 (#3043 review): 'where' windows the source.honua-layer read; the inline
+        // Codex P2: 'where' windows the source.honua-layer read; the inline
         // branch parses the staged FeatureCollection verbatim and never applies it. Silently
         // accepting it enriched EVERY staged feature while the caller believed a filter was
         // in force. The catalog documents 'where' as layer-source-only, so the executor
@@ -246,7 +246,7 @@ public sealed class EnrichmentJobExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("where");
         error.Should().Contain("layerId", "the failure must name the source form the filter belongs to");
-        // A deterministic input refusal is terminal; a retry would repeat it after backoff (#4629).
+        // A deterministic input refusal is terminal; a retry would repeat it after backoff.
         _lastRetryable.Should().BeFalse();
     }
 
@@ -290,7 +290,7 @@ public sealed class EnrichmentJobExecutorTests
         // The nearest branch returns after AnnotateNearest without consulting plan.Stats, so
         // accepting this combination published an artifact silently missing every requested
         // aggregate. The submit-time validator refuses it too; this is the runtime backstop
-        // for any path that reaches the executor without it (#3043 review).
+        // for any path that reaches the executor without it.
         var services = DefaultServices(dataset: Dataset());
 
         var (status, error) = await RunExpectingFailureAsync(
@@ -393,7 +393,7 @@ public sealed class EnrichmentJobExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("no-such-dataset");
-        // A deterministic input refusal is terminal; a retry would repeat it after backoff (#4629).
+        // A deterministic input refusal is terminal; a retry would repeat it after backoff.
         _lastRetryable.Should().BeFalse();
     }
 
@@ -504,7 +504,7 @@ public sealed class EnrichmentJobExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("exactly one source");
-        // A deterministic input refusal is terminal; a retry would repeat it after backoff (#4629).
+        // A deterministic input refusal is terminal; a retry would repeat it after backoff.
         _lastRetryable.Should().BeFalse();
     }
 
@@ -677,7 +677,7 @@ public sealed class EnrichmentJobExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
         uri.Should().BeNull();
         error.Should().Contain("MaxLayerVertices");
-        // The same input is refused again on every attempt, so the budget failure is terminal (#4629).
+        // The same input is refused again on every attempt, so the budget failure is terminal.
         _lastRetryable.Should().BeFalse();
     }
 

@@ -37,7 +37,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     private const string Audience = "recovery-fence-client";
     private const string SigningKey = "recovery-fence-cross-tenant-signing-key-32!";
 
-    // honua-server#4987: two tenant-bound platform administrators, exactly as the live reproduction
+    // Two tenant-bound platform administrators, exactly as the live reproduction
     // minted them, plus a tenant-bound admin that holds no platform role.
     private static readonly FencePrincipal TenantAPlatformAdmin = new("ops-a", "tenant-a", ["admin", "platform_admin"]);
     private static readonly FencePrincipal TenantBPlatformAdmin = new("ops-b", "tenant-b", ["admin", "platform_admin"]);

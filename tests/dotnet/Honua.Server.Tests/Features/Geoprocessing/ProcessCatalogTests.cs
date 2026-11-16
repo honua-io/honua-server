@@ -50,7 +50,7 @@ public sealed class ProcessCatalogTests
         // + 13 Round-5 managed ops: 12 GP tool-pack ops
         // (overlay.clip/intersect/union/erase/merge/split, proximity.near,
         // proximity.near-table, statistics.summarize/frequency/calculate,
-        // data-management.append) added by the GP tool packs (#2206/#2139/#2140)
+        // data-management.append) added by the GP tool packs
         // + 1 managed honua-layer sink (sink.honua-layer) added by the GeoETL
         // honua-layer sink path
         // + 10 Round-4 ops merged from trunk: 4 relational transforms
@@ -66,10 +66,10 @@ public sealed class ProcessCatalogTests
         // raster.interpolate-idw, raster.interpolate-kriging, raster.mosaic) added
         // by #2141.
         // + 9 native-profile raster analysis & terrain ops added by #2239/#2240:
-        // raster.map-algebra, raster.spectral-index, raster.reclassify (#2239);
+        // raster.map-algebra, raster.spectral-index, raster.reclassify;
         // proximity.euclidean-distance, proximity.euclidean-allocation,
         // surface.contour, surface.viewshed, conversion.polygonize,
-        // conversion.rasterize (#2240).
+        // conversion.rasterize.
         // + 1 spatial-statistics tool-pack op (analytics.hotspot-managed, Hot Spot
         // Analysis / Getis-Ord Gi*) added by #2142.
         // + 1 delegated imagery/ML inference op (imagery.classify, cloud-backend
@@ -113,7 +113,7 @@ public sealed class ProcessCatalogTests
     {
         var imagery = _catalog.GetProcessesByCategory("imagery");
 
-        // #2241: one delegated-inference process. Managed profile (the lean
+        // One delegated-inference process. Managed profile (the lean
         // dispatcher performs the HTTP delegation itself), raster sourcing shared
         // with the native raster family (inline source OR layerId/rasterId), and
         // both raster and feature outputs advertised because the backend decides
@@ -270,7 +270,7 @@ public sealed class ProcessCatalogTests
     // The set of built-ins that write durable state and therefore MUST carry
     // ProcessExecutionTier.Mutating. This is the reviewed snapshot; the two invariant
     // tests below make ExecutionTier a forced, auditable decision rather than a
-    // fail-open default that a future mutating built-in could silently omit (#2798).
+    // fail-open default that a future mutating built-in could silently omit.
     private static readonly string[] ExpectedMutatingProcessIds =
     [
         "data-management.copy-features",
@@ -435,7 +435,7 @@ public sealed class ProcessCatalogTests
             "generalization.simplify-layer", "generalization.dissolve",
             "data-management.copy-features", "data-management.delete-features",
             "data-management.calculate-field", "data-management.append",
-            // Layer-aware overlay/proximity/statistics tool packs (#2206, #2139, #2140).
+            // Layer-aware overlay/proximity/statistics tool packs.
             "overlay.clip", "overlay.intersect", "overlay.union", "overlay.erase",
             "overlay.merge", "overlay.split",
             "proximity.near", "proximity.near-table",
@@ -2443,7 +2443,7 @@ public sealed class ProcessCatalogTests
     }
 
     // -----------------------------------------------------------------------
-    // Validator — managed analytics counterparts (#1260) mirror the executor's
+    // Validator — managed analytics counterparts mirror the executor's
     // TransformInputException checks so ValidatePlan refuses plans the executor
     // would terminally fail at runtime.
     // -----------------------------------------------------------------------
@@ -3426,7 +3426,7 @@ public sealed class ProcessCatalogTests
     public void DestructiveClassifier_SinkProcess_RequiresApproval(string processId)
     {
         // A sink/write process is not a destructive source mutation, but it must
-        // still pass the approval gate (#2262).
+        // still pass the approval gate.
         ProcessDestructiveClassifier.IsSink(processId).Should().BeTrue();
         ProcessDestructiveClassifier.IsDestructive(processId).Should().BeFalse();
         ProcessDestructiveClassifier.RequiresApproval(processId).Should().BeTrue();

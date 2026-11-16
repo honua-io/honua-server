@@ -51,7 +51,7 @@ public sealed class RelatedRecordsServiceTests
         attributes["timestamp"].Should().Be(new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
     }
 
-    // Regression (#1431 + #1452): queryRelatedRecords must populate the field schema
+    // Regression: queryRelatedRecords must populate the field schema
     // from the related layer (so clients can map the returned attributes) and, per the
     // Esri spec, those fields live at the response top level while each group's
     // relatedRecords is a flat array of records.
@@ -101,7 +101,7 @@ public sealed class RelatedRecordsServiceTests
             .And.Contain("objectid");
         grouped.ObjectIdFieldName.Should().Be("objectid");
 
-        // Each group's relatedRecords is now a flat array of records (#1452).
+        // Each group's relatedRecords is now a flat array of records.
         var group = grouped.Groups.Should().ContainSingle().Which;
         group.ObjectId.Should().Be(1L);
         group.RelatedRecords.Should().NotBeNull();
@@ -109,7 +109,7 @@ public sealed class RelatedRecordsServiceTests
         group.RelatedRecords[0].Attributes.Should().ContainKey("label");
     }
 
-    // #1396: queryRelatedRecords orderByFields must re-sort each origin object's
+    // QueryRelatedRecords orderByFields must re-sort each origin object's
     // related records in-memory according to the requested field/direction.
     [Fact]
     public void GroupRelatedRecords_WithOrderByFieldsDescending_SortsRelatedRecords()
@@ -175,7 +175,7 @@ public sealed class RelatedRecordsServiceTests
             .Should().ContainInOrder("child-c", "child-b", "child-a");
     }
 
-    // #1396: returnCountOnly must emit a per-source-object count and omit both the
+    // ReturnCountOnly must emit a per-source-object count and omit both the
     // per-record payload and the top-level field/geometry schema.
     [Fact]
     public void GroupRelatedRecords_WithReturnCountOnly_EmitsCountsAndOmitsRecords()
@@ -296,7 +296,7 @@ public sealed class RelatedRecordsServiceTests
         withoutRecords.RelatedRecords!.Should().BeEmpty();
     }
 
-    // Regression (#1465): when the relationship's origin foreign key is NOT the object-id
+    // Regression: when the relationship's origin foreign key is NOT the object-id
     // field, the related row's destination key value differs from the origin object id.
     // Grouping must bucket related rows by the origin object id the storage layer stamped
     // onto each row (RelatedQuery.OriginObjectIdsAttribute), NOT by the destination key

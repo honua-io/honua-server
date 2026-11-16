@@ -293,7 +293,7 @@ public sealed partial class PostgresRasterStoreUnalignedMosaicTests(PostgresFixt
         });
     }
 
-    // #6561: the named raster is the one whose sample the union kept. At the overlap the
+    // The named raster is the one whose sample the union kept. At the overlap the
     // newer fine raster wins; outside its footprint the older coarse raster wins, including
     // when Oldest is asked to prefer it where both cover the point.
     [IntegrationTest]

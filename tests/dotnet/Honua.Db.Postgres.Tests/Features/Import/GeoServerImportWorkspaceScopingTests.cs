@@ -319,7 +319,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
 
         private static async Task CleanupServiceNamesAsync(PostgresFixture postgresFixture, params string[] serviceNames)
         {
-            // #2020: honua.services is a literal, process-global catalog table (not
+            // Honua.services is a literal, process-global catalog table (not
             // search_path isolated), so route this DELETE through the shared seed advisory
             // lock to keep parallel [Collection("Database")] tests off the 40P01 deadlock path.
             await postgresFixture.ApplyGlobalSeedSqlAsync(
@@ -329,7 +329,7 @@ public sealed class GeoServerImportWorkspaceScopingTests
 
         private static async Task CleanupDataSourceRowsAsync(PostgresFixture postgresFixture, params string[] sourceIds)
         {
-            // #2020: honua.migration_data_sources is a literal, process-global catalog table
+            // Honua.migration_data_sources is a literal, process-global catalog table
             // (not search_path isolated), so route this DELETE through the shared seed advisory
             // lock to keep parallel [Collection("Database")] tests off the 40P01 deadlock path.
             await postgresFixture.ApplyGlobalSeedSqlAsync(

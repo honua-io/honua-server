@@ -67,7 +67,7 @@ public sealed class LayerScopedWriteKeyTests
     public void ConfersFullAdmin_GenuinelyScopedGrants_ReturnsFalse(string grant)
     {
         // A grant set that carries no full-admin grant confers no admin authority,
-        // so the key must not satisfy the admin authorization policy (issue #1985).
+        // so the key must not satisfy the admin authorization policy.
         LayerScopedWriteKey.ConfersFullAdmin([grant]).Should().BeFalse();
     }
 

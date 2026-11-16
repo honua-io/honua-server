@@ -103,7 +103,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     public async Task Authentication_AdminOpenApiWithoutApiKey_ShouldReturn200()
     {
         // The admin OpenAPI document is public documentation (the bundled
-        // admin-api.json snapshot) and is intentionally anonymous (#1635);
+        // admin-api.json snapshot) and is intentionally anonymous;
         // the admin operations it documents remain authenticated.
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/openapi.json");
 

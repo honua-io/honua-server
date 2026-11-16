@@ -73,7 +73,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "initialize")]
     public async Task Initialize_With2025_06_18_NegotiatesThatRevision()
     {
-        // honua-server#1954: the server negotiates the 2025-06-18 revision (which
+        // The server negotiates the 2025-06-18 revision (which
         // adds the native tool outputSchema field this server publishes).
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
@@ -1093,7 +1093,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [Endpoint("POST /mcp")]
     public async Task Request_WithMalformedSessionId_Returns404()
     {
-        // The stateless fallback (#3027) only applies to well-formed ids —
+        // The stateless fallback only applies to well-formed ids —
         // visible ASCII per the Streamable-HTTP spec. An id containing a space
         // could never have been minted by a spec-compliant server, so it keeps
         // the strict 404.
@@ -1109,7 +1109,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [Endpoint("POST /mcp")]
     public async Task Request_WithOverlongSessionId_Returns404()
     {
-        // The stateless fallback (#3027) bounds the id length (server-minted ids
+        // The stateless fallback bounds the id length (server-minted ids
         // are 64 hex chars, stateless tokens at most 172); an overlong id keeps the strict 404.
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
@@ -1189,7 +1189,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [Endpoint("GET /mcp")]
     public async Task Get_ByDefault_Returns405WithAllowHeader()
     {
-        // #2537: server-initiated streaming is off by default, so the optional
+        // Server-initiated streaming is off by default, so the optional
         // GET /mcp stream MUST answer 405 + Allow per the Streamable-HTTP spec.
         // A spec-compliant SDK client tolerates this and skips the stream —
         // instead of hanging it at a non-streaming ingress and treating its
@@ -1215,7 +1215,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task Request_WithSessionBoundToDifferentPrincipal_ReturnsStructuredAuthError()
     {
-        // A3 binding (#2537): a session is bound at initialize to the principal
+        // A3 binding: a session is bound at initialize to the principal
         // that established it; a different identity presenting the id must get a
         // structured, re-auth-signalling error rather than riding the session.
         // The test fixture's dev-auth bypass authenticates every HTTP request as

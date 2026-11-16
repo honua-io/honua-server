@@ -126,7 +126,7 @@ public sealed class GeocodingEntitlementGateTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task ForwardGeocode_WithoutAnyLicense_Succeeds()
     {
-        // #2981: forward geocoding is Community now — no license/entitlement service configured
+        // Forward geocoding is Community now — no license/entitlement service configured
         // at all must still reach the endpoint.
         using var factory = CreateFactory(devGrantEdition: null);
         using var client = factory.CreateClient();

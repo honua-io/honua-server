@@ -200,7 +200,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
         features.Should().HaveCount(5);
 
-        // OData 4.01 Part 1 §11.2.6.3 (#5464): $top=5 bounds the requested collection, so no
+        // OData 4.01 Part 1 §11.2.6.3: $top=5 bounds the requested collection, so no
         // nextLink may lead a client past the fifth item.
         document.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeFalse();
     }

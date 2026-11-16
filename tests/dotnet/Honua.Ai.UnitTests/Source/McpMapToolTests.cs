@@ -641,7 +641,7 @@ public sealed class McpMapToolTests
     {
         // A Web-Mercator-scale bbox under the geographic default bboxSrid=4326 silently
         // matches nothing; the tool must warn about the likely CRS mismatch and flag the
-        // zero-result summary rather than returning an unexplained empty page (#2808).
+        // zero-result summary rather than returning an unexplained empty page.
         var reader = Substitute.For<IFeatureReader>();
         reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(new QueryResult<Feature>
@@ -1348,7 +1348,7 @@ public sealed class McpMapToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_RenderMap_NativeRenderingRuntimeUnavailable_ReturnsFailedPreconditionCapabilityError()
     {
-        // honua-server#2770: when the deployed (serverless/AOT) image cannot load the
+        // When the deployed (serverless/AOT) image cannot load the
         // native SkiaSharp rasterizer, the render seam raises
         // RasterRenderingUnavailableException. The MCP adapter must surface an actionable
         // failed_precondition capability error naming the missing rendering capability —

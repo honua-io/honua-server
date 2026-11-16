@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Honua.Protocols.GeoServices.Tests;
 
-// Parallelism note (#1359):
+// Parallelism note:
 //
 // The classes in this assembly drive the database-backed server through a per-class
 // `new WebAppFixture()` (IAsyncLifetime), not a shared collection fixture — the

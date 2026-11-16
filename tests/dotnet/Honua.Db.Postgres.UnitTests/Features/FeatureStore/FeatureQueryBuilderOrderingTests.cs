@@ -120,7 +120,7 @@ public sealed class FeatureQueryBuilderOrderingTests
         // stable tiebreaker ORDER BY objectid. Without it, page 1 returns an arbitrary
         // heap/plan order while page 2 (which carries an Offset and therefore injects
         // ORDER BY objectid) is drawn from a different ordering, silently skipping and
-        // duplicating rows across the page boundary (#2070).
+        // duplicating rows across the page boundary.
         var queryBuilder = CreateBuilder();
         var query = new FeatureQuery
         {

@@ -326,7 +326,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     public async Task TaskInfo_KnownTask_EveryParameterIncludesDefaultValueKey()
     {
         await StartDefaultApplicationAsync();
-        // Regression (#1775): a missing defaultValue key makes
+        // Regression: a missing defaultValue key makes
         // arcgis.geoprocessing.import_toolbox() raise KeyError('defaultValue').
         // Esri always emits the key (null when unset) on every parameter.
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
@@ -358,7 +358,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         string taskName, string parameterName, string dataType, JsonValueKind expectedKind, string expectedJson)
     {
         await StartDefaultApplicationAsync();
-        // Regression (#4634): Esri's Python SDK writes non-string defaults into
+        // Regression: Esri's Python SDK writes non-string defaults into
         // generated code with str(), so a "false" string became an unbound name.
         using var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -641,7 +641,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_WithContextOutSR_ReprojectsGeometryOutput()
     {
-        // #4030: the Esri 10.6.1+ `context` parameter replaces env:*; context.outSR must
+        // The Esri 10.6.1+ `context` parameter replaces env:*; context.outSR must
         // reproject the result exactly like env:outSR instead of being stored and ignored.
         // The job serves a WGS 84 point (1, 2); the baseline request without context proves
         // the output is otherwise unprojected, so the projected ordinates come from context.
@@ -759,7 +759,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     public async Task SubmitJob_WithUnsupportedOrConflictingContext_Returns400()
     {
         await StartDefaultApplicationAsync();
-        // #4030: a context property Honua cannot apply is rejected by name rather than
+        // A context property Honua cannot apply is rejected by name rather than
         // silently ignored, and a context SR that disagrees with env:* is ambiguous.
         var cases = new (Dictionary<string, string> Extra, string Expected)[]
         {
@@ -807,7 +807,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_TerminalFailedOrCancelledJob_ReturnsEsriErrorEnvelope()
     {
-        // #4034: Esri clients decide execute success by the absence of an `error` object,
+        // Esri clients decide execute success by the absence of an `error` object,
         // so a failed or cancelled synchronous run must return the GeoServices error
         // envelope — never `results: []`, which reads as an empty successful run.
         var cases = new (ExecutionJobStatus Status, string? ErrorMessage, string GeoServicesStatus, string Outcome)[]
@@ -982,7 +982,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         string? extraValue)
     {
         await StartDefaultApplicationAsync();
-        // #4033: the Esri input translator used to add a derived 'srid' input whenever an esriGeometry or
+        // The Esri input translator used to add a derived 'srid' input whenever an esriGeometry or
         // FeatureSet was translated. These three tasks declare no 'srid' parameter, so canonical plan
         // validation rejected every such submission as UNKNOWN_PARAMETER. The spatial reference travels
         // inside the translated EWKB instead, where each executor reads it.
@@ -1223,7 +1223,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithIdempotencyKeyParameter_ThreadsKeyToJobService()
     {
-        // server#4627: GPServer previously submitted every job with a null
+        // GPServer previously submitted every job with a null
         // idempotencyKey, so a caller-supplied key had no effect and a lost-response
         // retry could be denied at quota / mint a second job instead of returning the
         // original. Verify the optional GeoServices-style "idempotencyKey" request
@@ -1403,7 +1403,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
     public async Task JobResult_WithEnvOutSR_ReprojectsAsyncGeometryOutput()
     {
-        // Async honesty (#1228 follow-up): a submitJob request that carried
+        // Async honesty: a submitJob request that carried
         // env:outSR must actually reproject the geometry served from
         // results/{param}, matching the synchronous execute path — not accept
         // env:outSR and then silently return the unprojected geometry.
@@ -1623,7 +1623,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     }
 
     // -----------------------------------------------------------------------
-    // Jobs listing / history (#2143)
+    // Jobs listing / history
     // -----------------------------------------------------------------------
 
     [IntegrationTest]

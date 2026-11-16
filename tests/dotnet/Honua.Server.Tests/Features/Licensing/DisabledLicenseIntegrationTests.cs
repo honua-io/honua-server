@@ -56,7 +56,7 @@ public sealed class DisabledLicenseIntegrationTests
                 service is FileBackedLicenseService);
             Assert.False(fixture.Services.GetRequiredService<ILicenseOperationPolicy>().IsBlocked);
 
-            // #4758: the composed ladder keeps Studio draft composition direct in Disabled mode,
+            // The composed ladder keeps Studio draft composition direct in Disabled mode,
             // while publication, rollback and agent proposals keep their approval step.
             var ladder = fixture.Services.GetRequiredService<IGuardrailLadder>();
             Assert.Equal(GuardrailTier.DirectExecute, ladder.Resolve(OperationClass.StudioDraftMutation).Tier);

@@ -470,7 +470,7 @@ public sealed class AnalysisContentServiceTests
     {
         // The AnalysisContent run path delegates straight to the shared
         // GeoprocessingJobService.SubmitJobAsync without authorizing first, so the
-        // centralized submit-path authorization (#2263) is what protects it. Wire a
+        // centralized submit-path authorization is what protects it. Wire a
         // real job service whose evaluator forbids Process/Execute and assert the
         // package submission is rejected centrally.
         var authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();

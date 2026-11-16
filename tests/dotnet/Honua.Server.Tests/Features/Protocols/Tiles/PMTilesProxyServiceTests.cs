@@ -160,7 +160,7 @@ public sealed class PMTilesProxyServiceTests
         // A no-Range GET falls back to streaming the whole artifact. Above
         // MaxDirectFullStreamBytes that response can't reliably fit through a
         // single serverless (Lambda/API Gateway) invocation, which fails opaquely
-        // rather than with a clean error (#2991). The service must reject this
+        // rather than with a clean error. The service must reject this
         // case up front — purely from the already-fetched metadata size, without
         // ever touching the underlying object — rather than attempting the
         // full download.

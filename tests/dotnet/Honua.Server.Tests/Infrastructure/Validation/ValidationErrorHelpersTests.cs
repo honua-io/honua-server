@@ -280,7 +280,7 @@ public class ValidationErrorHelpersTests
 
         await result.ExecuteAsync(context);
 
-        // PA-070/PA-117 (#2418): GeoServices errors are transported as HTTP 200;
+        // PA-070/PA-117: GeoServices errors are transported as HTTP 200;
         // the error is signalled exclusively through the JSON body envelope.
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         context.Response.Body.Position = 0;
@@ -300,7 +300,7 @@ public class ValidationErrorHelpersTests
 
         await result.ExecuteAsync(context);
 
-        // PA-070/PA-117 (#2418): GeoServices errors are transported as HTTP 200;
+        // PA-070/PA-117: GeoServices errors are transported as HTTP 200;
         // the error is signalled exclusively through the JSON body envelope
         // (error.code = 405 below). The Allow header is still emitted.
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);

@@ -123,7 +123,7 @@ public sealed class TemporalExtentHelpersTests
         // helper must catch that and return null so capabilities and the
         // temporalExtent endpoint fall back to their non-time-aware
         // contract (omit time dimension, return 404) instead of escaping
-        // a 500 to the public surface (#379).
+        // a 500 to the public surface.
         var resource = BuildResourceWithIntervalTemporal();
         var reader = Substitute.For<IFeatureReader>();
         reader.GetTemporalExtentAsync(

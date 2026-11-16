@@ -421,7 +421,7 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
     {
         // The ArcGIS API for Python (arcgis 2.4.x) serializes query(time_filter=) to the
         // "timeFilter" query parameter. It must be accepted as an alias of "time" rather
-        // than rejected with HTTP 400 "Unknown query parameter: timeFilter" (#1775).
+        // than rejected with HTTP 400 "Unknown query parameter: timeFilter".
         var serviceId = WebAppFixture.TestServiceId;
         var layerId = WebAppFixture.TestLayerId;
         var encodedTime = Uri.EscapeDataString("2023-12-15T00:00:00Z,2024-02-15T00:00:00Z");

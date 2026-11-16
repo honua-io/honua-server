@@ -39,7 +39,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     private const string ExtentSceneId = "i3s-extent-scene";
 
     // A database-backed scene whose source kind is Building so the descriptor's
-    // I3S layerType mapping (#1812) is exercised end to end.
+    // I3S layerType mapping is exercised end to end.
     private const string BuildingSceneId = "i3s-building-scene";
     private const double ExtentXMin = -122.5;
     private const double ExtentYMin = 37.7;
@@ -320,7 +320,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{sceneId}/SceneServer")]
     public async Task GetService_AtGeoServicesPath_ReturnsI3sServiceDescriptor()
     {
-        // #1806: the canonical GeoServices path serves the same descriptor as
+        // The canonical GeoServices path serves the same descriptor as
         // the legacy /scenes alias.
         var response = await _enterpriseFixture.Client.GetAsync($"/rest/services/{SceneId}/SceneServer");
 
@@ -392,7 +392,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         root.TryGetProperty("textureSetDefinitions", out _).Should().BeTrue();
         root.TryGetProperty("attributeStorageInfo", out _).Should().BeTrue();
 
-        // #1809: the loadable tileset projects to fetchable node pages, so the
+        // The loadable tileset projects to fetchable node pages, so the
         // layer advertises nodePages (and a defaultGeometrySchema) but NOT
         // a legacy 1.6 rootNode tree.
         var store = root.GetProperty("store");
@@ -407,7 +407,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}")]
     public async Task GetLayer_BuildingScene_AdvertisesBuildingLayerType()
     {
-        // #1812: a Building-source scene maps to the I3S Building layerType.
+        // A Building-source scene maps to the I3S Building layerType.
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{BuildingSceneId}/SceneServer/layers/0");
 
@@ -422,7 +422,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}")]
     public async Task GetLayer_SceneWithLoadableTileset_AdvertisesNodePagesStore()
     {
-        // #1809: once the tileset projects to fetchable node pages, the layer
+        // Once the tileset projects to fetchable node pages, the layer
         // advertises nodePages so a conformant client traverses it.
         var response = await _enterpriseFixture.Client.GetAsync(
             $"/rest/services/{ExtentSceneId}/SceneServer/layers/0");
@@ -485,7 +485,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
     public async Task GetNodeGeometry_EnterpriseEdition_ReturnsTranscodedI3sBuffer()
     {
-        // #1810: the geometries route serves the transcoded I3S Default geometry
+        // The geometries route serves the transcoded I3S Default geometry
         // binary (not just the descriptor). The buffer must lead with the
         // vertexCount/featureCount header the transcoder emits.
         var response = await _enterpriseFixture.Client.GetAsync(
@@ -582,7 +582,7 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
     public async Task GetNodeAttribute_EnterpriseEdition_ReturnsObjectIdAttributeFile()
     {
-        // #1811: the attributes route serves the per-field OBJECTID binary file an
+        // The attributes route serves the per-field OBJECTID binary file an
         // ArcGIS SceneLayer client reads for identify. The values are the served
         // geometry's feature ids (the stub transcodes one feature with Id=1).
         var response = await _enterpriseFixture.Client.GetAsync(

@@ -72,7 +72,7 @@ public sealed class AdminOperationApprovalBridgeTests
     public async Task CreateProposalAsync_DurableStoreWithoutGateway_ReturnsNonDurableFailure()
     {
         // A real proposal store with no gateway is a composition defect, not a Redis-off host:
-        // the bridge keeps its fail-closed non-durable result rather than naming Redis (#5733).
+        // the bridge keeps its fail-closed non-durable result rather than naming Redis.
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IOperationProposalStore>());
         var bridge = CreateBridge(services.BuildServiceProvider());
@@ -93,7 +93,7 @@ public sealed class AdminOperationApprovalBridgeTests
     public async Task CreateProposalAsync_NoDurableControlPlane_RefusesWithTypedSystemDatabaseDependency()
     {
         // No gateway and no durable proposal store (absent, or the Redis-off placeholder): the
-        // control plane was never composed, so the bridge refuses with the typed receipt (#5733).
+        // control plane was never composed, so the bridge refuses with the typed receipt.
         foreach (var services in new[]
                  {
                      new ServiceCollection(),

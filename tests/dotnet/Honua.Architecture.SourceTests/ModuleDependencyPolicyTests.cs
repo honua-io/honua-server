@@ -95,7 +95,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.SqlServer, ModuleRole.Abstractions),
         (ModuleRole.SqlServer, ModuleRole.Core),
         (ModuleRole.SqlServer, ModuleRole.Geometry),
-        // GeoServices REST federated read-through provider (#1251): consumes Abstractions
+        // GeoServices REST federated read-through provider: consumes Abstractions
         // + Core; needs no NTS bindings because all wire-format conversion happens
         // inline against the canonical Feature/WKB seam.
         (ModuleRole.GeoServicesRest, ModuleRole.Abstractions),
@@ -103,19 +103,19 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Oracle,    ModuleRole.Abstractions),
         (ModuleRole.Oracle,    ModuleRole.Core),
         (ModuleRole.Oracle,    ModuleRole.Geometry),
-        // Amazon Redshift read-only provider (#1712): consumes Abstractions + Core. Connectivity
+        // Amazon Redshift read-only provider: consumes Abstractions + Core. Connectivity
         // uses Npgsql (Redshift is PostgreSQL-wire-compatible); spatial conversion stays on the
         // canonical Feature/WKB seam so no NTS bindings are required.
         (ModuleRole.Redshift,  ModuleRole.Abstractions),
         (ModuleRole.Redshift,  ModuleRole.Core),
-        // Snowflake read-only warehouse provider (#1713): consumes Abstractions +
+        // Snowflake read-only warehouse provider: consumes Abstractions +
         // Core. Geometry is permitted in case future spatial bindings need NTS,
         // matching the other relational providers.
         (ModuleRole.Snowflake, ModuleRole.Abstractions),
         (ModuleRole.Snowflake, ModuleRole.Core),
         (ModuleRole.Snowflake, ModuleRole.Geometry),
 
-        // Databricks read-only HTTP read-through provider (#1714): consumes
+        // Databricks read-only HTTP read-through provider: consumes
         // Abstractions + Core; like GeoServicesRest it needs no NTS bindings because all
         // geometry conversion happens inline against the canonical Feature/WKB seam.
         (ModuleRole.Databricks, ModuleRole.Abstractions),
@@ -172,7 +172,7 @@ public sealed class ModuleDependencyPolicyTests
         // Hosting + Jobs + ServiceDefaults) plus Geoprocessing: Grounding and
         // AnalysisContent orchestrate analysis jobs through
         // IGeoprocessingJobService, which lives in Honua.Geoprocessing.
-        // Ai also reaches the Geocoding / Routing satellites (#1597): the MCP
+        // Ai also reaches the Geocoding / Routing satellites: the MCP
         // geocode/route tools are thin adapters over the canonical
         // IGeocodeCoordinatorService / IRoutingProvider pipelines - the same
         // shape as the Protocols -> Routing edge the NAServer adapter uses.
@@ -197,7 +197,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Geoprocessing, ModuleRole.Abstractions),
         (ModuleRole.Geoprocessing, ModuleRole.Core),
         (ModuleRole.Geoprocessing, ModuleRole.Geometry),
-        // Canonical durable routing processes adapt IRoutingProvider (#5192).
+        // Canonical durable routing processes adapt IRoutingProvider.
         // Tier 4 orchestration consumes the tier 3 engine; no reverse edge.
         (ModuleRole.Geoprocessing, ModuleRole.Routing),
         (ModuleRole.Geoprocessing, ModuleRole.Hosting),
@@ -501,7 +501,7 @@ public sealed class ModuleDependencyPolicyTests
         // the GP Devkit dev tool "Honua.Geoprocessing.Cli" would match the
         // "Honua.Geoprocessing." prefix and be wrongly held to the runtime matrix even
         // though it is a `dotnet tool`-packaged, AOT-excluded developer convenience
-        // (issues #2123 / #2180) that the lean server never references. Unclassified
+        // that the lean server never references. Unclassified
         // consumers may reference anything.
         if (projectName.EndsWith(".Tests", StringComparison.Ordinal) ||
             projectName.EndsWith(".UnitTests", StringComparison.Ordinal) ||
@@ -677,7 +677,7 @@ public sealed class ModuleDependencyPolicyTests
             return ModuleRole.Protocols;
         }
 
-        // Plugin/extension SDK (#347), split into two roles: the lean public contract surface
+        // Plugin/extension SDK, split into two roles: the lean public contract surface
         // (Honua.Plugins.Abstractions) that protocol assemblies may consume, and the host-side
         // runtime (Honua.Plugins) that only Server composes. The Abstractions exact-match must
         // precede the "Honua.Plugins." prefix check. Honua.Plugins.Tests is already routed to

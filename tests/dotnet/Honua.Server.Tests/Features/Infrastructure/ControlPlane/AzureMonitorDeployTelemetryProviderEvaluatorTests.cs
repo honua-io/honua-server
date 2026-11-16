@@ -167,7 +167,7 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
     [InlineData(-0.5)]
     public async Task EvaluateAsync_InvalidErrorRateReading_IsTreatedAsAbsentNotHealthy(double invalidReading)
     {
-        // #4617: the provider-neutral gate rejects non-finite/negative readings from any provider.
+        // The provider-neutral gate rejects non-finite/negative readings from any provider.
         var client = new FakeAzureMonitorMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleQuery] = 50,

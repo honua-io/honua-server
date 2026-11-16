@@ -51,7 +51,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_get_style"] = "get_style",
             ["honua_apply_style_preset"] = "apply_style_preset",
             ["honua_publish_service"] = "publish_service",
-            // honua_publish_result (#2482): promotes a completed analysis job's
+            // honua_publish_result: promotes a completed analysis job's
             // materialized artifact into a hosted layer. The standard
             // publish_result requires only `sourceId`; the live schema mirrors that
             // required set (additionalProperties allowed) so the required-field
@@ -70,7 +70,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_propose_deploy_operation"] = "propose_deploy_operation",
             ["honua_propose_metadata_release"] = "propose_metadata_release",
             ["honua_propose_platform_release_convergence"] = "propose_platform_release_convergence",
-            // Honua extensions over the bare taxonomy (#1949): the standard models
+            // Honua extensions over the bare taxonomy: the standard models
             // entity resolution and capability discovery as CapabilityCatalog reads;
             // the reference implementation exposes them as discrete tools and ships
             // vendored conformance schemas marked x-honua-extension. Their live and
@@ -135,24 +135,24 @@ public sealed partial class McpTaxonomyAlignmentTests
         {
             "honua_publish_service",
             // honua_describe_layer / honua_list_jobs are Honua capability-breadth
-            // extensions (#2813) with no 1:1 geospatial-mcp standard tool schema:
+            // extensions with no 1:1 geospatial-mcp standard tool schema:
             // the standard models layer schema via CapabilityCatalog reads and does
             // not publish a discrete describe_layer or list_jobs tool. Recorded here
             // so coverage stays honest until the standard defines them.
             "honua_describe_layer",
             "honua_list_jobs",
-            // honua_get_job_results is a Honua extension (#3608). The vendored
+            // honua_get_job_results is a Honua extension. The vendored
             // geospatial-mcp index has no finalized results verb; status polling
             // stays on honua_list_jobs.
             "honua_get_job_results",
-            // Job diagnostics are Honua extensions over the admin job projection (#6219).
+            // Job diagnostics are Honua extensions over the admin job projection.
             "honua_diagnose_job",
             "honua_job_evidence",
-            // Completed job artifacts are imported by canonical reference (#6422).
+            // Completed job artifacts are imported by canonical reference.
             // The geospatial-mcp standard has no job-artifact source kind; browser-file
             // and local-process-artifact remain separate dataset-import variants.
             "honua_ingest_job_artifact",
-            // Studio draft lifecycle + composition tools (honua-server#3002) are
+            // Studio draft lifecycle + composition tools are
             // Honua extensions with vendored index.json entries (family "Studio
             // composition and lifecycle (Honua extension)") but no published
             // geospatial-mcp standard schema yet — the standard's map/app

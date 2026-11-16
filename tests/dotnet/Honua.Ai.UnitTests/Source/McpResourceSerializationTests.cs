@@ -316,7 +316,7 @@ public sealed class McpResourceSerializationTests
         var source = processes.EnumerateArray()
             .Single(process => process.GetProperty("processId").GetString() == "source.geojson");
         source.GetProperty("executionKind").GetString().Should().Be("WorkflowOnly");
-        // GA is defined per entry point (#4409): a DAG-only source must not read as
+        // GA is defined per entry point: a DAG-only source must not read as
         // job-submittable to an agent planning an execution.
         source.GetProperty("entryPoints").EnumerateArray()
             .Select(entry => entry.GetString()).Should().BeEquivalentTo(["workflow"]);

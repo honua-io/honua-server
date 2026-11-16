@@ -77,10 +77,10 @@ public sealed class FeatureCatalogDriftTests
         catalog.Entries.Select(entry => entry.Id)
             .Should().OnlyHaveUniqueItems("the catalog id is the canonical per-entry key");
 
-        // T10 (#2346): the built-experimental route groups are flipped to the
+        // T10: the built-experimental route groups are flipped to the
         // `experimental` tier; every other test-backed route stays `implemented` —
-        // UNLESS a reviewed capability-maturity-overrides.v1.json row demotes it
-        // (honua-release#100). Any other tier is unexplained and fails here.
+        // UNLESS a reviewed capability-maturity-overrides.v1.json row demotes it.
+        // Any other tier is unexplained and fails here.
         var overriddenCapabilities = CapabilityMaturityOverrides.Load().Overrides
             .ToDictionary(row => row.Capability, row => row.Maturity, StringComparer.Ordinal);
 
@@ -109,7 +109,7 @@ public sealed class FeatureCatalogDriftTests
         // endpoint gate 404s (the WithCapabilityGate route groups), no more and no
         // less — the route → descriptor map is the single source both project from.
         // A capability carrying a reviewed capability-maturity-overrides.v1.json row
-        // (honua-release#100) is re-derived the same way the generator does: the LOWER
+        // is re-derived the same way the generator does: the LOWER
         // of the gate-derived tier and the override tier, so an override can shift an
         // entry off `implemented` but can never move a gated route ONTO it.
         var overrides = CapabilityMaturityOverrides.Load();

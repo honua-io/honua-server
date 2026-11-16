@@ -104,9 +104,9 @@ public sealed class GPServerEsriTaskAliasesTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public void EveryAliasedProcess_IsPublishedOnTheTaskListExactlyOnce()
     {
-        // #4781: the alias contract, the parity alias claim that counts it, and the
-        // published task list must agree. GPServer publishes only job-callable processes
-        // (#4409), so an alias mapped onto a protocol-only or workflow-only process — as
+        // The alias contract, the parity alias claim that counts it, and the
+        // published task list must agree. GPServer publishes only job-callable processes,
+        // so an alias mapped onto a protocol-only or workflow-only process — as
         // DeleteFeatures/CalculateField once were — promises a task that is never
         // discoverable, describable or submittable. Iterate the REAL contract rather than
         // a hand-maintained copy so a future alias for an unpublished process fails here.
@@ -181,7 +181,7 @@ public sealed class GPServerEsriTaskAliasesTests
     }
 
     // Process IDs that carry an Esri alias, read from the real contract so this file can
-    // never claim an alias set the adapter does not actually publish (#4781).
+    // never claim an alias set the adapter does not actually publish.
     private static readonly string[] KnownAliasedProcessIds =
         [.. GPServerEsriTaskAliases.Contract.Keys];
 }

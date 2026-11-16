@@ -24,7 +24,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         // ServiceCollectionExtensions.AddPostgreSqlServices which propagates
         // Database:Schema into the default NpgsqlDataSource. The secure cache
         // must do the same so background/service callers (ISchemaContext.CurrentSchema == null)
-        // still resolve schema-qualified tables (honua-server#2949).
+        // still resolve schema-qualified tables.
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -67,8 +67,8 @@ public sealed partial class SecureConnectionDataSourceCacheTests
     public void GetOrCreate_RoleDefaultsMode_NamedPoolKeepsPerConnectionSessionSettings()
     {
         // role-defaults is verified only for the DefaultConnection role; a named secure
-        // connection may use another role, so its pool keeps setting the timeouts itself
-        // (honua-server#5870). Multiplexing makes the settings visible on the string.
+        // connection may use another role, so its pool keeps setting the timeouts itself.
+        // Multiplexing makes the settings visible on the string.
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -320,7 +320,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
     public void Acquire_OnLambda_NamedAndBoundPoolsAreUnpooled()
     {
         // Named and bound pools SET session settings per connection, which pins RDS Proxy.
-        // A frozen Lambda never prunes, so each close must end the session (#6760).
+        // A frozen Lambda never prunes, so each close must end the session.
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["AWS_LAMBDA_FUNCTION_NAME"] = "honua-api" })
             .Build();

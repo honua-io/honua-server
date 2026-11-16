@@ -410,7 +410,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes/{processId}")]
     public async Task ProcessDescription_RasterSurfaceProcess_ReturnsDescription()
     {
-        // #2698: raster/surface process ids are projected for direct discovery,
+        // Raster/surface process ids are projected for direct discovery,
         // exactly like the first-slice vector ids. surface.slope is a real registered
         // ProcessDefinition (GdalSurfaceJobExecutor); it previously returned 404.
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes/surface.slope");
@@ -440,7 +440,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes/{processId}")]
     public async Task ProcessDescription_ImageryClassify_AdvertisesDelegatedInferenceDescriptors()
     {
-        // #2241: the delegated imagery/ML inference lane is registered with
+        // The delegated imagery/ML inference lane is registered with
         // conformant parameter descriptors. The process is advertised even when no
         // inference backend is configured (execution then fails with a clear
         // message — no silent stub), so discovery must always succeed.
@@ -469,7 +469,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes")]
     public async Task ProcessList_IncludesImageryInferenceProcess()
     {
-        // #2241: imagery.classify appears in the process list for SDK/agent
+        // Imagery.classify appears in the process list for SDK/agent
         // discovery alongside the vector and raster families.
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -486,7 +486,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes")]
     public async Task ProcessList_IncludesRasterSurfaceProcesses()
     {
-        // #2698: raster/surface ids appear in the process list alongside the
+        // Raster/surface ids appear in the process list alongside the
         // first-slice vector ids so SDK clients can discover them for direct execution.
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -607,7 +607,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WithoutDurableJobStore_ReturnsTypedCapabilityUnavailableRefusal()
     {
-        // honua-release#202: Redis is optional for a local install (PostGIS is not). The
+        // Redis is optional for a local install (PostGIS is not). The
         // WebAppFixture runs without Redis, so no durable job store is composed. Submission
         // must be refused up front with a machine-readable receipt an agent can branch on —
         // never a hang, an untyped 500, or a job accepted into a queue that can never drain.
