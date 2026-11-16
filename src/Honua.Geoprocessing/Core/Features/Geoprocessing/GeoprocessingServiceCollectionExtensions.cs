@@ -109,12 +109,12 @@ internal static class GeoprocessingServiceCollectionExtensions
         // GeoprocessingJobService constructor binds them; their own optional collaborators
         // resolve to null/empty when the backing infrastructure is absent.
         services.TryAddSingleton<GeoprocessingJobAuthorizer>();
-        // Submit-time per-layer read gate (#2283 review). Prefers the ambient request to
+        // Submit-time per-layer read gate. Prefers the ambient request to
         // reach the shared access pipeline (grants, tenant scope, metadata snapshot), so
         // the accessor is registered here rather than assumed from the host wiring; the
         // IServiceScopeFactory the container always provides covers contextless
         // (workflow/background) submissions, which are evaluated against the submitting
-        // principal over a fresh scope rather than denied outright (#3043 review).
+        // principal over a fresh scope rather than denied outright.
         services.AddHttpContextAccessor();
         services.TryAddSingleton<GeoprocessingLayerAccessGuard>();
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
@@ -246,7 +246,7 @@ internal static class GeoprocessingServiceCollectionExtensions
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 
         // Headless single-process runner (GP Devkit): invokes one managed
-        // IProcessExecutor directly with no Redis/queue/job-store, reusing the same
+        // IProcessExecutor directly with no queue/job-store, reusing the same
         // executor instances registered above. Consumed by the dev `honua gp` CLI.
         services.TryAddSingleton(sp =>
             new GeoprocessingLocalRunner(sp.GetServices<IProcessExecutor>()));

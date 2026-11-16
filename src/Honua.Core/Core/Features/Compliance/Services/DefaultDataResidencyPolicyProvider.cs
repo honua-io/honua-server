@@ -1,14 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Compliance.Abstractions;
 using Honua.Core.Features.Compliance.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Compliance.Services;
 
 // The primary region is allowed even when it is absent from the explicit allow list.
-internal sealed class DefaultDataResidencyPolicyProvider : IDataResidencyPolicyProvider
+public sealed class DefaultDataResidencyPolicyProvider
 {
     private readonly IOptionsMonitor<ComplianceOptions> _options;
 

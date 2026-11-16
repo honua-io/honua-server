@@ -105,6 +105,8 @@ select all siblings. Dispatch ranks remain inherited pending measured child runs
 `test-live-output-capacity-partitions.py` conserves the original methods exactly
 once, keeps each class intact for future methods, and rejects lost, duplicated,
 foreign, budget-expanded or path-narrowed selections.
+GeoJSON preview validation belongs to File and Raster Import 3; the router pins
+its executable owner and selects every import sibling when its test file changes.
 
 
 OData Core is partitioned into `OData Core Endpoints` (the whole
@@ -1666,6 +1668,9 @@ predates both the workflow-inventory generator and its template, it validates th
 existing documentation with the complete link and concept suite. A partial
 inventory generator/template pair or a failing generator remains an error. This
 compatibility path adds no jobs and preserves all documentation assertions.
+Reachability grades tracked pages that still exist after concept generation,
+so retired generated pages are not phantom orphans. Links to deleted pages
+continue to fail the link check. This changes no job or runner allocation.
 
 Older PR bases that lack the retired-cache policy load it from fetched trusted
 trunk. The explicit base/head diff is still checked, head-supplied policy cannot

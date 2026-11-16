@@ -634,6 +634,7 @@ internal sealed partial class McpDataAccessSurface
             }
 
             invocationStarted = true;
+            McpDeclaredArgumentGuard.EnsureDeclared(tool, parameters.Arguments);
             result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);
