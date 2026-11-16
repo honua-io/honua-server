@@ -45,9 +45,8 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
 
         try
         {
-            await using var connection = _connectionFactory is null
-                ? new NpgsqlConnection(connectionString)
-                : await _connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
+            await using var connection = await CreateConnectionAsync(connectionString, cancellationToken)
+                .ConfigureAwait(false);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             // 1. Get engine version
@@ -146,6 +145,17 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
             LogCompatibilityCheckFailed(_logger, ex.Message, ex);
             return DatabaseCompatibilityResult.Incompatible(errorMessage, error: ex);
         }
+    }
+
+    private async ValueTask<NpgsqlConnection> CreateConnectionAsync(
+        string connectionString, CancellationToken cancellationToken)
+    {
+        if (_connectionFactory is null)
+        {
+            return new NpgsqlConnection(connectionString);
+        }
+
+        return await _connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> TryCreatePostGisExtensionAsync(
