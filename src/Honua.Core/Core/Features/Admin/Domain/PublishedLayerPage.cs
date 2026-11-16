@@ -8,7 +8,10 @@ public readonly record struct PublishedLayerPageQuery(
     Guid? ConnectionId,
     int Page,
     int PageSize,
-    string? NameQuery);
+    string? NameQuery)
+{
+    public Guid? ManagedConnectionId { get; init; }
+}
 
 public sealed class PublishedLayerPage
 {
