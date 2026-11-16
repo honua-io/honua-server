@@ -39,6 +39,7 @@ public sealed class FeatureLockStoreRegistrationTests
         var services = new ServiceCollection();
         var configuration = new ConfigurationBuilder().Build();
         using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=registration_only");
+        services.AddLogging();
         services.AddDataProtection();
         services.AddSingleton(dataSource);
         services.AddSingleton(new JobStoreDatabase(dataSource));
