@@ -214,7 +214,8 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             }
             """;
 
-        var createResponse = await _fixture.Client.PostAsync("/api/v1/admin/forms", JsonContent(packageJson));
+        using var content = JsonContent(packageJson);
+        var createResponse = await _fixture.Client.PostAsync("/api/v1/admin/forms", content);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var draft = await ReadJsonAsync(createResponse, FormPackageJsonContext.Default.FormPackageVersion);
 
@@ -498,7 +499,8 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
 
     private async Task<FormPackageVersion> CreateDraftAsync(FormPackageDocument package)
     {
-        var response = await _fixture.Client.PostAsync("/api/v1/admin/forms", JsonContent(package));
+        using var content = JsonContent(package);
+        var response = await _fixture.Client.PostAsync("/api/v1/admin/forms", content);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return await ReadJsonAsync(response, FormPackageJsonContext.Default.FormPackageVersion);
     }
