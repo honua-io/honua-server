@@ -391,6 +391,87 @@ public sealed class ODataBatchHandlerTests
         createOnlyDelete.IsValid.Should().BeFalse();
     }
 
+    private const string CanonicalServiceName = "primary";
+
+    [UnitTheory]
+    [MemberData(nameof(BatchMutationMethods))]
+    public async Task ProcessBatchAsync_SecondaryPublicationWithoutCanonicalServiceGrant_ReturnsForbidden(string method)
+    {
+        var (reader, writer, applyCount, _, _) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+
+        var response = await sut.ProcessBatchAsync(
+            SharedResourceContext(reader, writer, "data-editor:cities"),
+            new ODataBatchRequest { Requests = [MutationRequest(method)] },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle();
+        response.Responses[0].Status.Should().Be(StatusCodes.Status403Forbidden);
+        response.Responses[0].Body.Should().BeOfType<ODataError>()
+            .Which.Error.Code.Should().Be("Forbidden");
+        applyCount.Value.Should().Be(0);
+    }
+
+    [UnitTheory]
+    [MemberData(nameof(BatchMutationMethods))]
+    public async Task ProcessBatchAsync_SecondaryPublicationWithCanonicalServiceGrant_Writes(string method)
+    {
+        var (reader, writer, applyCount, _, _) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+
+        var response = await sut.ProcessBatchAsync(
+            SharedResourceContext(reader, writer, "data-editor:cities", $"data-editor:{CanonicalServiceName}"),
+            new ODataBatchRequest { Requests = [MutationRequest(method)] },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle();
+        response.Responses[0].Status.Should().BeOneOf(
+            StatusCodes.Status200OK,
+            StatusCodes.Status201Created,
+            StatusCodes.Status204NoContent);
+        applyCount.Value.Should().Be(1);
+    }
+
+    // The batch addresses layer 1, which only the secondary OData publication serves; the
+    // primary publication of the same resource sits on a service that does not speak OData.
+    private static DefaultHttpContext SharedResourceContext(
+        IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
+        params string[] roles)
+        => CreateContext(
+            featureReader,
+            featureWriter,
+            new TestMetadataV2GraphBuilder()
+                .AddResource(
+                    "res-layer-1",
+                    "cities",
+                    MetadataV2ObjectType.FeatureDataset,
+                    fields:
+                    [
+                        new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+                        new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 }
+                    ])
+                .AddService("svc-primary", CanonicalServiceName, protocols: [MetadataV2ServiceProtocols.OgcFeatures])
+                .AddService("svc-cities", "cities", protocols: ["OData"])
+                .AddPublication(
+                    "svc-primary-layer-0",
+                    "svc-primary",
+                    "res-layer-1",
+                    layerIndex: 0,
+                    isPrimary: true)
+                .AddPublication(
+                    "svc-cities-layer-1",
+                    "svc-cities",
+                    "res-layer-1",
+                    layerIndex: 1,
+                    publicationType: MetadataV2LayerType.ODataEntitySet)
+                .BuildProvider(),
+            "alice",
+            EditorRoles,
+            roles);
+
     private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateODataWriteAsync(
         HttpContext context,
         AuthorizationOperation operation)

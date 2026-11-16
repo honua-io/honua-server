@@ -2443,6 +2443,7 @@ public sealed partial class GrpcFeatureServiceTests
             => Task.FromResult(permissions);
     }
 
+
     // ---- Aliased publication: service-local index vs storage handle ------
 
     private const string AliasedServiceName = "aliased";
