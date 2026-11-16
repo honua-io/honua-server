@@ -585,8 +585,8 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool, 
         {
             JsonValueKind.True => true,
             JsonValueKind.False => false,
-            JsonValueKind.String => bool.TryParse(property.GetString(), out var parsed) && parsed,
-            _ => false,
+            JsonValueKind.String when bool.TryParse(property.GetString(), out var parsed) => parsed,
+            _ => throw new GeoprocessingValidationException($"Argument '{name}' must be a boolean."),
         };
     }
 
