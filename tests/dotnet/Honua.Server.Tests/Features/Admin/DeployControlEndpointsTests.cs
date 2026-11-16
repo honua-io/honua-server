@@ -662,7 +662,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     {
         var promoteStore = new InMemoryWorkflowOperationStore();
         var backend = new PromotableDeployBackend();
-        var identityProvider = new AdminAuthEndpointsTests.StubHttpClientFactory();
+        using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
         var promoteFixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), identityProvider)
             .ConfigureServices(services =>
             {
