@@ -20,9 +20,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Unit tests for STAC filter parsing helpers and metadata-graph publication lookups.
-/// </summary>
 [Protocol(TestProtocols.Stac)]
 public sealed class StacFilterHelpersTests
 {

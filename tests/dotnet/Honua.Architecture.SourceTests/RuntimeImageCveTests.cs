@@ -5,10 +5,6 @@ using FluentAssertions;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Pins the runtime-image fixes for the open Trivy rows that a package bump or a removal can close:
-/// CVE-2026-111943 (Lambda Runtime Interface Emulator), CVE-2026-85091 (zlib1g), and CVE-2021-31879 (wget).
-/// </summary>
 public sealed class RuntimeImageCveTests
 {
     [ArchitectureTest]

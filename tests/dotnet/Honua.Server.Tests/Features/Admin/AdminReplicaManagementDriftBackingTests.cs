@@ -12,14 +12,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Endpoint-level backing coverage for the admin named-replica inspection routes
-/// (#1167). The GeoServices-side suite already exercises these routes, but it builds
-/// the request path through a helper, which the EndpointRegistry drift source-scanner
-/// (<see cref="Honua.Server.Tests.Features.API.EndpointRegistryDriftTests"/>) cannot
-/// associate with the route. These tests issue the same-method HTTP request with the
-/// literal path inline so the admin replica registry entries are recognized as backed.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ReplicaInfo)]

@@ -29,10 +29,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// End-to-end coverage for the agentic ops loop that proposes and approves the deterministic
-/// alert-dispatch dead-letter redrive action (#2568).
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]
@@ -85,6 +81,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
             });
 
         await _fixture.InitializeAsync();
+        await ClearAlertStateAsync(_fixture);
         _dispatchHealth.Refresh = cancellationToken => _fixture
             .GetService<IAlertDispatchStore>()
             .GetBacklogAsync(cancellationToken);
@@ -267,37 +264,31 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         await MarkSeededDispatchesDeadLetterAsync(fixture, eventIds);
     }
 
+    private static async Task ClearAlertStateAsync(WebAppFixture fixture)
+    {
+        var dataSource = fixture.GetService<NpgsqlDataSource>();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "TRUNCATE TABLE honua.alert_event_lifecycle, honua.alert_dispatch, honua.alert_events CASCADE",
+            connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task MarkSeededDispatchesDeadLetterAsync(WebAppFixture fixture, HashSet<long> eventIds)
     {
+        var store = fixture.GetService<IAlertDispatchStore>();
         var now = DateTimeOffset.UtcNow;
-        var updated = 0;
+        var claimed = await store.ClaimPendingAsync(eventIds.Count, now.AddMinutes(1));
+        claimed.Select(item => item.EventId).Should().BeEquivalentTo(eventIds,
+            "the isolated fixture must claim exactly the dispatch rows seeded for this fault");
 
-        await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        foreach (var item in claimed)
         {
-            await using var connection = await fixture.Postgres.GetConnectionAsync();
-            await using var command = new NpgsqlCommand(
-                """
-                UPDATE honua.alert_dispatch
-                SET status = @status,
-                    attempts = attempts + 1,
-                    next_attempt_at = @now,
-                    last_attempt_at = @now,
-                    last_error = @last_error,
-                    updated_at = now()
-                WHERE event_id = ANY(@event_ids)
-                """,
-                connection);
-            command.Parameters.AddWithValue("status", (short)AlertDispatchStatus.DeadLetter);
-            command.Parameters.AddWithValue("now", now);
-            command.Parameters.AddWithValue("last_error", "seeded dead-letter storm for #2568");
-            command.Parameters.AddWithValue("event_ids", eventIds.ToArray());
-
-            updated = await command.ExecuteNonQueryAsync();
-        });
-
-        updated.Should().Be(
-            eventIds.Count,
-            "only the dispatch rows enqueued for the seeded fault should be marked dead-lettered");
+            var updated = await store.MarkFailedAsync(
+                item.DispatchId, item.ClaimToken, now, now,
+                deadLetter: true, errorMessage: "seeded dead-letter storm");
+            updated.Should().BeTrue("the seeded dispatch must transition under its current claim");
+        }
     }
 
     private async Task RefreshCachedBacklogAsync(IAlertDispatchStore store)

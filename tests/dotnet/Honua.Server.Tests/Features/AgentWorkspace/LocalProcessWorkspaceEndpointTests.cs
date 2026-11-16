@@ -11,7 +11,9 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.AgentWorkspace;
+using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -119,9 +121,7 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/agent/workspaces")]
     public async Task CreateWorkspace_BrowserCookieWithoutCsrf_IsRejected()
     {
-        using var owner = _fixture.CreateClient();
-        owner.DefaultRequestHeaders.Clear();
-        owner.DefaultRequestHeaders.Add("Cookie", "honua_admin_session=untrusted-browser-cookie");
+        using var owner = await BrowserClientAsync();
         using var response = await owner.PostAsync("/api/v1/agent/workspaces", null);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         _sandbox.Calls.Should().Be(0);
@@ -129,12 +129,23 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/agent/workspaces")]
-    public async Task CreateWorkspace_ExplicitBearerWithBrowserCookie_DoesNotRequireCsrf()
+    public async Task CreateWorkspace_BrowserSessionWithCsrf_IsCreated()
+    {
+        using var owner = await BrowserClientAsync();
+        await BrowserCsrf.SetHeaderAsync(owner);
+        var workspace = await CreateWorkspace(owner);
+        workspace.OwnerActorId.Should().Contain("alice");
+        _sandbox.Calls.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/agent/workspaces")]
+    public async Task CreateWorkspace_ExplicitBearerWithSessionCookie_IsCreated()
     {
         using var owner = Client("alice", "tenant-a");
         owner.DefaultRequestHeaders.Add("Cookie", "honua_admin_session=untrusted-browser-cookie");
-        using var response = await owner.PostAsync("/api/v1/agent/workspaces", null);
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var workspace = await CreateWorkspace(owner);
+        workspace.OwnerActorId.Should().Contain("alice");
         _sandbox.Calls.Should().Be(0);
     }
 
@@ -310,6 +321,25 @@ public sealed class LocalProcessWorkspaceEndpointTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
         return JsonSerializer.Deserialize(body, LocalProcessJsonContext.Default.AgentWorkspaceIdentity)!;
+    }
+
+    private async Task<HttpClient> BrowserClientAsync()
+    {
+        await using var serviceScope = _fixture.Services.CreateAsyncScope();
+        var store = serviceScope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        var sessionId = await store.CreateAuthenticatedSessionAsync("oidc", "access-token", null,
+            [
+                new AdminAuthSessionClaim { Type = "sub", Value = "alice" },
+                new AdminAuthSessionClaim { Type = "iss", Value = Issuer },
+                new AdminAuthSessionClaim { Type = "tid", Value = "tenant-a" },
+                new AdminAuthSessionClaim { Type = "roles", Value = "admin" },
+                new AdminAuthSessionClaim { Type = "scope", Value = OperatorScopeCatalog.Full }
+            ], DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
+        var client = _fixture.CreateClient();
+        client.BaseAddress = new Uri("https://localhost");
+        client.DefaultRequestHeaders.Clear();
+        client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}");
+        return client;
     }
 
     private HttpClient Client(string subject, string tenant, bool human = true, string? scope = OperatorScopeCatalog.Full)

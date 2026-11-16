@@ -13,11 +13,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalMultidimCoverageMetadataJobExecutor"/>
-/// (Path B, ADR-0039): VSI path projection, gdalmdiminfo invocation, the raw-JSON
-/// artifact contract, and input guardrails — without GDAL installed.
-/// </summary>
 public sealed class GdalMultidimCoverageExecutorTests
 {
     private const string GdalMdimInfoJson =

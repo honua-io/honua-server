@@ -19,12 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// Covers the WCS 2.0 GetCoverage Zarr slice oversize guard (#2796). The coverage's
-/// native grid exceeds the per-axis pixel limit and the request supplies no scaling
-/// operator, so the guard is reached on the base-grid path and must report a truthful
-/// locator (<c>COVERAGEID</c>, not a <c>SCALESIZE</c> the request never carried).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs201)]
 public sealed class Wcs20ZarrOversizeEndpointsTests : IAsyncLifetime

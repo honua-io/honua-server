@@ -9,7 +9,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
-    // Branch-versioning overlay read (#1272 Track B, ADR-0051). The DEFAULT version emits NOTHING extra
+    // Branch-versioning overlay read (ADR-0051). The DEFAULT version emits NOTHING extra
     // (today's exact SQL FROM the base features table) — this is the CITE firewall. A non-DEFAULT version
     // replaces the base table reference with an overlay subquery that produces the identical column shape
     // (objectid, layer_id, geometry, attributes) as the base table so the surrounding SELECT/WHERE is

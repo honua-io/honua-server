@@ -20,12 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Policy denials written by the authorization middleware short-circuit the pipeline above
-/// <c>UseHonuaAuditLog</c>, so the audit middleware never observes them. These tests drive the
-/// authorization result handler directly to prove the 401/403 outcome of an arbitrary policy is
-/// recorded there, exactly once.
-/// </summary>
 public sealed class HonuaAuthorizationMiddlewareResultHandlerTests
 {
     private const string RequestPath = "/api/v1/admin/roles/1";

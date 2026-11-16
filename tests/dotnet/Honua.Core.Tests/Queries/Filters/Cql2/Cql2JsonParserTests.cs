@@ -10,9 +10,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Tests.Queries.Filters.Cql2;
 
-/// <summary>
-/// Tests for CQL2 JSON filter expression parsing.
-/// </summary>
 public class Cql2JsonParserTests
 {
     private readonly Cql2JsonParser _parser = new();

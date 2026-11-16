@@ -11,18 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Map-family body gate against the published portable <c>honua_map_package.v1</c> schema
-/// (honua-server#4898). Before the fix the validator deserialized the body into the
-/// geoprocessing <c>MapPackage</c> record, so a schema-valid camera-form
-/// <c>initialView</c>, a non-<c>url</c> locator and the SDK's canonical artifact were all
-/// refused with one opaque <c>studio.body.invalid</c> diagnostic at <c>/body</c>.
-/// </summary>
 public sealed class StudioPackageValidatorMapBodyTests
 {
-    /// <summary>
-    /// The base body of the honua-server#4898 replay table: every row adds one member.
-    /// </summary>
     private const string ReplayBaseMembers = """
         "mapPackageId": "map-4898",
         "format": "honua_map_package.v1",

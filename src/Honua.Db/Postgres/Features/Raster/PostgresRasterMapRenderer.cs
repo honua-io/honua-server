@@ -178,7 +178,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
         // Dataset maps may combine coverages with different native SRIDs, pixel sizes,
         // origins, or skews. PostGIS ST_Union requires every input raster to share one
-        // alignment and otherwise raises rt_raster_from_two_rasters (honua-server#2487).
+        // alignment and otherwise raises rt_raster_from_two_rasters.
         // Reproject above, then borrow the first raster's grid for every remaining input
         // before the union. Collection renders avoid this extra resampling step.
         var alignmentCte = layerIds.Length > 1

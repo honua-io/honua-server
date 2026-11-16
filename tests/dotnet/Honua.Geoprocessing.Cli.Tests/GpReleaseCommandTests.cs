@@ -12,13 +12,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// <c>honua-gp-devkit release</c> against a real Git checkout: the same descriptor at the same
-/// commit must produce the same lock bytes and the same artifact bytes every time (that is what
-/// makes a re-run a no-op), the lock must validate against the v1 contract, and every way the
-/// inputs can be wrong (dirty tree, wrong SHA, missing receipt, bad descriptor) must refuse with a
-/// named finding instead of writing a lock.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpReleaseCommandTests : IDisposable
 {

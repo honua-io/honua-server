@@ -25,7 +25,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>Decodes actual persisted assets through the production I3S registration.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
 public sealed class I3sProductionResourceEndpointTests : IAsyncLifetime

@@ -11,10 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// Focused unit tests for the NAServer parameter translation and result mapping
-/// helpers — no HTTP host or database required.
-/// </summary>
 [Protocol(TestProtocols.NAServer)]
 public sealed class NAServerTranslationUnitTests
 {

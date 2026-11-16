@@ -7,11 +7,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models;
 
-/// <summary>
-/// Pins the FeatureServer layer descriptor's data-model surface (#1878): the layer-level
-/// <c>contingentValuesDefinition</c> and subtype-derived <c>types</c> are emitted when the
-/// layer authors them, and omitted (byte-stable for existing Esri clients) when it does not.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class LayerResponseDataModelSerializationTests
 {

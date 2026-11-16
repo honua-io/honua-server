@@ -14,12 +14,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Reconciler-level proof for honua-server#6474: a CloudWatch-gated canary whose target group served
-/// no 5XX responses publishes no <c>HTTPCode_Target_5XX_Count</c> datapoint. With an error-count
-/// numerator and a floor-meeting sample count the reconciler must promote it, and it must keep
-/// holding when the sample count itself is missing.
-/// </summary>
 public sealed class DeployWorkflowReconcilerCloudWatchZeroErrorTests
 {
     private const string SampleExpression = "SUM(SEARCH('{AWS/ApplicationELB,TargetGroup} RequestCount', 'Sum', 300))";
@@ -165,7 +159,6 @@ public sealed class DeployWorkflowReconcilerCloudWatchZeroErrorTests
         };
     }
 
-    /// <summary>Answers each expression with a raw response read through the production reader.</summary>
     private sealed class ScriptedCloudWatchMetricClient : Dictionary<string, GetMetricDataResponse>, ICloudWatchMetricClient
     {
         public ScriptedCloudWatchMetricClient()

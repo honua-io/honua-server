@@ -29,10 +29,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.WorkflowPackages;
 
-/// <summary>
-/// Integration tests for Console workflow package registry, lifecycle, publication,
-/// and job provenance endpoints (#1185).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ProcessExecution)]
@@ -633,11 +629,6 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-    /// <summary>
-    /// Records workflow release-package emissions from the publish path so the publishâ†’
-    /// metadata-release bridge can be asserted without an active Metadata v2 snapshot (#2176).
-    /// All other release-service operations are unused by these tests.
-    /// </summary>
     private sealed class RecordingMetadataReleaseService : IMetadataReleaseService
     {
         public List<CreateWorkflowReleasePackageRequest> Requests { get; } = new();

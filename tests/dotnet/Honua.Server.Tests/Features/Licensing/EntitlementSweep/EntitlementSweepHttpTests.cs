@@ -12,36 +12,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Licensing.EntitlementSweep;
 
-/// <summary>
-/// Local entitlement sweep (#2980): catalog-generated 402/200 matrix across every
-/// license-gated HTTP endpoint that has a probeable surface (see
-/// <see cref="EntitlementProbeRegistry"/>).
-///
-/// Each edition gets its own dedicated test class with a single, instance-field
-/// <see cref="WebAppFixture"/> — mirroring every other integration test in this project
-/// (e.g. <c>SpatialAnalyticsRestTests</c>, <c>VisibilityAnalysisEndpointTests</c>) — one
-/// Testcontainers Postgres per edition, reused across every probe in that edition rather
-/// than per probe (spinning ~90 individual containers would be prohibitively slow).
-///
-/// <b>The "blocked" check is not simply <c>StatusCode == 402</c>.</b> GeoServices-classified
-/// routes (<c>/rest/services/...</c>, matched by <c>ProtocolRequestClassifier.IsGeoServices</c>)
-/// follow the documented Esri GeoServices REST convention (see
-/// <c>StandardErrorResponseFormatter.FormatGeoServicesError</c>, "PA-070/PA-117: ALL responses
-/// — including errors — use HTTP 200 OK; the real status is signalled exclusively through the
-/// JSON body <c>{"error":{"code":402,...}}</c>"). An entitlement 402 for
-/// <c>analytics.clustering</c>/<c>editing.featureserver-edits</c>/etc. is therefore a real HTTP
-/// 200 carrying <c>"code":402</c> in the body, by design — not a gap. <see cref="EntitlementSweepEditionTestsBase.IsBlocked"/>
-/// treats EITHER shape (a literal 402, or a 200 with an embedded GeoServices <c>code:402</c>) as
-/// "blocked", so the sweep doesn't misreport this convention as an enforcement failure. This was
-/// confirmed by direct repro: an isolated single-request test against
-/// <c>analytics.clustering</c> printed literal <c>Status: OK</c> with a body of
-/// <c>{"error":{"code":402,...}}</c> — the gate fires correctly; only the wire shape differs
-/// from the non-GeoServices 402 convention used elsewhere (SAML/SCIM/mTLS/elevation/etc.).
-///
-/// Each probe's expected-blocked/expected-open assertions are accumulated in one
-/// <see cref="AssertionScope"/> per test so a single run reports every failing key at once
-/// instead of stopping at the first.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ContractTesting)]
@@ -91,11 +61,6 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
         _adminClient = _fixture.CreateAdminClient();
     }
 
-    /// <summary>
-    /// Builds an in-memory OIDC provider store already holding one provider, so the
-    /// identity.oidc-multi-provider probe's single create request lands on the second-provider
-    /// entitlement branch (#2997).
-    /// </summary>
     private static Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore CreateSeededOidcProviderStore()
     {
         var store = new Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore();
@@ -115,12 +80,6 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// A request is "blocked" by the entitlement gate when EITHER a literal HTTP 402 was
-    /// returned (every non-GeoServices surface), OR the response is the GeoServices-classified
-    /// 200-with-embedded-error-code convention carrying <c>"code":402</c> (see the class doc
-    /// comment). Both are the same gate firing — only the wire shape differs by protocol.
-    /// </summary>
     private static bool IsBlocked(HttpStatusCode statusCode, string body)
         => statusCode == HttpStatusCode.PaymentRequired
             || (statusCode == HttpStatusCode.OK && body.Contains("\"code\":402", StringComparison.Ordinal));
@@ -158,17 +117,6 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Sends the probe with <see cref="HttpCompletionOption.ResponseHeadersRead"/> and only
-    /// fully drains the body when it is NOT an open streaming response. SSE/chunked long-lived
-    /// transports never terminate their body on their own — <c>ai.spec-apply</c>'s success path
-    /// is a real Server-Sent-Events stream that stays open, so <c>ReadAsStringAsync</c> against
-    /// it would hang for the full HttpClient timeout instead of returning. Every probe's
-    /// "blocked" signal (a literal 402, or a GeoServices 200 wrapping <c>code:402</c>) is fully
-    /// framed in the response headers/status either way, so skipping the body read for a
-    /// genuinely open stream never hides a real gate failure: a blocked SSE request 402s before
-    /// the stream ever opens, with a normal (non-event-stream) content type.
-    /// </summary>
     private async Task<(HttpStatusCode StatusCode, string Body)> SendAsync(EntitlementProbe probe)
     {
         using var request = probe.CreateRequest();
@@ -186,7 +134,6 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
     private static string Truncate(string body) => body.Length <= 200 ? body : body[..200] + "...";
 }
 
-/// <summary>Community edition: every probe (Pro or Enterprise) must 402.</summary>
 public sealed class CommunityEditionEntitlementSweepTests : EntitlementSweepEditionTestsBase
 {
     protected override HonuaEdition Edition => HonuaEdition.Community;
@@ -196,10 +143,6 @@ public sealed class CommunityEditionEntitlementSweepTests : EntitlementSweepEdit
         => AssertBlockedAsync(EntitlementProbeRegistry.Probes.Keys);
 }
 
-/// <summary>
-/// Pro edition: Pro-tier probes must open up; Enterprise-tier probes must still 402
-/// ("Pro-is-not-enough", mirrors the #2978 SAML/SCIM shape).
-/// </summary>
 public sealed class ProEditionEntitlementSweepTests : EntitlementSweepEditionTestsBase
 {
     protected override HonuaEdition Edition => HonuaEdition.Pro;
@@ -221,7 +164,6 @@ public sealed class ProEditionEntitlementSweepTests : EntitlementSweepEditionTes
     public Task EnterpriseGatedProbes_AreStillBlockedAtPro() => AssertBlockedAsync(EnterpriseKeys());
 }
 
-/// <summary>Enterprise edition: every probe (Pro or Enterprise) must open up.</summary>
 public sealed class EnterpriseEditionEntitlementSweepTests : EntitlementSweepEditionTestsBase
 {
     protected override HonuaEdition Edition => HonuaEdition.Enterprise;
@@ -231,12 +173,6 @@ public sealed class EnterpriseEditionEntitlementSweepTests : EntitlementSweepEdi
         => AssertNotBlockedAsync(EntitlementProbeRegistry.Probes.Keys);
 }
 
-/// <summary>
-/// Guards that every probe is actually exercised by one of the three edition classes above
-/// (a probe whose key's <c>MinimumEdition</c> somehow isn't Pro or Enterprise would silently
-/// never run — <see cref="EntitlementSweepCoverageTests"/> is the broader coverage
-/// guarantee this narrower check complements).
-/// </summary>
 public sealed class EntitlementSweepHttpCoverageTests
 {
     [UnitTest]

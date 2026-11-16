@@ -6,14 +6,6 @@ using Honua.Server.Startup;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Regression guard for honua-server#2350: a standalone Test image (e.g. the honua-console
-/// live lane's Testcontainers server) that enables the Operate observability fixture must
-/// register the real data-provider infrastructure the seeder resolves, otherwise
-/// <c>POST /api/v1/admin/dev/fixtures/operate-observability/{profile}</c> 500s with
-/// "No service for type 'IAlertAdminStore' has been registered.". In-process WebAppFixture
-/// hosts (which skip migrations and wire their own providers) must stay excluded.
-/// </summary>
 public sealed class TestInfrastructureRegistrationPolicyTests
 {
     [Fact]

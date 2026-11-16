@@ -8,10 +8,6 @@ using Honua.Geocoding.Features.Geocoding.Providers;
 
 namespace Honua.Core.Tests.Features.Geocoding.Providers;
 
-/// <summary>
-/// Verifies structured-address input maps onto each provider's native request shape with parity, so
-/// Azure Maps and Amazon Location honor the same structured fields Nominatim already did (#2149).
-/// </summary>
 public sealed class GeocodeStructuredInputTests
 {
     private static readonly StructuredAddress Sample = new()

@@ -19,11 +19,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the Esri tile-cache package import + serving binding (#1269).
-/// Imports a synthetic Compact Cache V2 (.tpkx) package and then serves the imported
-/// tile + TileJSON descriptor through the public tile endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]

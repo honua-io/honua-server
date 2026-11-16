@@ -8,12 +8,6 @@ using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Unit coverage for the admin feature-overview capability projection (Track T8 /
-/// #2344): the read-only surface that projects the unified capability registry
-/// (ADR-0058, Decision B) through the T2 gate resolver so operators can see the
-/// full roster and <b>why</b> each capability is on or off.
-/// </summary>
 public sealed class FeatureOverviewCapabilityProjectionTests
 {
     private static readonly CapabilityDescriptor ImplementedDescriptor = new()

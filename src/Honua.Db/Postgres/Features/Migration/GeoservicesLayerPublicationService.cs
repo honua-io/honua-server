@@ -39,7 +39,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         _styleConverter = styleConverter;
         _styleCatalog = styleCatalog;
         _reconciliationService = reconciliationService;
-        // The catalog-reconciliation read-back (issue #1379) needs the genuinely-persisted current
+        // The catalog-reconciliation read-back needs the genuinely-persisted current
         // graph (where AutoPublish materialized res-layer-{layerId}), never the V1-catalog compat
         // synthesis. The Postgres store implements this seam; a non-implementing test double leaves
         // the reader null and catalog reconciliation is skipped.

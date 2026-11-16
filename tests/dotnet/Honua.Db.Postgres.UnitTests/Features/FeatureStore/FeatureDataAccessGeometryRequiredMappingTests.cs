@@ -7,14 +7,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Unit coverage for the BH-014 fix-forward (#2423, reverted by #2433): a create with no
-/// geometry on a layer whose geometry column is non-nullable must surface a clean
-/// validation message ("Geometry is required...") instead of a raw provider NOT NULL
-/// constraint violation. The mapping is driven by the database's own decision (the
-/// constraint actually fired), so it can never wrongly reject a valid attribute-only
-/// create on a nullable geometry column (Issue #45).
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureDataAccessGeometryRequiredMappingTests
 {

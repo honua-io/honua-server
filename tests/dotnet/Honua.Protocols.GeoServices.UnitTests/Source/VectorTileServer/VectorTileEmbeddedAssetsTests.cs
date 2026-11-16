@@ -9,11 +9,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer;
 
-/// <summary>
-/// Unit tests for the VectorTileServer glyph ranges (#5535): a served fontstack is answered
-/// with the bundled face's glyphs under the requested name; an unserved fontstack or range is
-/// refused rather than answered with an empty glyph stack.
-/// </summary>
 public sealed class VectorTileEmbeddedAssetsTests
 {
     [UnitTheory]

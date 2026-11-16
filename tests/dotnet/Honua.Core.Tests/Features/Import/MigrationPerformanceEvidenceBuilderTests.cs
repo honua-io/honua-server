@@ -12,9 +12,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Tests for <see cref="MigrationPerformanceEvidenceBuilder"/> (issue #1033 slice 4).
-/// </summary>
 public sealed class MigrationPerformanceEvidenceBuilderTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new()

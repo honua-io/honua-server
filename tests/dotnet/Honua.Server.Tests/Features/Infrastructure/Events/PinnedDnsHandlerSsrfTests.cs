@@ -10,15 +10,6 @@ using ImportHttpClientHelper = Honua.Import.FileImport.ImportHttpClientHelper;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events;
 
-/// <summary>
-/// Connect-time SSRF coverage for the shared pinned-DNS outbound handler
-/// (threat-model residual #1576). The handler backs webhook delivery and the
-/// import-from-URL surfaces; these tests prove that requests targeting
-/// private, loopback, link-local, and cloud-metadata addresses are rejected
-/// before any socket connection is attempted — for both literal IP targets
-/// and host names whose DNS resolution lands in a blocked range
-/// (DNS-rebinding defense).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class PinnedDnsHandlerSsrfTests
 {

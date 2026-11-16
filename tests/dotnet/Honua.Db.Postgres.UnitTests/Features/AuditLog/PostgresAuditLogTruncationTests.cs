@@ -6,12 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
-/// <summary>
-/// Docker-free coverage of <see cref="PostgresAuditLog.Truncate"/>. Guards the
-/// truncation-marker encoding contract: an over-long value must be truncated to
-/// the column width and end with a real horizontal ellipsis (U+2026), not the
-/// three-code-point mojibake sequence produced by a bad UTF-8/Latin-1 round trip.
-/// </summary>
 public sealed class PostgresAuditLogTruncationTests
 {
     private const string Ellipsis = "\u2026";

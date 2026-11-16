@@ -24,61 +24,19 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// honua-io/honua-server#3859, fail-closed leg: alert rules, state, events, dispatch,
-/// lifecycle, checkpoint and channel-state rows carry no tenant column, so 2026.1 ships
-/// Preview alerting on single-tenant instances only. Two mechanisms enforce that:
-/// <see cref="Honua.Alerts.AlertsServiceCollectionExtensions"/> refuses to start the
-/// evaluation and delivery workers when tenant resolution or schema routing is enabled,
-/// and <c>AlertAdminIsolationFilter</c> refuses every tenant-scoped HTTP caller.
-///
-/// <para>
-/// <c>AlertPreviewFloorTests.Requests_AnonymousAndTenantScopedAdmin_DenyWithoutDisclosureOrMutation</c>
-/// already proves the refusal on four hand-picked paths. The gap this class closes is
-/// <b>exhaustiveness</b>: nothing proved that the filter is wired onto <i>every</i> deployed
-/// alert route. <c>AddEndpointFilter</c> leaves no endpoint metadata, so a new alert route
-/// mapped without it is invisible to review and to every existing test, and would hand a
-/// tenant-scoped administrator instance-wide alert data on a multi-tenant deployment — the
-/// exact confidentiality failure #3859 names.
-/// </para>
-///
-/// <para>
-/// The denominator here is therefore the live <see cref="EndpointDataSource"/> of the running
-/// server, not a hand-maintained list: every registered route under the alert admin surfaces is
-/// driven, and an unrecognised route parameter fails the run rather than being skipped. Adding
-/// an unguarded alert route breaks this test on the PR that adds it.
-/// </para>
-///
-/// <para>
-/// The claim-sourced arm of the filter is covered by
-/// <c>AlertAdminIsolationFilterTests</c>; the fixture's API-key principal carries no tenant
-/// claim, so the header/resolved-tenant arm is what is exercised at the wire here.
-/// </para>
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed class AlertTenantIsolationRouteCoverageProofTests : IAsyncLifetime
 {
-    /// <summary>The other tenant's identifier. Must never appear in any response body.</summary>
     private const string ForeignTenantId = "tenant-b-3859";
 
-    /// <summary>
-    /// Route prefixes whose handlers read or mutate the instance-wide alert stores
-    /// (<c>IAlertAdminStore</c>, <c>IAlertEventQuery</c>, <c>IAlertLifecycleStore</c>,
-    /// <c>IAlertDispatchStore</c>). Every deployed route under these prefixes must fail closed.
-    /// </summary>
     private static readonly string[] AlertAdminRoutePrefixes =
     [
         "/api/v{version:apiVersion}/admin/alerts",
         "/api/v{version:apiVersion}/admin/observability/alerts"
     ];
 
-    /// <summary>
-    /// The alert routes deployed when this proof was written. Discovery drives the assertions,
-    /// so a <i>new</i> route is covered automatically; this list additionally fails the test if a
-    /// route is <i>removed or renamed</i>, which would otherwise silently shrink the denominator.
-    /// </summary>
     private static readonly string[] KnownAlertRoutes =
     [
         "GET /api/v{version:apiVersion}/admin/alerts/zones",
@@ -166,13 +124,6 @@ public sealed class AlertTenantIsolationRouteCoverageProofTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// Drives every deployed alert admin route twice: once as a tenant-scoped administrator
-    /// (must be refused) and once as the instance administrator (must not be refused). The
-    /// second arm is what makes the first non-vacuous — without it a blanket 403 from
-    /// authorization, routing, or the capability gate would satisfy the refusal assertion
-    /// while proving nothing about tenant isolation.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/alerts/zones")]
     [Endpoint("POST /api/v1/admin/alerts/zones")]
@@ -228,11 +179,6 @@ public sealed class AlertTenantIsolationRouteCoverageProofTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// The refusal must also leave no trace: no alert row changes and no audit record is
-    /// written for the tenant-scoped attempts. #3859 requires that a cross-tenant list, get,
-    /// acknowledge, resolve, suppress or redrive "fail closed and create no mutation".
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/alerts/zones")]
     [Endpoint("POST /api/v1/admin/alerts/zones")]
@@ -306,7 +252,6 @@ public sealed class AlertTenantIsolationRouteCoverageProofTests : IAsyncLifetime
     private static readonly string[] AlertAuditResourceTypes =
         ["alert_zone", "alert_rule", "alert-channel", "alert_event"];
 
-    /// <summary>Counts every audit row attached to an alert zone, rule, delivery channel, or event.</summary>
     private async Task<object?> CountAlertAuditRowsAsync()
     {
         await using var connection = await _fixture.GetService<NpgsqlDataSource>().OpenConnectionAsync();
@@ -316,7 +261,6 @@ public sealed class AlertTenantIsolationRouteCoverageProofTests : IAsyncLifetime
         return await command.ExecuteScalarAsync();
     }
 
-    /// <summary>Reads the audit rows the refused sweep produced, for outcome and disclosure checks.</summary>
     private async Task<IReadOnlyList<(string ResourceType, string Outcome, string Details)>> ReadSweepAuditRowsAsync(
         string correlation)
     {
@@ -335,11 +279,6 @@ public sealed class AlertTenantIsolationRouteCoverageProofTests : IAsyncLifetime
         return rows;
     }
 
-    /// <summary>
-    /// Discovers every deployed alert admin route from the running server and pairs it with a
-    /// concrete request. An unrecognised route parameter throws rather than being skipped, so a
-    /// new alert route cannot quietly drop out of the denominator.
-    /// </summary>
     private Dictionary<string, Func<HttpRequestMessage>> DiscoverAlertRoutes()
     {
         var routes = new Dictionary<string, Func<HttpRequestMessage>>(StringComparer.Ordinal);

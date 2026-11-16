@@ -8,11 +8,6 @@ using Xunit;
 
 namespace Honua.Core.Security.Tests;
 
-/// <summary>
-/// Tests for <see cref="DataConnection"/> verifying provider-name normalization
-/// and that encrypted-credential construction enforces strict SSL/TLS transport
-/// modes when <see cref="DataConnection.SslRequired"/> is set.
-/// </summary>
 public sealed class DataConnectionTests
 {
     [Trait("Tier", "Fast")]

@@ -13,9 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Tests for temporal filtering in OData endpoints
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
