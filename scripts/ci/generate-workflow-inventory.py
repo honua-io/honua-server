@@ -48,7 +48,12 @@ def render(root: Path) -> str:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
+    # Validators project into a scratch file: a rewritten tracked page dirties
+    # the checkout for later steps that require it unchanged (prove-nuget-auth.py).
+    parser.add_argument('--output', type=Path, help='write the projection here instead of the tracked page')
     args = parser.parse_args()
+    if args.check and args.output:
+        parser.error('--check compares the tracked page; it takes no --output')
     path = ROOT / 'docs/internal/ci/workflow-inventory.md'
     output = render(ROOT)
     if args.check:
@@ -63,7 +68,7 @@ def main():
                 'Feature PRs edit the template and workflow YAML and must not commit the projection.',
                 file=sys.stderr)
     else:
-        path.write_text(output)
+        (args.output or path).write_text(output)
 
 
 if __name__ == '__main__':
