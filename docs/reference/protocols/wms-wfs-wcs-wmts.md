@@ -290,6 +290,8 @@ Rules to know:
   dimension computed from the data. Requested values are checked against
   `values`. Give each dimension a `default`, because a request that omits a
   dimension without one is rejected with `MissingParameterValue`.
+- The WMTS identifier `time` is reserved for the dimension computed from the
+  data. A declared entry with that identifier is ignored.
 
 A layer in the legacy layer catalog takes the same `wms` and `wmts` objects as
 top-level keys of its layer `metadata` JSON.

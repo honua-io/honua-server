@@ -125,7 +125,9 @@ internal static class OgcClassicDeclaredDimensions
 
     private static DeclaredWmtsDimension? ReadWmtsDimension(JsonElement entry)
     {
+        // "time" is reserved for the dimension the server computes from temporal fields.
         if (ReadName(entry, "identifier") is not { } identifier ||
+            NameEquals(identifier, TimeDimensionName) ||
             !entry.TryGetProperty("values", out var valuesElement) ||
             valuesElement.ValueKind != JsonValueKind.Array)
         {

@@ -1557,6 +1557,11 @@ internal static class WmtsRequestHandlers
         return [];
     }
 
+    // Only the data-derived time stub has no values; a declared dimension always lists at least
+    // one, and a layer with declared dimensions never gains a data-derived time dimension.
+    private static bool IsDataDerivedTimeStub(WmtsDimensionDefinition[] dimensions)
+        => dimensions is [{ Values.Length: 0 }];
+
     // Continuous resolution is "0". "PT0S" is a zero-length duration, and ArcGIS Pro rejects a dimension declared that way.
     private const string ContinuousTemporalResolution = "0";
 
@@ -1566,7 +1571,7 @@ internal static class WmtsRequestHandlers
         CancellationToken cancellationToken)
     {
         var staticDimensions = GetWmtsDimensionDefinitions(layer);
-        if (staticDimensions.Length == 0 || featureReader is null)
+        if (!IsDataDerivedTimeStub(staticDimensions) || featureReader is null)
         {
             return staticDimensions;
         }
@@ -1595,32 +1600,7 @@ internal static class WmtsRequestHandlers
             SupportsCurrent: true,
             CurrentValue: max);
 
-        // Replace any stub time dimension already present (from the sync path)
-        // with the populated entry; preserve other dimensions in their order.
-        var resolved = new WmtsDimensionDefinition[staticDimensions.Length];
-        var replaced = false;
-        for (var i = 0; i < staticDimensions.Length; i++)
-        {
-            if (!replaced && string.Equals(staticDimensions[i].Identifier, "time", StringComparison.OrdinalIgnoreCase))
-            {
-                resolved[i] = populated;
-                replaced = true;
-            }
-            else
-            {
-                resolved[i] = staticDimensions[i];
-            }
-        }
-
-        if (!replaced)
-        {
-            var combined = new WmtsDimensionDefinition[resolved.Length + 1];
-            Array.Copy(resolved, combined, resolved.Length);
-            combined[^1] = populated;
-            return combined;
-        }
-
-        return resolved;
+        return [populated];
     }
 
     private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitionsFromRange(
@@ -1628,7 +1608,7 @@ internal static class WmtsRequestHandlers
         MetadataV2TemporalRange? temporalRange)
     {
         var staticDimensions = GetWmtsDimensionDefinitions(layer);
-        if (staticDimensions.Length == 0)
+        if (!IsDataDerivedTimeStub(staticDimensions))
         {
             return staticDimensions;
         }
@@ -1647,30 +1627,7 @@ internal static class WmtsRequestHandlers
             SupportsCurrent: true,
             CurrentValue: max);
 
-        var resolved = new WmtsDimensionDefinition[staticDimensions.Length];
-        var replaced = false;
-        for (var i = 0; i < staticDimensions.Length; i++)
-        {
-            if (!replaced && string.Equals(staticDimensions[i].Identifier, "time", StringComparison.OrdinalIgnoreCase))
-            {
-                resolved[i] = populated;
-                replaced = true;
-            }
-            else
-            {
-                resolved[i] = staticDimensions[i];
-            }
-        }
-
-        if (!replaced)
-        {
-            var combined = new WmtsDimensionDefinition[resolved.Length + 1];
-            Array.Copy(resolved, combined, resolved.Length);
-            combined[^1] = populated;
-            return combined;
-        }
-
-        return resolved;
+        return [populated];
     }
 
     private static async Task<bool> ResolveWmtsLegendSupportAsync(

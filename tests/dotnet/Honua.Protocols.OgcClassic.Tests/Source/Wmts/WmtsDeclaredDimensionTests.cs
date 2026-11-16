@@ -80,7 +80,9 @@ public sealed class WmtsDeclaredDimensionTests : IAsyncLifetime
 
         var advertised = await _fixture.Client.GetAsync(WmtsUrl(TileQuery("GetTile", "&elevation=current&scenario=summer&time=not-a-time")));
         var unknown = await _fixture.Client.GetAsync(WmtsUrl(TileQuery("GetTile", "&elevation=999")));
+        var layer = await GetCapabilitiesLayerAsync();
 
+        layer.Elements(WmtsNs + "Dimension").Should().HaveCount(2, "a data-derived time dimension is not added to declared dimensions");
         advertised.StatusCode.Should().Be(HttpStatusCode.OK, await advertised.Content.ReadAsStringAsync());
         advertised.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
         var unknownContent = await unknown.Content.ReadAsStringAsync();

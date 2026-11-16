@@ -84,6 +84,15 @@ public sealed class OgcClassicDeclaredDimensionsTests
     }
 
     [UnitTest]
+    public void ReadWmtsDimensions_IgnoresTheReservedTimeIdentifier()
+    {
+        var resource = ResourceWith("wmts", """{"dimensions":[{"identifier":"Time","values":["2020"]},{"identifier":"elevation","values":["1"]}]}""");
+
+        OgcClassicDeclaredDimensions.ReadWmtsDimensions(resource).Should().ContainSingle()
+            .Which.Identifier.Should().Be("elevation");
+    }
+
+    [UnitTest]
     public void IsWmtsQueryable_IsFalseForAnExplicitFalse()
         => OgcClassicDeclaredDimensions.IsWmtsQueryable(ResourceWith("wmts", """{"queryable":false}""")).Should().BeFalse();
 
