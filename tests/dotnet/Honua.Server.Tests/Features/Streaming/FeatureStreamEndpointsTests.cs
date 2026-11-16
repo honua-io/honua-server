@@ -1631,7 +1631,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
-    public async Task Sse_Connect_ReturnsEventStreamContentType()
+    public async Task Sse_Connect_ReturnsEventStreamWithProxyBufferingDisabled()
     {
         await StartDefaultApplicationAsync();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
@@ -1643,6 +1643,10 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        response.Headers.CacheControl.NoTransform.Should().BeTrue();
+        response.Headers.GetValues("X-Accel-Buffering").Should().ContainSingle().Which.Should().Be("no");
     }
 
     [IntegrationTest]
