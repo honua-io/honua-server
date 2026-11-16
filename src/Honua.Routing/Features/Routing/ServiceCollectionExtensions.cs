@@ -8,45 +8,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Routing.Features.Routing;
 
-/// <summary>
-/// Service collection extensions for the routing subsystem.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Configuration section name for routing options.
-    /// </summary>
     public const string ConfigurationSection = RoutingConfiguration.SectionName;
 
-    /// <summary>
-    /// Configuration key selecting the routing provider (e.g. "pgrouting", "mock").
-    /// </summary>
     public const string ProviderConfigurationKey = "Routing:Provider";
 
-    /// <summary>
-    /// Registers the routing subsystem: binds and validates
-    /// <see cref="RoutingConfiguration"/> from the <c>Routing</c> section and
-    /// registers the routing provider selected by <c>Routing:Provider</c>.
-    /// </summary>
-    /// <remarks>
-    /// Provider selection:
-    /// <list type="bullet">
-    /// <item><c>Routing:Provider=mock</c> — the database-free mock provider.</item>
-    /// <item><c>Routing:Provider=pgrouting</c> — the pgRouting provider, regardless
-    /// of the data provider (operator opt-in).</item>
-    /// <item><c>Routing:Provider=none</c>/<c>unavailable</c> — no routing engine.</item>
-    /// <item>Unset (default) — pgRouting <em>only</em> when the active
-    /// <c>DataSource:Provider</c> is PostgreSQL (or unset, since Postgres is the
-    /// default). On non-Postgres data providers (DuckDB/MySQL/etc.) the pgRouting
-    /// SQL cannot run, so an <see cref="UnavailableRoutingProvider"/> is registered
-    /// instead; the NAServer adapter then returns a clear "not supported" error
-    /// rather than a 500 from executing pgRouting SQL against an incompatible
-    /// database.</item>
-    /// </list>
-    /// </remarks>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Application configuration.</param>
-    /// <returns>Service collection for chaining.</returns>
     public static IServiceCollection AddRouting(
         this IServiceCollection services,
         IConfiguration configuration)

@@ -10,14 +10,8 @@ using Honua.Core.Features.Tiles;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Native MVT support for a PostGIS reader bound to a Metadata v2 storage mapping and secure
-/// connection. Keeping tile SQL on this binding-scoped reader prevents routed publications from
-/// falling back to the primary PostGIS connection.
-/// </summary>
 internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
 {
-    /// <inheritdoc />
     public async Task<byte[]?> GetMvtTileAsync(
         int layerId,
         int x,
@@ -165,7 +159,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
         }
     }
 
-    /// <inheritdoc />
     public Task<byte[]?> GetH3MvtTileAsync(
         int layerId,
         int x,

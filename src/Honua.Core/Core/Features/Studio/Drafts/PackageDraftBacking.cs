@@ -6,71 +6,47 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Studio.Drafts;
 
-/// <summary>Which package family a draft record belongs to. The two kinds never share a key space.</summary>
 public enum PackageDraftKind
 {
-    /// <summary>A <see cref="MapPackage"/> draft.</summary>
     Map,
 
-    /// <summary>An <see cref="AppPackage"/> draft.</summary>
     App,
 }
 
-/// <summary>One live draft plus the subject allowed to read it.</summary>
-/// <param name="OwnerId">Caller subject recorded at save.</param>
-/// <param name="WrittenAt">Utc instant of the write that started the TTL.</param>
-/// <param name="Map">Map package when <see cref="PackageDraftKind.Map"/>; otherwise null.</param>
-/// <param name="App">App package when <see cref="PackageDraftKind.App"/>; otherwise null.</param>
 public sealed record PackageDraftRecord(
     string OwnerId,
     DateTimeOffset WrittenAt,
     MapPackage? Map,
     AppPackage? App);
 
-/// <summary>Identifier and write time of a draft the backing still considers live.</summary>
-/// <param name="Id">Minted package identifier.</param>
-/// <param name="WrittenAt">Utc instant of the write that started the TTL.</param>
 public readonly record struct PackageDraftLiveEntry(string Id, DateTimeOffset WrittenAt);
 
 public sealed record PackageDraftWrite(PackageDraftKind Kind, string Id, PackageDraftRecord Record, TimeSpan Ttl);
 
-/// <summary>
-/// Persistence for <see cref="PackageDraftLedger"/>. A memory instance is private to
-/// one process. A shared instance is what makes two store objects agree.
-/// </summary>
 public interface IPackageDraftBacking
 {
     Task UpsertAsync(PackageDraftWrite write, CancellationToken cancellationToken);
 
-    /// <summary>Returns the record, or null when it is missing or already expired. Expired records are dropped.</summary>
     Task<PackageDraftRecord?> TryGetAsync(
         PackageDraftKind kind,
         string id,
         TimeSpan ttl,
         CancellationToken cancellationToken);
 
-    /// <summary>Live records of <paramref name="kind"/>, oldest write first. Expired records are omitted.</summary>
     Task<IReadOnlyList<PackageDraftLiveEntry>> ListLiveOldestFirstAsync(
         PackageDraftKind kind,
         TimeSpan ttl,
         CancellationToken cancellationToken);
 
-    /// <summary>Removes one record. Missing identifiers are a no-op.</summary>
     Task RemoveAsync(PackageDraftKind kind, string id, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Process-local <see cref="IPackageDraftBacking"/>. Expiry is evaluated against
-/// <see cref="TimeProvider"/> because this backing has no native TTL.
-/// </summary>
 internal sealed class MemoryPackageDraftBacking : IPackageDraftBacking
 {
     private readonly ConcurrentDictionary<string, PackageDraftRecord> _maps = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PackageDraftRecord> _apps = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>Initializes a new instance of the <see cref="MemoryPackageDraftBacking"/> class.</summary>
-    /// <param name="timeProvider">Clock used to decide expiry.</param>
     public MemoryPackageDraftBacking(TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(timeProvider);
@@ -86,7 +62,6 @@ internal sealed class MemoryPackageDraftBacking : IPackageDraftBacking
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task<PackageDraftRecord?> TryGetAsync(
         PackageDraftKind kind,
         string id,
@@ -109,7 +84,6 @@ internal sealed class MemoryPackageDraftBacking : IPackageDraftBacking
         return Task.FromResult<PackageDraftRecord?>(record);
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<PackageDraftLiveEntry>> ListLiveOldestFirstAsync(
         PackageDraftKind kind,
         TimeSpan ttl,
@@ -139,7 +113,6 @@ internal sealed class MemoryPackageDraftBacking : IPackageDraftBacking
         return Task.FromResult<IReadOnlyList<PackageDraftLiveEntry>>(live);
     }
 
-    /// <inheritdoc />
     public Task RemoveAsync(PackageDraftKind kind, string id, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

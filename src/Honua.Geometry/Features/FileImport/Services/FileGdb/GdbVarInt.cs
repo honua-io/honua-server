@@ -13,15 +13,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services.FileGdb;
 
-/// <summary>
-/// Reads variable-length integers used in the FileGDB binary format.
-/// Uses LEB128 encoding for unsigned values and zigzag decoding for signed values.
-/// </summary>
 internal static class GdbVarInt
 {
-    /// <summary>
-    /// Reads an unsigned variable-length integer (LEB128) from a BinaryReader.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong ReadVarUInt(BinaryReader reader)
     {
@@ -46,9 +39,6 @@ internal static class GdbVarInt
         return result;
     }
 
-    /// <summary>
-    /// Reads a signed variable-length integer (LEB128 + zigzag decode) from a BinaryReader.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long ReadVarInt(BinaryReader reader)
     {
@@ -56,9 +46,6 @@ internal static class GdbVarInt
         return ZigzagDecode(unsigned);
     }
 
-    /// <summary>
-    /// Reads an unsigned variable-length integer (LEB128) from a span.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong ReadVarUInt(ReadOnlySpan<byte> data, ref int offset)
     {
@@ -83,9 +70,6 @@ internal static class GdbVarInt
         throw new InvalidDataException("Unexpected end of data reading VarUInt.");
     }
 
-    /// <summary>
-    /// Reads a signed variable-length integer (LEB128 + zigzag decode) from a span.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long ReadVarInt(ReadOnlySpan<byte> data, ref int offset)
     {

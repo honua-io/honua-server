@@ -64,7 +64,7 @@ services:
       Experimental__Features__SnowflakeProvider: "false"
       Experimental__Features__DatabricksProvider: "false"
 EOF
-export HONUA_CNG_SERVER_PORT="127.0.0.1:$PORT" HONUA_CNG_POSTGRES_PORT="127.0.0.1:$PG_PORT"
+export HONUA_BIND_ADDRESS=127.0.0.1 HONUA_CNG_SERVER_PORT="$PORT" HONUA_CNG_POSTGRES_PORT="$PG_PORT"
 export HONUA_GITHUB_ACTOR_SECRET_FILE="$work/empty-secret" HONUA_GITHUB_TOKEN_SECRET_FILE="$work/empty-secret"
 compose() { docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$work/override.yml" "$@"; }
 cleanup() {

@@ -10,19 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Worker.Gdal.Execution;
 
-/// <summary>
-/// Native-profile dispatcher for <see cref="ExecutionJobKind.Geoprocessing"/>
-/// jobs inside the GDAL worker image. Mirrors the lean
-/// <c>GeoprocessingDispatchJobExecutor</c> pattern: the worker host registers a
-/// single <see cref="IJobExecutor"/> per <see cref="ExecutionJobKind"/>, and this
-/// dispatcher routes a claimed job to the matching GDAL-backed handler by process
-/// id.
-///
-/// It overrides <see cref="AcceptedRuntimeProfiles"/> to <c>{ "native" }</c> so the
-/// substrate claim fence (this branch's <see cref="RuntimeProfiles"/> helper) keeps
-/// the lean managed worker from claiming native-profile jobs and keeps this worker
-/// from claiming managed-profile jobs.
-/// </summary>
 internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
 {
     private static readonly IReadOnlySet<string> NativeProfileSet =
@@ -34,18 +21,6 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
     private readonly Microsoft.Extensions.Options.IOptionsMonitor<Honua.Core.Features.Geoprocessing.Domain.GeoprocessingOutputStagingOptions>? _stagingOptions;
     private readonly Microsoft.Extensions.Options.IOptionsMonitor<GdalWorkerOptions>? _workerOptions;
 
-    /// <summary>
-    /// Composes the dispatcher over the auto-registered GDAL-backed executors
-    /// (issue #2122). Each <see cref="IProcessExecutor"/> self-declares the process
-    /// ids it handles through <see cref="IProcessExecutor.ProcessIds"/> — including
-    /// the <c>surface.*</c> and <c>raster.statistics/histogram</c> families that fan
-    /// a single executor over several ids — so the O(1) routing table is built from
-    /// a single DI scan via <see cref="ProcessExecutorRouteTable.Build"/> instead of
-    /// a hand-maintained constructor naming every executor and its id set.
-    /// When an output staging store is registered (#3089), the dispatcher wraps the
-    /// execution context in <see cref="GdalStagedOutputContext"/> so the shared
-    /// publisher stages large outputs by reference instead of inlining them.
-    /// </summary>
     public GdalDispatchJobExecutor(
         IEnumerable<IProcessExecutor> executors,
         ILogger<GdalDispatchJobExecutor> logger,
@@ -63,16 +38,12 @@ internal sealed partial class GdalDispatchJobExecutor : IJobExecutor
         _workerOptions = workerOptions;
     }
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> AcceptedRuntimeProfiles => NativeProfileSet;
 
-    /// <summary>Process ids this dispatcher can route.</summary>
     public IReadOnlyCollection<string> SupportedProcessIds => _handlers.Keys;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

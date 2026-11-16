@@ -26,9 +26,6 @@ using Npgsql;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Admin;
 
-/// <summary>
-/// PostgreSQL implementation of layer publishing operations.
-/// </summary>
 internal sealed partial class PostgreSqlLayerPublishingService(
     ITableDiscoveryService tableDiscoveryService,
     IMetadataV2GraphStore metadataGraphStore,
@@ -727,10 +724,6 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         return linkedLayer;
     }
 
-    /// <summary>
-    /// Verifies a committed-sink endpoint pin and, only when it matches, allows that
-    /// publish to discover a non-reserved schema outside the operational list.
-    /// </summary>
     private static IDisposable? OpenCommittedSchemaScope(
         string connectionString,
         string? fingerprint,

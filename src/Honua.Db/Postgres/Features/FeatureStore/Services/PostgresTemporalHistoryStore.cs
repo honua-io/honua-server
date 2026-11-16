@@ -10,11 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-/// <summary>
-/// Reads the uncollapsed change log with attribution from Postgres for the temporal diff, timeline, and
-/// rollback surfaces (slices 2-5 of honua-server#1166). Reads <c>honua.feature_changes</c> directly,
-/// including the slice-4 attribution columns and the named-checkpoint registry.
-/// </summary>
 internal sealed class PostgresTemporalHistoryStore : ITemporalHistoryStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
