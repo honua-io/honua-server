@@ -21,32 +21,40 @@ public sealed class FeatureQueryBuilderIdProjectionIntegrationTests(PostgresFixt
     }
 
     [IntegrationTheory]
-    [InlineData(QueryPlan.Standard)]
-    [InlineData(QueryPlan.Optimized)]
-    public Task BuildSelectQuery_WithStoredIdAttribute_PreservesValue(QueryPlan plan) =>
-        AssertSelectedAttributesAsync(plan, new(["secret"]), attributes =>
-            attributes.GetProperty("id").GetInt32().Should().Be(42));
+    [InlineData(QueryPlan.Standard, "id")]
+    [InlineData(QueryPlan.Optimized, "id")]
+    [InlineData(QueryPlan.Standard, "public_id")]
+    [InlineData(QueryPlan.Optimized, "public_id")]
+    public Task BuildSelectQuery_WithStoredIdAttribute_PreservesValue(QueryPlan plan, string identifier) =>
+        AssertSelectedAttributesAsync(plan, new(["secret"], $$"""{"{{identifier}}":42,"name":"bravo","secret":"hidden"}""", identifier), attributes =>
+            attributes.GetProperty(identifier).GetInt32().Should().Be(42));
 
     [IntegrationTheory]
-    [InlineData(QueryPlan.Standard)]
-    [InlineData(QueryPlan.Optimized)]
-    public Task BuildSelectQuery_WithMissingIdAttribute_PreservesAbsence(QueryPlan plan) =>
-        AssertSelectedAttributesAsync(plan, new(["secret"], """{"name":"bravo","secret":"hidden"}"""), attributes =>
-            attributes.TryGetProperty("id", out _).Should().BeFalse());
+    [InlineData(QueryPlan.Standard, "id")]
+    [InlineData(QueryPlan.Optimized, "id")]
+    [InlineData(QueryPlan.Standard, "public_id")]
+    [InlineData(QueryPlan.Optimized, "public_id")]
+    public Task BuildSelectQuery_WithMissingIdAttribute_PreservesAbsence(QueryPlan plan, string identifier) =>
+        AssertSelectedAttributesAsync(plan, new(["secret"], """{"name":"bravo","secret":"hidden"}""", identifier), attributes =>
+            attributes.TryGetProperty(identifier, out _).Should().BeFalse());
 
     [IntegrationTheory]
-    [InlineData(QueryPlan.Standard)]
-    [InlineData(QueryPlan.Optimized)]
-    public Task BuildSelectQuery_WithNullIdAttribute_PreservesNull(QueryPlan plan) =>
-        AssertSelectedAttributesAsync(plan, new(["secret"], """{"id":null,"name":"bravo","secret":"hidden"}"""), attributes =>
-            attributes.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null));
+    [InlineData(QueryPlan.Standard, "id")]
+    [InlineData(QueryPlan.Optimized, "id")]
+    [InlineData(QueryPlan.Standard, "public_id")]
+    [InlineData(QueryPlan.Optimized, "public_id")]
+    public Task BuildSelectQuery_WithNullIdAttribute_PreservesNull(QueryPlan plan, string identifier) =>
+        AssertSelectedAttributesAsync(plan, new(["secret"], $$"""{"{{identifier}}":null,"name":"bravo","secret":"hidden"}""", identifier), attributes =>
+            attributes.GetProperty(identifier).ValueKind.Should().Be(JsonValueKind.Null));
 
     [IntegrationTheory]
-    [InlineData(QueryPlan.Standard)]
-    [InlineData(QueryPlan.Optimized)]
-    public Task BuildSelectQuery_WithMaskedIdAttribute_ExcludesValue(QueryPlan plan) =>
-        AssertSelectedAttributesAsync(plan, new(["id", "secret"]), attributes =>
-            attributes.TryGetProperty("id", out _).Should().BeFalse());
+    [InlineData(QueryPlan.Standard, "id")]
+    [InlineData(QueryPlan.Optimized, "id")]
+    [InlineData(QueryPlan.Standard, "public_id")]
+    [InlineData(QueryPlan.Optimized, "public_id")]
+    public Task BuildSelectQuery_WithMaskedIdAttribute_ExcludesValue(QueryPlan plan, string identifier) =>
+        AssertSelectedAttributesAsync(plan, new([identifier, "secret"], $$"""{"{{identifier}}":42,"name":"bravo","secret":"hidden"}""", identifier), attributes =>
+            attributes.TryGetProperty(identifier, out _).Should().BeFalse());
 
     private async Task AssertSelectedAttributesAsync(QueryPlan plan, ProjectionFixture projection, Action<JsonElement> assertId)
     {
@@ -57,7 +65,7 @@ public sealed class FeatureQueryBuilderIdProjectionIntegrationTests(PostgresFixt
             var pool = new DefaultObjectPoolProvider().Create(
                 new Honua.Db.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy());
             var builder = new FeatureQueryBuilder(pool, new GeometryProcessor(), schema);
-            var query = new FeatureQuery { OutFields = ["id", "name", "secret"], EnforcedMaskedFields = projection.MaskedFields };
+            var query = new FeatureQuery { OutFields = [projection.Identifier, "name", "secret"], EnforcedMaskedFields = projection.MaskedFields };
             var result = plan == QueryPlan.Optimized
                 ? builder.BuildOptimizedSelectQuery(1, query)
                 : builder.BuildSelectQuery(1, query);
@@ -87,7 +95,8 @@ public sealed class FeatureQueryBuilderIdProjectionIntegrationTests(PostgresFixt
 
     private sealed record ProjectionFixture(
         ImmutableArray<string> MaskedFields,
-        string AttributesJson = """{"id":42,"name":"bravo","secret":"hidden"}""");
+        string AttributesJson = """{"id":42,"name":"bravo","secret":"hidden"}""",
+        string Identifier = "id");
 
     private Task SeedFeatureAsync(string schema, string attributesJson) => fixture.ExecuteAsync($$"""
         CREATE TABLE {{schema}}.features (

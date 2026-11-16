@@ -214,7 +214,7 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         var projectedFields = new List<string>(requestedOutFields.Length);
-        string? storedIdProjection = null;
+        var presencePreservingFields = new List<string>(requestedOutFields.Length);
         var seenFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var fieldName in requestedOutFields)
@@ -257,12 +257,12 @@ internal sealed partial class FeatureQueryBuilder
             var valueExpression = isDistinctObjectId
                 ? DatabaseSchema.ObjectIdColumn
                 : $"{DatabaseSchema.AttributesColumn} -> ${fieldParamIndex}::text";
-            if (isStoredId)
+            if (!query.Distinct || isStoredId)
             {
                 // An absent key must remain absent so serializers can fall back to the
                 // physical identifier; an explicitly stored JSON null still wins.
-                storedIdProjection = $"CASE WHEN {DatabaseSchema.AttributesColumn} ? ${fieldParamIndex}::text " +
-                    $"THEN jsonb_build_object(${fieldParamIndex}::text, {valueExpression}) ELSE '{{}}'::jsonb END";
+                presencePreservingFields.Add($"CASE WHEN {DatabaseSchema.AttributesColumn} ? ${fieldParamIndex}::text " +
+                    $"THEN jsonb_build_object(${fieldParamIndex}::text, {valueExpression}) ELSE '{{}}'::jsonb END");
             }
             else
             {
@@ -270,17 +270,24 @@ internal sealed partial class FeatureQueryBuilder
             }
         }
 
-        if (projectedFields.Count == 0 && storedIdProjection is null)
+        if (projectedFields.Count == 0 && presencePreservingFields.Count == 0)
         {
             return "NULL";
         }
 
-        var attributesProjection = projectedFields.Count == 0
-            ? "'{}'::jsonb"
-            : $"jsonb_build_object({string.Join(", ", projectedFields)})";
-        return storedIdProjection is null
-            ? $"{attributesProjection}::text"
-            : $"({attributesProjection} || {storedIdProjection})::text";
+        if (projectedFields.Count > 0)
+        {
+            // DISTINCT retains its existing missing/null grouping semantics.
+            var distinctProjection = $"jsonb_build_object({string.Join(", ", projectedFields)})";
+            if (presencePreservingFields.Count == 0)
+            {
+                return $"{distinctProjection}::text";
+            }
+
+            presencePreservingFields.Insert(0, distinctProjection);
+        }
+
+        return $"({string.Join(" || ", presencePreservingFields)})::text";
     }
 
     private static HashSet<string> ResolveMaskedFields(FeatureQuery query)
