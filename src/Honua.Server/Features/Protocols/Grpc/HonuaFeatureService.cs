@@ -307,7 +307,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         {
             var storageBinding = snapshot.ResolveStorageBinding(layer.Publication)
                 ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
-            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites)
+            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites
+                || !await SupportsGlobalIdWritesAsync(layer, context).ConfigureAwait(false))
             {
                 throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,
@@ -358,8 +359,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
         // The same read supplies stored geometry for a partial update. Omitted attributes
         // are merged from the locked row by the writer, not from this snapshot.
-        (editBatch, var storedRows) = await EnsureEditTargetsVisibleAsync(
+        var visibleTargets = await EnsureEditTargetsVisibleAsync(
             layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
+        editBatch = visibleTargets.Batch;
+        globalIds = globalIds with { ExistingGlobalIds = StoredGlobalIds(visibleTargets.Stored, globalIds.Field) };
 
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
@@ -381,7 +384,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
 
         editBatch = ownerPrepared.Batch;
-        var gate = await CheckEditGateAsync(new EditCall(request, layer, context), editBatch, storedRows)
+        var gate = await CheckEditGateAsync(new EditCall(request, layer, context), editBatch, visibleTargets.Stored)
             .ConfigureAwait(false);
         var perOperationGeometryChanged = BuildPerOperationGeometryChanged(gate.Without(requestBatch));
 
@@ -673,14 +676,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     }
 
     // A row hidden by row-level security is rejected rather than edited, because the edit statement has no row-level predicate.
-    private async Task<(FeatureEditBatch Batch, IReadOnlyDictionary<long, Feature> Stored)> EnsureEditTargetsVisibleAsync(
+    private async Task<VisibleEditTargets> EnsureEditTargetsVisibleAsync(
         int storageLayerId,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken)
     {
         if (editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
         {
-            return (editBatch, ImmutableDictionary<long, Feature>.Empty);
+            return new VisibleEditTargets(editBatch, new Dictionary<long, Feature>());
         }
 
         // Collect distinct target objectids across updates and deletes; a single hidden/missing
@@ -720,7 +723,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         if (editBatch.Updates.IsDefaultOrEmpty)
         {
-            return (editBatch, storedById);
+            return new VisibleEditTargets(editBatch, storedById);
         }
 
         var mergedUpdates = ImmutableArray.CreateBuilder<Feature>(editBatch.Updates.Length);
@@ -758,12 +761,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
         }
 
-        return (editBatch with
-        {
-            Updates = mergedUpdates.MoveToImmutable(),
-            // Count is not known up front, so this builder cannot use MoveToImmutable.
-            Preconditions = preconditions.ToImmutable()
-        }, storedById);
+        return new VisibleEditTargets(
+            editBatch with
+            {
+                Updates = mergedUpdates.MoveToImmutable(),
+                // Count is not known up front, so this builder cannot use MoveToImmutable.
+                Preconditions = preconditions.ToImmutable()
+            },
+            storedById);
     }
 
     // Omitted geometry keeps the stored geometry because there is no protobuf signal for clearing it, and omitted attributes are merged from the locked row.

@@ -27,7 +27,7 @@ internal static class SceneDatasetServiceCollectionExtensions
 
         // Promote any prior ISceneDatasetRegistry registration (typically
         // ConfigurationSceneDatasetRegistry from AddScene) to the
-        // IConfigurationSceneDatasetRegistry alias so the composite below can
+        // ConfigurationSceneDatasetRegistryAdapter alias so the composite below can
         // delegate to it without colliding on the primary interface.
         for (var i = services.Count - 1; i >= 0; i--)
         {
@@ -39,7 +39,7 @@ internal static class SceneDatasetServiceCollectionExtensions
 
             services.RemoveAt(i);
             services.Add(new ServiceDescriptor(
-                typeof(IConfigurationSceneDatasetRegistry),
+                typeof(ConfigurationSceneDatasetRegistryAdapter),
                 sp => new ConfigurationSceneDatasetRegistryAdapter(
                     (ISceneDatasetRegistry)CreateInstance(sp, descriptor)),
                 descriptor.Lifetime));
@@ -51,7 +51,7 @@ internal static class SceneDatasetServiceCollectionExtensions
         services.AddScoped<ISceneDatasetRegistry>(sp =>
         {
             var primary = sp.GetRequiredService<PostgresSceneDatasetRegistry>();
-            var fallback = sp.GetService<IConfigurationSceneDatasetRegistry>();
+            var fallback = sp.GetService<ConfigurationSceneDatasetRegistryAdapter>();
             return fallback is null
                 ? primary
                 : new CompositeSceneDatasetRegistry(primary, primary, fallback);
@@ -92,9 +92,7 @@ internal static class SceneDatasetServiceCollectionExtensions
     }
 }
 
-internal interface IConfigurationSceneDatasetRegistry : ISceneDatasetRegistry;
-
-internal sealed class ConfigurationSceneDatasetRegistryAdapter : IConfigurationSceneDatasetRegistry
+internal sealed class ConfigurationSceneDatasetRegistryAdapter : ISceneDatasetRegistry
 {
     private readonly ISceneDatasetRegistry _inner;
 

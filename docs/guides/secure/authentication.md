@@ -212,6 +212,13 @@ to the current identity. Cookie-authenticated writes, bearer issuance, and logou
 require that token in the `X-Honua-CSRF` header. Logout removes the server-side
 session as well as the browser cookie.
 
+An explicit API key or bearer is validated independently when a browser session
+cookie is also present. Successful explicit authentication does not require the
+session's CSRF token for API operations, including gRPC-Web calls. Session sign-in,
+bearer issuance, logout, and provider authorization still enforce browser CSRF
+protection when they use the session. Invalid explicit credentials do not fall
+back to the browser session.
+
 Password sign-in requires HTTPS and accepts the configured administrator password,
 not managed API keys. It works without enabling OIDC. Existing OIDC sign-in uses
 server-held state and an authorization code with PKCE; provider credentials and
@@ -436,7 +443,7 @@ Redis shares replay registrations across nodes. When a configured Redis connecti
 #### Human operation approval
 
 A pending operation proposal requires one authorized person using a live
-interactive OIDC session in Console. The requester may approve their own proposal.
+interactive browser session (password or OIDC) in Console. The requester may approve their own proposal.
 Sign in to the server that owns the proposal, open its current review, and use
 **Approve**. Existing operation permissions, tenant restrictions and the original
 requester's current authority remain required. API keys, generic or operator
@@ -451,8 +458,10 @@ the session or applicable proposal evidence. Changing environment, changing the
 plan, logging out or losing authority requires a new review. A lost decision
 response requires reading the durable proposal status before deciding again.
 
-Configure the server's canonical `Public:BaseUrl`, the existing OIDC provider,
-and shared protected keys and session storage for replicas. Approval refuses
+Configure the server's canonical `Public:BaseUrl`, password sign-in or an OIDC
+provider, and shared protected keys and session storage for replicas. Approval
+evidence records `console-interactive-password` or `console-interactive-oidc`
+from the stored session's origin. Approval refuses
 when live shared-session authority cannot be verified. Copying bearer claims
 such as an authentication-method or session claim does not create an interactive
 session. Keep capability values, upstream cookies and one-time operation secrets

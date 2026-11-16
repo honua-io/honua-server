@@ -100,6 +100,7 @@ internal sealed class SyslogAuditSink : IAuditSink
         EventType = evt.EventType,
         Actor = evt.Actor,
         ActorType = evt.ActorType,
+        ActorAgent = evt.ActorAgent,
         ResourceType = evt.ResourceType,
         ResourceId = evt.ResourceId,
         Action = evt.Action,

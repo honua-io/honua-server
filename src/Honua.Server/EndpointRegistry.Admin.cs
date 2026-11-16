@@ -9,6 +9,9 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> AdminEndpoints =>
     [
+        // Admin live SSE. Mapped from AdminRealtimeContract.LivePath.
+        new("GET", "/api/v1/admin/live"),
+
         new("GET", "/api/v1/admin/folders"),
         new("POST", "/api/v1/admin/folders"),
         new("PATCH", "/api/v1/admin/folders/{id}"),
@@ -119,6 +122,9 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/promote"),
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/rollback"),
         new("POST", "/api/v1/admin/platform-release/converge"),
+        new("GET", "/api/v1/admin/agent-authority"),
+        new("PUT", "/api/v1/admin/agent-authority"),
+        new("DELETE", "/api/v1/admin/agent-authority"),
         new("GET", "/api/v1/admin/proposals"),
         new("GET", "/api/v1/admin/proposals/{id}"),
         new("GET", "/api/v1/admin/proposals/{id}/approval-review"),

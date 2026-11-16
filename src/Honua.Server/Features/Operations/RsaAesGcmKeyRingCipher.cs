@@ -31,11 +31,13 @@ internal static class RsaAesGcmKeyRingProtection
         builder.Services.AddSingleton(new RsaAesGcmKeyRingMaterial(certificate));
         builder.AddKeyManagementOptions(options =>
             options.XmlEncryptor = new RsaAesGcmKeyRingEncryptor(certificate));
-        return builder;
+        // Rings written before both runtimes shared this format hold certificate EncryptedXml keys.
+        // Keep them readable so existing protected rows survive the switch.
+        return builder.UnprotectKeysWithAnyCertificate(certificate);
     }
 }
 
-// The ring is wrapped with RSA-OAEP and AES-GCM because the certificate XML protector cannot run under native AOT.
+// The ring is wrapped with RSA-OAEP and AES-GCM on every runtime because the certificate XML protector cannot encrypt under native AOT.
 internal sealed class RsaAesGcmKeyRingEncryptor(X509Certificate2 certificate) : IXmlEncryptor
 {
     public EncryptedXmlInfo Encrypt(XElement plaintextElement)
