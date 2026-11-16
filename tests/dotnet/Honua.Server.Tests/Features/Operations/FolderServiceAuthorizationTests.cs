@@ -154,8 +154,8 @@ public sealed class FolderServiceAuthorizationTests
         await operatorEvaluator.Received(1).EvaluateAsync(operatorPrincipal,
             Arg.Is<OperatorAuthorizationRequest>(request => request.ResourceId == "survey" && request.Operation == OperatorOperation.Update),
             Arg.Any<CancellationToken>());
-        policyEvaluator.Received(1).Evaluate(requester, null, Arg.Is<AccessPolicy?>(policy => ReferenceEquals(policy, first)), AccessScope.Write);
-        policyEvaluator.Received(1).Evaluate(requester, null, Arg.Is<AccessPolicy?>(policy => ReferenceEquals(policy, last)), AccessScope.Write);
+        policyEvaluator.Received(1).Evaluate(requester, Arg.Is<AccessPolicy?>(policy => policy == null), Arg.Is<AccessPolicy?>(policy => ReferenceEquals(policy, first)), AccessScope.Write);
+        policyEvaluator.Received(1).Evaluate(requester, Arg.Is<AccessPolicy?>(policy => policy == null), Arg.Is<AccessPolicy?>(policy => ReferenceEquals(policy, last)), AccessScope.Write);
     }
 
     [UnitTheory]
