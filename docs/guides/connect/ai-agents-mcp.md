@@ -242,6 +242,8 @@ To upgrade the platform, an agent reads `honua_platform_release_status` and `GET
 
 Import a completed job artifact in two steps, without touching an existing table.
 
+The target schema must be the configured default operational schema, `public`, or a schema listed in `Database:OperationalSchemas`. Preview and proposal preparation refuse metadata and PostgreSQL system schemas even when listed as operational. Proposal preparation checks the current schema configuration again, so an earlier preview cannot retain permission for a removed destination.
+
 Read `honua_get_job_results` for the completed job. Use its `jobId`, `resultPackageId`, and a supported feature artifact's `artifactId` and `referenceSha256` as the source inputs. The matching `honua://jobs/{jobId}/results` resource returns the same artifact metadata. `referenceSha256` hashes the exact UTF-8 `uri` string, including any escaping; it is distinct from the preview's content checksum. A checksum alone does not make an artifact importable. Choose your own stable `targetId` replay label and reuse it across preview, import and retries.
 
 1. `honua_op_dataset_stage_preview` (`dataset.stage.preview`) is read-only. It reads the artifact with your own job access, checks it is the server's verified result, and returns:
