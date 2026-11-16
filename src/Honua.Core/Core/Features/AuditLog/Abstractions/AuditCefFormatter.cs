@@ -39,6 +39,11 @@ public static class AuditCefFormatter
         AppendExtension(builder, "cs2", record.ResourceId);
         AppendExtension(builder, "cs3Label", "correlationId");
         AppendExtension(builder, "cs3", record.CorrelationId);
+        if (record.ActorAgent is not null)
+        {
+            AppendExtension(builder, "cs4Label", "actorAgent");
+            AppendExtension(builder, "cs4", record.ActorAgent);
+        }
         AppendExtension(builder, "src", record.RemoteIp);
         AppendExtension(builder, "requestClientApplication", record.UserAgent);
         AppendExtension(builder, "msg", string.IsNullOrEmpty(record.Details) ? null : record.Details);

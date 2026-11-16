@@ -19,6 +19,10 @@ public interface IStudioPackageStore
     /// <summary>Gets a mutable package draft by identifier.</summary>
     Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
+    Task<StudioDraftRevision?> GetDraftRevisionAsync(Guid draftId, long generation, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<StudioDraftRevisionSummary>> ListDraftRevisionsAsync(StudioDraftRevisionQuery query, CancellationToken cancellationToken = default);
+
     /// <summary>Updates a mutable package draft.</summary>
     Task<StudioPackageDraft?> UpdateDraftAsync(StudioPackageDraft draft, CancellationToken cancellationToken = default);
 
@@ -198,18 +202,6 @@ public sealed class StudioPublicationRouteConflictException : InvalidOperationEx
 
     /// <summary>Content item whose governing request already owns <see cref="Route"/>.</summary>
     public Guid OwningItemId { get; }
-}
-
-/// <summary>
-/// Provides package-family capability descriptors.
-/// </summary>
-public interface IStudioPackageFamilyRegistry
-{
-    /// <summary>Returns package-family capability data for the current deployment context.</summary>
-    StudioPackageFamilyCapabilities GetCapabilities();
-
-    /// <summary>Gets a package-family descriptor, or null when the family is unknown.</summary>
-    StudioPackageFamilyDescriptor? GetDescriptor(StudioPackageFamily family);
 }
 
 /// <summary>

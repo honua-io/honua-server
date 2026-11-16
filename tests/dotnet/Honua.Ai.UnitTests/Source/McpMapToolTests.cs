@@ -689,6 +689,7 @@ public sealed class McpMapToolTests
     {
         var descriptor = new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance).Describe();
 
+        descriptor.InputSchema.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
         var inputProps = descriptor.InputSchema.GetProperty("properties");
         inputProps.TryGetProperty("resultOffset", out var resultOffset).Should().BeTrue();
         resultOffset.GetProperty("type").GetString().Should().Be("integer");

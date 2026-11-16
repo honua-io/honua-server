@@ -5,13 +5,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.Abstractions;
 
-public interface IRasterClassStatisticsAnalyzer
-{
-    Task<RasterClassStatisticsResult> ComputeAsync(
-        RasterClassStatisticsRequest request,
-        CancellationToken cancellationToken = default);
-}
-
 public sealed class RasterClassStatisticsAoiTooLargeException : Exception
 {
     public RasterClassStatisticsAoiTooLargeException(int classId, long boundingPixelCount, int maxPixels)

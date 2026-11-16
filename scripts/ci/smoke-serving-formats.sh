@@ -10,8 +10,34 @@ PG_PORT="${4:-}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OWNED_SERVER="$REPO_ROOT/scripts/ci/owned-server.py"
+PORT_REQUEST="${PORT:-${HONUA_AOT_GEOPARQUET_PORT:-}}"
+PG_PORT_REQUEST="${PG_PORT:-${HONUA_AOT_GEOPARQUET_POSTGRES_PORT:-}}"
+# Match owned-server's implicit automatic allocation outside CI.
+CI_MODE="${CI:-}"
+if [[ ! "${CI_MODE,,}" =~ ^(1|true|yes)$ ]]; then
+  PORT_REQUEST="${PORT_REQUEST:-0}"
+  PG_PORT_REQUEST="${PG_PORT_REQUEST:-0}"
+fi
 PORT="${PORT:-$(python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_PORT --ci-default 18912)}"
 PG_PORT="${PG_PORT:-$(python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_POSTGRES_PORT --ci-default 18913)}"
+# Rootless daemons share host listeners but have separate Docker port allocators.
+if [[ "$PORT" == 0 ]]; then
+  PORT="$(HONUA_AOT_GEOPARQUET_PORT=0 python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_PORT --ci-default 0)"
+fi
+if [[ "$PG_PORT" == 0 ]]; then
+  PG_PORT="$(HONUA_AOT_GEOPARQUET_POSTGRES_PORT=0 python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_POSTGRES_PORT --ci-default 0)"
+fi
+# Helpers can resolve environment-driven automatic requests before these guards.
+while [[ "$PG_PORT" == "$PORT" ]]; do
+  if [[ "$PORT_REQUEST" == 0 ]]; then
+    PORT="$(HONUA_AOT_GEOPARQUET_PORT=0 python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_PORT --ci-default 0)"
+  elif [[ "$PG_PORT_REQUEST" == 0 ]]; then
+    PG_PORT="$(HONUA_AOT_GEOPARQUET_POSTGRES_PORT=0 python3 "$OWNED_SERVER" port --variable HONUA_AOT_GEOPARQUET_POSTGRES_PORT --ci-default 0)"
+  else
+    printf 'HTTP and Postgres require distinct ports\n' >&2
+    exit 2
+  fi
+done
 COMPOSE_FILE="$REPO_ROOT/docker/cng/compose.yml"
 SEED_FILE="$REPO_ROOT/docker/cng/seed.sql"
 PROJECT="honua-serving-formats-smoke-$$"
@@ -32,12 +58,13 @@ services:
       - /tmp/honua:rw,noexec,nosuid,size=512m,uid=1001,gid=1001,mode=750
     environment:
       TZ: Pacific/Honolulu
+      PUBLIC_BASE_URL: http://honua-server:8080
       # appsettings.Test enables stores excluded from the PostGIS-only image.
       Experimental__Features__RedshiftProvider: "false"
       Experimental__Features__SnowflakeProvider: "false"
       Experimental__Features__DatabricksProvider: "false"
 EOF
-export HONUA_CNG_SERVER_PORT="$PORT" HONUA_CNG_POSTGRES_PORT="$PG_PORT"
+export HONUA_CNG_SERVER_PORT="127.0.0.1:$PORT" HONUA_CNG_POSTGRES_PORT="127.0.0.1:$PG_PORT"
 export HONUA_GITHUB_ACTOR_SECRET_FILE="$work/empty-secret" HONUA_GITHUB_TOKEN_SECRET_FILE="$work/empty-secret"
 compose() { docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$work/override.yml" "$@"; }
 cleanup() {

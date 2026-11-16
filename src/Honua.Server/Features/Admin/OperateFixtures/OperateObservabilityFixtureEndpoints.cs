@@ -33,7 +33,7 @@ internal static class OperateObservabilityFixtureEndpoints
 
     private static async Task<IResult> HandleSeed(
         string profile,
-        [FromServices] IOperateObservabilityFixtureSeeder seeder,
+        [FromServices] OperateObservabilityFixtureSeeder seeder,
         [FromServices] IOptions<OperateObservabilityFixtureOptions> options,
         CancellationToken cancellationToken)
     {

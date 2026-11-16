@@ -1,4 +1,11 @@
 <Project>
+  <!-- TargetFramework is set after Directory.Build.props is imported. Keep the .NET 10
+       plugin assets on compiler-generated state machines; only .NET 11 supports runtime async.
+       Clean bin/obj after changing this opt-in when validating incremental/AOT outputs. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net11.0'">
+    <Features>$(Features);runtime-async=on</Features>
+  </PropertyGroup>
+
   <!-- SDK 11 adds Hot Reload browser-tools JS modules to every Microsoft.NET.Sdk.Web project in
        Debug. A web library that references another web library (Hosting -> ServiceDefaults) then
        receives two assets for the same _framework/...HotReload.lib.module.js path and fails in
@@ -23,6 +30,7 @@
   <Target Name="HonuaGetAnalyzerOwnership" Returns="@(_HonuaAnalyzerOwnership)">
     <ItemGroup>
       <_HonuaAnalyzerOwnership Include="$(MSBuildProjectFullPath)">
+        <TestRoot Condition="'$(IsTestProject)' == 'true' or '$(TargetFrameworks)' != ''">true</TestRoot>
         <TestOnly Condition="'$(IsTestProject)' == 'true' and '$(TargetFrameworks)' == ''">true</TestOnly>
       </_HonuaAnalyzerOwnership>
     </ItemGroup>

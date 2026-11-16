@@ -53,6 +53,10 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture code-quality-trust "${PYTHON_BIN}" scripts/ci/fixtures/validate-code-quality-supersession.py
   run_fixture generated-file-ownership "${PYTHON_BIN}" scripts/ci/check-generated-file-ownership.test.py
   run_fixture workflow-inventory "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.test.py
+  run_fixture shard-identities-tests "${PYTHON_BIN}" scripts/ci/check-shard-identities.test.py
+  run_fixture shard-identities "${PYTHON_BIN}" scripts/ci/check-shard-identities.py
+  run_fixture publish-authorization-tests "${PYTHON_BIN}" scripts/ci/check-publish-authorization.test.py
+  run_fixture publish-authorization "${PYTHON_BIN}" scripts/ci/check-publish-authorization.py
   run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
@@ -67,10 +71,12 @@ run_fixture scripts/ci/validate-review-first-dispatch.sh scripts/ci/validate-rev
 echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-trunk-signal-watchdog.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-signal-watchdog.py
+  run_fixture full-ci-dispatch "${PYTHON_BIN}" scripts/ci/full-ci-dispatch.test.py
   run_fixture scripts/ci/fixtures/validate-optional-pr-inputs.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-optional-pr-inputs.py
   run_fixture scripts/ci/fixtures/validate-pr-workflow-load.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-workflow-load.py
   run_fixture scripts/ci/fixtures/validate-ogc-rc-workflows.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-ogc-rc-workflows.py
   run_fixture scripts/ci/fixtures/validate-testcontainer-images.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
+  run_fixture scripts/ci/fixtures/validate-advisory-runner.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-advisory-runner.py
   run_fixture scripts/ci/fixtures/validate-heavy-runners.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
   run_fixture scripts/ci/fixtures/test-affected-admission.py "${PYTHON_BIN}" scripts/ci/fixtures/test-affected-admission.py
   run_fixture scripts/ci/fixtures/validate-trunk-affected.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py

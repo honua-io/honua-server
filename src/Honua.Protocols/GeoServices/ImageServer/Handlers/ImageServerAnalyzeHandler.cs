@@ -4,9 +4,9 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
-using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -18,12 +18,12 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 internal sealed class ImageServerAnalyzeHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
-    private readonly IImageServerRasterFunctionPlanner _planner;
+    private readonly ImageServerRasterFunctionPlanner _planner;
     private readonly ILogger<ImageServerAnalyzeHandler> _logger;
 
     public ImageServerAnalyzeHandler(
         IMetadataV2GraphProvider graphProvider,
-        IImageServerRasterFunctionPlanner planner,
+        ImageServerRasterFunctionPlanner planner,
         ILogger<ImageServerAnalyzeHandler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));

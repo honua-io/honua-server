@@ -36,6 +36,7 @@ internal static class ClientCertificateAdminEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Security", "Client Certificates")
             .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority()
             .AddEndpointFilter((invocationContext, next) =>
             {
                 var context = invocationContext.HttpContext;

@@ -48,7 +48,7 @@ public static class StudioServiceCollectionExtensions
         // family registry consume it to route the form/analysis families through their native
         // stores.
         services.TryAddScoped<StudioFamilyPersistenceBridgeCatalog>();
-        services.TryAddScoped<IStudioPackageFamilyRegistry, StudioPackageFamilyRegistry>();
+        services.TryAddScoped<StudioPackageFamilyRegistry>();
         services.TryAddScoped<IStudioPackageValidator, StudioPackageValidator>();
         services.TryAddScoped<IStudioPackageLifecycleService, StudioPackageLifecycleService>();
         // StudioAuthorizationService enforces the OAuth scope ceiling itself (honua-server#3431),

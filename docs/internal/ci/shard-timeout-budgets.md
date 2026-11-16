@@ -571,11 +571,13 @@ superseded by the table in this section.
 
 | Child | Test surface | p50 / p90 (min) | Inner / outer cap | p90 / cap |
 |---|---|---:|---:|---:|
-| Server Features Streaming Snapshot and Conformance | `Streaming.FeatureStreamSnapshotEndpointsTests`, `…ConformanceEndpointsTests`, `…CursorDurabilityTests` | 18.0 / 20.7 | 30 / 40 | 69% |
+| Server Features Streaming Snapshot and Conformance | `Streaming.FeatureStreamSnapshotEndpointsTests`, `…ConformanceEndpointsTests` (`…CursorDurabilityTests` removed by #7750; timings predate that) | 18.0 / 20.7 | 30 / 40 | 69% |
 | Server Features Data Enrichment and Sharing | `DataEnrichment.*`, `Orchestration.*`, `Sharing.*`, `Grounding.*`, `Capabilities.*` | 23.6 / 25.3 | 38 / 48 | 67% |
 
 Both children are at or below the 70% target, and both job caps clear their
-inner cap by the required 10 minutes.
+inner cap by the required 10 minutes. The cursor-durability class in that
+historical surface was later deleted. The current Snapshot and Conformance
+filter, its parent and the miscellaneous residuals no longer name it.
 
 Two children rather than three: each shard pays a full restore+build of
 `Honua.Server.Tests`, and the next batch tail after this split is

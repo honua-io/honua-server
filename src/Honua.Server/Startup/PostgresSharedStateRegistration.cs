@@ -12,6 +12,7 @@ using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Infrastructure.Security;
@@ -49,14 +50,14 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.TryAddSingleton<PostgresExecutionJobStore>();
         services.TryAddSingleton<PostgresLeaseStore>();
-        // A host with no system database runs one node and has no lease store (deliberately null),
-        // so callers that ask with GetService fall back to in-process coordination.
-        services.TryAddSingleton<ILeaseStore>(provider =>
-            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresLeaseStore>() : null!);
+        services.AddSharedCacheCoordination();
 
         services.TryAddSingleton(provider => new ControlPlaneStorage(
             provider.GetRequiredService<JobStoreDatabase>(),
-            provider.GetRequiredService<ILeaseStore>()));
+            provider.GetRequiredService<ILeaseStore>())
+        {
+            Realtime = provider.GetService<IControlPlaneRealtimeWriter>()
+        });
         services.TryAddSingleton<WorkflowOperationRetention>();
         services.TryAddSingleton<PostgresOperationProposalStore>();
         services.TryAddSingleton<PostgresOpsNotificationStore>();
@@ -90,6 +91,19 @@ internal static class PostgresSharedStateRegistration
         services.AddRetentionSweeps();
         services.AddRealtimeEventLog(configuration);
         return services;
+    }
+
+    private static void AddSharedCacheCoordination(this IServiceCollection services)
+    {
+        services.TryAddSingleton<PostgresCdnPurgeBudget>();
+        services.TryAddSingleton<ICdnPurgeBudget>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null
+                ? provider.GetRequiredService<PostgresCdnPurgeBudget>()
+                : null!);
+        // A host with no system database runs one node and has no lease store (deliberately null),
+        // so callers that ask with GetService fall back to in-process coordination.
+        services.TryAddSingleton<ILeaseStore>(provider =>
+            provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresLeaseStore>() : null!);
     }
 
     private static void AddRetentionSweeps(this IServiceCollection services)

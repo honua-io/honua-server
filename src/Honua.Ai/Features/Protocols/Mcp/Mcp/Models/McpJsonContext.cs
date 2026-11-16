@@ -141,4 +141,5 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(string))]
 internal sealed partial class McpJsonContext : JsonSerializerContext;

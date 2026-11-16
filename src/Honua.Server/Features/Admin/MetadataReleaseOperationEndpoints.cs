@@ -28,7 +28,8 @@ internal static class MetadataReleaseOperationEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Metadata")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/{packageId}/operation", HandleGetMetadataReleaseOperation)
             .WithDisplayName("Get Metadata Release Operation")
