@@ -7,6 +7,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Middleware;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit;
 using Honua.TestKit.Extensions;
@@ -91,15 +92,25 @@ public sealed partial class PairedPublishEndpointTests
     {
         // A replacement executor reconstructs the durable job parameters, including the revision fence.
         await using var scope = _fixture.Services.CreateAsyncScope();
-        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(graph, schema: _fixture.MetadataGraphSchema);
-        var spec = TileCacheExecutionSpecBuilder.Build(submission.Request, null, new TileCacheBatchOptions());
-        TileCacheExecutionSpecBuilder.TryParse(spec.Parameters, out var queued, out _, out var error).Should().BeTrue(error);
-        queued.PublicationRevision.Should().Be(graph.Revision);
-        using var security = Honua.Core.Features.Authorization.JobSecurityScope.BeginSystem();
-        var core = ActivatorUtilities.CreateInstance<TileOperationExecutionCore>(scope.ServiceProvider, NullLogger.Instance, 100);
-        var completed = await core.ExecuteAsync(TileOperationProgress.CreateInitial(Guid.NewGuid().ToString("N"),
-            "paired-publish", queued.ServiceId, queued.LayerId, null), queued, scope.ServiceProvider, default);
-        completed.Status.Should().Be(OperationStatus.Completed);
+        var schemaContext = scope.ServiceProvider.GetRequiredService<SchemaContext>();
+        var previousSchema = schemaContext.CurrentSchema;
+        schemaContext.CurrentSchema = _fixture.MetadataGraphSchema;
+        try
+        {
+            _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(graph, schema: _fixture.MetadataGraphSchema);
+            var spec = TileCacheExecutionSpecBuilder.Build(submission.Request, null, new TileCacheBatchOptions());
+            TileCacheExecutionSpecBuilder.TryParse(spec.Parameters, out var queued, out _, out var error).Should().BeTrue(error);
+            queued.PublicationRevision.Should().Be(graph.Revision);
+            using var security = Honua.Core.Features.Authorization.JobSecurityScope.BeginSystem();
+            var core = ActivatorUtilities.CreateInstance<TileOperationExecutionCore>(scope.ServiceProvider, NullLogger.Instance, 100);
+            var completed = await core.ExecuteAsync(TileOperationProgress.CreateInitial(Guid.NewGuid().ToString("N"),
+                "paired-publish", queued.ServiceId, queued.LayerId, null), queued, scope.ServiceProvider, default);
+            completed.Status.Should().Be(OperationStatus.Completed, completed.ErrorMessage);
+        }
+        finally
+        {
+            schemaContext.CurrentSchema = previousSchema;
+        }
     }
 
     [IntegrationTest]
