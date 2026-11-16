@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
 using System.Net.Http.Json;
@@ -37,7 +37,7 @@ internal sealed class LocalProcessWorkspaceGateway : ILocalProcessWorkspaceGatew
     public Task<LocalProcessProjectIdentity> GetIdentityAsync(LocalProcessWorkspaceAccess access, CancellationToken cancellationToken)
         => Get(access, "project/identity", LocalProcessJsonContext.Default.LocalProcessProjectIdentity, cancellationToken);
 
-    public Task<LocalProcessProjectIdentity> BindAsync(LocalProcessWorkspaceAccess access, string projectId, CancellationToken cancellationToken)
+    public Task<LocalProcessProjectIdentity> BindProjectAsync(LocalProcessWorkspaceAccess access, string projectId, CancellationToken cancellationToken)
     {
         RequireHuman(access);
         return Send(access, HttpMethod.Post, "project/bind", new LocalProcessBindRequest(projectId),

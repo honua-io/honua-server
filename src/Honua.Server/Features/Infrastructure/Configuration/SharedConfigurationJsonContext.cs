@@ -3,11 +3,14 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Identity.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Server.Features.Infrastructure.Configuration;
 
+[JsonSerializable(typeof(AgentAuthorityCeiling))]
+[JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(OidcProviderConfiguration))]
 [JsonSerializable(typeof(RateLimitPolicy))]
 [JsonSerializable(typeof(ClientCertificateTrustProfile))]

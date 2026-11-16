@@ -13,13 +13,14 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Import;
 
 /// <summary>
 /// External integration tests that exercise Geoservices import against real Geoportal-backed services.
 /// </summary>
-[Collection("Database")]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 public sealed class GeoservicesGeoportalImportIntegrationTests : IAsyncLifetime
@@ -33,12 +34,13 @@ public sealed class GeoservicesGeoportalImportIntegrationTests : IAsyncLifetime
         new("https://maps.kauai.gov/server/rest/services/Bridges_with_condition_where_available/FeatureServer", 2, "bridges")
     ];
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Enterprise);
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        await _fixture.Postgres.DataSource.ClearJobSubstrateAsync();
         _client = _fixture.Client;
     }
 

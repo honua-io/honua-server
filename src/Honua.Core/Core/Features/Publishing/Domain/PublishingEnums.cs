@@ -67,21 +67,3 @@ public enum RefreshMode
 
     Scheduled
 }
-
-public enum RefreshScope
-{
-    Full,
-
-    Incremental
-}
-
-public enum RefreshOutcome
-{
-    Succeeded,
-
-    PartialSuccess,
-
-    Failed,
-
-    Cancelled
-}

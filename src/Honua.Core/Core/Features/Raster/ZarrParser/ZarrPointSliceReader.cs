@@ -16,12 +16,12 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
     private static readonly ActivitySource ActivitySource = new("Honua.Core.Raster.Zarr");
 
     private readonly IZarrStore _zarrStore;
-    private readonly IZarrSubsetReader _subsetReader;
+    private readonly ZarrSubsetReader _subsetReader;
     private readonly IReadOnlyList<ICloudRangeReader> _rangeReaders;
 
     public ZarrPointSliceReader(
         IZarrStore zarrStore,
-        IZarrSubsetReader subsetReader,
+        ZarrSubsetReader subsetReader,
         IEnumerable<ICloudRangeReader> rangeReaders)
     {
         _zarrStore = zarrStore ?? throw new ArgumentNullException(nameof(zarrStore));

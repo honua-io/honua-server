@@ -91,7 +91,7 @@ public static class RasterOutputDescriptorValidator
                 $"Output contract version {descriptor.OutputContractVersion} is outside the supported range.");
         }
 
-        if (!IsOpaqueReference(descriptor.JobId))
+        if (!RasterDescriptorChecks.IsOpaqueReference(descriptor.JobId))
         {
             Add(errors, RasterOutputValidationCodes.InvalidField, "jobId",
                 "Job identifier must be an opaque identifier.");
@@ -103,13 +103,13 @@ public static class RasterOutputDescriptorValidator
                 "Attempt number must be positive.");
         }
 
-        if (!IsOpaqueReference(descriptor.OutputName))
+        if (!RasterDescriptorChecks.IsOpaqueReference(descriptor.OutputName))
         {
             Add(errors, RasterOutputValidationCodes.InvalidField, "outputName",
                 "Output name must be an opaque identifier.");
         }
 
-        if (string.IsNullOrWhiteSpace(descriptor.ProducingEngine) || !IsOpaqueReference(descriptor.ProducingEngine))
+        if (string.IsNullOrWhiteSpace(descriptor.ProducingEngine) || !RasterDescriptorChecks.IsOpaqueReference(descriptor.ProducingEngine))
         {
             Add(errors, RasterOutputValidationCodes.InvalidField, "producingEngine",
                 "Producing engine must be an opaque identifier.");
@@ -147,13 +147,13 @@ public static class RasterOutputDescriptorValidator
         StagedObjectRasterOutputDescriptor staged,
         List<RasterOutputValidationError> errors)
     {
-        if (!IsOpaqueReference(staged.StoreReference))
+        if (!RasterDescriptorChecks.IsOpaqueReference(staged.StoreReference))
         {
             Add(errors, RasterOutputValidationCodes.UnsafeLocator, "storeReference",
                 "Store reference must be an opaque logical identifier, never a URI or credential.");
         }
 
-        if (!IsSafeObjectStoreKey(staged.ObjectKey))
+        if (!RasterDescriptorChecks.IsSafeObjectStoreKey(staged.ObjectKey))
         {
             Add(errors, RasterOutputValidationCodes.UnsafeLocator, "objectKey",
                 "objectKey must be a bounded object key without traversal, URI, query, or control syntax.");
@@ -227,19 +227,19 @@ public static class RasterOutputDescriptorValidator
                 "Content sizeBytes must be positive.");
         }
 
-        if (!IsMediaType(content.MediaType))
+        if (!RasterDescriptorChecks.IsMediaType(content.MediaType))
         {
             Add(errors, RasterOutputValidationCodes.InvalidContentIdentity, "content.mediaType",
                 "Content mediaType must be a simple IANA media type without parameters.");
         }
 
-        if (content.Checksum is not { } checksum || !IsChecksum(checksum))
+        if (content.Checksum is not { } checksum || !RasterDescriptorChecks.IsChecksum(checksum))
         {
             Add(errors, RasterOutputValidationCodes.InvalidContentIdentity, "content.checksum",
                 "Published raster outputs require a valid sha256 or sha512 checksum.");
         }
 
-        if (content.ETag is { } etag && (!IsSafeText(etag, 256) || etag.Contains('?')))
+        if (content.ETag is { } etag && (!RasterDescriptorChecks.IsSafeText(etag, 256) || etag.Contains('?')))
         {
             Add(errors, RasterOutputValidationCodes.InvalidContentIdentity, "content.eTag",
                 "ETag contains unsafe characters.");
@@ -268,7 +268,7 @@ public static class RasterOutputDescriptorValidator
                 "Grid pixel scale values must be positive finite numbers.");
         }
 
-        if (grid.CoordinateReferenceSystem is { } crs && !IsSafeText(crs, 256))
+        if (grid.CoordinateReferenceSystem is { } crs && !RasterDescriptorChecks.IsSafeText(crs, 256))
         {
             Add(errors, RasterOutputValidationCodes.InvalidField, "grid.coordinateReferenceSystem",
                 "Grid CRS identifier contains unsafe characters.");
@@ -307,97 +307,12 @@ public static class RasterOutputDescriptorValidator
         return false;
     }
 
-    private static bool IsOpaqueReference(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 160)
-        {
-            return false;
-        }
-
-        if (value.Any(character =>
-                !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':')))
-        {
-            return false;
-        }
-
-        return value[0] != '.' && !value.Contains("..", StringComparison.Ordinal);
-    }
-
-    private static bool IsSafeObjectStoreKey(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 || !IsSafeText(value, 2048))
-        {
-            return false;
-        }
-
-        if (value[0] is '/' or '\\'
-            || value.Contains('\\')
-            || value.Contains('?')
-            || value.Contains("://", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        string decoded;
-        try
-        {
-            decoded = Uri.UnescapeDataString(value);
-        }
-        catch (UriFormatException)
-        {
-            return false;
-        }
-
-        if (!IsSafeText(decoded, 2048)
-            || decoded[0] is '/' or '\\'
-            || decoded.Contains('\\')
-            || decoded.Contains('?')
-            || decoded.Contains("://", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return decoded
-            .Split('/', StringSplitOptions.None)
-            .All(segment => segment is not "." and not "..");
-    }
-
-    private static bool IsMediaType(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 127 || value.Contains(';'))
-        {
-            return false;
-        }
-
-        var slash = value.IndexOf('/');
-        return slash > 0
-            && slash == value.LastIndexOf('/')
-            && slash < value.Length - 1
-            && value.All(character => char.IsAsciiLetterOrDigit(character)
-                || character is '/' or '-' or '+' or '.' or '_');
-    }
-
-    private static bool IsChecksum(RasterChecksum checksum)
-    {
-        var length = checksum.Algorithm switch
-        {
-            "sha256" => 64,
-            "sha512" => 128,
-            _ => 0,
-        };
-
-        return length > 0
-            && checksum.Value is { } value
-            && value.Length == length
-            && value.All(Uri.IsHexDigit);
-    }
-
     private static void ValidateInlineChecksum(
         byte[] payload,
         RasterChecksum? checksum,
         List<RasterOutputValidationError> errors)
     {
-        if (checksum is null || !IsChecksum(checksum))
+        if (checksum is null || !RasterDescriptorChecks.IsChecksum(checksum))
         {
             // The missing/malformed checksum was already reported by ValidateContentIdentity.
             return;
@@ -415,10 +330,6 @@ public static class RasterOutputDescriptorValidator
                 "Inline output payload does not match its declared checksum.");
         }
     }
-
-    private static bool IsSafeText(string value, int maximumLength) =>
-        value.Length is > 0 && value.Length <= maximumLength
-        && value.All(character => !char.IsControl(character));
 
     private static void Add(
         List<RasterOutputValidationError> errors,
