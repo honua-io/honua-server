@@ -15,6 +15,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Events;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features.Models;
@@ -27,6 +28,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.TestKit.Helpers;
 
@@ -549,6 +551,7 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 services.RemoveAll<ICoordinateTransformService>();
                 services.RemoveAll<IGeometryTopologyValidator>();
                 services.RemoveAll<ISqlFilterTranslator>();
+                services.RemoveAll<IFeatureChangeEventPublisher>();
                 services.AddSingleton<TestFeatureStore>();
                 services.AddSingleton<IFeatureReader>(provider => provider.GetRequiredService<TestFeatureStore>());
                 services.AddSingleton<IFeatureWriter>(provider => provider.GetRequiredService<TestFeatureStore>());
@@ -559,6 +562,7 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 services.AddSingleton<ICoordinateTransformService, IdentityCoordinateTransformService>();
                 services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
                 services.AddScoped<ISqlFilterTranslator, StringIdSqlFilterTranslator>();
+                services.AddSingleton(Substitute.For<IFeatureChangeEventPublisher>());
 
                 // V2-ported OGC API Features endpoints resolve collections through
                 // IMetadataV2GraphProvider; mirror the v1 StringIdLayerCatalog content
