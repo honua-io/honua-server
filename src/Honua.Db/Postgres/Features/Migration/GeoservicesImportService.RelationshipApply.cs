@@ -71,7 +71,7 @@ internal sealed partial class GeoservicesImportService
             {
                 if (!IsApplyEligible(relationship.Classification))
                 {
-                    // #4600: a composite / many-to-many / unsupported relationship used to drop out
+                    // A composite / many-to-many / unsupported relationship used to drop out
                     // of the apply loop here without leaving any trace, so the run reported success
                     // while the target was missing a construct the source had. Emit an explicit
                     // deferred outcome instead so the fidelity gate blocks on it.
@@ -289,7 +289,7 @@ internal sealed partial class GeoservicesImportService
             Outcome = MigrationCatalogWriteOutcome.AlreadyExists,
             Message = message,
             TargetRelationshipRef = refValue,
-            // #4600: mark the omission explicitly. AlreadyExists is also what a successful
+            // Mark the omission explicitly. AlreadyExists is also what a successful
             // idempotent re-apply reports, so without this flag the fidelity gate cannot tell a
             // persisted relationship from a dropped one.
             Deferred = true

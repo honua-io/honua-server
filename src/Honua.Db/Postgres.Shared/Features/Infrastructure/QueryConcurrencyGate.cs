@@ -14,7 +14,7 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
     // reverts to the configured limits on restart.
     private const int TunableFloor = 1;
 
-    // Trailing window over which acquisition timeouts are counted for the pressure signal (#2805). A
+    // Trailing window over which acquisition timeouts are counted for the pressure signal. A
     // windowed count reflects a current exhaustion episode instead of a lifetime-monotonic total that,
     // once incremented, would keep the finding latched forever.
     private static readonly TimeSpan AcquisitionTimeoutWindow = TimeSpan.FromSeconds(60);

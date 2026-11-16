@@ -726,7 +726,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         // every protocol's projection. STAC extension properties are the concrete
         // case: `eo:cloud_cover` is a declared, filterable queryable, yet it was
         // absent from FeatureServer/OGC API Features/STAC responses because the
-        // colon failed the identifier check (honua-server#3392). The JSONB branch is not
+        // colon failed the identifier check. The JSONB branch is not
         // ungated, though: it keeps the jsonb-key allow-list (which admits the prefixed
         // shapes but no quote, whitespace or control character), so nothing that could
         // break out of the escaped string literal reaches the emitted SQL either way.
@@ -1187,7 +1187,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 // hold). For text/string fields it must NOT be applied: Esri and PostgreSQL
                 // treat an empty string as a non-NULL value, so wrapping a string column in
                 // NULLIF(..., '') would make `field IS NOT NULL` (and `field = ''`) silently
-                // drop empty-string rows, diverging from the source service (#1703).
+                // drop empty-string rows, diverging from the source service.
                 var fieldType = resolveFieldType?.Invoke(fieldName);
                 if (PreservesEmptyString(fieldType))
                 {
@@ -1640,7 +1640,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             // Return the provider's lease intact: for a gated/secure provider the lease's
             // wrapper (e.g. SemaphoreReleasingConnection) releases the QueryConcurrencyGate
             // slot on disposal. Down-casting to NpgsqlConnection here would drop that wrapper
-            // and permanently leak the gate slot on every read (#1978).
+            // and permanently leak the gate slot on every read.
             return await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -1685,7 +1685,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         // An external secret reference resolves through the operator-allow-listed resolver, the
-        // same path the admin connection test and the secure resolver use (honua-server#6499).
+        // same path the admin connection test and the secure resolver use.
         // A refusal or lookup failure falls through to the loud failure below, never to the
         // default database.
         if (!string.IsNullOrWhiteSpace(_connection.SecretRef)
@@ -1718,8 +1718,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         // loudly. The single-DB / default-connection deployment is the common case: a layer
         // is bound to a placeholder connection that carries no distinct connection-string
         // material at all, which means "read from the default database". Falling back there
-        // is correct and restores the pre-#1662 behavior (the resolver returned null, and
-        // OpenConnectionAsync opened the default connection).
+        // is correct.
         //
         // When the binding *does* carry connection-string material that we simply cannot
         // unlock (encrypted bytes with no/failed decryption service, or an external secret
@@ -1736,12 +1735,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                     : "The connection has encrypted or externally referenced credentials that could not be decrypted."));
         }
 
-        // An empty/whitespace connection ID is the "use the default connection" sentinel
-        // (the pre-#1662 behavior). When such a binding also carries leftover credential
-        // material we could not unlock — e.g. stale encrypted bytes that won't decrypt with
-        // the current master key — we still fall back to the default connection, but log a
-        // Warning so a genuine misconfiguration (an empty ID that was meant to be a real,
-        // distinct source) remains visible in operations.
+        // An empty/whitespace connection ID is the "use the default connection" sentinel.
+        // When such a binding also carries leftover credential material we could not
+        // unlock — e.g. stale encrypted bytes that won't decrypt with the current master
+        // key — we still fall back to the default connection, but log a Warning so a
+        // genuine misconfiguration (an empty ID that was meant to be a real, distinct
+        // source) remains visible in operations.
         if (string.IsNullOrWhiteSpace(_connection.Id)
             && (_connection.EncryptedConnectionString.Length > 0 || !string.IsNullOrWhiteSpace(_connection.SecretRef)))
         {
@@ -1955,7 +1954,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private bool ShouldUseGeodesicNearestNeighbor()
     {
         // The curated canonical geographic-SRID list is the primary source of truth. Until the
-        // classifier unification (#2732) replaces this heuristic, add a safety net: any SRID in
+        // classifier unification replaces this heuristic, add a safety net: any SRID in
         // the EPSG geographic 2D range (4000-4999) that is not already on the allowlist is still a
         // lat/lon degree CRS (e.g. 4674 SIRGAS 2000, 4490 CGCS2000), so planar degree KNN would
         // silently produce meaningless "distances". Route those through the same geodesic path as

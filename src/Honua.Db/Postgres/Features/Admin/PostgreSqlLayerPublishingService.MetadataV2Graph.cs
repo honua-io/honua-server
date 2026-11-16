@@ -230,7 +230,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 .ToArray()
         };
 
-        // ADR-0048 Phase 2 (#1389): project the independent style catalog into the
+        // ADR-0048 Phase 2: project the independent style catalog into the
         // canonical graph. Emit a Type=Style resource per associated catalog style and
         // point the data resource's StyleResourceIds at them ([0] = primary), so the
         // FeatureServer/MapServer StyleResourceIds read path lights up with real data
@@ -3135,11 +3135,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
     // container where no snapshot has been activated yet (e.g. migration 031 ran
     // but the compat/bootstrap compile has not). In that case we start from an
     // empty graph and force the first write (null expectedEtag) instead of 500ing
-    // the admin layer-publish path. (honua-server#1341.)
+    // the admin layer-publish path.
     //
     // This deliberately reads only the persisted snapshot via the write-base reader,
     // NOT GetCurrentAsync. GetCurrentAsync synthesizes a graph from the V1 catalog when
-    // no snapshot is activated (honua-server#1412); building a publish on top of that
+    // no snapshot is activated; building a publish on top of that
     // synthesized-but-never-persisted base makes SaveAsync's reconciliation fail, so
     // every AutoPublish import would report "publishing did not complete".
     private async Task<(MetadataV2Graph Graph, string? ExpectedEtag)> LoadCurrentOrEmptyGraphAsync(
@@ -3189,7 +3189,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // persisted snapshot only (same rationale as LoadCurrentOrEmptyGraphAsync): a
         // synthesized V1-compat graph is never persisted and would fail SaveAsync.
         // When no snapshot is activated there is nothing to update — extents are served
-        // straight from the V1 catalog — so skip. (honua-server#1412.)
+        // straight from the V1 catalog — so skip.
         MetadataV2GraphSnapshot? snapshot;
         if (_metadataWriteBaseReader is not null)
         {
@@ -3416,12 +3416,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
             },
             // Carry the captured Esri subtypes into the canonical graph so they survive
             // the compat-compile snapshot and are served on the FeatureServer layer
-            // metadata (subtypeField / subtypes / defaultSubtypeCode) (honua-server#1378).
+            // metadata (subtypeField / subtypes / defaultSubtypeCode).
             Subtypes = ResolveSubtypesForPublish(request.Subtypes, fields),
             Editing = ResolveEditingForPublish(request, fields),
             // Carry the captured Esri attribute rules into the canonical graph so they
             // fire on the shared edit path (FeatureServer applyEdits). Calculation rules
-            // whose target column was not published are dropped (honua-server#1271).
+            // whose target column was not published are dropped.
             AttributeRules = ResolveAttributeRulesForPublish(request.AttributeRules, fields),
             Status = LayerReadyStatus(request.Enabled, now)
         };
@@ -3563,7 +3563,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // table the managed feature writer writes: no connection of its own (reads use the
         // server connection the writer uses) and the writer's schema qualification, if any.
         // That is what lets the storage-routing guard admit edits and makes every accepted
-        // edit readable back (honua-server#4707, #4859).
+        // edit readable back.
         var storageConnectionId = storage.IsManagedStore ? null : request.ConnectionId;
         var connectionId = storageConnectionId?.ToString("D");
         var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
@@ -3600,7 +3600,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // metadata schema. A user source table that merely happens to be named
         // 'features' in another schema (e.g. public.features) has neither the JSONB
         // 'attributes' column nor 'layer_id', so applying these options there would make
-        // the reader emit columns the table lacks and fail with 42703. (honua-server#1238.)
+        // the reader emit columns the table lacks and fail with 42703.
         //
         // A managed-store layer is bound to the managed features table by construction (its
         // schema is resolved from the connection, e.g. public.features), so it always gets
@@ -3749,7 +3749,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Length = field.MaxLength,
             // Carry the captured Esri coded-value/range domain into the canonical
             // graph so it survives the compat-compile snapshot and is served via the
-            // FeatureServer field domain and queryDomains surfaces (honua-server#1255).
+            // FeatureServer field domain and queryDomains surfaces.
             Domain = field.Domain
         };
     }

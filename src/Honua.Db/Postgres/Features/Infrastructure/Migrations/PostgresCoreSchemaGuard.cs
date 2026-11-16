@@ -505,7 +505,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         {
             // A database that has never been migrated but already holds migration-owned tables is
             // usually a fixture seeded before its first boot. Name every unjournaled family at once,
-            // not just the first one in check order, and the explicit opt-in that adopts them (#4900).
+            // not just the first one in check order, and the explicit opt-in that adopts them.
             var others = DescribeUnjournaledFamilies(state)
                 .Where(family => !string.Equals(family.Migration, ex.MigrationScript, StringComparison.Ordinal))
                 .Select(family => $"{family.Migration} ({string.Join(", ", family.Present)})")
@@ -606,9 +606,9 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         // Skip-migrations serving cannot run the pending provider script. When the baseline tables
         // already match that script's creation contract, record the journal receipt only. A missing
-        // or partial raster schema stays a floor failure (honua-server#6496).
+        // or partial raster schema stays a floor failure.
         // The adoption lock is a session advisory lock. Unpooled, so closing the connection ends
-        // the session instead of returning an RDS Proxy-pinned connection to the pool (#6760).
+        // the session instead of returning an RDS Proxy-pinned connection to the pool.
         await using var connection = new NpgsqlConnection(
             new NpgsqlConnectionStringBuilder(connectionString) { Pooling = false }.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -787,7 +787,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 var name = reader.GetString(0);
-                // The migration runner may hand over entries it has already qualified (#6477).
+                // The migration runner may hand over entries it has already qualified.
                 if (!known.Contains(name) && !readerVerifiedMigrations.Contains(name))
                 {
                     unknown.Add(name);
@@ -801,7 +801,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
 
         // Read-only qualification through the recorded forward-compatibility declarations, the same
-        // check the migration runner applies (#6477). This is the HONUA_SKIP_MIGRATIONS=true and
+        // check the migration runner applies. This is the HONUA_SKIP_MIGRATIONS=true and
         // degraded-start path: it never applies or records anything. Without the declaration table
         // every unknown entry is refused exactly as before.
         await PostgresReaderCompatibilityJournal.QualifyAsync(connection, unknown, ReaderSchema(known), cancellationToken)
@@ -929,7 +929,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             if (requirement == DatabaseSchemaRequirement.RasterLayerStatistics && state.IsAwaitingRasterProviderRoot)
             {
                 // The request path never migrates. Name the one action that does, so a late
-                // postgis_raster enablement is not mistaken for unrecoverable divergence (#4744).
+                // postgis_raster enablement is not mistaken for unrecoverable divergence.
                 detail += " postgis_raster is installed but the raster provider migrations have not run yet; " +
                     "restart the server (or run the migrations) to apply them.";
             }
@@ -1166,7 +1166,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         // The runner discovers the provider root only once postgis_raster is installed, so a
         // deployment that enables the extension after its first boot has not run migration 003
-        // yet. A table created in the meantime by infrastructure or a fixture seed (#4744) is
+        // yet. A table created in the meantime by infrastructure or a fixture seed is
         // adopted by that pending CREATE TABLE IF NOT EXISTS, which journals it, and the
         // post-upgrade VerifyAsync then requires the receipt. The adoption cannot repair a
         // malformed object hidden behind IF NOT EXISTS, and once the provider root is journaled
