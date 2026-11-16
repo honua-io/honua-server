@@ -171,6 +171,7 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task CreateContent_WithAPublishedId_IsRefusedAsAClientError()
     {
         await using var scope = _fixture.Services.CreateAsyncScope();
