@@ -88,6 +88,20 @@ esac
                 self.assertEqual(selected, 'ubuntu-24.04')
                 self.assertEqual(calls, '')
 
+    def test_full_ci_forwards_selector_role_through_every_workflow_hop(self):
+        ci = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
+        caller = ci['jobs']['store-image-proofs']
+        self.assertEqual(caller['uses'], './.github/workflows/store-image-size.yml')
+        role = 'HONUA_PR_GATE_WAKE_ROLE_ARN'
+        self.assertEqual(caller.get('secrets', {}).get(role), '${{ secrets.' + role + ' }}')
+        store = yaml.safe_load((ROOT / '.github/workflows/store-image-size.yml').read_text())
+        # PyYAML's YAML 1.1 loader parses the workflow's `on` key as True.
+        triggers = store.get('on', store.get(True))
+        self.assertFalse(triggers['workflow_call']['secrets'][role]['required'])
+        selector = store['jobs']['runner-select']
+        self.assertEqual(selector['uses'], './.github/workflows/advisory-runner-select.yml')
+        self.assertEqual(selector['secrets']['wake-role'], '${{ secrets.' + role + ' }}')
+
     def test_selector_trust_and_timeouts(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/advisory-runner-select.yml').read_text())
         job = workflow['jobs']['select']
