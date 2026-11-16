@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -23,18 +24,27 @@ namespace Honua.Server.Tests.Features.Studio;
 public sealed class StudioHumanDraftPolicyTests
 {
     [UnitTheory]
-    [InlineData(StudioDraftOperations.Create, true)]
-    [InlineData(StudioDraftOperations.Update, true)]
-    [InlineData(StudioDraftOperations.Delete, true)]
-    [InlineData(StudioDraftOperations.Validate, true)]
-    [InlineData(StudioDraftOperations.PreviewPlan, true)]
-    [InlineData(StudioDraftOperations.SaveVersion, true)]
-    [InlineData(StudioDraftOperations.ReopenVersion, true)]
-    [InlineData(StudioDraftOperations.CreatePublicationRequest, false)]
-    [InlineData(StudioDraftOperations.Rollback, false)]
-    public async Task EvaluateAsync_VerifiedHuman_OnlyPrivateDraftEditsExecuteDirectly(string operationId, bool direct)
+    [InlineData(StudioDraftOperations.Create, true, OperationInitiationChannel.InteractiveOidc)]
+    [InlineData(StudioDraftOperations.Create, true, OperationInitiationChannel.InteractivePassword)]
+    [InlineData(StudioDraftOperations.Update, true, OperationInitiationChannel.InteractiveOidc)]
+    [InlineData(StudioDraftOperations.Update, true, OperationInitiationChannel.InteractivePassword)]
+    [InlineData(StudioDraftOperations.Delete, true, OperationInitiationChannel.InteractiveOidc)]
+    [InlineData(StudioDraftOperations.Delete, true, OperationInitiationChannel.InteractivePassword)]
+    [InlineData(StudioDraftOperations.Validate, true, OperationInitiationChannel.InteractiveOidc)]
+    [InlineData(StudioDraftOperations.Validate, true, OperationInitiationChannel.InteractivePassword)]
+    [InlineData(StudioDraftOperations.PreviewPlan, true, OperationInitiationChannel.InteractiveOidc)]
+    [InlineData(StudioDraftOperations.PreviewPlan, true, OperationInitiationChannel.InteractivePassword)]
+    [InlineData(StudioDraftOperations.SaveVersion, true, OperationInitiationChannel.InteractiveOidc)]
+    [InlineData(StudioDraftOperations.SaveVersion, true, OperationInitiationChannel.InteractivePassword)]
+    [InlineData(StudioDraftOperations.ReopenVersion, true, OperationInitiationChannel.InteractiveOidc)]
+    [InlineData(StudioDraftOperations.ReopenVersion, true, OperationInitiationChannel.InteractivePassword)]
+    [InlineData(StudioDraftOperations.CreatePublicationRequest, false, OperationInitiationChannel.InteractiveOidc)]
+    [InlineData(StudioDraftOperations.CreatePublicationRequest, false, OperationInitiationChannel.InteractivePassword)]
+    [InlineData(StudioDraftOperations.Rollback, false, OperationInitiationChannel.InteractiveOidc)]
+    [InlineData(StudioDraftOperations.Rollback, false, OperationInitiationChannel.InteractivePassword)]
+    public async Task EvaluateAsync_VerifiedHuman_OnlyPrivateDraftEditsExecuteDirectly(string operationId, bool direct, OperationInitiationChannel channel)
     {
-        var decision = await EvaluateAsync(operationId);
+        var decision = await EvaluateAsync(operationId, channel);
 
         decision.Kind.Should().Be(direct ? PolicyDecisionKind.Allow : PolicyDecisionKind.RequireApproval);
     }
@@ -74,30 +84,41 @@ public sealed class StudioHumanDraftPolicyTests
     public async Task EvaluateAsync_VerifiedHuman_StricterGuardrailsRemainEnforced(
         GuardrailTier tier, string source, string? action)
     {
-        var decision = await EvaluateAsync(StudioDraftOperations.Create, tier, source, action);
+        var policy = CreatePolicy(new GuardrailDecision(tier,
+            OperationClass.StudioDraftMutation, HonuaEdition.Enterprise, source));
+        var decision = await EvaluateAsync(StudioDraftOperations.Create, policy, action);
 
         decision.Kind.Should().Be(tier == GuardrailTier.Blocked ? PolicyDecisionKind.Deny : PolicyDecisionKind.RequireApproval);
     }
 
     [UnitTheory]
-    [InlineData("/mcp", false, false, OperationInitiationKind.Agent)]
-    [InlineData("/api/v1/studio/package-drafts", true, false, OperationInitiationKind.Agent)]
-    [InlineData("/api/v1/studio/package-drafts", false, true, OperationInitiationKind.Agent)]
-    [InlineData("/api/v1/studio/package-drafts", false, false, OperationInitiationKind.Human)]
+    [InlineData("mcp", OperationInitiationKind.Agent, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("mcp", OperationInitiationKind.Agent, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("bearer", OperationInitiationKind.Agent, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("bearer", OperationInitiationKind.Agent, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("missing-session", OperationInitiationKind.Agent, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("missing-session", OperationInitiationKind.Agent, (int)AdminAuthSessionOrigin.Builtin)]
+    [InlineData("browser", OperationInitiationKind.Human, (int)AdminAuthSessionOrigin.InteractiveOidc)]
+    [InlineData("browser", OperationInitiationKind.Human, (int)AdminAuthSessionOrigin.Builtin)]
     public async Task ResolveAsync_InteractiveSession_RequiresHumanTransport(
-        string path, bool explicitCredential, bool missingSession, OperationInitiationKind expected)
+        string transport, OperationInitiationKind expected, int originValue)
     {
+        var origin = (AdminAuthSessionOrigin)originValue;
         using var host = new OperationHumanApprovalTestHost();
-        var human = await host.CreateHumanAsync();
+        var human = await host.CreateHumanAsync(origin: origin);
         host.ReviewRequest(human);
-        host.Context.Request.Path = path;
-        if (explicitCredential) host.Context.Request.Headers.Authorization = "Bearer agent-token";
-        if (missingSession) host.Context.Request.Headers.Remove("Cookie");
+        host.Context.Request.Path = transport == "mcp" ? "/mcp" : "/api/v1/studio/package-drafts";
+        if (transport == "bearer") host.Context.Request.Headers.Authorization = "Bearer agent-token";
+        if (transport == "missing-session") host.Context.Request.Headers.Remove("Cookie");
         var resolver = new OperationInitiationResolver(new HttpContextAccessor { HttpContext = host.Context });
 
         var initiation = await resolver.ResolveAsync(CancellationToken.None);
 
         initiation.Kind.Should().Be(expected);
+        if (expected == OperationInitiationKind.Human)
+            initiation.Channel.Should().Be(origin == AdminAuthSessionOrigin.Builtin
+                ? OperationInitiationChannel.InteractivePassword
+                : OperationInitiationChannel.InteractiveOidc);
     }
 
     [UnitTheory]
@@ -128,11 +149,13 @@ public sealed class StudioHumanDraftPolicyTests
         initiation.Kind.Should().Be(expected);
     }
 
+    private static Task<PolicyDecision> EvaluateAsync(string operationId, OperationInitiationChannel channel) =>
+        EvaluateAsync(operationId, CreatePolicy(new GuardrailDecision(GuardrailTier.RequiresApproval,
+            OperationClass.StudioDraftMutation, HonuaEdition.Enterprise, "default-policy"), channel));
+
     private static Task<PolicyDecision> EvaluateAsync(
-        string operationId, GuardrailTier tier = GuardrailTier.RequiresApproval,
-        string source = "default-policy", string? action = null)
+        string operationId, CanonicalOperationPolicyDecisionPoint policy, string? action = null)
     {
-        var policy = CreatePolicy(new GuardrailDecision(tier, OperationClass.StudioDraftMutation, HonuaEdition.Enterprise, source));
         return policy.EvaluateAsync(StudioDraftOperations.BuildDescriptors().Single(item => item.OperationId == operationId),
             new OperationRequest
             {
@@ -147,13 +170,14 @@ public sealed class StudioHumanDraftPolicyTests
             }, new OperationPolicyContext { PrincipalId = "draft-owner" });
     }
 
-    private static CanonicalOperationPolicyDecisionPoint CreatePolicy(GuardrailDecision guardrail)
+    private static CanonicalOperationPolicyDecisionPoint CreatePolicy(GuardrailDecision guardrail,
+        OperationInitiationChannel channel = OperationInitiationChannel.InteractiveOidc)
     {
         var ladder = Substitute.For<IGuardrailLadder>();
         ladder.Resolve(OperationClass.StudioDraftMutation).Returns(guardrail);
         ladder.Resolve(OperationClass.StudioDraftMutation, Arg.Any<string?>()).Returns(guardrail);
         return new CanonicalOperationPolicyDecisionPoint(new CanonicalOperationPolicyConfiguration(Options.Create(new OperationPolicyOptions())),
-            ladder, resolveInitiation: _ => Task.FromResult((OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc)));
+            ladder, resolveInitiation: _ => Task.FromResult((OperationInitiationKind.Human, channel)));
     }
 
 }

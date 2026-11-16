@@ -60,7 +60,7 @@ internal sealed class ImageServerProjectHandler
             // image coordinates and mapped to ground (and then reprojected into outSR). When the
             // raster has no RPC metadata, the operation is genuinely unsupported and we keep the
             // 400 with a clear "no image CS metadata" message.
-            var transformation = GetString(values, "transformation");
+            var transformation = ImageServerRequestValues.GetString(values, "transformation");
             if (!string.IsNullOrWhiteSpace(transformation))
             {
                 return await ProjectImageCoordinatesAsync(context, layerId, values, scope, cancellationToken)
@@ -85,7 +85,7 @@ internal sealed class ImageServerProjectHandler
                 return StandardErrorHelpers.CreateBadRequest(context, error);
             }
 
-            if (!TryParseGeometries(GetString(values, "geometries"), out var request, out var geometryError))
+            if (!TryParseGeometries(ImageServerRequestValues.GetString(values, "geometries"), out var request, out var geometryError))
             {
                 ImageServerLog.InvalidProjectParameters(_logger, layerId, geometryError ?? "Invalid geometries.");
                 return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometries.");
@@ -95,7 +95,7 @@ internal sealed class ImageServerProjectHandler
             var targetSrid = outSrid.Value;
 
             if (!_projection.TryResolveDatumTransformation(
-                    GetString(values, "datumTransformation"),
+                    ImageServerRequestValues.GetString(values, "datumTransformation"),
                     sourceSrid,
                     targetSrid,
                     out var datumSelection,
@@ -210,7 +210,7 @@ internal sealed class ImageServerProjectHandler
             return StandardErrorHelpers.CreateBadRequest(context, error);
         }
 
-        if (!TryParseGeometries(GetString(values, "geometries"), out var request, out var geometryError))
+        if (!TryParseGeometries(ImageServerRequestValues.GetString(values, "geometries"), out var request, out var geometryError))
         {
             ImageServerLog.InvalidProjectParameters(_logger, layerId, geometryError ?? "Invalid geometries.");
             return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometries.");
@@ -238,7 +238,7 @@ internal sealed class ImageServerProjectHandler
         // rather than silently dropped, matching the datumTransformation contract on the map path.
         DatumTransformationSelection? datumSelection = null;
         if (reprojectToOut && !_projection.TryResolveDatumTransformation(
-                GetString(values, "datumTransformation"),
+                ImageServerRequestValues.GetString(values, "datumTransformation"),
                 GroundSrid,
                 outSrid.Value,
                 out datumSelection,
@@ -395,7 +395,7 @@ internal sealed class ImageServerProjectHandler
         string key,
         CancellationToken cancellationToken)
     {
-        var raw = GetString(values, key);
+        var raw = ImageServerRequestValues.GetString(values, key);
         if (string.IsNullOrWhiteSpace(raw))
         {
             return (null, $"{key} is required.");
@@ -559,9 +559,6 @@ internal sealed class ImageServerProjectHandler
         value = 0;
         return element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out value);
     }
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 
     private readonly record struct ProjectEnvelope(double XMin, double YMin, double XMax, double YMax);
 
