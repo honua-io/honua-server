@@ -412,7 +412,7 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
             return fromEnv;
         }
 
-        var assembly = typeof(Honua.Server.OperationRegistry).Assembly;
+        var assembly = typeof(Program).Assembly;
         var info = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
         if (info is not null && !string.IsNullOrWhiteSpace(info.InformationalVersion))
         {
