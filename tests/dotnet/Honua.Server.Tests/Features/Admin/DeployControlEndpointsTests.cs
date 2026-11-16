@@ -931,13 +931,13 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             Audit = new OperationAuditInfo { RequestedBy = "alice", Reason = "Rollout" },
             Concurrency = new OperationConcurrencyPolicy
             {
-                PartitionKey = "production:onprem-rolling",
+                PartitionKey = "production:promotable-target",
                 RequiresExclusiveLease = true
             },
             Deploy = new DeployOperationSpec
             {
-                TargetId = "onprem-rolling",
-                TargetKind = DeployTargetKind.SelfHostedRolling,
+                TargetId = "promotable-target",
+                TargetKind = DeployTargetKind.AwsEcs,
                 Backend = "test-promote-backend",
                 Environment = "production",
                 TargetName = "honua-server",
@@ -951,8 +951,8 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     {
         private static readonly DeployTargetDefinition Target = new()
         {
-            TargetId = "onprem-rolling",
-            TargetKind = DeployTargetKind.SelfHostedRolling,
+            TargetId = "promotable-target",
+            TargetKind = DeployTargetKind.AwsEcs,
             Backend = "test-promote-backend",
             Environment = "production",
             TargetName = "honua-server",
@@ -972,7 +972,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
 
         public string BackendName => "test-promote-backend";
 
-        public DeployTargetKind TargetKind => DeployTargetKind.SelfHostedRolling;
+        public DeployTargetKind TargetKind => DeployTargetKind.AwsEcs;
 
         public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(new DeployBackendCapabilities { SupportsRollback = true, SupportsProgressPolling = true });

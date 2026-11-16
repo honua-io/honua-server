@@ -12,7 +12,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Startup;
 
@@ -35,7 +34,6 @@ public sealed class DurableJobSubstrateRegistrationTests
     public void ServingHost_WithSystemDatabaseAndNoRedis_ResolvesTheJobSubstrateFromPostgres()
     {
         var services = ComposeServingHost(withSystemDatabase: true);
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer));
         using var provider = BuildProvider(services);
 
         AssertStoreClockAndCandidateSourceAreTheJobStore(provider);

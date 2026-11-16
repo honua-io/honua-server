@@ -29,12 +29,9 @@ public sealed class McpJobToolsInstalledClientTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task PublishedSdk_SubmitsPollsAndReadsGeometry_AndDeniesAnotherCaller()
     {
-        await using var redis = new RedisFixture();
-        await redis.InitializeAsync();
         await using var fixture = new WebAppFixture().WithProductionJobSubstrate().UseKestrel().WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");

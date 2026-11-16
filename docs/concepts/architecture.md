@@ -147,12 +147,6 @@ deploy API shifts weights or swaps revisions through it:
 GitOps passthrough variants (`honua-gitops-kubernetes`, `honua-gitops-aws-ecs`) hand off to your GitOps repository instead of acting directly;
 they report `rollbackSupported: false`, because Honua cannot revert a workload it does not drive.
 
-**Self-hosted rolling.** For on-prem and air-gapped hosts with no platform control plane, the server
-embeds a YARP reverse proxy (`ControlPlane:SelfHosted`, off by default). It runs the active and
-standby replicas on loopback ports, health-gates the standby, and swaps the proxy destination at
-cutover — the same canary-and-rollback contract as the cloud backends, with no cloud. Backend:
-`honua-yarp-rolling`.
-
 Rollback is capability-gated, not assumed: the `deploy.rollback` capability is advertised only when a
 configured target's backend implements a real revert. See
 [Upgrade and roll back](../guides/deploy/upgrade-and-rollback.md) for the gate contract and the

@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260829T205535Z",
-  "run_date": "2026-08-29T20:55:35.537514+00:00",
-  "server_version": "1.0.0+e358ef1b50961de6fe6e4fae172e544418b7fe0c",
-  "server_commit": "e358ef1b50961de6fe6e4fae172e544418b7fe0c",
-  "fixture_revision": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
-  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
+  "run_id": "20261116T165908Z",
+  "run_date": "2026-11-16T16:59:08.963176+00:00",
+  "server_version": "2026.1.1",
+  "server_commit": "95de72df386e4cb9ed9e656c017a0e66292614f3",
+  "fixture_revision": "sha256:756fa0c93bb1cdadb82e54f5c5f5d2b50e346125dcad86877c1bb8bc429e1d90",
+  "server_config_revision": "sha256:b40198620fbb9561d6f2230073c449caa41c2cec452ab70e6e12fc0d47273496",
   "client_lane": "py-owslib",
   "client_version": "0.36.0",
   "protocol": "wms",
@@ -28,8 +28,8 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Transport verified as plain http on the compose client-compat network, which terminates no TLS. TLS handshake behaviour is exercised in the release tier, where the same lane runs against the HTTPS candidate.",
-      "evidence_ref": "http://honua:5000",
+      "notes": "OWSLib well-formed capabilities request returned HTTP 200 with redirects disabled; client and 3 advertised endpoints match the configured http origin. Configured HTTP has no TLS handshake; this is not TLS proof.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS",
       "protocol_version": null
     },
     {
@@ -58,7 +58,7 @@
       "duration_ms": 0,
       "measured_count": 3,
       "measured_delta": null,
-      "notes": "WebMapService.contents listed 3 named layers (['Browser Points', 'Browser Lines', 'Browser Polygons']), each nested under the service root layer.",
+      "notes": "WebMapService.contents listed 3 named layers (['2000', '2001', '2002']), each nested under the service root layer.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -68,7 +68,7 @@
       "duration_ms": 0,
       "measured_count": 3,
       "measured_delta": null,
-      "notes": "Layer 'Browser Points': queryable=1, abstract present, CRS options ['EPSG:4326', 'EPSG:3857', 'CRS:84'], EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79), styles ['default'].",
+      "notes": "Layer '2000': queryable=1, abstract present, CRS options ['EPSG:4326', 'CRS:84', 'EPSG:3857'], EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79), styles ['default'].",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -145,20 +145,20 @@
     {
       "test_case_id": "CERT-GEOM-02",
       "status": "pass",
-      "duration_ms": 18,
+      "duration_ms": 15,
       "measured_count": 173,
       "measured_delta": null,
       "notes": "OWSLib emitted the WMS 1.3.0 CRS parameter (crs=EPSG:3857, never the 1.1.1 SRS spelling) for a CRS the layer advertises, and the server returned rendered content at the requested size instead of a ServiceException. The response is imagery, so the CRS is substantiated by the request/response pair plus the CRS:84/EPSG:4326 axis-order equivalence proved in NB-OWS-WMS-MAP-02.",
-      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?service=WMS&version=1.3.0&request=GetMap&layers=Browser+Points&styles=&width=256&height=256&crs=EPSG%3A3857&bbox=-13631071.64763635%2C4542761.36318661%2C-13623279.28328082%2C4551210.919691889&format=image%2Fpng&transparent=TRUE&exceptions=XML&bgcolor=0xFFFFFF",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?service=WMS&version=1.3.0&request=GetMap&layers=2000&styles=&width=256&height=256&crs=EPSG%3A3857&bbox=-13631071.64763635%2C4542761.36318661%2C-13623279.28328082%2C4551210.919691889&format=image%2Fpng&transparent=TRUE&exceptions=XML&bgcolor=0xFFFFFF",
       "protocol_version": null
     },
     {
       "test_case_id": "CERT-ERRH-01",
       "status": "pass",
-      "duration_ms": 7,
+      "duration_ms": 3,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "OWSLib raised owslib.util.ServiceException from the server's WMS ServiceExceptionReport, and the message names the undefined layer: \"Layer 'does-not-exist-9999' is not defined.\"",
+      "notes": "OWSLib raised owslib.util.ServiceException from the server's WMS ServiceExceptionReport, and the message names the undefined layer: '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<ServiceExceptionReport xmlns=\"http://www.opengis.net/ogc\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" version='",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -175,11 +175,11 @@
     {
       "test_case_id": "CERT-RNDR-01",
       "status": "pass",
-      "duration_ms": 88,
+      "duration_ms": 15,
       "measured_count": 173,
       "measured_delta": null,
       "notes": "GetMap returned a decodable 256x200 PNG at the requested size and format, with 173 non-transparent pixels over the seeded extent. This is server-rendered imagery accepted and decoded by the client, not client-side drawing: OWSLib has no drawing surface.",
-      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?service=WMS&version=1.3.0&request=GetMap&layers=Browser+Points&styles=&width=256&height=200&crs=CRS%3A84&bbox=-122.45%2C37.74%2C-122.38%2C37.8&format=image%2Fpng&transparent=TRUE&exceptions=XML&bgcolor=0xFFFFFF",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?service=WMS&version=1.3.0&request=GetMap&layers=2000&styles=&width=256&height=200&crs=CRS%3A84&bbox=-122.45%2C37.74%2C-122.38%2C37.8&format=image%2Fpng&transparent=TRUE&exceptions=XML&bgcolor=0xFFFFFF",
       "protocol_version": null
     },
     {
@@ -255,10 +255,10 @@
   ],
   "summary": {
     "total": 24,
-    "passed": 9,
+    "passed": 8,
     "failed": 0,
     "skipped": 0,
-    "not_applicable": 15
+    "not_applicable": 16
   },
   "cite_results": null,
   "extensions": [
@@ -268,7 +268,7 @@
       "duration_ms": null,
       "measured_count": 3,
       "measured_delta": null,
-      "notes": "Service block: Name=WMS, Title='browser_compat', Abstract='Honua WMS service', 3 keywords ['WMS', 'OGC', 'browser_compat'], OnlineResource http://honua:5000/rest/services/browser_compat/MapServer/WMS.",
+      "notes": "Service block: Name=WMS, Title='browser_compat', Abstract='Authored metadata for the canonical client compatibility fixture.', 3 keywords ['WMS', 'OGC', 'browser_compat'], OnlineResource http://honua:5000/rest/services/browser_compat/MapServer/WMS.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -276,9 +276,9 @@
       "test_case_id": "NB-OWS-WMS-CAP-02",
       "status": "pass",
       "duration_ms": null,
-      "measured_count": 8,
+      "measured_count": 2,
       "measured_delta": null,
-      "notes": "OWSLib parsed 8 ContactInformation fields: {'name': 'Honua Support', 'organization': 'Honua', 'position': 'Support Engineer', 'address': '1 Honua Way', 'city': 'Honolulu', 'region': 'HI', 'postcode': '96815', 'country': 'US'}. A WMS whose contact block does not survive a strict parser breaks catalogue harvesting.",
+      "notes": "OWSLib parsed 2 ContactInformation fields: {'name': 'Compatibility Fixture Maintainer', 'organization': 'CI Compatibility Fixture'}. A WMS whose contact block does not survive a strict parser breaks catalogue harvesting. The namespaced contact email is 'fixture-maintainer@example.invalid'.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -286,7 +286,7 @@
       "test_case_id": "NB-OWS-WMS-CAP-03",
       "status": "pass",
       "duration_ms": null,
-      "measured_count": 2,
+      "measured_count": 3,
       "measured_delta": null,
       "notes": "EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79); on the wire the BoundingBox for CRS:84 is (-122.44, 37.76, -122.4, 37.79) (longitude first) and for EPSG:4326 is (37.76, -122.44, 37.79, -122.4) (latitude first), i.e. axis-swapped views of the same ground area. OWSLib normalises both to the same longitude/latitude tuple.",
       "evidence_ref": "",
@@ -299,7 +299,7 @@
       "measured_count": 4320,
       "measured_delta": null,
       "notes": "The advertised LegendURL for style 'default' returned a decodable 135x32 PNG. A dangling LegendURL silently breaks every client legend panel.",
-      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetLegendGraphic&LAYER=Browser%20Points&STYLE=default&FORMAT=image/png",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetLegendGraphic&LAYER=2000&STYLE=default&FORMAT=image/png",
       "protocol_version": null
     },
     {
@@ -378,7 +378,7 @@
       "duration_ms": null,
       "measured_count": 3,
       "measured_delta": null,
-      "notes": "All 3 advertised GetFeatureInfo formats identified the same feature with a body matching the declared media type: text/plain=46B, application/vnd.ogc.gml=570B, application/json=117B",
+      "notes": "All 3 advertised GetFeatureInfo formats identified the same feature with a body matching the declared media type: text/plain=38B, application/vnd.ogc.gml=526B, application/json=189B",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -408,7 +408,7 @@
       "duration_ms": null,
       "measured_count": 123,
       "measured_delta": null,
-      "notes": "OWSLib WebMapService negotiated WMS 1.1.1, parsed capabilities, discovered layer Browser Points, and executed a non-empty GetMap using the 1.1.1 SRS shape.",
+      "notes": "OWSLib WebMapService negotiated WMS 1.1.1, parsed capabilities, discovered layer 2000, and executed a non-empty GetMap using the 1.1.1 SRS shape.",
       "evidence_ref": "",
       "protocol_version": "1.1.1"
     },

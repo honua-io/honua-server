@@ -67,8 +67,6 @@ public sealed record RollbackFunctionalQueryExpectation
 {
     public string? Url { get; init; }
 
-    public string? Path { get; init; }
-
     public string? ExpectedContains { get; init; }
 
     public string? ForbiddenContains { get; init; }
@@ -145,8 +143,6 @@ public static class RollbackDataPlaneCompletion
     public const string ReadinessTimeoutSecondsParameterKey = "telemetry.healthz.timeout_seconds";
 
     public const string FunctionalQueryUrlParameterKey = "telemetry.golden_query.url";
-
-    public const string FunctionalQueryPathParameterKey = "rollback.functional_query.path";
 
     public const string LocalFunctionalQueryExpectedContainsParameterKey = "rollback.functional_query.expected_contains";
 
@@ -301,7 +297,6 @@ public static class RollbackDataPlaneCompletion
         => new()
         {
             Url = ReadParameter(parameters, FunctionalQueryUrlParameterKey),
-            Path = ReadParameter(parameters, FunctionalQueryPathParameterKey),
             ExpectedContains = ReadParameter(parameters, FunctionalQueryExpectedContainsParameterKey)
                 ?? ReadParameter(parameters, LocalFunctionalQueryExpectedContainsParameterKey),
             ForbiddenContains = ReadParameter(parameters, FunctionalQueryForbiddenContainsParameterKey)
