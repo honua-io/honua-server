@@ -9905,7 +9905,7 @@
           "Deploy"
         ],
         "summary": "Approve Coordinated Release Gate",
-        "description": "Approves the exact reviewed container-swap or data-affecting gate so the coordinated-release conductor can advance. The optional request body carries only an operator reason. Requires one authorized human in a verified interactive OIDC code/PKCE session and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503.",
+        "description": "Approves the exact reviewed container-swap or data-affecting gate so the coordinated-release conductor can advance. The optional request body carries only an operator reason. Requires one authorized human in a verified interactive browser session established by password sign-in or OIDC code/PKCE and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503.",
         "operationId": "approveCoordinatedReleaseGate",
         "parameters": [
           {
@@ -10776,7 +10776,7 @@
           "Proposals"
         ],
         "summary": "Approve Operation Proposal",
-        "description": "Approves the exact reviewed proposal and applies its underlying operation through the gateway. Requires one authorized human in a verified interactive OIDC code/PKCE session and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503. A proposal state conflict returns 409. Takes no request body.",
+        "description": "Approves the exact reviewed proposal and applies its underlying operation through the gateway. Requires one authorized human in a verified interactive browser session established by password sign-in or OIDC code/PKCE and the private X-Honua-Approval-Capability from a fresh review of this target version and plan. The requester may approve. API keys, ordinary bearers and MCP tokens cannot approve and receive 403. A changed or expired review requires a fresh review; unavailable approval authority returns 503. A proposal state conflict returns 409. Takes no request body.",
         "operationId": "approveOperationProposal",
         "parameters": [
           {
@@ -22860,7 +22860,7 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "honua_admin_session",
-        "description": "Verified interactive OIDC code/PKCE session for human approval. API keys and bearer tokens cannot substitute for this session."
+        "description": "Verified interactive browser session established by password sign-in or OIDC code/PKCE for human approval. API keys and bearer tokens cannot substitute for this session."
       },
       "HumanApprovalCapability": {
         "type": "apiKey",

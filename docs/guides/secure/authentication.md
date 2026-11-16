@@ -443,7 +443,7 @@ Redis shares replay registrations across nodes. When a configured Redis connecti
 #### Human operation approval
 
 A pending operation proposal requires one authorized person using a live
-interactive OIDC session in Console. The requester may approve their own proposal.
+interactive browser session (password or OIDC) in Console. The requester may approve their own proposal.
 Sign in to the server that owns the proposal, open its current review, and use
 **Approve**. Existing operation permissions, tenant restrictions and the original
 requester's current authority remain required. API keys, generic or operator
@@ -458,8 +458,10 @@ the session or applicable proposal evidence. Changing environment, changing the
 plan, logging out or losing authority requires a new review. A lost decision
 response requires reading the durable proposal status before deciding again.
 
-Configure the server's canonical `Public:BaseUrl`, the existing OIDC provider,
-and shared protected keys and session storage for replicas. Approval refuses
+Configure the server's canonical `Public:BaseUrl`, password sign-in or an OIDC
+provider, and shared protected keys and session storage for replicas. Approval
+evidence records `console-interactive-password` or `console-interactive-oidc`
+from the stored session's origin. Approval refuses
 when live shared-session authority cannot be verified. Copying bearer claims
 such as an authentication-method or session claim does not create an interactive
 session. Keep capability values, upstream cookies and one-time operation secrets
