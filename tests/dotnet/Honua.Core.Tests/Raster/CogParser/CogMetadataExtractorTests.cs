@@ -281,7 +281,7 @@ public class CogMetadataExtractorTests
     [Fact]
     public async Task ReadMetadataAsync_TiepointTagWithNonDoubleType_ReturnsDefaultOriginWithoutThrowing()
     {
-        // Regression test for BH4-025: tag 33922 declared as SHORT (type 3) instead of DOUBLE (type 12).
+        // tag 33922 declared as SHORT (type 3) instead of DOUBLE (type 12).
         // Without the type guard, GetValidatedExternalArrayByteCount returns 12 bytes (6 * 2) but
         // ReadDouble(data, 24, ...) slices at offset 24 into that 12-byte span → ArgumentOutOfRangeException.
         var tiffData = BuildSyntheticCogBytesWithShortTiepoint(
@@ -305,7 +305,7 @@ public class CogMetadataExtractorTests
     [Fact]
     public async Task ReadMetadataAsync_PixelScaleTagWithNonDoubleType_ReturnsUnitScaleWithoutThrowing()
     {
-        // Regression test for BH4-025: tag 33550 declared as SHORT (type 3) instead of DOUBLE (type 12).
+        // tag 33550 declared as SHORT (type 3) instead of DOUBLE (type 12).
         // Without the type guard, GetValidatedExternalArrayByteCount returns 6 bytes (3 * 2) but
         // ReadDouble(data, 8, ...) slices at offset 8 into that 6-byte span → ArgumentOutOfRangeException.
         var tiffData = BuildSyntheticCogBytesWithShortPixelScale(

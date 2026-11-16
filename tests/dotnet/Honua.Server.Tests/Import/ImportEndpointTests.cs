@@ -740,7 +740,7 @@ public class ImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_TargetSchemaOutsideOperationalSchemas_Returns400AndCreatesNoSchema()
     {
-        // SEC-23: import targets are limited to the configured operational schemas.
+        // import targets are limited to the configured operational schemas.
         var requestedTableName = $"custom_schema_{Guid.NewGuid():N}";
         var targetSchema = $"adhoc_{Guid.NewGuid():N}";
 

@@ -730,7 +730,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
             content);
 
         // The sync is rejected because an edit failed and the batch rolled back.
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // State unchanged: the valid add was rolled back and never persisted.
@@ -1005,7 +1005,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_AllEmptyPerLayerPayload_DoesNotInsertPhantomFeatures()
     {
-        // BH5-013 regression: a per-layer payload where every layer has empty adds/updates/deletes
+        // a per-layer payload where every layer has empty adds/updates/deletes
         // arrays (a valid no-op acknowledgment) was falling through to the legacy flat-form parser,
         // which reinterpreted each {"id":0,"adds":[],...} object as a GeoServicesFeature and
         // submitted it as a phantom Create. After the fix, the no-op is a clean success with no
@@ -1049,7 +1049,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_Bidirectional_ConcurrentOtherClientEdit_IsDelivered()
     {
-        // BH5-015 regression: edits committed by OTHER clients in the window (preUploadGen,
+        // edits committed by OTHER clients in the window (preUploadGen,
         // uploadServerGen] were excluded from the bidirectional download delta AND from all
         // subsequent downloads (because the cursor jumped to uploadServerGen). After the fix
         // the full window (downloadSinceGen, uploadServerGen] is delivered.

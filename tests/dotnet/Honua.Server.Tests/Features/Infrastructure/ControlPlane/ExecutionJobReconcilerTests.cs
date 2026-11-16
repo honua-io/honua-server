@@ -2089,7 +2089,7 @@ public sealed partial class ExecutionJobReconcilerTests
             t.Value == 1 && t.PreviousStatus == nameof(ExecutionJobStatus.Queued) && t.Status == nameof(ExecutionJobStatus.Failed),
             "missing-backend path persists Queued -> Failed and must emit a transition sample");
 
-        // PA-165: the reconcile-cycle counter must carry job-kind and outcome tags so it
+        // the reconcile-cycle counter must carry job-kind and outcome tags so it
         // can be sliced instead of only totaled. This run hits the missing-backend branch.
         cycleTags.Should().Contain(
             t => t.JobKind == nameof(ExecutionJobKind.Geoprocessing) && t.Outcome == "backend_missing",

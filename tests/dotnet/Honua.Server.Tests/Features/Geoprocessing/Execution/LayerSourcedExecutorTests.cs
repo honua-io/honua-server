@@ -1071,7 +1071,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_MultiFieldGroupBy_AmbiguousValues_ProducesSeparateGroups()
     {
-        // BH2-017 regression: BuildGroupKey previously used string.Join("", parts) with no
+        // BuildGroupKey previously used string.Join("", parts) with no
         // separator, so {"San","Jose"} and {"Sa","nJose"} both produced key "SanJose" and
         // were dissolved into the same geometry/group. With the fix they must dissolve separately.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId,

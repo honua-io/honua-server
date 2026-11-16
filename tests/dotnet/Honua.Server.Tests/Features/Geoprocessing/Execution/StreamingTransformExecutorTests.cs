@@ -261,12 +261,12 @@ public sealed class StreamingTransformExecutorTests : IDisposable
         (await CountAsync(inlineStream)).Should().Be(1);
     }
 
-    // ----- BH-023 regression: path traversal in stream reference is rejected -----
+    // ----- path traversal in stream reference is rejected -----
 
     [UnitTest]
     public void TryOpenRead_WithPathOutsideRoot_RejectsWithError()
     {
-        // BH-023: TryOpenRead accepted any path in the stream reference without
+        // TryOpenRead accepted any path in the stream reference without
         // validating it falls within the configured output root. An authenticated
         // caller could craft a reference pointing at e.g. /etc/passwd or server
         // config files. The outputRootDirectory parameter must reject such references.
@@ -277,8 +277,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
         try
         {
             // Build a crafted reference with a path that escapes the root via "..".
-            // The ".." segment here is deliberately adversarial test input (BH-023 regression
-            // coverage for the path-traversal guard), not a real Path.Combine argument-drop risk.
+            // The ".." segment here is deliberately adversarial input for the path-traversal guard.
             var traversalPath = Path.GetFullPath(Path.Join(root, "..", "etc", "passwd"));
             var craftedRef = FeatureStreamArtifact.BuildStreamReference(traversalPath, count: 0, bytes: 0);
 
@@ -300,7 +299,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
     [UnitTest]
     public async Task TryOpenRead_WithPathInsideRoot_Succeeds()
     {
-        // BH-023: A legitimate stream reference whose path falls within the root must
+        // A legitimate stream reference whose path falls within the root must
         // still be accepted — the guard must not over-reject.
         var sourceRef = await BuildSpilledSourceAsync(10, includeDuplicates: false);
 

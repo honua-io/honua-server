@@ -260,7 +260,7 @@ public class CommonQueryValidatorTests
         result.Value!.MaxX.Should().Be(20000000);
     }
 
-    // PA-025: OGC API Features /req/core/fc-limit-definition (d) mandates that over-maximum limits
+    // OGC API Features /req/core/fc-limit-definition (d) mandates that over-maximum limits
     // are clamped to the server maximum, not rejected with a 400 error.
 
     [Trait("Tier", "Fast")]

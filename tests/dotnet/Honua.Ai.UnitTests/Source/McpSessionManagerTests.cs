@@ -286,7 +286,7 @@ public sealed class McpSessionManagerTests
     [UnitTest]
     public void TryCreateSession_AnonymousAtAnonymousCap_EvictsOnlyAnonymousSessions()
     {
-        // SEC-18: anonymous sessions live in their own bounded pool, so admitting
+        // anonymous sessions live in their own bounded pool, so admitting
         // another anonymous session displaces the oldest anonymous one and never an
         // authenticated session.
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);

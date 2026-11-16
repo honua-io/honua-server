@@ -83,7 +83,7 @@ public sealed class ClientCompatErrorHandlingTests : IClassFixture<WebAppFixture
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task FeatureServer_MalformedWhereClause_ReturnsErrorEnvelope()
     {
-        // The exact malformed clause the stub (CERT-ERRH-02) issues.
+        // The exact malformed clause the stub issues.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             "?where=this%20is%20not%20a%20where%20clause&f=json");

@@ -43,7 +43,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
-        // PA-070/PA-117: a capability error is now signalled as HTTP 200 +
+        // a capability error is now signalled as HTTP 200 +
         // {"error":{...}} (formerly 501/503), so distinguish success from a capability
         // error by the presence of an "error" member, not the HTTP status.
         var isError = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out _);
@@ -69,7 +69,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryH3?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -84,7 +84,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryH3?resolution=20&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -100,7 +100,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
             "/rest/services/nonexistent/FeatureServer/0/queryH3?resolution=7&f=json");
 
         // Resolution is valid so validation passes; service lookup fails before h3 capability check
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -126,7 +126,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
-        // PA-070/PA-117: a capability error is now HTTP 200 + {"error":{...}}
+        // a capability error is now HTTP 200 + {"error":{...}}
         // (formerly 501/503); branch on the "error" member, not the HTTP status.
         var isError = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out _);
         if (response.StatusCode == HttpStatusCode.OK && !isError)
@@ -144,7 +144,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryH3?resolution=-1&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -180,7 +180,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryH3?resolution=7&kRingDistance=99&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();

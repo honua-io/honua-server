@@ -901,7 +901,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal(expected, SqlServerIdentifier.IsValid(value));
     }
 
-    // BH2-D01 regression: SRID resolves to 0 when both filter and mapping SRID are absent ->
+    // SRID resolves to 0 when both filter and mapping SRID are absent ->
     // SQL Server spatial predicates return NULL (not false) -> silent zero-row result.
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]

@@ -725,7 +725,7 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Source_RepeatedCalls_ReuseProjectionUntilCatalogVersionChanges()
     {
-        // SEC-18: the projection is rebuilt only when the catalog version changes, so
+        // the projection is rebuilt only when the catalog version changes, so
         // repeated tools/list calls do not resolve executors or rebuild tool schemas.
         var executorResolutions = 0;
         var scopeFactory = new ServiceCollection()

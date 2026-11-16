@@ -1395,7 +1395,7 @@ public sealed partial class ServiceSettingsEndpointsTests
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var layerMetadataResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer/1?f=json");
-        // PA-070/PA-117: a blocked GeoServices surface reports HTTP 200 + {"error":{"code":404}}
+        // a blocked GeoServices surface reports HTTP 200 + {"error":{"code":404}}
         await layerMetadataResponse.AssertGeoServicesErrorAsync(404);
     }
 

@@ -33,7 +33,7 @@ public sealed class FeatureServerExceptionMappingTests
         {
             var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().NotContain("unexpected query backend failure");
@@ -56,7 +56,7 @@ public sealed class FeatureServerExceptionMappingTests
         {
             var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -83,7 +83,7 @@ public sealed class FeatureServerExceptionMappingTests
         {
             var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().NotContain("Distance spatial filters require Point");
@@ -112,7 +112,7 @@ public sealed class FeatureServerExceptionMappingTests
         {
             var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().NotContain("Feature provider 'mysql' does not support");
@@ -136,7 +136,7 @@ public sealed class FeatureServerExceptionMappingTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/test/FeatureServer/0/queryRelatedRecords?objectIds=1&relationshipId=1");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().NotContain("unexpected related records failure");
@@ -160,7 +160,7 @@ public sealed class FeatureServerExceptionMappingTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/test/FeatureServer/0/queryRelatedRecords?objectIds=1&relationshipId=1");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally

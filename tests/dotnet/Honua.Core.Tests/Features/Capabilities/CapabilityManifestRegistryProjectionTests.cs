@@ -119,7 +119,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         // Realtime feature streams are Experimental: they deliver from the PostgreSQL event log.
         "realtime.feature-streams",
         // alerts.geofence is Preview in 2026.1 and is projected through PreviewCapabilityIds.
-        // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        // versioning.branch (VMS REST surface) is gated Preview.
         "versioning.branch",
         // security.mtls is experimental: the always-on client-certificate scheme/RBAC layer
         // interposes on admin requests regardless of bearer-token validity.

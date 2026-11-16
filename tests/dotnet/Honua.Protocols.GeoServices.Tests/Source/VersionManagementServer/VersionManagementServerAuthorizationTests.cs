@@ -173,7 +173,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using var info = await GetAsync(_nonOwnerToken, $"{ServiceBase}/versions/{guid}?f=json");
         var infoBody = await info.Content.ReadAsStringAsync();
 
-        // BH3-002 deliberately answers 404, not 403, so a non-owner cannot confirm the version
+        // The endpoint deliberately answers 404, not 403, so a non-owner cannot confirm the version
         // exists. Either way the record itself must not be in the body.
         await info.AssertGeoServicesErrorAsync((int)HttpStatusCode.NotFound);
         infoBody.Should().NotContain("alice.private_visibility");

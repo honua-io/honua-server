@@ -43,7 +43,7 @@ public sealed class EditProcessorCreateValidationTests
         ]
     };
 
-    // BH2-014 regression: a feature that supplies SOME attributes (e.g. only the nullable "notes"
+    // a feature that supplies SOME attributes (e.g. only the nullable "notes"
     // field) but omits the required "name" field must be rejected with a named error, not passed
     // through to the DB to fail with an opaque NOT NULL constraint violation.
     [UnitTest]
@@ -110,8 +110,7 @@ public sealed class EditProcessorCreateValidationTests
         var processor = CreateProcessor();
         var resource = CreateResourceWithRequiredField();
 
-        // Completely empty attribute dictionary: the original "no attributes at all" check
-        // (not the BH2-014 per-field check) should fire first with the legacy message.
+        // The empty attribute dictionary check should run before per-field validation.
         var attributes = ImmutableDictionary<string, object?>.Empty;
 
         var request = UnifiedEditRequest.WithCreates(
@@ -126,8 +125,7 @@ public sealed class EditProcessorCreateValidationTests
 
     // Resource whose non-nullable "objectid" field carries NO semantic roles — mirrors the many
     // seeded/published layers (e.g. WebAppFixtureMetadataV2Mixin, ServiceRbacTestFixture) that
-    // declare objectid as Nullable=false without the "id.primary" role. BH2-014 keyed its
-    // primary-id skip exclusively on the role, so every create omitting objectid was rejected.
+    // declare objectid as Nullable=false without the "id.primary" role.
     private static MetadataV2Object CreateResourceWithUnroledObjectId() => new()
     {
         SchemaFields =
@@ -178,7 +176,7 @@ public sealed class EditProcessorCreateValidationTests
             + "even when it does not carry the id.primary semantic role");
     }
 
-    // The fix must not weaken BH2-014: a genuinely-missing required NON-id field is still rejected
+    // A missing required non-id field is rejected
     // even on a layer whose objectid lacks the id.primary role.
     [UnitTest]
     public void ValidateEdit_CreateMissingRequiredFieldOnUnroledObjectIdLayer_StillFails()

@@ -169,7 +169,7 @@ public sealed class FeatureCatalogDriftTests
         // The feature-stream routes are opt-in Experimental.
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
-        // Branch versioning (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        // Branch versioning (VMS REST surface) is gated Preview.
 
         var previewRoutes = catalog.Entries
             .Where(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview)

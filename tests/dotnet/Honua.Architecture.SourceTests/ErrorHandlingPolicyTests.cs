@@ -195,8 +195,7 @@ public sealed class ErrorHandlingPolicyTests
         // exception type in parens at all — valid C#, and functionally
         // identical to `catch (Exception) { }`) is just as silent but does not
         // match the typed-catch alternative, so it is matched as a second
-        // alternative below (PA-068 slipped past this test in exactly this
-        // form before it was hardened).
+        // alternative below.
         var pattern = new Regex(
             @"catch\s*\(\s*Exception(?:\s+\w+)?\s*\)\s*(?:when\s*\([^)]*\)\s*)?\{\s*\}|catch\s*\{\s*\}",
             RegexOptions.CultureInvariant);

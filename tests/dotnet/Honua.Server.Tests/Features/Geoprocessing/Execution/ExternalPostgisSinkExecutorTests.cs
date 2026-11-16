@@ -232,7 +232,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
     [Fact]
     public async Task ExecuteAsync_MidBatchFailure_RollsBackAllPreviouslyInsertedRows()
     {
-        // Regression for BH2-018: without the transaction wrapping, a constraint violation
+        // without the transaction wrapping, a constraint violation
         // on the 2nd batch would leave the 1st batch's rows permanently committed in the
         // external table. With the fix, the transaction wraps both batches
         // and the entire load is rolled back atomically.

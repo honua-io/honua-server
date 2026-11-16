@@ -655,7 +655,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
         // Assert - Should require authentication by default. FeatureServer is a GeoServices
         // REST path, so an auth failure is emitted as the Esri contract: HTTP 200 +
-        // {"error":{"code":401|499}} (PA-167). The helper still fails on a
+        // {"error":{"code":401|499}}. The helper still fails on a
         // success-shaped body, so it keeps catching a real "unauthenticated read allowed" leak.
         await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
         _output.WriteLine($"FeatureServer endpoint requires auth by default: {response.StatusCode}");

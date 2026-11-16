@@ -626,7 +626,7 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         var response = await _client.GetAsync(
             $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?time={encodedTime}&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();

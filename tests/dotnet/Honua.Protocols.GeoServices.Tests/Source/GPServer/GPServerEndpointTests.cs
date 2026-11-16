@@ -219,7 +219,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
 
         var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -245,7 +245,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         await StartDefaultApplicationAsync();
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer?f=html");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -269,7 +269,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         try
         {
             using var response = await fixture.Client.GetAsync("/rest/services/MissingService/GPServer");
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -404,7 +404,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
 
         var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -416,7 +416,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         await StartDefaultApplicationAsync();
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/BufferAnalysis");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -440,7 +440,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         try
         {
             using var response = await fixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -592,7 +592,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/analytics.cluster-managed/execute", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("submitJob");
@@ -886,7 +886,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/analytics.cluster/execute", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("ProtocolOnly");
@@ -932,7 +932,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1066,7 +1066,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob?f=json&input=test");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1102,7 +1102,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
                 content);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -1144,7 +1144,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
                 content);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var body = await response.Content.ReadAsStringAsync();
             body.Should().NotContain("honua.services");
@@ -1690,7 +1690,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         await StartDefaultApplicationAsync();
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/AnyTask/jobs?num=0&f=json");
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1761,7 +1761,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.GetAsync(
             $"/rest/services/AnyService/GPServer/AnyTask/jobs/{jobId}?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1954,7 +1954,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);

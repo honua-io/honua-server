@@ -156,7 +156,7 @@ public sealed class EditProcessorPreconditionTests
     [UnitTest]
     public void ToFeatureEditBatch_EmitsActivitySpan()
     {
-        // PA-018: the feature-write pipeline (validate/optimize/convert) previously emitted no
+        // the feature-write pipeline (validate/optimize/convert) previously emitted no
         // telemetry span at all.
         var activities = new List<Activity>();
         using var listener = new ActivityListener
@@ -210,7 +210,7 @@ public sealed class EditProcessorPreconditionTests
     [UnitTest]
     public void ValidateCreate_SpatialLayerWithGeometry_Succeeds()
     {
-        // BH-014 complement: a create with geometry on a spatial layer must still pass.
+        // a create with geometry on a spatial layer must still pass.
         var processor = CreateProcessor();
 
         var resource = new MetadataV2Object

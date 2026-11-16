@@ -312,7 +312,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         domains.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
-    // BH2-011 regression: the service-level query endpoint (/FeatureServer/query, not
+    // the service-level query endpoint (/FeatureServer/query, not
     // /FeatureServer/{layerId}/query) always returns a ServiceQueryResponse (JSON). Formats
     // like f=geojson are not supported at the service level. Before the fix, the outer
     // format validation allowed FeatureServerQueryFormats (including geojson), which let the

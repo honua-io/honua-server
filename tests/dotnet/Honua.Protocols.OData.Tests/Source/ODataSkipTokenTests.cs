@@ -188,7 +188,7 @@ public sealed class ODataSkipTokenTests : IAsyncLifetime
         pageCount.Should().Be(3); // 15 features / 5 per page = 3 pages
     }
 
-    // BH-S-04 regression: /Layers must reject inbound $skiptoken with 400. The server
+    // /Layers must reject inbound $skiptoken with 400. The server
     // never emits a $skiptoken nextLink on the catalog layer list ($skip is the
     // continuation mechanism there). Accepting a $skiptoken against a null fingerprint
     // would allow a token minted by any Features endpoint with no filter/orderby to jump

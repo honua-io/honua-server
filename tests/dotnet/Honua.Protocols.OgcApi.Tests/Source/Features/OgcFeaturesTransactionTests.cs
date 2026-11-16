@@ -466,7 +466,7 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // Regression tests for BH2-002: DELETE If-Match / optimistic-concurrency.
+    // DELETE If-Match / optimistic-concurrency.
     // Before the fix HandleDeleteFeature ignored the If-Match header entirely, meaning a
     // DELETE would succeed unconditionally even when the ETag was stale (OGC API Features
     // Part 4 §7.3 requires 412 Precondition Failed in that case).

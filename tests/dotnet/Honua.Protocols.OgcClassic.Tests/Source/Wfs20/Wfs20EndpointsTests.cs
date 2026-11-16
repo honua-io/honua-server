@@ -2593,7 +2593,6 @@ public sealed partial class Wfs20EndpointsTests
         allowedValues.Should().Contain("FALSE");
     }
 
-    // ---- Regression tests for BH-008, BH-009, BH-010, BH-011 ----
 
     [IntegrationTest]
     [Operation(Operations.Update)]
@@ -2922,9 +2921,8 @@ public sealed partial class Wfs20EndpointsTests
             .ToArray();
     }
 
-    // Regression tests for BH2-004 / BH2-005.
 
-    // BH2-004: an invalid FES 2.0 filter expression inside a WFS-T Transaction body
+    // an invalid FES 2.0 filter expression inside a WFS-T Transaction body
     // previously caused a 500 Internal Server Error because the Fes20ParseException
     // propagated out of HandleTransactionAsync unhandled.  After the fix the handler
     // catches it and returns 400 InvalidParameterValue.
@@ -2958,7 +2956,7 @@ public sealed partial class Wfs20EndpointsTests
             "an unparseable FES 2.0 filter must produce 400, not 500");
     }
 
-    // BH2-005: a WFS-T Delete with an empty <fes:Filter/> element previously caused a
+    // a WFS-T Delete with an empty <fes:Filter/> element previously caused a
     // TOCTOU: the filter was non-null but produced zero children, which (after the
     // has-only-ResourceId check passed) was forwarded as an empty SQL WHERE clause,
     // potentially deleting all rows in the type.  After the fix an empty filter is

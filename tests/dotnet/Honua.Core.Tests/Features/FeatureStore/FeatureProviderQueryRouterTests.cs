@@ -41,7 +41,7 @@ public sealed partial class FeatureProviderQueryRouterTests
     [Fact]
     public async Task ResolveReaderAsync_EmitsSpanTaggedWithServiceResourcePublicationAndProvider()
     {
-        // PA-019: this hot path previously emitted no telemetry at all.
+        // this hot path previously emitted no telemetry at all.
         var connectionId = Guid.NewGuid();
         var reader = new Mock<IFeatureReader>(MockBehavior.Strict).Object;
         var provider = CreateProvider(DataProviderNames.DuckDb, FeatureProviderCapabilities.ReadOnlyAnalytical, reader);

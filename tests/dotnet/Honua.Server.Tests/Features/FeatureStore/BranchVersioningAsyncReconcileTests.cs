@@ -155,7 +155,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
     [Fact]
     public async Task AsyncReconcileJob_HostShuttingDown_TerminatesAsFailedWithShutdownMessage()
     {
-        // PA-030: the detached background job must observe IHostApplicationLifetime and
+        // the detached background job must observe IHostApplicationLifetime and
         // record a clear terminal state (not sit unobserved past process teardown) when the
         // host shuts down mid-run. A lifetime whose ApplicationStopping is already
         // cancelled simulates the job starting just as shutdown begins.

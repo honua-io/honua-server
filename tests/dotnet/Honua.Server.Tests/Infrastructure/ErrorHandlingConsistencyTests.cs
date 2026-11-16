@@ -170,7 +170,7 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
 
             // Assert
             // GeoServices surfaces (/rest/services, /tiles) now signal errors as
-            // HTTP 200 + {"error":{"code":400}} (PA-070/PA-117); OGC API and
+            // HTTP 200 + {"error":{"code":400}}; OGC API and
             // OData keep RFC 7807 HTTP status semantics.
             if (IsGeoServicesEndpoint(endpoint))
             {

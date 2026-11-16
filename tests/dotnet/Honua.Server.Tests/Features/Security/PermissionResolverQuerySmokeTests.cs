@@ -74,7 +74,7 @@ public sealed class PermissionResolverQuerySmokeTests
 
         var response = await client.GetAsync(QueryUrl);
 
-        // PA-070/PA-117: the GeoServices query surface reports the coarse-policy
+        // the GeoServices query surface reports the coarse-policy
         // deny as HTTP 200 + {"error":{"code":403}} (or a legacy 403).
         await response.AssertGeoServicesErrorAsync(403);
     }

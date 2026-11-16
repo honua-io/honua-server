@@ -32,7 +32,7 @@ public sealed class FeatureServerH3TileTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().BeOneOf(
             HttpStatusCode.OK, HttpStatusCode.NoContent, HttpStatusCode.NotImplemented, HttpStatusCode.ServiceUnavailable);
 
-        // PA-070/PA-117: a capability error is now signalled as HTTP 200 +
+        // a capability error is now signalled as HTTP 200 +
         // a JSON {"error":{...}} body (formerly 501/503), so an OK response is a
         // real tile only when it is not the JSON error envelope.
         if (response.StatusCode == HttpStatusCode.OK &&
@@ -62,7 +62,7 @@ public sealed class FeatureServerH3TileTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{WebAppFixture.TestLayerId}/h3/5/16/11.mvt?resolution=99");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -74,7 +74,7 @@ public sealed class FeatureServerH3TileTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{WebAppFixture.TestLayerId}/h3/5/999/999.mvt");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 

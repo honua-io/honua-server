@@ -807,7 +807,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     [Endpoint("GET /sharing/rest/generateToken")]
     public async Task GenerateToken_CredentialsInQueryStringOverPlainHttp_Returns403WithHelpfulMessage()
     {
-        // PA-059: When RequireHttps=true (the default), a GET request carrying
+        // When RequireHttps=true (the default), a GET request carrying
         // credentials in the URL query string over plain HTTP must be rejected
         // with an actionable error that directs the caller to POST or HTTPS.
         var fixture = new WebAppFixture()
@@ -843,7 +843,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     [Endpoint("GET /sharing/rest/generateToken")]
     public async Task GenerateToken_CredentialsInQueryStringWithInsecureMode_Succeeds()
     {
-        // PA-059: When RequireHttps=false (explicit dev/test opt-out), GET with
+        // When RequireHttps=false (explicit dev/test opt-out), GET with
         // credentials in the query string is still accepted — ArcGIS clients use
         // this flow and the dev override must not break them.
         using var client = _fixture.CreateClient();

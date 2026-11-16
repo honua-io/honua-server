@@ -272,7 +272,7 @@ public sealed partial class GrpcFeatureServiceTests
         _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
-    // SEC-5: the publication's declared edit capabilities bound gRPC ApplyEdits the same way
+    // the publication's declared edit capabilities bound gRPC ApplyEdits the same way
     // they bound FeatureServer applyEdits and OGC API Features, even for a caller whose
     // per-operation write grant would otherwise allow the edit.
     [UnitTheory]
@@ -2304,7 +2304,7 @@ public sealed partial class GrpcFeatureServiceTests
             opts.DataEditorRoles = ["data-editor"];
         });
 
-        // gRPC binds where clauses to the shared filter parser and translator (SEC-11);
+        // gRPC binds where clauses to the shared filter parser and translator;
         // the provider-specific SQL is not under test here.
         var sqlFilterTranslator = Substitute.For<ISqlFilterTranslator>();
         sqlFilterTranslator

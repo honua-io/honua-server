@@ -1027,7 +1027,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -1050,7 +1050,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -1869,7 +1869,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/query?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -1938,7 +1938,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/query?f=json&outFields=Bogus");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -2067,7 +2067,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/find?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -2895,7 +2895,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -3125,7 +3125,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -3199,7 +3199,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/getSamples?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -3466,7 +3466,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&transformation=1&geometries={encoded}");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -3914,7 +3914,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/keyProperties?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -4048,7 +4048,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/legend?f=xml");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -4156,7 +4156,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -4228,7 +4228,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/multidimensionalInfo?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -4286,7 +4286,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/slices?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally

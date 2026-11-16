@@ -97,7 +97,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{TestLayerId}/1/0/0.mvt?time=not-a-timestamp");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -127,7 +127,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{TestLayerId}/1/0/0.mvt?time={start},{end}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -164,7 +164,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{TestLayerId}/1/0/0.mvt?time={start},{end}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 

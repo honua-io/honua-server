@@ -60,7 +60,7 @@ public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, ICl
         var response = await Client.SendAsync(request);
 
         // GeoServices REST errors are signalled Esri-style: HTTP 200 with an
-        // {"error":{"code":...}} body (PA-070/PA-117). The read-only provider's
+        // {"error":{"code":...}} body. The read-only provider's
         // NotSupportedException maps through the shared exception mapping to the 405
         // MethodNotAllowed body code — the documented rejection — never the generic 500
         // InternalServerError code.

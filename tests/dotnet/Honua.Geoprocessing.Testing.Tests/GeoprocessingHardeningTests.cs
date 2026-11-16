@@ -27,7 +27,7 @@ public sealed class GeoprocessingHardeningTests
     private const string ProcessDefinitionsKey = "honua.geoprocessing.process_definitions";
 
     // -----------------------------------------------------------------------
-    // PA-194: SSRF guard on source.wfs and source.ogc-features
+    // SSRF guard on source.wfs and source.ogc-features
     // -----------------------------------------------------------------------
 
     [Theory]
@@ -68,7 +68,7 @@ public sealed class GeoprocessingHardeningTests
     }
 
     // -----------------------------------------------------------------------
-    // PA-209: terminal callback must set Failed when result-package SetAsync throws
+    // terminal callback must set Failed when result-package SetAsync throws
     // -----------------------------------------------------------------------
 
     [UnitTest]

@@ -279,7 +279,7 @@ public sealed class CustomCodeSubmitTests
     }
 
     // -----------------------------------------------------------------------
-    // Open policy admin gate (PA-196)
+    // Open policy admin gate
     // -----------------------------------------------------------------------
 
     [UnitTest]
@@ -287,7 +287,7 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_OpenPolicy_NonAdminPrincipal_Forbidden()
     {
-        // Open policy accepts any HTTPS repo but must require admin elevation (PA-196) so
+        // Open policy accepts any HTTPS repo but must require admin elevation so
         // the widest-policy execution surface is never reachable from a non-admin caller.
         var sut = CreateService(options => options.RepoPolicy = CustomCodeRepoPolicy.Open);
 
@@ -452,7 +452,7 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_NonHttpsRepo_Rejected()
     {
-        // Use an admin principal so the Open-policy admin gate (PA-196) is satisfied and
+        // Use an admin principal so the Open-policy admin gate is satisfied and
         // the URL scheme check is reached — the non-https rejection must still apply to admins.
         var sut = CreateService(options => options.RepoPolicy = CustomCodeRepoPolicy.Open);
         var metadata = CustomCodeMetadata(repoUrl: "http://github.com/honua-io/example.git");
@@ -1165,7 +1165,7 @@ public sealed class CustomCodeSubmitTests
             ],
             "Test"));
 
-    // Admin carries the "admin" role that gates the Open repo policy (PA-196).
+    // Admin carries the "admin" role that gates the Open repo policy.
     private static ClaimsPrincipal AdminPrincipal()
         => new(new ClaimsIdentity(
             [

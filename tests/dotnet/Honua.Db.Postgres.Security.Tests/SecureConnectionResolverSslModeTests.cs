@@ -168,7 +168,7 @@ public sealed class SecureConnectionResolverSslModeTests
     [InlineData("Include Error Detail=true")]
     public async Task ResolveConnectionStringAsync_SecretWithKeywordOutsideAllowlist_ThrowsInvalidOperation(string keyword)
     {
-        // SEC-23: a resolved PostgreSQL connection string may carry only the endpoint, credential,
+        // a resolved PostgreSQL connection string may carry only the endpoint, credential,
         // TLS-mode and tuning keywords the server supports; anything else is refused.
         var connection = CreateSecretReferenceConnection(host: "db.example.com", port: 5432);
         var resolver = CreateResolver(
@@ -208,7 +208,7 @@ public sealed class SecureConnectionResolverSslModeTests
     [InlineData("Host=db.example.com,other.example.net;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require")]
     public async Task ResolveConnectionStringAsync_ResolvedHostOutsideHostPolicy_ThrowsInvalidOperation(string resolvedConnectionString)
     {
-        // SEC-23: the host policy applies to every host the resolved string names, including a
+        // the host policy applies to every host the resolved string names, including a
         // secret-reference connection that declared no host of its own.
         var connection = CreateSecretReferenceConnection(host: DataConnection.SecretReferenceMetadataPlaceholder, port: 0);
         var resolver = CreateResolver(

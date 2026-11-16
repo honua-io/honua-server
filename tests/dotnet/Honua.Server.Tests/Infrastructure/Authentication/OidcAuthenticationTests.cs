@@ -1533,7 +1533,7 @@ public class OidcAuthenticationTests
         var logger = new TestLogger<OidcClaimsTransformation>();
         var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
-        // The API-key handler marks the auth_type it mints as framework-owned (SEC-10).
+        // The API-key handler marks the auth_type it mints as framework-owned.
         var claims = new List<Claim>
         {
             new(ClaimTypes.Name, "admin"),
@@ -1970,7 +1970,7 @@ public class OidcAuthenticationTests
 
         // Assert - Should require authentication by default. FeatureServer is a GeoServices
         // REST path, so an auth failure is emitted as the Esri contract: HTTP 200 +
-        // {"error":{"code":401|499}} (PA-167). The helper still fails on a
+        // {"error":{"code":401|499}}. The helper still fails on a
         // success-shaped body, so it keeps catching a real "unauthenticated read allowed" leak.
         await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
         _output.WriteLine($"FeatureServer response requires auth: {response.StatusCode}");

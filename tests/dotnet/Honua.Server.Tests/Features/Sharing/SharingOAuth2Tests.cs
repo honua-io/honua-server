@@ -490,7 +490,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_AuthorizationCodeGrantViaGetQueryString_Returns405MethodNotAllowed()
     {
-        // BH7-001: The token endpoint must be POST-only per RFC 6749 §4.1.3.
+        // The token endpoint must be POST-only per RFC 6749 §4.1.3.
         // A GET registration exposed auth codes, client_secret, and refresh
         // tokens in URL query strings — logged by proxies/CDN/access logs (CWE-598).
         // Verify that GET requests are rejected with 405 Method Not Allowed.

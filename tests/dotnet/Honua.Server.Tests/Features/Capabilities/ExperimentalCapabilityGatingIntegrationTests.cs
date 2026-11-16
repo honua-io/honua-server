@@ -32,7 +32,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // alerts.geofence is Preview in 2026.1 and is asserted separately below.
         // Realtime feature streams are Experimental: they deliver from the PostgreSQL event log.
         "realtime.feature-streams",
-        // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        // versioning.branch (VMS REST surface) is gated Preview.
         "versioning.branch",
         // security.mtls is experimental: the always-on client-certificate scheme/RBAC layer
         // interposes on admin requests regardless of bearer-token validity.
@@ -246,10 +246,9 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
     public async Task VmsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
     {
-        // The VMS REST surface (versioning.branch) is gated Preview in the BH6-001/BH6-002 fix
-        // batch. With experimental OFF the capability-gate filter must short-circuit with
-        // 404 honua:capability-experimental-disabled before any handler runs — proving the GA
-        // surface no longer exposes the VMS endpoints by default.
+        // The VMS REST surface (versioning.branch) is gated Preview.
+        // With experimental OFF the capability-gate filter must short-circuit with
+        // 404 honua:capability-experimental-disabled before any handler runs.
         var fixture = CreateFixture(experimentalGlobalEnabled: false);
         await fixture.InitializeAsync();
 

@@ -1312,10 +1312,10 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     }
 
     // -----------------------------------------------------------------------
-    // Job list — BH7-009 resource-cap regression
+    // Job list — resource cap
     // -----------------------------------------------------------------------
 
-    // BH7-009 regression: before the fix, ListActiveAsync was called with no limit,
+    // before the fix, ListActiveAsync was called with no limit,
     // so all active jobs were loaded into memory before applying the effectiveLimit
     // break. The fix passes effectiveLimit to ListActiveAsync so the store applies
     // a server-side cap. This test verifies that a positive limit= parameter is

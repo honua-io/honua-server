@@ -164,7 +164,7 @@ public sealed class RemoteSourceExecutorTests
     [UnitTest]
     public async Task RemoteSource_SecureConnectionResolverThrows_LogsInnerExceptionAndFailsCleanly()
     {
-        // PA-211: the secure-connection resolution failure is wrapped in a
+        // the secure-connection resolution failure is wrapped in a
         // TransformInputException with a sanitized PublicMessage, but the original
         // exception must be preserved as InnerException and logged — not discarded —
         // so an operator can diagnose why the connection could not be resolved.
@@ -202,7 +202,7 @@ public sealed class RemoteSourceExecutorTests
     [UnitTest]
     public async Task RemoteSource_StreamingBytesExceedMaxArtifactBytes_FailsBeforeFullMaterialization()
     {
-        // BH6-024 regression: the executor previously accumulated ALL features into a List<IFeature>
+        // the executor previously accumulated ALL features into a List<IFeature>
         // before checking payload.Length against MaxArtifactBytes. A single feature whose attributes
         // exceed a small ceiling must cause a Failed result during streaming, not after the full
         // list has already been materialized and serialized.

@@ -92,7 +92,7 @@ public sealed class OgcCrsResolverTests
         definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
     }
 
-    // BH7-008 regression: when the CRS registry is degraded and the default CRS84
+    // when the CRS registry is degraded and the default CRS84
     // entry is absent, TryResolveCrs must return false with a descriptive error
     // rather than throwing KeyNotFoundException (which was previously silently
     // swallowed as a misleading HTTP 400 "Invalid filter parameters").
