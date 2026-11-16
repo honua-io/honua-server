@@ -9,6 +9,10 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 // A tool that advertises a closed input schema must refuse the argument names the schema
 // does not declare. Dropping them returns an answer the caller did not ask for: a misspelled
 // filter yields the unfiltered result with no warning.
+// A tool that already refuses undeclared names itself, with a more specific message or
+// with fields its schema omits on purpose, opts out of the shared check.
+internal interface IChecksOwnArgumentNames;
+
 internal static class McpDeclaredArgumentGuard
 {
     private const int MaxReportedArguments = 10;
@@ -16,8 +20,7 @@ internal static class McpDeclaredArgumentGuard
 
     public static void EnsureDeclared(IMcpTool tool, JsonElement? arguments)
     {
-        // Published tools check their own names: they also read routing fields the schema omits.
-        if (tool is PublishedOperationTool
+        if (tool is IChecksOwnArgumentNames
             || arguments is not { ValueKind: JsonValueKind.Object } supplied
             || !supplied.EnumerateObject().Any())
         {

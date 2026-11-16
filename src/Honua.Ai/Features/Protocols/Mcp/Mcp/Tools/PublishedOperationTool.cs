@@ -23,7 +23,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
+internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool, IChecksOwnArgumentNames
 {
     public const string NamePrefix = "honua_op_";
 
