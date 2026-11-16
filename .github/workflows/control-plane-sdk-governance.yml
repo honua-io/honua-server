@@ -63,10 +63,17 @@ jobs:
           path: artifacts/control-plane-sdks/
           retention-days: 30
 
+  authorize-publish:
+    if: github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/publish-authorization.yml
+    with:
+      tag-patterns: 'v*'
+
   publish-release-assets:
-    if: github.event_name == 'release'
-    needs: generate-control-plane-sdks
+    if: github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
+    needs: [generate-control-plane-sdks, authorize-publish]
     runs-on: ubuntu-latest
+    environment: publish-packages
     timeout-minutes: 15
     permissions:
       contents: write

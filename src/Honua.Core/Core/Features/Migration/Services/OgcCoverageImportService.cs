@@ -10,7 +10,6 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Microsoft.Extensions.Logging;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -20,7 +19,7 @@ using Honua.Core.Features.Security;
 
 namespace Honua.Core.Features.Migration.Services;
 
-public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
+public sealed partial class OgcCoverageImportService
 {
     private const string GeoTiffFormat = "GeoTIFF";
     private const string CogFormat = "CloudOptimizedGeoTIFF";

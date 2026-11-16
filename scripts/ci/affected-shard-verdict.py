@@ -357,6 +357,9 @@ def main(argv: list[str] | None = None) -> int:
             handle.write(outcome["summary"])
     for level, message in outcome["annotations"]:
         print(f"::{level}::{message}")
+    # A cancelled full run downloads no shard artifacts, so artifacts/ may not
+    # exist. The unavailable verdict is still the result and must be written.
+    args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.write_text(
         json.dumps(outcome["receipt"], indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

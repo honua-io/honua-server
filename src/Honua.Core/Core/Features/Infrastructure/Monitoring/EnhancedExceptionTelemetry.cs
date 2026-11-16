@@ -9,17 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-public interface IEnhancedExceptionTelemetry
-{
-    void RecordException(Exception exception, ExceptionContext? context = null);
-
-    void RecordException(Exception exception, string correlationId, string operationType, IDictionary<string, object>? additionalProperties = null);
-
-    ExceptionStatistics GetStatistics();
-
-    IReadOnlyList<ExceptionRecord> GetRecentExceptions(int maxCount = 100, ExceptionSeverity? minSeverity = null);
-}
-
 public sealed class ExceptionContext
 {
     public string? CorrelationId { get; set; }
@@ -132,7 +121,7 @@ public sealed class ExceptionTelemetryOptions
     public int MaxOccurrencesPerWindow { get; set; } = 10;
 }
 
-internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTelemetry, IDisposable
+public sealed partial class EnhancedExceptionTelemetry : IDisposable
 {
     private readonly ILogger<EnhancedExceptionTelemetry> _logger;
     private readonly ExceptionTelemetryOptions _options;

@@ -11,6 +11,8 @@ using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
+using Honua.Core.Features.Compliance.Services;
+
 namespace Honua.Server.Features.Admin;
 
 internal static partial class ComplianceAdminEndpoints
@@ -93,7 +95,7 @@ internal static partial class ComplianceAdminEndpoints
 
     private static async Task<IResult> HandleExportReport(
         [FromQuery] string? format,
-        [FromServices] IComplianceReportExporter exporter,
+        [FromServices] DefaultComplianceReportExporter exporter,
         [FromServices] IAuditLog auditLog,
         [FromServices] ILogger<ComplianceAdminEndpointsLog> logger,
         HttpContext context)
@@ -203,7 +205,7 @@ internal static partial class ComplianceAdminEndpoints
     }
 
     private static async Task<IResult> HandleRotateKey(
-        [FromServices] IEncryptionPostureProvider posture,
+        [FromServices] InMemoryEncryptionPostureProvider posture,
         [FromServices] ILogger<ComplianceAdminEndpointsLog> logger,
         HttpContext context)
     {
