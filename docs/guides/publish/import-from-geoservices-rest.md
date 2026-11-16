@@ -10,7 +10,7 @@ See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of 
 
 You'll have a layer from a public GeoServices REST service copied into PostGIS and published in about 10 minutes.
 
-**Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)) and admin credentials ([authentication](../secure/authentication.md)). Queued imports require the distributed job queue (Redis) to be healthy.
+**Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)) and admin credentials ([authentication](../secure/authentication.md)). Queued imports require the durable job store, which lives in the server's system PostgreSQL database.
 
 The GeoServices import API discovers layers on a live GeoServices REST service, pages features into a PostGIS table, and auto-publishes the result as a Honua layer. This guide covers a simple one-service import; for full migrations (inventory scans, styles, batches) see [Migrate from GeoServices REST](../migrate/from-geoservices-rest.md).
 
@@ -111,7 +111,7 @@ Supported modes are `token`, `oauth`, and `basic` (`username` + `passwordSecretR
 - **`ServiceUrl is required` or URL validation errors (400)** — use the HTTPS service root ending in `FeatureServer`/`MapServer`; embedded credentials and private/loopback addresses are rejected.
 - **`Failed to connect to source service` (502)** — the source is unreachable or timing out; raise `timeoutSeconds` on discovery or `requestTimeoutSeconds` on the import.
 - **Source authentication required/expired (401) or denied (403)** — supply or refresh source credentials; discovery preserves these statuses and does not misreport them as a connectivity failure.
-- **`Distributed import coordination is unavailable. Retry when Redis is healthy.` (503)** — queued GeoServices imports need the Redis-backed job manager; check Redis connectivity.
+- **`Durable import storage is unavailable. Configure the system database and job worker.` (503)** — queued GeoServices imports are stored as durable jobs in the system PostgreSQL database; check that the server has its system database configured and that a job worker is running.
 - **Plaintext credential rejected on start** — queued jobs only accept `accessTokenSecretReference`/`passwordSecretReference`; store the secret and reference it.
 - **Secret reference refused (400) or not resolved** — a reference must be a whole `provider:identifier` value permitted under `Security__RequestSecretReferences__*` ([References supplied in a request](../deploy/configuration.md#references-supplied-in-a-request)). Nothing is permitted by default.
 - **Import completed but the layer is missing** — confirm `autoPublish` was not set to `false`; otherwise publish the imported table manually ([Publish layers](publish-layers.md)).
