@@ -1234,8 +1234,6 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         // Update the live source table, as a re-import would.
         await InsertPostGisFeatureAsync("Reimported Feature", 250, 1.001d, 1.001d);
 
-        // The feature-query path reads the live source and immediately sees the new row, but the
-        // canonical snapshot the MVT path reads is unchanged — the staleness this fix addresses.
         var ogcItemsResponse = await _client.GetAsync(
             $"/ogc/features/collections/{_layerId}/items?f=json&limit=10");
         ogcItemsResponse.Be200Ok();

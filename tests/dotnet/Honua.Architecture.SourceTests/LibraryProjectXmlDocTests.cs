@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -52,6 +53,27 @@ public sealed class LibraryProjectXmlDocTests
             .ToList();
 
         offending.Should().BeEmpty("test code carries no XML doc comments; let test names carry the meaning");
+    }
+
+    [ArchitectureTest]
+    public void SourceFiles_UnderLibrariesAndTests_HaveNoTicketOrHistoryComments()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var forbidden = new Regex(
+            @"(?<![\w/])(?:honua-server#|#)[1-9]\d{2,4}(?!\w)|\bIssue\s+#[1-9]\d*\b|\b(?:BH\d+-\d+|pre-fix|before this (?:fix|change)|previous (?:code|implementation)|review finding)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var offending = XmlDocFreeRoots.Append("tests")
+            .SelectMany(root => SourceFiles(repositoryRoot, root))
+            .SelectMany(file => CSharpSyntaxTree.ParseText(File.ReadAllText(file))
+                .GetRoot()
+                .DescendantTrivia()
+                .Where(trivia => trivia.IsKind(SyntaxKind.SingleLineCommentTrivia)
+                    || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
+                .Where(trivia => forbidden.IsMatch(trivia.ToString()))
+                .Select(trivia => $"{Path.GetRelativePath(repositoryRoot, file)}:{trivia.GetLocation().GetLineSpan().StartLinePosition.Line + 1}"))
+            .ToList();
+
+        offending.Should().BeEmpty("comments describe current contracts; ticket and change history belong in version control");
     }
 
     private static IEnumerable<string> SourceFiles(string repositoryRoot, string root)

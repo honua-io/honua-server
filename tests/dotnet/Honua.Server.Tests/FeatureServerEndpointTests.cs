@@ -758,7 +758,6 @@ public sealed partial class FeatureServerEndpointTests
         capabilities.Should().Contain("Query");
     }
 
-    // Query endpoint tests (Issue #6)
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -1998,7 +1997,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.ExceededTransferLimit.Should().BeFalse();
     }
 
-    // Query paging tests (Issue #8)
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -2328,7 +2326,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    // Output format tests (Issue #9)
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -4435,7 +4432,6 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_WithMatchingPointGeometry_Succeeds()
     {
         await UseIsolatedApplicationAsync();
-        // Bug A guard: a valid point geometry must still be accepted on a point layer.
         var editsRequest = """
             {
               "adds": [

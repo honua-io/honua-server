@@ -40,7 +40,7 @@ public sealed class SceneGrpcMappingTests
     public void ToSceneMetadata_FromRecordWithoutExtent_LeavesExtentAndCameraUnset()
     {
         // A record with no persisted extent must leave both the Extent and the
-        // InitialCamera proto fields unset (#8) — fabricating a degenerate
+        // InitialCamera proto fields unset — fabricating a degenerate
         // all-zero extent/camera would break client camera framing.
         var record = new SceneDatasetRecord
         {
@@ -64,7 +64,7 @@ public sealed class SceneGrpcMappingTests
     [UnitTest]
     public void ToSceneMetadata_FromConfigScene_MapsCoreFieldsWithEmptyEditionAndNoExtent()
     {
-        // The config-backed SceneDataset overload (#8) always emits an empty
+        // The config-backed SceneDataset overload always emits an empty
         // edition gate and never sets Extent/InitialCamera (no persisted extent).
         var scene = new SceneDataset
         {

@@ -323,16 +323,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
     public async Task ListScenes_AfterConcurrentPeerHostAppliesDefaultSeed_StillIncludesRegisteredScene()
     {
-        // Regression test for the flaky "Server Tests (Operator Eval Harness)" shard: another
-        // isolated WebAppFixture host initializing concurrently in the same shard (a different
-        // xUnit collection than "Database.SceneGrpc", so it is free to run in parallel with this
-        // test) applies the same default seed (tests/seed/server.yaml) against its own fresh
-        // schema during its own InitializeAsync. That seed's "DELETE FROM honua.scene_datasets"
-        // statement targets the literal, process-global honua.scene_datasets table — not this
-        // fixture's per-test search_path schema — so without excluding this fixture's own ids it
-        // deletes "extent-scene" out from under this test between InitializeAsync's registration
-        // and any later ListScenes call. Simulate that peer host's seed apply directly and assert
-        // the registered scene survives it.
         await _fixture.Postgres.CreateSeededSchemaAsync(
             nameof(SceneGrpcIntegrationTests) + "Peer",
             RepositoryPaths.Resolve("tests", "seed", "server.yaml"));
@@ -1375,7 +1365,7 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
     {
         // The positive counterpart to the deny test: an authorized caller must be
         // GRANTED the protected scene's tiles, pinning the SceneAccessGuard allow
-        // branch on the gRPC adapter (#9).
+        // branch on the gRPC adapter.
         var response = await _tileClient!.GetTileAsync(
             new Proto.GetTileRequest { SceneId = ProtectedSceneId, NodeId = "0" },
             _authHeaders);
@@ -1742,7 +1732,7 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(100.0);
 
-        // #7: pin the POINT happy-path contract. The proto GetElevationResponse
+        // Pin the POINT happy-path contract. The proto GetElevationResponse
         // echoes x/y and carries mosaic_rule + source metadata, but the existing
         // point happy-path only asserted HasElevation. Mirror the profile
         // assertion so the point mapping (SceneGrpcMapping.ToElevationResponse) is

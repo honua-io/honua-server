@@ -715,7 +715,7 @@ public class CogMetadataExtractorTests
         WriteIfdEntry(writer, 324, 4, 1, 5000);
         WriteIfdEntry(writer, 325, 4, 1, 1000);
         WriteIfdEntry(writer, 33550, 12, 3, scaleDataOffset);   // PixelScale — correct DOUBLE type
-        WriteIfdEntry(writer, 33922, 3, 6, tiepointDataOffset); // Tiepoint — wrong SHORT type (BH4-025)
+        WriteIfdEntry(writer, 33922, 3, 6, tiepointDataOffset); // Tiepoint — wrong SHORT type
 
         writer.Write((uint)0); // no next IFD
 
@@ -754,7 +754,7 @@ public class CogMetadataExtractorTests
         WriteIfdEntry(writer, 323, 4, 1, 256);
         WriteIfdEntry(writer, 324, 4, 1, 5000);
         WriteIfdEntry(writer, 325, 4, 1, 1000);
-        WriteIfdEntry(writer, 33550, 3, 3, scaleDataOffset);      // PixelScale — wrong SHORT type (BH4-025)
+        WriteIfdEntry(writer, 33550, 3, 3, scaleDataOffset);      // PixelScale — wrong SHORT type
         WriteIfdEntry(writer, 33922, 12, 6, tiepointDataOffset);  // Tiepoint — correct DOUBLE type
 
         writer.Write((uint)0); // no next IFD

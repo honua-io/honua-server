@@ -142,7 +142,6 @@ internal static partial class ServiceCollectionExtensions
             return new PostgresConnectionStringCache(rawConnectionString, resolver);
         });
 
-        // Register NpgsqlDataSource as specified in Issue #3
         services.TryAddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
             // The NpgsqlDataSource singleton is created at startup (before requests).

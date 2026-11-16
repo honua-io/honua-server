@@ -127,15 +127,6 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithHighObjectId_ResolvesRelatedRecords()
     {
-        // QueryRelatedRecords must resolve related records for ANY
-        // origin object-id magnitude, not just the low seeded ids. Build the fixture in
-        // the arrange step against the unmodified shared seed: insert a NEW origin feature
-        // into the editable layer 0 (the server assigns a high auto-incremented object id),
-        // then insert a child into layer 1 whose related_id points at that assigned origin
-        // object id (relationship 1: layer0.objectid -> layer1.related_id). Querying related
-        // records for the freshly assigned (non-low) origin object id exercises the
-        // FeatureDataAccess high-oid SQL/grouping fix end-to-end. The created rows are
-        // cleaned up at the end so the shared seed is unperturbed.
         long originObjectId = 0;
         long childObjectId = 0;
         try

@@ -35,8 +35,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        // The default test graph declares no edit capabilities. applyEdits treats that as
-        // Query-only, and attachment writes now use the same resolver.
         _fixture.EnableV2ServiceEditingCapabilities(
             TestServiceId,
             ["Query", "Create", "Update", "Delete"]);

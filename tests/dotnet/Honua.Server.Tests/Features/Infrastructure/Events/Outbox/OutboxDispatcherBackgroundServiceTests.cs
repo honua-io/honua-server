@@ -307,12 +307,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     [UnitTest]
     public async Task ExecuteOnceAsync_PayloadDecodeAtRetryExhaustion_RoutesToDeadLetterCounter()
     {
-        // Symmetric counter routing: the payload-decode failure path must go
-        // through the same dead-letter calculation as the publish-failure path. Before
-        // this fix, decode failures always incremented honua.outbox.failed_total even
-        // when retry_count + 1 reached MaxRetries and the row transitioned to
-        // dead_lettered, so honua.outbox.dead_lettered_total under-counted real
-        // dead-letter transitions originating from corrupt payloads.
         var repository = new FakeOutboxRepository();
         var capability = Substitute.For<IOutboxCapabilityProvider>();
         capability.SupportsTransactionalOutbox.Returns(true);

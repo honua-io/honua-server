@@ -70,11 +70,6 @@ public sealed class FeatureServerExceptionMappingTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WhenReaderThrowsNotSupportedException_ReturnsBadRequest()
     {
-        // MySQL/MariaDB raises NotSupportedException for client-driven query shapes the provider
-        // cannot honour (e.g. distance filter on a polygon layer, projected-SRID distance filter,
-        // KNN/nearest-neighbor, cross-SRID transform, extent on unsupported geometry types). Prior
-        // to this fix the catch (Exception) fall-through mapped them to 500; the new
-        // catch (NotSupportedException) block returns 400 so callers see a client error.
         var fixture = CreateQueryFixture(() => new NotSupportedException(
             "Distance spatial filters require Point or MultiPoint geometry in the MySQL/MariaDB provider."));
         await fixture.InitializeAsync();

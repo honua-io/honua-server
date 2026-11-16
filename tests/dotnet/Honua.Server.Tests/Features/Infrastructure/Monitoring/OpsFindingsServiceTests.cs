@@ -753,8 +753,6 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_DbPoolPressure_FromRealAdmissionGateExhaustion_FiresFinding()
     {
-        // Prove the finding fires from the REAL admission gate under a simulated exhaustion, not from
-        // a fake snapshot — this is the regression the dead ConnectionPoolMetrics counters could not catch.
         using var gate = new QueryConcurrencyGate(new ConnectionLimits
         {
             MaxConcurrentQueries = 1,

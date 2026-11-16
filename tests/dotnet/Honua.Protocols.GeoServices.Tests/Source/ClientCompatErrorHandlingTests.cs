@@ -1,16 +1,5 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
-//
-// Regression coverage for the geoservices-rest-stub Client Compatibility Smoke gate
-// (docker/client-compat/geoservices-rest-stub/stub_runner.py) CERT-ERRH-01 / CERT-ERRH-02
-// error-handling certification checks. The stub grades these by asserting the
-// HTTP status is in (400, 404) OR the response body contains "error" (ERRH-01),
-// and status in (200, 400) AND the body contains "error"/"Invalid" (ERRH-02).
-//
-// Honua's GeoServices convention returns errors as HTTP 200 with a GeoServices REST
-// error envelope ({"error":{"code":N,...}}), which satisfies both. These tests lock in
-// that an unknown layer id (MapServer + FeatureServer) and a malformed `where`
-// filter surface an error envelope rather than a non-error 200.
 
 using System;
 using System.Net;

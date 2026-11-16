@@ -210,10 +210,6 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CreateRun_TriggeredFiringOnLegacyDefinition_IsRefusedBeforeAnyGateRuns()
     {
-        // A definition published before the author snapshot existed cannot reconstruct an
-        // identity to authorize. Falling back to the orchestrator is the escalation this fix
-        // exists to remove, so the firing is refused — and refused BEFORE the gate loop, so no
-        // partial authorization is attributed to a principal that was never resolved.
         var harness = new OrchestrationTestHarness();
         var definition = BuildSingleStepDefinition(
             harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail) with

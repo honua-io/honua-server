@@ -262,9 +262,6 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     [Fact]
     public async Task TickAsync_LosingReplicaJumpsToDurableCursor_WhenMultipleOccurrencesBehind()
     {
-        // Exercises the !claimed path fix: when a replica's in-memory cursor is far behind
-        // the durable cursor, it should jump directly to the durable position instead of
-        // crawling forward one occurrence per tick.
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
         var harness = BuildHarness(start);
         var definition = BuildCronDefinition(start, "* * * * *");

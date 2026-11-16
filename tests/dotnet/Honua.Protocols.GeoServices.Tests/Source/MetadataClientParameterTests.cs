@@ -1,18 +1,5 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
-//
-// Regression coverage for the ArcGIS Pro / arcpy FeatureServer-add failure: when
-// ArcGIS Pro resolves a FeatureServer service or layer by URL it appends
-// returnFieldGroups=true&returnPbfFeatureEncodings=true to the metadata request. A metadata allowlist that
-// permits only "f" rejects those requests with 400 on a cold output cache, and ArcGIS Pro reports the
-// layer as "does not exist or is not supported" (MakeFeatureLayer / Add Data fails). These tests assert
-// the metadata endpoints accept and ignore those standard client parameters, returning the same payload as
-// a plain f=json request.
-//
-// returnAdvancedSymbols is the same class of parameter for a different client: the ArcGIS Maps SDK for
-// .NET appends it to the layer/service metadata GET during ServiceFeatureTable.LoadAsync. If only the
-// layer-query endpoint accepts it, LoadAsync gets 400 and the entire .NET FeatureServer client is blocked.
-// It is folded into the parameter set below.
 
 using System.Net;
 using FluentAssertions;

@@ -48,12 +48,6 @@ public sealed class GeoPackagePreviewTests
     [Fact]
     public async Task PreviewFileAsync_GeoPackage_ResolvesLocalSrsIdViaSpatialRefSys()
     {
-        // A spec-legal GeoPackage may number its srs_id locally (here srs_id=1) while the
-        // gpkg_spatial_ref_sys row maps it to EPSG:27700 via organization_coordsys_id. Reading
-        // srs_id as the EPSG code directly (the old behavior) would mis-georeference every
-        // feature; the resolver must return 27700, not 1.
-        // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
-        // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
         var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
 
         try

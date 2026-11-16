@@ -664,9 +664,6 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_Int32Column_DecimalMaxValueClampsWithoutThrowing()
     {
-        // Companion fix: (int)decimal cast also throws on out-of-range
-        // values. Ensure the Integer column's clamping helper survives
-        // decimal.MaxValue without crashing the generation.
         var features = NumericFeaturePair(
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["height"] = decimal.MaxValue },
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["height"] = decimal.MinValue });
