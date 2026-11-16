@@ -6,15 +6,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Licensing.EntitlementSweep;
 
-/// <summary>
-/// Fail-closed coverage guard for the local entitlement sweep (#2980): every Pro/Enterprise
-/// <see cref="Honua.Core.Features.Licensing.Domain.FeatureCatalog"/> key must resolve to
-/// exactly one of <see cref="EntitlementProbeRegistry.Probes"/>,
-/// <see cref="EntitlementProbeRegistry.NoHttpSurfaceAllowlist"/>, or
-/// <see cref="EntitlementProbeRegistry.KnownGaps"/>. A newly added gated entitlement key ships
-/// with no registry row here fails this test — the sweep cannot be silently bypassed by adding
-/// a feature without also deciding how it is (or isn't) probed.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.LicenseManagement)]
 public sealed class EntitlementSweepCoverageTests

@@ -20,12 +20,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Verifies the ArcGIS migration inventory scanner against committed JSON baselines for
-/// supported, partial/unsupported, and manual-review scenarios. Fixtures are deterministic
-/// embedded JSON files; baselines are regenerated on demand by setting
-/// <c>UPDATE_ARCGIS_INVENTORY_BASELINES=1</c>.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesInventoryBaselineTests
 {

@@ -16,23 +16,23 @@ public sealed class ReviewedIndexRemovalCompatibilityTests
     [InlineData(Name)]
     [InlineData("999_RemoveUnusedFeatureIndexes.sql")]
     [InlineData("src/Honua.Server/Migrations/999_RemoveUnusedFeatureIndexes.sql")]
-    public void Verify_ReviewedRemoval_AcceptsWithoutRelaxingUpgradeGating(string name)
+    public void Verify_ReviewedRemoval_RefusesContractForOlderReader(string name)
     {
         var sql = ReadReviewedSql();
         var declaration = MigrationReaderCompatibility.Declare(name, sql);
 
         MigrationSafetyClassifier.Classify(name, sql).IsBreaking.Should().BeTrue();
-        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand);
-        MigrationReaderCompatibility.Verify(declaration, name, ReaderSchema).Accepted.Should().BeTrue();
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+        MigrationReaderCompatibility.Verify(declaration, name, ReaderSchema).Accepted.Should().BeFalse();
     }
 
     [UnitTest]
-    public void Verify_ReviewedRemovalWithCrLf_AcceptsNormalizedText()
+    public void Verify_ReviewedRemovalWithCrLf_RefusesContract()
     {
         var sql = ReadReviewedSql().Replace("\n", "\r\n", StringComparison.Ordinal);
         var declaration = MigrationReaderCompatibility.Declare(Name, sql);
 
-        MigrationReaderCompatibility.Verify(declaration, Name, ReaderSchema).Accepted.Should().BeTrue();
+        MigrationReaderCompatibility.Verify(declaration, Name, ReaderSchema).Accepted.Should().BeFalse();
     }
 
     [UnitTheory]
@@ -70,6 +70,7 @@ public sealed class ReviewedIndexRemovalCompatibilityTests
     {
         var declaration = MigrationReaderCompatibility.Declare(Name, ReadReviewedSql()) with
         {
+            Classification = MigrationReaderCompatibilityClassification.Expand,
             ScriptText = ReadReviewedSql() + "\nDROP TABLE honua.features;",
         };
 

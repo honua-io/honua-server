@@ -16,11 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// End-to-end integration tests that drive the full parse → canonicalize →
-/// validate pipeline over a realistic S1 spec and exercise
-/// <see cref="ServiceCollectionExtensions.AddSpecGrammar"/>.
-/// </summary>
 public sealed class SpecGrammarIntegrationTests
 {
     private const string FullS1Spec = """

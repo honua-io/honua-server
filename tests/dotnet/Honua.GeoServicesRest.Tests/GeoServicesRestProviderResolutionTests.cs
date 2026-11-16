@@ -18,12 +18,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.GeoServicesRest.Tests;
 
-/// <summary>
-/// Verifies the federated ArcGIS REST provider plugs into the shared Metadata v2 provider
-/// seam: discoverable by canonical name and aliases, advertises read-only capabilities,
-/// and resolves through <see cref="FeatureProviderQueryRouter"/> for publications whose
-/// connection selects the ArcGIS REST engine.
-/// </summary>
 public class GeoServicesRestProviderResolutionTests
 {
     private const int LayerId = 1;

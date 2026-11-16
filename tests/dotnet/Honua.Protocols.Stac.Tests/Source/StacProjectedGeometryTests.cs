@@ -11,11 +11,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Per-class fixture that configures the spatial-reference seed once for the whole
-/// <see cref="StacProjectedGeometryTests"/> class. <see cref="WebAppFixture"/> is sealed, so we
-/// wrap (not subclass) it and delegate the async lifecycle to it.
-/// </summary>
 public sealed class StacProjectedGeometryTestsFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; }

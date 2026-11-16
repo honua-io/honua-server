@@ -14,7 +14,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>Regressions for the SensorThings review findings on delete conflicts, counts, features, links, depth, and observation identity.</summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsReviewRegressionTests : IAsyncLifetime

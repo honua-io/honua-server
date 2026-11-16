@@ -11,12 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Unit tests for <see cref="DistributedReplicaUploadIdempotencyStore"/> (#4026): the reservation that
-/// holds off an in-flight duplicate upload, the recorded outcome a retry replays, the ownership guard on
-/// recording, expiry, and scope isolation. Exercises the in-process path of the shared
-/// <see cref="IdempotencyPayloadStore"/>.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ReplicaUploadIdempotencyStoreTests
 {

@@ -10,10 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Authorization tests for OGC API Processes protected endpoints.
-/// Verifies that protected routes return 401 when dev-auth is disabled.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesAuthorizationTests : IClassFixture<OgcProcessesAuthorizationTestsFixture>
@@ -88,11 +84,6 @@ public sealed class OgcProcessesAuthorizationTests : IClassFixture<OgcProcessesA
     }
 }
 
-/// <summary>
-/// Per-class wrapper that owns a single <see cref="WebAppFixture"/> configured
-/// with dev-auth disabled, shared across all tests in
-/// <see cref="OgcProcessesAuthorizationTests"/> via <see cref="IClassFixture{T}"/>.
-/// </summary>
 public sealed class OgcProcessesAuthorizationTestsFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture()

@@ -17,11 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage for the reconciled <c>geometry.make-valid</c> executor — the
-/// managed NetTopologySuite GeometryFixer repair that closes a catalog-honesty
-/// gap (advertised, sync-eligible, but previously unrouted on trunk).
-/// </summary>
 public sealed class GeometryMakeValidJobExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";

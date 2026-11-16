@@ -30,10 +30,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Eval;
 
-/// <summary>
-/// Real admin and MCP HTTP surfaces over the production secure-connection
-/// registry, Npgsql matcher, import service and publish executor.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpIngestCatalogConnectionIntegrationTests

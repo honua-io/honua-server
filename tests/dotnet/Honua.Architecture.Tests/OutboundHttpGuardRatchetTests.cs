@@ -7,18 +7,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ratchet for local outbound HTTP guards under <c>src/</c>.
-/// </summary>
-/// <remarks>
-/// Private-address checks belong on <c>OutboundHttpUrlValidator</c> and pinned
-/// connections on <c>PinnedDnsConnector</c> (or <c>MigrationPinnedDns</c>, which
-/// adds the migration clients' local-source opt-in). A file that declares its own
-/// <c>IsPrivateOrReservedAddress</c> or connect-pin method, or that opens a
-/// <c>Socket</c> from a <c>ConnectCallback</c> without delegating to one of them,
-/// is a local guard. The baseline lists the copies that already exist and may
-/// only shrink once it is on trunk.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed partial class OutboundHttpGuardRatchetTests
 {

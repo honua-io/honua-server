@@ -14,12 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.AuditLog;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresAuditLog"/> using the shared
-/// Testcontainers Postgres fixture. Exercises real SQL against an isolated
-/// schema so the append-only contract (RULE-blocked UPDATE/DELETE) and the
-/// composite indexes from migration 033 are validated end-to-end (#1144).
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAuditLogTests(PostgresFixture fixture)
 {
@@ -282,12 +276,6 @@ public sealed class PostgresAuditLogTests(PostgresFixture fixture)
         string? UserAgent,
         string Details);
 
-    /// <summary>
-    /// Minimal <see cref="IAdoNetDatabaseConnectionProvider"/> that pins the
-    /// per-test isolated schema on every connection. Lives in the test
-    /// assembly because <c>Honua.TestKit.TestDatabaseConnectionProvider</c>
-    /// is only IVT-visible to <c>Honua.Server.Tests</c>.
-    /// </summary>
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString() => dataSource.ConnectionString;

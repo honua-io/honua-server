@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.PointCloud;
 
-/// <summary>
-/// Unit coverage for <see cref="PointCloudCompressionDetector"/> (#1854): the
-/// non-throwing buffer classifier the ingest dispatch path uses to decide
-/// whether an uploaded point cloud must be routed through the out-of-tree
-/// decompression worker before the managed tiler can read it.
-/// </summary>
 public sealed class PointCloudCompressionDetectorTests
 {
     [UnitTest]

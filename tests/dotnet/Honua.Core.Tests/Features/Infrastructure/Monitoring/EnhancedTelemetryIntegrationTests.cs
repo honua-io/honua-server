@@ -6,10 +6,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Integration tests that demonstrate the enhanced telemetry features working together
-/// with smart sampling rules and adaptive sampling.
-/// </summary>
 public class EnhancedTelemetryIntegrationTests
 {
     [Trait("Tier", "Fast")]

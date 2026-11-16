@@ -9,10 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Unit tests for the contingent-value mapper (#1878 Phase 1): maps the canonical Metadata v2
-/// contingent value groups onto the Esri queryContingentValues per-layer definition shape.
-/// </summary>
 public sealed class GeoServicesContingentValueMapperTests
 {
     private static JsonElement Number(int value)

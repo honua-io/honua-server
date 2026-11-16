@@ -7,49 +7,11 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Generalized cross-protocol isolation guardrail.
-///
-/// <para>
-/// Per AGENTS.md "Protocol Adapter Architecture": no protocol adapter may depend on
-/// another protocol adapter's implementation. Shared behavior must be extracted into a
-/// neutral Core/Infrastructure service that both protocols adapt to. Previously only the
-/// single pair <c>Ogc.Classic -&gt; GeoServices</c> was guarded (see
-/// <c>DependencyRulesTests.ClassicOgcProtocols_ShouldNotDependOn_GeoServicesProtocols</c>),
-/// leaving 12 of 14 adapter families unchecked. This test asserts the full matrix:
-/// source under <c>Features/Protocols/{Family}</c> must not reference any <em>other</em>
-/// protocol family's namespace, except for the explicitly documented allow-list below.
-/// </para>
-///
-/// <para>
-/// Detection is source-based (scanning the namespace token
-/// <c>Honua.Server.Features.Protocols.{Family}</c> in each <c>.cs</c> file) rather than
-/// reflection-based, because protocol adapters frequently couple to each other only through
-/// static helper calls in method bodies (for example
-/// <c>GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(...)</c>), which a reflection
-/// member-signature walk cannot observe. Source scanning catches both <c>using</c> directives
-/// and fully-qualified references, and matches how the tech-debt file counts below were taken.
-/// </para>
-///
-/// <para>
-/// The allow-list is a tech-debt ratchet: it pins the cross-family couplings that exist
-/// today so the test passes against current code, while failing the moment a NEW
-/// cross-family leak is introduced. Entries must be burned down, not grown.
-/// </para>
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class CrossProtocolIsolationTests
 {
     private const string ProtocolsRootNamespace = "Honua.Server.Features.Protocols";
 
-    /// <summary>
-    /// The namespace root for a protocol family. Families extracted into their own
-    /// <c>Honua.Protocols.*</c> assembly have had their namespace normalized to match the
-    /// assembly (e.g. <c>Honua.Protocols.OData</c>; the Ogc Api/Classic/Shared trio collapses
-    /// under <c>Honua.Protocols.Ogc</c>); families still resident in Honua.Server keep the legacy
-    /// <c>Honua.Server.Features.Protocols.{family}</c> root. MCP keeps the legacy root (its source
-    /// lives in Honua.Ai with the namespace not yet normalized).
-    /// </summary>
     private static string FamilyNamespace(string family) => family switch
     {
         "OData" => "Honua.Protocols.OData",
@@ -62,13 +24,6 @@ public sealed class CrossProtocolIsolationTests
         _ => $"{ProtocolsRootNamespace}.{family}",
     };
 
-    /// <summary>
-    /// The 14 protocol adapter families under <c>Features/Protocols/</c>. Each value is the
-    /// directory/namespace segment immediately following <c>Protocols.</c>; sub-namespaces
-    /// (for example <c>Ogc.Api</c>, <c>Ogc.Classic</c>, <c>Ogc.Common</c>) collapse into their
-    /// family, so references between them are treated as same-family (allowed) and only
-    /// cross-FAMILY leaks are flagged.
-    /// </summary>
     private static readonly string[] _protocolFamilies =
     {
         "Cog",
@@ -88,53 +43,6 @@ public sealed class CrossProtocolIsolationTests
         "Zarr"
     };
 
-    /// <summary>
-    /// Tech-debt allow-list of tolerated cross-family protocol couplings. Each entry pins a
-    /// (sourceFamily, targetFamily, maxFileCount) triple: source files under
-    /// <c>Features/Protocols/{sourceFamily}</c> are permitted to reference
-    /// <c>{ProtocolsRootNamespace}.{targetFamily}</c> as long as the number of such files does
-    /// not exceed <c>maxFileCount</c>.
-    ///
-    /// <para>
-    /// EVERY ENTRY HERE IS TECH DEBT TO BE REMOVED. Each represents a protocol adapter that
-    /// reaches into another adapter instead of a neutral Core/Infrastructure service. When a
-    /// coupling shrinks, decrement <c>MaxFileCount</c> in the same change; when it reaches zero,
-    /// delete the entry. Do not add new entries to unblock a feature — extract a shared service
-    /// instead.
-    /// </para>
-    ///
-    /// <para>
-    /// The ratchet is enforced by <see cref="ProtocolFamilies_ShouldNotDependOn_OtherProtocolFamilies"/>:
-    /// the test fails if the actual file count for an allowed pair either EXCEEDS
-    /// <c>MaxFileCount</c> (regression) or is LOWER than <c>MaxFileCount</c> (debt was paid
-    /// down — decrement the cap so the ratchet tightens).
-    /// </para>
-    ///
-    /// <list type="bullet">
-    /// <item>
-    /// <description>
-    /// <c>SpatialAnalytics -&gt; GeoServices</c> (cap = 5): the SpatialAnalytics request
-    /// handlers call <c>GeoServicesRequestValueHelpers</c> / <c>GeoServicesGeometryConverter</c>
-    /// directly instead of a transport-neutral analytics request surface. Files (5):
-    /// <c>SpatialAnalyticsRequestHandlers.cs</c>,
-    /// <c>SpatialAnalyticsRequestHandlers.BufferAggregate.cs</c>,
-    /// <c>SpatialAnalyticsRequestHandlers.Clusters.cs</c>,
-    /// <c>SpatialAnalyticsRequestHandlers.Density.cs</c>,
-    /// <c>SpatialAnalyticsRequestHandlers.SpatialJoin.cs</c>.
-    /// </description>
-    /// </item>
-    /// <item>
-    /// <description>
-    /// <c>Stac -&gt; Ogc</c> (cap = 7): the STAC endpoints/models/JSON context reuse OGC API
-    /// adapter types (collection/feature DTOs, link/conformance models, OGC JSON contexts)
-    /// directly instead of a shared catalog/metadata service. Files (7):
-    /// <c>CatalogEndpoints.cs</c>, <c>CollectionEndpoints.cs</c>, <c>ItemEndpoints.cs</c>,
-    /// <c>SearchEndpoints.cs</c>, <c>StacJsonContext.cs</c>, <c>Models/StacModels.cs</c>,
-    /// <c>Services/StacMappingService.cs</c>.
-    /// </description>
-    /// </item>
-    /// </list>
-    /// </summary>
     private static readonly IReadOnlyList<CrossProtocolAllowance> _allowedCrossProtocolRefs =
         new CrossProtocolAllowance[]
         {
@@ -145,26 +53,8 @@ public sealed class CrossProtocolIsolationTests
             new("Stac", "Ogc", MaxFileCount: 7),
         };
 
-    /// <summary>
-    /// A single ratcheted cross-family allowance: source family <paramref name="From"/> may
-    /// reference target family <paramref name="To"/> from at most <paramref name="MaxFileCount"/>
-    /// files. The cap is the ratchet — it can only shrink.
-    /// </summary>
     private sealed record CrossProtocolAllowance(string From, string To, int MaxFileCount);
 
-    /// <summary>
-    /// Source roots for protocol families that have been physically extracted into their own
-    /// <c>Honua.Protocols.&lt;X&gt;</c> assembly. Their namespace is preserved
-    /// (<c>Honua.Server.Features.Protocols.{Family}</c>) so the cross-family matchers still
-    /// work, but their source no longer lives under <c>Honua.Server/Features/Protocols</c>.
-    /// Each value is one or more repo-relative directories that are scanned IN ADDITION to the
-    /// default Server path (<c>Honua.Server/Features/Protocols/{family}</c>). A family may span
-    /// several assemblies — e.g. <c>Ogc</c> covers the extracted <c>Honua.Protocols.OgcApi</c>
-    /// assembly, the shared <c>Honua.Protocols.Ogc.Shared</c> foundation, AND the still-in-Server
-    /// <c>Ogc/Classic</c> subfolder — so all of its roots are unioned. Fully-extracted families
-    /// (OData, Scene, Mcp) leave an empty Server path, which contributes nothing. As more families
-    /// are extracted, add their project roots here.
-    /// </summary>
     private static readonly Dictionary<string, string[]> _extractedFamilyRoots =
         new(StringComparer.Ordinal)
         {

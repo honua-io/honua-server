@@ -19,10 +19,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Cloud;
 
-/// <summary>
-/// Validates real cloud deployments after infrastructure provisioning completes.
-/// These tests are intended to run against a live environment after Terraform apply.
-/// </summary>
 [Protocol(TestProtocols.Admin)]
 public sealed class CloudDeploymentValidationTests
 {

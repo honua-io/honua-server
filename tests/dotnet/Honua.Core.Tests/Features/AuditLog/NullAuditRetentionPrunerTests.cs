@@ -7,9 +7,6 @@ using Honua.Core.Features.AuditLog.Export;
 
 namespace Honua.Core.Tests.Features.AuditLog;
 
-/// <summary>
-/// Unit tests for the no-op retention pruner fallback (#509).
-/// </summary>
 public sealed class NullAuditRetentionPrunerTests
 {
     [Trait("Tier", "Fast")]

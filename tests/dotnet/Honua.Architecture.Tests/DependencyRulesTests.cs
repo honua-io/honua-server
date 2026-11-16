@@ -10,9 +10,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces dependency direction and API pattern guardrails.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class DependencyRulesTests
 {

@@ -6,42 +6,6 @@ using System.Text.Json;
 
 namespace Honua.ProviderSmoke.Tests;
 
-/// <summary>
-/// Interface-level HTTP-stack smoke coverage for the SQL Server secondary/additional
-/// provider (honua-server#2947). Boots a Postgres-primary <see cref="Honua.TestKit.WebAppFixture"/>
-/// with a Testcontainers <c>mcr.microsoft.com/mssql/server:2022-latest</c> instance
-/// registered as a secure connection routed through <c>FeatureProviderQueryRouter</c>,
-/// replacing the creds-gated <c>HONUA_SQLSERVER_TEST_CONNECTION</c> approach for this suite
-/// (the existing creds-gated tests in <c>Honua.SqlServer.Tests</c> are untouched).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The FeatureServer where/bbox, OGC API Features items, OData, and raster-tile cases
-/// exercise real, working end-to-end coverage: reads route to SQL Server through
-/// <c>FeatureProviderQueryRouter</c>/<c>TileFeatureProviderResolver</c> (honua-server#2962),
-/// and the bbox/envelope path works since the honua-server#2965 EWKB/plain-WKB converter
-/// fix. Two cases remain intentionally not-green, each with a specific reason rather than
-/// silently omitting the coverage:
-/// <list type="bullet">
-///   <item>CQL2 <c>filter=</c> (OGC API Features) — still-real, documented limitation
-///   (sql-server.md's WHERE Clause section): no SQL Server <c>ISqlFilterTranslator</c>
-///   exists, unaffected by #2965/#2962. See the skip reason.</item>
-///   <item>OGC API Tiles vector (MVT) — not a routing gap: native MVT generation is a
-///   per-provider capability that only the PostGIS provider implements, so a
-///   SQL-Server-backed collection returns <c>501 Not Implemented</c> for vector tiles
-///   regardless of routing.</item>
-/// </list>
-/// </para>
-/// <para>
-/// Write posture: SQL Server is a read/query-only additional provider
-/// (<c>SqlServerFeatureStore.Writer</c> is <see langword="null"/>,
-/// <c>FeatureProviderEditCapabilities.ReadOnly</c>; sql-server.md documents "no edits").
-/// The edit round-trip test proves the documented fail-closed rejection:
-/// <c>ODataFeatureProviderResolver.CheckWriteSupportAsync</c> refuses writes for layers
-/// routed to a secondary provider with a clean <c>501 ProviderWriteNotSupported</c>
-/// OData error — never a 500, and never a silent write into the primary provider.
-/// </para>
-/// </remarks>
 [Trait("Provider", "SqlServer")]
 public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProviderWebAppFixture>
 {

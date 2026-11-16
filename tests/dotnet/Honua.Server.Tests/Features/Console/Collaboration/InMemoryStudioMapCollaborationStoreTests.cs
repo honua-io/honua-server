@@ -9,11 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console.Collaboration;
 
-/// <summary>
-/// Fast unit coverage for the durable Studio map collaboration store (#1278, slice 1):
-/// comment thread create/list/reply/resolve with anchor metadata and not-found
-/// handling, plus the activity-feed projection and presentation mapper.
-/// </summary>
 public sealed class InMemoryStudioMapCollaborationStoreTests
 {
     private const string MapId = "map-draft-1";
@@ -195,11 +190,6 @@ public sealed class InMemoryStudioMapCollaborationStoreTests
         dto.Messages[0].RelativeTime.Should().Be("just now");
     }
 
-    /// <summary>
-    /// Minimal controllable clock for deterministic store tests. Mirrors the local
-    /// <c>FakeTimeProvider</c> convention used elsewhere in the test suite (no
-    /// external test-time package dependency) while supporting <see cref="Advance"/>.
-    /// </summary>
     private sealed class FakeTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         private DateTimeOffset _utcNow = utcNow;

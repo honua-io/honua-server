@@ -348,11 +348,6 @@ public sealed class GeoservicesImportServiceScanTests
             new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
     }
 
-    /// <summary>
-    /// #4600 (acceptance criterion 4): imported coded-value and range domains are persisted, served,
-    /// enforced on edit and verified by catalog reconciliation, so the classifier reports them as
-    /// automated instead of "assisted / enforcement not automated".
-    /// </summary>
     [Fact]
     public async Task ScanSourceAsync_CapturedDomains_ClassifiesDomainsAsAutomated()
     {
@@ -374,10 +369,6 @@ public sealed class GeoservicesImportServiceScanTests
         domains.Metadata.Should().Contain("domainFieldCount", "2").And.NotContainKey("truncatedDomainCount");
     }
 
-    /// <summary>
-    /// #4600: a coded-value domain over the capture cap is not persisted, so the field migrates without
-    /// its domain. The classifier must not claim that construct is automated.
-    /// </summary>
     [Fact]
     public async Task ScanSourceAsync_CodedValueDomainOverTheCaptureCap_ClassifiesDomainsAsManualReview()
     {
@@ -399,10 +390,6 @@ public sealed class GeoservicesImportServiceScanTests
         domains.Metadata.Should().Contain("domainFieldCount", "2").And.Contain("truncatedDomainCount", "1");
     }
 
-    /// <summary>
-    /// #4600 review: a domain the edit validator cannot enforce (unknown type, no coded values, or no
-    /// numeric range bounds) is persisted but accepts every value, so it must not count as automated.
-    /// </summary>
     [Theory]
     [InlineData("""{ "type": "codedValue", "name": "EmptyCodes", "codedValues": [] }""")]
     [InlineData("""{ "type": "mysteryDomain", "name": "Unknown" }""")]
@@ -436,10 +423,6 @@ public sealed class GeoservicesImportServiceScanTests
         domains.Metadata.Should().Contain("unenforceableDomainCount", "1").And.NotContainKey("truncatedDomainCount");
     }
 
-    /// <summary>
-    /// Two domain fields: <c>zone</c> carries a coded-value domain with <paramref name="entryCount"/>
-    /// entries and <c>score</c> a range domain, so the domain field count is 2 either way.
-    /// </summary>
     private static string FieldsWithCodedValueDomain(int entryCount)
     {
         var codes = string.Join(",", Enumerable.Range(0, entryCount)

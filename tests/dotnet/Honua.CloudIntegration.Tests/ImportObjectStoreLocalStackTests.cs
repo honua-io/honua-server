@@ -21,18 +21,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// LocalStack Community coverage for the customer-bucket reader: a small object streams in the
-/// request, an object above the background threshold is queued without a body read, and an
-/// allow-listed role is assumed with the configured external id.
-/// </summary>
-/// <remarks>
-/// LocalStack Community STS grants every AssumeRole: it does not evaluate trust-policy
-/// conditions (<c>sts:ExternalId</c>), even with <c>ENFORCE_IAM=1</c>, and it issues credentials
-/// for missing roles and foreign accounts too. A refusal cell cannot execute against it, so the
-/// external-id denial is proven in <c>Honua.Aws.UnitTests.AwsImportObjectStoreReaderTests</c>
-/// against an STS double that applies the trust policy, not as a permanently skipped cell here.
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CloudIntegration)]
 [Trait("Category", "Integration")]
 [Trait("Category", "Emulator")]
@@ -344,10 +332,6 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
     }
 }
 
-/// <summary>
-/// One LocalStack Community container (S3, IAM, and STS) shared by the object-store import tests.
-/// Docker absence degrades to <see cref="Available"/> = false so the tests skip.
-/// </summary>
 public sealed class ImportObjectStoreLocalStackFixture : IAsyncLifetime
 {
     private const string Image = "localstack/localstack:3.6.0";

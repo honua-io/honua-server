@@ -16,10 +16,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Unit coverage for the read-only MCP operational-observability tools and
-/// fixed ops resources (#2555).
-/// </summary>
 public sealed class McpOpsObservabilityToolTests
 {
     [UnitTest]

@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Conversion;
 
-/// <summary>
-/// Unit tests for the feature-driven I3S statistics builder (#1811): the
-/// <c>statistics/f_{n}/0</c> summary an ArcGIS client reads to drive identify,
-/// classification, and renderer ranges. The summary must report real
-/// min/max/count derived from the features' projected attributes.
-/// </summary>
 public sealed class I3sSceneStatisticsBuilderTests
 {
     [UnitTest]

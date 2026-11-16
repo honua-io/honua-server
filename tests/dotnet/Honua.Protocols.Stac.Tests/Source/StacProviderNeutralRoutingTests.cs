@@ -20,9 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Contract tests for provider-neutral STAC item-id filters after provider routing.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Stac)]
 public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime

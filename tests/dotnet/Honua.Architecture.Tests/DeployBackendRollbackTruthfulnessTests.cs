@@ -18,11 +18,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Executable rollback contract for every automatic backend registered by the host.
-/// The provider seams below are deliberately the only fakes: every assertion invokes the
-/// registered concrete backend's real RollbackAsync and ObserveAsync implementation.
-/// </summary>
 public sealed class DeployBackendRollbackTruthfulnessTests
 {
     private const string Prior = "revision-prior";

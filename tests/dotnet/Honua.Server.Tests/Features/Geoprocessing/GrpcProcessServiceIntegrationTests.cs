@@ -13,10 +13,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Integration tests for gRPC ProcessService exercised through the full ASP.NET Core pipeline
-/// with a real PostgreSQL database via <see cref="WebAppFixture"/>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
 public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime

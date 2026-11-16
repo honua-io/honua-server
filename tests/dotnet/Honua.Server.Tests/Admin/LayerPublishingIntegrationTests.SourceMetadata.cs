@@ -17,11 +17,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Admin;
 
-/// <summary>
-/// Publishing a retained table through the admin API carries the captured source metadata
-/// (geometry dimensions, domains, subtypes, attribute rules) that the import path would
-/// carry, held to the same capture caps (honua-server#4854 REQ-006).
-/// </summary>
 public sealed partial class LayerPublishingIntegrationTests
 {
     [IntegrationTheory]
