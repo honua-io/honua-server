@@ -278,7 +278,7 @@ internal sealed class LayerValidationService(
             return;
         }
 
-        if (!TryResolveFilterLanguage(permanentFilter.Language, out var filterLanguage))
+        if (!PermanentFilterLanguages.TryResolve(permanentFilter.Language, out var filterLanguage))
         {
             checks.Add(Error(
                 "permanent-filter",
@@ -390,32 +390,6 @@ internal sealed class LayerValidationService(
     private static ColumnInfo? FindColumn(TableInfo table, string columnName)
         => table.Columns.FirstOrDefault(column =>
             column.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
-
-    private static bool TryResolveFilterLanguage(string? language, out FilterLanguage filterLanguage)
-    {
-        filterLanguage = FilterLanguage.GeoServicesSql;
-        var normalized = (language ?? PermanentFilterLanguages.GeoServicesSql)
-            .Trim()
-            .ToLowerInvariant();
-
-        switch (normalized)
-        {
-            case PermanentFilterLanguages.GeoServicesSql:
-            case "arcgis":
-            case "geoservices-sql":
-                filterLanguage = FilterLanguage.GeoServicesSql;
-                return true;
-            case PermanentFilterLanguages.Cql2Text:
-            case "cql2":
-                filterLanguage = FilterLanguage.Cql2Text;
-                return true;
-            case PermanentFilterLanguages.Cql2Json:
-                filterLanguage = FilterLanguage.Cql2Json;
-                return true;
-            default:
-                return false;
-        }
-    }
 
     private static LayerValidationResponse BuildResponse(
         int storageLayerId,

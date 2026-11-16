@@ -76,7 +76,7 @@ internal static class PermanentFilterResolver
                 $"Saved permanent filter for resource '{resource.Metadata.Id}' cannot be evaluated.");
         }
 
-        if (!TryResolveFilterLanguage(v2Filter.Language, out var v2Language))
+        if (!PermanentFilterLanguages.TryResolve(v2Filter.Language, out var v2Language))
         {
             throw new InvalidOperationException(
                 $"Saved permanent filter for resource '{resource.Metadata.Id}' uses unsupported language '{v2Filter.Language}'.");
@@ -90,31 +90,5 @@ internal static class PermanentFilterResolver
         }
 
         return parsed.Expression;
-    }
-
-    private static bool TryResolveFilterLanguage(string? language, out FilterLanguage filterLanguage)
-    {
-        filterLanguage = FilterLanguage.GeoServicesSql;
-        var normalized = (language ?? PermanentFilterLanguages.GeoServicesSql)
-            .Trim()
-            .ToLowerInvariant();
-
-        switch (normalized)
-        {
-            case PermanentFilterLanguages.GeoServicesSql:
-            case "arcgis":
-            case "geoservices-sql":
-                filterLanguage = FilterLanguage.GeoServicesSql;
-                return true;
-            case PermanentFilterLanguages.Cql2Text:
-            case "cql2":
-                filterLanguage = FilterLanguage.Cql2Text;
-                return true;
-            case PermanentFilterLanguages.Cql2Json:
-                filterLanguage = FilterLanguage.Cql2Json;
-                return true;
-            default:
-                return false;
-        }
     }
 }

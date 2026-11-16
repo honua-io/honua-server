@@ -45,6 +45,26 @@ internal static class MigrationSourceUrls
         return builder.Uri.AbsoluteUri;
     }
 
+    internal static Uri? ResolveUri(string href, Uri baseUri)
+    {
+        if (string.IsNullOrWhiteSpace(href))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(href, UriKind.Absolute, out var absolute)
+            ? absolute
+            : Uri.TryCreate(EnsureDirectoryBase(baseUri), href, out var relative)
+                ? relative
+                : null;
+    }
+
+    internal static Uri AppendPath(Uri baseUri, string relativePath)
+    {
+        var root = EnsureDirectoryBase(baseUri);
+        return new Uri(root, relativePath.TrimStart('/'));
+    }
+
     internal static Uri EnsureDirectoryBase(Uri uri)
     {
         var builder = new UriBuilder(uri)
