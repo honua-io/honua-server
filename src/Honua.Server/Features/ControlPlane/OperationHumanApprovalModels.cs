@@ -9,6 +9,7 @@ namespace Honua.ControlPlane;
 
 internal sealed class OperationHumanApprovalReview
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public required string? TenantId { get; init; }
     public required string ProposalId { get; init; }
     public required long ProposalVersion { get; init; }
