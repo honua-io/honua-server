@@ -7,7 +7,6 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Studio.Domain;
-using Honua.TestKit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -24,33 +23,6 @@ internal sealed class StudioMcpHttpClient(HttpClient client)
             : "(none)";
         failed.Should().BeFalse($"'{toolName}' must succeed, but reported {failure}");
         return result.GetProperty("structuredContent");
-    }
-
-    // Only successful mutation scenarios opt into human approval; raw denial calls stay untouched.
-    public async Task<JsonElement> CallApprovedToolAsync(WebAppFixture fixture, string toolName, string argumentsJson)
-    {
-        var result = await CallToolRawAsync(toolName, argumentsJson);
-        var content = result.GetProperty("structuredContent");
-        string proposalId;
-        if (content.TryGetProperty("operation", out var operation))
-        {
-            var failed = result.TryGetProperty("isError", out var isError) && isError.GetBoolean();
-            failed.Should().BeFalse();
-            operation.GetProperty("status").GetString().Should().Be("RequiresApproval");
-            proposalId = operation.GetProperty("proposalId").GetString()!;
-        }
-        else
-        {
-            result.GetProperty("isError").GetBoolean().Should().BeTrue();
-            content.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
-            proposalId = content.GetProperty("proposalId").GetString()!;
-        }
-
-        var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, proposalId);
-        handle.GetProperty("status").GetString().Should().Be("Completed");
-        using var payload = JsonDocument.Parse(
-            handle.GetProperty("result").GetProperty("details").GetProperty("payload").GetString()!);
-        return payload.RootElement.Clone();
     }
 
     public async Task<JsonElement> CallToolRawAsync(string toolName, string argumentsJson)
