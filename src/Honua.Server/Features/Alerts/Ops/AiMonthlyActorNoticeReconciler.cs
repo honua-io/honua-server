@@ -20,16 +20,21 @@ internal sealed partial class AiMonthlyActorNoticeReconciler(
     internal async Task<int> ReconcileOnceAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        if (scope.ServiceProvider.GetService<IAiMonthlyActorNoticeStore>() is null)
+        var queued = 0;
+        if (scope.ServiceProvider.GetService<IAiMonthlyActorNoticeStore>() is not null)
         {
-            return 0;
+            queued += await scope.ServiceProvider.GetRequiredService<AiMonthlyActorNoticePublisher>()
+                .PublishPendingAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        return await scope.ServiceProvider.GetRequiredService<AiMonthlyActorNoticePublisher>()
-            .PublishPendingAsync(cancellationToken).ConfigureAwait(false);
+        if (scope.ServiceProvider.GetService<IAiIncidentNoticeStore>() is not null)
+        {
+            queued += await scope.ServiceProvider.GetRequiredService<AiIncidentNoticePublisher>()
+                .PublishPendingAsync(cancellationToken).ConfigureAwait(false);
+        }
+        return queued;
     }
 
     [LoggerMessage(9470, LogLevel.Error,
-        "Monthly agent spend notice reconciliation failed; pending notices will be retried")]
+        "Agent spend notice reconciliation failed; pending notices will be retried")]
     private static partial void LogPassFailed(ILogger logger, Exception exception);
 }

@@ -240,12 +240,14 @@ internal static partial class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
             new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider)),
             serviceProvider.GetRequiredService<IChangeTracker>()));
-        // One scoped store serves admission and the monthly notice outbox.
+        // One scoped store serves admission and the spend notice outboxes.
         services.AddScoped(provider => new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
             provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
         services.AddScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>(static provider =>
             provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
         services.AddScoped<Honua.Core.Features.Security.Admission.IAiMonthlyActorNoticeStore>(static provider =>
+            provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
+        services.AddScoped<Honua.Core.Features.Security.Admission.IAiIncidentNoticeStore>(static provider =>
             provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
 
         services.AddScoped<IAlertRuleRepository, PostgresAlertRuleRepository>();
