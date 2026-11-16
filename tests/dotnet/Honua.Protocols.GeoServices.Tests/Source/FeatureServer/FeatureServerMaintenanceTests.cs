@@ -37,7 +37,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
             ["Create", "Update", "Delete"]);
     }
 
-    // Cases that append, calculate or read and write rows own a private host and schema.
+    // Cases that POST, insert or read rows own a private host and schema.
     private async Task<WebAppFixture> StartMutableFixtureAsync()
     {
         _mutableFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
