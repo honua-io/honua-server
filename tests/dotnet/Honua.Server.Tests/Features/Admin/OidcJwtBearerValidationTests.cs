@@ -324,7 +324,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 // A bearer token is not a human session, so neither decision reaches the gateway.
                 var body = await response.Content.ReadAsStringAsync();
                 response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
-                body.Should().Contain("live interactive OIDC session", $"{scope} must be refused for the transport, not the scope");
+                body.Should().Contain("live interactive browser session", $"{scope} must be refused for the transport, not the scope");
                 _proposalGateway.ReceivedCalls().Should().BeEmpty();
                 (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeSameAs(proposal);
             }
@@ -355,7 +355,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                     if (scope is "honua.mcp.rollback" or "honua.mcp.full")
                     {
                         // The scope admits the decision; the bearer transport is what refuses it.
-                        body.Should().Contain("live interactive OIDC session");
+                        body.Should().Contain("live interactive browser session");
                     }
 
                     _proposalGateway.ReceivedCalls().Should().BeEmpty();

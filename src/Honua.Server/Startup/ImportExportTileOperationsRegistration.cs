@@ -40,7 +40,7 @@ internal static class ImportExportTileOperationsRegistration
         services.AddSingleton<IUniversalProgressStore>(sp =>
             sp.GetService<Npgsql.NpgsqlDataSource>() is not null
                 ? sp.GetRequiredService<Honua.Server.Features.Infrastructure.Progress.PostgresUniversalProgressStore>()
-                : new UniversalProgressStore(sp.GetService<IDistributedCache>(), sp.GetRequiredService<ILogger<UniversalProgressStore>>()));
+                : new UniversalProgressStore(null, sp.GetRequiredService<ILogger<UniversalProgressStore>>()));
 
         services.Configure<FileUploadOptions>(
             configuration.GetSection(FileUploadOptions.SectionName));
@@ -50,20 +50,24 @@ internal static class ImportExportTileOperationsRegistration
         services.AddSingleton<IUploadQueueMetricsProvider>(sp =>
             sp.GetRequiredService<StreamingFileUploadService>());
 
-        services.AddSingleton<IDistributedImportJobManager>(sp =>
-            new RedisImportJobManager(
-                sp.GetRequiredService<IUniversalProgressStore>(),
-                sp.GetService<IDistributedCache>(),
-                sp.GetRequiredService<ILogger<RedisImportJobManager>>(),
-                sp.GetRequiredService<IHostEnvironment>(),
-                new ImportCoordinationStores(sp.GetService<IConnectionMultiplexer>(), sp.SharedLeaseStore())));
-        // Event-handler Lambdas (pool cap 2, frozen between invocations) do not poll.
-        // The API Lambda still does. honua-server#6515.
-        var hostPollingLoops = ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration);
-        if (hostPollingLoops)
+        services.AddSingleton<GeoservicesImportJobManager>(sp =>
         {
-            services.AddHostedService<GeoservicesImportBackgroundService>();
-        }
+            var leases = sp.SharedLeaseStore();
+            var environment = sp.GetRequiredService<IHostEnvironment>();
+            IDistributedLeaderElection leader = leases is not null
+                ? new Honua.Core.Features.Infrastructure.Coordination.LeaseLeaderElection(
+                    leases, "geoservices:import:leader", Honua.Core.Features.Infrastructure.Coordination.LeaseLeaderElection.DefaultLeaseDuration)
+                : environment.IsDevelopment() || environment.IsEnvironment("Test")
+                    ? new NodeLocalLeaderElection()
+                    : new UnelectedLeaderElection();
+            return new GeoservicesImportJobManager(
+                sp.GetRequiredService<IUniversalProgressStore>(),
+                sp.GetRequiredService<ILogger<GeoservicesImportJobManager>>(),
+                sp.GetService<IExecutionJobStore>(), sp.GetService<IJobQueue>(), leader);
+        });
+        services.AddSingleton<IDistributedImportJobManager>(sp => sp.GetRequiredService<GeoservicesImportJobManager>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobExecutor, GeoservicesImportJobExecutor>());
+        var hostPollingLoops = ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration);
 
         // Footprint-driven batch import orchestration (#1253). The orchestrator
         // composes the per-layer Geoservices import pipeline into an ordered,
@@ -74,17 +78,11 @@ internal static class ImportExportTileOperationsRegistration
         {
             services.AddHostedService<MigrationBatchBackgroundService>();
         }
-        services.AddSingleton<GeoServerImportJobManager>(sp =>
-            new GeoServerImportJobManager(
-                sp.GetRequiredService<IUniversalProgressStore>(),
-                sp.GetService<IDistributedCache>(),
-                sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
-                sp.GetRequiredService<IHostEnvironment>(),
-                new ImportCoordinationStores(sp.GetService<IConnectionMultiplexer>(), sp.SharedLeaseStore())));
-        if (hostPollingLoops)
-        {
-            services.AddHostedService<GeoServerImportBackgroundService>();
-        }
+        services.AddSingleton<GeoServerImportJobManager>(sp => new GeoServerImportJobManager(
+            sp.GetRequiredService<IUniversalProgressStore>(),
+            sp.GetRequiredService<ILogger<GeoServerImportJobManager>>(),
+            sp.GetService<IExecutionJobStore>(), sp.GetService<IJobQueue>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobExecutor, GeoServerImportJobExecutor>());
 
         // Migration performance evidence store (#1033 slice 5).
         // Surface the source-generated JsonTypeInfo so the Postgres store can round-trip the artifact
