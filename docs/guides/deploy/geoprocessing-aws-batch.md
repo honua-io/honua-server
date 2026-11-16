@@ -187,10 +187,22 @@ explicit `telemetry.rollback.consecutive_breaches` still overrides the default.
 
 ### appsettings override
 
+JSON override files merge `ExecutionWorkloads` by array index with the image
+defaults. Keep the local baseline at index `0` and configure AWS Batch at index
+`1`, as in this example. A single Batch entry at index `0` replaces the local
+baseline and leaves the default Batch entry at index `1`.
+
 ```json
 {
   "ControlPlane": {
     "ExecutionWorkloads": [
+      {
+        "WorkloadId": "geoprocessing-local",
+        "Kind": "Geoprocessing",
+        "TargetKind": "KubernetesJob",
+        "Backend": "local",
+        "WorkloadName": "Geoprocessing (local baseline)"
+      },
       {
         "WorkloadId": "geoprocessing-aws-batch",
         "Kind": "Geoprocessing",
