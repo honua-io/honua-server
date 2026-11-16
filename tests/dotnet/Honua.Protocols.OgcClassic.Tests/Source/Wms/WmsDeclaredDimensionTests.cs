@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Xml.Linq;
 using FluentAssertions;
@@ -46,7 +47,7 @@ public sealed class WmsDeclaredDimensionTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         var layer = XDocument.Parse(content).Descendants("Layer")
-            .Single(element => element.Element("Name")?.Value == WebAppFixture.TestLayerId.ToString());
+            .Single(element => element.Element("Name")?.Value == WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture));
         var dimensions = layer.Elements("Dimension").ToArray();
         var extents = layer.Elements("Extent").ToArray();
 
