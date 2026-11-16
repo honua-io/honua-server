@@ -26,7 +26,7 @@ public sealed class CollaborationSessionStreamEndpointTests
     private const string MapId = "saved-map:ops";
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
     public async Task Stream_WithAuthorizedJoin_ReceivesLiveStatusAndSnapshotEnvelopes()
     {
         using var factory = CreateFactory(allowJoin: true);
@@ -35,7 +35,7 @@ public sealed class CollaborationSessionStreamEndpointTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         using var ws = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream?displayName=Ada"),
+            new Uri($"ws://localhost/api/v1/maps/{MapId}/collaboration/sessions/stream?displayName=Ada"),
             cts.Token);
 
         ws.State.Should().Be(WebSocketState.Open);
@@ -56,7 +56,7 @@ public sealed class CollaborationSessionStreamEndpointTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
     public async Task Stream_WhenPeerJoins_ReceivesParticipantJoinedPresenceEvent()
     {
         using var factory = CreateFactory(allowJoin: true);
@@ -65,7 +65,7 @@ public sealed class CollaborationSessionStreamEndpointTests
         var firstClient = factory.Server.CreateWebSocketClient();
         firstClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
         using var first = await firstClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream?displayName=Ada"),
+            new Uri($"ws://localhost/api/v1/maps/{MapId}/collaboration/sessions/stream?displayName=Ada"),
             cts.Token);
 
         // Drain the first client's status + snapshot envelopes.
@@ -76,7 +76,7 @@ public sealed class CollaborationSessionStreamEndpointTests
         var secondClient = factory.Server.CreateWebSocketClient();
         secondClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
         using var second = await secondClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream?displayName=Bob"),
+            new Uri($"ws://localhost/api/v1/maps/{MapId}/collaboration/sessions/stream?displayName=Bob"),
             cts.Token);
 
         var joined = await ReceiveJsonAsync(first, cts.Token);
@@ -88,7 +88,7 @@ public sealed class CollaborationSessionStreamEndpointTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
     public async Task Stream_WhenPeerSendsCursorFrame_FanOutsCursorEvent()
     {
         using var factory = CreateFactory(allowJoin: true);
@@ -97,7 +97,7 @@ public sealed class CollaborationSessionStreamEndpointTests
         var firstClient = factory.Server.CreateWebSocketClient();
         firstClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
         using var first = await firstClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream?displayName=Ada"),
+            new Uri($"ws://localhost/api/v1/maps/{MapId}/collaboration/sessions/stream?displayName=Ada"),
             cts.Token);
         _ = await ReceiveJsonAsync(first, cts.Token);
         _ = await ReceiveJsonAsync(first, cts.Token);
@@ -105,7 +105,7 @@ public sealed class CollaborationSessionStreamEndpointTests
         var secondClient = factory.Server.CreateWebSocketClient();
         secondClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
         using var second = await secondClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream?displayName=Bob"),
+            new Uri($"ws://localhost/api/v1/maps/{MapId}/collaboration/sessions/stream?displayName=Bob"),
             cts.Token);
         _ = await ReceiveJsonAsync(second, cts.Token);
         _ = await ReceiveJsonAsync(second, cts.Token);
@@ -158,7 +158,7 @@ public sealed class CollaborationSessionStreamEndpointTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
     public async Task Stream_WithoutAuthorization_RejectsUpgrade()
     {
         // No permissive authorizer override: the default Studio-lifecycle-backed authorizer
@@ -171,7 +171,7 @@ public sealed class CollaborationSessionStreamEndpointTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var connect = async () => await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream"),
+            new Uri($"ws://localhost/api/v1/maps/{MapId}/collaboration/sessions/stream"),
             cts.Token);
 
         await connect.Should().ThrowAsync<Exception>();

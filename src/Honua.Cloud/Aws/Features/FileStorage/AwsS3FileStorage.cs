@@ -475,7 +475,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             // S3Objects == null rather than an empty list). Normalize before dereferencing —
             // an unguarded .Count here NRE'd the temporary-file quota listing against the
             // empty temporary-files/ prefix and 500'd every rendered map-image href/f=json
-            // export on S3-backed deployments (honua-server#2311).
+            // export on S3-backed deployments.
             var s3Objects = response.S3Objects ?? [];
 
             // ListObjectsV2 already carries the key, size, and last-modified for every object, so a

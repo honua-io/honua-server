@@ -321,7 +321,7 @@ internal static class DataEnrichmentRequestHandlers
             return StandardErrorHelpers.CreateBadRequest(context, "Data enrichment failed", [message]);
         }
 
-        // ----- Over-limit guard: point large inputs at the async batch path (#2282) -----
+        // ----- Over-limit guard: point large inputs at the async batch path -----
         if (rows.Length > analyticsLimits.MaxInputFeatures)
         {
             return StandardErrorHelpers.CreatePayloadTooLarge(
@@ -356,7 +356,7 @@ internal static class DataEnrichmentRequestHandlers
         };
 
         // Echo the dataset attribution so downstream consumers can comply with the
-        // provider's terms (#2282 / #2280).
+        // provider's terms.
         if (!string.IsNullOrWhiteSpace(dataset.Attribution))
         {
             context.Response.Headers["X-Honua-Data-Attribution"] = dataset.Attribution;
@@ -388,7 +388,7 @@ internal static class DataEnrichmentRequestHandlers
     // Resolves the effective spatial predicate from the enrichment method vocabulary,
     // a direct predicate override, or the dataset default.
     //
-    // The enrichment vocabulary is DATASET-SUBJECT (honua-server#3069): the caller
+    // The enrichment vocabulary is DATASET-SUBJECT: the caller
     // asks what the enrichment dataset does to the source features being enriched,
     // so `point-in-polygon`/`contains` means "the dataset polygon contains my source
     // feature" (canonical JoinContainsTarget — the dataset layer is the join side)

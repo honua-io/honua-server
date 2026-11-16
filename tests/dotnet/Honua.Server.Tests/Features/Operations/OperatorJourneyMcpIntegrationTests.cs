@@ -16,9 +16,9 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-[Collection(RedisFixture.CollectionName)]
+[Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
+public sealed class OperatorJourneyMcpIntegrationTests
 {
     private const string SecretVariable = "HONUA_OPERATOR_ROSTER_PG";
     private const string SourceUrl = "https://s3.amazonaws.com/sample-bucket/parcels.geojson";
@@ -32,11 +32,10 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
     [Endpoint("POST /mcp")]
     public async Task AdminKey_ConfiguresThroughMcp_AndNonAdminCreatesNoRow()
     {
-        var fixture = new WebAppFixture().WithProductionJobSubstrate()
+        var fixture = PostgresJobHost.Create()
             .UseKestrel()
             .ConfigureWebHost(builder =>
             {
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
@@ -57,6 +56,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         await fixture.InitializeAsync();
         try
         {
+            PostgresJobHost.AssertPostgresJobs(fixture);
             Environment.SetEnvironmentVariable(SecretVariable, fixture.Postgres.ConnectionString);
             using var admin = fixture.CreateAdminClient();
             var deniedName = $"denied{suffix}";
@@ -207,6 +207,8 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         using var filePreviewBody = ResponseJson(filePreview);
         filePreviewBody.RootElement.GetRawText().Should().Contain("Parcel");
 
+        await AssertMalformedPreviewRefusedAsync(admin);
+
         var urlPreview = await CallOkAsync(admin, "honua_admin_import_preview_url", new
         {
             sourceUrl = SourceUrl,
@@ -224,6 +226,26 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         });
         using var validatedBody = ResponseJson(validated);
         validatedBody.RootElement.GetProperty("data").GetProperty("table").GetString().Should().Be(table);
+    }
+
+    private static async Task AssertMalformedPreviewRefusedAsync(HttpClient admin)
+    {
+        var malformed = await CallAsync(admin, "honua_admin_import_preview", new
+        {
+            file = Convert.ToBase64String(Encoding.UTF8.GetBytes("{not-json")),
+            fileName = "invalid.geojson",
+        });
+        var malformedResult = malformed.GetProperty("result");
+        var refusal = malformedResult.GetProperty("structuredContent");
+        refusal.GetProperty("status").GetString().Should().Be("Failed");
+        // Operation details keep HTTP status as text, matching the admin executor dictionary.
+        refusal.GetProperty("details").GetProperty("statusCode").GetString().Should().Be("400");
+        var previewResponse = refusal.GetProperty("details").GetProperty("response").GetString();
+        previewResponse.Should().Contain("Failed to preview file");
+        previewResponse.Should().NotContain("JsonException").And.NotContain("BytePositionInLine");
+        var refusalText = malformedResult.GetProperty("content")[0].GetProperty("text").GetString();
+        using var refusalDocument = JsonDocument.Parse(refusalText!);
+        JsonElement.DeepEquals(refusalDocument.RootElement, refusal).Should().BeTrue();
     }
 
     private static async Task CallProposalAsync(HttpClient client, string name, object arguments)

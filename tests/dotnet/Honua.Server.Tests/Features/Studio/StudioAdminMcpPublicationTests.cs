@@ -31,24 +31,20 @@ namespace Honua.Server.Tests.Features.Studio;
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
 {
-    private const string JsonMediaType = "application/json";
     private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
     private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
     private const string SigningKey = "studio-admin-publication-signing-key-at-least-32-chars";
     private const string Tenant = "tenant-a";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private readonly RedisFixture _redis = new();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         HumanApprovalHttpClient.Configure(_fixture, _identityProvider)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
                 builder.UseSetting("Licensing:Mode", "Disabled");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -64,6 +60,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
             })
             .ConfigureServices(services =>
             {
+                ApprovedStudioDraftCall.ConfigureDurableOperationInstances(services);
                 services.RemoveAll<IStudioPackageStore>();
                 services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
                 services.RemoveAll<IOperatorAuthorizationEvaluator>();
@@ -75,7 +72,6 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
         _identityProvider.Dispose();
     }
 
@@ -85,7 +81,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/published/{*route}")]
     public async Task AdminKey_ProposePublication_RequiresHumanBeforePublishingActiveRoute()
     {
-        using var admin = _fixture.CreateAdminClient();
+        using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
         var route = $"/maps/admin-{Guid.NewGuid():N}";
 
         var (proposed, itemId) = await ProposeAsync(admin, route, "public");
@@ -191,7 +187,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         after.CurrentVersionId.Should().Be(before!.CurrentVersionId);
     }
 
-    private static async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
+    private async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
     {
         var version = await SaveVersionAsync(client);
         var itemId = version.GetProperty("itemId").GetGuid();
@@ -200,7 +196,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         return (proposed, itemId);
     }
 
-    private static async Task<JsonElement> SaveVersionAsync(HttpClient client)
+    private async Task<JsonElement> SaveVersionAsync(HttpClient client)
     {
         var packageKey = $"admin-publish-{Guid.NewGuid():N}";
         var created = await CallToolAsync(client, "honua_studio_create_draft",
@@ -225,34 +221,14 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         return client;
     }
 
-    private static async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
+    private async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
     {
-        var response = await RpcAsync(
+        var response = await ApprovedStudioDraftCall.RpcAsync(
             client,
             $$$"""{"jsonrpc":"2.0","id":"{{{toolName}}}","method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}""");
-        var hasProtocolError = response.TryGetProperty("error", out var protocolError);
-        hasProtocolError.Should().BeFalse(
-            $"tool '{toolName}' should return a tool result: {(hasProtocolError ? protocolError.GetRawText() : "(none)")}");
-        var result = response.GetProperty("result");
-        if (result.TryGetProperty("isError", out var isError))
-        {
-            isError.GetBoolean().Should().BeFalse($"tool '{toolName}' failed: {result.GetRawText()}");
-        }
-
-        return result.GetProperty("structuredContent").Clone();
-    }
-
-    private static async Task<JsonElement> RpcAsync(HttpClient client, string body)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = new StringContent(body, Encoding.UTF8) { Headers = { ContentType = new MediaTypeHeaderValue(JsonMediaType) } },
-        };
-        using var response = await client.SendAsync(request);
-        var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
-        using var document = JsonDocument.Parse(payload);
-        return document.RootElement.Clone();
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, toolName, (_fixture, _identityProvider, Tenant, null));
+        if (completed is { } value) return value;
+        return ApprovedStudioDraftCall.ReadResult(response, toolName);
     }
 
     private static string CreateToken(string subject, params string[] roles)

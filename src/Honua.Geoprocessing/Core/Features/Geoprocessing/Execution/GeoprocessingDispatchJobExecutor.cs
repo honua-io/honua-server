@@ -82,7 +82,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 $"Supported ids in this slice: {supported}.");
         }
 
-        // Establish the job-security scope for the whole dispatch (#3068). The worker has no
+        // Establish the job-security scope for the whole dispatch. The worker has no
         // HttpContext, so the request-scoped RLS and field-mask sources would otherwise resolve
         // NO row filter and an EMPTY mask and hand the submitter data they cannot see
         // synchronously. Begun here — the single seam every managed process executor runs
@@ -140,7 +140,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             activity?.SetStatus(ActivityStatusCode.Error, result.ErrorMessage);
         }
 
-        // Usage-ranked tiering (#2144): record every dispatched invocation with its
+        // Usage-ranked tiering: record every dispatched invocation with its
         // outcome. Recording never throws, so it cannot affect the job result.
         _usageTelemetry?.RecordInvocation(processId, result.Status == ExecutionJobStatus.Succeeded);
 

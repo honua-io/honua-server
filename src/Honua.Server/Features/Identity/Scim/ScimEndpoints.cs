@@ -34,7 +34,7 @@ internal static partial class ScimEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        // #2978: SCIM provisioning is an Enterprise entitlement (FeatureCatalog
+        // SCIM provisioning is an Enterprise entitlement (FeatureCatalog
         // .ScimProvisioningKey; ADR-0024 Identity Governance tier, with OIDC
         // multi-provider/claims-mapping). Applied to every /scim/v2 group
         // (Users, Groups, and the RFC 7643 discovery documents) so an unlicensed deployment
@@ -77,7 +77,7 @@ internal static partial class ScimEndpoints
         groups.MapPatch("/{id}", HandlePatchGroup).WithDisplayName("SCIM Patch Group");
         groups.MapDelete("/{id}", HandleDeleteGroup).WithDisplayName("SCIM Delete Group");
 
-        // RFC 7643 service-provider discovery documents (#2154). These let an IdP probe the
+        // RFC 7643 service-provider discovery documents. These let an IdP probe the
         // optional features, resource types, and attribute schemas Honua supports.
         var discovery = endpoints.MapGroup("/scim/v2")
             .WithTags("Identity", "SCIM")
@@ -240,7 +240,7 @@ internal static partial class ScimEndpoints
         catch (InvalidOperationException)
         {
             // The durable store rejects an externalId already owned by another user
-            // (unique index, honua-server#3141); report SCIM uniqueness rather than 500.
+            // (unique index); report SCIM uniqueness rather than 500.
             return ScimErrorResult(StatusCodes.Status409Conflict, "Another user already has that externalId.", "uniqueness");
         }
 

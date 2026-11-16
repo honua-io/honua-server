@@ -38,7 +38,7 @@ internal static class ConfigurationValidationService
         LogFeatureStatus(configuration, logger, "HONUA_OPENTELEMETRY", "OpenTelemetry tracing");
         LogFeatureStatus(configuration, logger, "HONUA_SKIP_MIGRATIONS", "Skip migrations");
 
-        // Experimental feature gates (audit PA-096/PA-103/PA-116/PA-145/PA-001/PA-181/PA-182, #2436).
+        // Experimental feature gates (audit PA-096/PA-103/PA-116/PA-145/PA-001/PA-181/PA-182).
         // Each is default-off; operators must explicitly opt in. All three warehouse providers are
         // reported here so an operator's startup log shows the same evidence for each of them.
         LogExperimentalFeatureStatus(configuration, logger, "Capabilities:Experimental:serve.sensorthings:Enabled", "SensorThings API Preview");

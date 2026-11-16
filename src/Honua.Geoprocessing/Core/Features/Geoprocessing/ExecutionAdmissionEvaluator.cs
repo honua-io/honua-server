@@ -91,7 +91,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
                 // The active-job snapshot backs the backpressure, concurrency and cost gates. When
                 // the store cannot be read and any of them is configured, refuse with a retryable
                 // backpressure denial rather than admitting past a limit we cannot evaluate — the
-                // same fail-closed rule the shared rate limit follows (#3853).
+                // same fail-closed rule the shared rate limit follows.
                 if (options.MaxConcurrentJobsGlobal > 0
                     || options.MaxConcurrentJobsPerPartition > 0
                     || options.MaxCostWeightPerPartition > 0)
@@ -174,7 +174,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             if (sharedUnavailable)
             {
                 // A shared rate limit is never silently replaced by a per-node bucket: each node
-                // would grant the full window and a restart would reset it (#3853).
+                // would grant the full window and a restart would reset it.
                 return Deny(
                     ExecutionAdmissionDimension.Backpressure,
                     $"backpressure:{request.JobKind.ToString().ToLowerInvariant()}:shared-rate-unavailable",

@@ -160,32 +160,6 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     }
 
     [Fact]
-    public async Task EvaluateAsync_UsesDefaultHonuaHttpPreset_ForAzureContainerAppsTargets()
-    {
-        var capturedQueries = new ConcurrentQueue<string>();
-        var evaluator = CreateEvaluator(
-            capturedQueries,
-            responses: CreateSuccessfulResponses("25", "0.02", "130"));
-
-        var decision = await evaluator.EvaluateAsync(CreateOperation(
-            DeployTargetKind.AzureContainerApps,
-            new Dictionary<string, string>
-            {
-                ["telemetry.connection"] = "prod-prom",
-                ["telemetry.prometheus.job"] = "honua-aca"
-            },
-            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
-
-        decision.Should().NotBeNull();
-
-        var queries = capturedQueries.ToArray();
-        queries.Should().HaveCount(3);
-        queries[0].Should().Contain("honua_http_request_total{job=\"honua-aca\"}[5m]");
-        queries[1].Should().Contain("honua_http_request_total{job=\"honua-aca\",status_code=~\"5..\"}[5m]");
-        queries[2].Should().Contain("honua_http_request_duration_ms_bucket{job=\"honua-aca\"}[5m]");
-    }
-
-    [Fact]
     public async Task EvaluateAsync_UsesExplicitQueryOverrides_WhenProvidedAlongsidePreset()
     {
         var capturedQueries = new ConcurrentQueue<string>();
@@ -1606,7 +1580,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe, responses: CreateSuccessfulResponses("25", "0.01", "150"));
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-10));
 
@@ -1625,7 +1599,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(capturedQueries, responses: CreateSuccessfulResponses("25", "0.01", "150"));
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600")),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-11));
 
@@ -1646,7 +1620,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600")),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-11));
 
@@ -1669,7 +1643,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
 
@@ -1689,7 +1663,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 3 });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
 
@@ -1709,7 +1683,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
             new DeployGoldenQueryResult { Matched = false, Detail = "response body contained the forbidden marker" });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(
                 ("telemetry.golden_query.url", "http://127.0.0.1:18081/rest/services/parcels/FeatureServer/0/query"),
                 ("telemetry.golden_query.expected_contains", "\"features\"")),
@@ -1731,10 +1705,10 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var parameters = StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600"));
 
         var holding = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
             candidateReady: true);
         var escalated = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
             candidateReady: true);
 
         holding!.WaitForMoreTelemetry.Should().BeTrue("a probe that cannot run is not a passing probe");
@@ -1756,10 +1730,10 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         parameters.Remove("telemetry.healthz.url");
 
         var holding = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
             candidateReady: true);
         var escalated = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
             candidateReady: true);
 
         holding!.WaitForMoreTelemetry.Should().BeTrue();
@@ -1784,7 +1758,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         parameters.Remove("telemetry.healthz.url");
 
         var decision = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
             candidateReady: true);
 
         decision!.RollbackRecommended.Should().BeTrue();
@@ -1808,7 +1782,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         parameters.Remove("telemetry.healthz.url");
 
         var decision = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
             candidateReady: true);
 
         decision!.RollbackRecommended.Should().BeTrue();
@@ -1824,7 +1798,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     {
         var evaluator = CreateEvaluator(new ConcurrentQueue<string>());
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             new Dictionary<string, string>(StringComparer.Ordinal),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
 

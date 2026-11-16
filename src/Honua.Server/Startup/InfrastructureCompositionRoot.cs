@@ -19,6 +19,7 @@ using Honua.Infrastructure.Configuration;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Server.Features.Portal;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -60,13 +61,13 @@ internal static class InfrastructureCompositionRoot
                 throw new InvalidOperationException($"Unsupported data source provider '{configuredProvider}'.");
         }
 
-        // Wrap the provider's IFeatureWriter with the shared audit decorator (#507)
+        // Wrap the provider's IFeatureWriter with the shared audit decorator
         // so destructive feature writes (deletes, bulk/transactional edits) emit
         // audit events once, at the shared edit-pipeline boundary, for every
         // protocol adapter (FeatureServer, OGC API Features, WFS-T, OData, gRPC).
         services.AddAuditingFeatureWriter();
 
-        // Collaborative-editing lease enforcement at the same shared boundary (#4402). The
+        // Collaborative-editing lease enforcement at the same shared boundary. The
         // protocol handlers check leases too, so each surface can refuse in its own natural
         // shape; this decorator is the guarantee that a write path which does not ask —
         // WFS-T, gRPC, the OData atomic change-set, or one added later — still cannot
@@ -74,7 +75,7 @@ internal static class InfrastructureCompositionRoot
         // a blocked edit never reaches the auditor as an applied write.
         services.AddFeatureLockEnforcingFeatureWriter();
 
-        // Registry-backed geographic-SRID classification seam (#2794). Composes the provider's
+        // Registry-backed geographic-SRID classification seam. Composes the provider's
         // ICrsRegistry (registered above for providers that ship one, e.g. Postgres) with the
         // static GeographicSridClassifier fallback so DI-reachable call sites (ImageServer
         // mensuration handlers, etc.) classify arbitrary EPSG codes from live spatial_ref_sys WKT
@@ -86,7 +87,7 @@ internal static class InfrastructureCompositionRoot
             Honua.Core.Features.Shared.Services.RegistryGeographicSridClassifier>();
 
 #if !HONUA_POSTGIS_ONLY
-        // Register the SQL Server spatial provider as an additional read-only feature backend (#850).
+        // Register the SQL Server spatial provider as an additional read-only feature backend.
         // Metadata v2 publications whose connection resolves to provider 'sqlserver'/'mssql' are routed here
         // through the shared FeatureProviderQueryRouter. Disabled when SqlServer:Enabled is explicitly false.
         if (configuration.GetValue("SqlServer:Enabled", true))
@@ -94,7 +95,7 @@ internal static class InfrastructureCompositionRoot
             Honua.Db.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(services, configuration);
         }
 
-        // Register the Amazon Redshift spatial provider as an additional read-only feature backend (#1712).
+        // Register the Amazon Redshift spatial provider as an additional read-only feature backend.
         // Metadata v2 publications whose connection resolves to provider 'redshift' are routed here through
         // the shared FeatureProviderQueryRouter. Disabled when Redshift:Enabled is explicitly false. Redshift
         // speaks the PostgreSQL wire protocol (Npgsql) and is AOT-friendly, so it needs no AOT carve-out.
@@ -113,7 +114,7 @@ internal static class InfrastructureCompositionRoot
             Honua.Db.GeoServicesRest.ServiceCollectionExtensions.AddGeoServicesRestFeatureProvider(services, configuration);
         }
 
-        // Register the Oracle spatial provider as an additional read-only feature backend (#1252).
+        // Register the Oracle spatial provider as an additional read-only feature backend.
         // Metadata v2 publications whose connection resolves to provider 'oracle'/'oracledb' are routed here
         // through the shared FeatureProviderQueryRouter. Disabled when Oracle:Enabled is explicitly false.
         // Oracle.ManagedDataAccess.Core uses internal reflection and is not Native AOT-compatible;
@@ -128,7 +129,7 @@ internal static class InfrastructureCompositionRoot
         }
 #endif
 
-        // Register the Snowflake spatial provider as an additional read-only feature backend (#1713).
+        // Register the Snowflake spatial provider as an additional read-only feature backend.
         // Metadata v2 publications whose connection resolves to provider 'snowflake'/'snowflakedb' are routed
         // here through the shared FeatureProviderQueryRouter. Disabled when Snowflake:Enabled is explicitly false.
         // Snowflake.Data uses internal reflection and is not Native AOT-compatible; operators publishing
@@ -145,12 +146,12 @@ internal static class InfrastructureCompositionRoot
         }
 #endif
 
-        // Register the read-only Databricks read-through provider (#1714). Layers whose
+        // Register the read-only Databricks read-through provider. Layers whose
         // backing connection resolves to provider 'databricks' (aliases 'databrickssql',
         // 'dbsql') are routed here. Databricks has no first-class .NET driver, so the
         // provider is a best-effort HTTP adapter over the SQL Statement Execution REST API
         // against a SQL Warehouse. It is pure-HTTP and AOT-friendly.
-        // Experimental gate (#2436): Databricks requires the experimental feature flag, matching
+        // Experimental gate: Databricks requires the experimental feature flag, matching
         // Redshift (PA-181) and Snowflake (PA-182). Until this gate existed, Databricks was the
         // only one of the three warehouse providers an operator could enable without opting in —
         // configuring Databricks:Host was enough — while the identical action on Redshift threw.
@@ -218,7 +219,7 @@ internal static class InfrastructureCompositionRoot
         }
 
         // Wrap the provider's raster-coverage IRasterMapRenderer so a layer's bound vector
-        // style is applied at pixel level on the shared render path (honua-server#2498).
+        // style is applied at pixel level on the shared render path.
         // Raster-backed renders keep the provider's native bytes; only feature layers with
         // no raster coverage fall back to the shared Skia styled-vector pipeline.
         Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
@@ -285,6 +286,8 @@ internal static class InfrastructureCompositionRoot
             {
                 innerCache = new ExternalRevisionResponseCache(innerCache, revisions);
             }
+
+            innerCache = new ProcessCacheHitResponseCache(innerCache, sp.GetRequiredService<IHttpContextAccessor>());
 
             return new MonitoredResponseCacheDecorator(
                 innerCache,

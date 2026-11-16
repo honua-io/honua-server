@@ -125,7 +125,7 @@ internal sealed class ManagedSpatialJoinExecutor(
             return false;
         }
 
-        // Canonical operand order (honua-server#3069): the member name states which
+        // Canonical operand order: the member name states which
         // geometry is the subject, so this stays in lockstep with the PostGIS pushdown.
         return predicate switch
         {

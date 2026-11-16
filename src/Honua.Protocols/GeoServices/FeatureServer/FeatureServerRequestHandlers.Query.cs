@@ -133,8 +133,8 @@ internal static partial class FeatureServerEndpoints
         => HandleServiceQueryFeaturesAsync(serviceId, context, queryHandler, queryValidator);
 
     // Esri Map/Feature services accept BOTH GET and POST for the service-level query
-    // operation; clients POST large layerDefs/layers arrays that exceed URL limits
-    // (honua-server#1825). The POST companion merges the form body over the query string
+    // operation; clients POST large layerDefs/layers arrays that exceed URL limits.
+    // The POST companion merges the form body over the query string
     // and shares this handler; it is AllowAnonymous because the per-layer access policy is
     // enforced below via RequireAnyResourceAccess/FilterAccessibleLayersV2.
     private static Task<IResult> HandleServiceQueryFeaturesPost(
@@ -476,7 +476,7 @@ internal static partial class FeatureServerEndpoints
             F = GetValueString(values, "f") ?? "json",
             FormatSpecified = values.ContainsKey("f"),
             // arcgis 2.4.x serializes query(time_filter=) to the "timeFilter" query
-            // parameter; accept it as an alias of "time" (explicit "time" wins). #1775
+            // parameter; accept it as an alias of "time" (explicit "time" wins).
             Time = GetValueString(values, "time") ?? GetValueString(values, "timeFilter"),
             TimeRelation = GetValueString(values, "timeRelation"),
             ReturnGeometry = returnGeometry,

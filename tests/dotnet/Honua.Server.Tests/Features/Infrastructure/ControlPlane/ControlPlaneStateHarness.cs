@@ -38,7 +38,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.161_CreateOpsNotificationSchedules.sql",
         "Honua.Server.Migrations.174_CreateOperationProposalBatches.sql",
         "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql",
-        "Honua.Server.Migrations.201_CreateEmbedKeyUsage.sql"
+        "Honua.Server.Migrations.201_CreateEmbedKeyUsage.sql",
+        "Honua.Server.Migrations.212_CreateConfigurationDocumentRevisions.sql"
     ];
 
     private readonly PostgresJobSubstrateHarness _jobs;
@@ -73,6 +74,10 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public Task ReplayConfigurationMigrationAsync()
         => ExecuteAsync(ReadMigration("Honua.Server.Migrations.156_CreateConfigurationDocuments.sql")
+            .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
+
+    public Task ReplayRevisionMigrationAsync()
+        => ExecuteAsync(ReadMigration("Honua.Server.Migrations.212_CreateConfigurationDocumentRevisions.sql")
             .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
 
     public string Table(string tableName) => _jobs.Database.Table(tableName);

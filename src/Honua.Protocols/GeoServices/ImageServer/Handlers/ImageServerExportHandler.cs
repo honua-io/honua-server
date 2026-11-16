@@ -748,7 +748,7 @@ internal sealed class ImageServerExportHandler
                 (quality.Value < MinCompressionQuality || quality.Value > MaxCompressionQuality))
             {
                 // Pro's ExportImage sends 10000 with LERC. That is a maxZError scale, not a
-                // JPEG quality. The LERC block is lossless and does not use the value (#6563).
+                // JPEG quality. The LERC block is lossless and does not use the value.
                 if (!isLerc)
                 {
                     error = new ExportParameterParseError("compressionQuality must be between 0 and 100.");
@@ -872,7 +872,7 @@ internal sealed class ImageServerExportHandler
                 var geometryBytes = writer.Write(geometry);
 
                 // Esri clients paint the returned pixels across the requested bbox, so the image
-                // must cover the whole bbox with NoData outside the data (#4060), not just the
+                // must cover the whole bbox with NoData outside the data, not just the
                 // bbox-raster intersection stretched to size.
                 query = query with
                 {

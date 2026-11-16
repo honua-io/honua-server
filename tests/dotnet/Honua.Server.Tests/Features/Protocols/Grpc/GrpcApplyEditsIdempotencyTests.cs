@@ -467,6 +467,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
     {
         private static long _nextObjectId = 1000;
         private readonly StrongBox<int> _writeCount = new();
+        private readonly Action<IServiceCollection>? _configureServices;
 
         public ServiceHarness(
             GrpcApplyEditsReceipts store,
@@ -476,13 +477,27 @@ public sealed class GrpcApplyEditsIdempotencyTests
         {
             Service = CreateService(
                 store,
-                Substitute.For<IFeatureReader>(),
-                ScriptedWriter(_writeCount, new ScriptedWrites(editResult, throwAfterWrite, commitReceipt)));
+                new HarnessParts(
+                    Substitute.For<IFeatureReader>(),
+                    ScriptedWriter(_writeCount, new ScriptedWrites(editResult, throwAfterWrite, commitReceipt))));
         }
 
         public ServiceHarness(GrpcApplyEditsReceipts store, IFeatureReader reader, IFeatureWriter writer)
+            : this(store, new HarnessParts(reader, writer))
         {
-            Service = CreateService(store, reader, writer);
+        }
+
+        public ServiceHarness(GrpcApplyEditsReceipts store, HarnessParts parts)
+        {
+            Service = CreateService(store, parts);
+            _configureServices = parts.ConfigureServices;
+        }
+
+        internal sealed record HarnessParts(IFeatureReader Reader, IFeatureWriter Writer)
+        {
+            public MetadataV2Object? Resource { get; init; }
+
+            public Action<IServiceCollection>? ConfigureServices { get; init; }
         }
 
         public HonuaFeatureService Service { get; }
@@ -541,15 +556,14 @@ public sealed class GrpcApplyEditsIdempotencyTests
             return writer;
         }
 
-        private static HonuaFeatureService CreateService(
-            GrpcApplyEditsReceipts store,
-            IFeatureReader reader,
-            IFeatureWriter writer)
+        private static HonuaFeatureService CreateService(GrpcApplyEditsReceipts store, HarnessParts parts)
         {
+            var (reader, writer) = parts;
+            var resource = parts.Resource;
             var resourceValidator = Substitute.For<IResourceValidator>();
             resourceValidator
                 .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
-                .Returns(ResourceValidationResult.Success(CreateTriple(CreateServiceMetadata(), CreateResource())));
+                .Returns(ResourceValidationResult.Success(CreateTriple(CreateServiceMetadata(), resource ?? CreateResource())));
 
             var crsRegistry = Substitute.For<ICrsRegistry>();
 #pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
@@ -582,6 +596,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
             tenantContext.TenantId.Returns(tenantId);
             services.AddSingleton(tenantContext);
             services.Configure<RbacOptions>(_ => { });
+            _configureServices?.Invoke(services);
 
             var context = new TestServerCallContext();
             context.UserState["__HttpContext"] = new DefaultHttpContext
@@ -599,7 +614,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
             Protocols = ["Grpc"],
         };
 
-        private static MetadataV2Object CreateResource() => new()
+        internal static MetadataV2Object CreateResource() => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-test", Name = "test" },
             Spatial = new MetadataV2ObjectSpatial

@@ -13,7 +13,7 @@ internal sealed class DefaultComplianceEvidenceCollector : IComplianceEvidenceCo
 
     private readonly DefaultComplianceControlCatalog _catalog;
     private readonly IComplianceDependencyGate _gate;
-    private readonly IDataResidencyPolicyProvider _residency;
+    private readonly DefaultDataResidencyPolicyProvider _residency;
     private readonly InMemoryEncryptionPostureProvider _encryption;
     private readonly IOptionsMonitor<ComplianceOptions> _options;
     private readonly TimeProvider _timeProvider;
@@ -21,7 +21,7 @@ internal sealed class DefaultComplianceEvidenceCollector : IComplianceEvidenceCo
     public DefaultComplianceEvidenceCollector(
         DefaultComplianceControlCatalog catalog,
         IComplianceDependencyGate gate,
-        IDataResidencyPolicyProvider residency,
+        DefaultDataResidencyPolicyProvider residency,
         InMemoryEncryptionPostureProvider encryption,
         IOptionsMonitor<ComplianceOptions> options,
         TimeProvider timeProvider)

@@ -23,7 +23,7 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
         services.AddSingleton<AdminAccessOperationRegistrationMarker>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider,
             AdminAccessOperationDescriptorProvider>());
-        // #3363: the audited Admin projection (the committed manifest rows) publishes over MCP by default.
+        // The audited Admin projection (the committed manifest rows) publishes over MCP by default.
         // The closed operator roster is a second projection so server status, connection create/test,
         // and import-from-URL publish without enabling the full catalog.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAuditedAdminMcpProjection,

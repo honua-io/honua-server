@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 using System.Globalization;
@@ -137,6 +138,12 @@ internal static class ShapefileExportWriter
                 }
             }
 
+            if (writtenCount == 0)
+            {
+                FinalizeEmptyShapeHeader(shpPath);
+                FinalizeEmptyShapeHeader(Path.ChangeExtension(shpPath, ".shx"));
+            }
+
             Directory.Delete(prefixDirectory, recursive: true);
             if (warnings.Count > 0)
             {
@@ -183,6 +190,18 @@ internal static class ShapefileExportWriter
                 ExportLog.ScratchDirectoryCleanupFailed(logger, scratchDir, ex);
             }
         }
+    }
+
+    private static void FinalizeEmptyShapeHeader(string path)
+    {
+        // The library leaves the file-length placeholder unchanged when no records are written.
+        const int fileLengthOffset = 24;
+        const int headerLengthInWords = 50;
+        Span<byte> length = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32BigEndian(length, headerLengthInWords);
+        using var stream = File.OpenWrite(path);
+        stream.Position = fileLengthOffset;
+        stream.Write(length);
     }
 
     private static Dictionary<string, string> BuildDbfFieldMap(ExportField[] fields, List<string> warnings)

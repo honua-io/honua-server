@@ -55,7 +55,7 @@ internal static class ODataServiceCollectionExtensions
         services.TryAddScoped<IQueryProcessor, QueryProcessor>();
         services.TryAddScoped<IEditProcessor, EditProcessor>();
 
-        // Collaborative-editing lock enforcement (#4402). TryAdd so a host that also calls
+        // Collaborative-editing lock enforcement. TryAdd so a host that also calls
         // AddFeatureLockCollaboration shares one singleton lease store between the
         // /collaboration/feature-locks endpoints and every write path that honours them.
         services.TryAddSingleton<IFeatureLockService, InMemoryFeatureLockService>();

@@ -58,7 +58,7 @@ public static class CustomCodeJobContract
     // CUSTOMCODE_* environment variables. The server projects each present
     // customcode.* spec parameter to the matching env.CUSTOMCODE_* spec key so
     // batch backends surface it to the container under these exact names. These names are the
-    // SERVER half of a cross-piece contract and must match the harness 1:1 (#2191).
+    // SERVER half of a cross-piece contract and must match the harness 1:1.
 
     public const string EnvParamPrefix = "env.";
 

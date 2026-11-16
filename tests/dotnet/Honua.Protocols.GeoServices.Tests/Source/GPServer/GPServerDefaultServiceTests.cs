@@ -63,7 +63,7 @@ public sealed class GPServerDefaultServiceTests
 
         // The real geometry.buffer executor and worker run, so the seeded service is
         // driven to a genuine terminal result, not a fixture stub.
-        var fixture = NoRedisJobHost.Create()
+        var fixture = PostgresJobHost.Create()
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IMetadataV2GraphProvider>();
@@ -72,7 +72,7 @@ public sealed class GPServerDefaultServiceTests
                 services.AddSingleton<IMetadataV2GraphStore>(graphProvider);
             });
 
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -148,7 +148,7 @@ public sealed class GPServerDefaultServiceTests
                 "the real task submission must succeed: {0}", submitDoc.RootElement.GetRawText());
             var jobId = submitDoc.RootElement.GetProperty("jobId").GetString();
             jobId.Should().NotBeNullOrWhiteSpace();
-            submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+            submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().BeOneOf(GPServerJobWait.AcceptedSubmitStatuses);
 
             using var terminal = await GPServerJobWait.UntilRestSucceededAsync(
                 client,

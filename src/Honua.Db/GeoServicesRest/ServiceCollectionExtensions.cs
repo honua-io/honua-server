@@ -33,7 +33,7 @@ public static class ServiceCollectionExtensions
         // A per-request timeout and the shared retry/circuit-breaker policy (reused from
         // Honua.Core.Features.Infrastructure.Resilience rather than a bespoke policy here)
         // guard against a slow/unresponsive federated ArcGIS endpoint hanging a request or
-        // hammering a downed one (#2404 PA-123).
+        // hammering a downed one.
         services
             .AddHttpClient<IGeoServicesRestFeatureClient, GeoServicesRestFeatureClient>(GeoServicesRestServiceClientName.Default)
             .ConfigurePrimaryHttpMessageHandler(

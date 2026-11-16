@@ -196,7 +196,7 @@ internal static partial class GeoServicesGeometryConverter
 
         // True curves (curvePaths/curveRings) are densified into linear paths/rings up front so the
         // rest of the pipeline only ever deals with linear geometry. NTS/WKB cannot represent a true
-        // curve, so densification is the storage representation (#1877 Part A; storage-linearization
+        // curve, so densification is the storage representation (storage-linearization
         // limitation documented on CurveGeometryConverter). The budget is the caller-supplied
         // configured limit, not a second hard-coded cap below that limit.
         if (HasTrueCurves(geometry))

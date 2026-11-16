@@ -495,6 +495,29 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WriteGraph(fixture, provider, updatedGraph);
     }
 
+    // Sets one extension key on the resource published at layerIndex.
+    internal static void SetResourceExtension(WebAppFixture fixture, int layerIndex, KeyValuePair<string, JsonElement> extension)
+    {
+        MutateGraph(fixture, graph =>
+        {
+            var pub = graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex)
+                ?? throw MissingLayerMutation(layerIndex, nameof(SetResourceExtension));
+            if (!graph.Resources.Any(r => string.Equals(r.Metadata.Id, pub.ResourceId, StringComparison.Ordinal)))
+            {
+                throw MissingResourceMutation(layerIndex, pub.ResourceId, nameof(SetResourceExtension));
+            }
+
+            return graph with
+            {
+                Resources = [.. graph.Resources.Select(resource =>
+                    string.Equals(resource.Metadata.Id, pub.ResourceId, StringComparison.Ordinal)
+                        ? resource with { Extensions = new Dictionary<string, JsonElement>(resource.Extensions, StringComparer.Ordinal) { [extension.Key] = extension.Value } }
+                        : resource)]
+            };
+        });
+    }
+
+
     internal static void UpdateServiceMetadata(
         WebAppFixture fixture,
         string serviceName,

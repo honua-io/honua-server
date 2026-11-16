@@ -75,7 +75,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
             HasCacheSamples = cacheSnapshot.TotalHits > 0 || cacheSnapshot.TotalMisses > 0,
             TotalQueries = totalRequests,
             TotalErrors = totalServerErrors,
-            // Error rate is a WINDOWED signal (#2809): a lifetime ratio (cumulative errors over cumulative
+            // Error rate is a WINDOWED signal: a lifetime ratio (cumulative errors over cumulative
             // requests since process start) dilutes toward zero and never reflects a current spike. Source it
             // from the rolling serving-latency window instead; the cumulative totals above remain as counters.
             ErrorRate = CalculateWindowedErrorRate(),

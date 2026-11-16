@@ -18,7 +18,6 @@ internal static class PreMigrationRestoreRegistration
         services.AddSingleton<ISchemaJournal, PostgresSchemaJournal>();
         services.AddSingleton<IRevisionSchemaCatalog, ConfiguredRevisionSchemaCatalog>();
         services.AddSingleton<IPreMigrationRestoreAudit, FilePreMigrationRestoreAudit>();
-        services.AddSingleton<IComposeRollbackTransport, ComposeRollbackSocketClient>();
         services.AddSingleton<IServingCustomerProbe, HttpServingCustomerProbe>();
         services.AddSingleton<IRestoredSchemaProbe, JournalRestoredSchemaProbe>();
         services.AddSingleton<PreMigrationRestoreAssessmentService>();
@@ -35,7 +34,7 @@ internal static class PreMigrationRestoreRegistration
 #else
         services.AddSingleton<IRdsSnapshotRestore, UnconfiguredRdsSnapshotRestore>();
         services.AddSingleton<IConnectionSecretRetarget, UnconfiguredConnectionSecretRetarget>();
-        services.AddSingleton<IRestoredConnectionOpener, AppDatabaseConnectionOpener>();
+        services.AddSingleton<IRestoredConnectionOpener, UnconfiguredRestoredConnectionOpener>();
 #endif
         return services;
     }
