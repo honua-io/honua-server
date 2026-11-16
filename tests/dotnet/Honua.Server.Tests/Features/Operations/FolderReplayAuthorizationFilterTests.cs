@@ -52,6 +52,9 @@ public sealed class FolderReplayAuthorizationFilterTests
     [InlineData("missing-payload", false)]
     [InlineData("completed", false)]
     [InlineData("changed-plan", false)]
+    [InlineData("missing-definition", false)]
+    [InlineData("read-only-definition", false)]
+    [InlineData("wrong-definition", false)]
     public async Task InvokeAsync_ReplayBoundary_DelegatesOnlySealedExecutingFolderOperation(string scenario, bool delegated)
     {
         var proposal = Proposal();
@@ -183,6 +186,17 @@ public sealed class FolderReplayAuthorizationFilterTests
     private static DefaultHttpContext Context(string scenario)
     {
         var context = new DefaultHttpContext();
+        if (scenario != "missing-definition")
+        {
+            var operationId = scenario switch
+            {
+                "read-only-definition" => "folder.list",
+                "wrong-definition" => "folder.delete",
+                _ => "folder.update"
+            };
+            context.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(
+                AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == operationId)), "folder"));
+        }
         context.Request.Method = "PATCH";
         context.Request.Path = scenario == "wrong-folder-path" ? "/api/v1/admin/folders/another" : "/api/v1/admin/folders/folder";
         context.Request.Headers.IfMatch = scenario == "changed-etag" ? "\"another\"" : "\"revision\"";

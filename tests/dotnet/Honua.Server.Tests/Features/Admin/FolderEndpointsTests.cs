@@ -15,6 +15,9 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using System.Security.Claims;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -25,16 +28,25 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class FolderEndpointsTests : IAsyncLifetime
 {
     private readonly FacetAuthorization _authorization = new();
+    private readonly ILogger _mutationLog = Substitute.For<ILogger>();
     private readonly WebAppFixture _fixture;
 
     public FolderEndpointsTests()
     {
+        _mutationLog.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         _fixture = new WebAppFixture();
         _fixture.ConfigureWebHost(b =>
             {
                 b.UseEnvironment("Test");
                 b.UseSetting("HONUA_DEV_AUTH", "false");
                 b.UseSetting("HONUA_ADMIN_PASSWORD", "folder-test-key");
+                b.ConfigureLogging(logging =>
+                {
+                    var provider = Substitute.For<ILoggerProvider>();
+                    provider.CreateLogger(Arg.Any<string>()).Returns(NullLogger.Instance);
+                    provider.CreateLogger("FolderMutations").Returns(_mutationLog);
+                    logging.AddProvider(provider);
+                });
             })
             .ConfigureServices(services =>
             {
@@ -91,6 +103,17 @@ public sealed class FolderEndpointsTests : IAsyncLifetime
         await AssertMembership(null);
         SetEtag(root);
         (await _client.DeleteAsync($"/api/v1/admin/folders/{id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        AssertAuditOperationIdentity();
+    }
+
+    private void AssertAuditOperationIdentity()
+    {
+        var operationIds = _mutationLog.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments()[2])
+            .OfType<IEnumerable<KeyValuePair<string, object?>>>()
+            .Select(state => state.Single(item => item.Key == "OperationId").Value);
+        operationIds.Should().Equal("folder.create", "service.move", "folder.update", "service.move", "folder.delete");
     }
 
     [IntegrationTest]

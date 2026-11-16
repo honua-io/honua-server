@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Operations;
 
 namespace Honua.Server.Features.Admin;
 
@@ -19,11 +20,16 @@ internal static class FolderEndpoints
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
             .AddEndpointFilter<FolderReplayAuthorizationFilter>()
             .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Services").RequireAdminAuthorization();
-        group.MapGet("/folders", (Delegate)List);
-        group.MapPost("/folders", Create);
-        group.MapPatch("/folders/{id}", Update);
-        group.MapDelete("/folders/{id}", Delete);
-        group.MapPut("/services/{serviceName}/folder", Move);
+        var list = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.list");
+        group.MapMethods(list.Path, [list.Method.Method], List).WithAdminOperation(list);
+        var create = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.create");
+        group.MapMethods(create.Path, [create.Method.Method], Create).WithAdminOperation(create);
+        var update = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.update");
+        group.MapMethods(update.Path, [update.Method.Method], Update).WithAdminOperation(update);
+        var delete = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.delete");
+        group.MapMethods(delete.Path, [delete.Method.Method], Delete).WithAdminOperation(delete);
+        var move = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "service.move");
+        group.MapMethods(move.Path, [move.Method.Method], Move).WithAdminOperation(move);
     }
 
     private static async Task<IResult> List(HttpContext context)
@@ -77,6 +83,8 @@ internal static class FolderEndpoints
     private static async Task<IResult> CommitMutationAsync(
         HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation, IMetadataV2GraphStore store)
     {
+        var operation = context.GetEndpoint()?.Metadata.GetMetadata<AdminApiOperationCatalog.Definition>()
+            ?? throw new InvalidOperationException("Folder mutation is missing its operation definition.");
         if (context.Features.Get<FolderReplayServicePrincipal>() is { } replay &&
             !await FolderApprovalAuthorization.IsCurrentAsync(replay.Proposal, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
             return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: FolderApprovalAuthorization.FreshProposalRequired);
@@ -89,7 +97,7 @@ internal static class FolderEndpoints
         var saved = await store.SaveAsync(changed.Graph, snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
         context.Response.Headers.ETag = saved.Etag;
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("FolderMutations");
-        FolderAuditLog.Mutated(logger, context.Request.Method, saved.Graph.Revision);
+        FolderAuditLog.Mutated(logger, operation.OperationId, saved.Graph.Revision);
         if (changed.Status == 204) return Results.NoContent();
         var folder = saved.Graph.Folders.Single(f => f.Metadata.Id == changed.Folder!.Metadata.Id);
         if (changed.Status == 201) context.Response.Headers.Location = $"{context.Request.PathBase}/api/v1/admin/folders/{folder.Metadata.Id}";
@@ -186,6 +194,6 @@ internal sealed partial class FolderJsonContext : JsonSerializerContext;
 internal static partial class FolderAuditLog
 {
     [Microsoft.Extensions.Logging.LoggerMessage(EventId = 9460, Level = LogLevel.Information,
-        Message = "Folder catalog mutation {Method} committed metadata revision {Revision}")]
-    public static partial void Mutated(ILogger logger, string method, long revision);
+        Message = "Folder catalog mutation {OperationId} committed metadata revision {Revision}")]
+    public static partial void Mutated(ILogger logger, string operationId, long revision);
 }

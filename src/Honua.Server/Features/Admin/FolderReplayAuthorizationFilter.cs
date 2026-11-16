@@ -49,13 +49,13 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
         if (context.User.Identity?.IsAuthenticated != true ||
             !context.User.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) ||
             string.IsNullOrWhiteSpace(proposalId) ||
-            OperationId(context.Request.Method) is not { } operationId ||
+            context.GetEndpoint()?.Metadata.GetMetadata<AdminApiOperationCatalog.Definition>() is not { Destructive: true } definition ||
             !context.User.HasClaim(AdminApiKeyPermission.PermissionClaimType, FolderOperationCredential.ProposalGrant(proposalId)) ||
             !AdminApiKeyPermission.IsAuthorized(context.User, context.Request.Method, context.Request.Path.Value))
             return null;
         var proposal = await context.RequestServices.GetRequiredService<IOperationProposalStore>()
             .GetAsync(proposalId, context.RequestAborted).ConfigureAwait(false);
-        if (proposal is null || proposal.OperationId != operationId ||
+        if (proposal is null || proposal.OperationId != definition.OperationId ||
             !FolderReplayRequest.Matches(invocation, proposal) ||
             !MetadataV2ServicePaths.SameTenant(proposal.TenantId,
                 context.User.FindFirstValue(AdminApiKeyPermission.ApprovedOperationTenantClaim)) ||
@@ -67,15 +67,6 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
             context.Request.Headers[OperationLineageHeaders.OperationInstanceId].ToString(),
             proposal.SealedPlanHash ?? string.Empty, context.RequestAborted).ConfigureAwait(false) ? proposal : null;
     }
-
-    private static string? OperationId(string method) => method switch
-    {
-        "POST" => "folder.create",
-        "PATCH" => "folder.update",
-        "DELETE" => "folder.delete",
-        "PUT" => "service.move",
-        _ => null
-    };
 }
 
 internal sealed record FolderReplayServicePrincipal(ClaimsPrincipal Principal, OperationProposal Proposal);
