@@ -19,7 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>Proves one <c>$expand</c> cannot fan out without a request-wide budget.</summary>
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsExpansionBudgetTests
 {
