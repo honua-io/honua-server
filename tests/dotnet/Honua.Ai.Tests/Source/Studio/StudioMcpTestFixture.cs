@@ -14,6 +14,7 @@ internal static class StudioMcpTestFixture
 {
     public static WebAppFixture Create() => new WebAppFixture()
         .WithProductionJobSubstrate()
+        .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", "http://localhost"))
         .ConfigureServices(services =>
         {
             services.RemoveAll<IStudioPackageStore>();
