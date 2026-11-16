@@ -162,6 +162,42 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
+    public async Task GetChangesInWindow_WhenSameFeatureChangesLater_CollapsesOnlyInsideTheWindow()
+    {
+        const int layerId = 990136;
+        var tracker = _fixture.GetService<IChangeTracker>();
+        var baseline = await tracker.GetCurrentGenerationAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var insert = new Npgsql.NpgsqlCommand("""
+            INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+            VALUES (nextval('honua.sync_generation'), 990136, 9101, 1)
+            RETURNING generation;
+            """, connection);
+        var throughGeneration = (long)(await insert.ExecuteScalarAsync())!;
+        await using var update = new Npgsql.NpgsqlCommand("""
+            INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+            VALUES (nextval('honua.sync_generation'), 990136, 9101, 2)
+            RETURNING generation;
+            """, connection);
+        var laterGeneration = (long)(await update.ExecuteScalarAsync())!;
+
+        // Filtering a feed after collapse would discard the insert because the later update
+        // replaces it. The upper bound must apply before collapsing the feature's history.
+        var firstWindow = await tracker.GetChangesInWindowAsync(baseline, throughGeneration, [layerId], null);
+        var first = firstWindow.Should().ContainSingle().Which;
+        first.ObjectId.Should().Be(9101);
+        first.Generation.Should().Be(throughGeneration);
+        first.Operation.Should().Be(FeatureChangeOperation.Insert);
+
+        var nextWindow = await tracker.GetChangesInWindowAsync(throughGeneration, laterGeneration, [layerId], null);
+        var next = nextWindow.Should().ContainSingle().Which;
+        next.ObjectId.Should().Be(9101);
+        next.Generation.Should().Be(laterGeneration);
+        next.Operation.Should().Be(FeatureChangeOperation.Update);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
     public async Task GetCurrentGeneration_ReturnsNonNegativeValue()
     {
         var tracker = _fixture.GetService<IChangeTracker>();
