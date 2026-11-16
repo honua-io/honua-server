@@ -3,22 +3,16 @@
 
 using System.Collections.Immutable;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.Ogc.Common;
 
-public sealed record Collections : ICollectionResponse<CollectionInfo>
+public sealed record Collections
 {
     [JsonPropertyName("collections")]
     public required ImmutableArray<CollectionInfo> CollectionList { get; init; }
 
     [JsonPropertyName("links")]
     public required ImmutableArray<Link> Links { get; init; }
-
-    // ICollectionResponse implementation
-    ImmutableArray<CollectionInfo> ICollectionResponse<CollectionInfo>.Items => CollectionList;
-    ImmutableArray<ILink>? ICollectionResponse<CollectionInfo>.Links => Links.Cast<ILink>().ToImmutableArray();
-    IPaginationMetadata? ICollectionResponse<CollectionInfo>.Pagination => null;
 }
 
 public sealed record CollectionInfo

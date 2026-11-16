@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.Ogc.Common;
 
@@ -44,7 +43,7 @@ public sealed record ConformanceDeclaration
     public ImmutableArray<Link>? Links { get; init; }
 }
 
-public sealed record Link : ILink
+public sealed record Link
 {
     [JsonPropertyName("href")]
     public required string Href { get; init; }

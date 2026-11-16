@@ -19,13 +19,13 @@ public sealed record AuditExportDispatcherOptions
 public sealed partial class AuditExportDispatcher
 {
     private readonly AuditExportDispatcherOptions _options;
-    private readonly IAuditDeadLetterStore _deadLetterStore;
+    private readonly InMemoryAuditDeadLetterStore _deadLetterStore;
     private readonly ILogger<AuditExportDispatcher> _logger;
     private readonly AuditResidencyGuard? _residencyGuard;
 
     public AuditExportDispatcher(
         AuditExportDispatcherOptions options,
-        IAuditDeadLetterStore deadLetterStore,
+        InMemoryAuditDeadLetterStore deadLetterStore,
         ILogger<AuditExportDispatcher> logger,
         AuditResidencyGuard? residencyGuard = null)
     {

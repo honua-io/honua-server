@@ -5,14 +5,6 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Core.Features.AuditLog.Export;
 
-// A failed forward must not drop events; the full batch is kept so an operator can replay it.
-public interface IAuditDeadLetterStore
-{
-    Task StoreAsync(IReadOnlyList<AuditEvent> events, string sinkType, string error, CancellationToken ct);
-
-    Task<IReadOnlyList<DeadLetteredAuditBatch>> ListAsync(CancellationToken ct);
-}
-
 public sealed record DeadLetteredAuditBatch
 {
     public required IReadOnlyList<AuditEvent> Events { get; init; }
@@ -24,7 +16,8 @@ public sealed record DeadLetteredAuditBatch
     public required DateTimeOffset FailedAt { get; init; }
 }
 
-public sealed class InMemoryAuditDeadLetterStore : IAuditDeadLetterStore
+// A failed forward must not drop events; the full batch is kept so an operator can replay it.
+public sealed class InMemoryAuditDeadLetterStore
 {
     private readonly object _gate = new();
     private readonly List<DeadLetteredAuditBatch> _batches = [];
