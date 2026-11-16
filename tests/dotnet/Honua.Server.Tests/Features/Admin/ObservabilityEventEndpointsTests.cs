@@ -136,6 +136,7 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
                     EventType = AuditEventType.AdminAction,
                     Actor = "bob",
                     ActorType = AuditActorType.UserId,
+                    ActorAgent = "agent-7",
                     ResourceType = "alert_event",
                     ResourceId = "42",
                     Action = "alert.resolve",
@@ -145,7 +146,7 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
             }
         };
 
-        var response = await _client.GetAsync("/api/v1/admin/observability/audit?pageSize=10");
+        var response = await _client.GetAsync("/api/v1/admin/observability/audit?pageSize=10&actorAgent=agent-7");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -153,6 +154,8 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
         items.GetArrayLength().Should().Be(1);
         items[0].GetProperty("action").GetString().Should().Be("alert.resolve");
         items[0].GetProperty("actor").GetString().Should().Be("bob");
+        items[0].GetProperty("actorAgent").GetString().Should().Be("agent-7");
+        _auditReader.LastFilter!.ActorAgent.Should().Be("agent-7");
     }
 
     [IntegrationTest]
@@ -185,11 +188,11 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
     {
         _auditExporter.Records = new[]
         {
-            ExportRecord(1, "auth.success"),
+            ExportRecord(1, "auth.success") with { ActorAgent = "agent-7" },
             ExportRecord(2, "layer.delete"),
         };
 
-        var response = await _client.GetAsync("/api/v1/admin/observability/audit/export");
+        var response = await _client.GetAsync("/api/v1/admin/observability/audit/export?actorAgent=agent-7");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/x-ndjson");
 
@@ -200,6 +203,8 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
         using var first = JsonDocument.Parse(lines[0]);
         first.RootElement.GetProperty("auditId").GetInt64().Should().Be(1);
         first.RootElement.GetProperty("action").GetString().Should().Be("auth.success");
+        first.RootElement.GetProperty("actorAgent").GetString().Should().Be("agent-7");
+        _auditExporter.LastFilter!.ActorAgent.Should().Be("agent-7");
     }
 
     [IntegrationTest]
@@ -334,19 +339,25 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
     {
         public AuditEventPage Page { get; set; } = new() { Items = Array.Empty<AuditEventRecord>() };
         public Exception? Exception { get; set; }
+        public AuditLogFilter? LastFilter { get; private set; }
 
         public Task<AuditEventPage> ListAsync(AuditLogFilter filter, CancellationToken cancellationToken = default)
-            => Exception is null ? Task.FromResult(Page) : Task.FromException<AuditEventPage>(Exception);
+        {
+            LastFilter = filter;
+            return Exception is null ? Task.FromResult(Page) : Task.FromException<AuditEventPage>(Exception);
+        }
     }
 
     private sealed class StubAuditExporter : IAuditLogExporter
     {
         public IReadOnlyList<AuditEventRecord> Records { get; set; } = Array.Empty<AuditEventRecord>();
+        public AuditExportFilter? LastFilter { get; private set; }
 
         public async IAsyncEnumerable<AuditEventRecord> ExportAsync(
             AuditExportFilter filter,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            LastFilter = filter;
             foreach (var record in Records)
             {
                 cancellationToken.ThrowIfCancellationRequested();

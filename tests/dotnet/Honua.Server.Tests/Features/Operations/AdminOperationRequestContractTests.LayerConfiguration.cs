@@ -42,6 +42,22 @@ public sealed partial class AdminOperationRequestContractTests
     }
 
     [Theory]
+    [InlineData("display", "minScale")]
+    [InlineData("display", "maxScale")]
+    [InlineData("spatial", "storageCrsCoordinateEpoch")]
+    public void LayerConfiguration_Discovery_PreservesNonNegativeNumberConstraints(string section, string field)
+    {
+        var descriptor = AdminApiOperationCatalog.Descriptors.Single(item =>
+            item.OperationId == $"admin.layer.{section}.set");
+        var tool = new PublishedOperationTool(descriptor, "contract", NullLogger.Instance).Describe();
+        var schema = tool.InputSchema.GetProperty("properties").GetProperty(field);
+
+        schema.GetProperty("minimum").GetDecimal().Should().Be(0);
+        schema.GetProperty("type").EnumerateArray().Select(value => value.GetString())
+            .Should().BeEquivalentTo("number", "null");
+    }
+
+    [Theory]
     [InlineData("display", "minScale", "125.5")]
     [InlineData("display", "defaultVisibility", "false")]
     [InlineData("display", "displayField", "2026")]

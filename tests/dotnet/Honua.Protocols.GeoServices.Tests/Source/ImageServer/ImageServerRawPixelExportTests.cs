@@ -20,10 +20,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public sealed class ImageServerRawPixelExportTests : IClassFixture<PostgresFixture>
+public sealed class ImageServerRawPixelExportTests : IClassFixture<WebAppFixture>
 {
-    // The class fixture holds a reference on the shared PostgreSQL infrastructure so it outlives
-    // each case's own host and schema instead of being torn down and restarted between cases.
+    // Keep the shared host and PostgreSQL alive while each case owns its schema and raster seed.
     // A 3-band U8 service over the issue's extent, one stored pixel per output pixel at 64 x 64.
     private const int Size = 64;
     private const int BandCount = 3;

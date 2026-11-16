@@ -15,8 +15,6 @@ internal sealed class CacheHealthResponse
 
     public int DefaultTtlSeconds { get; init; }
 
-    public RedisServerInfoResponse? RedisServerInfo { get; init; }
-
     public string? MetricsEndpoint { get; init; }
 
     public DateTimeOffset GeneratedAt { get; init; }
@@ -34,9 +32,6 @@ internal sealed class CacheStatisticsResponse
     public required bool IsUsingFallback { get; init; }
     public required int LocalKeyCount { get; init; }
     public long? DistributedKeyCount { get; init; }
-    public long? RedisDatabaseSize { get; init; }
-    public long? RedisUsedMemoryBytes { get; init; }
-    public string? RedisUsedMemoryHuman { get; init; }
     public required IReadOnlyDictionary<string, CacheTypeStatisticsResponse> Types { get; init; }
 }
 
@@ -47,32 +42,6 @@ internal sealed class CacheTypeStatisticsResponse
     public required long Evictions { get; init; }
     public required double HitRatio { get; init; }
     public required double MissRatio { get; init; }
-}
-
-internal sealed class RedisConnectionMetricsResponse
-{
-    public required DateTimeOffset GeneratedAt { get; init; }
-    public required bool IsConfigured { get; init; }
-    public required bool IsConnected { get; init; }
-    public string? ClientName { get; init; }
-    public long? TotalOutstanding { get; init; }
-    public int? EndpointCount { get; init; }
-    public RedisServerInfoResponse? ServerInfo { get; init; }
-}
-
-internal sealed class RedisServerInfoResponse
-{
-    public bool IsConnected { get; init; }
-
-    public string? RedisVersion { get; init; }
-
-    public string? UsedMemory { get; init; }
-
-    public int? ConnectedClients { get; init; }
-
-    public long? DatabaseSize { get; init; }
-
-    public long? UptimeSeconds { get; init; }
 }
 
 internal sealed class CacheOperationsInvalidationRequest

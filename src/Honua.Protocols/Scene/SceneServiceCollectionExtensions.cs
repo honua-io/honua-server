@@ -36,7 +36,7 @@ internal static class SceneServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<II3sSceneResourceProvider, HostedI3sSceneResourceProvider>();
-        services.TryAddSingleton<ISceneAccessEnvelopeService, SceneAccessEnvelopeService>();
+        services.TryAddSingleton<SceneAccessEnvelopeService>();
 
         return services;
     }

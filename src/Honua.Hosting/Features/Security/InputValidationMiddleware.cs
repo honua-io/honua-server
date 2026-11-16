@@ -439,8 +439,7 @@ internal sealed class InputValidationMiddleware
         => IsFeatureEditPayloadField(request, paramType, name)
            || IsOpaqueTokenCredentialParameter(paramType, name)
            || IsOAuth2CredentialParameter(request, paramType, name)
-           || IsGenerateTokenPasswordParameter(request, paramType, name)
-           || IsAdminSignalRConnectionId(request, paramType, name);
+           || IsGenerateTokenPasswordParameter(request, paramType, name);
 
     private static bool IsOpaqueTokenCredentialParameter(string paramType, string name)
     {
@@ -464,17 +463,6 @@ internal sealed class InputValidationMiddleware
             && name.Equals("password", StringComparison.OrdinalIgnoreCase)
             && (string.Equals(request.Path.Value, "/sharing/rest/generateToken", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(request.Path.Value, "/sharing/rest/generateToken/", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool IsAdminSignalRConnectionId(HttpRequest request, string paramType, string name)
-    {
-        // SignalR supplies this opaque, base64url connection token after negotiation. It is
-        // consumed only by the hub transport and can legitimately contain SQL-looking byte
-        // sequences such as "--"; it never reaches a SQL context. Keep the exemption exact
-        // to the admin hub transport route and parameter so every other input remains checked.
-        return paramType.Equals("query", StringComparison.Ordinal)
-            && name.Equals("id", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(request.Path.Value, "/hubs/admin", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsOAuth2CredentialParameter(HttpRequest request, string paramType, string name)

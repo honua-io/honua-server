@@ -111,8 +111,9 @@ Verify the published target with the JavaScript SDK's `honua` CLI:
 export HONUA_BASE_URL="$HONUA_URL"
 honua services
 honua layers my-service
-honua query my-service/0 --count
-honua query my-service/0 --limit 5 --format geojson
+LAYER_ID=1  # replace with a layer id from the list above; do not assume 0
+honua query "my-service/$LAYER_ID" --count
+honua query "my-service/$LAYER_ID" --limit 5 --format geojson
 ```
 
 Compare counts, schemas, extents, representative records, relationships, and metadata with GeoServer or a source-native desktop client. Repoint WFS clients to `$HONUA_URL/wfs`, WMS clients to `$HONUA_URL/ogc/services/my-service/wms`, and WMTS clients to `$HONUA_URL/ogc/services/my-service/wmts` after validation.

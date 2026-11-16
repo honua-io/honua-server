@@ -212,25 +212,38 @@ def test_ext_service_identification(wms: WebMapService,
 
 
 @pytest.mark.cert("NB-OWS-WMS-CAP-02")
-def test_ext_contact_information(wms: WebMapService,
+def test_ext_contact_information(wms: WebMapService, lane_config: LaneConfig,
                                  wms_collector: CertificationEvidenceCollector) -> None:
     """ContactInformation must round-trip through OWSLib's provider model."""
     provider = wms.provider
     contact = provider.contact
-    assert provider.name, "no ContactOrganization"
-    populated = {
-        field: getattr(contact, field)
-        for field in ("name", "organization", "position", "address", "city", "region",
-                      "postcode", "country")
-        if getattr(contact, field, None)
+    assert provider.name == fx.CONTACT_ORGANIZATION
+    # The canonical contact model carries name, organization and email. Street
+    # addresses and job positions must not be synthesized to populate this block.
+    expected = {
+        "name": fx.CONTACT_NAME,
+        "organization": fx.CONTACT_ORGANIZATION,
     }
-    assert len(populated) >= 6, f"ContactInformation is too sparse to be useful: {populated}"
+    populated = {field: getattr(contact, field, None) for field in expected}
+    assert populated == expected, f"Authored ContactInformation did not round-trip: {populated}"
+    # OWSLib 0.36.0 looks up email without the WMS namespace. Check the valid
+    # namespaced wire element directly rather than changing the server XML.
+    import xml.etree.ElementTree as ET
+
+    document = ET.fromstring(http_get(lane_config.wms_url, params={
+        "SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetCapabilities"}, timeout=30).content)
+    email = document.findtext(
+        "{http://www.opengis.net/wms}Service/"
+        "{http://www.opengis.net/wms}ContactInformation/"
+        "{http://www.opengis.net/wms}ContactElectronicMailAddress")
+    assert email == fx.CONTACT_EMAIL
     wms_collector.record(
         "NB-OWS-WMS-CAP-02", "pass",
         measured_count=len(populated),
         notes=(
             f"OWSLib parsed {len(populated)} ContactInformation fields: {populated}. A WMS whose "
-            "contact block does not survive a strict parser breaks catalogue harvesting."
+            "contact block does not survive a strict parser breaks catalogue harvesting. "
+            f"The namespaced contact email is {email!r}."
         ),
     )
 

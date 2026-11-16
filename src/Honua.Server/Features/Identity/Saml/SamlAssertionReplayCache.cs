@@ -5,14 +5,8 @@ using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Identity.Saml;
 
-internal interface ISamlAssertionReplayCache
-{
-    // A repeated, empty, or unrecordable assertion id is rejected.
-    bool TryRemember(string id, DateTimeOffset notOnOrAfter);
-}
-
 // The assertion is accepted only after the shared replay store records it; a store failure rejects it.
-internal sealed class SamlAssertionReplayCache(ITokenReplayStore replays) : ISamlAssertionReplayCache
+internal sealed class SamlAssertionReplayCache(ITokenReplayStore replays)
 {
     private const string KeyPrefix = "saml:replay:";
     private const string Marker = "saml";

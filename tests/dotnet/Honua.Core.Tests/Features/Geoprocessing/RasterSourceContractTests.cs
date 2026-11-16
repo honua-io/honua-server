@@ -534,108 +534,6 @@ public sealed class RasterSourceContractTests
             && error.Message.Contains("configured count limit", StringComparison.Ordinal)));
     }
 
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task ResolveAsync_MetadataMatchesPinnedDescriptor_ReturnsAvailable()
-    {
-        var descriptor = Cog();
-        var resolver = new StubMetadataResolver((_, _) => Task.FromResult(
-            RasterSourceMetadataResolution.Available(new RasterSourceMetadata
-            {
-                Version = descriptor.Version,
-                Content = descriptor.Content,
-            })));
-
-        var result = await RasterSourceMetadataAdmission.ResolveAsync(descriptor, resolver);
-
-        Assert.Equal(RasterSourceMetadataStatus.Available, result.Status);
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task ResolveAsync_ChecksumDoesNotMatch_ReturnsIntegrityMismatch()
-    {
-        var descriptor = Cog();
-        var resolver = new StubMetadataResolver((_, _) => Task.FromResult(
-            RasterSourceMetadataResolution.Available(new RasterSourceMetadata
-            {
-                Version = descriptor.Version,
-                Content = descriptor.Content with
-                {
-                    Checksum = new RasterChecksum("sha256", new string('b', 64)),
-                },
-            })));
-
-        var result = await RasterSourceMetadataAdmission.ResolveAsync(descriptor, resolver);
-
-        Assert.Equal(RasterSourceMetadataStatus.IntegrityMismatch, result.Status);
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task ResolveAsync_MediaTypeDoesNotMatch_ReturnsIntegrityMismatch()
-    {
-        var descriptor = Cog();
-        var resolver = new StubMetadataResolver((_, _) => Task.FromResult(
-            RasterSourceMetadataResolution.Available(new RasterSourceMetadata
-            {
-                Version = descriptor.Version,
-                Content = descriptor.Content with { MediaType = "application/octet-stream" },
-            })));
-
-        var result = await RasterSourceMetadataAdmission.ResolveAsync(descriptor, resolver);
-
-        Assert.Equal(RasterSourceMetadataStatus.IntegrityMismatch, result.Status);
-        Assert.Equal("source_integrity_mismatch", result.FailureCode);
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task ResolveAsync_VersionDoesNotMatch_ReturnsStale()
-    {
-        var descriptor = Cog();
-        var resolver = new StubMetadataResolver((_, _) => Task.FromResult(
-            RasterSourceMetadataResolution.Available(new RasterSourceMetadata
-            {
-                Version = "version-2",
-                Content = descriptor.Content,
-            })));
-
-        var result = await RasterSourceMetadataAdmission.ResolveAsync(descriptor, resolver);
-
-        Assert.Equal(RasterSourceMetadataStatus.Stale, result.Status);
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task ResolveAsync_MissingArtifact_PreservesMissingStatus()
-    {
-        var descriptor = Staged();
-        var resolver = new StubMetadataResolver((_, _) => Task.FromResult(
-            RasterSourceMetadataResolution.Failure(RasterSourceMetadataStatus.Missing, "artifact_missing")));
-
-        var result = await RasterSourceMetadataAdmission.ResolveAsync(descriptor, resolver);
-
-        Assert.Equal(RasterSourceMetadataStatus.Missing, result.Status);
-        Assert.Equal("artifact_missing", result.FailureCode);
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task ResolveAsync_Cancellation_IsPropagatedToResolver()
-    {
-        var resolver = new StubMetadataResolver(async (_, cancellationToken) =>
-        {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            return RasterSourceMetadataResolution.Failure(RasterSourceMetadataStatus.Missing, "unreachable");
-        });
-        using var cancellation = new CancellationTokenSource();
-        await cancellation.CancelAsync();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            RasterSourceMetadataAdmission.ResolveAsync(Cog(), resolver, cancellationToken: cancellation.Token));
-    }
-
     private static PostgisRasterSourceDescriptor Postgis() => new()
     {
         Version = "catalog-version-42",
@@ -720,15 +618,6 @@ public sealed class RasterSourceContractTests
         TenantId = "tenant-a",
         AuthorizationSnapshotReference = "auth-snapshot-123",
     };
-
-    private sealed class StubMetadataResolver(
-        Func<RasterSourceDescriptor, CancellationToken, Task<RasterSourceMetadataResolution>> callback)
-        : IRasterSourceMetadataResolver
-    {
-        public Task<RasterSourceMetadataResolution> ResolveMetadataAsync(
-            RasterSourceDescriptor descriptor,
-            CancellationToken cancellationToken = default) => callback(descriptor, cancellationToken);
-    }
 
     private sealed class ThrowingReadOnlyList<T>(int count) : IReadOnlyList<T>
     {

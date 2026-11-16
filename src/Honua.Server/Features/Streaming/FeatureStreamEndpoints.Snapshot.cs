@@ -111,8 +111,8 @@ internal static partial class FeatureStreamEndpoints
                 ServiceId = begin.ServiceId,
                 LayerIds = begin.LayerIds,
                 FeatureCount = 0,
-                // False is one byte longer than true, so it safely reserves either outcome.
-                Complete = false,
+                // Reserve the complete frame, including its resumable checkpoint.
+                Complete = true,
                 Features = [],
                 // The emitted frame receives a fresh UtcNow timestamp. Reserve the longest
                 // DateTimeOffset JSON representation so fractional-second trimming can never
@@ -362,7 +362,7 @@ internal static partial class FeatureStreamEndpoints
         var json = JsonSerializer.Serialize(payload, jsonTypeInfo);
         var frame = id.HasValue
             ? string.Concat(
-                "id: ", id.Value.ToString(CultureInfo.InvariantCulture), "\n",
+                "id: ", FeatureStreamCursor.Format(id.Value), "\n",
                 "event: ", eventName, "\n",
                 "data: ", json, "\n\n")
             : string.Concat("event: ", eventName, "\n", "data: ", json, "\n\n");
@@ -401,7 +401,7 @@ internal static partial class FeatureStreamEndpoints
 
     private static string? ValidateSnapshotScope(
         FeatureStreamSubscriptionMode mode,
-        IStreamSubscriptionFilter? filter)
+        StreamSubscriptionFilter? filter)
     {
         if (!IsSnapshotMode(mode))
         {
@@ -434,7 +434,7 @@ internal static partial class FeatureStreamEndpoints
         HttpContext context,
         bool isSse,
         FeatureStreamSubscriptionMode mode,
-        IStreamSubscriptionFilter? subscriptionFilter)
+        StreamSubscriptionFilter? subscriptionFilter)
     {
         if (!IsSnapshotMode(mode) ||
             subscriptionFilter is not StreamSubscriptionFilter filter ||
@@ -446,18 +446,10 @@ internal static partial class FeatureStreamEndpoints
         // A reconnect whose cursor remains inside the retained event window takes the delta-only
         // replay path and never reads the feature store. Do not let a temporary feature-read
         // outage block a resume the event store can satisfy by itself (#3206 review).
-        var cursorValue = context.Request.Query["cursor"].ToString();
-        long? cursor = long.TryParse(cursorValue, CultureInfo.InvariantCulture, out var parsedCursor)
-            ? parsedCursor
-            : null;
-        if (!cursor.HasValue && isSse)
-        {
-            var lastEventId = context.Request.Headers["Last-Event-ID"].ToString();
-            if (long.TryParse(lastEventId, CultureInfo.InvariantCulture, out var parsedLastEventId))
-            {
-                cursor = parsedLastEventId;
-            }
-        }
+        // A position from another cursor epoch cannot be resumed, so it takes a fresh snapshot.
+        var cursor = FeatureStreamCursor.Parse(
+            context.Request.Query["cursor"].ToString(),
+            isSse ? context.Request.Headers["Last-Event-ID"].ToString() : null).Position;
 
         if (cursor.HasValue &&
             await ResolveResnapshotReasonAsync(
@@ -602,9 +594,10 @@ internal static partial class FeatureStreamEndpoints
             Sequence = sink.BatchesFrames ? beginFrame.Sequence : long.MaxValue,
             Cursor = baselineCursor,
             FeatureCount = 0,
-            Complete = false
+            Complete = true
         };
-        var fixedBytes = sink.MeasureFixedBytes(beginFrame, measuredEndFrame);
+        // Reserve the complete checkpoint and one extra byte for an incomplete boolean.
+        var fixedBytes = sink.MeasureFixedBytes(beginFrame, measuredEndFrame) + 1;
         if (fixedBytes > options.MaxSnapshotBytes)
         {
             return new SnapshotEmitResult(

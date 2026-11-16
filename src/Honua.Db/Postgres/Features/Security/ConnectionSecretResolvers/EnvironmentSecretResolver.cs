@@ -7,30 +7,14 @@ using Honua.Core.Features.Security.Abstractions;
 
 namespace Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
 
-/// <summary>
-/// Environment variable-based secret resolver for harness/dev hosts and CI-injected secrets.
-/// </summary>
-/// <remarks>
-/// Secret references use either the <c>env:VARIABLE_NAME</c> or the URI-style
-/// <c>env://VARIABLE_NAME</c> form; both resolve to the process environment variable
-/// <c>VARIABLE_NAME</c>. A missing or empty variable is a resolution failure
-/// (<see cref="SecretNotFoundException"/>) whose message names the variable but never carries
-/// a value.
-///
-/// WARNING: This should only be used for development, harness hosts, or secrets a CI runner
-/// injects into the process. Environment variables are visible to the process owner and may be
-/// captured by process inspection tooling.
-/// </remarks>
 internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
 {
     internal const string ProviderType = "env";
     private const string ShortPrefix = ProviderType + ":";
     private const string UriPrefix = ProviderType + "://";
 
-    /// <inheritdoc />
     public string ProviderName => ProviderType;
 
-    /// <inheritdoc />
     public Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(secretKey))
@@ -59,7 +43,6 @@ internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
     public Task<string?> ResolveSecretFreshAsync(string secretKey, CancellationToken cancellationToken = default)
         => ResolveSecretAsync(secretKey, cancellationToken);
 
-    /// <inheritdoc />
     public bool CanResolve(string secretKey)
     {
         try
@@ -77,7 +60,6 @@ internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
         }
     }
 
-    /// <inheritdoc />
     public async Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(connectionStringTemplate))
@@ -121,11 +103,6 @@ internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
         return result;
     }
 
-    /// <summary>
-    /// Extracts the environment variable name from an <c>env:NAME</c> or <c>env://NAME</c>
-    /// reference. The provider prefix is case-insensitive; the variable name is returned as
-    /// written.
-    /// </summary>
     internal static bool TryGetVariableName(
         [NotNullWhen(true)] string? secretKey,
         [NotNullWhen(true)] out string? variableName)

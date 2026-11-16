@@ -242,8 +242,8 @@ public sealed class GeoPackageAttributeRoundtripTests
     private static async Task<List<IFeature>> ReadAsync(string path)
     {
         var method = typeof(StreamingFileImportService).GetMethod("ReadGeoPackageStreamingAsync",
-            BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(string), typeof(CancellationToken)], null)!;
-        var stream = (IAsyncEnumerable<IFeature>)method.Invoke(null, [path, CancellationToken.None])!;
+            BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(string), typeof(string), typeof(CancellationToken)], null)!;
+        var stream = (IAsyncEnumerable<IFeature>)method.Invoke(null, [path, null, CancellationToken.None])!;
         var features = new List<IFeature>();
         await foreach (var feature in stream)
         {

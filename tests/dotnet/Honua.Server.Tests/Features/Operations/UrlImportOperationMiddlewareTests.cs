@@ -352,7 +352,8 @@ public sealed class UrlImportOperationMiddlewareTests
             audit.RecordAsync(Arg.Any<AuditEvent>(), Arg.Any<CancellationToken>()).Returns(_ => Task.FromResult<string?>(AuditAvailable ? "audit-identity" : null));
             var verifier = Substitute.For<IOperationApprovalReplayVerifier>();
             verifier.VerifyAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
-            _dispatcher = new OperationDispatcher(catalog, [executor], policy, TimeProvider.System, instanceStore: Store, auditLog: audit, approvalReplayVerifier: verifier);
+            _dispatcher = new OperationDispatcher(catalog, [executor], policy, TimeProvider.System, instanceStore: Store, auditLog: audit,
+                guards: new OperationActuationGuards { ApprovalReplayVerifier = verifier });
             _services = services.AddSingleton<IOperationInvoker>(_dispatcher).BuildServiceProvider();
         }
 

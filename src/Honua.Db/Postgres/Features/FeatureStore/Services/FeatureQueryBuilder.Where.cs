@@ -108,7 +108,7 @@ internal sealed partial class FeatureQueryBuilder
             var inMatch = expression.Match;
             if (expression.Kind == LegacyWhereExpressionKind.In)
             {
-                var valueTokens = SplitValueTokens(inMatch.Groups["values"].Value);
+                var valueTokens = LegacyWhereClauseParser.SplitValueTokens(inMatch.Groups["values"].Value);
                 var fieldSql = MapWhereField(
                     inMatch.Groups["field"].Value,
                     ref paramIndex,
@@ -287,40 +287,6 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         return parts;
-    }
-
-    private static List<string> SplitValueTokens(string values)
-    {
-        var tokens = new List<string>();
-        var current = new StringBuilder();
-        var inQuotes = false;
-
-        for (var index = 0; index < values.Length; index++)
-        {
-            var value = values[index];
-            if (value == '\'' && inQuotes && index + 1 < values.Length && values[index + 1] == '\'')
-            {
-                current.Append("''");
-                index++;
-            }
-            else if (value == '\'')
-            {
-                inQuotes = !inQuotes;
-                current.Append(value);
-            }
-            else if (value == ',' && !inQuotes)
-            {
-                tokens.Add(current.ToString().Trim());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(value);
-            }
-        }
-
-        tokens.Add(current.ToString().Trim());
-        return tokens;
     }
 
     private static bool IsAndTokenAt(string whereClause, int index)

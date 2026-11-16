@@ -718,6 +718,7 @@ internal static partial class ImportEndpoints
                 TableName = request.TableName,
                 TargetSchema = request.TargetSchema,
                 SourceSrid = request.SourceSrid,
+                SourceLayer = request.SourceLayer,
                 DatumTransformationWkid = request.DatumTransformationWkid,
                 DatumTransformationName = request.DatumTransformationName,
                 CoordinateEpoch = request.CoordinateEpoch,
@@ -1148,6 +1149,7 @@ internal static partial class ImportEndpoints
                 TableName = tableName,
                 UploadId = NormalizeOptionalOperationId(fields, "UploadId"),
                 SourceSrid = ParseOptionalSrid(fields, "SourceSrid"),
+                SourceLayer = fields.GetValueOrDefault("SourceLayer") is { Length: > 0 } layer ? layer.Trim() : null,
                 TargetSrid = ParseOptionalSrid(fields, "TargetSrid"),
                 DatumTransformationWkid = ParseDatumTransformationWkid(fields),
                 DatumTransformationName = fields.GetValueOrDefault("DatumTransformationName"),
@@ -1875,6 +1877,7 @@ internal sealed record ImportExecutionRequest
     public string? UploadId { get; init; }
     public string? TargetSchema { get; init; }
     public int? SourceSrid { get; init; }
+    public string? SourceLayer { get; init; }
     public int? DatumTransformationWkid { get; init; }
     public string? DatumTransformationName { get; init; }
     public double? CoordinateEpoch { get; init; }

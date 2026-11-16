@@ -137,7 +137,6 @@ public class DatabricksMetadataV2QueryTests
         var client = new DatabricksStatementClient(httpClient, options);
         return new DatabricksFeatureStore(
             new DatabricksLayerMappingRegistry([]),
-            new DatabricksFeatureQueryBuilder(),
             new DatabricksFeatureDataAccess(client));
     }
 
@@ -145,7 +144,6 @@ public class DatabricksMetadataV2QueryTests
     {
         var store = new DatabricksFeatureStore(
             new DatabricksLayerMappingRegistry([]),
-            new DatabricksFeatureQueryBuilder(),
             new DatabricksFeatureDataAccess(new DatabricksStatementClient(
                 new HttpClient(new StubHttpMessageHandler()) { BaseAddress = new Uri("https://example.cloud.databricks.com") },
                 Options.Create(new DatabricksOptions

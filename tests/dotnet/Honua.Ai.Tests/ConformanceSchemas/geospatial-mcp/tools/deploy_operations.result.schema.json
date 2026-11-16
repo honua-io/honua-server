@@ -2,12 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/deploy_operations.result.schema.json",
   "title": "deploy_operations result payload",
-  "description": "Response payload for the deploy_operations tool: the paged deploy-operations envelope copied VERBATIM from the wire contract pinned in honua-server#2562 / PR #2577 (GET /api/v1/admin/deploy/operations). camelCase; null-valued properties are OMITTED (DefaultIgnoreCondition = WhenWritingNull), so a missing key means null. items is DeployOperationResponse[], newest-first by createdAt. warnings / blockingReasons / target.parameters / metadataRelease.jobIds|evidenceRefs|blockers|warnings are always present (possibly empty). x-honua-reference-shape: this shape tracks the reference implementation.",
+  "description": "Response payload for the deploy_operations tool: the paged deploy-operations envelope from GET /api/v1/admin/deploy/operations, including the canonical EvidencePosture when available. camelCase; null-valued properties are OMITTED (DefaultIgnoreCondition = WhenWritingNull), so a missing key means null. items is DeployOperationResponse[], newest-first by createdAt. warnings / blockingReasons / target.parameters / metadataRelease.jobIds|evidenceRefs|blockers|warnings are always present (possibly empty). x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
   "additionalProperties": false,
   "required": ["items", "page", "pageSize", "totalCount", "hasMore"],
   "properties": {
+    "evidencePosture": {
+      "type": "object",
+      "description": "Canonical EvidencePosture from honua-server; its field shapes are owned by the upstream contract."
+    },
     "items": {
       "type": "array",
       "description": "DeployOperationResponse[], newest-first by createdAt.",

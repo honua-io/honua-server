@@ -6,7 +6,6 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.FileStorage;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Protocols.Rasters.CogArtifacts;
 
@@ -104,63 +103,7 @@ internal static class CogArtifactEndpoints
             return accessError;
         }
 
-        var metadata = target.File;
-
-        var response = context.Response;
-        var conditions = ArtifactHttpConditions.Evaluate(context, metadata);
-        if (conditions.StatusCode is { } statusCode)
-        {
-            return TypedResults.StatusCode(statusCode);
-        }
-        response.ContentType = CogArtifactService.ContentType;
-
-        if (HttpMethods.IsHead(context.Request.Method))
-        {
-            response.ContentLength = metadata.SizeBytes;
-            return TypedResults.Empty;
-        }
-
-        var rangeHeader = conditions.RangeHeader;
-        var rangeResult = await rangeProxy.ReadRangeAsync(metadata, rangeHeader, cancellationToken).ConfigureAwait(false);
-
-        switch (rangeResult.Outcome)
-        {
-            case ArtifactRangeOutcome.RevisionChanged:
-            case ArtifactRangeOutcome.Unsupported:
-                return ArtifactHttpConditions.ReadFailure(context, rangeResult.Outcome);
-
-            case ArtifactRangeOutcome.Unsatisfiable:
-                response.Headers[HeaderNames.ContentRange] = $"bytes */{rangeResult.TotalSize}";
-                return TypedResults.StatusCode(StatusCodes.Status416RangeNotSatisfiable);
-
-            case ArtifactRangeOutcome.NotFound:
-                return ArtifactHttpConditions.ReadFailure(context, rangeResult.Outcome);
-
-            case ArtifactRangeOutcome.TooLarge:
-                return StandardErrorHelpers.CreatePayloadTooLarge(
-                    context,
-                    $"Artifact '{artifactId}' is {rangeResult.TotalSize:N0} bytes, which exceeds the " +
-                    $"{ArtifactByteReader.MaxDirectFullStreamBytes:N0}-byte limit for one proxy response. " +
-                    "Request a smaller byte range (this endpoint advertises Accept-Ranges: bytes).");
-
-            case ArtifactRangeOutcome.Partial:
-                response.Headers[HeaderNames.ContentRange] = $"bytes {rangeResult.Start}-{rangeResult.End}/{rangeResult.TotalSize}";
-                response.StatusCode = StatusCodes.Status206PartialContent;
-                response.ContentLength = rangeResult.Payload?.LongLength ?? 0L;
-                if (rangeResult.Payload is { Length: > 0 })
-                {
-                    await response.Body.WriteAsync(rangeResult.Payload, cancellationToken).ConfigureAwait(false);
-                }
-                return TypedResults.Empty;
-
-            case ArtifactRangeOutcome.Full:
-            default:
-                var fullResult = await rangeProxy.ReadFullAsync(metadata, cancellationToken).ConfigureAwait(false);
-                if (fullResult.Outcome != ArtifactRangeOutcome.Full)
-                {
-                    return ArtifactHttpConditions.ReadFailure(context, fullResult.Outcome);
-                }
-                return Results.Stream(fullResult.Stream!, response.ContentType, enableRangeProcessing: false);
-        }
+        return await ArtifactHttpResponse.ServeAsync(
+            context, target.File with { ContentType = CogArtifactService.ContentType }, rangeProxy, cancellationToken).ConfigureAwait(false);
     }
 }

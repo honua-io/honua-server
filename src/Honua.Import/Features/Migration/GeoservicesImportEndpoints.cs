@@ -324,29 +324,10 @@ internal static partial class GeoservicesImportEndpoints
 
         string? jobId = null;
         IDistributedImportJobManager? jobManager = null;
-        var jobQueued = false;
 
         try
         {
             jobManager = context.RequestServices.GetRequiredService<IDistributedImportJobManager>();
-            // Probe recovery before refusing: the cached health flags only clear through
-            // component operations, so gating first would keep admission closed after
-            // Redis returns (#4877). Still-unavailable coordination is refused below.
-            if (jobManager is IImportCoordinationHealth coordinationHealth &&
-                !await ImportCoordinationRecovery.TryAdmitAsync(
-                    coordinationHealth,
-                    jobManager.JobQueue,
-                    jobManager.RequestStore,
-                    jobManager.ProgressStore,
-                    cancellationToken).ConfigureAwait(false))
-            {
-                await AdminResponseWriter.WriteErrorAsync(
-                    context,
-                    "Distributed import coordination is unavailable. Retry when Redis is healthy.",
-                    StatusCodes.Status503ServiceUnavailable);
-                return;
-            }
-
             // Generate job ID
             jobId = Guid.NewGuid().ToString("N")[..12];
 
@@ -391,24 +372,7 @@ internal static partial class GeoservicesImportEndpoints
                 ServiceName = importRequest.ServiceName
             };
 
-            if (!await ImportEndpointCoordinationHelper.PersistQueuedJobStateAsync(
-                    context,
-                    jobManager is not IImportCoordinationHealth { CanAcceptNewJobs: false },
-                    jobManager.RequestStore,
-                    jobManager.ProgressStore,
-                    jobId,
-                    importRequest,
-                    progress,
-                    TimeSpan.FromHours(24),
-                    "Distributed import coordination became unavailable while the job was being enqueued. Retry when Redis is healthy.",
-                    cancellationToken).ConfigureAwait(false))
-            {
-                return;
-            }
-
-            // Queue the job
-            await jobManager.JobQueue.EnqueueAsync(jobId, cancellationToken);
-            jobQueued = true;
+            await jobManager.SubmitAsync(importRequest, progress, cancellationToken).ConfigureAwait(false);
 
             Log.ImportJobQueued(GetLogger(context), jobId, request.ServiceUrl, request.LayerId, request.TableName);
 
@@ -427,50 +391,22 @@ internal static partial class GeoservicesImportEndpoints
         }
         catch (LayerPublishingException ex)
         {
-            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
             await GeoservicesImportPlanning.WriteErrorAsync(context, ex).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import", StringComparison.OrdinalIgnoreCase) && ex.Message.Contains("unavailable", StringComparison.OrdinalIgnoreCase))
+        catch (InvalidOperationException ex) when (ex.Message == ImportExecutionJobQueue<GeoservicesImportRequest, GeoservicesImportProgress>.DurableQueueUnavailableMessage)
         {
-            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
-
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
             await AdminResponseWriter.WriteErrorAsync(
                 context,
-                "Distributed import queue is temporarily unavailable. Retry when Redis is healthy.",
+                "Durable import storage is unavailable. Configure the system database and job worker.",
                 StatusCodes.Status503ServiceUnavailable);
         }
-        // Intentionally generic: top-level endpoint boundary after the specific
-        // coordination-unavailable case above; any remaining unexpected failure rolls back
-        // the queued state and maps to a generic 500 rather than leaking exception details.
+        // Intentionally generic: the endpoint maps unexpected admission failures to a
+        // generic 500 rather than exposing storage exception details.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
-
             Log.ImportStartFailed(GetLogger(context), request.ServiceUrl, request.LayerId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to queue import job", StatusCodes.Status500InternalServerError);
-        }
-    }
-
-    private static async Task TryRollbackQueuedStateAsync(
-        IDistributedImportJobManager? jobManager, string? jobId, bool jobQueued)
-    {
-        if (jobManager == null || string.IsNullOrWhiteSpace(jobId) || jobQueued)
-        {
-            return;
-        }
-
-        try
-        {
-            await ImportEndpointCoordinationHelper.DeleteQueuedStateAsync(
-                jobManager.RequestStore,
-                jobManager.ProgressStore,
-                jobId,
-                CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
-        {
-            System.Diagnostics.Debug.WriteLine(caughtException);
         }
     }
 
@@ -530,6 +466,8 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
+        await jobManager.RequestCancellationAsync(jobId, cancellationToken);
+
         var cancelledProgress = progress with
         {
             Status = GeoservicesImportStatus.Cancelled,
@@ -538,7 +476,6 @@ internal static partial class GeoservicesImportEndpoints
         };
 
         await jobManager.ProgressStore.SetProgressAsync(jobId, cancelledProgress, TimeSpan.FromHours(24), cancellationToken);
-        await jobManager.RequestStore.DeleteProgressAsync(jobId, cancellationToken);
 
         Log.ImportJobCancelled(GetLogger(context), jobId);
 

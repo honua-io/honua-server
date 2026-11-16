@@ -58,7 +58,7 @@ internal sealed class ImageServerComputeTiePointsHandler
             // rasterId selects the source raster in the mosaic. When supplied it must be a valid
             // identifier; when omitted we resolve control points on the layer's primary raster.
             var rasterId = raster.Id;
-            var rasterIdRaw = GetString(values, "rasterId") ?? GetString(values, "imageID");
+            var rasterIdRaw = ImageServerRequestValues.GetString(values, "rasterId") ?? ImageServerRequestValues.GetString(values, "imageID");
             if (!string.IsNullOrWhiteSpace(rasterIdRaw))
             {
                 if (!long.TryParse(rasterIdRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedRasterId) ||
@@ -135,7 +135,4 @@ internal sealed class ImageServerComputeTiePointsHandler
             return StandardErrorHelpers.CreateInternalServerError(context, "ImageServer computeTiePoints failed.");
         }
     }
-
-    private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
-        => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 }

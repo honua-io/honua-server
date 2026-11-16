@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 /// inferred.
 /// </remarks>
 [Protocol(TestProtocols.Infrastructure)]
-public sealed class FeatureLockEnforcingFeatureWriterTests
+public sealed partial class FeatureLockEnforcingFeatureWriterTests
 {
     private const int StorageLayerId = 4;
     private const string ServiceName = "parcels";
@@ -404,6 +404,8 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
     /// </summary>
     private sealed class RecordingFeatureWriter : IFeatureWriter
     {
+        public ReceiptRecordingTransaction Transaction { get; } = new();
+
         public int ApplyEditsCalls { get; private set; }
 
         public int DeleteCalls { get; private set; }
@@ -411,7 +413,7 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
         public Task<IFeatureWriterTransaction> BeginTransactionAsync(
             IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
             CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+            => Task.FromResult<IFeatureWriterTransaction>(Transaction);
 
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
             => Task.FromResult(feature);

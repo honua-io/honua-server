@@ -97,7 +97,7 @@ public sealed class AiAdmissionControlHostTests
             using var admin = Admin(fixture);
             var response = await SubmitAsync(admin, "initialize", PolicyParameters());
             response.Status.Should().Be(HttpStatusCode.OK);
-            response.Handle.GetProperty("status").GetString().Should().Be("RequiresApproval");
+            response.Handle.GetProperty("status").GetString().Should().Be("RequiresApproval", "the operation response was {0}", response.Handle.GetRawText());
             (await CountControlEventsAsync(fixture)).Should().Be(0);
         }
         finally { await fixture.DisposeAsync(); }

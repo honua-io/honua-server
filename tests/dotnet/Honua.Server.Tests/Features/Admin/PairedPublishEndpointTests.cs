@@ -32,7 +32,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
-public sealed class PairedPublishEndpointTests(DatabaseFixtureAdapter database) : IAsyncLifetime
+public sealed partial class PairedPublishEndpointTests(DatabaseFixtureAdapter database) : IAsyncLifetime
 {
     private const string JobsRoute = "/api/v1/admin/tile-operations/jobs";
     private const string IdentityField = "name";

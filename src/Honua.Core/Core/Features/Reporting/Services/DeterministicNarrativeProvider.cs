@@ -6,7 +6,7 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Services;
 
-internal sealed class DeterministicNarrativeProvider : INarrativeProvider
+public sealed class DeterministicNarrativeProvider : INarrativeProvider
 {
     public bool IsDeterministic => true;
 

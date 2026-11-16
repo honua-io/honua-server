@@ -27,7 +27,7 @@ internal static class AnalysisContentServiceCollectionExtensions
         services.TryAddSingleton<InMemoryAnalysisContentStore>();
         services.TryAddScoped<IAnalysisContentStore>(sp =>
             sp.GetRequiredService<InMemoryAnalysisContentStore>());
-        services.TryAddScoped<IAnalysisContentService, AnalysisContentService>();
+        services.TryAddScoped<AnalysisContentService>();
 
         return services;
     }

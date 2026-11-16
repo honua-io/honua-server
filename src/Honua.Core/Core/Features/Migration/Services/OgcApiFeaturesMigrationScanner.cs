@@ -101,7 +101,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         {
             if (_logger.IsEnabled(LogLevel.Warning))
             {
-                Log.ScanFailed(_logger, ToSafeSourceUrl(serviceUri), ex);
+                Log.ScanFailed(_logger, MigrationSourceUrls.ToSafeSourceUrl(serviceUri), ex);
             }
 
             return CreateFailedArtifact(serviceUri, ToSafeScanFailureReason(ex));
@@ -116,7 +116,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         using var landingDocument = await GetJsonDocumentAsync(serviceUri, cancellationToken).ConfigureAwait(false);
         var landing = landingDocument.RootElement;
         var landingLinks = ReadLinks(landing).ToArray();
-        var baseUrl = ToSafeSourceUrl(serviceUri);
+        var baseUrl = MigrationSourceUrls.ToSafeSourceUrl(serviceUri);
         var collectionsUri = FindLinkUri(landingLinks, serviceUri, static link => IsRel(link, "data") || LinkLooksLikeCollections(link))
             ?? AppendPath(serviceUri, "collections");
         var conformanceUri = FindLinkUri(landingLinks, serviceUri, static link => IsRel(link, "conformance"))
@@ -166,7 +166,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
         {
-            var conformanceUrl = ToSafeSourceUrl(conformanceUri);
+            var conformanceUrl = MigrationSourceUrls.ToSafeSourceUrl(conformanceUri);
             if (_logger.IsEnabled(LogLevel.Debug))
             {
                 Log.OptionalDocumentUnavailable(_logger, "conformance", conformanceUrl, ex);
@@ -274,7 +274,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
             }
             catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
             {
-                var documentUrl = ToSafeSourceUrl(uri);
+                var documentUrl = MigrationSourceUrls.ToSafeSourceUrl(uri);
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
                     Log.OptionalDocumentUnavailable(_logger, "schema-queryables", documentUrl, ex);
@@ -315,7 +315,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
         {
-            var itemsUrl = ToSafeSourceUrl(itemsUri);
+            var itemsUrl = MigrationSourceUrls.ToSafeSourceUrl(itemsUri);
             if (_logger.IsEnabled(LogLevel.Debug))
             {
                 Log.OptionalDocumentUnavailable(_logger, "items", itemsUrl, ex);
@@ -604,31 +604,15 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
 
         return Uri.TryCreate(href, UriKind.Absolute, out var absolute)
             ? absolute
-            : Uri.TryCreate(EnsureDirectoryBase(baseUri), href, out var relative)
+            : Uri.TryCreate(MigrationSourceUrls.EnsureDirectoryBase(baseUri), href, out var relative)
                 ? relative
                 : null;
     }
 
     private static Uri AppendPath(Uri baseUri, string relativePath)
     {
-        var root = EnsureDirectoryBase(baseUri);
+        var root = MigrationSourceUrls.EnsureDirectoryBase(baseUri);
         return new Uri(root, relativePath.TrimStart('/'));
-    }
-
-    private static Uri EnsureDirectoryBase(Uri uri)
-    {
-        var builder = new UriBuilder(uri)
-        {
-            Query = string.Empty,
-            Fragment = string.Empty
-        };
-
-        if (builder.Path.Length == 0 || builder.Path[^1] != '/')
-        {
-            builder.Path += "/";
-        }
-
-        return builder.Uri;
     }
 
     private static Uri AddMissingQueryParameter(Uri uri, string name, string value)
@@ -685,7 +669,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
             Source = new MigrationSourceIdentity
             {
                 DisplayName = "OGC API Features",
-                BaseUrl = ToSafeSourceUrl(serviceUri),
+                BaseUrl = MigrationSourceUrls.ToSafeSourceUrl(serviceUri),
                 Product = "OGC API Features",
                 ServiceType = "OGC API Features"
             },
@@ -714,19 +698,6 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
             _ => "OGC API Features metadata could not be scanned."
         };
 
-
-    private static string ToSafeSourceUrl(Uri uri)
-    {
-        var builder = new UriBuilder(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty,
-            Query = string.Empty,
-            Fragment = string.Empty
-        };
-
-        return builder.Uri.AbsoluteUri;
-    }
 
     private sealed record ItemsProbeResult(
         int? FeatureCount,

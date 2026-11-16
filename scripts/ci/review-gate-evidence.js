@@ -21,16 +21,19 @@ const NEGATIVE_REVIEW_STATES = new Set(['CHANGES_REQUESTED', 'DISMISSED']);
 // The gate reads GraphQL (review-gate-snapshot.js), so the suffix-less spelling
 // is the one that actually shows up in production. `logins` matches on the login
 // alone; `botLogins` matches ONLY when GitHub also types the author as a `Bot`.
-// That distinction is load-bearing for Claude: `claude` is a real GitHub User
-// too, and a User can hold a PAT, which would break the
-// bot-distinct-from-author property this list depends on.
+// That distinction is load-bearing for both reviewers: `claude` is a real
+// GitHub User and `chatgpt-codex-connector` is an ordinary account name, and an
+// account can hold a PAT, which would break the bot-distinct-from-author
+// property this list depends on.
 const ATTESTING_REVIEWERS = [
   {
     id: 'codex',
-    // Both spellings are accepted unconditionally: no `chatgpt-codex-connector`
-    // User exists, so the suffix-less form cannot be impersonated by a PAT.
-    logins: ['chatgpt-codex-connector', 'chatgpt-codex-connector[bot]'],
-    botLogins: [],
+    // REST spelling: a `[bot]` login cannot be registered by an account.
+    logins: ['chatgpt-codex-connector[bot]'],
+    // GraphQL spelling. The bare name is an ordinary account name (a registered
+    // Organization today), so it attests only when GitHub types the author as a
+    // Bot, the same rule as `claude` below.
+    botLogins: ['chatgpt-codex-connector'],
     reviewMarker: /Codex Review|Reviewed commit/i,
     cleanMarker: /Codex Review:\s+Didn't find any major issues\./i,
   },
@@ -43,16 +46,14 @@ const ATTESTING_REVIEWERS = [
     // GraphQL spelling. Verified live: a review posted by the Claude GitHub App
     // comes back from GraphQL as `{login: "claude", __typename: "Bot"}`
     // (anthropics/claude-code-action#1650) while REST reports `claude[bot]`.
-    // Without this entry every review the Claude lane posts is invisible to the
+    // Without this entry every review the Claude App posts is invisible to the
     // gate, because review-gate.yml reads the GraphQL shape.
     botLogins: ['claude'],
     reviewMarker: /Claude Review|Reviewed commit/i,
     cleanMarker: /Claude Review:\s+No major issues found\./i,
-    // THE canonical body `.github/workflows/claude-review.yml` posts for a clean
-    // head, kept here so the lane cannot drift from the marker that grades it.
-    // `cleanCommentBody(head)` must satisfy `cleanMarker` and the reviewed-commit
-    // parser below; review-gate-evidence.test.js asserts exactly that by feeding
-    // the generated body back through `evaluateCodexEvidence`.
+    // The clean-comment template a Claude bot posts for a clean head, kept
+    // beside the marker that grades it; review-gate-evidence.test.js feeds it
+    // back through `evaluateCodexEvidence` so the two cannot drift.
     cleanCommentBody: head =>
       `Claude Review: No major issues found.\n\n**Reviewed commit:** \`${head}\``,
   },
@@ -214,25 +215,16 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   // attest. Tests asserting `freshCleanReaction === false` therefore pass against
   // any implementation -- do not count them as coverage.
   const freshCleanReaction = false;
-  // hasOpenObjection is exposed for the merge train's inverted admission rule
-  // (fix-forward): admission no longer requires positive exact-head evidence,
-  // but a standing identity-scoped objection must still block on its own.
+  // hasOpenObjection is exposed so review-gate.yml can block on a standing
+  // identity-scoped objection independently of positive exact-head evidence.
   return { exactReview, exactCleanComment, freshCleanReaction, hasOpenObjection };
 }
 
 // Every attesting login, flattened. This is THE source of truth for the reviewer
-// identity set, exported so no other component has to restate it. The merge
-// train's select.sh reads it via `--print-logins` rather than hardcoding logins
-// in its own jq -- it recomputes unresolvedCount and then WRITES the required
-// `Review Gate` status, so if its login set drifted from this one it could stamp
-// the gate green while a reviewer's threads sat unresolved.
-// Includes the suffix-less GraphQL spellings: select.sh counts unresolved
-// reviewer threads with jq over the GraphQL snapshot, so omitting `claude` there
-// would hide every unresolved Claude thread and let the train stamp the gate
-// green over open findings. jq cannot see `__typename`, so this set is the
-// permissive one; the direction is fail-safe (a stray bare-`claude` User thread
-// only makes the train MORE conservative), and positive evidence is still graded
-// by `reviewerFor`, which does enforce the Bot check.
+// identity set, exported (and printable via `--print-logins`) so no other
+// component has to restate it. It includes the suffix-less GraphQL spellings,
+// so it is the permissive set; positive evidence is still graded by
+// `reviewerFor`, which does enforce the Bot check.
 const ATTESTING_LOGINS = ATTESTING_REVIEWERS.flatMap(
   reviewer => [...reviewer.logins, ...(reviewer.botLogins || [])]);
 

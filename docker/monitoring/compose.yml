@@ -27,11 +27,14 @@ services:
     entrypoint:
       - /bin/sh
       - -ec
-    command: >-
-      test -s /run/source/honua-scrape-key;
-      cp /run/source/honua-scrape-key /run/destination/honua-scrape-key;
-      chown 65534:65534 /run/destination/honua-scrape-key;
-      chmod 0440 /run/destination/honua-scrape-key
+    # One list element: `sh -c` takes a single script argument, and Compose splits a
+    # string command into words.
+    command:
+      - >-
+        test -s /run/source/honua-scrape-key;
+        cp /run/source/honua-scrape-key /run/destination/honua-scrape-key;
+        chown 65534:65534 /run/destination/honua-scrape-key;
+        chmod 0440 /run/destination/honua-scrape-key
     volumes:
       - "${HONUA_METRICS_SCRAPE_KEY_FILE:?Set HONUA_METRICS_SCRAPE_KEY_FILE to a file holding a read-only (admin:read) Honua API key for the /metrics scrape}:/run/source/honua-scrape-key:ro"
       - prometheus_secrets:/run/destination

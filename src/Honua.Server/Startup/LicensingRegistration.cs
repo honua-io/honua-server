@@ -6,6 +6,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Extensions;
 using Honua.Infrastructure.Licensing;
+using Honua.Server.Features.Infrastructure.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -55,7 +56,8 @@ internal static class LicensingRegistration
         services.AddResilientHttpClient(
             "IdentityProviderTest",
             "identity-provider-test",
-            HttpResiliencePolicies.FastApiDefaults);
+            HttpResiliencePolicies.FastApiDefaults,
+            configureHandler: PublicHealthCheckHttpHandler.Create);
         services.AddResilientHttpClient(
             "AdminAuthOidc",
             "admin-auth-oidc",

@@ -18,6 +18,8 @@ public enum OperateEventKind
     TemporalOp = 6,
 
     Log = 7,
+
+    Incident = 8,
 }
 
 public enum OperateEventSeverity

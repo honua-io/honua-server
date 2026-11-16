@@ -4,8 +4,8 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Provisioner.BuildJobs;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Provisioner;
 
@@ -38,7 +38,7 @@ internal static class ProvisionerServiceCollectionExtensions
 
         if (services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
         {
-            services.TryAddSingleton<IProvisionerBuildJobService, ProvisionerBuildJobService>();
+            services.TryAddSingleton<ProvisionerBuildJobService>();
         }
 
         return services;

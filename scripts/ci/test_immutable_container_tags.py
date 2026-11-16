@@ -178,7 +178,7 @@ class ImmutableTagsTests(unittest.TestCase):
                 block = re.split(r'\n  [a-z][a-z0-9-]*:', workflow.split('\n  ' + job + ':\n', 1)[1], maxsplit=1)[0]
                 self.assertIn('concurrency:', block)
                 self.assertIn('group: nightly-publish-${{ needs.select-candidate.outputs.sha }}', block)
-        self.assertEqual(workflow.count('| python3 scripts/ci/promote-verified-image.py'), 3)
+        self.assertEqual(workflow.count('| python3 scripts/ci/promote-verified-image.py'), 4)
         self.assertEqual(workflow.count('scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"'), 4)
         self.assertIn('tags: ${{ steps.immutable_tags.outputs.tags }}', workflow)
         self.assertIn("if: steps.existing_executor.outputs.digest == ''", workflow)

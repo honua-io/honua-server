@@ -13,7 +13,6 @@ namespace Honua.Core.Features.Migration.Services;
 // Scoped collaborators are resolved per call so a request handler and the long-lived batch service do not capture scoped lifetimes.
 public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestrator
 {
-    private static readonly TimeSpan ChildJobTtl = TimeSpan.FromHours(24);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<MigrationBatchOrchestrator> _logger;
@@ -442,9 +441,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             ServiceName = child.ServiceName
         };
 
-        await jobManager.RequestStore.SetProgressAsync(jobId, importRequest, ChildJobTtl, cancellationToken).ConfigureAwait(false);
-        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, ChildJobTtl, cancellationToken).ConfigureAwait(false);
-        await jobManager.JobQueue.EnqueueAsync(jobId, cancellationToken).ConfigureAwait(false);
+        await jobManager.SubmitAsync(importRequest, progress, cancellationToken).ConfigureAwait(false);
         return jobId;
     }
 

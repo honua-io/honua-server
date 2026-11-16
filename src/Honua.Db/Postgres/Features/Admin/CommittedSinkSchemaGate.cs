@@ -7,9 +7,6 @@ using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Features.Admin;
 
-/// <summary>
-/// Operational-schema checks plus the pinned committed-sink exception.
-/// </summary>
 internal static class CommittedSinkSchemaGate
 {
     internal static bool Allows(PostgresSchemaConfiguration configuration, string? currentSchema, string? schema)

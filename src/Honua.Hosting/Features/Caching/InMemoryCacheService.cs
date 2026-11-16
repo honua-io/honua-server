@@ -15,7 +15,7 @@ namespace Honua.Infrastructure.Caching;
 
 // Each node caches for itself; the CDN is the shared cache. Entries are stored
 // serialized so a caller mutating a returned object cannot change the cached value.
-internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealthChecker, ICacheStorageMetricsProvider, IDisposable
+internal sealed partial class InMemoryCacheService : ICacheService, ICacheHealthChecker, IDisposable
 {
     private const string CacheType = "layer-catalog";
     private const string StorageBackend = "memory";

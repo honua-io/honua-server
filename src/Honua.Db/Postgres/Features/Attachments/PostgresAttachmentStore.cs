@@ -15,14 +15,7 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Attachments;
 
-/// <summary>
-/// PostgreSQL implementation of attachment storage and file management
-/// </summary>
-/// <remarks>
-/// Marked as internal to prevent exposure of database-specific implementations
-/// outside the Infrastructure layer (Clean Architecture principle).
-/// </remarks>
-internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore, IFeatureAttachmentCleanup
+internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImportedAttachmentStore, IFeatureAttachmentCleanup, IAttachmentNativeMetadataStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICloudFileStorage? _fileStorage;
@@ -31,6 +24,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
     private readonly AttachmentLimits? _attachmentLimits;
     private readonly string _configuredSchema;
     private readonly string _canonicalSchema;
+    private readonly string _featureTable;
     private readonly PostgresAttachmentMigrationContract? _migrationContract;
 
     public PostgresAttachmentStore(
@@ -41,7 +35,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         IAttachmentOrphanLedger? orphanLedger = null,
         AttachmentLimits? attachmentLimits = null,
         PostgresAttachmentMigrationContract? migrationContract = null,
-        string? canonicalSchemaName = null)
+        AttachmentStoreSchemaOptions? schemaOptions = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         // Null is a database-only host. Feature-store resolution includes this store for
@@ -53,15 +47,14 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         _ = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
         _configuredSchema = string.IsNullOrWhiteSpace(schemaName)
             ? PostgresSchemaConfiguration.DefaultMetadataSchema : schemaName;
-        _canonicalSchema = string.IsNullOrWhiteSpace(canonicalSchemaName) ? _configuredSchema : canonicalSchemaName;
+        _canonicalSchema = string.IsNullOrWhiteSpace(schemaOptions?.CanonicalSchemaName) ? _configuredSchema : schemaOptions.CanonicalSchemaName;
         _ = SchemaSearchPath.ValidateAndQuote(_canonicalSchema);
         _migrationContract = migrationContract;
+        // Match FeatureDataAccess: an unset Database:Schema uses the connection search path.
+        _featureTable = string.IsNullOrEmpty(schemaOptions?.FeatureSchemaName)
+            ? "features" : SchemaSearchPath.QualifyTable("features", schemaOptions.FeatureSchemaName);
     }
 
-    /// <summary>
-    /// Returns the configured object store. Blob reads and writes call this; a missing
-    /// store becomes an orphan record when the metadata change has already committed.
-    /// </summary>
     private ICloudFileStorage RequireFileStorage()
         => _fileStorage ?? throw new InvalidOperationException(
             "Object storage is not configured. Register ICloudFileStorage before using attachment blobs.");
@@ -88,16 +81,6 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             Infrastructure.SchemaSearchPath.QualifyTable("import_attachment_cleanup", physical));
     }
 
-    /// <summary>
-    /// Records a storage object that outlived its metadata row, so the divergence is
-    /// enumerable and alertable rather than only logged. Never throws: an orphan record
-    /// must not mask the original failure nor fail an otherwise successful delete.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately not cancellable. Every call site is a failure or cancellation path, so
-    /// the caller's token is frequently already canceled; honouring it would discard the
-    /// only evidence that the two stores diverged.
-    /// </remarks>
     private async Task RecordOrphanAsync(
         string storagePath,
         int layerId,
@@ -182,11 +165,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
-        var sql = $@"
-            UPDATE {tables.Attachments}
-            SET filename = $4, content_type = $5, size = $6, storage_path = $7, keywords = $8
-            WHERE layer_id = $1 AND feature_id = $2 AND id = $3
-            RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
+        var sql = CreateAttachmentUpdateSql(tables.Attachments);
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
@@ -196,7 +175,8 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         command.Parameters.AddWithValue(attachment.ContentType);
         command.Parameters.AddWithValue(attachment.Size);
         command.Parameters.AddWithValue(attachment.StoragePath);
-        command.Parameters.AddWithValue(attachment.Keywords ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(NpgsqlTypes.NpgsqlDbType.Text, attachment.Keywords ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(tables.Attachments);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -217,16 +197,26 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var tables = await ResolveTablesAsync(connection, null, false, cancellationToken).ConfigureAwait(false);
         var sql = $@"
-            UPDATE {tables.Attachments}
-            SET keywords = $4
-            WHERE layer_id = $1 AND feature_id = $2 AND id = $3
-            RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
+            WITH updated AS (
+                UPDATE {tables.Attachments}
+                SET keywords = $4
+                WHERE layer_id = $1 AND feature_id = $2 AND id = $3
+                RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords
+            ), synced AS (
+                UPDATE {NativeMetadataTable} m
+                SET keywords = COALESCE(string_to_array(u.keywords, ','), ARRAY[]::text[])
+                FROM updated u
+                WHERE m.attachment_authority = $5 AND m.attachment_id = u.id
+                    AND m.layer_id = u.layer_id AND m.feature_id = u.feature_id AND m.storage_path = u.storage_path
+            )
+            SELECT * FROM updated";
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(featureId);
         command.Parameters.AddWithValue(attachmentId);
         command.Parameters.AddWithValue(NpgsqlTypes.NpgsqlDbType.Text, keywords ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(tables.Attachments);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -498,9 +488,6 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         return AttachmentContent.Create(attachment.Value, fileStream);
     }
 
-    /// <summary>
-    /// Sanitizes a filename to prevent path traversal and other security issues.
-    /// </summary>
     private static string SanitizeFileName(string filename)
     {
         if (string.IsNullOrWhiteSpace(filename))
@@ -549,69 +536,16 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
             featureId.ToString(CultureInfo.InvariantCulture));
     }
 
-    /// <summary>
-    /// Holds a transaction advisory lock for this feature, recounts its attachments, and
-    /// inserts only when the configured count and size limits still hold. A refusal throws
-    /// <see cref="ValidationException"/> so the caller can delete the blob it already stored.
-    /// </summary>
     private async Task<Attachment> InsertWithinQuotaAsync(
         int layerId,
         long featureId,
         Attachment attachment,
         CancellationToken cancellationToken)
     {
-        var limits = _attachmentLimits ?? throw new InvalidOperationException("Attachment limits are not configured.");
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        var tables = await ResolveTablesAsync(connection, transaction, false, cancellationToken).ConfigureAwait(false);
-
-        // hashtextextended keeps the lock in the bigint form. Feature ids do not fit the
-        // two-int overload, and the prefix does not share the feature-edit lock key.
-        await using (var lease = new NpgsqlCommand(
-            "SELECT pg_advisory_xact_lock(hashtextextended('attachment:' || $1::text || ':' || $2::text, 0))",
-            connection,
-            transaction))
-        {
-            lease.Parameters.AddWithValue(layerId);
-            lease.Parameters.AddWithValue(featureId);
-            await lease.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        long count;
-        long totalSize;
-        await using (var countCommand = new NpgsqlCommand($"""
-            SELECT COUNT(*)::bigint, COALESCE(SUM(size), 0)::bigint
-            FROM {tables.Attachments}
-            WHERE layer_id = $1 AND feature_id = $2
-            """, connection, transaction))
-        {
-            countCommand.Parameters.AddWithValue(layerId);
-            countCommand.Parameters.AddWithValue(featureId);
-            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                throw new InvalidOperationException("Failed to count attachments");
-            }
-
-            count = reader.GetInt64(0);
-            totalSize = reader.GetInt64(1);
-        }
-
-        if (count >= limits.MaxAttachmentsPerFeature)
-        {
-            throw new ValidationException(
-                $"Feature already has the maximum number of attachments ({limits.MaxAttachmentsPerFeature})");
-        }
-
-        if (attachment.Size > limits.MaxTotalAttachmentSize ||
-            totalSize > limits.MaxTotalAttachmentSize - attachment.Size)
-        {
-            throw new ValidationException(
-                $"Total attachment size would exceed maximum allowed ({limits.MaxTotalAttachmentSize:N0} bytes)");
-        }
-
-        var created = await InsertAttachmentAsync(connection, transaction, layerId, featureId, attachment, cancellationToken)
-            .ConfigureAwait(false);
+        await EnforceUploadQuotaAsync(new AttachmentPublicationTransaction(connection, transaction, cancellationToken), attachment, null).ConfigureAwait(false);
+        var created = await InsertAttachmentAsync(connection, transaction, layerId, featureId, attachment, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return created;
     }
@@ -649,7 +583,7 @@ internal sealed partial class PostgresAttachmentStore : IAttachmentStore, IImpor
         return ReadAttachment(reader);
     }
 
-    private static Attachment ReadAttachment(NpgsqlDataReader reader)
+    internal static Attachment ReadAttachment(NpgsqlDataReader reader)
     {
         var id = reader.GetInt64(0); // id
         var featureId = reader.GetInt64(1); // feature_id

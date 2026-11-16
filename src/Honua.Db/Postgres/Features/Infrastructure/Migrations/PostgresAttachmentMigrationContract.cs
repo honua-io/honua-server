@@ -3,7 +3,6 @@
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
-/// <summary>Exact application-owned attachment journal and resource identities supplied at composition.</summary>
 internal sealed record PostgresAttachmentMigrationContract(
     string CreateMigration,
     string ImportMigration,

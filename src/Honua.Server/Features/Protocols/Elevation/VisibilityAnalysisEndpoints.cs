@@ -16,6 +16,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+using Honua.Core.Features.Raster;
+
 namespace Honua.Server.Features.Protocols.Elevation;
 
 internal static partial class VisibilityAnalysisEndpoints
@@ -76,7 +78,7 @@ internal static partial class VisibilityAnalysisEndpoints
     private static async Task<IResult> HandleLineOfSight(
         string datasetId,
         HttpContext context,
-        IVisibilityAnalysisService visibilityService,
+        VisibilityAnalysisService visibilityService,
         [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
@@ -205,7 +207,7 @@ internal static partial class VisibilityAnalysisEndpoints
     private static async Task<IResult> HandleViewshed(
         string datasetId,
         HttpContext context,
-        IVisibilityAnalysisService visibilityService,
+        VisibilityAnalysisService visibilityService,
         CancellationToken cancellationToken)
     {
         var logger = context.RequestServices.GetService<ILoggerFactory>()?

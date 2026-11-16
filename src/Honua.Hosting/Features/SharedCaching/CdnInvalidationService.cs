@@ -18,6 +18,7 @@ internal sealed partial class CdnInvalidationService(
     private readonly IHttpContextAccessor? _httpContextAccessor = coordination?.HttpContextAccessor;
     private readonly IOptionsMonitor<SharedCacheOptions>? _options = coordination?.Options;
     private readonly ILeaseStore? _leaseStore = coordination?.LeaseStore;
+    private readonly ICdnPurgeBudget? _budget = coordination?.Budget;
 
     internal const string ResultHeader = "Honua-Cdn-Invalidation";
 
@@ -294,6 +295,11 @@ internal sealed partial class CdnInvalidationService(
 
         async Task<CdnInvalidationResult> SendBatchAsync(IReadOnlyCollection<string> batch)
         {
+            if (await RefuseWhenEditBudgetSpentAsync(batch, cause, cancellationToken).ConfigureAwait(false) is { } refused)
+            {
+                return refused;
+            }
+
             var result = await SendAndRecordAsync(batch, cause, cancellationToken).ConfigureAwait(false);
             if (result.Outcome is CdnInvalidationOutcome.Busy)
             {
@@ -387,7 +393,12 @@ internal sealed partial class CdnInvalidationService(
             return;
         }
 
-        response.Headers[ResultHeader] = result.Failed ? "failed" : "submitted";
+        response.Headers[ResultHeader] = result.Outcome switch
+        {
+            CdnInvalidationOutcome.Submitted => "submitted",
+            CdnInvalidationOutcome.BudgetExceeded => "budget",
+            _ => "failed",
+        };
     }
 
     private static partial class Log
@@ -403,6 +414,18 @@ internal sealed partial class CdnInvalidationService(
             Level = LogLevel.Warning,
             Message = "The purge lease store could not be reached; invalidating without coalescing across tasks. path={Path}")]
         public static partial void PurgeLeaseUnavailable(ILogger logger, Exception exception, string path);
+
+        [LoggerMessage(
+            EventId = 10313,
+            Level = LogLevel.Warning,
+            Message = "CDN edit purges are paused for this month; cached edits expire with their lifetime. submitted={Submitted} estimatedSpend={EstimatedSpend} paths={Paths}")]
+        public static partial void PurgeBudgetSpent(ILogger logger, int submitted, string estimatedSpend, string paths);
+
+        [LoggerMessage(
+            EventId = 10314,
+            Level = LogLevel.Warning,
+            Message = "The CDN purge budget could not be read; the edit purge was sent anyway.")]
+        public static partial void PurgeBudgetUnreadable(ILogger logger, Exception exception);
 
         // The purge record: which change caused the invalidation, which task sent it, and what the CDN answered.
         [LoggerMessage(

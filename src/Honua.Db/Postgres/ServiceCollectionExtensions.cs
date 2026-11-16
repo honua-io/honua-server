@@ -85,18 +85,8 @@ using StackExchange.Redis;
 
 namespace Honua.Db.Postgres;
 
-/// <summary>
-/// Dependency injection extensions for PostgreSQL services
-/// </summary>
-internal static class ServiceCollectionExtensions
+internal static partial class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Add PostgreSQL services including feature store and health checking
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Configuration to get connection string from</param>
-    /// <param name="coreSchemaMigrations">Application-owned migration identities to verify</param>
-    /// <returns>Updated service collection</returns>
     internal static IServiceCollection AddPostgreSqlServices(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -248,8 +238,9 @@ internal static class ServiceCollectionExtensions
         // Register alert persistence services
         services.AddScoped<IAlertChangeReader>(static serviceProvider => new PostgresAlertChangeReader(
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-            new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider))));
-        services.AddKeyedScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>("postgres", (provider, _) =>
+            new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider)),
+            serviceProvider.GetRequiredService<IChangeTracker>()));
+        services.AddScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>(provider =>
             new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
 
@@ -307,10 +298,7 @@ internal static class ServiceCollectionExtensions
             new PostgresOpsHealthRollupStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
-        services.AddScoped<IOpsExternalEventStore>(serviceProvider =>
-            new PostgresOpsExternalEventStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
+        AddOpsIncidentServices(services, configuration);
         services.AddScoped<IOpsAutonomyPolicyStore>(serviceProvider =>
             new PostgresOpsAutonomyPolicyStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
@@ -355,9 +343,8 @@ internal static class ServiceCollectionExtensions
                 attachmentLimits: serviceProvider.GetService<IOptions<LimitsOptions>>()?.Value.Attachments
                     ?? new AttachmentLimits(),
                 migrationContract: coreSchemaMigrations.Attachments,
-                canonicalSchemaName: schemaConfiguration.MetadataSchema));
-        services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
-        services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+                schemaOptions: new AttachmentStoreSchemaOptions(schemaConfiguration.MetadataSchema, configuration["Database:Schema"])));
+        AddAttachmentUploadServices(services, configuration, schemaConfiguration);
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 
@@ -1036,12 +1023,11 @@ internal static class ServiceCollectionExtensions
         // path is Postgres-backed (reads the tile catalog populated by the importer).
         services.AddSingleton<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageReader,
             Honua.Core.Features.TileCachePackage.Services.GeoServicesTileCachePackageReader>();
-        services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageImportService,
-            Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
+        services.AddScoped<Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
             Honua.Db.Postgres.Features.TileCachePackage.PostgresImportedTileCacheReader>();
 
-        services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
+        services.AddScoped<OgcTileCacheExportService>(serviceProvider =>
         {
             var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
             return new OgcTileCacheExportService(
@@ -1058,17 +1044,6 @@ internal static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers only what applying migrations needs: the read-only journal/physical-schema guard,
-    /// the migration runner, the migration-safety options and the PostGIS preflight checker. The
-    /// serving composition calls it from <see cref="AddPostgreSqlServices"/>; the migrate-only host
-    /// (<c>HONUA_MIGRATE_ONLY=true</c>, honua-server#6470) calls it on its own, so it composes no data
-    /// providers, caches or background services.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <param name="configuration">Configuration carrying <c>Database:*</c> settings.</param>
-    /// <param name="coreSchemaMigrations">Application-owned migration identities to verify.</param>
-    /// <returns>Updated service collection.</returns>
     internal static IServiceCollection AddPostgresMigrationServices(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -1105,6 +1080,33 @@ internal static class ServiceCollectionExtensions
         services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();
 
         return services;
+    }
+
+    private static void AddAttachmentUploadServices(
+        IServiceCollection services, IConfiguration configuration, PostgresSchemaConfiguration schemaConfiguration)
+    {
+        services.AddScoped<PostgresAttachmentMaintenance>(serviceProvider =>
+            new PostgresAttachmentMaintenance(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+        if (!Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsEventHandler(configuration))
+        {
+            services.AddHostedService<PostgresAttachmentMaintenanceService>();
+        }
+        services.AddScoped<IAttachmentStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IAttachmentNativeMetadataStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IFeatureAttachmentCleanup>(serviceProvider => serviceProvider.GetRequiredService<PostgresAttachmentStore>());
+        services.AddScoped<IAttachmentUploadSessionStore>(serviceProvider =>
+            new PostgresAttachmentUploadSessionStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+        services.AddScoped<IAttachmentMutationStore>(serviceProvider =>
+            new PostgresAttachmentMutationStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                schemaConfiguration.MetadataSchema,
+                serviceProvider.GetRequiredService<PostgresAttachmentStore>()));
+
     }
 
     private static string ResolveConnectionString(IServiceProvider serviceProvider, IConfiguration configuration)

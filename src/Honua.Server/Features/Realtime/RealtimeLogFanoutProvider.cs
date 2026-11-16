@@ -55,7 +55,7 @@ internal abstract class RealtimeLogFanoutProvider(
     }
 
     public async ValueTask<RealtimeLogWindow> GetWindowAsync(RealtimeFamily family, CancellationToken cancellationToken)
-        => await log.ReadWindowAsync(family.Name, cancellationToken).ConfigureAwait(false);
+        => await dispatcher.ReadWindowAsync(family.Name, cancellationToken).ConfigureAwait(false);
 
     public async ValueTask<IReadOnlyList<RealtimeEvent>> ReadPresencePageAsync(
         string scopeKey, long after, long through, CancellationToken cancellationToken)

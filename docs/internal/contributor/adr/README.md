@@ -60,7 +60,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0052](0052-kubernetes-closed-loop-promotion-via-argo-rollouts.md) | Kubernetes Closed-Loop Promotion via Argo Rollouts | Accepted | 2026-06 |
 | [0053](0053-oauth2-client-credentials-grant.md) | OAuth2 Client-Credentials Grant for Service-to-Service Named Clients | Accepted | 2026-06 |
 | [0054](0054-evidence-based-feature-catalog.md) | Evidence-Based Feature Catalog (Generated, Drift-Gated Capability Map) | Accepted | 2026-06 |
-| [0055](0055-optimistic-batch-merge-train.md) | Optimistic Batch Merge Train | Accepted | 2026-06 |
+| [0055](0055-optimistic-batch-merge-train.md) | Optimistic Batch Merge Train | Superseded | 2026-06 |
 | [0056](0056-mcp-redesign-unified-governed-surface.md) | MCP Redesign — Unified, Client-Agnostic, Governed Surface (Sequencing Plan) | Proposed | 2026-06 |
 | [0057](0057-geoprocessing-capability-boundaries.md) | Geoprocessing Capability Boundaries (Server-Canonical Engine, Thin SDKs, Cloud-Delegated ML) | Accepted | 2026-06 |
 | [0058](0058-unified-capability-registry-single-source-of-truth.md) | Unified Capability Registry as Single Source of Truth for MCP, Spec Conformance, and Studio AI | Accepted | 2026-07 |
@@ -75,6 +75,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0067](0067-plugin-data-store-and-output-format-extension-points.md) | Plugin Data-Store and Output-Format Extension Points | Accepted | 2026-07 |
 | [0068](0068-optional-jwt-access-tokens-and-introspection.md) | Optional JWT Access Tokens and RFC 7662 Introspection | Accepted | 2026-06 |
 | [0069](0069-studio-persistence-bridge-forms-analysis.md) | Bridge Forms and Analysis Persistence into the Studio Package Lifecycle | Accepted | 2026-07 |
+| [0070](0070-job-submitter-security-context-carrier.md) | Carry the submitter's claim snapshot onto background jobs | Accepted | 2026-08 |
 | [0071](0071-raster-execution-boundary.md) | Raster Execution Boundary — Single GDAL-Worker Engine, PostGIS as Serving/Storage Plane | Accepted | 2026-08 |
 | [0073](0073-dedicated-photogrammetry-worker.md) | Dedicated Photogrammetry Worker and Qualified Orthomosaic Engine | Accepted | 2026-08 |
 
@@ -93,6 +94,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0086](0086-one-generation-for-configuration-and-caches.md) | One source of truth and one generation number for configuration and caches | Accepted | 2026-11 |
 | [0087](0087-native-client-protocols.md) | Native client protocols are gRPC and cloud-native files; OGC API and GeoServices REST are compatibility surfaces | Proposed | 2026-11 |
 | [0088](0088-one-first-party-field-sync-contract.md) | One first-party field sync contract | Proposed | 2026-11 |
+| [0088](0088-explicit-datum-selection-and-observation-epochs.md) | Explicit datum selection and observation epochs | Accepted | 2026-11 |
 
 ## Template
 

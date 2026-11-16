@@ -31,6 +31,30 @@ internal sealed partial class HonuaFeatureService
         public ImmutableArray<string> ClientAddIds { get; init; } = [];
 
         public ImmutableArray<string> AssignedAddIds { get; init; } = [];
+
+        public IReadOnlyDictionary<long, string> ExistingGlobalIds { get; init; } = new Dictionary<long, string>();
+    }
+
+    // Update and delete targets read through the caller's row-level view, keyed by object ID.
+    private readonly record struct VisibleEditTargets(FeatureEditBatch Batch, IReadOnlyDictionary<long, Feature> Stored);
+
+    private static Dictionary<long, string> StoredGlobalIds(IReadOnlyDictionary<long, Feature> stored, string? field)
+    {
+        var globalIds = new Dictionary<long, string>(stored.Count);
+        if (field is null)
+        {
+            return globalIds;
+        }
+
+        foreach (var (objectId, feature) in stored)
+        {
+            if (GrpcGlobalIds.Read(feature.Attributes, field) is { } globalId)
+            {
+                globalIds[objectId] = globalId;
+            }
+        }
+
+        return globalIds;
     }
 
     private readonly record struct QueryGlobalIds(GrpcLayerContext Layer, IServiceProvider Services, string? Field);
@@ -265,9 +289,8 @@ internal sealed partial class HonuaFeatureService
 
     private async Task EnsureClientAddIdsAreNewAsync(GlobalIdEdit edit, CancellationToken cancellationToken)
     {
-        // Best effort: the check sees only rows the caller may read (it must not reveal hidden
-        // rows) and runs outside the write transaction. Managed storage has no unique index on
-        // the global-ID attribute, so concurrent or RLS-hidden duplicates are not excluded yet.
+        // This early check sees only visible rows. The storage constraint also rejects
+        // concurrent or hidden duplicates without disclosing their identities.
         var addIds = edit.ClientAddIds;
         if (!addIds.IsEmpty)
         {
@@ -319,7 +342,7 @@ internal sealed partial class HonuaFeatureService
         return resolved;
     }
 
-    // Fills result global IDs the writer did not report from the request's selectors, and removes
+    // Fills result global IDs from selectors or the visibility read, and removes
     // every global ID when the caller may not see the field. Runs before the receipt is stored,
     // so receipts retain the committed identity. Replay applies the current field visibility.
     private static Proto.ApplyEditsResponse StampResultGlobalIds(GlobalIdEdit edit, Proto.ApplyEditsResponse response)
@@ -337,8 +360,28 @@ internal sealed partial class HonuaFeatureService
             Stamp(response.UpdateResults, [.. request.Updates.Select(static update => update.GlobalId)]);
             Stamp(response.DeleteResults, [.. request.DeleteGlobalIds]);
         }
+        else
+        {
+            StampStoredIds(response.UpdateResults, request.Updates.Select(static update => update.Id), edit.ExistingGlobalIds);
+            StampStoredIds(response.DeleteResults, request.Deletes, edit.ExistingGlobalIds);
+        }
 
         return response;
+    }
+
+    private static void StampStoredIds(
+        RepeatedField<Proto.EditResult> results, IEnumerable<long> objectIds, IReadOnlyDictionary<long, string> storedIds)
+    {
+        var index = 0;
+        foreach (var objectId in objectIds)
+        {
+            if (index >= results.Count)
+            {
+                break;
+            }
+
+            results[index++].GlobalId = storedIds.GetValueOrDefault(objectId, string.Empty);
+        }
     }
 
     private static void Stamp(RepeatedField<Proto.EditResult> results, string[] selectors)

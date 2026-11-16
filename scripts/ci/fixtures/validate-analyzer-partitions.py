@@ -73,9 +73,11 @@ with tempfile.TemporaryDirectory(prefix="honua-analyzer-partitions-") as tempora
                 raise AssertionError(f"{partition}: compiler errors must still fail the build")
     if source_filter.source_roots(root, projects) != [projects[0]]:
         raise AssertionError("Source roots must exclude evaluated test projects")
+    if source_filter.test_roots(root, projects) != sorted(projects[1:]):
+        raise AssertionError("Test roots must include every evaluated test and exclude source roots")
     # The property comes from an import, not the project name or inline XML.
     (root / "ownership.props").write_text(
-        '<Project><PropertyGroup><IsTestProject>true</IsTestProject></PropertyGroup></Project>',
+        '<Project><PropertyGroup><IsTestProject>True</IsTestProject></PropertyGroup></Project>',
         encoding="utf-8")
     imported = root / "Imported.csproj"
     imported.write_text(
@@ -85,6 +87,8 @@ with tempfile.TemporaryDirectory(prefix="honua-analyzer-partitions-") as tempora
         '<ItemGroup><Compile Include="Imported.cs" /></ItemGroup></Project>', encoding="utf-8")
     if source_filter.source_roots(root, [imported.name]):
         raise AssertionError("Imported IsTestProject must control source ownership")
+    if source_filter.test_roots(root, [imported.name]) != [imported.name]:
+        raise AssertionError("Imported test ownership must retain test compilation")
     (root / "Imported.cs").write_text("public class Imported { public static int[] Values() => new int[0]; }\n")
     subprocess.run(["dotnet", "restore", str(imported), "--verbosity", "quiet"], check=True)
     for partition in ("source", "tests"):
@@ -97,4 +101,13 @@ with tempfile.TemporaryDirectory(prefix="honua-analyzer-partitions-") as tempora
         '<TargetFramework>net10.0</TargetFramework>', '<TargetFrameworks>net10.0</TargetFrameworks>'))
     if source_filter.source_roots(root, [imported.name]) != [imported.name]:
         raise AssertionError("Multi-targeted projects must conservatively retain source compilation")
+    if source_filter.test_roots(root, [imported.name]) != [imported.name]:
+        raise AssertionError("Multi-targeted tests must retain test analyzer compilation")
+    # Outer evaluation can miss test ownership that is conditional on a target framework.
+    # Retain every multi-targeted root so an inner test build cannot lose diagnostics.
+    imported.write_text(imported.read_text().replace(
+        '<Import Project="ownership.props" />',
+        "<Import Project=\"ownership.props\" Condition=\"'$(TargetFramework)' != ''\" />"))
+    if source_filter.test_roots(root, [imported.name]) != [imported.name]:
+        raise AssertionError("Framework-conditional test ownership must retain compilation")
 print("Analyzer partitions preserve complete diagnostic ownership and compiler failures.")

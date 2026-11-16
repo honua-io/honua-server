@@ -1,0 +1,28 @@
+{
+  "id": "platform_release_status.result_null_execution",
+  "schemaRef": "tools/platform_release_status.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "releaseVersion": "2026.11.15",
+    "releaseDeclared": true,
+    "isCoVersioned": false,
+    "serving": [],
+    "execution": [
+      {
+        "id": "unconfigured-plane",
+        "runtimeProfile": null,
+        "effectiveArtifactReference": null,
+        "projectedFromRelease": false,
+        "skewed": true
+      }
+    ],
+    "skewedIds": [
+      "unconfigured-plane"
+    ]
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [
+    "DeployPreflightPlatformRelease",
+    "PlatformReleasePlaneProjection"
+  ]
+}

@@ -328,6 +328,11 @@ internal static class SearchEndpoints
                 isPostSearch,
                 cogArtifactLocator);
         }
+        catch (UnevaluableLikePatternException)
+        {
+            StacTelemetry.SetFailed(activity, "unevaluable_like_pattern");
+            return StandardErrorHelpers.CreateBadRequest(context, "LIKE pattern could not be evaluated.");
+        }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {

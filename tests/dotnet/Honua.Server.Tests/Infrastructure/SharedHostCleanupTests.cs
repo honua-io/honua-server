@@ -106,8 +106,8 @@ public sealed partial class SharedHostCleanupTests
 
     private static int PostgresReferenceCount()
     {
-        var state = typeof(PostgresFixture).GetField("SharedState", BindingFlags.NonPublic | BindingFlags.Static)!
-            .GetValue(null)!;
+        var state = typeof(PostgresFixture).GetField("SharedState", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!
+            .GetValue(new PostgresFixture())!;
         return (int)state.GetType().GetProperty("SharedRefCount")!.GetValue(state)!;
     }
 

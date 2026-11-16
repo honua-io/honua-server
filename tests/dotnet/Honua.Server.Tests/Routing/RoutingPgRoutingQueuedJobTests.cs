@@ -10,6 +10,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Honua.Routing.Features.Routing.Providers;
@@ -421,14 +422,8 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     [RoutingTest("HONUA_ROUTING_TEST")]
     public async Task ProviderFailure_FailsDurablyWithoutPartialResults()
     {
-        // Two live hosts on the same job tables would claim each other's jobs, so this host gets job tables of its own.
         await using var isolatedJobs = await PostgresJobSubstrateHarness.CreateAsync(_database, nameof(RoutingPgRoutingQueuedJobTests));
-        await using var host = CreateHost(new MissingTableNetworkDatasetResolver(), _routing)
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<JobStoreDatabase>();
-                services.AddSingleton(isolatedJobs.Database);
-            });
+        await using var host = CreateHostWithIsolatedJobTables(isolatedJobs, _routing);
         await host.InitializeAsync();
         using var client = Client(host);
         client.Timeout = TimeSpan.FromMinutes(5);
@@ -469,6 +464,33 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
             await AssertResultIsErrorAsync(client, failure.Task, jobId, failure.Output);
         }
     }
+
+    // Two live hosts on the same job tables would claim each other's jobs, so this host gets job tables of its own.
+    // The job store (and the lease store built on it), queue and log store move there; everything else
+    // (shared configuration, security tokens, idempotency) stays in the system schema, because the
+    // isolated schema holds only the job tables.
+    private static WebAppFixture CreateHostWithIsolatedJobTables(PostgresJobSubstrateHarness isolatedJobs, PgRoutingFixture routing)
+        => CreateHost(new MissingTableNetworkDatasetResolver(), routing)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<PostgresExecutionJobStore>();
+                services.AddSingleton(provider => new PostgresExecutionJobStore(
+                    isolatedJobs.Database,
+                    provider.GetRequiredService<IOptions<JobStoreOptions>>(),
+                    NullLogger<PostgresExecutionJobStore>.Instance,
+                    provider.GetService<PollWakeSignal<IExecutionJobStore>>()));
+                services.RemoveAll<PostgresJobQueue>();
+                services.AddSingleton(provider => new PostgresJobQueue(
+                    isolatedJobs.Database,
+                    NullLogger<PostgresJobQueue>.Instance,
+                    provider.GetService<PollWakeSignal<IJobQueue>>(),
+                    provider.GetService<PollWakeSignal<IExecutionJobStore>>()));
+                services.RemoveAll<IExecutionLogStore>();
+                services.AddSingleton<IExecutionLogStore>(provider => new PostgresExecutionLogStore(
+                    isolatedJobs.Database,
+                    provider.GetRequiredService<IOptions<JobStoreOptions>>(),
+                    NullLogger<PostgresExecutionLogStore>.Instance));
+            });
 
     private static WebAppFixture CreateHost(INetworkDatasetResolver resolver, PgRoutingFixture routing)
         => new WebAppFixture()

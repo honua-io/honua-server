@@ -531,6 +531,55 @@ public class CrsDetectionServiceTests : IAsyncLifetime
         result.Should().Be(25832);
     }
 
+    [Theory]
+    [InlineData(nameof(EsriProjectedPrj.NewYorkLongIslandFtUs), 2263)]
+    [InlineData(nameof(EsriProjectedPrj.NewYorkLongIsland2011FtUs), 6539)]
+    [InlineData(nameof(EsriProjectedPrj.CaliforniaZone5FtUs), 2229)]
+    [InlineData(nameof(EsriProjectedPrj.Lambert93), 2154)]
+    [InlineData(nameof(EsriProjectedPrj.BritishNationalGrid), 27700)]
+    [InlineData(nameof(EsriProjectedPrj.BcAlbers), 3005)]
+    [InlineData(nameof(EsriProjectedPrj.MgaZone55), 28355)]
+    [InlineData(nameof(EsriProjectedPrj.AustralianAlbers), 3577)]
+    public async Task DetectFromPrjAsync_EsriProjectedWithoutAuthority_MatchesEpsgByParameters(string fixture, int expected)
+    {
+        var prj = (string)typeof(EsriProjectedPrj).GetField(fixture)!.GetValue(null)!;
+        // Known ESRI names resolve before parameter matching. Replace only the projected name
+        // so these cases exercise the PostGIS parameter fallback with the original CRS definition.
+        var nameStart = prj.IndexOf('"');
+        var nameEnd = prj.IndexOf('"', nameStart + 1);
+        prj = prj[..(nameStart + 1)] + "Unrecognised_Parameter_Grid" + prj[nameEnd..];
+
+        var result = await _service!.DetectFromPrjAsync(prj);
+
+        result.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(nameof(EsriProjectedPrj.NewYorkLongIslandInternationalFeet))]
+    [InlineData(nameof(EsriProjectedPrj.MgaZone55UnknownDatum))]
+    public async Task DetectFromPrjAsync_EsriProjectedWithNoVerifiableEpsgEquivalent_ReturnsNull(string fixture)
+    {
+        // International feet on a CRS EPSG defines only in US survey feet has no candidate; an unrecognised datum
+        // with GDA94 MGA parameters must not be inferred as GDA94. Either way the import asks for the SRID.
+        var prj = (string)typeof(EsriProjectedPrj).GetField(fixture)!.GetValue(null)!;
+
+        var result = await _service!.DetectFromPrjAsync(prj);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DetectFromPrjAsync_UnknownNameWithGradAngles_ReturnsNull()
+    {
+        var prj = EsriProjectedPrj.BritishNationalGrid
+            .Replace("PROJCS[\"British_National_Grid\"", "PROJCS[\"Unrecognised_Grad_Grid\"", StringComparison.Ordinal)
+            .Replace("UNIT[\"Degree\",0.0174532925199433]", "UNIT[\"Grad\",0.015707963267948967]", StringComparison.Ordinal);
+
+        var result = await _service!.DetectFromPrjAsync(prj);
+
+        result.Should().BeNull("grad-based angles must not match a degree-based EPSG definition");
+    }
+
     [Fact]
     public async Task DetectFromShapefilePrjAsync_WithNonExistentFile_ReturnsNull()
     {

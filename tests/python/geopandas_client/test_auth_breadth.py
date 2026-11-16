@@ -93,7 +93,7 @@ def test_core_analyst_read_authenticated_matches_anonymous_baseline(
             authenticated_layers = {str(entry[0]) for entry in pyogrio.list_layers(dsn)}
             protected = {
                 name for name in authenticated_layers - public_layers
-                if "authenticated_test_layer" in name.lower()
+                if name.split(":")[-1] == fixture.AUTHENTICATED_WFS_TYPE_LOCAL_NAME
             }
             assert len(protected) == 1, {
                 "public": sorted(public_layers),
@@ -138,7 +138,10 @@ def test_core_analyst_read_invalid_credential_returns_protocol_challenge(
             for element in root.iter()
             if element.tag.endswith("Name") and element.text
         ]
-        matches = [name for name in type_names if name.split(":")[-1] == "authenticated_test_layer"]
+        matches = [
+            name for name in type_names
+            if name.split(":")[-1] == fixture.AUTHENTICATED_WFS_TYPE_LOCAL_NAME
+        ]
         assert len(matches) == 1, type_names
         url = (
             f"{base_url}/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature"

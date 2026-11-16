@@ -37,6 +37,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Runs only when this run would publish (PUBLISH_IMAGES): scan_only dispatches on a
+  # branch build and scan without it.
+  authorize-publish:
+    if: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.scan_only != true) }}
+    uses: ./.github/workflows/publish-authorization.yml
+    with:
+      tag-patterns: 'v*'
+
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk' || inputs.scan_only == true
@@ -159,6 +167,17 @@ jobs:
       security-events: write
       id-token: write
     steps:
+      # GitHub compares strings without case, so this job's if also admits a branch named TRUNK.
+      # A publishing run must be on trunk or a v* tag exactly, the test publish-authorization.yml makes.
+      - name: Refuse publication from any other ref
+        if: env.PUBLISH_IMAGES == 'true'
+        run: |
+          case "${GITHUB_REF}" in
+            refs/heads/trunk) exit 0 ;;
+            refs/tags/v*) [[ "${GITHUB_REF#refs/tags/}" != */* ]] && exit 0 ;;
+          esac
+          echo "::error::Publishing runs only from trunk or a v* tag; ${GITHUB_REF} is neither."
+          exit 1
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -622,7 +641,7 @@ jobs:
   publish-manifests:
     name: Publish ${{ matrix.image_name }} Manifest
     if: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || (github.ref == 'refs/heads/trunk' && inputs.scan_only != true)) && needs.build-and-push.result == 'success' }}
-    needs: build-and-push
+    needs: [authorize-publish, build-and-push]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:

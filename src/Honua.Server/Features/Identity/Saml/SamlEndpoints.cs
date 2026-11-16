@@ -4,12 +4,11 @@
 using System.Globalization;
 using System.Net;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography;
 using System.Text;
-using System.Xml;
 using System.Xml.Linq;
-using Honua.Server.Features.Admin;
+using System.Xml;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
@@ -17,6 +16,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -77,7 +77,7 @@ internal static partial class SamlEndpoints
     private static async Task<IResult> HandleAssertionConsumerService(
         HttpContext context,
         [FromServices] IOptions<SamlAuthenticationOptions> options,
-        [FromServices] ISamlAssertionValidator validator,
+        [FromServices] SamlAssertionValidator validator,
         [FromServices] AdminAuthSessionStore sessionStore,
         [FromServices] ILogger<SamlEndpointsLog> logger)
     {

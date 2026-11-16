@@ -54,8 +54,5 @@ public sealed partial class InMemoryCacheServiceTests
         metrics.IsUsingFallback.Should().BeFalse();
         metrics.LocalKeyCount.Should().Be(2);
         metrics.DistributedKeyCount.Should().BeNull();
-        metrics.RedisDatabaseSize.Should().BeNull();
-        metrics.RedisUsedMemoryBytes.Should().BeNull();
-        metrics.RedisUsedMemoryHuman.Should().BeNull();
     }
 }

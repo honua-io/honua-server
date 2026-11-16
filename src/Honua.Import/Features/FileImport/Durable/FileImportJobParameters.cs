@@ -23,6 +23,7 @@ internal static class FileImportJobParameters
     public const string TargetSchema = "import.target_schema";
     public const string SourceSrid = "import.source_srid";
     public const string DatumTransformationName = "import.datum_transformation_name";
+    public const string SourceLayer = "import.source_layer";
     public const string DatumTransformationWkid = "import.datum_transformation_wkid";
     public const string CoordinateEpoch = "import.coordinate_epoch";
     public const string TargetSrid = "import.target_srid";
@@ -99,6 +100,7 @@ internal static class FileImportJobParameters
         AddIfPresent(parameters, TargetSrid, request.TargetSrid?.ToString(CultureInfo.InvariantCulture));
         AddIfPresent(parameters, SourceSrid, request.SourceSrid?.ToString(CultureInfo.InvariantCulture));
         AddIfPresent(parameters, DatumTransformationName, request.DatumTransformationName);
+        AddIfPresent(parameters, SourceLayer, request.SourceLayer);
         AddIfPresent(parameters, DatumTransformationWkid, request.DatumTransformationWkid?.ToString(CultureInfo.InvariantCulture));
         AddIfPresent(parameters, CoordinateEpoch, request.CoordinateEpoch?.ToString("R", CultureInfo.InvariantCulture));
         AddIfPresent(parameters, KeyColumns, request.KeyColumns.Count == 0 ? null : string.Join(',', request.KeyColumns));
@@ -177,6 +179,7 @@ internal static class FileImportJobParameters
             SourceSrid = spatialReferences.Source,
             DatumTransformationWkid = datum.Wkid,
             DatumTransformationName = Get(parameters, DatumTransformationName),
+            SourceLayer = Get(parameters, SourceLayer),
             CoordinateEpoch = datum.Epoch,
             TargetSrid = spatialReferences.Target,
             OverwriteExisting = string.Equals(Get(parameters, OverwriteExisting), "true", StringComparison.Ordinal),

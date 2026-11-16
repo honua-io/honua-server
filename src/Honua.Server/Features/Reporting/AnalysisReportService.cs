@@ -15,6 +15,8 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+using Honua.Core.Features.Reporting.Services;
+
 namespace Honua.Server.Features.Reporting;
 
 internal sealed class AnalysisReportService : IAnalysisReportService
@@ -47,7 +49,7 @@ internal sealed class AnalysisReportService : IAnalysisReportService
         description: "Count of narrative fallbacks from llm-error or deterministic-only.");
 
     private readonly IGeoprocessingJobService _jobService;
-    private readonly IAnalysisReportBuilder _builder;
+    private readonly AnalysisReportBuilder _builder;
     private readonly IAnalysisReportStore _store;
     private readonly Dictionary<AnalysisReportFormat, IAnalysisReportRenderer> _renderers;
     private readonly IMemoryCache _cache;
@@ -57,7 +59,7 @@ internal sealed class AnalysisReportService : IAnalysisReportService
 
     public AnalysisReportService(
         IGeoprocessingJobService jobService,
-        IAnalysisReportBuilder builder,
+        AnalysisReportBuilder builder,
         IAnalysisReportStore store,
         IEnumerable<IAnalysisReportRenderer> renderers,
         IMemoryCache cache,

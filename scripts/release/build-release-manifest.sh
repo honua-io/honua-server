@@ -26,7 +26,7 @@ Candidate identity (image is what makes candidate.image.evidenceState pass):
   --ref-source <label>     Optional source label (branch/tag) for the ref
   --image-repository <r>   e.g. ghcr.io/honua-io/honua-server
   --image-tag <tag>        Immutable RC tag (e.g. rc-honua-2026-06-preview-<sha>)
-  --image-digest <sha256>  Immutable image digest (sha256:...)
+  --image-digest <sha256>  Immutable image digest (sha256: + 64 lowercase hex digits)
 
 Other:
   --observed-at <iso8601>  Timestamp recorded in the manifest (default: env OBSERVED_AT, else error)
@@ -57,8 +57,8 @@ Evidence JSON shape (all arrays optional):
     "blockers": [ { "repo": "...", "number": 1, "url": "...", "reason": "..." } ],
     "waiver": { "approvedBy": "...", "reason": "..." }            # optional
   }
-A conclusion of success/passed/green/ok -> evidenceState "passed"; anything else
--> "blocked". A signal with no conclusion but a non-empty blockers[] -> "blocked".
+A conclusion of success/passed/green/ok with no blockers -> evidenceState "passed".
+Any non-empty blockers[] or other conclusion -> "blocked".
 EOF
   exit 2
 }
@@ -119,8 +119,8 @@ manifest="$(
     # Map a CI conclusion to an evidenceState.
     def state_from($conclusion; $blockers):
       ($conclusion // "" | ascii_downcase) as $c |
-      if   ($c | IN("success","passed","green","ok","completed")) then "passed"
-      elif ($c == "" and (($blockers // []) | length) == 0) then "blocked"
+      if   (($blockers // []) | length) > 0 then "blocked"
+      elif ($c | IN("success","passed","green","ok")) then "passed"
       else "blocked" end;
 
     # Normalize one signal entry into a manifest gate/lane record.
@@ -175,7 +175,7 @@ manifest="$(
         blockers: $blockers
       };
 
-    ($imageDigest != "" and $imageTag != "") as $imageReady |
+    (($imageDigest | test("\\Asha256:[0-9a-f]{64}\\z")) and $imageTag != "" and $imageRepo != "") as $imageReady |
 
     {
       "$schema": "https://honua.io/schemas/release-train-manifest.v1.json",
@@ -194,7 +194,7 @@ manifest="$(
           blockers: (if $imageReady then [] else
             [ { repo: "honua-io/honua-devops", number: 41,
                 url: "https://github.com/honua-io/honua-devops/issues/41",
-                reason: "Release-candidate image tag and digest are not yet published." } ] end)
+                reason: "Release-candidate image requires a repository, published tag and valid sha256 digest." } ] end)
         }
       },
       sdkCompatibilityManifest: ($ev.meta.sdkCompatibilityManifest // "docs/developer/sdk-compatibility-versions.json"),

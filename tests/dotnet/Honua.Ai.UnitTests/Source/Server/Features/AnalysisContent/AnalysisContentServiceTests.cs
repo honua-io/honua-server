@@ -120,7 +120,8 @@ public sealed class AnalysisContentServiceTests
             Substitute.For<IGeoprocessingJobService>(),
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
         var exception = await Assert.ThrowsAsync<AnalysisContentValidationException>(() =>
             sut.CreateItemAsync(
@@ -151,7 +152,8 @@ public sealed class AnalysisContentServiceTests
             Substitute.For<IGeoprocessingJobService>(),
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
         var exception = await Assert.ThrowsAsync<AnalysisContentValidationException>(() =>
             sut.CreateItemAsync(
@@ -192,7 +194,8 @@ public sealed class AnalysisContentServiceTests
             Substitute.For<IGeoprocessingJobService>(),
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
         var result = await sut.AddVersionAsync(
             ConflictOnceAnalysisContentStore.ItemId,
@@ -503,7 +506,8 @@ public sealed class AnalysisContentServiceTests
             jobService,
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
         await Assert.ThrowsAsync<GeoprocessingAuthorizationException>(
             () => sut.SubmitAnalysisPackageAsync(
@@ -657,7 +661,8 @@ public sealed class AnalysisContentServiceTests
             jobs,
             Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
     private static ExecutionJobRecord JobFromMetadata(IReadOnlyDictionary<string, string>? metadata)
     {
@@ -726,7 +731,8 @@ public sealed class AnalysisContentServiceTests
             jobService ?? Substitute.For<IGeoprocessingJobService>(),
             logStores ?? Array.Empty<IExecutionLogStore>(),
             TimeProvider.System,
-            NullLogger<AnalysisContentService>.Instance);
+            NullLogger<AnalysisContentService>.Instance,
+            Substitute.For<ILayerAccessAuthorizer>());
 
     private static ClaimsPrincipal Principal() => new(new ClaimsIdentity("Test"));
 

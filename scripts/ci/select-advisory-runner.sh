@@ -9,6 +9,8 @@ emit() {
   exit 0
 }
 
+readonly RESERVED_HEAVY_RUNNERS=2
+
 hosted="$(jq -cn --arg label "${HOSTED_RUNNER:-ubuntu-latest}" '$label')"
 label="${HONUA_HEAVY_RUNNER:-}"
 jq -e '
@@ -25,4 +27,8 @@ heartbeat="$(aws --cli-connect-timeout 5 --cli-read-timeout 5 ssm get-parameter 
   --name /honua-lane-build-host/gate-runner/heartbeat --query Parameter.Value --output text)" || emit "$hosted" 'heartbeat unreadable'
 proof="$(bash "$(dirname "${BASH_SOURCE[0]}")/gate-runner-heartbeat.sh" "$instance" <<< "$heartbeat")" || emit "$hosted" 'invalid heartbeat'
 jq -e '.heavy_ready == true' <<< "$proof" >/dev/null || emit "$hosted" 'heavy pool busy or stale'
+# Required PR Gate jobs come first: advisory work takes a heavy runner only
+# while this many others stay idle for them. The proof above validated the count.
+jq -e --argjson reserved "$RESERVED_HEAVY_RUNNERS" '.heavy.idle > $reserved' <<< "$heartbeat" >/dev/null ||
+  emit "$hosted" 'idle heavy runners are reserved for required jobs'
 emit "$(jq -c . <<< "$label")" 'fresh idle heavy runner'

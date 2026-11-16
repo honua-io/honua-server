@@ -5,7 +5,6 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
-using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -135,7 +134,7 @@ internal static partial class OgcCoverageImportEndpoints
 
         try
         {
-            var service = context.RequestServices.GetRequiredService<IOgcCoverageImportService>();
+            var service = context.RequestServices.GetRequiredService<OgcCoverageImportService>();
             var result = await service.ImportAsync(importRequest, cancellationToken).ConfigureAwait(false);
 
             await Results.Json(result, OgcCoverageImportJsonContext.Default.OgcCoverageImportResult)

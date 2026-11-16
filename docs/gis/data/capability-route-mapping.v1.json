@@ -423,6 +423,10 @@
       "capability": "serve.vector-tiles"
     },
     {
+      "family": "Paired Publication HTTP",
+      "capability": "serve.vector-tiles"
+    },
+    {
       "family": "Cloud Optimized GeoTIFF",
       "capability": "raster.cloud-cog-serving"
     },

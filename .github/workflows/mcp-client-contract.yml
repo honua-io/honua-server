@@ -49,8 +49,9 @@ jobs:
           node-version: '22.19.0'
       - name: Check contract failure controls
         run: node --test scripts/qualification/mcp/catalog-channel-contract.test.mjs scripts/qualification/mcp/inspector-result.test.mjs scripts/qualification/mcp/inspector-rate-budget.test.mjs
-      - name: Generate candidate roster for feature PRs
-        if: github.event_name == 'pull_request'
+      # PRs may not commit the roster and the nightly writer lands it after
+      # merge, so every event projects it before the strict drift test.
+      - name: Generate the roster projection before the strict roster test
         run: bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release
       - name: Invoke every advertised tool and audit its inputs and discovery
         run: |

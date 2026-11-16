@@ -36,7 +36,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public partial class SecureConnectionEndpointsTests : IAsyncLifetime
+public partial class SecureConnectionEndpointsTests : IClassFixture<SecureConnectionEndpointsTests.DefaultApplicationHost>, IAsyncLifetime
 {
     private const string AdminPassword = "secure-connection-admin-key";
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -44,14 +44,14 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true
     };
-    private readonly WebAppFixture _fixture;
-    private bool _defaultApplicationInitialized;
+    private readonly DefaultApplicationHost _defaultApplication;
+    private WebAppFixture _fixture = null!;
     private HttpClient _client = null!;
     private ISecureConnectionRegistry _registry = null!;
 
-    public SecureConnectionEndpointsTests()
+    public SecureConnectionEndpointsTests(DefaultApplicationHost defaultApplication)
     {
-        _fixture = CreateFixture();
+        _defaultApplication = defaultApplication;
     }
 
     private static WebAppFixture CreateFixture() => new WebAppFixture()
@@ -67,15 +67,39 @@ public partial class SecureConnectionEndpointsTests : IAsyncLifetime
 
     private async Task InitializeDefaultApplicationAsync()
     {
-        _defaultApplicationInitialized = true;
-        await _fixture.InitializeAsync();
+        _fixture = await _defaultApplication.GetApplicationAsync();
         _client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
 
         using var scope = _fixture.Services.CreateScope();
         _registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
     }
 
-    public Task DisposeAsync() => _defaultApplicationInitialized ? _fixture.DisposeAsync() : Task.CompletedTask;
+    public Task DisposeAsync()
+    {
+        _client?.Dispose();
+        return Task.CompletedTask;
+    }
+
+    public sealed class DefaultApplicationHost : IAsyncLifetime
+    {
+        private readonly WebAppFixture _application = CreateFixture();
+        private readonly Lazy<Task> _startup;
+
+        public DefaultApplicationHost()
+        {
+            _startup = new Lazy<Task>(_application.InitializeAsync);
+        }
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task<WebAppFixture> GetApplicationAsync()
+        {
+            await _startup.Value;
+            return _application;
+        }
+
+        public Task DisposeAsync() => _application.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/connections")]

@@ -69,7 +69,7 @@ internal sealed class ObservabilityRealtimeStatus
 {
     public bool Supported { get; init; }
 
-    public string? HubPath { get; init; }
+    public string? StreamPath { get; init; }
 
     public string? Protocol { get; init; }
 

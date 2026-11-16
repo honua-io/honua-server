@@ -8,46 +8,28 @@ using System.Threading.Channels;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Server.Features.Streaming;
 
 internal sealed class FeatureStreamSessionManager : IDisposable
 {
     internal const string DefaultSubscriptionId = "default";
-    private static readonly RedisChannel BroadcastChannel = new("featurechange:stream:broadcast", RedisChannel.PatternMode.Literal);
-    private static readonly TimeSpan ClusterBroadcastRecoveryInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan RoutabilityRefreshInterval = TimeSpan.FromSeconds(1);
     private const int RecentEventIdCapacity = 128;
     private const int SubscriberSecurityRefreshParallelism = 8;
 
-    private const int MaxClusterBroadcastBacklog = 1024;
     private readonly ConcurrentDictionary<Guid, SessionEntry> _sessions = new();
-    private readonly ConcurrentQueue<string> _clusterBroadcastBacklog = new();
-    private readonly object _clusterBroadcastLock = new();
     private readonly IOptions<FeatureStreamOptions> _options;
     private readonly ILogger<FeatureStreamSessionManager> _logger;
     private readonly FeatureStreamMetrics _metrics;
-    private readonly IConnectionMultiplexer? _redis;
     private readonly FeatureStreamRoutabilityGuard? _routabilityGuard;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly SemaphoreSlim _routabilityRefreshGate = new(1, 1);
-    private readonly SemaphoreSlim _clusterBroadcastDispatchGate = new(1, 1);
-    private ISubscriber? _subscriber;
-    private readonly Timer? _clusterBroadcastRecoveryTimer;
-    private readonly string _instanceId = Guid.NewGuid().ToString("N");
-    private bool _clusterBroadcastEnabled;
     private int _activeSessionCount;
     private readonly object _admissionLock = new();
     private readonly Dictionary<string, int> _partitionSessionCounts = new(StringComparer.Ordinal);
     private long _slowConsumerDrops;
     private long _heartbeatsSent;
-    private int _clusterBroadcastUnavailableLogged;
-    private int _clusterBroadcastFailedLogged;
-    private int _clusterBroadcastRecoveryInProgress;
-    private int _clusterBroadcastBacklogCount;
-    private long _clusterBroadcastBacklogDropped;
-    private bool _clusterBroadcastBacklogDropLogged;
     private long _nextRoutabilityRefreshTimestamp;
     private int _lastRoutabilityRefreshSucceeded = 1;
 
@@ -55,41 +37,14 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         IOptions<FeatureStreamOptions> options,
         ILogger<FeatureStreamSessionManager> logger,
         FeatureStreamMetrics metrics,
-        IConnectionMultiplexer? redis = null,
         FeatureStreamRoutabilityGuard? routabilityGuard = null,
         IServiceScopeFactory? serviceScopeFactory = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
-        _redis = redis;
         _routabilityGuard = routabilityGuard;
         _serviceScopeFactory = serviceScopeFactory;
-
-        if (_redis is null)
-        {
-            return;
-        }
-
-        try
-        {
-            _subscriber = _redis.GetSubscriber();
-            _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
-            _clusterBroadcastEnabled = true;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional broad catch: cluster broadcast subscribe is best-effort during
-            // construction. A Redis outage here must not prevent the session manager (and
-            // single-node feature streaming) from starting; the recovery timer retries.
-            LogClusterBroadcastUnavailableOnce(ex);
-        }
-
-        _clusterBroadcastRecoveryTimer = new Timer(
-            _ => TryRecoverClusterBroadcast(),
-            null,
-            ClusterBroadcastRecoveryInterval,
-            ClusterBroadcastRecoveryInterval);
     }
 
     public long SlowConsumerDrops => Interlocked.Read(ref _slowConsumerDrops);
@@ -244,22 +199,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public ClusterBroadcastBacklogSnapshot GetClusterBroadcastBacklogSnapshot()
-    {
-        lock (_clusterBroadcastLock)
-        {
-            return new ClusterBroadcastBacklogSnapshot(
-                Configured: _redis is not null,
-                Enabled: _clusterBroadcastEnabled,
-                BacklogDepth: _clusterBroadcastBacklogCount,
-                Dropped: _clusterBroadcastBacklogDropped);
-        }
-    }
-
     private void UpdateGaugeSnapshot()
-        => _metrics.RecordGaugeSnapshot(
-            Volatile.Read(ref _activeSessionCount),
-            Volatile.Read(ref _clusterBroadcastBacklogCount));
+        => _metrics.RecordGaugeSnapshot(Volatile.Read(ref _activeSessionCount));
 
     public void RecordReplayEventsDelivered(string transport, long count)
         => _metrics.RecordReplayEventsDelivered(transport, count);
@@ -267,7 +208,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public FeatureStreamSession CreateSession(string transport, string? clientLabel)
         => CreateSession(transport, clientLabel, filter: null);
 
-    public FeatureStreamSession CreateSession(string transport, string? clientLabel, IStreamSubscriptionFilter? filter = null)
+    public FeatureStreamSession CreateSession(string transport, string? clientLabel, StreamSubscriptionFilter? filter = null)
         => TryCreateSession(transport, clientLabel, filter)
             ?? throw new InvalidOperationException(
                 $"Feature stream session limit of {_options.Value.MaxConcurrentSessions} concurrent sessions reached.");
@@ -275,7 +216,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public FeatureStreamSession? TryCreateSession(
         string transport,
         string? clientLabel,
-        IStreamSubscriptionFilter? filter = null,
+        StreamSubscriptionFilter? filter = null,
         bool addDefaultSubscription = true,
         string? admissionPartition = null)
     {
@@ -391,107 +332,119 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return true;
     }
 
-    public int Broadcast(FeatureStreamMessage message)
+    // A reset means the relay skipped an interval. Close current sessions before later cursors
+    // can reach them; reconnecting with their last delivered cursor invokes durable gap recovery.
+    internal void DisconnectForReplayGap()
     {
-        var delivered = BroadcastLocally(message);
-
-        if (message.IsHeartbeat)
+        foreach (var sessionId in _sessions.Keys)
         {
-            return delivered;
-        }
-
-        if (_redis is null)
-        {
-            // Single-node mode: there are no cross-node consumers, so skip the
-            // cluster serialization and never accumulate a backlog that nothing
-            // could ever flush.
-            return delivered;
-        }
-
-        var payload = JsonSerializer.Serialize(
-            new FeatureStreamBroadcastMessage
-            {
-                OriginInstanceId = _instanceId,
-                Envelope = message.Envelope,
-                GeometryEnvelope = message.GeometryEnvelope,
-                PropertiesJson = message.PropertiesJson
-            },
-            FeatureStreamJsonContext.Default.FeatureStreamBroadcastMessage);
-
-        lock (_clusterBroadcastLock)
-        {
-            if (_clusterBroadcastEnabled && _subscriber is not null)
-            {
-                TryFlushClusterBroadcastBacklogLocked();
-                if (TryPublishClusterBroadcastLocked(payload))
-                {
-                    return delivered;
-                }
-            }
-
-            EnqueueClusterBroadcastBacklogLocked(payload);
-            TryRecoverClusterBroadcastLocked();
-        }
-
-        return delivered;
-    }
-
-    private bool TryPublishClusterBroadcastLocked(string payload)
-    {
-        if (!_clusterBroadcastEnabled || _subscriber is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            // Fire-and-forget: Broadcast() runs synchronously on the feature-edit
-            // hot path while holding the process-wide cluster lock, so it must not
-            // block on a Redis round trip. Cross-node delivery is best-effort —
-            // missed live events are recovered through the durable event store and
-            // the cross-node poll.
-            _subscriber.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
-            return true;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional broad catch: this is a best-effort cross-node publish on the
-            // feature-edit hot path. Failure falls back to the retry backlog instead of
-            // propagating and interrupting the local broadcast.
-            LogClusterBroadcastFailedOnce(ex);
-            return false;
+            RemoveSession(sessionId, FeatureStreamDisconnectReason.ServerShutdown);
         }
     }
 
-    // Callers must hold the lock while a retry is queued.
-    private void EnqueueClusterBroadcastBacklogLocked(string payload)
-    {
-        _clusterBroadcastBacklog.Enqueue(payload);
-        _clusterBroadcastBacklogCount++;
-        UpdateGaugeSnapshot();
+    // Delivers to this task's sessions; every task receives each change from the change log.
+    public int Broadcast(FeatureStreamMessage message) => BroadcastLocally(message);
 
-        while (_clusterBroadcastBacklogCount > MaxClusterBroadcastBacklog &&
-               _clusterBroadcastBacklog.TryDequeue(out _))
+    // The task's realtime relay follows the feature log once and broadcasts every change in
+    // generation order, so a session has nothing to read from the store while it has been offered
+    // everything the relay has broadcast. Its periodic store read then becomes a memory check
+    // instead of one query per session per interval (specification section 12 item 9). Without an
+    // attached, positioned relay, or once a session falls behind it, the session reads the store.
+    // SSE sessions use this; WebSocket control subscriptions advance their own poll cursors and
+    // still read the store on every interval.
+    private RelayAttachment? _relayAttachment;
+    private long _relayedThrough;
+    private long _broadcastStartedThrough;
+
+    private sealed class RelayAttachment(Func<long> position)
+    {
+        public Func<long> Position { get; } = position;
+    }
+
+    internal void AttachRelay(Func<long> position)
+        => Volatile.Write(ref _relayAttachment, new RelayAttachment(position));
+
+    internal void DetachRelay() => Volatile.Write(ref _relayAttachment, null);
+
+    // Called after a change has been offered to every local session.
+    internal void MarkRelayed(long generation) => InterlockedMax(ref _relayedThrough, generation);
+
+    // Called when the relay could not offer a change to local sessions. Every session must then
+    // read the store through it, even after later changes are offered live.
+    internal void MarkUnrelayed(long generation) => InterlockedMax(ref _storeReadRequiredThrough, generation);
+
+    private long _storeReadRequiredThrough;
+
+    // Null when the session must read the store. Otherwise the cursor it may move to without one:
+    // everything offered to it once its channel is empty (written or discarded by its writer), or
+    // its current cursor while offered frames are still queued. Moving the cursor keeps the next
+    // real store read, and the delivered-cursor floor, as current as a read would have.
+    internal long? StorePollSkipCursor(Guid sessionId, long replayCursor)
+    {
+        var relay = Volatile.Read(ref _relayAttachment);
+        if (relay is null || !_sessions.TryGetValue(sessionId, out var entry))
         {
-            _clusterBroadcastBacklogCount--;
-            _clusterBroadcastBacklogDropped++;
-            _metrics.RecordClusterBroadcastDropped();
-            if (!_clusterBroadcastBacklogDropLogged)
+            return null;
+        }
+
+        var position = relay.Position();
+        if (position <= 0)
+        {
+            return null;
+        }
+
+        // Each session must durably cover its first positioned reading of this attachment.
+        // A later offered change cannot prove coverage of an earlier startup or joining gap.
+        // Relayed is read before considered: a change is considered before it is relayed.
+        var relayed = Math.Max(Interlocked.Read(ref _relayedThrough), position);
+        var attachmentFloor = Math.Max(relayed, Interlocked.Read(ref _broadcastStartedThrough));
+        if (replayCursor < entry.GetRelayReadFloor(relay, attachmentFloor))
+        {
+            return null;
+        }
+        var considered = entry.ConsideredThrough;
+        if (Math.Max(considered, replayCursor) < relayed)
+        {
+            return null;
+        }
+
+        var proposed = entry.Channel.Reader.TryPeek(out _) ? replayCursor : Math.Max(replayCursor, considered);
+        // Capture advancement before checking the floors: a later considered generation must
+        // never cover an earlier dropped change that this session has not read from the store.
+        if (replayCursor < Interlocked.Read(ref _storeReadRequiredThrough) ||
+            replayCursor < entry.StoreReadRequiredThrough ||
+            !ReferenceEquals(relay, Volatile.Read(ref _relayAttachment)))
+        {
+            return null;
+        }
+
+        return proposed;
+    }
+
+    private static void InterlockedMax(ref long target, long value)
+    {
+        var seen = Interlocked.Read(ref target);
+        while (value > seen)
+        {
+            var prior = Interlocked.CompareExchange(ref target, value, seen);
+            if (prior == seen)
             {
-                _clusterBroadcastBacklogDropLogged = true;
-                FeatureStreamLog.ClusterBroadcastBacklogOverflowed(
-                    _logger,
-                    MaxClusterBroadcastBacklog,
-                    _clusterBroadcastBacklogDropped);
+                return;
             }
+            seen = prior;
         }
     }
 
     private int BroadcastLocally(FeatureStreamMessage message)
     {
+        if (!message.IsHeartbeat)
+        {
+            // A joining session can miss an enumeration before MarkRelayed completes.
+            InterlockedMax(ref _broadcastStartedThrough, message.Envelope.Cursor);
+        }
+
         var delivered = 0;
-        IReadOnlyDictionary<string, JsonElement>? parsedProperties = null;
-        bool propertiesParsed = false;
+        var parse = new BroadcastParse();
         foreach (var (id, entry) in _sessions)
         {
             if (entry.Cts.IsCancellationRequested)
@@ -509,38 +462,67 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 continue;
             }
 
-            var matches = entry.GetMatchingSubscriptions(
-                message.Envelope,
-                message.GeometryEnvelope,
-                message.PropertiesJson,
-                ref parsedProperties,
-                ref propertiesParsed);
-            if (matches.Length == 0)
+            delivered += OfferChange(id, entry, message, parse);
+        }
+
+        return delivered;
+    }
+
+    private sealed class BroadcastParse
+    {
+        public IReadOnlyDictionary<string, JsonElement>? Properties;
+        public bool Parsed;
+    }
+
+    private int OfferChange(Guid sessionId, SessionEntry entry, FeatureStreamMessage message, BroadcastParse parse)
+    {
+        var parsedProperties = parse.Properties;
+        var propertiesParsed = parse.Parsed;
+        var matches = entry.GetMatchingSubscriptions(
+            message.Envelope,
+            message.GeometryEnvelope,
+            message.PropertiesJson,
+            ref parsedProperties,
+            ref propertiesParsed);
+        parse.Properties = parsedProperties;
+        parse.Parsed = propertiesParsed;
+        if (matches.Length == 0)
+        {
+            if (entry.AnyRejectedByRoutability(message.Envelope))
             {
-                continue;
+                entry.RequireStoreRead(message.Envelope.Cursor);
+            }
+            else
+            {
+                entry.MarkConsidered(message.Envelope.Cursor);
             }
 
-            // Dedup is claimed at send time (writer task and per-subscription
-            // replay), not here. Claiming the (event, subscription) slot before
-            // queueing would mark events delivered that the bounded channel
-            // later drops as pre-drain overflow — and replay would then skip
-            // them too, losing the event entirely. Queue speculatively; the
-            // writer/replay path with the atomic test-and-set decides who
-            // actually sends. The generation observed at match time travels
-            // with the frame so the writer can reject queued frames whose
-            // subscription was unsubscribed or replaced before drain.
-            var matchIndex = 0;
-            while (matchIndex < matches.Length)
+            return 0;
+        }
+
+        // Queue speculatively. Send-time dedup decides who delivers; claiming the slot here
+        // would hide events the bounded channel later drops.
+        var delivered = 0;
+        var allQueued = true;
+        foreach (var match in matches)
+        {
+            var subscriptionMessage = message with
             {
-                var match = matches[matchIndex];
-                var subscriptionMessage = message with
-                {
-                    Envelope = (match.Envelope ?? message.Envelope) with { SubscriptionId = match.SubscriptionId },
-                    SubscriptionGeneration = match.Generation
-                };
-                delivered += TryQueueMessage(id, entry, subscriptionMessage) ? 1 : 0;
-                matchIndex++;
-            }
+                Envelope = (match.Envelope ?? message.Envelope) with { SubscriptionId = match.SubscriptionId },
+                SubscriptionGeneration = match.Generation
+            };
+            var queued = TryQueueMessage(sessionId, entry, subscriptionMessage);
+            delivered += queued ? 1 : 0;
+            allQueued &= queued;
+        }
+
+        if (allQueued)
+        {
+            entry.MarkConsidered(message.Envelope.Cursor);
+        }
+        else
+        {
+            entry.RequireStoreRead(message.Envelope.Cursor);
         }
 
         return delivered;
@@ -575,154 +557,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         return true;
-    }
-
-    private void HandleClusterBroadcast(RedisChannel channel, RedisValue value)
-    {
-        if (!_clusterBroadcastEnabled || value.IsNullOrEmpty)
-        {
-            return;
-        }
-
-        try
-        {
-            var payload = JsonSerializer.Deserialize(
-                value.ToString(),
-                FeatureStreamJsonContext.Default.FeatureStreamBroadcastMessage);
-
-            if (payload is null ||
-                string.Equals(payload.OriginInstanceId, _instanceId, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _ = HandleClusterBroadcastAsync(payload);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional broad catch: this handles an inbound Redis pub/sub callback for
-            // a cross-node broadcast. A malformed or unexpected payload must not throw back
-            // into StackExchange.Redis's dispatch thread; log and drop the message.
-            LogClusterBroadcastFailedOnce(ex);
-        }
-    }
-
-    private async Task HandleClusterBroadcastAsync(FeatureStreamBroadcastMessage payload)
-    {
-        await _clusterBroadcastDispatchGate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (!await RefreshRoutabilityAsync().ConfigureAwait(false))
-            {
-                return;
-            }
-
-            BroadcastLocally(FeatureStreamMessage.Data(
-                payload.Envelope,
-                payload.GeometryEnvelope,
-                payload.PropertiesJson));
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            LogClusterBroadcastFailedOnce(ex);
-        }
-        finally
-        {
-            _clusterBroadcastDispatchGate.Release();
-        }
-    }
-
-    private void TryRecoverClusterBroadcast()
-    {
-        try
-        {
-            lock (_clusterBroadcastLock)
-            {
-                TryRecoverClusterBroadcastLocked();
-            }
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentionally generic: this runs on the recurring cluster-broadcast recovery
-            // timer callback. A single failed recovery attempt must not kill the timer or
-            // the host; log and let the next tick retry.
-            LogClusterBroadcastUnavailableOnce(ex);
-        }
-    }
-
-    private void TryRecoverClusterBroadcastLocked()
-    {
-        if (_redis is null)
-        {
-            return;
-        }
-
-        if (!_clusterBroadcastEnabled)
-        {
-            if (Interlocked.Exchange(ref _clusterBroadcastRecoveryInProgress, 1) != 0)
-            {
-                return;
-            }
-
-            try
-            {
-                _subscriber ??= _redis.GetSubscriber();
-                _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
-                _clusterBroadcastEnabled = true;
-
-                // Re-arm the once-per-episode failure logs so the next outage is
-                // visible to operators instead of degrading silently after the
-                // first incident in the process lifetime.
-                Interlocked.Exchange(ref _clusterBroadcastUnavailableLogged, 0);
-                Interlocked.Exchange(ref _clusterBroadcastFailedLogged, 0);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Intentional broad catch: this is a best-effort re-subscribe attempt inside
-                // the recovery loop; Redis may still be unavailable, so log and leave
-                // cluster broadcast disabled for the next recovery tick to retry.
-                LogClusterBroadcastUnavailableOnce(ex);
-                return;
-            }
-            finally
-            {
-                Volatile.Write(ref _clusterBroadcastRecoveryInProgress, 0);
-            }
-        }
-
-        TryFlushClusterBroadcastBacklogLocked();
-    }
-
-    private void TryFlushClusterBroadcastBacklogLocked()
-    {
-        if (!_clusterBroadcastEnabled || _subscriber is null)
-        {
-            return;
-        }
-
-        while (_clusterBroadcastBacklog.TryPeek(out var payload))
-        {
-            try
-            {
-                _subscriber.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
-                if (_clusterBroadcastBacklog.TryDequeue(out _))
-                {
-                    _clusterBroadcastBacklogCount--;
-                }
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Intentional broad catch: this is a per-payload attempt inside the backlog
-                // flush loop; one failed publish must not abort the flush of the remaining
-                // backlog entries, so log and leave the rest queued for the next attempt.
-                LogClusterBroadcastFailedOnce(ex);
-                return;
-            }
-        }
-
-        // Backlog fully drained: re-arm the overflow log for the next episode.
-        _clusterBroadcastBacklogDropLogged = false;
-        UpdateGaugeSnapshot();
     }
 
     public void BroadcastHeartbeat()
@@ -780,7 +614,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     }
 
     // The caller must pin the generation, and live fan-out waits until replay finishes so the two do not interleave.
-    public AddSubscriptionOutcome TryAddSubscription(Guid sessionId, string subscriptionId, IStreamSubscriptionFilter? filter, bool paused = false)
+    public AddSubscriptionOutcome TryAddSubscription(Guid sessionId, string subscriptionId, StreamSubscriptionFilter? filter, bool paused = false)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
         {
@@ -881,21 +715,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
     public void Dispose()
     {
-        _clusterBroadcastRecoveryTimer?.Dispose();
-        if (_subscriber is not null)
-        {
-            try
-            {
-                _subscriber.Unsubscribe(BroadcastChannel, HandleClusterBroadcast);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // Intentional broad catch: best-effort shutdown; the connection owner will
-                // close the Redis subscription anyway.
-                FeatureStreamLog.ClusterUnsubscribeFailed(_logger, ex);
-            }
-        }
-
         foreach (var (_, entry) in _sessions)
         {
             entry.Cts.Cancel();
@@ -907,22 +726,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             _partitionSessionCounts.Clear();
             Interlocked.Exchange(ref _activeSessionCount, 0);
-        }
-    }
-
-    private void LogClusterBroadcastUnavailableOnce(Exception exception)
-    {
-        if (Interlocked.Exchange(ref _clusterBroadcastUnavailableLogged, 1) == 0)
-        {
-            FeatureStreamLog.ClusterBroadcastUnavailable(_logger, exception);
-        }
-    }
-
-    private void LogClusterBroadcastFailedOnce(Exception exception)
-    {
-        if (Interlocked.Exchange(ref _clusterBroadcastFailedLogged, 1) == 0)
-        {
-            FeatureStreamLog.ClusterBroadcastFailed(_logger, exception);
         }
     }
 
@@ -944,7 +747,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             DateTimeOffset connectedAt,
             string? clientLabel,
             string transport,
-            IStreamSubscriptionFilter? subscriptionFilter = null,
+            StreamSubscriptionFilter? subscriptionFilter = null,
             bool addDefaultSubscription = true,
             string admissionPartition = "anonymous")
         {
@@ -965,7 +768,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         private sealed record SubscriptionState(
-            IStreamSubscriptionFilter? Filter,
+            StreamSubscriptionFilter? Filter,
             bool Paused,
             long Generation,
             long LastPolledCursor,
@@ -1049,6 +852,53 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             Interlocked.Exchange(ref _lastQueuedCursor, cursor);
         }
 
+        private long _consideredThrough;
+
+        // The highest generation offered to this session by a live broadcast.
+        public long ConsideredThrough => Interlocked.Read(ref _consideredThrough);
+
+        public void MarkConsidered(long cursor) => InterlockedMax(ref _consideredThrough, cursor);
+
+        private RelayAttachment? _pollRelay;
+        private long _relayReadFloor;
+
+        public long GetRelayReadFloor(RelayAttachment relay, long position)
+        {
+            lock (_subscriptionLock)
+            {
+                if (!ReferenceEquals(_pollRelay, relay))
+                {
+                    _pollRelay = relay;
+                    _relayReadFloor = position;
+                }
+
+                return _relayReadFloor;
+            }
+        }
+
+        private long _storeReadRequiredThrough;
+
+        // The highest generation dropped from this session's channel while it stayed open.
+        public long StoreReadRequiredThrough => Interlocked.Read(ref _storeReadRequiredThrough);
+
+        public void RequireStoreRead(long cursor) => InterlockedMax(ref _storeReadRequiredThrough, cursor);
+
+        public bool AnyRejectedByRoutability(FeatureStreamEnvelope envelope)
+        {
+            lock (_subscriptionLock)
+            {
+                foreach (var state in _subscriptions.Values)
+                {
+                    if (!state.Paused && state.Filter is StreamSubscriptionFilter filter && filter.RejectedByRoutability(envelope))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         public void SetDrainGrace(long count)
         {
             Interlocked.Exchange(ref _drainGraceRemaining, count);
@@ -1086,7 +936,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
         public bool TryAddSubscription(
             string subscriptionId,
-            IStreamSubscriptionFilter? filter,
+            StreamSubscriptionFilter? filter,
             bool paused,
             int maxSubscriptions,
             out long generation)
@@ -1287,7 +1137,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     internal readonly record struct PollableSubscription(
         string SubscriptionId,
         long Generation,
-        IStreamSubscriptionFilter? Filter,
+        StreamSubscriptionFilter? Filter,
         long LastPolledCursor);
 }
 
@@ -1352,13 +1202,3 @@ internal readonly record struct FeatureStreamMessage
         new() { IsHeartbeat = true };
 }
 
-internal sealed record FeatureStreamBroadcastMessage
-{
-    public required string OriginInstanceId { get; init; }
-
-    public required FeatureStreamEnvelope Envelope { get; init; }
-
-    public double[]? GeometryEnvelope { get; init; }
-
-    public string? PropertiesJson { get; init; }
-}

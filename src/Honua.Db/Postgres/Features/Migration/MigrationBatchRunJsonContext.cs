@@ -6,13 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Source-generated JSON context for <see cref="PostgresMigrationBatchRunCatalog"/> (#1253). The
-/// catalog persists a batch child's <c>DependsOn</c> dependency list as a JSON text column; using a
-/// source-generated <see cref="System.Text.Json.Serialization.Metadata.JsonTypeInfo{T}"/> instead of
-/// the reflection-based <c>JsonSerializer</c> overloads keeps the provider AOT/trim-safe (no IL2026 /
-/// IL3050). Web defaults preserve the prior serializer behavior (a no-op for a string collection).
-/// </summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
 [JsonSerializable(typeof(IReadOnlyList<string>))]
 [JsonSerializable(typeof(Honua.Core.Features.Migration.Domain.MigrationFidelityDifference[]))]

@@ -13,11 +13,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services.FileGdb;
 
-/// <summary>
-/// Detects advanced constructs in a File Geodatabase by inspecting the GDB_Items
-/// system table (a00000004.gdbtable). Produces warnings for features that may not
-/// be fully preserved during import, such as domains, subtypes, and relationships.
-/// </summary>
 internal static class FileGdbAdvancedConstructs
 {
     // GDB_Items XML definition type keywords that indicate advanced constructs.
@@ -52,11 +47,6 @@ internal static class FileGdbAdvancedConstructs
         "DENetworkDataset",
     ];
 
-    /// <summary>
-    /// Scans the GDB_Items table to detect advanced constructs and returns warnings.
-    /// </summary>
-    /// <param name="gdbPath">Path to the .gdb directory.</param>
-    /// <returns>Array of warning messages for detected advanced constructs.</returns>
     internal static string[] DetectWarnings(string gdbPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gdbPath);

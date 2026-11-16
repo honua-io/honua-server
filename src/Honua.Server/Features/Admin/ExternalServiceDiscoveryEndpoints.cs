@@ -2,11 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Admin.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Admin.Services;
 
 namespace Honua.Server.Features.Admin;
 
@@ -58,7 +58,7 @@ internal static class ExternalServiceDiscoveryEndpoints
 
         try
         {
-            var service = context.RequestServices.GetRequiredService<IExternalServiceDiscoveryService>();
+            var service = context.RequestServices.GetRequiredService<ExternalServiceDiscoveryService>();
             var response = await service.DiscoverAsync(request, context.RequestAborted).ConfigureAwait(false);
 
             context.Response.StatusCode = StatusCodes.Status200OK;

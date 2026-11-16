@@ -55,7 +55,8 @@ internal sealed class LocalBatchComputeBackend(
         // and may never signal the execution-job token.
         ExecutionJobCancellationTokens.CancelAttempt(cancellationNotifiers, job);
 
-        if (job.Status == ExecutionJobStatus.Queued)
+        if (job.Status == ExecutionJobStatus.Queued &&
+            !ExecutionJobCancellationHelper.RequiresCommitRecovery(job))
         {
             return new BatchComputeObservation
             {
@@ -83,6 +84,7 @@ internal sealed class LocalBatchComputeBackend(
         }
 
         var mappedStatus = job.Spec.Kind is ExecutionJobKind.Export or ExecutionJobKind.TileCache
+            or ExecutionJobKind.GeoservicesImport or ExecutionJobKind.GeoServerImport
             ? job.Status
             : MapStatus(progress.Status, job.Status);
         return new BatchComputeObservation

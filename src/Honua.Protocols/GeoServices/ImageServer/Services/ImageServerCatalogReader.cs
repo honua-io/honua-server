@@ -130,12 +130,12 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
     internal const double CellSizeRangeFactor = 10;
 
     private readonly IRasterStore _rasterStore;
-    private readonly IImageServerCatalogFilterEvaluator _filterEvaluator;
+    private readonly ImageServerCatalogFilterEvaluator _filterEvaluator;
     private readonly ICoordinateTransformService? _transformService;
 
     public ImageServerCatalogReader(
         IRasterStore rasterStore,
-        IImageServerCatalogFilterEvaluator filterEvaluator,
+        ImageServerCatalogFilterEvaluator filterEvaluator,
         ICoordinateTransformService? transformService = null)
     {
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));

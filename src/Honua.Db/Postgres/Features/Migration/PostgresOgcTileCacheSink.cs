@@ -22,12 +22,6 @@ using Honua.Db.Postgres.Features.FileImport;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Idempotent Postgres-backed sink for the WMTS tile-cache exporter
-/// (#1016 slice 4). Writes tile bytes into <c>honua.tile_caches</c> and
-/// <c>honua.tile_cache_entries</c>, deriving stable cache identifiers from
-/// the descriptor so repeated exports converge on the same row set.
-/// </summary>
 internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -41,7 +35,6 @@ internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<string> EnsureTileCacheAsync(
         OgcTileCacheDescriptor descriptor,
         CancellationToken cancellationToken = default)
@@ -99,7 +92,6 @@ internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
         return cacheId;
     }
 
-    /// <inheritdoc />
     public async Task<OgcTileCacheWriteStatus> WriteTileAsync(
         OgcTileCacheRecord record,
         CancellationToken cancellationToken = default)
@@ -144,7 +136,6 @@ internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
         return OgcTileCacheWriteStatus.AlreadyPresent;
     }
 
-    /// <inheritdoc />
     public async Task<OgcTileCacheWriteStatus> ReplaceTileAsync(
         OgcTileCacheRecord record,
         CancellationToken cancellationToken = default)
@@ -190,7 +181,6 @@ internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
             : OgcTileCacheWriteStatus.Replaced;
     }
 
-    /// <inheritdoc />
     public async Task DeleteTilesExceptAsync(
         string tileCacheId,
         IReadOnlyList<OgcTileCoordinate> retained,
@@ -228,13 +218,6 @@ internal sealed partial class PostgresOgcTileCacheSink : IOgcTileCacheSink
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Build a deterministic tile-cache identifier from the descriptor. The
-    /// identifier collapses long URLs and identifiers to a short fingerprint
-    /// so the row count in <c>honua.tile_caches</c> stays bounded by the
-    /// number of distinct (layer, tile-matrix-set, style, format, source URL)
-    /// tuples.
-    /// </summary>
     internal static string BuildTileCacheId(OgcTileCacheDescriptor descriptor)
     {
         var key = string.Create(CultureInfo.InvariantCulture,

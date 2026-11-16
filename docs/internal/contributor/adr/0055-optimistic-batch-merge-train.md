@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted for manual and release-candidate batch validation. Phase 1
+Superseded (2026-11-15, simplify A4). The train had been disabled on GitHub
+and was deleted: `merge-train.yml`, `merge-train-rerun-recovery.yml` and
+`scripts/ci/merge-train/`. GitHub ruleset auto-merge is the only landing path,
+and `scripts/ci/validate-single-merge-authority.sh` rejects any repository merge
+authority. The text below is the historical record.
+
+Previously: Accepted for manual and release-candidate batch validation. Phase 1
 (deterministic git assembly, smart-CI, attribution, FF-CAS land, and a
 dry-run-by-default workflow) remains available. Automatic triggers remain
 dry-run-only; an explicit `workflow_dispatch` with `train_apply=true` and a

@@ -46,6 +46,24 @@ its identity and UTC event time, even if a replay supplies a different body. The
 fence the current service/release identity before acting. An old receiving task
 is not evidence that its release completed. Handler failures retry through SQS.
 
+CloudWatch alarm state-change envelopes also persist an
+[incident observation](incident-observation-history.md) and update the
+[incident episode lifecycle](incident-episode-lifecycle.md) before acknowledgment.
+The collector derives platform authority on the server and correlates observations
+by the alarm resource ARN, rather than accepting authority from the event detail.
+A missing or ambiguous alarm resource, or a missing state object or state timestamp,
+leaves the message unacknowledged. `ALARM` activates an episode, `OK` records
+recovery, and a missing or unrecognized state value records Unknown. Late evidence remains in history without reopening an episode
+that has already recovered. A later activation starts a distinct episode.
+
+Duplicate deliveries across tasks retain one immutable observation and one episode
+transition. If the episode write fails after observation persistence, replay uses
+the stored observation to finish that transition. Queue acknowledgment failure
+also retries safely. Observation history survives server restarts and the event
+inbox retention window; no automatic observation deletion is enabled. This
+collector does not expose incident context, create investigations, send email or
+enable remediation. It needs the incident observation and episode schema migrations.
+
 For the isolated test stack, MAIN can run `scripts/ops/check-event-ingestion.py`
 with its queue and DLQ URLs and `--execute`. It sends one failing Batch envelope
 twice and one poison envelope. Expected results: one durable event and one finding

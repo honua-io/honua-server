@@ -17,8 +17,6 @@ public sealed partial class GrpcIntegrationTests
     [InlineData("BeginAttachmentUpload")]
     [InlineData("CommitAttachmentUpload")]
     [InlineData("DeleteAttachment")]
-    [InlineData("DescribeLayer")]
-    [InlineData("DescribeService")]
     [InlineData("GetAttachmentUrl")]
     [InlineData("ListAttachments")]
     [InlineData("UploadAttachment")]
@@ -31,10 +29,6 @@ public sealed partial class GrpcIntegrationTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/CommitAttachmentUpload")]
     [Endpoint("POST /geospatial.v1.FeatureService/DeleteAttachment")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/DeleteAttachment")]
-    [Endpoint("POST /geospatial.v1.FeatureService/DescribeLayer")]
-    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/DescribeLayer")]
-    [Endpoint("POST /geospatial.v1.FeatureService/DescribeService")]
-    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/DescribeService")]
     [Endpoint("POST /geospatial.v1.FeatureService/GetAttachmentUrl")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/GetAttachmentUrl")]
     [Endpoint("POST /geospatial.v1.FeatureService/ListAttachments")]
@@ -43,7 +37,7 @@ public sealed partial class GrpcIntegrationTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/UploadAttachment")]
     [Endpoint("POST /geospatial.v1.FeatureService/UploadAttachmentChunk")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/UploadAttachmentChunk")]
-    public async Task ContractRpc_WithoutImplementation_ReturnsUnimplemented(string method)
+    public async Task AttachmentRpc_EmptyRequest_ReturnsInvalidArgument(string method)
     {
         Func<Task> call = method switch
         {
@@ -51,8 +45,6 @@ public sealed partial class GrpcIntegrationTests
             "BeginAttachmentUpload" => async () => await _client!.BeginAttachmentUploadAsync(new Proto.BeginAttachmentUploadRequest(), _headers),
             "CommitAttachmentUpload" => async () => await _client!.CommitAttachmentUploadAsync(new Proto.CommitAttachmentUploadRequest(), _headers),
             "DeleteAttachment" => async () => await _client!.DeleteAttachmentAsync(new Proto.DeleteAttachmentRequest(), _headers),
-            "DescribeLayer" => async () => await _client!.DescribeLayerAsync(new Proto.DescribeLayerRequest(), _headers),
-            "DescribeService" => async () => await _client!.DescribeServiceAsync(new Proto.DescribeServiceRequest(), _headers),
             "GetAttachmentUrl" => async () => await _client!.GetAttachmentUrlAsync(new Proto.GetAttachmentUrlRequest(), _headers),
             "ListAttachments" => async () => await _client!.ListAttachmentsAsync(new Proto.ListAttachmentsRequest(), _headers),
             "UploadAttachment" => async () => await _client!.UploadAttachmentAsync(new Proto.UploadAttachmentRequest(), _headers),
@@ -61,6 +53,6 @@ public sealed partial class GrpcIntegrationTests
         };
 
         var failure = await call.Should().ThrowAsync<RpcException>();
-        failure.Which.StatusCode.Should().Be(StatusCode.Unimplemented);
+        failure.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 }

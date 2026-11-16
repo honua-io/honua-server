@@ -136,6 +136,11 @@ internal static class ObservabilityAlertEndpoints
             return Task.FromResult(BadRequest("'suppressUntil' must be in the future."));
         }
 
+        if (body.SuppressUntil > DateTimeOffset.UtcNow.AddDays(7))
+        {
+            return Task.FromResult(BadRequest("'suppressUntil' must be no more than seven days in the future."));
+        }
+
         return PerformLifecycleAsync(
             eventId,
             AlertLifecycleAction.Suppress,
@@ -214,6 +219,11 @@ internal static class ObservabilityAlertEndpoints
         };
 
         var transition = await lifecycleStore.ApplyAsync(command, cancellationToken).ConfigureAwait(false);
+        if (transition.RefusalReason is { } refusal)
+        {
+            return BadRequest(refusal);
+        }
+
         if (transition.Lifecycle is null)
         {
             return NotFound(eventId);

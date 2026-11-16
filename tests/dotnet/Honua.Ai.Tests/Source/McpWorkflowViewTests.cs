@@ -1149,9 +1149,17 @@ public sealed partial class McpWorkflowViewTests
             "honua_admin_connection_tables_list",
         ]);
         var operate = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Operate, catalog);
-        operate.Members.Select(member => member.ToolName).Should().Contain(["honua_ops_health", "honua_propose_finding"]);
+        AssertOperateViewContainsOperatorTools(operate);
         var analyze = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Analyze, catalog);
         analyze.Members.Select(member => member.ToolName).Should().Contain(["honua_execute_plan", "honua_geocode_address"]);
+    }
+
+    private static void AssertOperateViewContainsOperatorTools(McpWorkflowViewProjection operate)
+    {
+        operate.Members.Select(member => member.ToolName).Should().Contain(["honua_ops_health", "honua_propose_finding"]);
+        operate.Members.Select(member => member.ToolName).Should().Contain(
+            ["honua_propose_platform_release_convergence", "honua_propose_rollback"],
+            "AGENTS.md and the honua-ops skill send upgrade and rollback to the operate view");
     }
 
     [UnitTest]

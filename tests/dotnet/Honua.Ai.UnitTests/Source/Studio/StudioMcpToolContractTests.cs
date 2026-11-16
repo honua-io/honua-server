@@ -178,15 +178,14 @@ public sealed class StudioMcpToolContractTests
             Arg.Is<StudioPublicationIntent>(intent => intent.Route == "/studio/parcels" && intent.Visibility == "organization"),
             Arg.Any<string?>(), Arg.Any<string?>(),
             Arg.Is<StudioDraftMutationContext>(context =>
-                !context.PublishImmediately
-                && context.ActionDiscriminator == BuiltInGuardrailActions.StudioPublicationProposal),
+                context.ActionDiscriminator == BuiltInGuardrailActions.StudioPublicationProposal),
             Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
-    public async Task ProposePublication_WhenCallerIsAdmin_PublishesAndReturnsTheActiveRoute()
+    public async Task ProposePublication_WhenCallerIsAdmin_StillFilesAProposal()
     {
         var itemId = Guid.NewGuid();
         var versionId = Guid.NewGuid();
@@ -219,19 +218,10 @@ public sealed class StudioMcpToolContractTests
                     OperationId = StudioDraftMutationContext.PublicationOperationId,
                     CorrelationId = "corr-admin-publish",
                     AuditId = "audit-admin-publish",
-                    Status = OperationHandleStatus.Completed,
+                    ProposalId = "proposal-admin-publish",
+                    Status = OperationHandleStatus.RequiresApproval,
                     CreatedAt = now,
                     UpdatedAt = now,
-                },
-                Value = new StudioPublicationRequest
-                {
-                    RequestId = Guid.NewGuid(),
-                    ItemId = itemId,
-                    VersionId = versionId,
-                    Status = StudioPublicationRequestStatus.Accepted,
-                    Intent = new StudioPublicationIntent { Route = route, Visibility = "organization" },
-                    DeploymentId = "dep-admin-published-map",
-                    CreatedAt = now,
                 },
             });
 
@@ -261,30 +251,29 @@ public sealed class StudioMcpToolContractTests
         result.IsError.Should().BeFalse();
         var structuredContent = result.StructuredContent
             ?? throw new InvalidOperationException("Expected structured MCP content.");
-        structuredContent.GetProperty("status").GetString().Should().Be("Published");
-        structuredContent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeFalse();
-        structuredContent.GetProperty("shareUrl").GetString().Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
-        structuredContent.GetProperty("deploymentId").GetString().Should().Be("dep-admin-published-map");
-        structuredContent.GetProperty("deploymentResourceUri").GetString()
-            .Should().Be("honua://deployments/dep-admin-published-map");
-        structuredContent.TryGetProperty("proposalId", out _).Should().BeFalse();
-        structuredContent.TryGetProperty("proposalUri", out _).Should().BeFalse();
+        // Every MCP caller is an agent: an administrator's publication waits for a person too.
+        structuredContent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        structuredContent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
+        structuredContent.GetProperty("proposalId").GetString().Should().Be("proposal-admin-publish");
+        structuredContent.TryGetProperty("shareUrl", out _).Should().BeFalse();
+        structuredContent.TryGetProperty("deploymentId", out _).Should().BeFalse();
         await runtime.Received(1).CreatePublicationRequestAsync(
             itemId, versionId, contentHash, Arg.Any<StudioPublicationIntent?>(), Arg.Any<string?>(),
             Arg.Any<string?>(),
             Arg.Is<StudioDraftMutationContext>(mutation =>
-                mutation.PublishImmediately && mutation.ActionDiscriminator == null),
+                mutation.ActionDiscriminator == BuiltInGuardrailActions.StudioPublicationProposal),
             Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
-    public void ProposePublicationOutputSchema_AcceptsAnAdminResult()
+    public void ProposePublicationOutputSchema_RequiresTheProposal()
     {
-        var schema = McpToolOutputSchemas.StudioProposePublicationOutputSchema.GetRawText();
-        schema.Should().NotContain("\"const\": \"AwaitingApproval\"");
-        schema.Should().NotContain("\"const\": true");
-        schema.Should().Contain("\"shareUrl\"");
-        schema.Should().Contain("\"deploymentResourceUri\"");
+        var schema = McpToolOutputSchemas.StudioProposePublicationOutputSchema;
+        schema.GetProperty("required").EnumerateArray().Select(static item => item.GetString())
+            .Should().Contain(["proposalId", "proposalUri"]);
+        var properties = schema.GetProperty("properties");
+        properties.TryGetProperty("shareUrl", out _).Should().BeFalse();
+        properties.TryGetProperty("deploymentResourceUri", out _).Should().BeFalse();
     }
 
     [UnitTest]
