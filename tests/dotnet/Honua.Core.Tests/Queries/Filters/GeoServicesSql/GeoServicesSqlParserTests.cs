@@ -212,9 +212,8 @@ public class GeoServicesSqlParserTests
     [Fact]
     public void Parse_TimestampKeywordWithoutOffset_AcceptedAsUtc()
     {
-        // ArcGIS clients emit TIMESTAMP 'value' literals without a timezone offset.
-        // Previously the parser threw "missing a timezone offset"; now they are accepted
-        // as UTC to mirror ArcGIS Server's AssumeUniversal behaviour.
+        // Accept TIMESTAMP literals without timezone offsets as UTC, matching
+        // ArcGIS Server AssumeUniversal behavior.
         var expression = _parser.Parse("event_date > TIMESTAMP '2024-01-01 12:00:00'");
 
         var binary = (BinaryExpression)expression;

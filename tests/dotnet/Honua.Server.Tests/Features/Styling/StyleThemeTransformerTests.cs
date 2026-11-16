@@ -109,11 +109,8 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_ColorblindSafeProfile_MapsIdenticalInputColorsToSamePaletteSlot()
     {
-        // Regression: the colorblind-safe walker used to advance the palette index
-        // for every visited color, so a classBreaks first-class color and a case
-        // fallback that share an input color got mapped to different palette
-        // slots.  Equal input colors must map to equal output colors within a
-        // single ApplyTheme call.
+        // Within one ApplyTheme call, equal input colors must map to equal output colors
+        // across classBreaks and case fallback expressions.
         const string json = """
         {
           "version": 8,
@@ -486,14 +483,8 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_PreservesGetExpressionFieldName()
     {
-        // Regression: the generic walker used to recurse into every nested
-        // expression array and rewrite any string that parsed as a color.
-        // Because the named-color set includes common words like "red",
-        // "white", and "blue", a valid data-driven binding such as
-        // ["get", "red"] (read the "red" feature property) had its field
-        // name rewritten to a themed hex literal under dark /
-        // colorblind-safe themes, breaking the binding.  The walker now
-        // skips get / has / feature-state operators entirely.
+        // Skip get, has and feature-state expression operands when theming. Property
+        // names such as red, white and blue are bindings rather than color literals.
         const string json = """
         {
           "version": 8,
@@ -627,11 +618,8 @@ public class StyleThemeTransformerTests
     [Fact]
     public void ApplyTheme_DarkProfile_TransformsCssNamedColorLiterals()
     {
-        // Regression: the normalizer accepts CSS / X11 named color literals
-        // (e.g. "red", "transparent") via MapLibreStyleNormalizer.
-        // TryParseMapLibreColor previously only handled hex and rgb/rgba and
-        // therefore left stored named colors unthemed.  Theme transforms must
-        // resolve the same set the normalizer accepts.
+        // Theme transforms must accept the same CSS/X11 named colors as
+        // MapLibreStyleNormalizer, including red and transparent.
         const string json = """
         {
           "version": 8,
@@ -691,14 +679,9 @@ public class StyleThemeTransformerTests
     [InlineData("hsl(120 100% 50% / 50%)")]
     public void TryParseMapLibreColor_HslLiteralForms_ParseToExpectedRgb(string input)
     {
-        // Regression: the admin write-time normalizer
-        // (MapLibreStyleNormalizer.IsValidColorLiteral) accepts hsl/hsla in
-        // both legacy comma syntax and CSS Color Module Level 4 modern
-        // space-separated syntax with a `/`-separated alpha.
-        // TryParseMapLibreColor previously skipped every hsl/hsla form, so a
-        // stored "hsl(120 100% 50%)" was treated as malformed and emitted
-        // event 6403 under ?theme=dark|colorblind-safe|print instead of
-        // being themed.
+        // Theme transforms must accept hsl/hsla forms accepted by MapLibreStyleNormalizer:
+        // legacy comma syntax and CSS Color Module Level 4 space syntax with slash alpha.
+        // A valid stored hsl(120 100% 50%) must be themed without event 6403.
         Assert.True(StyleJsonUtilities.TryParseMapLibreColor(input, out var color));
         // hsl(120, 100%, 50%) ≡ pure green (#00ff00).
         Assert.Equal(0, color.R);

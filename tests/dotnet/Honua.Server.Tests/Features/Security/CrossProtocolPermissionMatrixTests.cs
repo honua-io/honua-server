@@ -454,12 +454,10 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task ODataCreate_InsertGrant_OverridesCoarseDeny()
     {
-        // An OData POST authorizes as Insert, so a matching Insert grant must
-        // override the coarse data-editor deny. The in-memory fixture cannot complete the create
-        // (the layer requires an objectid the payload does not carry), so the assertion is that
-        // authorization is cleared — not Forbidden / not Unauthorized — rather than a 201.
-        // (An Update grant is separately proven NOT to authorize a create via the per-operation
-        // gate; before the fix the coarse any-write gate let any write grant through.)
+        // OData POST requires Insert permission. A matching Insert grant overrides the
+        // coarse data-editor denial. The fixture omits required objectid, so assert that
+        // authorization succeeds rather than requiring creation to return 201. An Update
+        // grant alone cannot authorize Insert.
         using var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -479,8 +477,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task ODataCreate_UpdateOnlyGrant_DeniesCreate()
     {
-        // an Update-only grantee must be denied an OData create (POST=Insert).
-        // Before the fix the coarse any-write gate accepted any write grant for any mutation.
+        // An Update-only grantee must be denied an OData create (POST requires Insert).
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 

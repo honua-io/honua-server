@@ -223,9 +223,8 @@ public sealed class GpPlanTests
     [UnitTest]
     public void Build_EnrichmentLayerSourceWithMalformedBbox_IsRejected()
     {
-        // Three ordinates and a nonnumeric ordinate both used to clear the generic
-        // text-type check and only fail later in HonuaLayerDagSource.BuildSpatialFilter as a
-        // generic source-read error rather than an actionable parameter error.
+        // Reject bbox values with three ordinates or nonnumeric ordinates as actionable
+        // parameter errors before source execution.
         foreach (var bbox in new[] { "-10,-10,10", "-10,-10,east,10" })
         {
             var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -293,10 +292,8 @@ public sealed class GpPlanTests
     [UnitTest]
     public void Build_EnrichmentNearestNeighborWithAggregates_IsRejected()
     {
-        // The nearest branch of EnrichmentJobExecutor.Enrich returns after AnnotateNearest
-        // without ever consulting plan.Stats, so this combination used to queue a job that
-        // succeeded while silently omitting every requested aggregate. The catalog already
-        // advertises 'aggregates' as join-methods-only.
+        // The nearest enrichment branch does not consume plan.Stats. Reject aggregates
+        // there because the catalog defines them for join methods only.
         foreach (var method in new[] { "nearest-neighbor", "nearest_neighbor", "nearest" })
         {
             var inputs = new Dictionary<string, string>(StringComparer.Ordinal)

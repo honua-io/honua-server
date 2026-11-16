@@ -293,8 +293,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result!.AddAttachmentResult.Success.Should().BeTrue();
         result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
 
-        // A successful insert over a missing or garbled blob used to pass here.
-        // Read the bytes back through the public download route.
+        // Read the stored bytes back through the public download route.
         var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
         downloaded.Should().Equal(fileContent);
     }
@@ -411,8 +410,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result!.AddAttachmentResult.Success.Should().BeTrue();
         result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
 
-        // A successful insert over a missing or garbled blob used to pass here.
-        // Read the bytes back through the public download route.
+        // Read the stored bytes back through the public download route.
         var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
         downloaded.Should().Equal(fileContent);
     }

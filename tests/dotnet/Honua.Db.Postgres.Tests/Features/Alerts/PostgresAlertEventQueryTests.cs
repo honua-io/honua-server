@@ -145,10 +145,8 @@ public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task ListAsync_WithOpsEventNullRuleId_DoesNotThrowAndReturnsNullRuleId()
     {
-        // Regression: migration 075 relaxed rule_id to NULL so ops notifications
-        // (deploy/job terminal events) can reuse the alert outbox. The list mapper
-        // previously called GetInt64 unconditionally and threw InvalidCastException
-        // when an ops row (NULL rule_id) surfaced.
+        // Ops notifications share the alert outbox with a null rule_id. The list mapper
+        // must accept these rows without calling GetInt64 on null.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
         try
         {

@@ -95,10 +95,8 @@ public sealed partial class ConfigurationBindingShapeTests
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var violations = new SortedSet<string>(StringComparer.Ordinal);
 
-        // A property whose simple type name matches several declarations that neither the
-        // declaring namespace nor the file's imports disambiguate used to be dropped silently, so
-        // the walk could stop early and stay green over a graph it never actually inspected. Such a
-        // reference is now collected and reported rather than skipped.
+        // Collect and report an ambiguous property type when its declaring namespace and
+        // imports cannot distinguish declarations, so the graph walk cannot skip it silently.
         var unresolvable = new SortedSet<string>(StringComparer.Ordinal);
 
         while (pending.TryPop(out var typeShape))

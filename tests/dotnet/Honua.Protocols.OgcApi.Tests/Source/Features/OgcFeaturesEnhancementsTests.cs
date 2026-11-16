@@ -1264,13 +1264,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithCql2TextTemporalInstantOnAttributeField_Returns200()
     {
-        // Regression: a CQL2-text T_AFTER against an attribute-backed timestamp
-        // field literally named "created_at" previously triggered a special-case
-        // in the SQL filter translator that emitted a bare column reference. In
-        // the JSONB-attributes storage model that produced
-        // "operator does not exist: text > timestamp with time zone" (PostgreSQL
-        // 42883) and surfaced as a 500. The field must instead resolve through the
-        // schema to the typed attributes JSON path and return 200.
+        // CQL2-text T_AFTER on an attribute-backed timestamp named created_at must resolve
+        // through the schema to the typed attributes JSON path and return 200.
         _fixture.UpdateV2ResourceSchemaField(
             WebAppFixture.TestLayerId,
             new Honua.Core.Features.Metadata.Domain.V2.MetadataV2Field
@@ -1293,10 +1288,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithCql2TextTemporalOnUndefinedField_Returns400()
     {
-        // Regression: T_BEFORE against an undefined queryable (e.g. "updated_at"
-        // on a layer that does not expose it) previously emitted a bare column
-        // reference that failed at the database and surfaced as a 500. It must be
-        // a client error (400) instead, with no parser/syntax detail leaked.
+        // T_BEFORE on an undefined queryable such as updated_at must return 400
+        // without exposing parser or SQL syntax details.
         var filter = Uri.EscapeDataString("T_BEFORE(updated_at, TIMESTAMP('2024-12-31T23:59:59Z'))");
 
         var response = await _fixture.Client.GetAsync(

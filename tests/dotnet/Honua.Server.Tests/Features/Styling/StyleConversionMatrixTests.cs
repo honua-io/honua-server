@@ -180,13 +180,8 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_PointWithStrokeOpacity_AppliesAlphaToOutlineColor()
     {
-        // Regression: SLD import emits circle-stroke-opacity for point Marks as a
-        // separate paint property. ResolveOutline previously read circle-stroke-color
-        // and circle-stroke-width but ignored circle-stroke-opacity, producing an
-        // opaque outline in regenerated GeoServices drawingInfo even though the
-        // stored MapLibre style preserved the alpha. The polygon outline branch
-        // already folded line-opacity into the color; the point branch must do the
-        // same for circle-stroke-opacity.
+        // Preserve SLD point Stroke alpha through circle-stroke-opacity. GeoServices
+        // drawingInfo outline conversion must fold it into color, as for polygon line-opacity.
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string mapLibreJson = """
         {
@@ -1029,10 +1024,8 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_PictureMarkerClassBreaks_AppliesNumericGuardAndToNumberCoercion()
     {
-        // Regression: picture-marker classBreaks used to emit
-        // ["step", ["get", field], baseId, ...] directly, skipping the numeric
-        // guard and to-number coercion that the color classBreaks path uses.
-        // Now both paths share the same documented contract.
+        // Picture-marker classBreaks share the numeric guard and to-number coercion
+        // contract of color classBreaks.
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
@@ -1472,10 +1465,8 @@ public class StyleConversionMatrixTests
     [Fact]
     public void ServerEvaluator_ClassBreaks_NullValue_RendersFallbackColor()
     {
-        // Regression: a feature whose classified field key exists but has a null value
-        // must render with the fallback color.  typeof(null) → "null" ≠ "number", so
-        // the guard rejects it.  Before the fix, the guard used ["!=", typeof, "string"]
-        // which let null through because "null" ≠ "string" was true.
+        // A null classified field renders with the fallback color: typeof(null) is null,
+        // so the number-only guard must reject it.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion

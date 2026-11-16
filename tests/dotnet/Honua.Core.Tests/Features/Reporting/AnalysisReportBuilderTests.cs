@@ -220,11 +220,8 @@ public sealed class AnalysisReportBuilderTests
     [Operation(Operations.Metadata)]
     public async Task BuildAsync_AllowsMaxTableRowsAboveTwoHundred()
     {
-        // Templates previously hard-coded a 200-row cap, masking any operator
-        // configuration that wanted to surface more rows. Build a package with
-        // >200 rows and a configured cap of 250 — the artifact/assumption
-        // tables must keep all 250 rows inside the cap and only truncate the
-        // overflow.
+        // Use more than 200 rows and a configured cap of 250: artifact and assumption
+        // tables must retain all 250 rows inside the cap and truncate the overflow.
         const int packageRows = 280;
         const int configuredCap = 250;
 

@@ -278,10 +278,8 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{NonExistentLayerId}/ImageServer?f=json");
 
-        // This file documents that GeoServices always answers HTTP 200 and carries the
-        // error in the body, so the `if (StatusCode != OK)` guard that used to wrap these
-        // assertions made every one of them unreachable — the test could not fail. The response
-        // must be an error, and its body must disclose no internals.
+        // GeoServices errors use HTTP 200 with an error body. Assert that body
+        // unconditionally and verify it discloses no internals.
         await response.AssertGeoServicesErrorAsync();
 
         var content = await response.Content.ReadAsStringAsync();

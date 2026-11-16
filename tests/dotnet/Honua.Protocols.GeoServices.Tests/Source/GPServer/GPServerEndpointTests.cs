@@ -980,10 +980,8 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         string? extraValue)
     {
         await StartDefaultApplicationAsync();
-        // The Esri input translator used to add a derived 'srid' input whenever an esriGeometry or
-        // FeatureSet was translated. These three tasks declare no 'srid' parameter, so canonical plan
-        // validation rejected every such submission as UNKNOWN_PARAMETER. The spatial reference travels
-        // inside the translated EWKB instead, where each executor reads it.
+        // These tasks declare no srid parameter. Spatial reference must travel inside
+        // the translated EWKB, where executors read it, without adding an unknown input.
         var inputs = new Dictionary<string, string>
         {
             ["f"] = "json",

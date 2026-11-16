@@ -410,9 +410,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes/{processId}")]
     public async Task ProcessDescription_RasterSurfaceProcess_ReturnsDescription()
     {
-        // Raster/surface process ids are projected for direct discovery,
-        // exactly like the first-slice vector ids. surface.slope is a real registered
-        // ProcessDefinition (GdalSurfaceJobExecutor); it previously returned 404.
+        // Raster and surface process IDs support direct discovery. surface.slope is
+        // registered by GdalSurfaceJobExecutor.
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes/surface.slope");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -1315,11 +1314,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     // Job list — resource cap
     // -----------------------------------------------------------------------
 
-    // before the fix, ListActiveAsync was called with no limit,
-    // so all active jobs were loaded into memory before applying the effectiveLimit
-    // break. The fix passes effectiveLimit to ListActiveAsync so the store applies
-    // a server-side cap. This test verifies that a positive limit= parameter is
-    // accepted and the response shape is valid (or 503 without Redis).
+    // Pass the positive effectiveLimit to ListActiveAsync so the store caps active jobs
+    // before materialization. Verify the response shape, or 503 without Redis.
     [IntegrationTest]
     [Operation(Operations.JobStatus)]
     [Endpoint("GET /ogc/processes/jobs")]

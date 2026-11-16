@@ -44,10 +44,9 @@ public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifet
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_RetryAfterProviderRejectionWithSameIdempotencyKey_RepeatsRejectionInsteadOfConflict()
     {
-        // The rejection is thrown after TryReserveAsync has won the key. Before the fix no
-        // exception exit released it, so a retry inside the ~60s reservation window found no replay
-        // value, lost the reserve, and was answered with the idempotency conflict (error code 409)
-        // instead of a deterministic repeat of the original 405 rejection.
+        // A rejection after TryReserveAsync wins the key must release the reservation.
+        // Retrying inside its roughly 60-second window must repeat the original 405
+        // rejection rather than return an idempotency conflict (409).
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var request = new ApplyEditsRequest
         {

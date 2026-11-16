@@ -473,10 +473,9 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task ReplicaDownload_PointZMFeature_KeepsZMAndLayerSpatialReference()
     {
-        // Every replica download used to flatten Z/M and carry no spatial reference, so a 3D or
-        // measured layer synced offline lost its ordinates and wrote them back flattened on upload.
-        // The expected ordinates are the literal values written below, and 4326 is the SRID the test
-        // layer is seeded with (TestDataBuilder), not values read back from the server under test.
+        // Replica downloads preserve Z/M ordinates and spatial reference for offline
+        // round trips. Expected ordinates are literal seeded values below; SRID 4326
+        // comes from TestDataBuilder rather than the server response.
         const double ExpectedX = -157.85;
         const double ExpectedY = 21.30;
         const double ExpectedZ = 123.5;

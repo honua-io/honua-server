@@ -179,9 +179,8 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task AppliedSolidRedPreset_IsTheStyleRenderMapDraws_AndApplyReturnsOperationHandle()
     {
-        // Terminal promise journey stage 4: apply a solid-red preset to a published layer whose
-        // stored default style is blue, render it, and decode the centre pixel. Before the fix
-        // render_map named the preset but drew the stored default (rgba(45,105,165)).
+        // Apply a solid-red preset to a published layer with a blue stored default,
+        // render it, and decode the centre pixel to verify the selected preset is drawn.
         using var client = await HumanApprovedOperation.CreateProposerClientAsync(_fixture);
         await SeedTestLayerStyleAsync(client);
         using var scope = _fixture.Services.CreateScope();

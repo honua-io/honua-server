@@ -428,13 +428,9 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_LodPathDegenerateLeaf_DropsLeafAndEmitsValidTiles()
     {
-        // Regression (#2): in the LOD path the layer-level degeneracy guard only
-        // proves >=1 non-degenerate feature in the WHOLE layer, not per leaf. A
-        // spatial cluster of all-degenerate features lands in its own quadtree
-        // leaf; previously that leaf was routed into GeometryTileBuilder.BuildGlb
-        // with zero vertices, threw InvalidOperationException("No vertices
-        // produced for tile."), and aborted the entire generation run. The content
-        // node selection must now DROP such a leaf and still emit the valid tiles.
+        // The layer-level LOD guard proves only that the whole layer has a valid
+        // feature. Drop a quadtree leaf containing only degenerate features and
+        // still emit the valid tiles.
         BuildLayer();
         _featureSource.Features = ValidLinesWithDegenerateCluster();
 
@@ -547,9 +543,8 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         (maxZ - minZ).Should().BeGreaterThan(50.0,
             "the prism spans baseHeight=100 to baseHeight+max(height)=150");
 
-        // Tileset.json bounding region heights are read from disk and must
-        // include the 100m base offset; without the fix the max height would
-        // be just the extrusion height (max ~50m) and ignore the 100m base.
+        // The on-disk tileset bounding region must include the 100m base offset
+        // in addition to the extrusion height (at most roughly 50m).
         var tilesetJson = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tileset.json"));
         using var tilesetDoc = JsonDocument.Parse(tilesetJson);
         var region = tilesetDoc.RootElement.GetProperty("root").GetProperty("boundingVolume").GetProperty("region");
@@ -829,12 +824,9 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_NoZValuesAndNoExtrusion_EmitsFlatZeroWarning()
     {
-        // 2D layers without an extrusionInfo block must surface the
-        // documented "flat at Z=0" warning so operators and admin tooling
-        // can spot when a generated tileset lost vertical fidelity. The
-        // Postgres scene source previously wrapped geometry in ST_Force3D
-        // (Z=0 for every 2D vertex), which masked this branch — the warning
-        // only fires when no vertex carries a Height value.
+        // A 2D layer without extrusionInfo must report the documented flat-at-Z=0
+        // warning so operators can detect lost vertical fidelity. This requires
+        // vertices without Height values.
         BuildLayer();
         _featureSource.Features = SamplePolygonsWithoutZ();
 

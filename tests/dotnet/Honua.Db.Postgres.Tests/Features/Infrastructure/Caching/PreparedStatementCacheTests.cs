@@ -158,8 +158,8 @@ public class PreparedStatementCacheTests : IDisposable
             }
         };
 
-        // First call primes the cache (MinExecutionsForCaching=2); the second returns the
-        // cloned, parameter-applied execution command that previously dropped the value.
+        // The first call primes the cache (MinExecutionsForCaching=2); the second
+        // returns a cloned execution command with its parameters applied.
         await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql, configureParams);
         await using var preparedCommand = await _cache.GetOrCreatePreparedCommandAsync(
             (NpgsqlConnection)connection,

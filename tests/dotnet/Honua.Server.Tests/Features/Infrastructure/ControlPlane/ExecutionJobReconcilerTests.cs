@@ -1226,8 +1226,7 @@ public sealed partial class ExecutionJobReconcilerTests
     [Trait("Tier", "Fast")]
     public async Task ReconcileExecutionJob_TransientRedisTimeoutWhileObserving_LeavesTheRunningJobAlone()
     {
-        // A Redis timeout during a sweep used to stamp a healthy, heartbeating
-        // Batch import terminal Failed, so its worker lost the execution lease 30 s in.
+        // A Redis sweep timeout must not fail a healthy Batch import or revoke its execution lease.
         var backend = Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns("aws-batch");
         backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);

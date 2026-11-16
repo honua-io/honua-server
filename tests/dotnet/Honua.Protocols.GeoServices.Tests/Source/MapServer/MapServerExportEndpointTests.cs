@@ -952,8 +952,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         content.Should().NotContain("System.Text.Json");
     }
 
-    // Regression: the Esri layerDefs array form [{"layerId":N,"where":...}]
-    // must be accepted (previously rejected with "Invalid layer id").
+    // Accept the Esri layerDefs array form [{"layerId":N,"where":...}].
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]

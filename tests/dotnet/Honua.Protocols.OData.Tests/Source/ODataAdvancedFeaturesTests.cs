@@ -909,8 +909,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})/$apply")]
     public async Task Apply_WithComputeFloorBinning_ReturnsHistogramBins()
     {
-        // floor(population div 1000000) buckets each city into a population band. This is the
-        // real Analyst Workbench histogram query that previously required arithmetic workarounds.
+        // floor(population div 1000000) is the Analyst Workbench histogram query
+        // that buckets each city into a population band.
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=compute(floor(population div 1000000) as PopBin)");
 

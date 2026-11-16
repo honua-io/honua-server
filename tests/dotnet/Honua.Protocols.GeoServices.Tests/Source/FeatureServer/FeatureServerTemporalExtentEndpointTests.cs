@@ -164,13 +164,9 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_NonTimeAwareLayer_WithTime_ReturnsBadRequest()
     {
-        // The temporal-animation contract requires query?time= to reject
-        // non-time-aware layers with HTTP 400 (docs/gis/temporal-animation-api.md
-        // "Empty-range and non-time-aware behavior" table). The previous
-        // GeoServicesTemporalQueryBuilder fell back to the first Date /
-        // DateTime attribute when TimeInfo was absent, silently filtering on
-        // a non-temporal column instead of rejecting the request — same gap
-        // the MVT path used to have.
+        // The temporal-animation contract rejects query?time= on non-time-aware layers
+        // with HTTP 400; see docs/gis/temporal-animation-api.md,
+        // Empty-range and non-time-aware behavior.
         await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(

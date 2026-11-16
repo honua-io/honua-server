@@ -261,10 +261,8 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     [Endpoint("GET /edr/collections/{collectionId}/position")]
     public async Task Edr_WebMercatorRaster_AdvertisesCrs84ExtentAndGatesPositionInCrs84()
     {
-        // RasterInfo.Extent is in the storage SRID. A San Francisco raster stored in EPSG:3857
-        // previously advertised its metre bbox labelled CRS84 and rejected every lon/lat position.
-        // The expected CRS84 bbox uses the spherical inverse Mercator closed form, independent of
-        // the server's transform code.
+        // RasterInfo.Extent uses the storage SRID. For an EPSG:3857 raster, derive the
+        // expected CRS84 bbox independently using the spherical inverse Mercator formula.
         const double minX = -13637750;
         const double minY = 4539250;
         const double maxX = -13614250;

@@ -917,21 +917,10 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
-    // Regression for review finding "Control-frame subscriptions are excluded
-    // from durable cross-node polling". Sessions opened without query filters
-    // by non-admin clients previously had no onPoll installed at all — control-
-    // frame subscribes added later relied solely on live broadcast. A cross-node event that landed only in the durable store (not
-    // seen by Broadcast on this node) was lost. After the fix, the writer
-    // always installs onPoll and snapshots active control subscriptions on
-    // each interval, replaying each from its per-subscription poll watermark
-    // through the existing generation/dedup claim path.
-    //
-    // The test runs in dev-bypass mode where every session is admin and so
-    // gets addDefaultSubscription=true — both subscriptions are active, both
-    // have a poll path, and a single store-only event must be delivered to
-    // BOTH the default and the control subscription (one frame per (event,
-    // subscription) tuple). Without the fix, the control subscription would
-    // never see a frame for a store-only cross-node event.
+    // Durable cross-node polling snapshots active control subscriptions and replays
+    // from each subscription watermark through generation and deduplication claims.
+    // In dev-bypass mode both default and control subscriptions are active. A single
+    // store-only event must reach both, once per event/subscription pair.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_ControlSubscription_RecoversCrossNodeEventViaDurablePoll()
@@ -991,11 +980,8 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
                 RequestId = "req-cross-node-poll"
             }, cts.Token);
 
-            // The fix's invariant: the cross-node store sweep delivers ONE frame
-            // per matching subscription. Wait until the control subscription
-            // receives its frame for this event — without the fix, the writer's
-            // onPoll closure only handled the default subscription and the
-            // control subscription would never see a store-only event.
+            // Wait for the control subscription: a cross-node store sweep delivers one frame
+            // per matching subscription.
             var sawControlSubFrame = false;
             while (!sawControlSubFrame)
             {
@@ -1131,25 +1117,11 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
 
-    // Regression for review finding "Durable cross-node polling can starve
-    // under continuous outbound traffic". Pre-fix, each writer iteration
-    // started a fresh full-interval Task.Delay for the poll branch, so a
-    // session whose channel was kept hot would see the read branch always
-    // win the WhenAny race and the durable-store sweep would never fire.
-    // The fix replaces per-iteration delays with an absolute deadline plus
-    // an inline post-drain poll fallback, so the sweep fires on schedule
-    // (plus bounded slack from the ongoing drain) even under continuous
-    // outbound traffic.
-    //
-    // The test uses continuous heartbeat broadcasts to keep the session
-    // channel hot. Heartbeats deliberately bypass the cursor-fence and do
-    // not advance any watermark, so the cross-node event injected directly
-    // into the durable store stays strictly above the writer's per-
-    // subscription poll watermark — i.e., the poll has something to
-    // recover whenever it does fire. A continuous PUBLISHER loop would
-    // have been a more obvious driver but live sends post-fix advance the
-    // per-subscription poll watermark past the cross-node event's cursor,
-    // making the recovery target unreachable through the poll path.
+    // Durable polling must keep its deadline under continuous outbound traffic, with
+    // bounded slack from the ongoing drain. Keep the channel hot using heartbeat
+    // broadcasts, which bypass cursor fences without advancing watermarks. The
+    // store-only event therefore remains above the subscription poll watermark.
+    // Ordinary live publisher sends would advance it beyond the recovery target.
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_DurablePoll_FiresUnderContinuousOutboundTraffic()

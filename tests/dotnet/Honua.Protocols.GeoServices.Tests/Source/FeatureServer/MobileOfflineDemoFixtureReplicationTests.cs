@@ -441,7 +441,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
                 + "rejects the query with 42703 (the honua-server#1238 failure)");
         }
 
-        // The fix: with the accessor, declared fields resolve as attributes->>'field'.
+        // Declared fields resolve through the accessor as attributes->>field.
         await PublishMobileOfflineMetadataV2Async(includeAttributesAccessor: true);
 
         var fixedResponse = await _fixture.Client.GetAsync(requestUri);

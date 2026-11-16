@@ -370,8 +370,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
 
         var act = async () => await CollectAsync(adapter, DefaultOptions(), request);
 
-        // Before the fix this threw synchronously inside BuildRequest (an anonymous type passed to
-        // JsonSerializer.SerializeToElement has no source-generated JsonTypeInfo).
+        // Request serialization must work with source-generated JsonTypeInfo.
         await act.Should().NotThrowAsync();
 
         handler.CapturedRequestBody.Should().NotBeNull();

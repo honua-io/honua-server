@@ -958,12 +958,9 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_PublishWithoutSource_AnsweringOnlyPublishTarget_StillRequestsSource()
     {
-        // Regression for Finding #2 (codex_local): previously, answering
-        // publish.target without any explicit inputs or high-confidence
-        // datasets terminated with draftIntent.publishing == null AND a null
-        // clarification — the caller could not escape. With the publish.source
-        // finding, the follow-up pass keeps asking for the source until it is
-        // pinned.
+        // After publish.target is answered without explicit inputs or high-confidence
+        // datasets, keep asking for publish.source until it is pinned so the caller
+        // always has a clarification to answer.
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
         {
             Value = WorkflowFamily.PublishData,

@@ -378,11 +378,8 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
                 var width = query.OutputWidth ?? 64;
                 var height = query.OutputHeight ?? 64;
 
-                // The exported extent and payload are DERIVED from the request, not
-                // hard-coded. Previously the mock returned the same constant extent and the
-                // same four bytes whatever was asked for, so `Content-Bbox` contained
-                // "-122.5" for any bbox on the planet and a regression in which `bbox` was
-                // parsed but never applied passed every Coverages test.
+                // The exported extent and payload derive from the request so bbox assertions
+                // can detect ignored spatial filters.
                 var extent = ClippedExtent(query, srid);
                 return Task.FromResult(new RasterResult
                 {

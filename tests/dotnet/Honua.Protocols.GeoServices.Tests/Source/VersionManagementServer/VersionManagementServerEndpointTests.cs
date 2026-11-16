@@ -750,10 +750,8 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.VersionManagementServer, "delete")]
     public async Task Delete_VersionMidReconcile_Returns409Conflict()
     {
-        // before the fix HandleDelete called DeleteAsync without a
-        // VersionState guard, allowing deletion during an in-flight reconcile/post job.
-        // This caused the running reconcile to write its result to a deleted record and
-        // could corrupt the DEFAULT branch or leave dangling change rows.
+        // A VersionState guard must prevent deletion during an in-flight reconcile/post
+        // job so the job cannot write to a deleted version or leave dangling changes.
         var created = await CreateVersionAsync("admin.delete_midreconcile");
         var guid = created.GetProperty("versionGuid").GetString();
 

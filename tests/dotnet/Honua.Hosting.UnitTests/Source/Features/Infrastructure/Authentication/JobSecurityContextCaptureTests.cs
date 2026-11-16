@@ -617,8 +617,8 @@ public sealed class JobSecurityContextCaptureTests
     [UnitTest]
     public void Restore_LegacySnapshotWithScopedMarkerUnderStandardRoleType_FailsClosedToGoverned()
     {
-        // Snapshots persisted before the fix hold the marker under ClaimTypes.Role with
-        // RoleClaimType "roles". They must restore as governed, not as an ungoverned principal.
+        // Legacy snapshots with the marker under ClaimTypes.Role and RoleClaimType
+        // roles must restore as governed principals.
         var legacySnapshot = new JobSecurityContext(
             "scoped-api-key",
             TenantId: null,

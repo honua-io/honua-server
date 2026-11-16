@@ -986,9 +986,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetFeatureInfo_DuplicateLayerWithFilter_Returns200NotCrash()
     {
-        // LAYERS=X,X with a per-layer FILTER used to throw ArgumentException
-        // (duplicate key in ToDictionary) producing HTTP 500. After the fix the request must
-        // be handled gracefully — the first filter wins and the response is not a 500 error.
+        // For LAYERS=X,X with per-layer FILTER, the first filter wins and duplicate
+        // layer keys must not cause HTTP 500.
         const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>does-not-exist</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
         var twoFilters = Uri.EscapeDataString($"{filter};{filter}");
         var duplicateLayers = $"{WebAppFixture.TestLayerId},{WebAppFixture.TestLayerId}";
@@ -1010,11 +1009,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetFeatureInfo_BboxExtendingOutsideCrsBoundsButIntersecting_DoesNotReject400()
     {
-        // GetFeatureInfo used IsExtentWithinCrsBounds (strict full-containment)
-        // while GetMap uses DoesExtentIntersectCrsBounds (lenient partial-overlap). A BBOX that
-        // extends outside CRS bounds by even one unit (here MaxX=190 > 180 for CRS:84) makes GetMap
-        // render successfully but caused GetFeatureInfo to return HTTP 400 with "BBOX is outside the
-        // valid range for the requested CRS." After the fix both operations use the same lenient check.
+        // GetMap and GetFeatureInfo accept partial overlap with CRS bounds.
+        // This BBOX has MaxX=190 beyond the CRS:84 limit of 180.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-10,-10,190,10&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=128&J=128");
 

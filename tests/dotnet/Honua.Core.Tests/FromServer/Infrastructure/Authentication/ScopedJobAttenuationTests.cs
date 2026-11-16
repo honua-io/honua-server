@@ -171,10 +171,8 @@ public sealed class ScopedJobAttenuationTests
     [UnitTest]
     public void Intersect_GrantBasedWriteSubmitter_RetainsWrite_NoRoleNeeded()
     {
-        // The submitter's write authority comes purely from a layer-scoped
-        // write:{service}/{layer} permission GRANT — they hold no data-editor role.
-        // The intersection must retain that write (previously it was dropped because
-        // only roles were considered).
+        // The submitter has a layer-scoped write:{service}/{layer} grant and no
+        // data-editor role. The intersection must retain the scoped write authority.
         var effective = ScopedJobAttenuation.Intersect(
             ownerRoles: [],
             ownerGrants: ["write:parcels/lots"],

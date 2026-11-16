@@ -1300,12 +1300,9 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity")]
     public async Task QueryDensity_WithTimeFilter_FlowsThroughTemporalBuilder()
     {
-        // Layer 0 declares timeInfo with startTimeField=timestamp,endTimeField=event_date
-        // in the seed, so the same `time={start,end}` shape that FeatureServer's
-        // main query handler accepts should also flow through the analytics
-        // path. The fix wires TryBuildFeatureQueryAsync to call the same
-        // GeoServicesTemporalQueryBuilder used by the main handler, so the
-        // request must succeed and yield a well-formed feature collection.
+        // Layer 0 declares timestamp and event_date as its time fields. The analytics
+        // path must accept the same time={start,end} shape as the main query handler via
+        // GeoServicesTemporalQueryBuilder and return a well-formed feature collection.
         var payload = JsonSerializer.Serialize(new
         {
             mode = "hex",
@@ -1435,9 +1432,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
                 .Should().BeFalse("_inputCount must be stripped before MapRowToFeature");
         }
 
-        // Density was previously hardcoding inputTruncated=false; the fix wires
-        // it to the actual overflow detector. With small input it must still be
-        // false, but the property must now be present in the metadata.
+        // Density metadata must expose inputTruncated from its overflow detector.
+        // For small input the value remains false.
         root.GetProperty("metadata").GetProperty("inputTruncated").GetBoolean().Should().BeFalse();
     }
 

@@ -154,9 +154,8 @@ public sealed class EditProcessorCreateValidationTests
         ]
     };
 
-    // Regression: a create that supplies every required NON-id field but omits the
-    // server-assigned "objectid" must validate, even when objectid lacks the "id.primary" role.
-    // Before the fix this failed with "Required attribute(s) missing for create operation: objectid".
+    // Creates may omit the server-assigned objectid even when it lacks the
+    // id.primary role; all required non-ID fields must still validate.
     [UnitTest]
     public void ValidateEdit_CreateOmittingUnroledObjectId_Succeeds()
     {
@@ -275,11 +274,9 @@ public sealed class EditProcessorCreateValidationTests
         ]
     };
 
-    // Regression (OGC create-with-top-level-string-feature-id): a create that supplies the public
-    // "id" plus the required "name" but omits the server-assigned integer "objectid" must validate,
-    // even though "objectid" is non-nullable and does not carry the id.primary role (a separate
-    // "id" field does). Before the fix this failed with
-    // "Required attribute(s) missing for create operation: objectid" → OGC HTTP 500.
+    // A public string id and required name may be supplied without the server-assigned
+    // integer objectid, even when objectid is non-nullable and the separate id field
+    // carries the id.primary role.
     [UnitTest]
     public void ValidateEdit_CreateOmittingServerAssignedObjectIdBesidePublicId_Succeeds()
     {
@@ -300,9 +297,8 @@ public sealed class EditProcessorCreateValidationTests
             + "client, even when a distinct id.primary field is the resource's resolved primary id");
     }
 
-    // The fix must not weaken validation: on the same two-id-field layer, a genuinely-missing
-    // required NON-id field ("name") is still rejected, and the server-assigned "objectid" must not
-    // appear in the missing-required list.
+    // On a two-ID-field layer, reject a missing required name without including
+    // the server-assigned objectid in the missing-required list.
     [UnitTest]
     public void ValidateEdit_CreateMissingRequiredFieldBesidePublicIdAndObjectId_StillFails()
     {

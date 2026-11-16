@@ -575,8 +575,8 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     [Endpoint("GET /elevation/{datasetId}/profile")]
     public async Task GetElevationProfile_WithIntervalOnly_DerivesSampleCountFromLineLength()
     {
-        // Regression: ?interval was previously ignored (always set to MaxSampleCount).
-        // Now the SQL derives effective_count = ceil(length / interval) + 1, capped.
+        // Derive effective_count = ceil(length / interval) + 1 from the requested interval,
+        // subject to the configured sample cap.
         await using var heldRasters = await HoldFullWorldRasterAsync(7);
 
         // ~157 km geodesic line. With interval=50 km we expect ceil(157/50)+1 = 5 samples.

@@ -59,7 +59,7 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
             "without the JSONB accessor the reader projects bare columns and Postgres "
             + "rejects the query with 42703 (the honua-server#1238 failure)");
 
-        // The fix: with the accessor, declared fields resolve as attributes->>'field'.
+        // Declared fields resolve through the accessor as attributes->>'field'.
         await MobileOfflineDemoGraphPublisher.PublishAsync(Provider, includeAttributesAccessor: true);
 
         var fixedResponse = await _fixture.Client.GetAsync(requestUri);

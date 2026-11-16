@@ -924,10 +924,9 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetStylesheet_EveryAdvertisedCollectionStylesheet_ResolvesAndIsListed()
     {
-        // Every OGC API Features collection advertises rel=stylesheet at
-        // /ogc/styles/{resource name}. A collection that has never been styled renders with its
-        // layer default, and that default is what the link must return — before the fix it was
-        // 404 and /ogc/styles listed nothing, so MapLibre and QGIS could not style the layer.
+        // A collection advertises rel=stylesheet at /ogc/styles/{resource name}. Before any
+        // explicit style is stored, that link must return its layer default and styles
+        // discovery must include it for MapLibre and QGIS clients.
         var client = _fixture.CreateClient();
 
         using var collectionsResponse = await client.GetAsync("/ogc/features/collections");

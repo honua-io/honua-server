@@ -2840,8 +2840,7 @@ public sealed partial class Wfs20EndpointsTests
             SupportedCrs = [MetadataV2SpatialReference.Wgs84]
         });
 
-        // 2-vertex 3D LineString: x1 y1 z1 x2 y2 z2 → 6 ordinates.
-        // Before the fix these were mis-parsed as 3 2D points with the wrong coordinates.
+        // A two-vertex 3D LineString has six ordinates: x1 y1 z1 x2 y2 z2.
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -2864,7 +2863,7 @@ public sealed partial class Wfs20EndpointsTests
         var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
-        // Before the fix this returned 400 or stored wrong geometry; now it must succeed.
+        // The three-dimensional transaction must preserve its geometry.
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("TransactionResponse");
         content.Should().Contain("<wfs:totalInserted>1</wfs:totalInserted>");
@@ -2922,10 +2921,8 @@ public sealed partial class Wfs20EndpointsTests
     }
 
 
-    // an invalid FES 2.0 filter expression inside a WFS-T Transaction body
-    // previously caused a 500 Internal Server Error because the Fes20ParseException
-    // propagated out of HandleTransactionAsync unhandled.  After the fix the handler
-    // catches it and returns 400 InvalidParameterValue.
+    // An invalid FES 2.0 filter in a WFS-T transaction must return
+    // 400 InvalidParameterValue.
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]

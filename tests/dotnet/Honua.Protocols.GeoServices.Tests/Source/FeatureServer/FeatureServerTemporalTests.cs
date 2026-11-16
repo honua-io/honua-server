@@ -328,10 +328,9 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
             new long[] { 1, 3 }
         };
 
-        // Start/end-relative Esri relations (ArcObjects esriTimeRelation vocabulary).
-        // Feature interval = [timestamp, COALESCE(event_date, timestamp)]; a single time
-        // value sets queryStart == queryEnd. ArcGIS Pro / arcpy send these spellings and
-        // previously got HTTP 400 because only Overlaps/OverlapsStartWithinEnd were mapped.
+        // ArcGIS Pro and arcpy send start/end-relative ArcObjects esriTimeRelation
+        // spellings. The feature interval is [timestamp, COALESCE(event_date, timestamp)];
+        // a single query time sets queryStart == queryEnd.
 
         // start > queryStart (2023-01-04): OID 2,3,5.
         yield return new object[]

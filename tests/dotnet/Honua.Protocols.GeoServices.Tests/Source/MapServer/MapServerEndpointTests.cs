@@ -933,8 +933,8 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         domains.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
-    // Esri services accept BOTH GET and POST for queryDomains; clients
-    // POST large layers arrays that exceed URL limits. Previously POST returned 405.
+    // Accept GET and POST for queryDomains; clients POST layers arrays
+    // that exceed URL limits.
     [IntegrationTest]
     [Operation(Operations.QueryDomains)]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/queryDomains")]

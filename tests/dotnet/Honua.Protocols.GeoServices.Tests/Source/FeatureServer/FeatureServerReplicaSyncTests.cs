@@ -1005,11 +1005,8 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_AllEmptyPerLayerPayload_DoesNotInsertPhantomFeatures()
     {
-        // a per-layer payload where every layer has empty adds/updates/deletes
-        // arrays (a valid no-op acknowledgment) was falling through to the legacy flat-form parser,
-        // which reinterpreted each {"id":0,"adds":[],...} object as a GeoServicesFeature and
-        // submitted it as a phantom Create. After the fix, the no-op is a clean success with no
-        // features inserted.
+        // Per-layer empty adds, updates, and deletes arrays are a valid no-op
+        // acknowledgment: return success without inserting features.
         var featureCountBefore = await CountAllFeaturesAsync();
 
         var replicaId = await CreateReplicaAsync("EmptyPerLayerNoop", "0");
@@ -1049,10 +1046,8 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_Bidirectional_ConcurrentOtherClientEdit_IsDelivered()
     {
-        // edits committed by OTHER clients in the window (preUploadGen,
-        // uploadServerGen] were excluded from the bidirectional download delta AND from all
-        // subsequent downloads (because the cursor jumped to uploadServerGen). After the fix
-        // the full window (downloadSinceGen, uploadServerGen] is delivered.
+        // Bidirectional download must deliver the full window
+        // (downloadSinceGen, uploadServerGen], including other clients’ edits.
         var createRoot = await CreateReplicaWithResponseAsync("BidirectionalConcurrent", "0");
         var replicaId = createRoot.GetProperty("replicaID").GetString()!;
         var baseServerGen = createRoot.GetProperty("serverGen").GetInt64();
@@ -1064,8 +1059,7 @@ public sealed partial class FeatureServerReplicaSyncTests : IAsyncLifetime
         // Establish a baseline download so the replica cursor is at the current generation.
         await SynchronizeDownloadWithResponseAsync(replicaId, baseServerGen);
 
-        // Another client commits a feature concurrently — this is the "in-window" edit that
-        // was previously skipped. We simulate it by adding it before the bidirectional upload.
+        // Simulate another client’s in-window edit before the bidirectional upload.
         var concurrentObjectId = await AddFeatureAsync("concurrent-other-client");
 
         // Client uploads its own add in a bidirectional call.

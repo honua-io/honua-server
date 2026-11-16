@@ -117,9 +117,7 @@ public sealed class GeoprocessingHardeningTests
             scopeFactory,
             NullLogger<GeoprocessingJobTerminalCallback>.Instance);
 
-        // Succeeded job — without the fix the outer catch would leave
-        // artifactPersistenceError null, so effectiveStatus stays Succeeded
-        // and the progress would be written as Completed (wrong).
+        // Start with a succeeded job to verify that artifact persistence failure changes its status.
         var job = new ExecutionJobRecord
         {
             OperationId = operationId,
@@ -144,9 +142,7 @@ public sealed class GeoprocessingHardeningTests
         // --- act ---
         await callback.OnTerminalAsync(job, CancellationToken.None);
 
-        // --- assert ---
-        // After the fix the outer catch sets artifactPersistenceError, so
-        // effectiveStatus flips to Failed and progress must be written as Failed.
+        // Artifact persistence errors must produce Failed status and progress.
         await progressStore.Received(1).SetProgressAsync(
             operationId,
             Arg.Is<IOperationProgress>(p =>

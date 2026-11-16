@@ -161,7 +161,7 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
         matching.RootElement.GetProperty("value").EnumerateArray()
             .Select(value => value.GetProperty("name").GetString()).Should().Equal("Filterable Station");
 
-        // The repro from the issue: a filter matching nothing used to return every Thing.
+        // A filter matching nothing must return no Things.
         using var empty = await GetOkAsync($"/sta/v1.1/Things?$filter={Escape("name eq 'nope'")}&$count=true");
         empty.RootElement.GetProperty("value").GetArrayLength().Should().Be(0);
         empty.RootElement.GetProperty("@iot.count").GetInt64().Should().Be(0);

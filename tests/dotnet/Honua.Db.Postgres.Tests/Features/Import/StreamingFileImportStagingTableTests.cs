@@ -1262,7 +1262,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
                 TargetSchema = schema,
                 SourceSrid = 4326,
                 TargetSrid = 4326,
-                // The previously-broken default: do NOT request an overwrite.
+                // Exercise the default without requesting overwrite.
                 OverwriteExisting = false,
             });
 
@@ -1420,8 +1420,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
             result.RepairedGeometryCount.Should().Be(0);
             result.Warnings.Should().Contain(w => w.Contains("skipped", StringComparison.OrdinalIgnoreCase));
 
-            // The invalid feature must not exist at all — previously it imported as a
-            // null-geometry row carrying its properties.
+            // Reject the invalid feature without persisting its properties or a null-geometry row.
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
             command.CommandText =

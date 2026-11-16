@@ -323,7 +323,7 @@ public sealed class InputValidationIntegrationTests : IClassFixture<InputValidat
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_FormUrlEncoded_AttributeValuesWithSqlMetacharacters_AreNotRejected()
     {
-        // Attribute values that previously tripped the SQL-injection content filter.
+        // Legitimate attribute values must pass SQL-injection content validation.
         const string addsJson =
             "[{\"geometry\":{\"x\":-122.4194,\"y\":37.7749}," +
             "\"attributes\":{\"name\":\"Paris--London\",\"description\":\"open 10--20 units; note /* internal */ ok 'quoted'\"}}]";

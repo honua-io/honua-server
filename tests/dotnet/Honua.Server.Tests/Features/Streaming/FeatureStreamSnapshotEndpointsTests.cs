@@ -927,11 +927,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotCapReachedOnPageBoundary_MarksBaselineIncomplete()
     {
-        // The cap is set equal to the page size, so it is reached exactly when a page ends and
-        // no row is visibly dropped inside the page. That branch used to exit without clearing
-        // 'complete', so snapshot-end advertised an authoritative baseline while ids beyond the
-        // first page were never read — a client would discard valid features outside it.
-        // Any truncation must report complete=false.
+        // Set the cap equal to the page size to exercise truncation exactly at a page
+        // boundary. snapshot-end must report complete=false because unread IDs remain.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var fixture = CreateFixtureWithDeploymentConfig(new Dictionary<string, string?>
@@ -1257,10 +1254,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_SnapshotMode_UnreadableLayer_ReturnsTypedProblemInsteadOfUntyped500()
     {
-        // A baseline read that the backing store refuses used to escape after the SSE handshake,
-        // which leaves no way to answer with a problem document — the caller (or a buffering
-        // intermediary) reports an untyped 500 instead. Servability is now decided ahead of the
-        // handshake, where a typed RFC 7807 response is still possible.
+        // Decide baseline servability before the SSE handshake while a typed RFC 7807
+        // problem response can still be sent.
         foreach (var allowObjectIdProbe in new[] { false, true })
         {
             // Cover both provider failure seams: the cheap id sweep and the full row

@@ -41,8 +41,8 @@ public sealed class DeployTelemetryPolicyTests
     [Fact]
     public void Parse_WithConnectionAndUnsupportedPreset_ProducesInvalidPolicy()
     {
-        // An unknown preset with no query used to yield null, so the connection the operator
-        // configured was silently ignored and the deploy ran ungated.
+        // Reject an unknown preset without a query rather than ignoring the configured
+        // connection and running deployment without a gate.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(
             new Dictionary<string, string>
             {
@@ -231,8 +231,7 @@ public sealed class DeployTelemetryPolicyTests
     [Fact]
     public void Parse_HealthProbeNonPositiveOrMalformedOverrides_AreRejected()
     {
-        // These used to fall back to defaults silently, so the probe ran with settings the
-        // operator never chose. Each unusable value is now named in the validation error.
+        // Name each unusable value in the validation error rather than substituting defaults.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-prom",

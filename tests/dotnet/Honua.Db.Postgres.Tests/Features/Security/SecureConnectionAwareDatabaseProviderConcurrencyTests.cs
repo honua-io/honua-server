@@ -38,10 +38,9 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
             NullLogger<CachingDatabaseConnectionProvider>.Instance,
             concurrencyGate: gate);
 
-        // Stub resolver that mimics PostgresSecureConnectionRegistry: it opens
-        // a metadata connection through the primary (gated) provider before
-        // returning the resolved connection string. This is the exact path
-        // that previously self-deadlocked.
+        // Mimic PostgresSecureConnectionRegistry by opening a metadata connection through
+        // the primary gated provider before returning the resolved connection string.
+        // The nested access must complete without deadlocking.
         var resolver = new RegistryLookupSimulatingResolver(
             primaryProvider,
             _fixture.ConnectionString,

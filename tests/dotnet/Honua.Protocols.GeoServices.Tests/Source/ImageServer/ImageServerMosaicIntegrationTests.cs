@@ -460,9 +460,8 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
                 postNewest.StatusCode.Should().Be(HttpStatusCode.OK);
                 var postNewestBytes = await postNewest.Content.ReadAsByteArrayAsync();
 
-                // POST with time must honor the requested slice: it agrees with GET for the same
-                // time, and differs from the default (newest) mosaic. Before the fix POST dropped
-                // `time`, so postWithTime == postNewest and postWithTime != getWithTime.
+                // POST with time must agree with GET for that slice and differ from the
+                // default newest mosaic.
                 postWithTimeBytes.Should().NotBeEmpty();
                 postWithTimeBytes.Should().Equal(getWithTimeBytes, "POST and GET exportImage must honor time identically");
                 postWithTimeBytes.Should().NotEqual(postNewestBytes, "POST exportImage must apply the requested temporal slice, not the default newest mosaic");
@@ -479,10 +478,10 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
     [Operation(Operations.Export)]
     public async Task ExportImage_WithBboxBeyondRasterFootprint_CoversRequestedBboxWithNoDataOutsideData()
     {
-        // Esri clients paint the exported pixels across the requested bbox. The seeded rasters
-        // cover x[0,4] y[0,2] (west 20, overlap-newest 5, east 40); bbox [-4,-2,4,2] at 80x40 is
-        // 0.1-degree pixels, so the data is 40x20 = 800 pixels in the upper-right quarter and every
-        // other pixel must be NoData. Before the fix the 80x40 image was the data alone, stretched.
+        // Esri clients stretch exported pixels across the requested bbox. Seeded rasters
+        // cover x[0,4] y[0,2] (west 20, overlap-newest 5, east 40). At 80x40, bbox
+        // [-4,-2,4,2] gives 0.1-degree pixels: data occupies the upper-right 40x20
+        // quarter (800 pixels), with NoData everywhere else.
         var fixture = await CreateFixtureAsync();
         try
         {
@@ -648,8 +647,7 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
     [Operation(Operations.Export, Operations.Identify)]
     public async Task ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected()
     {
-        // Before the fix every ImageServer operation answered 400 to time=<start>,<end>.
-        // The Jan 10 - Jan 20 window selects only east (constant 40).
+        // The Jan 10–Jan 20 time range selects only the east raster (constant 40).
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro);
         try
         {

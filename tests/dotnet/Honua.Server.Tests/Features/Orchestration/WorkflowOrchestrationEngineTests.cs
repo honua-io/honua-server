@@ -558,10 +558,8 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CancelRunAsync_ReturnsLeaseContention_WhenLeaseUnavailableWithinRetryWindow()
     {
-        // MEDIUM regression: before the fix, a lease-contention scenario on the admin cancel
-        // path surfaced as a TimeoutException / 500. The outcome is now shaped as
-        // LeaseContention, which the admin endpoint translates into a retriable 409 instead
-        // of leaking an internal exception to the caller.
+        // Admin cancel lease contention returns LeaseContention, translated to a retriable
+        // 409 response without exposing an internal exception.
         var harness = new OrchestrationTestHarness();
         var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
         await harness.Definitions.TryCreateAsync(definition);
@@ -717,11 +715,8 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CancelRunAsync_KeepsRunInActiveReconcileSetUntilStepsTerminate()
     {
-        // Regression: before the fix, CancelRunAsync marked the run Cancelled which made
-        // the run-store treat it as terminal and drop it from the active reconcile index.
-        // The reconcile loop then never cascaded cancellation to the queued child job.
-        // After the fix, a run stays in the active set until every step has also reached
-        // a terminal state, so the background reconciler still sees it.
+        // Keep a cancelled run in the active reconcile index until every step is terminal
+        // so the background reconciler can cascade cancellation to queued children.
         var harness = new OrchestrationTestHarness();
         var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
         await harness.Definitions.TryCreateAsync(definition);
@@ -752,11 +747,8 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CancelRunAsync_SerialisesAgainstReconcileLease()
     {
-        // Regression: CancelRunAsync previously did a read-modify-write without taking
-        // the reconcile lease, so a concurrent reconcile could clobber the Cancelled
-        // status back to Running/Succeeded after cancel had already returned success.
-        // Verify the cancel path now blocks on the lease and resumes cleanly after the
-        // lease is released.
+        // Cancel must hold the reconcile lease so a concurrent reconcile cannot overwrite
+        // the cancellation. Verify that cancel blocks until the lease is released.
         var harness = new OrchestrationTestHarness();
         var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
         await harness.Definitions.TryCreateAsync(definition);

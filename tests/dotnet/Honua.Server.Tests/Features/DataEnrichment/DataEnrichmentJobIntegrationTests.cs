@@ -175,15 +175,9 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
         }
     }
 
-    // Parameter honesty at submission. Two ways an enrichment submission
-    // could previously be accepted and then behave differently than the caller asked:
-    //   * 'where'/'bbox' supplied with a staged 'input' source — documented in the catalog
-    //     as layer-source-only, never applied to the inline collection, so the job
-    //     "succeeded" over EVERY staged feature;
-    //   * a malformed 'bbox' on the layer-backed source — cleared the generic text-type
-    //     check, queued a job, and only failed deep inside the provider read.
-    // Both must now be refused at the submit surface with an actionable parameter error and
-    // without queueing a job.
+    // Reject where or bbox with a staged input source: the catalog defines these
+    // parameters for layer sources only. Reject malformed layer-source bbox values at
+    // submission with an actionable parameter error, before queueing a job.
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]

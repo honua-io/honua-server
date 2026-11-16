@@ -556,9 +556,8 @@ public class ImageServerCatalogQueryHandlerTests
     [Operation(Operations.Query)]
     public async Task QueryCatalogAsync_FeatureGeometrySpatialReference_MatchesRasterNativeSrid()
     {
-        // Regression: previously the geometry SR was stamped with outSR even though the
-        // MVP does not reproject. The geometry SR must match the actual ring coordinates,
-        // which come straight from the raster's native SRID (3857 here).
+        // Geometry SR must match the native raster coordinates (3857 here),
+        // regardless of outSR, because this path does not reproject.
         SetupLayerWithRasters([CreateRaster(100, "first", srid: 3857)]);
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
@@ -602,8 +601,7 @@ public class ImageServerCatalogQueryHandlerTests
     [Operation(Operations.Query)]
     public async Task QueryCatalogAsync_ReturnExtentOnlyWithObjectIdsFilter_ShrinksAggregateExtent()
     {
-        // Regression: aggregate extent previously iterated the unfiltered raster set,
-        // returning the full layer extent regardless of objectIds/where filters.
+        // Aggregate extent must honor objectIds and where filters.
         SetupLayerWithRasters([
             CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: 0, yMax: 5),
             CreateRaster(200, "east", xMin: 0, yMin: -5, xMax: 10, yMax: 5),

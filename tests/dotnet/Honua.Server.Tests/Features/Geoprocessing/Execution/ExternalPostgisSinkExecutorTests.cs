@@ -232,10 +232,8 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
     [Fact]
     public async Task ExecuteAsync_MidBatchFailure_RollsBackAllPreviouslyInsertedRows()
     {
-        // without the transaction wrapping, a constraint violation
-        // on the 2nd batch would leave the 1st batch's rows permanently committed in the
-        // external table. With the fix, the transaction wraps both batches
-        // and the entire load is rolled back atomically.
+        // Wrap both batches in one transaction so a constraint violation in the second
+        // batch rolls back the first batch as well.
         var resolver = Substitute.For<ISecureConnectionResolver>();
         resolver
             .ResolveConnectionStringAsync("external-target", Arg.Any<CancellationToken>())
@@ -276,9 +274,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
 
         Assert.Equal(ExecutionJobStatus.Failed, result.Status);
 
-        // Without the transaction fix, the first batch (first_feature) would be committed
-        // before the second batch fails. With the fix, the transaction wraps both batches
-        // and the entire load is rolled back → 0 rows in the table.
+        // The second batch fails; the transaction must roll back both batches, leaving zero rows.
         await using var countConnection = await _fixture.DataSource.OpenConnectionAsync();
         await using var countCmd = new NpgsqlCommand(
             $"SELECT COUNT(*) FROM \"{_schemaName}\".partial_test", countConnection);

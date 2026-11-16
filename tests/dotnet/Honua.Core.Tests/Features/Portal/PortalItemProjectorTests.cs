@@ -314,8 +314,7 @@ public sealed class PortalItemProjectorTests
     [Operation(Operations.Metadata)]
     public void ProjectVisibleItems_BuiltInRegistry_ServesAllFacadeServiceTypes()
     {
-        // Behaviour-preservation guard: every Esri service construct the private
-        // table used to accept is served by the built-in registry descriptors.
+        // Built-in registry descriptors must serve every supported Esri service construct.
         var registry = new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
         registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.FacadeFeatureService).CanServe.Should().BeTrue();
         registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.FacadeMapService).CanServe.Should().BeTrue();

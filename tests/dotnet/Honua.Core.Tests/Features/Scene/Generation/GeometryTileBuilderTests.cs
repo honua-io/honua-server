@@ -72,11 +72,9 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_RecentersPositionsAboutNodeTranslation()
     {
-        // Regression for the float32 ECEF precision defect: vertex positions
-        // used to be stored as ABSOLUTE ECEF meters (~6.3e6 magnitude) cast to
-        // float32, quantizing every vertex to ~0.5-1 m. The builder now subtracts
-        // a per-tile ECEF centroid (emitted as the node translation) BEFORE the
-        // float cast, so the stored POSITION values are small-magnitude.
+        // Subtract the per-tile ECEF centroid, emitted as the node translation, before
+        // casting positions to float32. Absolute ECEF coordinates near 6.3e6 meters
+        // would quantize vertices to roughly 0.5–1 meter.
         var glb = BuildSimpleSquare();
         var json = ExtractJsonChunk(glb);
 

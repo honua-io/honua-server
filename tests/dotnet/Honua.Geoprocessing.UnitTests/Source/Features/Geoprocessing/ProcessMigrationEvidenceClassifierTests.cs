@@ -48,11 +48,9 @@ public sealed class ProcessMigrationEvidenceClassifierTests
     [Operation(Operations.ProcessExecution)]
     public void HeavyweightRasterAndSurfaceProcesses_AreAssistedAndProjected()
     {
-        // Raster/surface ids are now projected through OGC API Processes for
-        // direct process-id discovery and execution (they were previously excluded,
-        // callable only as a single-step honua-geoprocessing plan wrapper). The
-        // automation tier stays Assisted because full-fidelity execution still
-        // requires the out-of-process GDAL worker.
+        // Raster and surface process IDs support direct OGC API Processes discovery and
+        // execution. Automation remains Assisted because full-fidelity execution requires
+        // the out-of-process GDAL worker.
         string[] processIds = ["surface.slope", "surface.hillshade", "raster.clip", "raster.zonal-statistics"];
 
         foreach (var processId in processIds)

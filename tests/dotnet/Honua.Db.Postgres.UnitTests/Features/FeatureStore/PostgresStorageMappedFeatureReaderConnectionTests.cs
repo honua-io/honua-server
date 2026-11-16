@@ -179,9 +179,8 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
     [Fact]
     public async Task ResolveBoundConnectionString_SecretReference_ResolvesThroughTheRequestSecretResolver()
     {
-        // A connection whose credentials are an external secret reference
-        // (no encrypted bytes, no plaintext) used to fail every read with "no usable connection
-        // string" because the reader never consulted the secret-reference resolver.
+        // A connection with an external secret reference, without encrypted bytes
+        // or plaintext, must resolve its credentials through the secret resolver.
         const string secretConnectionString = "Host=demo-rds;Port=5432;Database=demo;Username=svc;Password=secret";
         var connection = new DataConnection
         {

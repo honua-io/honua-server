@@ -286,8 +286,8 @@ public sealed class CollaborationLiveCoEditingTests
             client, dForm, "op-vis", "SetLayerVisibility", baseCursor: head,
             payload: """{"layerId":"parcels","visible":false}""");
 
-        // The replay window is server-derived: a client-supplied cursor field (which previously
-        // could silently drop accepted operation 1) is ignored, so BOTH ops reach the version.
+        // Ignore client-supplied replay cursors. The server-derived window must include
+        // both accepted operations in the version.
         using var content = new StringContent(
             """{"changeNote":"canonical","sinceCursor":1}""", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
@@ -876,8 +876,8 @@ public sealed class CollaborationLiveCoEditingTests
             client, mapId, "op-style", "PatchStyle", baseCursor: 0,
             payload: """{"layerId":"parcels","styleRef":"style-night"}""");
 
-        // A non-string styleRef used to be admitted, take a permanent cursor, and then CLEAR the
-        // layer's style at checkpoint time — malformed input turned into a destructive edit.
+        // Reject a non-string styleRef before assigning a permanent cursor so malformed
+        // input cannot clear the layer style during checkpointing.
         foreach (var malformed in new[]
         {
             """{"operationId":"bad-number","kind":"PatchStyle","baseCursor":1,"payload":{"layerId":"parcels","styleRef":42}}""",
@@ -1314,9 +1314,8 @@ public sealed class CollaborationLiveCoEditingTests
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
 
-        // The shared Studio view contract caps zoom at 24 and pitch at 85 — the same bounds the MCP
-        // composition tool schemas advertise. Payloads outside them used to reach an unconditional
-        // success path, consume a permanent cursor, and persist a view no client can render.
+        // Validate zoom <= 24 and pitch <= 85 before assigning a cursor, matching the
+        // shared Studio view contract advertised by the MCP composition schemas.
         foreach (var malformed in new[]
         {
             """{"operationId":"zoom-high","kind":"SetViewport","baseCursor":0,"payload":{"zoom":25}}""",

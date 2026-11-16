@@ -898,10 +898,8 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_TemporalPredicateOnAttributeBackedTimestampField_UsesAttributesJsonPath()
     {
-        // Regression: a schema field literally named "created_at"/"updated_at" is
-        // stored in the JSONB attributes column on managed feature tables and must
-        // be resolved through the schema, not rewritten to a bare physical column
-        // (which previously produced invalid SQL and a 500 from the OGC pipeline).
+        // Schema fields named created_at or updated_at live in managed tables’ JSONB
+        // attributes. Resolve them through the schema rather than physical columns.
         var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
         var resource = CreateResource() with
         {
@@ -950,10 +948,8 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_TemporalPredicateOnUndefinedField_ThrowsArgumentException()
     {
-        // Regression: T_BEFORE(updated_at, ...) on a layer that does not define an
-        // "updated_at" queryable previously emitted a bare column reference and
-        // failed at the database (500). It must surface a client error (400) via
-        // an ArgumentException instead.
+        // T_BEFORE(updated_at, ...) without an updated_at queryable must raise
+        // ArgumentException for a client error rather than emit an invalid column reference.
         var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
 
         var predicate = new TemporalPredicate(

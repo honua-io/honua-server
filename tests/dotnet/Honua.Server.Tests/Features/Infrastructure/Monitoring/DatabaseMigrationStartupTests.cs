@@ -80,9 +80,8 @@ public sealed class DatabaseMigrationStartupTests
             builder.ConfigureTestServices(services => services.RemoveAll<IDatabaseMigrationRunner>());
         });
 
-        // Building the host (via the first client) runs Program's startup migration routine.
-        // Before the fix this threw InvalidOperationException because no IDatabaseMigrationRunner
-        // was registered, aborting boot — CreateClient would have thrown here.
+        // Creating the first client builds the host and runs startup migrations.
+        // IDatabaseMigrationRunner must be registered so boot succeeds.
         using var client = factory.CreateClient();
 
         var migrationState = factory.Services.GetRequiredService<MigrationState>();

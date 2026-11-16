@@ -143,7 +143,7 @@ public sealed class ExecutionWorkerProfileTests
         var services = builder.Services;
         ComposeServingControlPlane(services, builder.Configuration, builder.Environment);
 
-        // The serving composition the worker used to inherit: proves the assertions below bite.
+        // Serving composition is the negative fixture for the worker-profile assertions.
         HostedImplementations(services).Should().Contain(
         [
             typeof(ExecutionJobReconcilerBackgroundService),

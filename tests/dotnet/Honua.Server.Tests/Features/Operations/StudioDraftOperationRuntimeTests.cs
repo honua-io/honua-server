@@ -119,10 +119,9 @@ public sealed partial class StudioDraftOperationRuntimeTests
         handle.ResourceIds.Should().NotContainKey("activeUrl");
     }
 
-    // ValidateAsync binds the proposal to the item's current version, but
-    // actuation runs later (approved replay) and used to reload only the version and hash. These
-    // two tests pin the compare-and-set that closes that window, driven through the real
-    // lifecycle + in-memory store so the pointer write is the one production uses.
+    // Validation binds the proposal to the current item version. Approved replay must
+    // compare-and-set that version and hash through the production lifecycle and store
+    // to reject changes between validation and actuation.
     [UnitTest]
     public async Task PublicationRequestActuation_DraftSavedAfterValidation_ConflictsInsteadOfPublishingStaleVersion()
     {

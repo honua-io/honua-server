@@ -961,10 +961,8 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
         honuaSingleOutField.Rows[0].Should().ContainKey(sanitizedCompareField);
         honuaSingleOutField.Rows[0].Should().NotContainKey(sanitizedNumericField);
 
-        // The frozen snapshot is the source of truth: the import copied exactly these rows,
-        // so derive the expected count from the snapshot rather than re-querying the live
-        // external service, whose row counts drift between snapshot capture and now (the live
-        // re-query previously made this assertion flaky — see honua-server nightly parity).
+        // Derive the expected row count from the frozen snapshot that was imported.
+        // Live external service counts can drift after snapshot capture.
         var expectedCompareNotNull = sourceSnapshot.TotalCount
             - CountJsonNull(sourceSnapshot.Rows, serviceCase.CompareField);
         var honuaNotNullWhereCount = await QueryCountWithWhereAsync(

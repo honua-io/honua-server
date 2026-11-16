@@ -263,8 +263,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
                     })
             };
 
-            // Decode actual exported bytes, not just the returned metadata. A same-CRS
-            // ST_Transform used to resample this 2x2 grid into square pixels.
+            // Decode the exported bytes to verify that same-CRS export preserves the 2x2 grid.
             var decoded = await ProbeExportedRasterAsync(schemaName, result.Data, 4326,
                 (1, 1.5), (3, 1.5), (1, 0.5), (3, 0.5));
             decoded.Width.Should().Be(2);
@@ -869,8 +868,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var second = await InsertTwoBandRasterAsync(schemaName, upperLeftX: 1, visible: 60, infrared: 180);
             var store = CreateStore(schemaName);
 
-            // NDVI over band1 (visible) and band2 (infrared): the mosaic export previously ignored
-            // band math entirely. The output must be a single analytic band.
+            // NDVI over visible band1 and infrared band2 must export a single analytic band.
             var result = await store.ExportMosaicAsync(
                     LayerId,
                     [first, second],

@@ -143,13 +143,8 @@ public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, ICl
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task FeatureServer_ApplyEdits_RetriedAfterReadOnlyRejection_Repeats405InsteadOfConflict()
     {
-        // The read-only rejection is raised as NotSupportedException AFTER the
-        // handler has reserved the Idempotency-Key. Before the fix nothing released that
-        // reservation, so a client retrying inside the ~60s reservation window found no replay
-        // value, lost TryReserveAsync, and was answered with the idempotency conflict instead of a
-        // repeat of the documented 405. This is the most visible instance of the leak because on a
-        // read/query-only provider EVERY keyed edit fails, so EVERY keyed retry degraded to a
-        // conflict.
+        // A read-only provider rejects edits after reserving the idempotency key. Release
+        // the reservation so keyed retries receive the documented 405 response.
         var payload = /*lang=json,strict*/ """
             {
               "adds": [

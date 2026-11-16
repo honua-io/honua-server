@@ -280,14 +280,9 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_UniqueValueRenderer_MixedPictureAndColorSymbols_ReportsPictureMarkerPartial()
     {
-        // Regression: a uniqueValue renderer with both esriPMS (image) and
-        // esriSMS (color) stops previously caused TryGetPictureMarkerPayload to
-        // return false on the first non-esriPMS stop.  The dispatcher then fell
-        // through to the generic color path, which considers esriPMS supported
-        // and silently dropped the image metadata.  The fix records
-        // PICTURE_MARKER_PARTIAL when at least one esriPMS payload is present
-        // but cannot be emitted as a clean picture-marker style, so the
-        // no-silent-drop contract holds end-to-end.
+        // A mixed esriPMS image and esriSMS color uniqueValue renderer must report
+        // PICTURE_MARKER_PARTIAL when it cannot emit a complete picture-marker style,
+        // preserving the no-silent-drop contract.
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {

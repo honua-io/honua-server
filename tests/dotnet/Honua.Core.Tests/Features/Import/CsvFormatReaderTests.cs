@@ -17,8 +17,7 @@ public sealed class CsvFormatReaderTests
     [Fact]
     public async Task ReadStreamingAsync_PostgisEwktExport_ImportsWithGeometry()
     {
-        // A standard PostGIS CSV export encodes the geometry column as EWKT
-        // ("SRID=<n>;WKT"). Previously a bare catch{} silently dropped it to NULL.
+        // A standard PostGIS CSV export encodes geometry as EWKT (SRID=<n>;WKT).
         var csv = """
             id,name,geom
             1,San Francisco,SRID=4326;POINT(-122.4194 37.7749)

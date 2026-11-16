@@ -296,13 +296,9 @@ public sealed class RelatedRecordsServiceTests
         withoutRecords.RelatedRecords!.Should().BeEmpty();
     }
 
-    // Regression: when the relationship's origin foreign key is NOT the object-id
-    // field, the related row's destination key value differs from the origin object id.
-    // Grouping must bucket related rows by the origin object id the storage layer stamped
-    // onto each row (RelatedQuery.OriginObjectIdsAttribute), NOT by the destination key
-    // value. Previously the grouping treated the destination key value as the origin
-    // object id, so the relate only resolved when the foreign key happened to equal the
-    // object id — failing for any origin object id whose key differs (e.g. large ids).
+    // When the origin foreign key differs from the object-ID field, group
+    // related rows by RelatedQuery.OriginObjectIdsAttribute stamped by storage,
+    // not by destination key values.
     [Fact]
     public void GroupRelatedRecords_WithNonObjectIdOriginKey_GroupsByStampedOriginObjectId()
     {

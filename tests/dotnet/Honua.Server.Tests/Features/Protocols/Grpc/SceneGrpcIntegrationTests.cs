@@ -1790,12 +1790,8 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
     [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
     public async Task GetElevation_LayerWithNoRasterSource_ThrowsNotFound()
     {
-        // #4: the gRPC adapter must mirror the HTTP elevation status mapping
-        // (ElevationEndpoints.MapElevationException), where ElevationFailureKind
-        // .SourceUnavailable maps to NotFound (HTTP 404). Previously every
-        // ElevationQueryException collapsed to FailedPrecondition. Clearing the
-        // layer's rasters makes the query raise SourceUnavailable, which must now
-        // surface as gRPC NotFound rather than FailedPrecondition.
+        // Mirror the HTTP elevation status mapping: SourceUnavailable is HTTP 404
+        // and gRPC NotFound. Clearing the layer rasters exercises this error.
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             accessPolicy: new AccessPolicy { AllowAnonymous = true });

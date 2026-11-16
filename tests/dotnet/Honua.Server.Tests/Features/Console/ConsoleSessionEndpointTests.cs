@@ -524,9 +524,7 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/console/actions/check")]
     public async Task CheckActions_WithNullTargetEntry_ReturnsBadRequest()
     {
-        // The targets array is required, but JSON null entries inside it pass
-        // deserialization. Dereferencing target.ItemId without a null check
-        // previously surfaced as a 500; the contract is a 400.
+        // Reject JSON null entries in the required targets array with 400.
         using var content = new StringContent(
             """
             {"targets":[null]}

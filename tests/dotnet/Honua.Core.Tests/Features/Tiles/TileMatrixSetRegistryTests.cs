@@ -182,7 +182,7 @@ public class TileMatrixSetRegistryTests
         const int i = 200;
         const int j = 50;
 
-        // Legacy inline formula previously hardcoded in HandleWmtsGetFeatureInfo.
+        // Independent inline reference formula for the tile pixel calculation.
         var matrixWidth = 2.0 * origin / (1L << level);
         var expectedX = (-origin + col * matrixWidth) + (((i + 0.5) / 256.0) * matrixWidth);
         var expectedY = (origin - row * matrixWidth) - (((j + 0.5) / 256.0) * matrixWidth);

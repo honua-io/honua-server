@@ -28,9 +28,8 @@ public sealed class StacV2LookupsMatchesCollectionIdTests
             LayerIndex = layerIndex
         };
 
-    // a STAC client passes collections=["sentinel-2-l2a"] and the publication
-    // whose ServiceLocalId is "sentinel-2-l2a" must be returned; previously only integer
-    // layer indices were matched.
+    // A collections filter containing sentinel-2-l2a must match the publication’s
+    // ServiceLocalId, independently of its integer layer index.
 
     [UnitTest]
     public void MatchesCollectionId_ServiceLocalId_Matches()

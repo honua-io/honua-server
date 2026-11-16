@@ -74,8 +74,8 @@ public sealed class GeoServicesGeometryParserTests
     [UnitTest]
     public void TryParse_WithShortEnvelopeCoordinates_Fails()
     {
-        // A two-coordinate list declared as an envelope previously read xmax/ymax from the
-        // zero-initialized stackalloc tail and silently queried a different window.
+        // Reject an envelope with only two coordinates rather than reading its
+        // missing bounds from the zero-initialized stackalloc tail.
         var parsed = GeoServicesGeometryParser.TryParseGeoServicesGeometry(
             "1,2",
             "esriGeometryEnvelope",

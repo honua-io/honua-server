@@ -92,10 +92,8 @@ public sealed class OgcCrsResolverTests
         definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
     }
 
-    // when the CRS registry is degraded and the default CRS84
-    // entry is absent, TryResolveCrs must return false with a descriptive error
-    // rather than throwing KeyNotFoundException (which was previously silently
-    // swallowed as a misleading HTTP 400 "Invalid filter parameters").
+    // If the CRS registry lacks the default CRS84 entry, TryResolveCrs must
+    // return false with a descriptive error.
     [UnitTest]
     public void TryResolveCrs_WithNullCrs_WhenCrs84Absent_ReturnsFalseWithError()
     {

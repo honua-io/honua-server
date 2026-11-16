@@ -3435,11 +3435,8 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_RetryAfterValidationRollbackWithSameIdempotencyKey_RepeatsRollbackInsteadOfConflict()
     {
         await UseIsolatedApplicationAsync();
-        // The rollbackOnFailure validation-failure response returns before the handler
-        // records a replay value, so before the fix the reservation taken by TryReserveAsync stayed
-        // held for the whole reservation window. A client retrying inside that window found no
-        // replay value, lost the reserve, and got 409 Conflict instead of a deterministic repeat of
-        // the original rejection.
+        // A rollbackOnFailure validation rejection must release its reservation so a retry
+        // returns the same rejection instead of an idempotency conflict.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var editsRequest = new ApplyEditsRequest
         {
@@ -3481,9 +3478,8 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_RetryAfterZeroRowCommitWithSameIdempotencyKey_ReattemptsInsteadOfConflict()
     {
         await UseIsolatedApplicationAsync();
-        // A committed-but-zero-row edit is deliberately NOT recorded so a genuine retry is
-        // re-attempted rather than replaying a no-op failure — but before the fix the still-held
-        // reservation blocked exactly that retry with a 409, contradicting the branch's own intent.
+        // A committed zero-row edit has no replay value. Release its reservation so a
+        // genuine retry can execute again.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var editsRequest = new ApplyEditsRequest
         {

@@ -687,19 +687,10 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items")]
     public async Task ListEndpoints_FlagOn_UnresolvableCallerId_DeniedInsteadOfListingEverything()
     {
-        // Once end-user mode is on, ResolveEffectiveOwnerFilter scopes
-        // a non-admin caller's list request to their own resolved id. If ResolveCallerId cannot
-        // resolve any id at all (for example a principal missing NameIdentifier/sub/api-key/name
-        // claims -- not reachable via any api-key-authenticated request in this codebase today,
-        // since every branch of ApiKeyAuthenticationHandler.CreateSuccessfulAuthenticationResult
-        // unconditionally stamps ClaimTypes.Name, but a real risk for other auth schemes such as
-        // mTLS certificates or an OIDC JWT missing its subject claim), the filter used to
-        // collapse to null, which NormalizeOptionalQueryValue treats as "no owner filter" --
-        // silently listing every draft/content item instead of denying. This test isolates the
-        // endpoint-level fix (DenyIfCallerUnresolvedForScopedListingAsync) from exactly how such a
-        // principal authenticates by substituting a fake IStudioAuthorizationService whose
-        // ResolveCallerId always returns null while IsAdmin returns false, simulating the shape
-        // of that principal regardless of transport.
+        // In end-user mode, list requests are scoped to the resolved caller ID. Deny a
+        // non-admin caller whose ID cannot be resolved rather than listing every item.
+        // A fake authorization service isolates this endpoint contract from transport
+        // authentication, including subject-less mTLS or OIDC principals.
         var auditLog = new CapturingAuditLog();
         await using var fixture = await CreateUnresolvableCallerFixtureAsync(auditLog);
         var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
@@ -1525,11 +1516,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/map-packages/generate")]
     public async Task CreateMapPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier()
     {
-        // ADR-0076: the route is a deterministic draft-creation entry point. It takes
-        // structured composition input, calls no model, and must hand back a real package with a
-        // stable map_ identifier -- the behavioural guard the ADR asks for, at the REST surface.
-        // sourceBindings was previously rejected outright and initialView was published in the
-        // schema and then dropped; both are honored here.
+        // ADR-0076 defines deterministic draft creation from structured input without a
+        // model call. Return a real package with a stable map_ identifier and honor both
+        // sourceBindings and initialView.
         using var body = new StringContent(
             """
             {

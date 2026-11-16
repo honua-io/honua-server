@@ -52,11 +52,9 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     public async Task QueryTopFeatures_WithReturnCountOnly_ReturnsCountNotFeatures()
     {
-        // The ArcGIS API for Python issues returnCountOnly=true as the first step of
-        // query_top_features paging and reads `count`. queryTopFeatures previously
-        // returned a FeatureSet regardless, leaving the paginator with a null total
-        // (fetched >= None -> TypeError). It must honor returnCountOnly: return the
-        // top-feature count and no `features`, with exceededTransferLimit always present.
+        // ArcGIS API for Python query_top_features paging requests returnCountOnly=true
+        // and reads count. Return the top-feature count without features, and always
+        // include exceededTransferLimit.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",

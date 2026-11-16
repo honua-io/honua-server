@@ -771,10 +771,9 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Endpoint("GET /rest/services/{id}/ImageServer")]
     public async Task ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex()
     {
-        // The service route resolves the aliased publication (layerIndex 41) to its storage
-        // layer (TestLayerId). A second service publishes a DIFFERENT storage layer under
-        // layerIndex == TestLayerId. Handlers used to re-resolve the storage id as a LayerIndex, so
-        // they either 404'd or answered with the colliding publication's name.
+        // Resolve aliased layerIndex 41 to TestLayerId exactly once. Another service
+        // publishes a different storage layer under layerIndex == TestLayerId to expose
+        // any accidental re-resolution of the storage ID as a publication index.
         const int aliasedLayerIndex = 41;
         const int collidingStorageLayerId = 7;
         const string serviceId = "aliased-image";
@@ -2938,9 +2937,9 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task BandIds_ZeroBasedOnStatisticsHistogramsAndExportImage_AddressTheSameBand()
     {
-        // ExportImage bandIds is 0-based (Esri). computeStatisticsHistograms and
-        // computeHistograms used to reject bandIds=0 and read bandIds=1 as a different band. The
-        // same selection must now reach the raster store as the same 1-based band on all three.
+        // ExportImage, computeStatisticsHistograms, and computeHistograms use Esri
+        // zero-based bandIds; the same selection must reach the raster store as
+        // the same one-based band on all three paths.
         var store = CreateRasterStoreSubstitute(bandCount: 3);
         RasterQuery? exportQuery = null;
         store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())

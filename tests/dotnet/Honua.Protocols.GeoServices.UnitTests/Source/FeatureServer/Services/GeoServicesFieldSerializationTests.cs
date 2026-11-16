@@ -593,7 +593,7 @@ public sealed class GeoServicesFieldSerializationTests
                 "the query response and the layer resource must agree on {0}'s length", field.Name);
         }
 
-        // The two that used to differ, stated explicitly so a regression is unambiguous.
+        // Check both field representations explicitly.
         queried["tags"].SqlType.Should().Be("sqlTypeNVarchar");
         queried["tags"].Length.Should().Be(DefaultStringLength);
         queried[FieldNames.ObjectId].SqlType.Should().Be("sqlTypeInteger");

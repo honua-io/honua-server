@@ -54,8 +54,8 @@ public sealed class OperationsToolsetTests
         services.AddSingleton(readiness);
         services.AddSingleton<IOperationPolicyDecisionPoint>(new AllowAllPolicyDecisionPoint());
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
-        // Deliberately leave IStudioPackageLifecycleService unresolved. Constructing its
-        // executor used to prevent even validation of an unrelated status operation.
+        // Leave IStudioPackageLifecycleService unresolved to verify that unrelated status
+        // validation does not construct the package executor.
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var invoker = scope.ServiceProvider.GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationInvoker>();
@@ -319,7 +319,7 @@ public sealed class OperationsToolsetTests
                 AdminOperateOperationCatalog.Definitions.Count + 4 + 16 + 4,
                 "each admin operation, legacy operation class, and typed actuator gets one deferred projection");
 
-        // Idempotence across repeated composition, previously TryAddEnumerable's job.
+        // Repeated composition must be idempotent.
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         services.Count(descriptor =>
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
@@ -545,8 +545,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task ScopeGovernedCaller_WithoutReadScope_CannotInvokeAccessReadOperations()
     {
-        // admin.api-key.list executes directly, so it never reaches the approved-replay branch
-        // where scope authority used to be the only thing enforced.
+        // admin.api-key.list executes directly and must enforce scope authority there.
         var handler = new CapturingOperationHandler(_ => Task.FromResult(
             // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             new HttpResponseMessage(HttpStatusCode.OK)

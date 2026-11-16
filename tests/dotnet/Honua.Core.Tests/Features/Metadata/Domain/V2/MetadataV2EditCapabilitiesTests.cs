@@ -65,9 +65,8 @@ public sealed class MetadataV2EditCapabilitiesTests
     [Operation(Operations.Create)]
     public void Supports_DefaultPublishCapabilities_RejectsCreate()
     {
-        // ["Query","Extract"] is what PostgreSqlLayerPublishingService stamps on every
-        // publication it creates, and it is exactly the set that used to let an OGC API
-        // Features insert through unannounced.
+        // PostgreSqlLayerPublishingService stamps Query and Extract capabilities on
+        // publications; this capability set must not authorize inserts.
         var service = new MetadataV2Service();
         var publication = new MetadataV2Layer { Capabilities = ["Query", "Extract"] };
 

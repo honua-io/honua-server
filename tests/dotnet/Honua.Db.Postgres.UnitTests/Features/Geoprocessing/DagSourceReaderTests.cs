@@ -258,12 +258,9 @@ public sealed class DagSourceReaderTests
     [UnitTest]
     public async Task HonuaLayer_ObjectIdsRequest_BuildsExactObjectIdSet()
     {
-        // Analytics.buffer-aggregate (and its layer-sourced siblings) advertise
-        // 'objectIds' but source.honua-layer previously never propagated it into the
-        // FeatureQuery the streaming store filters by, so it was silently accepted and
-        // ignored. Assert the built FeatureQuery.ObjectIds is EXACTLY the requested set
-        // (order preserved, no extras, no drops) — an independent value check, not a
-        // snapshot of whatever the reader happened to produce before this fix.
+        // Analytics.buffer-aggregate and its layer-sourced siblings propagate objectIds
+        // into the streaming store FeatureQuery. Check the exact requested set in order,
+        // with no extra or missing IDs, against independently supplied values.
         var store = Substitute.For<IStreamingFeatureStore>();
         store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(_ => ToAsync());

@@ -330,14 +330,9 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_EnumeratorCancellationDuringQuietPeriod_DetachesStreamImmediately()
     {
-        // Regression for the review finding: ReadEventsAsync used to await
-        // WaitToReadAsync without honouring the enumerator token, so a caller
-        // that cancelled during a long quiet period stayed attached until the
-        // next event or the terminal frame fired. The iterator now threads the
-        // [EnumeratorCancellation] token through WaitToReadAsync, so
-        // `WithCancellation(...)` on both REST (RequestAborted) and gRPC
-        // (context.CancellationToken) detaches immediately. The orchestrator
-        // CTS is not touched — the background run must continue.
+        // Enumerator cancellation must detach an event reader during a quiet period.
+        // REST RequestAborted and gRPC context.CancellationToken flow through
+        // WithCancellation to WaitToReadAsync; the background run CTS stays active.
         var fixture = new OrchestratorFixture();
         var started = new TaskCompletionSource();
         var release = new TaskCompletionSource();
@@ -689,10 +684,8 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_ExecutorFailure_RecordsNodeDurationWithFailedOutcome()
     {
-        // Regression: failed nodes used to bypass NodeDurationMs entirely, so
-        // the histogram only carried successful tails. Dashboards keying off
-        // per-node duration silently under-counted the failure path, which
-        // also made slow-failing executors invisible on alerting.
+        // Record NodeDurationMs for failed nodes so duration dashboards and alerts
+        // include slow failures.
         var fixture = new OrchestratorFixture();
         fixture.Executor.FailFor("a", new InvalidOperationException("boom"));
 

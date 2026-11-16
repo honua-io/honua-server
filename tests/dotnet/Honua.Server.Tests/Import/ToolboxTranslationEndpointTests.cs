@@ -822,9 +822,8 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_SatisfiedExactlyOneOfGroup_IsCertifiedExecutable()
     {
-        // The counterpart of the case above: mapping one burn source and the grid definition
-        // satisfies every rule, so the report must still certify it. Guards the fix against
-        // over-reporting every rasterize mapping.
+        // Mapping one burn source and the grid definition satisfies every rasterize rule
+        // and must be certified.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
