@@ -1062,7 +1062,8 @@ internal static partial class ServiceCollectionExtensions
         services.AddSingleton(serviceProvider =>
             new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
                 serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
-                configuration));
+                configuration,
+                (connectionString, cancellationToken) => CreateMigrationServiceConnectionAsync(serviceProvider, connectionString, cancellationToken)));
         services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
             serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
 
@@ -1084,12 +1085,12 @@ internal static partial class ServiceCollectionExtensions
         services.AddSingleton<IDatabaseCompatibilityChecker>(provider =>
             new PostgresDatabaseCompatibilityChecker(
                 provider.GetRequiredService<ILogger<PostgresDatabaseCompatibilityChecker>>(),
-                (connectionString, cancellationToken) => CreateCompatibilityConnectionAsync(provider, connectionString, cancellationToken)));
+                (connectionString, cancellationToken) => CreateMigrationServiceConnectionAsync(provider, connectionString, cancellationToken)));
 
         return services;
     }
 
-    private static async ValueTask<NpgsqlConnection> CreateCompatibilityConnectionAsync(
+    private static async ValueTask<NpgsqlConnection> CreateMigrationServiceConnectionAsync(
         IServiceProvider provider, string connectionString, CancellationToken cancellationToken)
     {
         // Migrate-only composition has no serving pool. Explicit alternate targets retain their
