@@ -66,7 +66,11 @@ public sealed class TestOnlyProductionRatchetTests
         }
         catch (OperationCanceledException)
         {
-            process.Kill(entireProcessTree: true);
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
             throw;
         }
 
