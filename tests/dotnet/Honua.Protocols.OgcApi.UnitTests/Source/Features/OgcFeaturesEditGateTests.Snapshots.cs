@@ -31,12 +31,7 @@ public sealed partial class OgcFeaturesEditGateTests
                     .Returns(QueryResult<Feature>.Create(1, [snapshot]));
                 var writer = new CountingWriter();
                 var hooks = new RecordingHooks();
-                var resource = ResourceWithNullSize();
-                resource = resource with
-                {
-                    SchemaFields = [.. resource.SchemaFields.Select(field => field.Name == "size" ? field with { Editable = false } : field),
-                        new MetadataV2Field { Name = "other", Type = MetadataV2FieldType.String, Nullable = true, Editable = true }],
-                };
+                var resource = ResourceWithProtectedSize();
                 var request = new OgcFeaturesEditRequest
                 {
                     Operation = OgcFeaturesEditOperation.Replace,
@@ -63,4 +58,14 @@ public sealed partial class OgcFeaturesEditGateTests
             }
         }
     }
+    private static MetadataV2Object ResourceWithProtectedSize()
+    {
+        var resource = ResourceWithNullSize();
+        return resource with
+        {
+            SchemaFields = [.. resource.SchemaFields.Select(field => field.Name == "size" ? field with { Editable = false } : field),
+                new MetadataV2Field { Name = "other", Type = MetadataV2FieldType.String, Nullable = true, Editable = true }],
+        };
+    }
+
 }

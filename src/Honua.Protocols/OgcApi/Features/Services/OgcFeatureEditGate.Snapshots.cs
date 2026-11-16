@@ -27,7 +27,7 @@ internal static partial class OgcFeatureEditGate
         }
 
         var ids = updates.Select(static row => row.Id).Distinct().ToImmutableArray();
-        var page = await ReadSnapshotsAsync(target, batch, ids, cancellationToken).ConfigureAwait(false);
+        var page = await ReadSnapshotsAsync(target, (batch.VersionContext, ids), cancellationToken).ConfigureAwait(false);
         var stored = page.Items.IsDefaultOrEmpty ? new Dictionary<long, Feature>() : page.Items.ToDictionary(static row => row.Id);
         var preconditions = batch.Preconditions.IsDefault ? [] : batch.Preconditions.ToList();
         foreach (var update in updates)
@@ -46,17 +46,16 @@ internal static partial class OgcFeatureEditGate
 
     private static Task<QueryResult<Feature>> ReadSnapshotsAsync(
         Target target,
-        FeatureEditBatch batch,
-        ImmutableArray<long> ids,
+        (VersionContext? Version, ImmutableArray<long> Ids) query,
         CancellationToken cancellationToken)
         => target.Reader.QueryAsync(target.LayerId, new FeatureQuery
         {
-            ObjectIds = ids,
+            ObjectIds = query.Ids,
             OutFields = ["*"],
-            Limit = ids.Length,
+            Limit = query.Ids.Length,
             // Restore hidden attributes for validation only; retain the enforced row filter.
             EnforcedMaskedFields = ImmutableArray<string>.Empty,
-            VersionContext = batch.VersionContext,
+            VersionContext = query.Version,
         }, cancellationToken);
 
     private static void BindSnapshot(List<FeatureEditPrecondition> preconditions, Feature update, Feature snapshot)
