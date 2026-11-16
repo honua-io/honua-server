@@ -55,17 +55,19 @@ public sealed class FolderReplayAuthorizationFilterTests
     [InlineData("missing-definition", false)]
     [InlineData("read-only-definition", false)]
     [InlineData("wrong-definition", false)]
+    [InlineData("wrong-stored-proposal-id", false)]
     public async Task InvokeAsync_ReplayBoundary_DelegatesOnlySealedExecutingFolderOperation(string scenario, bool delegated)
     {
         var proposal = Proposal();
         if (scenario == "unapproved") proposal = proposal with { ResolvedBy = null };
-        if (scenario == "wrong-proposal-lineage") proposal = proposal with { ProposalId = "another" };
+        if (scenario is "wrong-proposal-lineage" or "wrong-stored-proposal-id") proposal = proposal with { ProposalId = "another" };
         if (scenario == "wrong-operation") proposal = proposal with { OperationId = "folder.delete" };
         if (scenario == "wrong-tenant") proposal = proposal with { TenantId = "another" };
         if (scenario == "completed") proposal = proposal with { Status = OperationProposalStatus.Succeeded };
         if (scenario == "missing-payload") proposal = proposal with { Plan = proposal.Plan with { ExecutionPayload = null } };
         if (scenario == "changed-plan") proposal = proposal with { SealedPlanHash = "invalid" };
-        using var services = Services(proposal, scenario == "wrong-resolved-tenant" ? "another" : "public");
+        using var services = Services(proposal, scenario == "wrong-resolved-tenant" ? "another" : "public",
+            scenario == "wrong-stored-proposal-id" ? "proposal" : null);
         var context = Context(scenario);
         context.RequestServices = services;
         var original = context.User;
@@ -140,10 +142,10 @@ public sealed class FolderReplayAuthorizationFilterTests
         request.Title.Should().Be(title);
     }
 
-    private static ServiceProvider Services(OperationProposal proposal, string tenantId)
+    private static ServiceProvider Services(OperationProposal proposal, string tenantId, string? lookupId = null)
     {
         var store = Substitute.For<IOperationProposalStore>();
-        store.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
+        store.GetAsync(lookupId ?? proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns(tenantId);
         return new ServiceCollection().AddSingleton(store).AddSingleton(tenant)
