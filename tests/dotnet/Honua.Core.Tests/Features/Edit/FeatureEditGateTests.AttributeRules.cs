@@ -145,6 +145,25 @@ public sealed partial class FeatureEditGateTests
         warnings.Received(1).OnUnsupported(resource, rule);
     }
 
+    [UnitTheory]
+    [InlineData("split")]
+    [InlineData("ordered")]
+    public void AttributeRules_UpdateAndDeleteSameTarget_RejectBothRowsAndPreserveUnrelatedRows(string shape)
+    {
+        var row = Row("changed", "L") with { Id = 7 };
+        var batch = FeatureEditBatch.Create(creates: [Row("new", "L")], updates: [row], deletes: [7],
+            operations: shape == "ordered"
+                ? [FeatureEditOperation.Update(row), FeatureEditOperation.Delete(7), FeatureEditOperation.Create(Row("new", "L"))]
+                : []);
+
+        var prepared = FeatureEditGate.ApplyAttributeRules(new FeatureEditCheck(Rules(CalculateSize()), Scope, batch));
+
+        prepared.Rejections.Should().HaveCount(2);
+        prepared.Rejections.Should().Contain(rejection => rejection.Kind == FeatureEditOperationKind.Update && rejection.Index == 0);
+        prepared.Rejections.Should().Contain(rejection => rejection.Kind == FeatureEditOperationKind.Delete && rejection.Index == 0);
+        prepared.Batch.Creates.Single().Attributes["size"].Should().Be("S");
+    }
+
     private static MetadataV2AttributeRule CalculateSize() => new()
     {
         Name = "size", Type = MetadataV2AttributeRuleType.Calculation, FieldName = "size",

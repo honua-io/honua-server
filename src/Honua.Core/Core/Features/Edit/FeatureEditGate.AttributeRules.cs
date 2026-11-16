@@ -22,9 +22,18 @@ public static partial class FeatureEditGate
         }
 
         var replacements = new Dictionary<(FeatureEditOperationKind, int), Feature>();
+        var rows = FeatureEditRows.Enumerate(check.Batch);
+        var conflicts = ConflictingRuleTargets(rows);
         var rejected = new List<FeatureEditHookRejection>();
-        foreach (var row in FeatureEditRows.Enumerate(check.Batch))
+        foreach (var row in rows)
         {
+            if (row.ObjectId is { } id && conflicts.Contains(id))
+            {
+                rejected.Add(new(row.Kind, row.Index,
+                    "An edit batch cannot update and delete the same feature while attribute rules are enabled."));
+                continue;
+            }
+
             var attributes = check.EffectiveAttributes?.Invoke(row) ?? row.Feature?.Attributes ?? ImmutableDictionary<string, object?>.Empty;
             var result = AttributeRuleEngine.Apply(check.Resource, attributes, Event(row.Kind), check.UnsupportedExpressions);
             if (!result.IsValid)
@@ -39,6 +48,15 @@ public static partial class FeatureEditGate
 
         return new(ReplaceCalculatedFeatures(check.Batch, replacements), rejected);
     }
+
+    // Rules read one guarded snapshot per target, so an earlier operation must not change the
+    // state a later delete was checked against. Reject both rows rather than validating stale state.
+    private static HashSet<long> ConflictingRuleTargets(IReadOnlyList<FeatureEditRow> rows)
+        => rows.Where(static row => row.Kind != FeatureEditOperationKind.Create && row.ObjectId.HasValue)
+            .GroupBy(static row => row.ObjectId!.Value)
+            .Where(static group => group.Select(static row => row.Kind).Distinct().Count() > 1)
+            .Select(static group => group.Key)
+            .ToHashSet();
 
     private static Feature WithCalculatedFields(Feature feature, AttributeRuleApplicationResult result)
     {

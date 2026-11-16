@@ -87,4 +87,36 @@ public sealed partial class OgcFeaturesEditGateTests
         hooks.BeforeBatches.Should().BeEmpty();
         result.DeleteResults.Should().ContainSingle().Which.ErrorMessage.Should().Be("protected row");
     }
+    [UnitTest]
+    public async Task UpdateThenDelete_CannotBypassDeleteConstraintUsingTheOriginalSnapshot()
+    {
+        var resource = Resource() with
+        {
+            ContingentValueGroups = [],
+            AttributeRules = [new MetadataV2AttributeRule
+            {
+                Name = "keep-blue", Type = MetadataV2AttributeRuleType.Constraint,
+                ScriptExpression = "$feature.color != 'blue'", TriggeringEvents = ["delete"], IsEnabled = true,
+            }],
+        };
+        var writer = new CountingWriter();
+        var hooks = new RecordingHooks();
+        var request = new OgcFeaturesEditRequest
+        {
+            Operation = OgcFeaturesEditOperation.Batch, RollbackOnFailure = true,
+            BatchOperations = [PartialUpdate(42, "blue"), new OgcFeaturesBatchEditOperation
+            {
+                Operation = OgcFeaturesEditOperation.Delete, ObjectId = 42,
+            }],
+        };
+
+        var result = await CreateHandlers(writer).Transaction.ExecuteEditAsync(
+            Context(hooks), 7, resource, request, CancellationToken.None);
+
+        writer.ApplyCount.Should().Be(0);
+        hooks.BeforeBatches.Should().BeEmpty();
+        result.UpdateResults.Should().ContainSingle().Which.ErrorMessage.Should().Contain("update and delete");
+        result.DeleteResults.Should().ContainSingle().Which.ErrorMessage.Should().Contain("update and delete");
+    }
+
 }

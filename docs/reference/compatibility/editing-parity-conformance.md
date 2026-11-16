@@ -76,6 +76,8 @@ never by parsing the message.
 - On OGC API Features and gRPC, calculations precede owner/editor stamps, contingent checks and
   hooks. Only calculated fields are added to a partial write; stored values read by a rule stay
   inside validation. Delete constraints read the stored row and bind the write to that snapshot.
+  When attribute rules are configured, updating and deleting the same target in a batch rejects
+  both rows, preventing a delete from being validated against the state before the update.
 - On OGC API Features and gRPC, a hook sees the row an update produces and, on delete, the stored
   row where the request read it (every OGC delete, and gRPC deletes). When a rule or contingent-value
   failure removes rows from a gRPC call without `rollback_on_failure`, hooks number the remaining

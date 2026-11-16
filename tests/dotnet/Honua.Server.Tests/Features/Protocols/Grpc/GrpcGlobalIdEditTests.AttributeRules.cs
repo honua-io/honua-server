@@ -57,7 +57,9 @@ public sealed partial class GrpcGlobalIdEditTests
                 ScriptExpression = "$feature.name != 'blocked'", TriggeringEvents = ["delete"], IsEnabled = true,
             }],
         }, capabilities: null);
-        ReturnWriteResult(FeatureEditResult.Success(0, 0, 1, deleteResults: [EditOperationResult.Success(7)]));
+        ReturnWriteResult(name == "allowed"
+            ? FeatureEditResult.Success(0, 0, 1, deleteResults: [EditOperationResult.Success(7)])
+            : FeatureEditResult.Success(0, 0, 0));
         var request = new Proto.ApplyEditsRequest { ServiceId = "test", LayerId = 0 };
         request.Deletes.Add(7);
 
@@ -66,7 +68,7 @@ public sealed partial class GrpcGlobalIdEditTests
         response.DeleteResults.Should().ContainSingle().Which.Success.Should().Be(name == "allowed");
         if (name == "blocked")
         {
-            AssertNothingWritten();
+            WrittenBatch().Deletes.Should().BeEmpty();
         }
         else
         {
@@ -106,5 +108,47 @@ public sealed partial class GrpcGlobalIdEditTests
         response.AddResults[0].Success.Should().BeFalse();
         response.AddResults[1].Success.Should().BeTrue();
         WrittenBatch().Creates.Should().ContainSingle().Which.Attributes["name"].Should().Be("allowed");
+    }
+
+    [UnitTheory]
+    [InlineData(FeatureEditFailurePolicy.PerRow)]
+    [InlineData(FeatureEditFailurePolicy.Rollback)]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task UpdateThenDelete_CannotBypassDeleteConstraintUsingTheOriginalSnapshot(FeatureEditFailurePolicy failurePolicy)
+    {
+        var stored = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty.Add("name", "allowed"));
+        _featureReader.GetAsync(Arg.Any<int>(), 7, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Feature?>(stored));
+        UseLayer(TrackedResource(MetadataV2FieldType.DateTime) with
+        {
+            AttributeRules = [new MetadataV2AttributeRule
+            {
+                Name = "keep blocked", Type = MetadataV2AttributeRuleType.Constraint,
+                ScriptExpression = "$feature.name != 'blocked'", TriggeringEvents = ["delete"], IsEnabled = true,
+            }],
+        }, capabilities: null);
+        ReturnWriteResult(FeatureEditResult.Success(0, 0, 0));
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test", LayerId = 0, RollbackOnFailure = failurePolicy == FeatureEditFailurePolicy.Rollback,
+        };
+        request.Updates.Add(new Proto.Feature
+        {
+            Id = 7, Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "blocked" } },
+        });
+        request.Deletes.Add(7);
+        if (failurePolicy == FeatureEditFailurePolicy.Rollback)
+        {
+            var act = async () => await _sut.ApplyEdits(request, CallContext("update", "delete"));
+            (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+            AssertNothingWritten();
+        }
+        else
+        {
+            var response = await _sut.ApplyEdits(request, CallContext("update", "delete"));
+            response.UpdateResults.Should().ContainSingle().Which.Error.Message.Should().Contain("update and delete");
+            response.DeleteResults.Should().ContainSingle().Which.Error.Message.Should().Contain("update and delete");
+            WrittenBatch().Updates.Should().BeEmpty();
+            WrittenBatch().Deletes.Should().BeEmpty();
+        }
     }
 }
