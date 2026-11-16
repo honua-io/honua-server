@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit;
@@ -52,7 +53,8 @@ public sealed class StagedImportMcpIntegrationTests
             var schema = fixture.CurrentSchema ?? "public";
             // Approval replays under the proposer's stored API-key authority, so the agent uses one.
             using var agent = await HumanApprovedOperation.CreateProposerClientAsync(fixture);
-            var (proposalId, stagingTable) = await PreviewAndProposeAsync(fixture, agent, Arguments(schema, artifact));
+            var source = await DiscoveredArgumentsAsync(agent, schema);
+            var (proposalId, stagingTable) = await PreviewAndProposeAsync(fixture, agent, source);
 
             var handle = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, proposalId);
             handle.GetProperty("status").GetString().Should().Be("Completed", handle.GetRawText());
@@ -76,6 +78,7 @@ public sealed class StagedImportMcpIntegrationTests
     {
         var jobs = Substitute.For<IGeoprocessingJobService>();
         jobs.GetJobAsync(JobId, Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(CompletedJob(artifact));
+        jobs.GetJobResultsAsync(JobId, Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(CompletedPackage(artifact));
         return new WebAppFixture().WithProductionJobSubstrate()
             .ConfigureWebHost(builder =>
             {
@@ -138,6 +141,38 @@ public sealed class StagedImportMcpIntegrationTests
             ["targetSrid"] = 4326,
             ["sourceSrid"] = 4326,
         };
+
+    private static async Task<Dictionary<string, object?>> DiscoveredArgumentsAsync(HttpClient agent, string schema)
+    {
+        var results = await CallCompletedAsync(agent, "honua_get_job_results", new { jobId = JobId });
+        var artifact = results.GetProperty("artifacts")[0];
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["intentId"] = "intent-staged",
+            ["schema"] = schema,
+            ["targetId"] = "target-local",
+            ["jobId"] = results.GetProperty("jobId").GetString(),
+            ["resultPackageId"] = results.GetProperty("resultPackageId").GetString(),
+            ["artifactId"] = artifact.GetProperty("artifactId").GetString(),
+            ["referenceSha256"] = artifact.GetProperty("referenceSha256").GetString(),
+            ["targetSrid"] = 4326,
+            ["sourceSrid"] = 4326,
+        };
+    }
+
+    private static AnalysisResultPackage CompletedPackage(string artifact) => AnalysisResultPackage.CreateCompleted(
+        $"{JobId}:v2",
+        new ResultSummary { Title = "Completed parcel job" },
+        [new ArtifactRef
+        {
+            ArtifactId = $"{JobId}:artifact:1",
+            Kind = ArtifactKind.FeatureLayer,
+            Label = "Parcel output",
+            Uri = artifact,
+            ContentType = "application/geo+json",
+        }],
+        [],
+        new ProvenanceRecord { Sources = [], ProcessDefinitions = ["geometry.buffer"] });
 
     private static ExecutionJobRecord CompletedJob(string artifact) => new()
     {

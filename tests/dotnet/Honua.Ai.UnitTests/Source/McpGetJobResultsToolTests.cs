@@ -45,6 +45,8 @@ public sealed class McpGetJobResultsToolTests
         structured.GetProperty("status").GetString().Should().Be(nameof(GeoprocessingWorkflowStatus.Completed));
         structured.GetProperty("summary").GetProperty("title").GetString().Should().Be("Buffered parcels");
         structured.GetProperty("artifacts")[0].GetProperty("artifactId").GetString().Should().Be("artifact-1");
+        structured.GetProperty("artifacts")[0].GetProperty("referenceSha256").GetString().Should().Be(
+            "77f060ef7da5b14247281f6dcef6e97f7438771d975254291c659cc84c96f5ec");
         structured.GetProperty("artifactsTruncated").GetBoolean().Should().BeFalse();
         captured.Should().NotBeNull();
         captured!.Identity!.Name.Should().Be("test-user");
