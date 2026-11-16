@@ -28,6 +28,8 @@ public readonly record struct AttributeRuleApplicationResult(
     IReadOnlyList<AttributeRuleViolation> Violations)
 {
     public bool IsValid => Violations.Count == 0;
+
+    public IReadOnlyList<string> CalculatedFields { get; init; } = [];
 }
 
 public static class AttributeRuleEngine
@@ -50,6 +52,7 @@ public static class AttributeRuleEngine
 
         Dictionary<string, object?>? working = null;
         List<AttributeRuleViolation>? violations = null;
+        List<string>? calculatedFields = null;
 
         // The evaluation snapshot a rule reads from. Calculation rules can feed later
         // rules, so we read from the working copy once one exists.
@@ -84,6 +87,7 @@ public static class AttributeRuleEngine
 
                         working ??= new Dictionary<string, object?>(attributes, StringComparer.OrdinalIgnoreCase);
                         working[rule.FieldName] = result.Value;
+                        (calculatedFields ??= []).Add(rule.FieldName);
                         break;
                     }
 
@@ -137,7 +141,10 @@ public static class AttributeRuleEngine
 
         return new AttributeRuleApplicationResult(
             working ?? attributes,
-            (IReadOnlyList<AttributeRuleViolation>?)violations ?? Array.Empty<AttributeRuleViolation>());
+            (IReadOnlyList<AttributeRuleViolation>?)violations ?? Array.Empty<AttributeRuleViolation>())
+        {
+            CalculatedFields = (IReadOnlyList<string>?)calculatedFields ?? [],
+        };
     }
 
     private static void AddViolation(ref List<AttributeRuleViolation>? violations, MetadataV2AttributeRule rule)

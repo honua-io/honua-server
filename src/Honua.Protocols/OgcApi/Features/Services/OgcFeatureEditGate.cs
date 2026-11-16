@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.Edit;
+using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -12,8 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-// OGC API Features edits pass the owner policy, then the same contingent-value and plugin checks as
-// GeoServices applyEdits. PATCH validation restores masked values internally without adding them
+// OGC API Features edits calculate attribute rules before owner policy, then run the shared
+// contingent-value and plugin checks. PATCH validation restores masked values internally without adding them
 // to the submitted batch or returning them to the caller.
 internal static partial class OgcFeatureEditGate
 {
@@ -37,22 +38,10 @@ internal static partial class OgcFeatureEditGate
             return (batch, FeatureEditGate.RejectedResult(batch, repeatedUpdates));
         }
 
-        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            target.Reader,
-            target.LayerId,
-            target.Resource.OwnerEditPolicy,
-            batch,
-            ServiceDataEditorAuthorization.ResolveEditPrincipal(target.Context),
-            cancellationToken).ConfigureAwait(false);
-        if (!prepared.IsAllowed)
-        {
-            return (batch, OwnerEditPolicyFieldAccess.DeniedEditResult(batch, prepared.DenialReason ?? "Edit not permitted."));
-        }
-
-        var effective = await ReadEffectiveUpdatesAsync(target, prepared.Batch, cancellationToken).ConfigureAwait(false);
+        var effective = await ReadEffectiveUpdatesAsync(target, batch, cancellationToken).ConfigureAwait(false);
         if (effective is null)
         {
-            return (prepared.Batch, OwnerEditPolicyFieldAccess.DeniedEditResult(prepared.Batch, "Edit not permitted."));
+            return (batch, OwnerEditPolicyFieldAccess.DeniedEditResult(batch, "Edit not permitted."));
         }
 
         return await CheckEffectiveBatchAsync(target, effective.Value, cancellationToken).ConfigureAwait(false);
@@ -60,20 +49,53 @@ internal static partial class OgcFeatureEditGate
 
     private static async Task<(FeatureEditBatch Batch, FeatureEditResult? Ended)> CheckEffectiveBatchAsync(
         Target target,
-        (FeatureEditBatch Batch, Dictionary<long, IReadOnlyDictionary<string, object?>> Rows) effective,
+        EffectiveEdits effective,
         CancellationToken cancellationToken)
     {
-        var checkedBatch = effective.Batch;
-        var rejections = await FeatureEditGate.CheckAsync(
-            ResolveHooks(target.Context),
-            new FeatureEditCheck(target.Resource, Scope(target), checkedBatch)
-            {
-                EffectiveAttributes = row => row.Kind == FeatureEditOperationKind.Update && effective.Rows.TryGetValue(row.ObjectId ?? 0, out var attributes)
-                    ? attributes
-                    : row.Feature?.Attributes ?? ImmutableDictionary<string, object?>.Empty,
-            },
+        var check = new FeatureEditCheck(target.Resource, Scope(target), effective.Batch)
+        {
+            EffectiveAttributes = row => EffectiveAttributes(row, effective.Rows),
+            UnsupportedExpressions = target.Context.RequestServices?.GetService<ILoggerFactory>() is { } logging
+                ? new AttributeRuleWarningSink(logging.CreateLogger("Honua.Features.AttributeRules")) : null,
+        };
+        var rules = FeatureEditGate.ApplyAttributeRules(check);
+        var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
+            target.Reader,
+            target.LayerId,
+            target.Resource.OwnerEditPolicy,
+            rules.Batch,
+            ServiceDataEditorAuthorization.ResolveEditPrincipal(target.Context),
             cancellationToken).ConfigureAwait(false);
+        if (!prepared.IsAllowed)
+        {
+            return (rules.Batch, OwnerEditPolicyFieldAccess.DeniedEditResult(rules.Batch, prepared.DenialReason ?? "Edit not permitted."));
+        }
+
+        var checkedBatch = prepared.Batch;
+        var rejections = await FeatureEditGate.CheckAsync(ResolveHooks(target.Context), check with
+        {
+            Batch = checkedBatch, Rejections = rules.Rejections,
+        }, cancellationToken).ConfigureAwait(false);
         return (checkedBatch, rejections.Count == 0 ? null : FeatureEditGate.RejectedResult(checkedBatch, Safe(rejections)));
+    }
+
+    private static IReadOnlyDictionary<string, object?> EffectiveAttributes(
+        FeatureEditRow row,
+        Dictionary<(FeatureEditOperationKind Kind, long Id), IReadOnlyDictionary<string, object?>> stored)
+    {
+        var attributes = row.Feature?.Attributes ?? ImmutableDictionary<string, object?>.Empty;
+        if (row.Kind == FeatureEditOperationKind.Create || !stored.TryGetValue((row.Kind, row.ObjectId ?? 0), out var snapshot))
+        {
+            return attributes;
+        }
+
+        var merged = new Dictionary<string, object?>(snapshot, StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in attributes)
+        {
+            merged[name] = value;
+        }
+
+        return merged;
     }
 
     private static FeatureEditHookRejection[] RepeatedUpdateRejections(FeatureEditBatch batch)

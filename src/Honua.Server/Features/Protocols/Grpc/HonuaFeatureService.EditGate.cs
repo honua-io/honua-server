@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Core.Features.Edit;
+using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,9 +36,10 @@ internal sealed partial class HonuaFeatureService
 
     private static async Task<EditGate> CheckEditGateAsync(
         EditCall call,
-        FeatureEditBatch batch,
+        FeatureEditPreparation prepared,
         IReadOnlyDictionary<long, Feature> storedRows)
     {
+        var batch = prepared.Batch;
         ValidateUniqueUpdateTargets(batch);
         storedRows = ValidationSnapshots(storedRows);
 
@@ -53,6 +55,7 @@ internal sealed partial class HonuaFeatureService
         var check = new FeatureEditCheck(call.Layer.Resource, scope, batch)
         {
             EffectiveAttributes = row => EffectiveAttributes(row, storedRows),
+            Rejections = prepared.Rejections,
         };
         var rejections = await FeatureEditGate.CheckAsync(hooks, check, call.Context.CancellationToken)
             .ConfigureAwait(false);
@@ -72,6 +75,25 @@ internal sealed partial class HonuaFeatureService
         ];
         return new EditGate(batch, bounded) { Hooks = hooks, Scope = scope };
     }
+
+    private FeatureEditPreparation ApplyEditRules(EditCall call, FeatureEditBatch batch, IReadOnlyDictionary<long, Feature> storedRows)
+    {
+        var snapshots = ValidationSnapshots(storedRows);
+        return FeatureEditGate.ApplyAttributeRules(new FeatureEditCheck(
+            call.Layer.Resource, new FeatureEditHookScope(call.Request.ServiceId ?? "unknown", call.Request.LayerId), batch)
+        {
+            EffectiveAttributes = row => EffectiveAttributes(row, snapshots),
+            UnsupportedExpressions = new AttributeRuleWarningSink(_logger),
+        });
+    }
+
+    // Keep request geometry for change-event semantics, and include calculated attributes in events.
+    private static FeatureEditBatch CalculatedEventBatch(FeatureEditBatch request, FeatureEditBatch prepared)
+        => request with
+        {
+            Creates = [.. request.Creates.Select((feature, index) => feature with { Attributes = prepared.Creates[index].Attributes })],
+            Updates = [.. request.Updates.Select((feature, index) => feature with { Attributes = prepared.Updates[index].Attributes })],
+        };
 
     private static IReadOnlyDictionary<long, Feature> ValidationSnapshots(IReadOnlyDictionary<long, Feature> storedRows)
         => storedRows.ToDictionary(static pair => pair.Key, static pair => pair.Value with
@@ -96,7 +118,7 @@ internal sealed partial class HonuaFeatureService
         IReadOnlyDictionary<long, Feature> storedRows)
     {
         var attributes = row.Feature?.Attributes ?? ImmutableDictionary<string, object?>.Empty;
-        if (row.Kind != FeatureEditOperationKind.Update || !storedRows.TryGetValue(row.ObjectId ?? 0, out var stored))
+        if (row.Kind == FeatureEditOperationKind.Create || !storedRows.TryGetValue(row.ObjectId ?? 0, out var stored))
         {
             return attributes;
         }

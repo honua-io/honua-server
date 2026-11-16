@@ -363,7 +363,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // are merged from the locked row by the writer, not from this snapshot.
         var visibleTargets = await EnsureEditTargetsVisibleAsync(
             layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
-        editBatch = visibleTargets.Batch;
+        var call = new EditCall(request, layer, context);
+        var rules = ApplyEditRules(call, visibleTargets.Batch, visibleTargets.Stored);
+        editBatch = rules.Batch;
+        requestBatch = CalculatedEventBatch(requestBatch, rules.Batch);
         globalIds = globalIds with { ExistingGlobalIds = StoredGlobalIds(visibleTargets.Stored, globalIds.Field) };
 
         var grpcHttpContext = context.GetHttpContext()
@@ -392,7 +395,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             (grpcHttpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
         editBatch = GrpcEditorTracking.Stamp(layer.Resource, ownerPrepared.Batch, stamp);
         requestBatch = GrpcEditorTracking.Stamp(layer.Resource, requestBatch, stamp);
-        var gate = await CheckEditGateAsync(new EditCall(request, layer, context), editBatch, visibleTargets.Stored)
+        var gate = await CheckEditGateAsync(call, rules with { Batch = editBatch }, visibleTargets.Stored)
             .ConfigureAwait(false);
         var perOperationGeometryChanged = BuildPerOperationGeometryChanged(gate.Without(requestBatch));
 
@@ -729,11 +732,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             storedById[objectId] = existing.Value;
         }
 
-        if (editBatch.Updates.IsDefaultOrEmpty)
-        {
-            return new VisibleEditTargets(editBatch, storedById);
-        }
-
         var mergedUpdates = ImmutableArray.CreateBuilder<Feature>(editBatch.Updates.Length);
         var preconditions = ImmutableArray.CreateBuilder<FeatureEditPrecondition>();
         var guarded = new HashSet<long>();
@@ -755,8 +753,12 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
 
             mergedUpdates.Add(MergePartialUpdate(update, stored));
-            // Bind validation to the snapshot the writer will lock. Providers with
-            // projections supply the raw token; ordinary reads hash the complete row.
+        }
+
+        // Both update and delete rules read these snapshots. Bind each target to the row
+        // the writer will lock so a concurrent change cannot bypass the validation.
+        foreach (var stored in storedById.Values)
+        {
             if (guarded.Add(stored.Id))
             {
                 preconditions.Add(new FeatureEditPrecondition
