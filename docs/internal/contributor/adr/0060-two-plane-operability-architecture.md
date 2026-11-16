@@ -50,11 +50,11 @@ since PostGIS never executes raster GP.
 Because compute is stateless, the primitive is **(statelessness) + (a Honua-owned cutover semantic: rolling replace + health-gate + keep-old-until-healthy) + (a thin executor)** — *not* AWS/K8s-native blue/green. Coupling ops to a cloud's deployment strategy breaks on-prem/air-gapped and is unnecessary given stateless compute.
 
 Executor set (semantics owned by Honua, mechanics by the executor):
-- Serving: **YARP-embedded** (default; single-container, on-prem, air-gapped — the proxy ships *inside* Honua), **Envoy-xDS** (K8s / service-mesh / scale), plus existing ECS/ALB and Lambda.
+- Serving: ECS/ALB, Lambda, Argo Rollouts and the installed Compose project. The server does not embed a reverse proxy.
 - GP: **local process-pool** and **K8s Jobs** (neutral), plus existing AWS Batch, Azure Batch.
 
 ### Four workstreams
-1. **Substrate-neutral executors** — `YarpRollingDeployBackend` (serving) + local/K8s-Jobs `IBatchComputeBackend` (GP), as peers to the cloud executors. Breaks cloud-lock; delivers the on-prem/air-gapped story.
+1. **Substrate-neutral executors** — local/K8s-Jobs `IBatchComputeBackend` (GP), as peers to the cloud executors. Breaks cloud-lock for the execution plane.
 2. **One catalog spanning both planes** — desired-state including serving config **and** GP compute-env / queue / **worker-image version**; both backends project from it. Upgrade = a single diff bumping serving *and* worker images together.
 3. **Expand/contract discipline + gate — in two places**: (a) DB schema (extend `IDatabaseMigrationRunner` to reject/flag non-backward-compatible migrations), and (b) the **serving↔worker job contract** (a vX server must not submit a job a vY worker can't run during a rolling version step).
 4. **Observability spine** — rich, GIS-aware, correlated telemetry across both planes (serving p95 / cache / pool; GP queue-depth / duration / cost / spot) feeding: an OOTB curated **Grafana-LGTM** stack (the "Splunk out of the box"), a **GIS-aware console health view** (the differentiated at-a-glance), and the **copilot** (diagnosis → proposed catalog diff). Same data serves all three.
@@ -76,6 +76,6 @@ The `honua-devops` ops-brain (diagnose / tune / upgrade) proposes catalog diffs 
 
 ## Verification
 Real cloud e2e is the proving ground (lots of moving parts): **#2164** (real-AWS certification tier — Batch/ECS/Lambda + rollback; OIDC, ephemeral, budgeted) and **#2166** (cloud-integration & deploy-safety — emulated + real-cloud, GP + ECS/Lambda/K8s). Extend to the two-plane matrix:
-`{serving, GP} × {YARP/local, ECS/Batch, K8s, Azure} × {deploy, rolling-upgrade, expand/contract-migration, rollback, scale, cancel}`.
+`{serving, GP} × {local, ECS/Batch, K8s, Azure} × {deploy, rolling-upgrade, expand/contract-migration, rollback, scale, cancel}`.
 
 Tracked by epic **#2457** (Operate-it-for-me — the self-driving GIS platform).

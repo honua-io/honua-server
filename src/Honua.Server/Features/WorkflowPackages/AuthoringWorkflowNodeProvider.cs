@@ -33,18 +33,6 @@ internal sealed class AuthoringWorkflowNodeProvider : IWorkflowNodeProvider
 
     public static string ToNodeTypeId(string capabilityKey) => NodeTypePrefix + capabilityKey;
 
-    public static bool TryGetCapabilityKey(string nodeTypeId, out string capabilityKey)
-    {
-        if (nodeTypeId.StartsWith(NodeTypePrefix, StringComparison.Ordinal))
-        {
-            capabilityKey = nodeTypeId[NodeTypePrefix.Length..];
-            return !string.IsNullOrWhiteSpace(capabilityKey);
-        }
-
-        capabilityKey = string.Empty;
-        return false;
-    }
-
     private static readonly IReadOnlyList<WorkflowNodeDefinition> Nodes =
     [
         // ---- Publish --------------------------------------------------------------------

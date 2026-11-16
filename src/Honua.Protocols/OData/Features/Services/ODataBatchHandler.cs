@@ -19,7 +19,6 @@ internal sealed partial class ODataBatchHandler
 {
     private const string NonAtomicGroupKey = "__non-atomic__";
     private const string AtomicGroupPrefix = "atomic:";
-    private const int DefaultBatchCollectionTop = 1000;
     private const string AbsoluteBatchRequestUrlMessage = "Absolute batch request URLs are not supported.";
     private const string ODataProtocol = "OData";
 
@@ -196,9 +195,6 @@ internal sealed partial class ODataBatchHandler
     {
         [LoggerMessage(EventId = 3100, Level = LogLevel.Warning, Message = "Batch request {RequestId} failed to parse.")]
         public static partial void BatchRequestParseFailed(ILogger logger, string requestId, Exception exception);
-
-        [LoggerMessage(EventId = 3101, Level = LogLevel.Warning, Message = "Batch read request {RequestId} failed.")]
-        public static partial void BatchReadFailed(ILogger logger, string requestId, Exception exception);
 
         [LoggerMessage(EventId = 3102, Level = LogLevel.Error, Message = "Batch atomic group failed.")]
         public static partial void BatchAtomicGroupFailed(ILogger logger, Exception exception);

@@ -41,12 +41,6 @@ public readonly record struct UnifiedQuery
     public static UnifiedQuery WithSpatialFilter(SpatialFilter spatialFilter)
         => new() { SpatialFilter = spatialFilter };
 
-    public static UnifiedQuery WithPagination(int offset, int limit)
-        => new() { Offset = offset, Limit = limit };
-
-    public static UnifiedQuery WithObjectIds(ImmutableArray<long> objectIds)
-        => new() { ObjectIds = objectIds };
-
     public bool IsEmpty => Filter == null &&
                           SpatialFilter == null &&
                           TemporalFilter == null &&
@@ -62,8 +56,6 @@ public readonly record struct UnifiedQuery
                                        Aggregation.Value.GroupByFields?.IsDefaultOrEmpty == false);
 
     public int GetEffectiveLimit(int defaultLimit) => Limit ?? defaultLimit;
-
-    public int GetEffectiveOffset() => Offset ?? 0;
 }
 
 public readonly record struct QueryFilter

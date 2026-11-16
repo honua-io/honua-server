@@ -91,7 +91,8 @@ public sealed class ClientCertificationEvidenceCorrectnessTests
                 var tls = document.RootElement.GetProperty("results").EnumerateArray()
                     .Single(result => result.GetProperty("test_case_id").GetString() == "CERT-CONN-02");
                 tls.GetProperty("status").GetString().Should().Be("not-applicable");
-                tls.GetProperty("notes").GetString().Should().MatchRegex("(?i)plain HTTP|HTTP-only");
+                // OWSLib's transport probe (tests/python/owslib_client/transport.py) words it "Configured HTTP has no TLS handshake".
+                tls.GetProperty("notes").GetString().Should().MatchRegex("(?i)plain HTTP|HTTP-only|configured HTTP has no TLS handshake");
             }
         }
     }

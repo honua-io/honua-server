@@ -835,24 +835,6 @@ internal static partial class AttachmentEndpoints
         return feature;
     }
 
-    private static async Task<bool> EnsureFeatureVisibleAsync(
-        HttpContext context,
-        IFeatureReader featureReader,
-        int layerId,
-        long featureId)
-    {
-        var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted).ConfigureAwait(false);
-        if (feature is not null)
-        {
-            return true;
-        }
-
-        await StandardErrorHelpers.CreateNotFound(
-            context,
-            $"Feature {featureId} not found").ExecuteAsync(context).ConfigureAwait(false);
-        return false;
-    }
-
     private static async Task<IFormCollection?> TryReadAttachmentFormAsync(HttpContext context)
     {
         if (context.Request.HasFormContentType)
