@@ -1,5 +1,5 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Authorization.Domain;
@@ -43,7 +43,7 @@ internal static class LocalProcessWorkspaceEndpoints
             Execute(context, (access, token) => gateway.GetIdentityAsync(access, token), LocalProcessJsonContext.Default.LocalProcessProjectIdentity))
             .RequiresScope(OperatorResourceType.Process, OperatorOperation.Read);
         group.MapPost("/project/bind", (HttpContext context, ILocalProcessWorkspaceGateway gateway, LocalProcessBindRequest request) =>
-            Execute(context, (access, token) => gateway.BindAsync(access, request.ProjectId, token), LocalProcessJsonContext.Default.LocalProcessProjectIdentity))
+            Execute(context, (access, token) => gateway.BindProjectAsync(access, request.ProjectId, token), LocalProcessJsonContext.Default.LocalProcessProjectIdentity))
             .RequiresScope(OperatorResourceType.Workspace, OperatorOperation.Update);
         group.MapDelete("/project/bindings/{bindingId}", Revoke)
             .RequiresScope(OperatorResourceType.Workspace, OperatorOperation.Delete);

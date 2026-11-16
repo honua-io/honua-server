@@ -197,7 +197,8 @@ Current gaps, stated as fact. Protocol-level GeoServices REST parity detail live
 - **WMS 1.1.1 passes its CITE profile.** It is served (with `SRS`, `X`/`Y`, and
   lon/lat EPSG:4326 BBOX order); both WMS 1.1.1 and WMS 1.3 have current
   all-pass CITE evidence.
-- **WMTS scope is WebMercatorQuad only** on the GeoServices `MapServer/WMTS` alias
+- **WMTS serves the built-in WebMercatorQuad and WorldCRS84Quad tile matrix sets**,
+  plus operator-configured custom sets, on the GeoServices `MapServer/WMTS` alias
   and the `/ogc` classic surface.
 - **SensorThings discovery and navigation cover the five exposed entity sets.**
   Both `/sta/v1.1` and `/sta/v1.1/` list Things, Sensors, ObservedProperties,
