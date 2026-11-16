@@ -1044,7 +1044,7 @@ Measured ranks (16 Nov 2026): every `dispatch_rank` with a passing job is the
 median passing job duration of full trunk runs 43348507021, 43471044721,
 43540829683, 43564575677, 43580101834, 43612492209, 43661416329, 43703260559,
 43709972683 and 43726623779. The four newest runs were cancelled before they
-finished, so only their passing jobs count. A run counts for a shard only when
+finished: only 43709972683 has passing shard jobs, so seven runs supply samples. A run counts for a shard only when
 that shard's filter at the run's head equals the current filter, so re-split
 children are never ranked by their predecessor. 171 of 219 shards are measured
 (1 to 7 samples, median 2); `scripts/ci/fixtures/measured-dispatch-ranks.json`
@@ -1055,14 +1055,18 @@ child's estimate is removed from its contract, and the rule that estimates may
 not add up to less than the parent applies only while every child of a split is
 still estimated: measured children of the 15 Nov splits ran in 2.5 to 8.6 minutes,
 well under their estimates. Of the 48 unmeasured shards, 44 keep a contract
-estimate: 16 are the last child of an earlier split and 28 are children of the
+estimate: 16 are a still-unmeasured child of an earlier split and 28 are children of the
 nine shards split in #7678, which no full run has executed yet. STAC Protocol 4 (no passing job yet) keeps its parent's
 13.6. Three changed their filter after the newest run and so leave the record,
 keeping their previous rank until a run measures the new filter: Server Features
 Streaming Snapshot and Conformance (#7820), and Admin Layer Publishing and Admin
 Runtime Operations (renamed publishing test method, 49518429d9). Ranks sum to
 1,644.0 runner-minutes (was 1,894.8); 189 of 219 shards fit the 10-minute PR
-shard budget (was 178). The 14 Nov refresh is superseded.
+shard budget (was 178). Run 43709972683 is the only sample for 41 shards and ran
+at a median 0.63 times the duration of the older runs on the 56 shards they share,
+for a cause not yet identified. A single-sample rank between 6.5 and 9.3 minutes
+may therefore prove over 10 on the next full run; the cost is a PR shard of about
+12 minutes, not lost coverage, and the next refresh settles it. The 14 Nov refresh is superseded.
 
 ### Standalone tooling in affected producer builds
 
