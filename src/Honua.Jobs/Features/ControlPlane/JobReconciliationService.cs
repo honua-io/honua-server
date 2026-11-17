@@ -521,6 +521,9 @@ internal sealed partial class JobReconciliationService(
             Log.QueueRemovalFailed(logger, job.OperationId, ex);
         }
 
+        // Only a heartbeat expiry reaches this path: the running attempt was lost with its worker.
+        await RecordLostAttemptAsync(job, now, (job.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts).ConfigureAwait(false);
+
         if (logStore != null)
         {
             try

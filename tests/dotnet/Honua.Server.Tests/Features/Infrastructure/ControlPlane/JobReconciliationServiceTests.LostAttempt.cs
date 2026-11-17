@@ -107,6 +107,20 @@ public sealed partial class JobReconciliationServiceTests
         logged.Metadata.Should().Contain("attempt", "1").And.Contain("worker.id", "worker-1");
     }
 
+    [UnitTest]
+    public async Task HeartbeatExpiry_WithPendingCancel_RecordsLostAttemptEvent()
+    {
+        var snapshot = CreateExpiredJob(attemptCount: 2, maxAttempts: 3) with { CancellationRequestedAt = DateTimeOffset.UtcNow.AddMinutes(-1) };
+
+        var (written, logged, sweepError) = await SweepExpiredJobAsync(snapshot, Substitute.For<IExecutionLogStore>());
+
+        sweepError.Should().BeNull();
+        written.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        logged.Should().NotBeNull();
+        logged!.Phase.Should().Be("worker-lost");
+        logged.Metadata.Should().Contain("attempt", "2").And.Contain("worker.id", "worker-1");
+    }
+
     private static async Task<(ExecutionJobRecord Written, ExecutionLogEntry? Logged, Exception? SweepError)> SweepExpiredJobAsync(
         ExecutionJobRecord snapshot,
         IExecutionLogStore logStore,
