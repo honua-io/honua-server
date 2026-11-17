@@ -149,7 +149,7 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
 
         async def upstream(reader, writer):
             sessions.append(writer)
-            await PROXY.frame(reader, startup=True)
+            await PROXY.startup_frame(reader)
             writer.write(message(b"R", struct.pack("!I", 0)) + message(b"Z", b"I"))
             await writer.drain()
             for _ in range(4):

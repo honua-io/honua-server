@@ -19,15 +19,29 @@ import struct
 MAX_MESSAGE = 8 * 1024 * 1024
 MAX_BUFFER = 16 * 1024 * 1024
 MAX_TRACKED = 512
+# Every PostgreSQL message length counts its own four bytes.
+LENGTH_BYTES = 4
+# Startup request codes: SSLRequest and GSSENCRequest are refused; protocol 3.0 and CancelRequest pass.
+ENCRYPTION_REQUESTS = (80877103, 80877104)
+SESSION_REQUESTS = (196608, 80877102)
 
 
-async def frame(reader, startup=False):
-    prefix = b"" if startup else await reader.readexactly(1)
-    length = await reader.readexactly(4)
+async def frame(reader):
+    """Read one typed protocol message: a kind byte, then a length-prefixed body."""
+    return await _length_prefixed(reader, await reader.readexactly(1))
+
+
+async def startup_frame(reader):
+    """Read an untyped startup, SSL or GSS request: a length-prefixed body only."""
+    return await _length_prefixed(reader, b"")
+
+
+async def _length_prefixed(reader, prefix):
+    length = await reader.readexactly(LENGTH_BYTES)
     size = struct.unpack("!I", length)[0]
-    if not 4 <= size <= MAX_MESSAGE:
+    if not LENGTH_BYTES <= size <= MAX_MESSAGE:
         raise ValueError("invalid or oversized PostgreSQL message")
-    body = await reader.readexactly(size - 4)
+    body = await reader.readexactly(size - LENGTH_BYTES)
     return prefix + length + body, prefix, body
 
 
@@ -235,13 +249,17 @@ async def barrier(root, job):
         await asyncio.sleep(0.025)
 
 
+def request_code(body):
+    return struct.unpack("!I", body[:LENGTH_BYTES])[0] if len(body) >= LENGTH_BYTES else None
+
+
 async def startup(reader, writer, upstream):
-    raw, _, body = await frame(reader, startup=True)
-    if body[:4] in (struct.pack("!I", 80877103), struct.pack("!I", 80877104)):
+    raw, _, body = await startup_frame(reader)
+    if request_code(body) in ENCRYPTION_REQUESTS:
         writer.write(b"N")  # The qualification network uses SSL Mode=Disable.
         await writer.drain()
-        raw, _, body = await frame(reader, startup=True)
-    if len(body) < 4 or struct.unpack("!I", body[:4])[0] not in (196608, 80877102):
+        raw, _, body = await startup_frame(reader)
+    if request_code(body) not in SESSION_REQUESTS:
         raise ValueError("unsupported PostgreSQL startup")
     upstream.write(raw)
     await upstream.drain()
@@ -255,13 +273,10 @@ async def pump_requests(reader, upstream, protocol):
         await upstream.drain()
 
 
-async def pump_replies(reader, writer, protocol, root):
+async def pump_replies(reader, writer, fence):
     while True:
         raw, kind, body = await frame(reader)
-        output, job = protocol.response(raw, kind, body)
-        if job is not None:
-            await barrier(root, job)
-        writer.write(output)
+        writer.write(await fence(raw, kind, body))
         await writer.drain()
 
 
@@ -273,8 +288,16 @@ async def client(reader, writer, root=Path("/barriers")):
     try:
         await startup(reader, writer, upstream)
         protocol = Protocol()
+
+        async def fence(raw, kind, body):
+            # Hold the terminal commit acknowledgement until the harness releases its barrier.
+            output, job = protocol.response(raw, kind, body)
+            if job is not None:
+                await barrier(root, job)
+            return output
+
         tasks = [asyncio.create_task(pump_requests(reader, upstream, protocol)),
-                 asyncio.create_task(pump_replies(upstream_reader, writer, protocol, root))]
+                 asyncio.create_task(pump_replies(upstream_reader, writer, fence))]
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             task.result()

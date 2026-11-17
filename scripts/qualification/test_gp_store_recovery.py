@@ -13,64 +13,81 @@ recovery = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(recovery)
 
 
+class FakeDocker:
+    """Answers the drill's docker calls for one postgres volume and one bound output store."""
+
+    def __init__(self, test, project, root, backup, failure):
+        self.test, self.project, self.root, self.backup, self.failure = test, project, root, backup, failure
+        self.calls, self.restored = [], set()
+
+    def run(self, *args, **kwargs):
+        self.calls.append(args)
+        if args[:2] == ("docker", "compose"):
+            return self.compose(args[6:])
+        if args[:2] == ("docker", "inspect"):
+            return self.inspect_container(args[2])
+        if args[:3] == ("docker", "volume", "inspect"):
+            owner = "another-project" if self.failure == "foreign-volume" else self.project
+            return json.dumps([{"Labels": {"com.docker.compose.project": owner}}]).encode()
+        self.test.assertEqual(args[:2], ("docker", "run"))
+        return self.helper(args, kwargs)
+
+    def compose(self, action):
+        if action[:2] == ("ps", "-q"):
+            return action[2].encode()
+        if action == ("config", "--format", "json"):
+            return json.dumps({"services": {"postgres": {"image": "postgres-helper"}}}).encode()
+        if action == ("create", "postgres") and self.failure == "archive-corrupt":
+            (self.backup / "postgres.tar").write_bytes(b"corrupted archive")
+        return b""
+
+    def inspect_container(self, service):
+        mount = ({"Destination": "/var/lib/postgresql/data", "Type": "volume", "Name": "database"}
+                 if service == "postgres" else
+                 {"Destination": "/var/lib/honua/gp-outputs", "Type": "bind", "Source": str(self.root)})
+        return json.dumps([{"Mounts": [mount]}]).encode()
+
+    def helper(self, args, kwargs):
+        mount = args[args.index("--mount") + 1]
+        store = "postgres" if "src=database," in mount else "gp-output"
+        if args[args.index("--entrypoint") + 1] == "tar":
+            self.test.assertEqual(kwargs["input"], (store + " archive").encode())
+            self.restored.add(store)
+            return b""
+        return self.helper_command(store, args[-1])
+
+    def helper_command(self, store, command):
+        if command.startswith("cd /volume"):
+            if self.failure == "inventory-corrupt" and store in self.restored:
+                return b"different restored inventory"
+            return (store + " checksum file\n").encode()
+        if command == "tar -C /volume -cpf - .":
+            return (store + " archive").encode()
+        if command == "find /volume -mindepth 1 -print -quit":
+            return b"leftover" if self.failure == "nonempty-destination" else b""
+        self.test.assertEqual(command, "find /volume -mindepth 1 -delete")
+        return b""
+
+    def inspect_destroyed(self, args, **_):
+        self.calls.append(tuple(args))
+        self.test.assertEqual(args, ["docker", "volume", "inspect", "database"])
+        return subprocess.CompletedProcess(args, 0 if self.failure == "surviving-volume" else 1)
+
+
 class RecoveryTests(unittest.TestCase):
     def exercise(self, failure=None):
         project = "honua-gp-reliability-test"
-        calls, restored = [], set()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "output"
             root.mkdir()
             (root / ".honua-gp-store.json").write_text(json.dumps({"StoreReference": "qualification"}))
             backup = Path(temp) / "backup"
-
-            def run(*args, **kwargs):
-                calls.append(args)
-                if args[:2] == ("docker", "compose"):
-                    action = args[6:]
-                    if action[:2] == ("ps", "-q"):
-                        return action[2].encode()
-                    if action == ("config", "--format", "json"):
-                        return json.dumps({"services": {"postgres": {"image": "postgres-helper"}}}).encode()
-                    if action == ("create", "postgres") and failure == "archive-corrupt":
-                        (backup / "postgres.tar").write_bytes(b"corrupted archive")
-                    return b""
-                if args[:2] == ("docker", "inspect"):
-                    mount = ({"Destination": "/var/lib/postgresql/data", "Type": "volume", "Name": "database"}
-                             if args[2] == "postgres" else
-                             {"Destination": "/var/lib/honua/gp-outputs", "Type": "bind", "Source": str(root)})
-                    return json.dumps([{"Mounts": [mount]}]).encode()
-                if args[:3] == ("docker", "volume", "inspect"):
-                    owner = "another-project" if failure == "foreign-volume" else project
-                    return json.dumps([{"Labels": {"com.docker.compose.project": owner}}]).encode()
-                self.assertEqual(args[:2], ("docker", "run"))
-                mount = args[args.index("--mount") + 1]
-                store = "postgres" if "src=database," in mount else "gp-output"
-                if args[args.index("--entrypoint") + 1] == "tar":
-                    self.assertEqual(kwargs["input"], (store + " archive").encode())
-                    restored.add(store)
-                    return b""
-                command = args[-1]
-                if command.startswith("cd /volume"):
-                    if failure == "inventory-corrupt" and store in restored:
-                        return b"different restored inventory"
-                    return (store + " checksum file\n").encode()
-                if command == "tar -C /volume -cpf - .":
-                    return (store + " archive").encode()
-                if command == "find /volume -mindepth 1 -print -quit":
-                    return b"leftover" if failure == "nonempty-destination" else b""
-                self.assertEqual(command, "find /volume -mindepth 1 -delete")
-                return b""
-
-            def inspect_destroyed(args, **kwargs):
-                calls.append(tuple(args))
-                self.assertEqual(args, ["docker", "volume", "inspect", "database"])
-                return subprocess.CompletedProcess(args, 0 if failure == "surviving-volume" else 1)
-
-            with patch.object(recovery, "run", side_effect=run), \
-                    patch.object(recovery.subprocess, "run", side_effect=inspect_destroyed):
+            docker = FakeDocker(self, project, root, backup, failure)
+            with patch.object(recovery, "run", side_effect=docker.run), \
+                    patch.object(recovery.subprocess, "run", side_effect=docker.inspect_destroyed):
                 result = recovery.recover(Path("compose.yaml"), project, root, backup)
             self.assertEqual({p.name for p in backup.iterdir()}, {"postgres.tar", "gp-output.tar"})
-        return result, calls
+        return result, docker.calls
 
     def test_restores_every_physical_store_after_destroying_originals(self):
         result, calls = self.exercise()
