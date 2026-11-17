@@ -87,7 +87,7 @@ PY
 }
 
 run_heartbeat_recovery_case() {
-  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification/heartbeat-original
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification/heartbeat-original
   local -x HONUA_GP_WORKER_REDIS=redis:6379
   local recovery_deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-900}))
   local original_record winner_record original_worker recovery_worker barrier before_bytes after_bytes
@@ -99,7 +99,7 @@ run_heartbeat_recovery_case() {
   job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
   jq -n --arg job "$job" '{submitted_job:$job,scope:"natural heartbeat expiry; not exclusive partition lease"}' > "$scenario_evidence_file"
   heartbeat_barrier "$first_root" wait claimed || return 1
-  docker exec --user 0 "$first_container" chmod 777 "/var/run/honua/qualification/heartbeat-original/$job" || return 1
+  docker exec --user 0 "$first_container" chmod 777 "/run/honua/qualification/heartbeat-original/$job" || return 1
   heartbeat_barrier "$first_root" release claimed || return 1
   heartbeat_barrier "$first_root" wait native-process-started || return 1
   original_record="$(heartbeat_job_record)" || return 1
@@ -113,7 +113,7 @@ run_heartbeat_recovery_case() {
   paused=1
   record_disruption worker native-process-started pause-heartbeat
   second_container="$(compose run -d --no-deps --name "$peer_name" \
-    -e HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification/heartbeat-recovery worker)" || return 1
+    -e HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification/heartbeat-recovery worker)" || return 1
   # Both live containers must resolve the same actual image, not just equal supplied tags.
   docker inspect "$first_container" "$second_container" > "$receipt_root/$scenario-worker-identities.json" || return 1
   jq -e --arg image "$HONUA_WORKER_IMAGE" --arg sha "$candidate_source_sha" '
@@ -130,7 +130,7 @@ run_heartbeat_recovery_case() {
   recovery_worker="$(jq -r .claimedBy "$receipt_root/$scenario-reclaimed-record.json")"
   heartbeat_barrier "$second_root" wait claimed || return 1
   [[ "$(jq -r .workerId "$second_root/$job/claimed.ready.json")" == "$recovery_worker" ]] || return 1
-  docker exec --user 0 "$second_container" chmod 777 "/var/run/honua/qualification/heartbeat-recovery/$job" || return 1
+  docker exec --user 0 "$second_container" chmod 777 "/run/honua/qualification/heartbeat-recovery/$job" || return 1
   for barrier in claimed native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending; do
     heartbeat_barrier "$second_root" wait "$barrier" || return 1
     heartbeat_barrier "$second_root" release "$barrier" || return 1
