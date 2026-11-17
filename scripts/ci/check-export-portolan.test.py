@@ -21,11 +21,11 @@ FINDING = {"rule_id": "PTL-GEN-000", "severity": "error", "message": "root catal
            "path": "catalog.json"}
 
 
-def report(passed=False, findings=(FINDING,), **validator):
+def report(findings=(FINDING,), **validator):
     return {
         "validator": {"version": PIN["validator_version"], "applied_profile": PIN["profile"],
                       "spec_commit": PIN["spec_commit"], **validator},
-        "passed": passed, "files_checked": 3, "error_count": len(findings), "warning_count": 0, "info_count": 0,
+        "passed": not findings, "files_checked": 3, "error_count": len(findings), "warning_count": 0, "info_count": 0,
         "summary": {"by_rule": [{"rule_id": "PTL-GEN-000", "severity": "error", "count": len(findings),
                                  "description": "the catalog root has a readable catalog.json"}]},
         "findings": list(findings),
@@ -53,7 +53,7 @@ class ExportPortolanCheckTests(unittest.TestCase):
         self.assertEqual(json.loads(self.output.read_text())["findings"], [FINDING])
 
     def test_a_conforming_export_passes(self):
-        self.assertEqual(self.run_check(json.dumps(report(passed=True, findings=())), exit_code=0), 0)
+        self.assertEqual(self.run_check(json.dumps(report(findings=())), exit_code=0), 0)
 
     def test_another_specification_version_fails_the_harness(self):
         self.assertEqual(self.run_check(json.dumps(report(applied_profile="v0.2.0"))), 2)

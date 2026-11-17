@@ -1,5 +1,5 @@
 {
-  "comment": "The one place the Portolan specification version is pinned for the advisory Export check (#8268). Bump all three together: rashid prints them with --version.",
+  "comment": "The one place the Portolan specification version is pinned for the advisory Export check. Bump all three together: rashid prints them with --version.",
   "validator": "rashid",
   "validator_version": "0.4.0",
   "profile": "v0.3.0",

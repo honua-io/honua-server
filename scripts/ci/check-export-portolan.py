@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check a published Export snapshot against the pinned Portolan specification (#8268).
+"""Check a published Export snapshot against the pinned Portolan specification.
 
 Advisory: specification findings are reported in the job summary and as warnings, and
 never fail the job. The job fails only when the check itself cannot be trusted: the
@@ -80,13 +80,11 @@ def annotations(report: dict) -> list[str]:
     return lines
 
 
-def check(snapshot: Path, report_path: Path, command: list[str], pin: dict[str, str]) -> dict:
+def check(snapshot: Path, command: list[str], pin: dict[str, str]) -> dict:
     report = run_validator(command, snapshot)
     mismatches = pin_mismatches(report, pin)
     if mismatches:
         raise HarnessError("validator does not match scripts/ci/portolan-pin.v1.json: " + "; ".join(mismatches))
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return report
 
 
@@ -98,10 +96,12 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     pin = load_pin()
     try:
-        report = check(arguments.snapshot, arguments.report, shlex.split(arguments.rashid), pin)
+        report = check(arguments.snapshot, shlex.split(arguments.rashid), pin)
     except HarnessError as error:
         print(f"::error title=Export Portolan check::{error}")
         return 2
+    arguments.report.parent.mkdir(parents=True, exist_ok=True)
+    arguments.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     summary = summary_markdown(report, pin)
     print(summary)
     print("\n".join(annotations(report)))

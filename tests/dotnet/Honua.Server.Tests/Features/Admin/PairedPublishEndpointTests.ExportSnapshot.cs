@@ -9,7 +9,7 @@ using Honua.TestKit.Attributes;
 namespace Honua.Server.Tests.Features.Admin;
 
 // A published version is a self-contained file tree: every file it names is stored under it.
-// The advisory Export check (#8268, .github/workflows/export-portolan-check.yml) sets
+// The advisory Export check (.github/workflows/export-portolan-check.yml) sets
 // HONUA_EXPORT_SNAPSHOT_DIR and runs the pinned Portolan validator over the copy this case writes.
 public sealed partial class PairedPublishEndpointTests
 {

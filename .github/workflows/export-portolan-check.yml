@@ -1,6 +1,6 @@
 name: Export Portolan Check
 
-# Advisory (#8268): publishes an Export in the integration test, then runs the
+# Advisory: publishes an Export in the integration test, then runs the
 # Portolan validator pinned in scripts/ci/portolan-pin.v1.json over the
 # published files. Findings go to the job summary, warnings and the report
 # artifact and never fail the job; it fails only when the check itself breaks
