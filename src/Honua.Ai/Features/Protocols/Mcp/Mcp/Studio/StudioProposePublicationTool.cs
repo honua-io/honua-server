@@ -185,7 +185,6 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
 
     private const string DerivedKeyPrefix = "mcp-propose-publication:";
     private const int MaxIdempotencyKeyLength = 200;
-    private const int MaxDerivedChain = 8;
 
     // Length-prefixed fields so no two argument sets share an encoding. The runtime scopes
     // keys to the caller's tenant and principal and binds each key to this hash.
@@ -196,7 +195,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
     }
 
     // Submits one publication proposal under an idempotency key and decides what a replay means.
-    private sealed class ProposalSubmission(
+    internal sealed class ProposalSubmission(
         HttpContext httpContext,
         Func<string, Task<OperationHandle>> submit,
         CancellationToken cancellationToken)
@@ -206,6 +205,8 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
 
         // A caller-chosen key is honoured as given; a replayed proposal that ended without
         // publishing is refused with the advice to choose a new key.
+        public const int MaxDerivedChain = 8;
+
         public async Task<(OperationHandle Operation, string Key)> SubmitAsync(string key)
         {
             var operation = await SubmitOnceAsync(key).ConfigureAwait(false);
@@ -240,10 +241,17 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         private async Task<OperationHandle> SubmitOnceAsync(string key)
         {
             var operation = await submit(key).ConfigureAwait(false);
-            return IsRetryConflict(operation)
-                ? throw new GeoprocessingPreconditionFailedException(
-                    $"{operation.Reason} Send a new idempotencyKey for a different publication request.")
-                : operation;
+            if (!IsRetryConflict(operation))
+            {
+                return operation;
+            }
+
+            // The idempotency key is bound to other arguments, or the original call is still
+            // running: only the first is cured by a new key.
+            var advice = operation.Reason?.Contains("different request", StringComparison.Ordinal) == true
+                ? "Send a new idempotencyKey for a different publication request."
+                : "Retry the same call later.";
+            throw new GeoprocessingPreconditionFailedException($"{operation.Reason} {advice}");
         }
 
         private async Task<bool> IsSpentReplayAsync(OperationHandle operation)
@@ -273,10 +281,12 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             $"The publication proposal for this idempotencyKey ended as {operation.Status} without publishing. "
             + "Send a new idempotencyKey to propose again.");
 
+        // Only the idempotency projection carries statusCode 409. A stored validation failure
+        // (for example a route claimed by another item) is an outcome, not a key conflict.
         private static bool IsRetryConflict(OperationHandle operation)
             => operation.Status == OperationHandleStatus.Failed
-                && operation.Result?.Details.TryGetValue("errorKind", out var kind) == true
-                && string.Equals(kind, "conflict", StringComparison.Ordinal);
+                && operation.Result?.Details.TryGetValue("statusCode", out var statusCode) == true
+                && string.Equals(statusCode, "409", StringComparison.Ordinal);
     }
 
     // A first call always enters approval. A retry with the same key returns that proposal in
