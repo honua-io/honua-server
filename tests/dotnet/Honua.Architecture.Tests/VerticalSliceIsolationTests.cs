@@ -172,6 +172,10 @@ public sealed class VerticalSliceIsolationTests
             // ControlPlane orchestrates deploy/release workflows over the
             // Geoprocessing job runtime and is wired from the Admin surface.
             ["ControlPlane"] = new[] { "Geoprocessing", "Admin" },
+            // The governed operation executor runs approved folder mutations through
+            // Admin's transport-neutral folder mutation service, the same path the
+            // direct HTTP routes use, instead of a loopback HTTP call.
+            ["Operations"] = new[] { "Admin" },
             // Studio composes the Console authoring surface.
             ["Studio"] = new[] { "Console" },
             // The ingest cluster (Import + Migration + FileImport + RasterImport)
