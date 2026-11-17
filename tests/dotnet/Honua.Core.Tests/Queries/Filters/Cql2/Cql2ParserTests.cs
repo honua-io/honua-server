@@ -39,6 +39,42 @@ public class Cql2ParserTests
     }
 
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("age != 2")]
+    [InlineData("age!=2")]
+    [InlineData("age <> 2")]
+    public void Parse_InequalitySpellings_ReturnsCanonicalNotEqualExpression(string cql)
+    {
+        var result = _parser.Parse(cql);
+        var json = new Cql2JsonParser().Parse(
+            """{"op":"!=","args":[{"property":"age"},2]}""");
+
+        var binary = result.Should().BeOfType<BinaryExpression>().Subject;
+        var jsonBinary = json.Should().BeOfType<BinaryExpression>().Subject;
+        binary.Operator.Should().Be(BinaryOperator.NotEqual);
+        jsonBinary.Operator.Should().Be(binary.Operator);
+        binary.Left.Should().BeOfType<PropertyReference>().Subject.PropertyName.Should().Be("age");
+        jsonBinary.Left.Should().BeOfType<PropertyReference>().Subject.PropertyName.Should().Be("age");
+        binary.Right.Should().BeOfType<Literal>().Subject.Value.Should().Be(2.0);
+        Convert.ToDouble(jsonBinary.Right.Should().BeOfType<Literal>().Subject.Value,
+            System.Globalization.CultureInfo.InvariantCulture).Should().Be(2.0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("age ! 2")]
+    [InlineData("age ! = 2")]
+    [InlineData("age !! 2")]
+    [InlineData("age !> 2")]
+    [InlineData("age !")]
+    public void Parse_MalformedExclamationOperator_ThrowsArgumentException(string cql)
+    {
+        var act = () => _parser.Parse(cql);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NumericComparison_ReturnsCorrectAST()
     {
