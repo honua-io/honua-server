@@ -58,6 +58,10 @@ require a Databricks runtime / DBSQL with spatial-function support.
 - For geometry/extent: a Databricks runtime / DBSQL that exposes the spatial `ST_*`
   functions used above.
 
+The admin connection test requires a public workspace address. It resolves and checks
+addresses when opening each connection, connects directly without an environment proxy,
+and does not follow redirects.
+
 ## Configuration
 
 Bound from the `Databricks` configuration section (environment variables shown with the
