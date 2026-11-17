@@ -256,10 +256,11 @@ if (tracingSection.Exists() || tracingEnabled)
     builder.AddTelemetryDefaults();
 }
 
-if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
-        builder.Environment.IsDevelopment(),
-        isTestEnvironment,
-        keyRingIsShared: !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"))))
+var durableKeyRing = OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+    builder.Environment.IsDevelopment(),
+    isTestEnvironment,
+    keyRingIsShared: !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")));
+if (durableKeyRing)
 {
     // The key ring lives in the system database so that every node unprotects what any node
     // protected: an operation secret consumed on another node is deleted before it is
@@ -1729,6 +1730,24 @@ catch (Honua.Core.Features.FeatureStore.Domain.DataStoreProviderUnavailableExcep
     return;
 }
 #endif
+
+// The key-ring checks (every key protected, every wrapped key readable with the configured secret)
+// run when KeyManagementOptions is first built. Left to the data-protection hosted service, a
+// refusal escapes app.Run unhandled and the AOT image aborts with exit 139, so build it here.
+if (durableKeyRing)
+{
+    try
+    {
+        _ = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<
+            Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>>().Value;
+    }
+    catch (InvalidOperationException ex)
+        when (!Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+    {
+        await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+        return;
+    }
+}
 
 // Configure health endpoints
 app.MapHealthEndpoints();
