@@ -48,7 +48,12 @@ public sealed class GeoPackageSchemaAdmissionTests
             {
                 await connection.OpenAsync();
                 await using var command = connection.CreateCommand();
-                command.CommandText = $"ALTER TABLE \"{tableName}\" RENAME TO original_table; CREATE VIEW \"{tableName}\" AS SELECT * FROM original_table;";
+                command.CommandText = $"""
+                    ALTER TABLE "{tableName}" RENAME TO original_table;
+                    CREATE VIEW "{tableName}" AS SELECT * FROM original_table;
+                    CREATE TABLE pragma_table_list (schema TEXT, name TEXT, type TEXT);
+                    INSERT INTO pragma_table_list VALUES ('main', '{tableName}', 'table');
+                    """;
                 await command.ExecuteNonQueryAsync();
             }
 

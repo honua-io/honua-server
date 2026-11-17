@@ -13,6 +13,9 @@ public sealed partial class PostgisSourceExecutionProofTests
     [Theory]
     [InlineData("updated_at >= '2026-01-02T00:00:00Z'")]
     [InlineData("external_id = '2c9dfe88-1676-4329-a6eb-f5e049891f41'")]
+    [InlineData("CONCAT(name, '-x') = 'foo-x'")]
+    [InlineData("name || '-x' = 'foo-x'")]
+    [InlineData("ROUND(fraction, 2) = 1.23")]
     [InlineData("reading = 9007199254740993.0")]
     [InlineData("reading = 90071992547409930e-1")]
     [InlineData("reading = 9007199254740992.0 + 1.0")]
@@ -22,10 +25,10 @@ public sealed partial class PostgisSourceExecutionProofTests
         var table = "source_filter_" + Guid.NewGuid().ToString("N");
         await using var setup = dataSource.CreateCommand($"""
             CREATE TABLE public.{table} (key integer, updated_at timestamptz, external_id uuid,
-                reading numeric, geom geometry(Point,4326));
+                reading numeric, name text, fraction numeric, geom geometry(Point,4326));
             INSERT INTO public.{table} VALUES
-                (1,'2026-01-02T00:00:00Z','2c9dfe88-1676-4329-a6eb-f5e049891f41',9007199254740993,NULL),
-                (2,'2026-01-01T00:00:00Z','00000000-0000-0000-0000-000000000000',9007199254740992,NULL);
+                (1,'2026-01-02T00:00:00Z','2c9dfe88-1676-4329-a6eb-f5e049891f41',9007199254740993,'foo',1.234,NULL),
+                (2,'2026-01-01T00:00:00Z','00000000-0000-0000-0000-000000000000',9007199254740992,'bar',1.244,NULL);
             """);
         await setup.ExecuteNonQueryAsync();
         try

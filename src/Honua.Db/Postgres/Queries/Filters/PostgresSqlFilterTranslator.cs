@@ -597,7 +597,7 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
             "SUBSTRING" => TranslateSubstring(args, function.FunctionName),
             "SUBSTR" => TranslateSubstring(args, function.FunctionName),
             "REPLACE" => $"REPLACE({argString})",
-            "CONCAT" => $"CONCAT({argString})",
+            "CONCAT" => $"CONCAT({string.Join(", ", args.Select(arg => $"CAST({arg} AS text)"))})",
             "POSITION" => args.Length == 2
                 ? $"POSITION({args[0]} IN {args[1]})"
                 : throw new ArgumentException("POSITION requires two arguments"),
@@ -605,7 +605,9 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
             "CEIL" => $"CEIL({argString})",
             "CEILING" => $"CEILING({argString})",
             "FLOOR" => $"FLOOR({argString})",
-            "ROUND" => $"ROUND({argString})",
+            "ROUND" => args.Length == 2
+                ? $"ROUND(CAST({args[0]} AS numeric), CAST({args[1]} AS integer))"
+                : $"ROUND({argString})",
             "NOW" => args.Length == 0
                 ? "NOW()"
                 : throw new ArgumentException("NOW does not accept arguments"),

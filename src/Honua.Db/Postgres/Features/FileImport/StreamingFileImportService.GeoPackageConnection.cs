@@ -48,12 +48,18 @@ internal sealed partial class StreamingFileImportService
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT type FROM pragma_table_list WHERE schema = 'main' AND name = $name COLLATE NOCASE";
-        command.Parameters.AddWithValue("$name", tableName);
-        var tableType = await command.ExecuteScalarAsync(cancellationToken);
-        if (tableType is not "table")
+        command.CommandText = "PRAGMA main.table_list";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
-            throw new InvalidDataException("GeoPackage metadata and feature layers must use ordinary SQLite tables.");
+            if (reader.GetString(0) == "main" &&
+                string.Equals(reader.GetString(1), tableName, StringComparison.OrdinalIgnoreCase) &&
+                reader.GetString(2) == "table")
+            {
+                return;
+            }
         }
+
+        throw new InvalidDataException("GeoPackage metadata and feature layers must use ordinary SQLite tables.");
     }
 }
