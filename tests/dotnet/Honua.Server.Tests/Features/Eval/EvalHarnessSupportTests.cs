@@ -30,7 +30,7 @@ public sealed class EvalHarnessSupportTests
 
     [UnitTest]
     [Operation(Operations.ContractTesting)]
-    public void DetermineRedisAvailability_WhenSubmitStagePassed_ReturnsTrue()
+    public void DetermineJobStoreAvailability_WhenSubmitStagePassed_ReturnsTrue()
     {
         var results = new[]
         {
@@ -47,12 +47,12 @@ public sealed class EvalHarnessSupportTests
             }
         };
 
-        EvalHarnessSupport.DetermineRedisAvailability(results).Should().BeTrue();
+        EvalHarnessSupport.DetermineJobStoreAvailability(results).Should().BeTrue();
     }
 
     [UnitTest]
     [Operation(Operations.ContractTesting)]
-    public void DetermineRedisAvailability_WhenSubmitStageSkippedForRedisUnavailable_ReturnsFalse()
+    public void DetermineJobStoreAvailability_WhenSubmitStageSkippedForUnavailableJobStore_ReturnsFalse()
     {
         var results = new[]
         {
@@ -64,13 +64,13 @@ public sealed class EvalHarnessSupportTests
                     {
                         Stage = EvalStageKind.SubmitJob,
                         Status = EvalStageStatus.Skipped,
-                        Reason = "redis-unavailable"
+                        Reason = "job-store-unavailable"
                     }
                 ]
             }
         };
 
-        EvalHarnessSupport.DetermineRedisAvailability(results).Should().BeFalse();
+        EvalHarnessSupport.DetermineJobStoreAvailability(results).Should().BeFalse();
     }
 
     [UnitTest]

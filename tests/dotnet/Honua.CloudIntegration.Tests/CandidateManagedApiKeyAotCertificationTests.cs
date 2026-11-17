@@ -26,7 +26,7 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
     private const int RaceRounds = 10;
 
     [SkippableFact]
-    public async Task ManagedKeyLifecycle_OnProductionNativeAotCandidateWithRedis_HoldsScopeExpiryRotationRevocationAndRaces()
+    public async Task ManagedKeyLifecycle_OnProductionNativeAotCandidate_HoldsScopeExpiryRotationRevocationAndRaces()
     {
         var reference = Environment.GetEnvironmentVariable(CandidateImageEnvVar);
         Skip.If(string.IsNullOrWhiteSpace(reference), $"Set {CandidateImageEnvVar} to certify managed API keys on a candidate image.");
@@ -150,7 +150,7 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
         expired.CanAuthenticate.Should().BeFalse();
         await replay.ExpectAsync("rotate-expired-refused", HttpMethod.Post, $"{KeysPath}/{shortLived.Id}/rotate", bootstrap, HttpStatusCode.NotFound);
 
-        // A fresh process reads every persisted record back from Redis with the same outcomes.
+        // A fresh process reads every persisted record back from PostgreSQL with the same outcomes.
         await server.RestartAsync();
         await replay.ExpectAsync("restart-survivor-accepted", HttpMethod.Get, KeysPath, survivor.Secret, HttpStatusCode.OK);
         await replay.ExpectAsync("restart-scoped-still-refused", HttpMethod.Get, KeysPath, scoped.Secret, HttpStatusCode.Forbidden);
@@ -374,7 +374,6 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
         internal const string Environment = "Production";
 
         private const string PostgresImage = "postgis/postgis:18-3.6";
-        private const string RedisImage = "redis:7.2-alpine";
         private const string DatabasePassword = "managed-key-4571";
 
         private readonly string _network;
@@ -396,10 +395,9 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
             var suffix = Guid.NewGuid().ToString("N")[..8];
             var network = $"honua-mk-{suffix}";
             var postgres = $"{network}-pg";
-            var redis = $"{network}-redis";
             var serverName = $"{network}-server";
             var port = LoopbackTcpPort.GetFree();
-            var server = new CandidateServer(network, serverName, [serverName, redis, postgres], port);
+            var server = new CandidateServer(network, serverName, [serverName, postgres], port);
             try
             {
                 await Docker.RunCheckedAsync(["network", "create", network]);
@@ -409,11 +407,6 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
                     "-e", "POSTGRES_USER=honua", "-e", $"POSTGRES_PASSWORD={DatabasePassword}", "-e", "POSTGRES_DB=honua",
                     PostgresImage
                 ]);
-                await Docker.RunCheckedAsync(
-                [
-                    "run", "-d", "--name", redis, "--network", network, RedisImage,
-                    "redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"
-                ]);
                 await WaitForPostgresAsync(postgres);
 
                 await Docker.RunCheckedAsync(
@@ -422,7 +415,6 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
                     "-p", $"127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}:8080",
                     "-e", $"ASPNETCORE_ENVIRONMENT={Environment}",
                     "-e", $"ConnectionStrings__DefaultConnection=Host={postgres};Database=honua;Username=honua;Password={DatabasePassword}",
-                    "-e", $"ConnectionStrings__Redis={redis}:6379",
                     "-e", $"HONUA_ADMIN_PASSWORD={BootstrapPassword}",
                     "-e", "HostValidation__AllowedHosts__0=127.0.0.1",
                     "-e", "HostValidation__AllowedHosts__1=localhost",

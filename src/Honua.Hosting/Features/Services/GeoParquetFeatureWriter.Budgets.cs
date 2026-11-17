@@ -69,21 +69,68 @@ public static partial class GeoParquetFeatureWriter
         return batches;
     }
 
-    private sealed class BoundedParquetStream(int maxBytes) : FileStream(
-        PrivateTempFile.NewPath("honua-parquet-"), CreateOptions())
+    // A full scratch volume is transient: concurrent spools drain within seconds once their
+    // readers finish, so tell the caller to retry instead of reporting a query failure.
+    internal const int ScratchFullRetryAfterSeconds = 10;
+
+    internal const string ScratchFullClientMessage =
+        "The server's temporary storage is full. Retry the GeoParquet request shortly.";
+
+    // ENOSPC and EDQUOT (Linux), ERROR_HANDLE_DISK_FULL and ERROR_DISK_FULL (Windows HRESULTs).
+    private static readonly int[] StorageFullErrorCodes = [28, 122, unchecked((int)0x80070027), unchecked((int)0x80070070)];
+
+    internal static bool IsStorageFull(Exception? exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is IOException && Array.IndexOf(StorageFullErrorCodes, current.HResult) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // The encoder's spool: a private delete-on-close scratch file in production. It refuses
+    // writes past the response budget and records when the scratch volume itself is full.
+    internal sealed class BoundedParquetStream : Stream
     {
         private const int WriteBufferBytes = 64 * 1024;
 
-        private static FileStreamOptions CreateOptions()
-            => PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
-            {
-                Access = FileAccess.ReadWrite,
-                Share = FileShare.None,
-                BufferSize = WriteBufferBytes,
-                Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
-            });
+        private readonly int maxBytes;
+        private readonly Stream spool;
+
+        public BoundedParquetStream(int maxBytes)
+            : this(maxBytes, PrivateTempFile.CreateScratch("honua-parquet-", extension: null, WriteBufferBytes))
+        {
+        }
+
+        internal BoundedParquetStream(int maxBytes, Stream spool)
+        {
+            this.maxBytes = maxBytes;
+            this.spool = spool;
+        }
 
         public bool LimitExceeded { get; private set; }
+
+        // Set when the scratch volume refused a write. The native encoder can wrap the managed
+        // IOException, so the writer reads this flag rather than the exception it receives.
+        public bool StorageFull { get; private set; }
+
+        public override bool CanRead => spool.CanRead;
+
+        public override bool CanSeek => spool.CanSeek;
+
+        public override bool CanWrite => spool.CanWrite;
+
+        public override long Length => spool.Length;
+
+        public override long Position
+        {
+            get => spool.Position;
+            set => Spool(() => spool.Position = value);
+        }
 
         private void Reserve(long end)
         {
@@ -94,28 +141,82 @@ public static partial class GeoParquetFeatureWriter
             }
         }
 
+        private void Spool(Action write)
+        {
+            try
+            {
+                write();
+            }
+            catch (IOException ex) when (IsStorageFull(ex))
+            {
+                StorageFull = true;
+                throw;
+            }
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => spool.Read(buffer, offset, count);
+
+        public override int Read(Span<byte> buffer) => spool.Read(buffer);
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => spool.ReadAsync(buffer, cancellationToken);
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            long position = 0;
+            Spool(() => position = spool.Seek(offset, origin));
+            return position;
+        }
+
         public override void Write(byte[] buffer, int offset, int count)
         {
             Reserve(Position + count);
-            base.Write(buffer, offset, count);
+            Spool(() => spool.Write(buffer, offset, count));
         }
 
         public override void Write(ReadOnlySpan<byte> buffer)
         {
             Reserve(Position + buffer.Length);
-            base.Write(buffer);
+            try
+            {
+                spool.Write(buffer);
+            }
+            catch (IOException ex) when (IsStorageFull(ex))
+            {
+                StorageFull = true;
+                throw;
+            }
         }
 
         public override void WriteByte(byte value)
         {
             Reserve(Position + 1);
-            base.WriteByte(value);
+            Spool(() => spool.WriteByte(value));
         }
 
         public override void SetLength(long value)
         {
             Reserve(value);
-            base.SetLength(value);
+            Spool(() => spool.SetLength(value));
+        }
+
+        public override void Flush() => Spool(spool.Flush);
+
+        // Stream.Dispose and DisposeAsync both end here, so the scratch file always goes.
+        // A buffered spool retries refused bytes on close; the runtime still closes (and so
+        // deletes) the file, and the refusal is already reported as a retryable 503.
+        public override void Close()
+        {
+            try
+            {
+                spool.Dispose();
+            }
+            catch (IOException ex) when (IsStorageFull(ex))
+            {
+                StorageFull = true;
+            }
+
+            base.Close();
         }
     }
 }

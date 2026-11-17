@@ -503,8 +503,8 @@ public sealed class EvalRunner
             {
                 Stage = EvalStageKind.SubmitJob,
                 Status = EvalStageStatus.Skipped,
-                Reason = "redis-unavailable",
-                Detail = "Durable job store not configured; SubmitJob requires Redis.",
+                Reason = "job-store-unavailable",
+                Detail = "Durable job store not configured; SubmitJob requires the PostgreSQL job store.",
                 ElapsedMs = stopwatch.ElapsedMilliseconds
             }, null);
         }
