@@ -690,7 +690,8 @@ jobs:
           selective_affected=false
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
              [[ "${TRAILING_SELECTIVE_BASE:-}" =~ ^[0-9a-f]{40}$ ]] &&
-             [ "${{ inputs.full_ci }}" != "true" ]; then
+             [ "${{ inputs.full_ci }}" != "true" ] &&
+             [ "${{ needs.changes.outputs.full_ci }}" != "true" ]; then
             selective_affected=true
           fi
           echo "schedule_shards=$(python3 scripts/ci/trailing_selection.py --schedule-shards --reason "${router_reason}" --selective "${selective_affected}")" >> "$GITHUB_OUTPUT"

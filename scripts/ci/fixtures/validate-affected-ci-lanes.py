@@ -160,7 +160,9 @@ class AffectedLaneTests(unittest.TestCase):
         receipts = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Verify server shard execution receipts')
         receipt_download = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Download server shard receipts')
         self.assertIn("schedule_shards != 'false'", receipt_download['if'])
-        self.assertIn('no_shards_selected', receipts['run'])
+        self.assertIn('no_shards_selected', receipts['env']['SELECT_REASON'])
+        compute = next(step for step in jobs['targeted-shards']['steps'] if step.get('id') == 'compute')
+        self.assertIn('needs.changes.outputs.full_ci', compute['run'])
         self.assertIn('SCHEDULE_SHARDS', summary['run'])
         self.assertIn('!= skipped', summary['run'])
         self.assertIn('!cancelled() && !failure()', jobs['aot-build']['if'])
@@ -198,6 +200,7 @@ class ShardWidthTests(unittest.TestCase):
             "scripts/ci/test_immutable_container_tags.py",
             "tests/dotnet/Honua.Architecture.Tests/NightlyImageCertificationTests.cs",
         ]
+        self.assertTrue(TRAILING.core_package_required([]))
         self.assertFalse(TRAILING.core_package_required(measured))
         self.assertTrue(TRAILING.core_package_required(measured + ["src/Honua.Core/Core/Honua.Core.csproj"]))
         self.assertTrue(TRAILING.core_package_required(["Directory.Build.props"]))

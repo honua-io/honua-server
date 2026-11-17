@@ -35,7 +35,14 @@ def affected_run_schedules_shards(reason: str) -> bool:
 
 
 def core_package_required(paths: list[str]) -> bool:
-    return any(path and CORE_PACKAGE_SKIP.match(path) is None for path in paths)
+    """Run the Core package proof unless every path is known not to affect it.
+
+    An empty list is not evidence that the package is unchanged, so it runs.
+    """
+    usable = [path for path in paths if path]
+    if not usable:
+        return True
+    return any(CORE_PACKAGE_SKIP.match(path) is None for path in usable)
 
 
 def main(argv: list[str] | None = None) -> None:

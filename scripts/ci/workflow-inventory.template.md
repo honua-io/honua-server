@@ -750,7 +750,8 @@ artifacts. Server shards retain descending measured `dispatch_rank` order and
 run at most two at once for every `selective_base` dispatch. A selective
 dispatch whose router reason is `no_path_match` does not schedule those default
 smoke shards. Honua.Core package compatibility runs on that dispatch only when a
-changed file is outside docs, workflows, `scripts/ci/` and tests. A skipped Core
+changed file is outside docs, workflows, `scripts/ci/` and tests. An empty path
+list still runs it. A skipped Core
 package does not cancel a selected AOT or MCP lane; a failed Core package or
 Postgres compatibility job still does. Optional affected
 runs above 40 total jobs defer to scheduled full CI; manual full-coverage overrides
