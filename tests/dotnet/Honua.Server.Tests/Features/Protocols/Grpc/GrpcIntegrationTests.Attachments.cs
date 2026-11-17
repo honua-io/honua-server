@@ -77,7 +77,7 @@ public sealed partial class GrpcIntegrationTests
         }, _headers);
         var link = new Uri(download.Url);
         const string downloadRoute = "/api/v1/attachments/downloads/{token}";
-        link.AbsolutePath.Should().StartWith(downloadRoute[..downloadRoute.LastIndexOf('/') + 1]);
+        link.AbsolutePath.Should().StartWith(downloadRoute[..(downloadRoute.LastIndexOf('/') + 1)]);
         download.Url.Should().NotContain("attachment-object");
         using var http = _fixture.CreateClient();
         using var response = await http.GetAsync(link.PathAndQuery);
