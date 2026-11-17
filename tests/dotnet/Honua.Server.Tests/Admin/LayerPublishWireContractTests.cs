@@ -31,7 +31,31 @@ public sealed class LayerPublishWireContractTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(layer, LayerPublishingJsonContext.Default.PublishedLayerSummary));
 
         Assert.Equal(741, document.RootElement.GetProperty("storageLayerId").GetInt32());
-        Assert.False(document.RootElement.TryGetProperty("layerId", out _));
+        Assert.Equal(741, document.RootElement.GetProperty("layerId").GetInt32());
+    }
+
+    [UnitTest]
+    public void ExtentAndFeatureRefresh_SourceGeneratedJson_KeepsTheLayerIdAlias()
+    {
+        var extent = new LayerExtentRefreshLayerResult { StorageLayerId = 12, LayerName = "Roads" };
+        var features = new MaterializedFeatureRefreshResult
+        {
+            StorageLayerId = 12,
+            LayerName = "Roads",
+            Schema = "public",
+            Table = "roads",
+            MaterializedFeatureCount = 4,
+        };
+
+        using var extentDocument = JsonDocument.Parse(JsonSerializer.Serialize(
+            extent, LayerPublishingJsonContext.Default.LayerExtentRefreshLayerResult));
+        using var featureDocument = JsonDocument.Parse(JsonSerializer.Serialize(
+            features, LayerPublishingJsonContext.Default.MaterializedFeatureRefreshResult));
+
+        Assert.Equal(12, extentDocument.RootElement.GetProperty("storageLayerId").GetInt32());
+        Assert.Equal(12, extentDocument.RootElement.GetProperty("layerId").GetInt32());
+        Assert.Equal(12, featureDocument.RootElement.GetProperty("storageLayerId").GetInt32());
+        Assert.Equal(12, featureDocument.RootElement.GetProperty("layerId").GetInt32());
     }
 
     [UnitTheory]

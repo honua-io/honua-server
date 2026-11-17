@@ -26703,6 +26703,12 @@
             "format": "int32",
             "description": "Layer ID"
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "layerName": {
             "type": "string",
             "description": "Layer name"
@@ -50714,9 +50720,16 @@
       "LayerExtentRefreshLayerSummary": {
         "type": "object",
         "properties": {
+          "storageLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layer ID"
+          },
           "layerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"
@@ -50753,9 +50766,16 @@
       "MaterializedFeatureRefreshSummary": {
         "type": "object",
         "properties": {
+          "storageLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layer ID"
+          },
           "layerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"

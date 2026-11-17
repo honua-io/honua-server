@@ -197,6 +197,11 @@ public sealed class PublishedLayerSummary
 {
     public required int StorageLayerId { get; init; }
 
+    /// <summary>
+    /// Deprecated wire alias of <see cref="StorageLayerId"/>. Published clients still read <c>layerId</c>.
+    /// </summary>
+    public int LayerId => StorageLayerId;
+
     public required string LayerName { get; init; }
 
     public required string Schema { get; init; }
@@ -253,6 +258,11 @@ public sealed class LayerExtentRefreshLayerResult
 {
     public int StorageLayerId { get; init; }
 
+    /// <summary>
+    /// Deprecated wire alias of <see cref="StorageLayerId"/>. Published clients still read <c>layerId</c>.
+    /// </summary>
+    public int LayerId => StorageLayerId;
+
     public required string LayerName { get; init; }
 
     public bool HasExtent { get; init; }
@@ -263,6 +273,11 @@ public sealed class LayerExtentRefreshLayerResult
 public sealed class MaterializedFeatureRefreshResult
 {
     public int StorageLayerId { get; init; }
+
+    /// <summary>
+    /// Deprecated wire alias of <see cref="StorageLayerId"/>. Published clients still read <c>layerId</c>.
+    /// </summary>
+    public int LayerId => StorageLayerId;
 
     public required string LayerName { get; init; }
 
