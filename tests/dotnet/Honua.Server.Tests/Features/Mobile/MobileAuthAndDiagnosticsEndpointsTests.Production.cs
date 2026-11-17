@@ -25,8 +25,8 @@ public sealed partial class MobileAuthAndDiagnosticsEndpointsTests
         environment.EnvironmentName = Environments.Production;
         try
         {
-            using var response = await _anonymousClient.PostAsync("/oauth/token",
-                Json("""{"refreshToken":"configured-refresh"}"""));
+            using var content = Json("""{"refreshToken":"configured-refresh"}""");
+            using var response = await _anonymousClient.PostAsync("/oauth/token", content);
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         }
         finally
