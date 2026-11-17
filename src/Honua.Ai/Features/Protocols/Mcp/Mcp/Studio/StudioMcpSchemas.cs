@@ -402,9 +402,10 @@ internal static class StudioMcpSchemas
             "itemId": { "type": "string", "format": "uuid", "description": "version.itemId from honua_studio_save_version." },
             "versionId": { "type": "string", "format": "uuid", "description": "version.versionId from honua_studio_save_version." },
             "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "version.contentHash from honua_studio_save_version." },
-            "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Caller-supplied. Requested target route key." },
+            "route": { "type": "string", "minLength": 2, "maxLength": 200, "pattern": "^/", "description": "Caller-supplied. Requested public path for the item; must start with '/', for example '/parks-map'." },
             "visibility": { "type": "string", "enum": ["personal", "team", "organization", "public"], "description": "Caller-supplied. personal: owner; team/organization: signed-in item-tenant callers; public: anonymous readers." },
-            "note": { "type": "string", "maxLength": 2000, "description": "Rationale recorded for reviewers." }
+            "note": { "type": "string", "maxLength": 2000, "description": "Rationale recorded for reviewers." },
+            "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Optional. Repeating a call with the same key returns the original proposal and its current state. Without a key, identical arguments are the key; send a new key to propose again after a rejection." }
           }
         }
         """;

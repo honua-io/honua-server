@@ -187,6 +187,58 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         after.CurrentVersionId.Should().Be(before!.CurrentVersionId);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    public async Task ProposePublication_IdenticalRetry_ReturnsOriginalProposalAndItsState()
+    {
+        using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
+        var version = await SaveVersionAsync(admin);
+        var arguments = ProposeArguments(version, $"/maps/retry-{Guid.NewGuid():N}");
+
+        var first = await CallToolAsync(admin, "honua_studio_propose_publication", arguments);
+        var retry = await CallToolAsync(admin, "honua_studio_propose_publication", arguments);
+        var proposalId = first.GetProperty("proposalId").GetString()!;
+        retry.GetProperty("proposalId").GetString().Should().Be(proposalId);
+        retry.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+
+        var explicitKey = arguments[..^1] + $$""","idempotencyKey":"{{Guid.NewGuid():N}}"}""";
+        var separate = await CallToolAsync(admin, "honua_studio_propose_publication", explicitKey);
+        separate.GetProperty("proposalId").GetString().Should().NotBe(proposalId);
+
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "studio-retry-publisher");
+        using var approval = await approver.ApproveAsync(proposalId);
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, await approval.Content.ReadAsStringAsync());
+
+        var afterApproval = await CallToolAsync(admin, "honua_studio_propose_publication", arguments);
+        afterApproval.GetProperty("proposalId").GetString().Should().Be(proposalId);
+        afterApproval.GetProperty("status").GetString().Should().Be("Published");
+        afterApproval.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    public async Task ProposePublication_RouteWithoutLeadingSlash_IsRefusedWithThePathForm()
+    {
+        using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
+        var version = await SaveVersionAsync(admin);
+
+        var response = await ApprovedStudioDraftCall.RpcAsync(
+            admin,
+            $$"""{"jsonrpc":"2.0","id":"route","method":"tools/call","params":{"name":"honua_studio_propose_publication","arguments":{{ProposeArguments(version, "parks-map")}}}}""");
+
+        var text = response.GetRawText();
+        text.Should().Contain("must start with '/'").And.Contain("'/parks-map'");
+        text.Should().NotContain("proposalId");
+        var lifecycle = _fixture.Services.GetRequiredService<IStudioPackageLifecycleService>();
+        (await lifecycle.GetPointersAsync(version.GetProperty("itemId").GetGuid()))!.PublishedVersionId.Should().BeNull();
+    }
+
+    private static string ProposeArguments(JsonElement version, string route) =>
+        $$"""{"itemId":"{{version.GetProperty("itemId").GetGuid():D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"{{route}}","visibility":"public"}""";
+
     private async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
     {
         var version = await SaveVersionAsync(client);

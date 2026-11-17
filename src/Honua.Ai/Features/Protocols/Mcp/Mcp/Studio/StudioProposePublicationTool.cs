@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Authorization.Domain;
@@ -60,21 +62,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioProposePublicationArgument);
-        var itemId = argument.ItemId is { } suppliedItemId && suppliedItemId != Guid.Empty
-            ? suppliedItemId
-            : throw new GeoprocessingValidationException("'itemId' is required.");
-        var versionId = argument.VersionId is { } suppliedVersionId && suppliedVersionId != Guid.Empty
-            ? suppliedVersionId
-            : throw new GeoprocessingValidationException("'versionId' is required.");
-        if (string.IsNullOrWhiteSpace(argument.ContentHash))
-        {
-            throw new GeoprocessingValidationException("'contentHash' is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(argument.Route) || string.IsNullOrWhiteSpace(argument.Visibility))
-        {
-            throw new GeoprocessingValidationException("'route' and 'visibility' are required.");
-        }
+        var (itemId, versionId, contentHash, route, visibility) = RequireArguments(argument);
 
         // Authorize against the item owner before disclosing whether the item or version exists:
         // a missing item is an ownerless target, so a non-owner receives the same governed
@@ -106,7 +94,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             throw new GeoprocessingPreconditionFailedException("The publication proposal must bind the current saved Studio version.");
         }
 
-        if (!string.Equals(version.ContentHash, argument.ContentHash, StringComparison.Ordinal))
+        if (!string.Equals(version.ContentHash, contentHash, StringComparison.Ordinal))
         {
             throw new GeoprocessingPreconditionFailedException("The supplied content hash does not match the saved Studio version.");
         }
@@ -115,15 +103,20 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
 
         var intent = new StudioPublicationIntent
         {
-            Route = argument.Route,
-            Visibility = argument.Visibility,
+            Route = route,
+            Visibility = visibility,
         };
 
-        var idempotencyKey = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault();
+        // MCP clients cannot set a per-call header, so the argument comes first. Without either,
+        // the call's own arguments are the key: an identical retry returns the original proposal
+        // instead of filing a duplicate, which is what the idempotent annotation promises.
+        var idempotencyKey = NonBlank(argument.IdempotencyKey)
+            ?? NonBlank(httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault())
+            ?? DerivedIdempotencyKey([itemId.ToString("D"), versionId.ToString("D"), contentHash, route, visibility, argument.Note ?? string.Empty]);
         var receipt = await RequireMutationRuntime(httpContext).CreatePublicationRequestAsync(
             itemId,
             versionId,
-            argument.ContentHash,
+            contentHash,
             intent,
             argument.Note,
             actorId,
@@ -151,10 +144,50 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             StudioMcpJsonContext.Default.McpStudioProposePublicationOutput);
     }
 
+    private static (Guid ItemId, Guid VersionId, string ContentHash, string Route, string Visibility) RequireArguments(McpStudioProposePublicationArgument argument)
+    {
+        var itemId = argument.ItemId is { } suppliedItemId && suppliedItemId != Guid.Empty
+            ? suppliedItemId
+            : throw new GeoprocessingValidationException("'itemId' is required.");
+        var versionId = argument.VersionId is { } suppliedVersionId && suppliedVersionId != Guid.Empty
+            ? suppliedVersionId
+            : throw new GeoprocessingValidationException("'versionId' is required.");
+        if (string.IsNullOrWhiteSpace(argument.ContentHash))
+        {
+            throw new GeoprocessingValidationException("'contentHash' is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(argument.Route) || string.IsNullOrWhiteSpace(argument.Visibility))
+        {
+            throw new GeoprocessingValidationException("'route' and 'visibility' are required.");
+        }
+
+        if (!argument.Route.StartsWith('/'))
+        {
+            throw new GeoprocessingValidationException(
+                $"'route' is a public path and must start with '/', for example '/{argument.Route.Trim()}'.");
+        }
+
+        return (itemId, versionId, argument.ContentHash, argument.Route, argument.Visibility);
+    }
+
+    private static string? NonBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static string DerivedIdempotencyKey(string[] parts)
+    {
+        // Length-prefixed fields so no two argument sets share an encoding. The runtime scopes
+        // the key to the caller's tenant and principal.
+        var material = string.Join('|', parts.Select(static part => $"{part.Length}:{part}"));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
+        return $"mcp-propose-publication:{Convert.ToHexString(hash).ToLowerInvariant()}";
+    }
+
+    // A first call always enters approval. A retry with the same key returns that proposal in
+    // whatever state a person has since put it, so it is reported as it stands. An operation
+    // without a durable proposal never counts as one.
     private static McpStudioProposePublicationOutput ProposalOutput(OperationHandle operation, string? idempotencyKey)
     {
-        if (operation.Status != OperationHandleStatus.RequiresApproval
-            || string.IsNullOrWhiteSpace(operation.ProposalId)
+        if (string.IsNullOrWhiteSpace(operation.ProposalId)
             || string.IsNullOrWhiteSpace(operation.AuditId))
         {
             throw new GeoprocessingPreconditionFailedException(
@@ -170,9 +203,25 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             AuditId = operation.AuditId!,
             CorrelationId = operation.CorrelationId,
             IdempotencyIdentity = idempotencyKey ?? operation.OperationInstanceId,
-            Status = "AwaitingApproval",
-            HumanConfirmationRequired = true,
-            Message = "Publication proposal is awaiting approval by a person in Console.",
+            Status = ProposalStatus(operation.Status),
+            HumanConfirmationRequired = operation.Status == OperationHandleStatus.RequiresApproval,
+            Message = ProposalMessage(operation.Status),
         };
     }
+
+    private static string ProposalStatus(OperationHandleStatus status) => status switch
+    {
+        OperationHandleStatus.RequiresApproval => "AwaitingApproval",
+        OperationHandleStatus.Completed => "Published",
+        _ => status.ToString(),
+    };
+
+    private static string ProposalMessage(OperationHandleStatus status) => status switch
+    {
+        OperationHandleStatus.RequiresApproval => "Publication proposal is awaiting approval by a person in Console.",
+        OperationHandleStatus.Completed => "This proposal was already approved and published; no new proposal was filed.",
+        OperationHandleStatus.Rejected or OperationHandleStatus.Denied =>
+            "This proposal was already decided and not published; no new proposal was filed. Send a new idempotencyKey to propose again.",
+        _ => $"This proposal already exists with status {status}; no new proposal was filed.",
+    };
 }
