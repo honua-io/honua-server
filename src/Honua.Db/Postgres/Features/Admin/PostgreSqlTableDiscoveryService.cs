@@ -16,7 +16,8 @@ namespace Honua.Db.Postgres.Features.Admin;
 internal sealed class PostgreSqlTableDiscoveryService(
     ILogger<PostgreSqlTableDiscoveryService> logger,
     ISchemaContext? schemaContext = null,
-    PostgresSchemaConfiguration? schemaConfiguration = null) : ITableDiscoveryService
+    PostgresSchemaConfiguration? schemaConfiguration = null,
+    Func<string, CancellationToken, ValueTask<NpgsqlConnection>>? connectionFactory = null) : ITableDiscoveryService
 {
     private readonly ILogger<PostgreSqlTableDiscoveryService> _logger = logger;
     private readonly ISchemaContext? _schemaContext = schemaContext;
@@ -33,7 +34,9 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
         try
         {
-            await using var connection = new NpgsqlConnection(connectionString);
+            await using var connection = connectionFactory is null
+                ? new NpgsqlConnection(connectionString)
+                : await connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
             await connection.OpenAsync(cancellationToken);
 
             return await DiscoverPostGisTablesCoreAsync(connection, cancellationToken);
@@ -232,7 +235,9 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
         try
         {
-            await using var connection = new NpgsqlConnection(connectionString);
+            await using var connection = connectionFactory is null
+                ? new NpgsqlConnection(connectionString)
+                : await connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
             await connection.OpenAsync(cancellationToken);
 
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
