@@ -26,7 +26,6 @@ services:
     environment: &honua-environment
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=honua;SSL Mode=Disable
-      Jobs__Store__RetentionSweepInterval: 00:00:01
       Licensing__DevGrantEdition: Pro
       Jobs__Store__RetentionSweepInterval: "00:00:02"
       HONUA_ADMIN_PASSWORD: gp-reliability-admin
@@ -90,7 +89,7 @@ services:
     image: ${HONUA_WORKER_IMAGE:?set HONUA_WORKER_IMAGE to a digest-addressed image}
     environment:
       DOTNET_ENVIRONMENT: Development
-      # Since the PostgreSQL job substrate (#7250) a worker claims from the system database\'s job queue.
+      # Since the PostgreSQL job substrate (#7250) a worker claims from the system database's job queue.
       ConnectionStrings__DefaultConnection: Host=${HONUA_GP_WORKER_POSTGRES_HOST:-postgres};Port=5432;Database=honua;Username=honua;Password=honua;SSL Mode=Disable
       Jobs__Store__RetentionSweepInterval: 00:00:01
       GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
