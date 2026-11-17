@@ -45,7 +45,7 @@ args = sys.argv[1:]
 assert args[0] != 'new', 'SDK 11 templates reject net10.0'
 project, = Path.cwd().glob('*.csproj')
 framework = ET.parse(project).findtext('./PropertyGroup/TargetFramework')
-assert framework in ('net10.0', 'net11.0'), framework
+assert framework == 'net11.0', framework
 assert ET.parse(project).findtext('./PropertyGroup/OutputType') == 'Exe'
 if args[0] == 'add':
     assert args == ['add', 'package', 'Honua.Core', '--version', '0.0.0-ci.42.1']
