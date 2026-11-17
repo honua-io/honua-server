@@ -60,7 +60,7 @@ public sealed class ImageServerSoapBandSelectionTests
         // ArcGIS Pro 3.7 draw captured against a reference ImageServer: ExportImage asks for
         // esriImageLERC with CompressionQuality 10000 (LERC maxZError scale, not JPEG quality)
         // and esriMosaicNone. A hand-built REST PNG of the same bbox succeeds; this request
-        // is what Pro sends when it actually paints (#6563).
+        // is what Pro sends when it actually paints.
         var operation = XElement.Parse(
             """
             <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8">

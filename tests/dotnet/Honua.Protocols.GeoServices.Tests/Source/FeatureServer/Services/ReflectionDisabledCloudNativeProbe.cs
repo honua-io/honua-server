@@ -23,7 +23,7 @@ internal static class ReflectionDisabledCloudNativeProbe
 
     private const string ReflectionSwitch = "System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault";
 
-    // The exact shape the writer used to pass to the reflection-based overload.
+    // Anonymous payload shape used to exercise reflection-disabled serialization.
     private static readonly string[] CanaryValue = ["Point"];
 
     public static readonly ImmutableArray<ProbeRow> Rows =

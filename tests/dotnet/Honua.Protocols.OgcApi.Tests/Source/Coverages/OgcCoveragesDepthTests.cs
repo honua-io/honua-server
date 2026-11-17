@@ -460,7 +460,7 @@ internal static class CoverageDepthRasterStore
                 var width = query.OutputWidth ?? 64;
                 var height = query.OutputHeight ?? 64;
 
-                // #4424: the covered extent follows the requested clip instead of always
+                // The covered extent follows the requested clip instead of always
                 // reporting the raster's full 20000 x 20000 native footprint, so a narrow
                 // bbox that the handler failed to apply is now distinguishable from one it
                 // applied correctly.

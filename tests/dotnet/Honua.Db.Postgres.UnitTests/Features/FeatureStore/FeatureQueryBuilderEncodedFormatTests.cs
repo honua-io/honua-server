@@ -81,7 +81,7 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
             Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType.Geometry,
             new FeatureQuery());
 
-        // RFC 7946 §3.1.6 right-hand-rule enforcement (#2745).
+        // RFC 7946 §3.1.6 right-hand-rule enforcement.
         expression.Should().Contain("ST_ForcePolygonCCW(");
         expression.Should().Contain("ST_AsGeoJSON(ST_ForcePolygonCCW(");
     }
@@ -95,7 +95,7 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
             Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType.Geometry,
             new FeatureQuery());
 
-        // GML 3.2 / ISO 19107 surface patches require right-hand-rule winding (#2745).
+        // GML 3.2 / ISO 19107 surface patches require right-hand-rule winding.
         expression.Should().Contain("ST_AsGML(3, ST_ForcePolygonCCW(");
     }
 
@@ -108,7 +108,7 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
             Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType.Geometry,
             new FeatureQuery());
 
-        // KML polygons use right-hand-rule winding (#2745).
+        // KML polygons use right-hand-rule winding.
         expression.Should().Contain("ST_AsKML(ST_ForcePolygonCCW(");
     }
 

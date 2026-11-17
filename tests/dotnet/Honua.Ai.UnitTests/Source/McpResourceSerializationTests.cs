@@ -336,7 +336,7 @@ public sealed class McpResourceSerializationTests
         var source = processes.EnumerateArray()
             .Single(process => process.GetProperty("processId").GetString() == "source.geojson");
         source.GetProperty("executionKind").GetString().Should().Be("WorkflowOnly");
-        // GA is defined per entry point (#4409): a DAG-only source must not read as
+        // GA is defined per entry point: a DAG-only source must not read as
         // job-submittable to an agent planning an execution.
         source.GetProperty("entryPoints").EnumerateArray()
             .Select(entry => entry.GetString()).Should().BeEquivalentTo(["workflow"]);
@@ -389,8 +389,8 @@ public sealed class McpResourceSerializationTests
         // implemented. Deriving the set from the enum rather than pinning the
         // literals keeps this honest when a reviewed
         // capability-maturity-overrides.v1.json row demotes a capability
-        // (honua-release#100 demoted scene.catalog to "deferred" when D0.2 moved
-        // 3D to 2026.2) while still failing on any value outside the vocabulary.
+        // (scene.catalog to "deferred", for example) while still failing on any
+        // value outside the vocabulary.
         // The resource serves the catalog unfiltered; that each non-implemented
         // tier is *explained* is gated by FeatureCatalogDriftTests.
         var maturityTiers = Enum.GetValues<CapabilityMaturity>()

@@ -220,8 +220,7 @@ public static class MobileOfflineDemoGraphPublisher
             ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
             // The shared 'features' table holds rows for every layer keyed by 'layer_id'.
             // Declaring the discriminator column makes the storage-mapped reader constrain
-            // each read to this binding's StorageLayerId, preventing cross-layer leakage
-            // (honua-server#1238 follow-up).
+            // each read to this binding's StorageLayerId, preventing cross-layer leakage.
             ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
         };
 

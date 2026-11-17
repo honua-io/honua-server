@@ -304,7 +304,7 @@ public sealed class GeoServicesConstructCapabilityRegistry
             // Projected through OGC API Processes for direct process-id discovery
             // and execution. CanServe drives the GP lane's
             // IsProjectedThroughOgcApiProcesses verdict; the raster/surface family
-            // is now callable directly at /ogc/processes/processes/{id} exactly as a
+            // is callable directly at /ogc/processes/processes/{id} exactly as a
             // single-step honua-geoprocessing plan wrapper already invoked it — the
             // shared async job/tier/RBAC pipeline is unchanged. The automation tier
             // stays Assisted because full-fidelity execution still requires the

@@ -143,7 +143,7 @@ public sealed class WorkflowBranchingAndForEachTests
         // A cron/event trigger calls in as OrchestrationSystemPrincipal, which carries admin, so
         // authorizing a ForEach-supplied layerId there and pinning the result would let the
         // SYSTEM grant access the publisher never had — and publication cannot resolve the
-        // placeholder to check it (honua-server#3043 review).
+        // placeholder to check it.
         var harness = new Harness();
         var now = harness.Clock.GetUtcNow();
 
@@ -161,8 +161,8 @@ public sealed class WorkflowBranchingAndForEachTests
                 }
             ],
             // Background runs inherit the publisher snapshot. Definitions created before this
-            // durable identity existed are intentionally refused and must be republished
-            // (#3068); this fixture models a current, successfully published definition.
+            // durable identity existed are intentionally refused and must be republished;
+            // this fixture models a current, successfully published definition.
             AuthorSecurityContext = new JobSecurityContext("tester", TenantId: null, Claims: []),
             CreatedAt = now,
             UpdatedAt = now
@@ -250,7 +250,7 @@ public sealed class WorkflowBranchingAndForEachTests
         // Publication cannot pin a ForEach step's layer: the concrete id exists only after
         // expansion at RUN CREATION. Discarding the plan the gate bound there left
         // reconciliation submitting the stored, unpinned definition plan, which the layer gate
-        // refuses — every dynamic iteration failed before execution (honua-server#3043 review).
+        // refuses — every dynamic iteration failed before execution.
         var harness = new Harness();
         var now = harness.Clock.GetUtcNow();
 

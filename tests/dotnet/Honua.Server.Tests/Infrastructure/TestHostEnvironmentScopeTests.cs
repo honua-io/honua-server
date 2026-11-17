@@ -75,7 +75,7 @@ public sealed class TestHostEnvironmentScopeTests
         // WebApplicationFactory builds the web host builder, which snapshots ASPNETCORE_*,
         // before CreateHost takes the environment gate. A concurrent host that is inside
         // StartInEnvironment at that instant holds ASPNETCORE_ENVIRONMENT; an unpinned host
-        // inherited it and booted without the provider composition (#4640).
+        // inherited it and booted without the provider composition.
         const string aspnetKey = "ASPNETCORE_ENVIRONMENT";
         var originalAspnet = Environment.GetEnvironmentVariable(aspnetKey);
         string? environmentSeenByConfigure = null;

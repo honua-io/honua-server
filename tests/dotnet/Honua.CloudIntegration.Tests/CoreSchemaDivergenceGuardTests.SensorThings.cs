@@ -96,7 +96,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests
         if (configured)
         {
             // Execute the actual immutable 109 resource as fixture setup. This proves its
-            // physical result, not canonical configured full boot (which also requires #6418).
+            // physical result, not canonical configured full boot.
             await ApplySensingAdoptionFixtureAsync(connectionString, schema);
         }
         (await CaptureSensingFamilyAsync(connectionString)).Should().Be(before,

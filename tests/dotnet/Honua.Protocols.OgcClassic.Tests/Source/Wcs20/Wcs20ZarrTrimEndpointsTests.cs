@@ -73,8 +73,7 @@ public sealed class Wcs20ZarrTrimEndpointsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
     public async Task Wcs_GetCoverage_OverExtentZarrTrim_ClampsToCoverageAndReturnsPng()
     {
-        // The trim reaches past the coverage extent on every side; previously the reader
-        // required full containment and 404ed, now it clamps to the intersection.
+        // A trim extending past every coverage edge clamps to the intersection.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
             "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +

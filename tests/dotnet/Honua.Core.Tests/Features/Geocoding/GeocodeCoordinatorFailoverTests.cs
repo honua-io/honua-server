@@ -76,7 +76,7 @@ public sealed class GeocodeCoordinatorFailoverTests
     public async Task ForwardGeocodeAsync_ExceedsAdvertisedRateLimit_ThrottlesWithRetryAfter()
     {
         // The provider advertises one request per minute; the second request in the window must be
-        // throttled before it reaches the provider, carrying a Retry-After hint (#2150).
+        // throttled before it reaches the provider, carrying a Retry-After hint.
         var provider = new FakeGeocodeProvider(
             "capable",
             new GeocodeProviderCapabilities(SupportsForwardGeocode: true) { RateLimitPerMinute = 1 })
@@ -287,7 +287,7 @@ public sealed class GeocodeCoordinatorFailoverTests
             maxFailoverAttempts: 2);
 
         var queries = Enumerable.Range(0, 500).Select(index => $"address {index}").ToArray();
-        // Unnamed requests may still fail over. An explicit provider name must not (#6601).
+        // Unnamed requests may still fail over. An explicit provider name must not.
         var result = await coordinator.BatchGeocodeAsync(
             new BatchGeocodeRequest(queries),
             providerName: null,

@@ -339,7 +339,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         children[0].GetProperty("publishedLayerId").GetInt32().Should().Be(42);
         children[1].GetProperty("dependsOn")[0].GetString().Should().Be("resource:x:layer:0");
 
-        // #4600: the service-level verdict and its differences, and each child's verdict, are on the wire.
+        // The service-level verdict and its differences, and each child's verdict, are on the wire.
         doc.RootElement.GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
         var difference = doc.RootElement.GetProperty("fidelityDifferences").EnumerateArray().Should().ContainSingle().Subject;
         difference.GetProperty("code").GetString().Should().Be("fidelity.service.layer-unverified");
@@ -348,7 +348,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         children[0].GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
         children[1].TryGetProperty("fidelityVerdict", out _).Should().BeFalse("a running child has no verdict yet");
 
-        // #4600 (AC1): the construct accounting is replayed from the persisted manifest and child rows. The
+        // The construct accounting is replayed from the persisted manifest and child rows. The
         // manifest discovers layers 0, 1 and 2; the batch selected 0 and 1, so layer 2 blocks.
         var accounting = doc.RootElement.GetProperty("constructAccounting");
         accounting.GetProperty("executed").GetBoolean().Should().BeTrue();

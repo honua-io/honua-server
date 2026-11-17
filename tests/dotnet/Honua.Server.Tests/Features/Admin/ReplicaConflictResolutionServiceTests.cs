@@ -827,10 +827,8 @@ public sealed class ReplicaConflictResolutionServiceTests
     [UnitTest]
     public async Task ResolveAsync_NoWriteResumeDuringALiveClaim_ReportsAlreadyResolved()
     {
-        // A no-write plan used to skip the lease entirely and go straight to finalization. A retry
-        // arriving while the first request was still inside its staleness probe would therefore audit
-        // and report Applied, and the original - finding a post-conflict edit - would then release the
-        // same timestamp-bound claim back to Pending.
+        // Even a no-write plan must hold the lease through its staleness probe, preventing
+        // a concurrent retry from reporting Applied while the original request detects an edit.
         var live = Conflict(clientEditApplied: false) with
         {
             Status = ReplicaConflictStatus.Resolved,
@@ -855,9 +853,8 @@ public sealed class ReplicaConflictResolutionServiceTests
     [UnitTest]
     public async Task ResolveAsync_WhenTheWritePreconditionFails_ReportsStaleAndReleasesTheClaim()
     {
-        // The staleness probe covers detection-to-now; the write's own precondition covers now-to-write.
-        // An edit arriving inside that second window used to be overwritten unconditionally even though
-        // the service promises to reject post-conflict changes.
+        // The staleness probe covers detection-to-now; the write precondition covers
+        // now-to-write and rejects post-conflict edits arriving in that interval.
         var repository = new FakeConflictRepository(Conflict(clientEditApplied: true));
         var applier = new PreconditionFailingApplier();
         var service = CreateService(repository, applier);

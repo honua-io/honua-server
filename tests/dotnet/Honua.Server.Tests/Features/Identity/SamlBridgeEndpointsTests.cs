@@ -32,7 +32,7 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
-                // #2978: SAML SP auth is an Enterprise entitlement (ADR-0024 Identity
+                // SAML SP auth is an Enterprise entitlement (ADR-0024 Identity
                 // Governance tier); grant it so these tests keep exercising the SAML
                 // machinery itself (the gate has its own tests in IdentityEntitlementGateTests).
                 builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");

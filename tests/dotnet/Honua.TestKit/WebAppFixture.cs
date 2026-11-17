@@ -38,12 +38,9 @@ namespace Honua.TestKit;
 
 public sealed class WebAppFixture : IAsyncLifetime
 {
-    // Audit-A2: the process-wide shared-factory/Postgres/refcount/semaphore static
-    // state used to live here. It is owned by
-    // <see cref="Mixins.WebAppFixtureSharedBootstrapMixin"/> now, which exposes the
-    // factory + Postgres handles through static accessors. The bootstrap mixin owns
-    // the lifecycle (init + ref-counted release) so the per-fixture instance code
-    // only needs to know about its own per-test state.
+    // Mixins.WebAppFixtureSharedBootstrapMixin owns process-wide factory and PostgreSQL
+    // handles, including initialization and ref-counted release. Each fixture instance
+    // only owns its per-test state.
 
     private PostgresFixture? _postgres;
     private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
@@ -68,15 +65,9 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     public const int TestLayerId = 0;
 
-    // Audit-A2: the geocoding base URL and encryption material constants used to live
-    // here as static strings. They now live on
-    // <see cref="WebAppFixturePostgresWiringMixin"/> next to the configuration-building
-    // helpers that read them.
+    // WebAppFixturePostgresWiringMixin owns the geocoding URL and encryption material
+    // next to the configuration helpers that consume them.
 
-    // Audit-A2: the default GeoServices drawingInfo, V2 graph factories, and per-layer
-    // schema/spatial/temporal helpers historically lived inline as ~770 LOC of static
-    // helpers. They are pure functions over layer ids and seed-file names — no fixture
-    // state — and now live on Honua.TestKit.Mixins.WebAppFixtureMetadataV2Mixin.
 
     public const string SharedAdminPassword = "test-admin-password";
 
@@ -147,7 +138,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         var postgres = _postgres ?? throw new InvalidOperationException("Postgres fixture is not initialized.");
 
         // Create and seed the fixture schema before the host is built so the host can
-        // configure it as an operational schema (#5391). Seeding touches only the database.
+        // configure it as an operational schema. Seeding touches only the database.
         if (_schemaOwner is not null)
         {
             _currentSchema = _schemaOwner.CurrentSchema
@@ -166,9 +157,8 @@ public sealed class WebAppFixture : IAsyncLifetime
         // fixture's tests run.
         _factory = ConfiguredWebApplicationFactory.Create(builder =>
             {
-                // Audit-A2: host settings, app configuration, and PostgreSQL test
-                // services wiring all live on WebAppFixturePostgresWiringMixin so the
-                // isolated and shared bootstrap paths stay in lockstep.
+                // Host settings and PostgreSQL wiring share a mixin so isolated and shared
+                // bootstrap paths stay in lockstep.
                 Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings(builder);
 
                 _configureWebHost?.Invoke(builder);
@@ -231,11 +221,8 @@ public sealed class WebAppFixture : IAsyncLifetime
             _currentSchema!,
             TestLayerId);
 
-    // Audit-A2 follow-up: the V2 graph mutation helpers (UpdateV2*, SetV2*, and
-    // AddAdminSampleMetadataV2Graph) used to live inline as ~400 LOC. They now live on
-    // Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin and the methods below
-    // are thin delegating wrappers that preserve the public fixture API. ApplySeedSpecificMetadataV2Graph
-    // is likewise routed through the mixin.
+    // Metadata-v2 mutation helpers delegate to WebAppFixtureMetadataV2GraphMutationMixin
+    // while preserving the public fixture API.
 
     private void ApplySeedSpecificMetadataV2Graph()
     {
@@ -364,8 +351,6 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     private async Task InitializeSharedAsync()
     {
-        // Audit-A2: the process-wide shared-server lifecycle (semaphore + refcount +
-        // factory/Postgres construction) lives on WebAppFixtureSharedBootstrapMixin.
         await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin
             .EnsureInitializedAsync(SharedAdminPassword);
         _hasSharedReference = true;

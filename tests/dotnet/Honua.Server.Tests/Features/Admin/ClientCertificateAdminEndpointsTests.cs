@@ -533,7 +533,7 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
                     ["HONUA_ADMIN_PASSWORD"] = AdminPassword,
                     ["Authentication:ClientCertificates:Mode"] = "Optional",
                     ["Authentication:ClientCertificates:EnvironmentId"] = "prod",
-                    // #2958: mTLS client-certificate auth is demoted to experimental and gated
+                    // MTLS client-certificate auth is demoted to experimental and gated
                     // behind Capabilities:Experimental:security.mtls:Enabled (default off). This
                     // suite proves the flag-ON behavior, so every fixture opts in explicitly.
                     ["Capabilities:Experimental:security.mtls:Enabled"] = "true"

@@ -47,7 +47,7 @@ public sealed class GeoprocessingUsageEndpointsTests : IAsyncLifetime
     public async Task GetUsageRanking_AfterRecordingInvocations_RanksMostInvokedFirst()
     {
         // The endpoint reads the real singleton telemetry store the dispatcher
-        // records into, so recording here is reflected on the next read (#2144).
+        // records into, so recording here is reflected on the next read.
         var telemetry = _fixture.Services.GetRequiredService<IProcessUsageTelemetry>();
         var popular = $"popular-tool-{Guid.NewGuid():N}";
         var rare = $"rare-tool-{Guid.NewGuid():N}";

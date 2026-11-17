@@ -130,7 +130,7 @@ internal static class WebAppFixtureMetadataV2Mixin
 
         // VectorTileServer publication for the canonical "test" service. The
         // GeoServices VectorTileServer adapter resolves the service by NAME against
-        // an EsriVectorTileLayer publication (honua-server#1777). Publish layer 0 so
+        // an EsriVectorTileLayer publication. Publish layer 0 so
         // /rest/services/test/VectorTileServer resolves and inherits the seeded bbox.
         builder
             .AddService("svc-test-vectortile", "test", protocols: [MetadataV2ServiceProtocols.VectorTileServer])
@@ -212,7 +212,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     .Distinct(StringComparer.Ordinal)
                     .ToArray(),
                 // Opt the canonical test layer into attachments so both the FeatureServer
-                // and MapServer layer metadata advertise hasAttachments:true (#1923).
+                // and MapServer layer metadata advertise hasAttachments:true.
                 Metadata = resources[i].Metadata with
                 {
                     Annotations = new Dictionary<string, string>(resources[i].Metadata.Annotations, StringComparer.Ordinal)

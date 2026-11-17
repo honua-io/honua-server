@@ -42,7 +42,7 @@ public sealed class FeatureEditsDeniedPathSkipsResourceValidatorTests : IAsyncLi
             $"/rest/services/{ServiceId}/FeatureServer/{LayerId}/addFeatures", content);
         var body = await response.Content.ReadAsStringAsync();
 
-        // GeoServices signals a refused operation in the body, never in the status (PA-070/PA-117).
+        // GeoServices signals a refused operation in the body, never in the status.
         // If the entitlement gate ran after IResourceValidator was touched, ThrowingResourceValidator
         // would have surfaced its exception as an unhandled raw 500 here instead.
         response.Be200Ok();

@@ -93,7 +93,7 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         layerContent.Should().Contain("\"geometryType\"");
         layerContent.Should().Contain("\"fields\"");
 
-        // Test invalid layer ID (GeoServices 200 + {"error":{"code":404}} per #2418)
+        // Test invalid layer ID (GeoServices 200 + {"error":{"code":404}})
         var invalidResponse = await client.GetAsync("/rest/services/test/FeatureServer/999?f=json");
         await invalidResponse.AssertGeoServicesErrorAsync(404);
     }
@@ -191,8 +191,8 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
         {
             var response = await client.GetAsync(endpoint);
 
-            // GeoServices (/rest/services) error responses now use the Esri contract:
-            // HTTP 200 + {"error":{"code":N}} (#2418, PA-070/PA-117). OGC API endpoints
+            // GeoServices (/rest/services) error responses use the Esri contract:
+            // HTTP 200 + {"error":{"code":N}}. OGC API endpoints
             // keep RFC 7807 HTTP status semantics.
             if (endpoint.StartsWith("/rest/services", StringComparison.Ordinal) && (int)expectedStatus >= 400)
             {

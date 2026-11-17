@@ -241,7 +241,7 @@ public sealed class CatalogRasterSourceResolverTests
                 Arg.Any<CancellationToken>())
             // 3e9 x 3e9 x 4 bands x 8 bits = ~3.6e19 decoded bytes: the unchecked product wraps
             // 64-bit math negative, which would sail under MaxDecodedRasterBytes and defeat the
-            // decompression-bomb gate (#3090).
+            // decompression-bomb gate.
             .Returns(BuildMinimalTiffHeader(width: 3_000_000_000, height: 3_000_000_000, bands: 4, bitsPerSample: 8));
         await using var services = BuildServices(store, BuildSnapshot((42, 900)), reader);
         var resolver = CreateResolver(services, maxDecodedRasterBytes: 64L * 1024 * 1024);

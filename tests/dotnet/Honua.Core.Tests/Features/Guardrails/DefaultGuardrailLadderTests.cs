@@ -31,7 +31,7 @@ public class DefaultGuardrailLadderTests
     }
 
     // Mirrors DisabledLicenseService.CreateSnapshot: Disabled mode reports Enterprise with a
-    // Disabled validation state (#4721).
+    // Disabled validation state.
     private static DefaultGuardrailLadder CreateDisabledLadder(GuardrailLadderOptions? options = null)
         => CreateLadder(HonuaEdition.Enterprise, options, mode: LicenseMode.Disabled);
 
@@ -52,7 +52,7 @@ public class DefaultGuardrailLadderTests
     };
 
     // ------------------------------------------------------------------
-    // Licensing:Mode=Disabled Studio posture (#4758)
+    // Licensing:Mode=Disabled Studio posture
     // ------------------------------------------------------------------
 
     [UnitTest]
@@ -269,7 +269,7 @@ public class DefaultGuardrailLadderTests
     }
 
     // ------------------------------------------------------------------
-    // Ops-action discriminator resolution (#2561)
+    // Ops-action discriminator resolution
     // ------------------------------------------------------------------
 
     [UnitTest]
@@ -345,7 +345,7 @@ public class DefaultGuardrailLadderTests
     [UnitTest]
     public void Resolve_StudioPublicationProposal_RequiresApprovalOnDirectExecuteEditionWithoutCatalog()
     {
-        // #3429: an agent publication proposal must wait for approval even where Studio draft
+        // An agent publication proposal must wait for approval even where Studio draft
         // composition executes directly, and must not depend on a host registering the ops catalog.
         var ladder = CreateLadder(HonuaEdition.Community);
 

@@ -181,7 +181,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             new KeyValuePair<string, string>(parameter, "opaque--value"),
             new KeyValuePair<string, string>("f", "json")
         });
-        // Unmatched routes intentionally do not buffer anonymous form bodies (#5615).
+        // Unmatched routes intentionally do not buffer anonymous form bodies.
         // Query parameters are inspected even there, proving the password exemption
         // matches the exact token path rather than a prefix.
         using var response = query
@@ -263,7 +263,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     {
         // ArcGIS clients request an IP-bound token with client=requestip (the
         // default for many SDKs). It must be accepted and IP-bind the token,
-        // not be rejected with the misleading "referer required" error (#1912).
+        // not be rejected with the misleading "referer required" error.
         using var client = _fixture.CreateClient();
         using var response = await PostFormAsync(client,
             ("username", "admin"), ("password", AdminPassword),
@@ -807,7 +807,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     [Endpoint("GET /sharing/rest/generateToken")]
     public async Task GenerateToken_CredentialsInQueryStringOverPlainHttp_Returns403WithHelpfulMessage()
     {
-        // PA-059: When RequireHttps=true (the default), a GET request carrying
+        // When RequireHttps=true (the default), a GET request carrying
         // credentials in the URL query string over plain HTTP must be rejected
         // with an actionable error that directs the caller to POST or HTTPS.
         var fixture = new WebAppFixture()
@@ -843,7 +843,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     [Endpoint("GET /sharing/rest/generateToken")]
     public async Task GenerateToken_CredentialsInQueryStringWithInsecureMode_Succeeds()
     {
-        // PA-059: When RequireHttps=false (explicit dev/test opt-out), GET with
+        // When RequireHttps=false (explicit dev/test opt-out), GET with
         // credentials in the query string is still accepted — ArcGIS clients use
         // this flow and the dev override must not break them.
         using var client = _fixture.CreateClient();
