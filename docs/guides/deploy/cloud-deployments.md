@@ -47,7 +47,7 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 The database and observability tiers are separate modules: `aws-data` / `azure-data`
 for the managed PostGIS, and `observability-stack`.
 
-Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the chiseled JIT image with PostGIS as its only database store. Unsuffixed generic release and nightly tags select that image. Native AOT is a separate, optional `-aot` variant; its promotion requires suite and live-journey parity evidence. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
+Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the native-AOT image with PostGIS as its only database store; the 2026.1 release channel and unsuffixed nightly and trunk tags select it. The tag-triggered `latest` and `vX.Y.Z` tags from `deploy.yml` still select the chiseled JIT image, and every channel keeps an explicit `-jit` variant. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
 
 Cloud-targeted tags select their runtime explicitly: `*-ecs-jit` and `*-ecs-jit-full` are JIT variants, while `*-ecs-aot` and `*-lambda-aot` select Native AOT. The shorter `*-ecs` and `*-lambda` compatibility aliases still resolve to the corresponding AOT images; they do not follow the generic default. A published tag does not change the platform support tier in the table above.
 
