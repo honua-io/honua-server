@@ -807,8 +807,8 @@ internal sealed partial class ConsoleJobService(
                 Name = "cancel",
                 Method = "POST",
                 Href = links.Cancel!,
-                Allowed = canExecute,
-                DisabledReason = canExecute ? null : "execute permission required",
+                Allowed = canExecute && !job.CancellationRequestedAt.HasValue,
+                DisabledReason = canExecute ? PendingCancelReason(job) : "execute permission required",
                 RequiresApproval = cancelApproval.IsRequired
             });
         }
@@ -904,6 +904,11 @@ internal sealed partial class ConsoleJobService(
             ? null
             : RetryDisabledReasons.RetryBudgetExhausted;
     }
+
+    // A cancel is applied asynchronously: the job keeps running until its worker or the reconciler
+    // honours the durable signal, so a second cancel is not offered meanwhile.
+    private static string? PendingCancelReason(ExecutionJobRecord job)
+        => job.CancellationRequestedAt.HasValue ? "cancellation requested; waiting for the worker to stop" : null;
 
     private static string ResolveRetryDisabledReason(bool canExecute, string? retryDisabledReason)
     {

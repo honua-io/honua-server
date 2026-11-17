@@ -26314,7 +26314,7 @@
           "disabledReason": {
             "type": "string",
             "nullable": true,
-            "description": "Operator-facing reason when the advertised action is currently disabled, such as execute permission required, job queue unavailable, job backend unavailable, job backend retry capability unavailable, job backend does not support retry, retry budget exhausted, or not retryable."
+            "description": "Operator-facing reason when the advertised action is currently disabled, such as execute permission required, cancellation requested; waiting for the worker to stop, job queue unavailable, job backend unavailable, job backend retry capability unavailable, job backend does not support retry, retry budget exhausted, or not retryable."
           },
           "requiresApproval": {
             "type": "boolean"
