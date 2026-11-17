@@ -25,7 +25,9 @@ class ServingImageMeasurementTests(unittest.TestCase):
             digest = 'sha256:' + hashlib.sha256(payload).hexdigest()
             blobs['blobs/sha256/' + digest.split(':')[1]] = payload
             return {'digest': digest, 'size': len(payload)}
-        config = blob(b'{"architecture":"amd64","os":"linux"}')
+        diff_id = 'sha256:' + hashlib.sha256(b'image layer bytes').hexdigest()
+        config = blob(json.dumps({'architecture': 'amd64', 'os': 'linux',
+                                  'rootfs': {'type': 'layers', 'diff_ids': [diff_id]}}).encode())
         layer = blob(gzip.compress(b'image layer bytes', mtime=0))
         layer['mediaType'] = 'application/vnd.oci.image.layer.v1.tar+gzip'
         manifest = blob(json.dumps({'schemaVersion': 2, 'config': config,
@@ -38,12 +40,17 @@ class ServingImageMeasurementTests(unittest.TestCase):
                 archive.addfile(member, io.BytesIO(payload))
         return path, config['digest'], layer['size']
 
-    def run_published_gate(self, directory, files, deps, size=100):
+    def run_published_gate(self, directory, files, **options):
+        deps = options.get('deps', {'targets': {}})
+        size = options.get('size', 100)
+        stage = options.get('stage', 'ga')
         with patch('sys.argv', ['measure-serving-image.py', 'registry/server@sha256:' + 'a' * 64,
                                '--published', '--profile', 'postgis', '--verify-jit-boundary',
-                               '--default-image', '--output', str(Path(directory) / 'report.json')]), \
+                               '--default-image', '--release-stage', stage,
+                               '--output', str(Path(directory) / 'report.json')]), \
              patch.object(self.measurement, 'inspect_image', return_value={'Id': 'sha256:' + 'b' * 64, 'Size': size}), \
              patch.object(self.measurement, 'measure_registry_image', return_value={'compressed_layer_bytes': 50}), \
+             patch.object(self.measurement, 'measure_saved_image', return_value=size), \
              patch.object(self.measurement, 'exported_files', return_value=(files, deps)):
             self.measurement.main()
 
@@ -52,25 +59,46 @@ class ServingImageMeasurementTests(unittest.TestCase):
         files['app/libduckdb.so'] = 20
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, 'libduckdb.so'):
-                self.run_published_gate(directory, files, {'targets': {}})
+                self.run_published_gate(directory, files)
 
     def test_published_gate_rejects_excluded_runtime_manifest_input(self):
         files = {name: 1 for name in self.measurement.FORMAT_FILES}
         deps = json.loads('{"targets": {"net10.0": {"optional/1": {"runtime": {"Honua.MySql.dll": {}}}}}}')
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, 'Honua.MySql.dll'):
-                self.run_published_gate(directory, files, deps)
+                self.run_published_gate(directory, files, deps=deps)
 
     def test_published_gate_rejects_size_overrun(self):
         files = {name: 1 for name in self.measurement.FORMAT_FILES}
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, '220000000'):
-                self.run_published_gate(directory, files, {'targets': {}}, size=220_000_001)
+                self.run_published_gate(directory, files, size=220_000_001)
+
+    def test_published_rc_gate_records_budget_and_accepts_exact_limit(self):
+        files = {name: 1 for name in self.measurement.FORMAT_FILES}
+        with tempfile.TemporaryDirectory() as directory:
+            self.run_published_gate(directory, files, size=370_000_000, stage='rc')
+            report = json.loads((Path(directory) / 'report.json').read_text())
+            self.assertEqual(report['release_stage'], 'rc')
+            self.assertEqual(report['size_budget_bytes'], 370_000_000)
+
+    def test_published_rc_gate_rejects_overrun_and_retains_evidence(self):
+        files = {name: 1 for name in self.measurement.FORMAT_FILES}
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, '370000000'):
+                self.run_published_gate(directory, files, size=370_000_001, stage='rc')
+            report = json.loads((Path(directory) / 'report.json').read_text())
+            self.assertEqual(report['bytes'], 370_000_001)
+
+    def test_rc_budget_does_not_relax_ga_budget(self):
+        self.measurement.verify_size(370_000_000, 'postgis', 'rc')
+        with self.assertRaisesRegex(ValueError, '220000000'):
+            self.measurement.verify_size(370_000_000, 'postgis', 'ga')
 
     def test_published_gate_accepts_store_free_jit_image(self):
         files = {name: 1 for name in self.measurement.FORMAT_FILES}
         with tempfile.TemporaryDirectory() as directory:
-            self.run_published_gate(directory, files, {'targets': {}})
+            self.run_published_gate(directory, files)
 
     def test_oci_compressed_bytes_are_bound_to_loaded_image(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,6 +1,7 @@
 # Stand-in entrypoint. rc1 refuses to serve when a reader-incompatible script is above its label.
 # The candidate applies the real 140 and 142 scripts, then serves.
 # Journal identities match DbUp (Honua.Server.Migrations.<number>_Name.sql), not bare filenames.
+import json
 import os
 import re
 import subprocess
@@ -125,6 +126,12 @@ def main():
         apply_candidate()
     else:
         refuse_incompatible()
+    if os.environ.get("HONUA_MIGRATE_ONLY") == "true":
+        # The executor migrates the candidate once before starting it; report like the real
+        # migrate-only summary and exit instead of serving.
+        print(json.dumps({"format": "honua.migrate-only/v1", "code": "success", "exitCode": 0,
+                          "schemaVerified": True, "pendingScripts": []}), flush=True)
+        return
     ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
 
 

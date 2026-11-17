@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using FluentAssertions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -61,6 +62,60 @@ public sealed class FolderOperationReplayTests
         (await executor.ValidateAsync(request)).IsValid.Should().BeTrue();
     }
 
+    [UnitTheory]
+    [InlineData(HttpStatusCode.PreconditionFailed)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task FolderCreate_ApprovedReplay_PreservesClassifiedRefusal(HttpStatusCode status)
+    {
+        var failure = status == HttpStatusCode.PreconditionFailed
+            ? FolderMutationFailure.ApprovalSnapshotChanged : FolderMutationFailure.RequesterAuthorizationChanged;
+        using var handler = new FolderHandler(status) { ResponseBody = System.Text.Json.JsonSerializer.Serialize(new { detail = failure.Detail }) };
+        using var client = new HttpClient(handler);
+        var executor = CreateExecutor("folder.create", client);
+
+        var result = await executor.SubmitAsync(new OperationRequest { OperationId = executor.OperationId },
+            new OperationPolicyContext { ApprovedProposalId = "approved" });
+
+        result.Status.Should().Be(OperationHandleStatus.Failed);
+        result.Reason.Should().Be(failure.Detail);
+    }
+
+    [UnitTheory]
+    [InlineData("not-json")]
+    [InlineData("[]")]
+    [InlineData("{\"detail\":42}")]
+    [InlineData("{\"detail\":\"sensitive internal failure\"}")]
+    public async Task FolderCreate_ApprovedReplay_DoesNotPromoteUnclassifiedResponse(string payload)
+    {
+        using var handler = new FolderHandler(HttpStatusCode.PreconditionFailed) { ResponseBody = payload };
+        using var client = new HttpClient(handler);
+        var executor = CreateExecutor("folder.create", client);
+
+        var result = await executor.SubmitAsync(new OperationRequest { OperationId = executor.OperationId },
+            new OperationPolicyContext { ApprovedProposalId = "approved" });
+
+        result.Status.Should().Be(OperationHandleStatus.Failed);
+        result.Reason.Should().Be("Admin API returned 412 (Precondition Failed).");
+    }
+
+    [UnitTheory]
+    [InlineData("folder.create", null)]
+    [InlineData("folder.list", "approved")]
+    public async Task Submit_OutsideApprovedFolderMutation_PreservesGenericRefusal(string operationId, string? approval)
+    {
+        using var handler = new FolderHandler(HttpStatusCode.PreconditionFailed)
+        {
+            ResponseBody = System.Text.Json.JsonSerializer.Serialize(new { detail = FolderMutationFailure.ApprovalSnapshotChanged.Detail })
+        };
+        using var client = new HttpClient(handler);
+        var executor = CreateExecutor(operationId, client);
+
+        var result = await executor.SubmitAsync(new OperationRequest { OperationId = operationId },
+            new OperationPolicyContext { ApprovedProposalId = approval });
+
+        result.Reason.Should().Be("Admin API returned 412 (Precondition Failed).");
+    }
+
     private static AdminApiOperationExecutor CreateExecutor(string operationId, HttpClient client)
     {
         var factory = Substitute.For<IHttpClientFactory>();
@@ -75,6 +130,7 @@ public sealed class FolderOperationReplayTests
 
     private sealed class FolderHandler(HttpStatusCode status) : HttpMessageHandler
     {
+        public string? ResponseBody { get; init; }
         public string? Precondition { get; private set; }
         public string? Body { get; private set; }
         public string? Query { get; private set; }
@@ -88,7 +144,7 @@ public sealed class FolderOperationReplayTests
             Body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             var response = new HttpResponseMessage(status)
             {
-                Content = new StringContent(status == HttpStatusCode.NoContent ? string.Empty : "{}")
+                Content = new StringContent(ResponseBody ?? (status == HttpStatusCode.NoContent ? string.Empty : "{}"))
             };
             response.Headers.ETag = new EntityTagHeaderValue("\"updated\"");
             return response;

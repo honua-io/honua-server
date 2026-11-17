@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 [Collection("Database")]
 [Trait("Category", "RemoteSourceExecutionProof")]
-public sealed class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
+public sealed partial class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
     [Fact]
     public async Task Postgis_RegisteredExternalDatabase_PublishesOnlyPredicateWatermarkAndBboxMatches()
@@ -85,11 +85,36 @@ public sealed class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IC
             assert.Should().Throw<XunitException>();
 
             await AssertPredicateCannotAdvanceSequenceAsync(connectionString);
+            await AssertQuotedFilterLiteralAsync(connectionString);
         }
         finally
         {
             await registry.DeleteConnectionAsync(registered.ConnectionId);
         }
+    }
+
+    private static async Task AssertQuotedFilterLiteralAsync(string connectionString)
+    {
+        const string literal = "O'Brien; -- survey";
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        await using (var setup = dataSource.CreateCommand("INSERT INTO survey (key,name,active) VALUES (31,@name,true)"))
+        {
+            setup.Parameters.AddWithValue("name", literal);
+            await setup.ExecuteNonQueryAsync();
+        }
+        var source = new ExternalPostgisDagSource(dataSource);
+        var rows = new List<DagSourceFeature>();
+        await foreach (var feature in source.ReadAsync(new DagSourceRequest
+        {
+            PostgisTable = "survey",
+            Where = "name = 'O''Brien; -- survey' AND active = true"
+        }))
+        {
+            rows.Add(feature);
+        }
+        rows.Should().ContainSingle();
+        rows[0].Attributes["key"].Should().Be(31);
+        rows[0].Attributes["name"].Should().Be(literal);
     }
 
     private static async Task AssertPredicateCannotAdvanceSequenceAsync(string connectionString)
@@ -120,8 +145,7 @@ public sealed class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IC
                 throw new XunitException("A side-effecting predicate must fail before yielding a feature.");
             }
         };
-        var refusal = await attempt.Should().ThrowAsync<PostgresException>();
-        refusal.Which.SqlState.Should().Be(PostgresErrorCodes.ReadOnlySqlTransaction);
+        await attempt.Should().ThrowAsync<ArgumentException>();
 
         await using (var unchanged = dataSource.CreateCommand("SELECT last_value FROM source_read_guard_seq"))
         {

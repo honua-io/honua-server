@@ -54,6 +54,11 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn(':latest-jit', text)
         self.assertNotIn('${channel}-aot', text)
 
+    def test_release_bundle_reports_rc_budget(self):
+        steps = workflow('release-bundle.yml')['jobs']['rc-image']['steps']
+        verify = next(step for step in steps if step.get('name') == 'Verify RC JIT candidate before registry publication')
+        self.assertIn('--release-stage rc', verify['run'])
+
     def test_release_inventory_registers_resolved_platform_manifest(self):
         jobs = workflow('release-security-assets.yml')['jobs']
         assets = jobs['assets']
@@ -151,7 +156,16 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         admission = workflow('advisory-runner-select.yml')['jobs']['select']
         self.assertIn('head.repo.full_name == github.repository', admission['runs-on'])
         self.assertIn('fromJSON(vars.HONUA_LIGHT_RUNNER)', admission['runs-on'])
-        self.assertLessEqual(int(job['timeout-minutes']), 30)
+        budgets = re.fullmatch(
+            r"\$\{\{ matrix.compilation == 'aot' && (\d+) \|\| (\d+) \}\}",
+            job['timeout-minutes'])
+        self.assertIsNotNone(budgets, 'Store builds must use separate AOT and JIT budgets')
+        aot_minutes, jit_minutes = map(int, budgets.groups())
+        nightly_aot = workflow('nightly-container-build.yml')['jobs']['build-aot']
+        self.assertEqual(aot_minutes, int(nightly_aot['timeout-minutes']))
+        self.assertGreater(aot_minutes, jit_minutes)
+        self.assertGreater(jit_minutes, 0)
+        self.assertLessEqual(jit_minutes, 30)
         build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
         self.assertIn('matrix.profile', build['with']['cache-to'])
         self.assertIn('matrix.compilation', build['with']['cache-to'])

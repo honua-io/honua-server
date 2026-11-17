@@ -16,20 +16,27 @@ namespace Honua.Server.Tests.Features.Infrastructure.Hosting;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
-public sealed class ServerInstanceHeaderIntegrationTests : IAsyncLifetime
+public sealed class ServerInstanceHeaderIntegrationTests(ServerInstanceHeaderIntegrationTests.InstanceHost host)
+    : IClassFixture<ServerInstanceHeaderIntegrationTests.InstanceHost>
 {
     private const string InstanceId = "it-replica-a";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) =>
-            config.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                [ServerInstanceIdentity.ConfigurationKey] = InstanceId
-            })));
+    private readonly WebAppFixture _fixture = host.Fixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    // One host for the class: every case reads the instance identity the host was started with.
+    public sealed class InstanceHost : IAsyncLifetime
+    {
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) =>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [ServerInstanceIdentity.ConfigurationKey] = InstanceId
+                })));
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /healthz/live")]

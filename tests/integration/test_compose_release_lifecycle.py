@@ -83,6 +83,26 @@ def wait_for_proposal(base, key, proposal, expected, proposer_key, session, time
     raise AssertionError(f"operation did not reach its terminal state (REST={status}, MCP={resource_status})")
 
 
+def wait_until_ready(port, failure, timeout=120):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz/ready", timeout=5) as ready:
+                if ready.status == 200:
+                    return
+        except (urllib.error.URLError, TimeoutError):
+            # A restarting dependency can temporarily refuse readiness; the deadline bounds retries.
+            pass
+        time.sleep(2)
+    raise AssertionError(failure)
+
+
+def expected_failure(reason):
+    # Imported here: the polling unit test loads this module without pytest installed.
+    import pytest
+    pytest.xfail(reason)
+
+
 def wait_for_approval(base, key, proposal, timeout=30):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -218,18 +238,7 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         human.approve(failed_proposal)
         wait_for_proposal(base, key, failed_proposal, "failed", proposer_key, session)
         dc("start", "redis")
-        deadline = time.monotonic() + 120
-        while time.monotonic() < deadline:
-            try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz/ready", timeout=5) as ready:
-                    if ready.status == 200:
-                        break
-            except (urllib.error.URLError, TimeoutError):
-                # Redis recovery can temporarily refuse readiness; the deadline bounds retries.
-                pass
-            time.sleep(2)
-        else:
-            raise AssertionError("serving stack did not recover after Redis restarted")
+        wait_until_ready(port, "serving stack did not recover after its stopped dependency restarted")
         convergence = call("honua_propose_platform_release_convergence", {
             "reason": "candidate convergence after failed operation"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
@@ -244,6 +253,17 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         assert detail["status"].lower() == "awaitingapproval"
         human.approve(proposal)
+        # The candidate carries a reviewed contract migration and the proposal's approval does
+        # not carry its nonce, so the executor must refuse and leave the prior serving.
+        # Remove this block when that approval exists: the rest of this journey is its
+        # acceptance test, and it fails here as soon as the convergence succeeds.
+        refused = wait_for_proposal(base, key, proposal, "failed", proposer_key, session)
+        assert refused["resolutionReason"] == "contract-approval-required"
+        assert image_id() == prior_id and schema() == 140
+        assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
+        wait_until_ready(port, "prior did not keep serving after the contract refusal")
+        assert_live_revision(prior_id, True)
+        expected_failure("an approved convergence cannot yet cross a reviewed contract migration")
         first_convergence = wait_for_proposal(base, key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
         assert_live_revision(candidate, False)

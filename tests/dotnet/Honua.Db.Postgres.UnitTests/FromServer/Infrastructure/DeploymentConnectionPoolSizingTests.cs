@@ -25,12 +25,12 @@ public sealed class DeploymentConnectionPoolSizingTests
     }
 
     [UnitTheory]
-    [InlineData("db.t4g.small", 1, 72)]
-    [InlineData("db.t4g.small", 2, 36)]
-    [InlineData("db.t4g.small", 10, 7)]
-    [InlineData("db.t4g.medium", 2, 72)]
+    [InlineData("db.t4g.small", 1, 71)]
+    [InlineData("db.t4g.small", 2, 35)]
+    [InlineData("db.t4g.small", 10, 6)]
+    [InlineData("db.t4g.medium", 2, 71)]
     [InlineData("db.m7g.large", 10, 28)]
-    [InlineData(null, 2, 20)]
+    [InlineData(null, 2, 19)]
     public void ResolveConnectionLimits_TasksAndInstanceClass_SizesEachPoolFromTheDatabaseLimit(
         string? instanceClass, int tasks, int expectedMaxPool)
     {
@@ -43,17 +43,41 @@ public sealed class DeploymentConnectionPoolSizingTests
         limits.MaxConcurrentQueries.Should().Be(expectedMaxPool);
     }
 
-    [UnitTest]
-    public void ResolveConnectionLimits_TwoTasksOnSmallestLaunchStackDatabase_StayWithinItsConnectionLimit()
+    [UnitTheory]
+    [InlineData(1, 100, 39)]
+    [InlineData(2, 100, 19)]
+    [InlineData(12, 100, 2)]
+    [InlineData(26, 100, 1)]
+    [InlineData(1, 4, 1)]
+    public void ResolveConnectionLimits_AutoSizedPoolsAndListeners_PreserveMaintenanceHeadroom(
+        int tasks, int databaseMax, int expectedPoolMax)
     {
         var configuration = Configuration(
-            (DeploymentTaskCount.MaxTasksKey, "2"),
-            (DeploymentConnectionPoolSizing.DatabaseInstanceClassKey, "db.t4g.small"));
+            (DeploymentTaskCount.MaxTasksKey, tasks.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            (DeploymentConnectionPoolSizing.DatabaseMaxConnectionsKey, databaseMax.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
         var limits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
 
-        var heldAtPeak = 2 * DeploymentConnectionPoolSizing.PoolsPerTask * limits.MaxConnectionPoolSize;
-        heldAtPeak.Should().BeLessThanOrEqualTo(DeploymentConnectionPoolSizing.ResolveMaxConnections(configuration)!.Value);
+        limits.MaxConnectionPoolSize.Should().Be(expectedPoolMax);
+        limits.MinConnectionPoolSize.Should().BeLessThanOrEqualTo(expectedPoolMax);
+        var configuredPeak = (long)tasks * (2 * limits.MaxConnectionPoolSize + 1);
+        configuredPeak.Should().BeLessThanOrEqualTo(databaseMax * 4L / 5);
+    }
+
+    [UnitTheory]
+    [InlineData(27, 100)]
+    [InlineData(1, 3)]
+    [InlineData(int.MaxValue, int.MaxValue)]
+    public void ResolveConnectionLimits_InsufficientAutomaticBudget_RefusesBeforeOpeningPools(int tasks, int databaseMax)
+    {
+        var configuration = Configuration(
+            (DeploymentTaskCount.MaxTasksKey, tasks.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            (DeploymentConnectionPoolSizing.DatabaseMaxConnectionsKey, databaseMax.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+        var resolve = () => PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
+
+        resolve.Should().Throw<InvalidOperationException>()
+            .WithMessage("*database connection budget cannot support*Reduce Deployment:MaxTasks*");
     }
 
     [UnitTest]
@@ -79,7 +103,7 @@ public sealed class DeploymentConnectionPoolSizingTests
             (DeploymentConnectionPoolSizing.DatabaseInstanceClassKey, "db.t4g.small"),
             (DeploymentConnectionPoolSizing.DatabaseMaxConnectionsKey, "1000")));
 
-        limits.MaxConnectionPoolSize.Should().Be(200);
+        limits.MaxConnectionPoolSize.Should().Be(199);
     }
 
     [UnitTest]

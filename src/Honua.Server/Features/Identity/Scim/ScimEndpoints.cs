@@ -56,7 +56,8 @@ internal static partial class ScimEndpoints
         var users = endpoints.MapGroup("/scim/v2/Users")
             .WithTags("Identity", "SCIM")
             .AllowAnonymous()
-            .AddEndpointFilter(RequireScimEntitlement);
+            .AddEndpointFilter(RequireScimEntitlement)
+            .AddEndpointFilter(RequireScimAuthentication);
 
         users.MapGet("/", HandleListUsers).WithDisplayName("SCIM List Users");
         users.MapPost("/", HandleCreateUser).WithDisplayName("SCIM Create User");
@@ -68,7 +69,8 @@ internal static partial class ScimEndpoints
         var groups = endpoints.MapGroup("/scim/v2/Groups")
             .WithTags("Identity", "SCIM")
             .AllowAnonymous()
-            .AddEndpointFilter(RequireScimEntitlement);
+            .AddEndpointFilter(RequireScimEntitlement)
+            .AddEndpointFilter(RequireScimAuthentication);
 
         groups.MapGet("/", HandleListGroups).WithDisplayName("SCIM List Groups");
         groups.MapPost("/", HandleCreateGroup).WithDisplayName("SCIM Create Group");
@@ -82,7 +84,8 @@ internal static partial class ScimEndpoints
         var discovery = endpoints.MapGroup("/scim/v2")
             .WithTags("Identity", "SCIM")
             .AllowAnonymous()
-            .AddEndpointFilter(RequireScimEntitlement);
+            .AddEndpointFilter(RequireScimEntitlement)
+            .AddEndpointFilter(RequireScimAuthentication);
 
         discovery.MapGet("/ServiceProviderConfig", HandleServiceProviderConfig).WithDisplayName("SCIM ServiceProviderConfig");
         discovery.MapGet("/ResourceTypes", HandleResourceTypes).WithDisplayName("SCIM ResourceTypes");
