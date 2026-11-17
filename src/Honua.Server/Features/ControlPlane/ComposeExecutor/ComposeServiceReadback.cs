@@ -12,7 +12,7 @@ internal sealed partial class ComposeProjectController
 {
     private const int ObservationProbeTimeoutSeconds = 10;
 
-    private string[] ManagedServices() => new[] { _options.ServiceName, _options.PostgresService, _options.RedisService }
+    private string[] ManagedServices() => new[] { _options.ServiceName, _options.PostgresService }
         .Where(service => !string.IsNullOrWhiteSpace(service)).ToArray();
 
     // Observation success describes collection, independently of the service's health. In
@@ -111,11 +111,6 @@ internal sealed partial class ComposeProjectController
                     ["exec", "-T", "--", service, "psql", "-U", _options.DatabaseUser, "-d", _options.DatabaseName,
                         "-tA", "-v", "ON_ERROR_STOP=1", "-c", "SELECT PostGIS_Version()"], cancellationToken).ConfigureAwait(false);
                 ready = result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.Stdout);
-            }
-            else if (running && service == _options.RedisService)
-            {
-                var ping = await ComposeAsync(TimeSpan.FromSeconds(5), ["exec", "-T", "--", service, "redis-cli", "ping"], cancellationToken).ConfigureAwait(false);
-                ready = ping.ExitCode == 0 && ping.Stdout.Trim() == "PONG";
             }
 
             services.Add(new()

@@ -22,34 +22,33 @@ class TerminalRecoveryTests(unittest.TestCase):
                                     text=True, check=False)
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
 
-    def test_fence_requires_matching_durable_success_and_withheld_success_reply(self):
+    def test_fence_requires_matching_durable_success_and_unreleased_hold(self):
         terminal = {"operationId": "job-1", "status": 3, "claimedBy": "worker-1",
-                    "version": 5, "updatedAt": "2026-11-16T12:00:00Z",
-                    "claimedAt": "2026-11-16T11:55:00.123456+00:00",
-                    "completedAt": "2026-11-16T12:00:00Z", "artifactReferences": ["descriptor"]}
-        fence = {"operationId": "job-1", "workerId": "worker-1",
-                 "barrier": "terminal-committed-registration-pending", "postgres_command_tag": "UPDATE 1",
-                 "postgres_transaction_status": "I", "reply_forwarded": False,
-                 "terminal_record": {**terminal, "version": 4,
-                                     "claimedAt": "2026-11-16T13:55:00.1234560+02:00",
-                                     "updatedAt": "2026-11-16T11:59:59.999999Z",
-                                     "completedAt": "2026-11-16T11:59:59.999999Z"}}
-        variants = [({}, True), ({"reply_forwarded": True}, False), ({"postgres_command_tag": "UPDATE 0"}, False),
-                    ({"postgres_transaction_status": "T"}, False),
-                    ({"operationId": "other"}, False), ({"workerId": "other"}, False),
-                    ({"terminal_record": {**terminal, "version": 6}}, False),
-                    ({"terminal_record": {**terminal, "status": 2}}, False),
-                    ({"terminal_record": {**fence["terminal_record"], "claimedAt": "2026-11-16T11:54:00Z"}}, False),
-                    ({"terminal_record": {**fence["terminal_record"], "extraMetadata": "changed"}}, False)]
-        for mutation, expected in variants:
-            with self.subTest(mutation=mutation):
+                    "version": 5, "artifactReferences": ["descriptor"]}
+        fence = {"operationId": "job-1", "workerId": "worker-1", "workerProcessId": 7,
+                 "barrier": "terminal-committed-registration-pending"}
+        variants = [({}, False, True), ({}, True, False), ({"workerProcessId": None}, False, False),
+                    ({"operationId": "other"}, False, False), ({"workerId": "other"}, False, False),
+                    ({"barrier": "claimed"}, False, False)]
+        for mutation, released, expected in variants:
+            with self.subTest(mutation=mutation, released=released):
                 script = functions(RECOVERY, "terminal_assert_fence") + r'''
-job=job-1; before_record="$TERMINAL"; ready="$FENCE"
+barrier_directory() { printf '%s/%s' "$PWD" "$1"; }
+job=job-1; before_record="$TERMINAL"; ready="$FENCE"; mkdir -p job-1
+if [[ "$RELEASED" == yes ]]; then echo '{}' > job-1/terminal-committed-registration-pending.released.json; fi
 result=0; terminal_assert_fence || result=$?
 if [[ "$EXPECTED" == pass ]]; then [[ "$result" == 0 ]]; else [[ "$result" != 0 ]]; fi
 '''
                 self.run_shell(script, TERMINAL=json.dumps(terminal), FENCE=json.dumps({**fence, **mutation}),
-                               EXPECTED="pass" if expected else "fail")
+                               RELEASED="yes" if released else "no", EXPECTED="pass" if expected else "fail")
+        for status in (2, 4):
+            with self.subTest(status=status):
+                script = functions(RECOVERY, "terminal_assert_fence") + r'''
+barrier_directory() { printf '%s/%s' "$PWD" "$1"; }
+job=job-1; before_record="$TERMINAL"; ready="$FENCE"
+! terminal_assert_fence
+'''
+                self.run_shell(script, TERMINAL=json.dumps({**terminal, "status": status}), FENCE=json.dumps(fence))
 
     def test_worker_death_requires_sigkill_not_stop_or_oom(self):
         for running, exit_code, oom, expected in (

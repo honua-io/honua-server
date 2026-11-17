@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit.Receipts;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.ControlPlane;
@@ -58,8 +59,7 @@ internal sealed class PostgresIdempotencyReservationStore(JobStoreDatabase datab
     }
 
     public Task<bool> CompleteAsync(
-        IdempotencyReservation reservation,
-        ReadOnlyMemory<byte> receipt,
+        IdempotencyReceiptWrite write,
         TimeSpan receiptRetention,
         CancellationToken cancellationToken)
         => database.ExecuteAsync(
@@ -76,8 +76,8 @@ internal sealed class PostgresIdempotencyReservationStore(JobStoreDatabase datab
                        OR (held.reservation_token = @reservation_token AND held.receipt IS NULL)
                     """,
                     connection);
-                AddReservationParameters(command, reservation, receiptRetention);
-                command.Parameters.Add(new NpgsqlParameter("receipt", NpgsqlDbType.Bytea) { Value = receipt });
+                AddReservationParameters(command, write.Reservation, receiptRetention);
+                command.Parameters.Add(new NpgsqlParameter("receipt", NpgsqlDbType.Bytea) { Value = write.Payload });
                 return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
             },
             StatementRepeat.NotAfterSend,

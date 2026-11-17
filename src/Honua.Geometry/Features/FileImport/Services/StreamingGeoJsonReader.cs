@@ -66,6 +66,7 @@ internal sealed partial class StreamingGeoJsonReader
     {
         var buffer = MemoryPool.RentByteArray(_limits.StreamBufferSize);
         byte[]? leftoverBuffer = null;
+        byte[]? combinedBuffer = null;
         var leftoverLength = 0;
         try
         {
@@ -85,12 +86,8 @@ internal sealed partial class StreamingGeoJsonReader
 
                 // Read more data from stream
                 var bytesRead = await stream.ReadAsync(buffer, cancellationToken);
-                if (bytesRead == 0 && leftoverLength == 0)
-                    break;
-
                 // Combine leftover with new data
                 ReadOnlyMemory<byte> data;
-                byte[]? combinedBuffer = null;
                 if (leftoverLength == 0)
                 {
                     data = buffer.AsMemory(0, bytesRead);
@@ -114,7 +111,11 @@ internal sealed partial class StreamingGeoJsonReader
                         leftoverBuffer ??= MemoryPool.RentByteArray(3);
                         data.Span.CopyTo(leftoverBuffer);
                         leftoverLength = data.Length;
-                        if (combinedBuffer != null) MemoryPool.ReturnByteArray(combinedBuffer, clearArray: false);
+                        if (combinedBuffer != null)
+                        {
+                            MemoryPool.ReturnByteArray(combinedBuffer, clearArray: false);
+                            combinedBuffer = null;
+                        }
                         continue;
                     }
                     firstChunk = false;
@@ -126,7 +127,8 @@ internal sealed partial class StreamingGeoJsonReader
                 }
 
                 // Process chunk synchronously to avoid ref struct issues
-                var (features, newState, newProcessingState, consumed) = ProcessJsonChunk(data, jsonReaderState, processingState);
+                var (features, newState, newProcessingState, consumed) = ProcessJsonChunk(
+                    data, new Utf8JsonReader(data.Span, bytesRead == 0, jsonReaderState), processingState);
 
                 jsonReaderState = newState;
                 processingState = newProcessingState;
@@ -187,6 +189,7 @@ internal sealed partial class StreamingGeoJsonReader
                 if (combinedBuffer != null)
                 {
                     MemoryPool.ReturnByteArray(combinedBuffer, clearArray: false);
+                    combinedBuffer = null;
                 }
 
                 if (_limits.MaxFeaturesPerFile > 0 && featureCount >= _limits.MaxFeaturesPerFile)
@@ -194,8 +197,7 @@ internal sealed partial class StreamingGeoJsonReader
                     break;
                 }
 
-                // If we've finished processing the features array, break
-                if (processingState.IsComplete)
+                if (processingState.IsComplete || bytesRead == 0)
                 {
                     break;
                 }
@@ -204,6 +206,11 @@ internal sealed partial class StreamingGeoJsonReader
         finally
         {
             MemoryPool.ReturnByteArray(buffer);
+            if (combinedBuffer != null)
+            {
+                MemoryPool.ReturnByteArray(combinedBuffer, clearArray: false);
+            }
+
             if (leftoverBuffer != null)
             {
                 MemoryPool.ReturnByteArray(leftoverBuffer, clearArray: false);
@@ -396,11 +403,10 @@ internal sealed partial class StreamingGeoJsonReader
 
     private (List<IFeature> features, JsonReaderState newState, JsonProcessingState newProcessingState, int consumed) ProcessJsonChunk(
         ReadOnlyMemory<byte> data,
-        JsonReaderState jsonReaderState,
+        Utf8JsonReader reader,
         JsonProcessingState processingState)
     {
         var features = new List<IFeature>();
-        var reader = new Utf8JsonReader(data.Span, false, jsonReaderState);
         var lastConsumed = 0;
 
         var inFeaturesArray = processingState.InFeaturesArray;

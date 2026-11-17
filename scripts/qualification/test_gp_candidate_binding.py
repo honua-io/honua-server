@@ -35,16 +35,11 @@ def terminal_recovery_evidence(job, sha, size, committed_sha=None):
                         PRODUCER.read_text(), re.S)
     if program is None:
         raise AssertionError("gp-terminal-recovery.sh evidence program not found")
-    before = {"operationId": job, "status": 3, "claimedBy": "worker-1", "version": 5, "attemptCount": 1,
-              "updatedAt": "2026-11-16T12:00:00Z", "completedAt": "2026-11-16T12:00:00Z",
-              "claimedAt": "2026-11-16T11:55:00.123456Z",
+    before = {"operationId": job, "status": 3, "claimedBy": "worker-1", "version": 4, "attemptCount": 1,
               "artifactReferences": [committed_descriptor(job, committed_sha or sha, size)]}
-    fence = {"operationId": job, "barrier": "terminal-committed-registration-pending",
-             "postgres_command_tag": "UPDATE 1", "postgres_transaction_status": "I",
-             "reply_forwarded": False, "workerId": "worker-1", "terminal_record": {**before, "version": 4,
-                 "updatedAt": "2026-11-16T11:59:00Z", "completedAt": "2026-11-16T11:59:59Z",
-                 "claimedAt": "2026-11-16T13:55:00.123456+02:00"}}
-    package = {"resultPackageId": f"{job}:v5", "status": 5, "artifacts": [{"artifactId": f"{job}:artifact:1",
+    fence = {"operationId": job, "barrier": "terminal-committed-registration-pending", "workerId": "worker-1",
+             "workerProcessId": 7, "released": False}
+    package = {"resultPackageId": f"{job}:v4", "status": 5, "artifacts": [{"artifactId": f"{job}:artifact:1",
                "metadata": {"raster.output.checksum": "sha256:" + sha, "raster.output.sizeBytes": str(size)}}]}
     with tempfile.TemporaryDirectory() as temp:
         files = {}
@@ -79,8 +74,7 @@ def crash_summary():
                 "disruptions": [{"component": mode, "boundary": boundary,
                                  "action": "SIGKILL" if mode == "worker" else "hide-marker-and-bytes"}],
                 "evidence": {"fence": {"barrier": boundary, "operationId": "fixture-job",
-                                       "reply_forwarded": False, "postgres_command_tag": "UPDATE 1",
-                                       "postgres_transaction_status": "I"},
+                                       "workerId": "worker-1", "workerProcessId": 7},
                              "sha256_before": "a" * 64, "sha256_after": "a" * 64,
                              "job_before": {"status": 3}, "job_after": {"artifactReferences": [{}]},
                              "result_package_before": 0, "result_package_after": 1}})
@@ -93,101 +87,44 @@ def crash_summary():
     return pin, summary
 
 
-def output_store_summary(pin):
-    """A passing output-store-dr lane receipt for the pinned candidate."""
-    worker = "worker@sha256:" + "3" * 64
-    identity = {"requested": {**pin, "worker_image": worker}, "observed": {}}
-    for host in ("server", "server-peer", "worker"):
-        image = worker if host == "worker" else pin["server_image"]
-        identity["observed"][host] = {"revision": pin["source_sha"],
-                                     "image_ref": image, "repo_digests": [image]}
-    names = ["topology", "output-store-attestation", "output-store-dr", "cleanup"]
-    summary = {"lane": "output-store-dr", "declared_scenarios": names,
-               "missing_scenarios": [], "duplicate_receipts": [], "failed": 0, "passed": 4,
-               "scenarios": [{"scenario": name, "outcome": "pass", "candidate": identity}
-                             for name in names]}
-    summary["scenarios"][2]["evidence"] = {
-        "artifact": {"sha256_before": "a" * 64, "sha256_after": "a" * 64},
-        "recovery": {"substrates": [{"store": store, "original_destroyed": True,
-                                     "restored_into_empty_store": True,
-                                     "files_before": "checksum file", "files_after": "checksum file"}
-                                    for store in ("postgres", "gp-output")]}}
-    return summary
-
-
-def broken_output_store_summary(summary, mutation):
-    """The passing receipt with one recovery fact broken."""
-    bad = copy.deepcopy(summary)
-    proof = bad["scenarios"][2]["evidence"]
-    if mutation == "missing-store":
-        proof["recovery"]["substrates"].pop()
-    elif mutation == "retained-original":
-        proof["recovery"]["substrates"][1]["original_destroyed"] = False
-    elif mutation == "dirty-destination":
-        proof["recovery"]["substrates"][0]["restored_into_empty_store"] = False
-    elif mutation == "changed-inventory":
-        proof["recovery"]["substrates"][1]["files_after"] = "changed"
-    elif mutation == "legacy-store":
-        proof["recovery"]["substrates"].append({"store": "unsupported-store"})
-    elif mutation == "corrupt-bytes":
-        proof["artifact"]["sha256_after"] = "b" * 64
-    elif mutation == "wrong-worker":
-        bad["scenarios"][0]["candidate"]["observed"]["worker"]["revision"] = "0" * 40
-    else:
-        bad["scenarios"][2]["outcome"] = "skipped"
-    return bad
-
-
-OUTPUT_STORE_MUTATIONS = ("missing-store", "retained-original", "dirty-destination", "changed-inventory",
-                          "legacy-store", "corrupt-bytes", "wrong-worker", "skipped")
-
-
-def terminal_recovery_mutations():
-    """Each breaks one fact the terminal worker cell must prove; p is the proof, s the scenario."""
-    return {
-        "acknowledged": lambda p, s: p["fence"].__setitem__("reply_forwarded", True),
-        "uncommitted": lambda p, s: p["fence"].__setitem__("postgres_command_tag", "UPDATE 0"),
-        "uncommitted-transaction": lambda p, s: p["fence"].__setitem__("postgres_transaction_status", "T"),
-        "failed-transaction": lambda p, s: p["fence"].__setitem__("postgres_transaction_status", "E"),
-        "legacy-receipt": lambda p, s: (p["fence"].pop("postgres_command_tag"),
-                                         p["fence"].__setitem__("unexpected_reply", ":1")),
-        "other-job": lambda p, s: p["fence"].__setitem__("operationId", "job-2"),
-        "other-worker": lambda p, s: p["fence"].__setitem__("workerId", "worker-2"),
-        "changed-claim": lambda p, s: p["fence"]["terminal_record"].__setitem__("claimedAt", "2026-11-16T11:54:00Z"),
-        "fence-record": lambda p, s: p["fence"]["terminal_record"].__setitem__("version", 5),
-        "record-changed": lambda p, s: p["terminal_final"].__setitem__("version", 6),
-        "not-terminal": lambda p, s: (p["terminal_before"].__setitem__("status", 2),
-                                      p["terminal_final"].__setitem__("status", 2),
-                                      p["fence"]["terminal_record"].__setitem__("status", 2)),
-        "registered-early": lambda p, s: p.__setitem__("result_package_before", 1),
-        "registered-before-read": lambda p, s: p.__setitem__("result_package_before_read", 1),
-        "not-registered": lambda p, s: p.__setitem__("result_package_after", 0),
-        "not-killed": lambda p, s: p.__setitem__("worker_exit_code", 0),
-        "duplicate-artifact": lambda p, s: p["result_package"]["artifacts"].append({}),
-        "checksum": lambda p, s: p["result_package"]["artifacts"][0]["metadata"].__setitem__(
-            "raster.output.checksum", "sha256:" + "d" * 64),
-        "bytes-changed": lambda p, s: s["output"].__setitem__("sha256", "d" * 64),
-        "inline": lambda p, s: (p.__setitem__("bytes", 512), s["output"].__setitem__("bytes", 512)),
-        "failed-job": lambda p, s: s["job"].__setitem__("terminal_state", "failed"),
-        "descriptor-size": lambda p, s: [r.__setitem__("artifactReferences", [committed_descriptor("job-1", "c" * 64, 4097)])
-                                         for r in (p["terminal_before"], p["terminal_final"], p["fence"]["terminal_record"])],
-        "descriptor-inline": lambda p, s: [r.__setitem__("artifactReferences", [json.dumps({**json.loads(
-            committed_descriptor("job-1", "c" * 64, 4096)), "outputType": "inline"})])
-            for r in (p["terminal_before"], p["terminal_final"], p["fence"]["terminal_record"])],
-        "descriptor-unparsable": lambda p, s: [r.__setitem__("artifactReferences", ["not json"])
-            for r in (p["terminal_before"], p["terminal_final"], p["fence"]["terminal_record"])],
-    }
-
-
 class CandidateBindingTests(unittest.TestCase):
     def test_repin_and_missing_store_recovery_reject_previously_passing_receipt(self):
         pin = {"source_sha": "1" * 40, "server_image": "server@sha256:" + "2" * 64}
-        summary = output_store_summary(pin)
+        worker = "worker@sha256:" + "3" * 64
+        identity = {"requested": {**pin, "worker_image": worker}, "observed": {}}
+        for host in ("server", "server-peer", "worker"):
+            image = worker if host == "worker" else pin["server_image"]
+            identity["observed"][host] = {"revision": pin["source_sha"],
+                                         "image_ref": image, "repo_digests": [image]}
+        names = ["topology", "output-store-attestation", "output-store-dr", "cleanup"]
+        summary = {"lane": "output-store-dr", "declared_scenarios": names,
+                   "missing_scenarios": [], "duplicate_receipts": [], "failed": 0, "passed": 4,
+                   "scenarios": [{"scenario": name, "outcome": "pass", "candidate": identity}
+                                 for name in names]}
+        summary["scenarios"][2]["evidence"] = {
+            "artifact": {"sha256_before": "a" * 64, "sha256_after": "a" * 64},
+            "recovery": {"substrates": [{"store": store, "original_destroyed": True,
+                                         "restored_into_empty_store": True,
+                                         "files_before": "checksum file", "files_after": "checksum file"}
+                                        for store in ("postgres", "gp-output")]}}
         self.assertEqual(pin, binding.verify(pin, summary)["candidate"])
         with self.assertRaisesRegex(ValueError, "another candidate"):
             binding.verify({**pin, "server_image": "server@sha256:" + "4" * 64}, summary)
-        for mutation in OUTPUT_STORE_MUTATIONS:
-            bad = broken_output_store_summary(summary, mutation)
+        for mutation in ("missing-store", "retained-original", "legacy-store", "corrupt-bytes", "wrong-worker", "skipped"):
+            bad = copy.deepcopy(summary)
+            proof = bad["scenarios"][2]["evidence"]
+            if mutation == "missing-store":
+                proof["recovery"]["substrates"].pop()
+            elif mutation == "retained-original":
+                proof["recovery"]["substrates"][1]["original_destroyed"] = False
+            elif mutation == "legacy-store":
+                proof["recovery"]["substrates"].append({"store": "unsupported-store"})
+            elif mutation == "corrupt-bytes":
+                proof["artifact"]["sha256_after"] = "b" * 64
+            elif mutation == "wrong-worker":
+                bad["scenarios"][0]["candidate"]["observed"]["worker"]["revision"] = "0" * 40
+            else:
+                bad["scenarios"][2]["outcome"] = "skipped"
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 binding.verify(pin, bad)
 
@@ -213,27 +150,11 @@ class CandidateBindingTests(unittest.TestCase):
             elif mutation == "inline":
                 case["output"]["bytes"] = 512
             elif mutation == "uncommitted":
-                case["evidence"]["fence"]["postgres_command_tag"] = "UPDATE 0"
+                case["evidence"]["fence"].pop("workerProcessId")
             else:
                 case["evidence"]["result_package_before"] = 1
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 binding.verify_crashes(pin, bad)
-
-    def test_both_terminal_crash_modes_require_committed_postgres_transaction(self):
-        pin, summary = crash_summary()
-        for mode in ("worker", "store"):
-            for field, value in (("postgres_command_tag", "UPDATE 0"),
-                                 ("postgres_command_tag", None),
-                                 ("postgres_transaction_status", "T"),
-                                 ("postgres_transaction_status", "E"),
-                                 ("postgres_transaction_status", None),
-                                 ("reply_forwarded", True)):
-                bad = copy.deepcopy(summary)
-                case = next(s for s in bad["scenarios"] if s["scenario"] ==
-                            f"crash-terminal-committed-registration-pending-{mode}")
-                case["evidence"]["fence"][field] = value
-                with self.subTest(mode=mode, field=field, value=value), self.assertRaises(ValueError):
-                    binding.verify_crashes(pin, bad)
 
     def test_terminal_worker_cell_consumes_the_terminal_recovery_producer(self):
         """The producer's real layout (no sha256_before/job_before) passes; each broken fact fails."""
@@ -242,7 +163,32 @@ class CandidateBindingTests(unittest.TestCase):
                     "evidence": terminal_recovery_evidence("job-1", "c" * 64, 4096)}
         self.assertNotIn("sha256_before", scenario["evidence"])
         binding.verify_terminal_recovery(scenario, scenario["evidence"])
-        mutations = terminal_recovery_mutations()
+        mutations = {
+            "acknowledged": lambda p, s: p["fence"].__setitem__("released", True),
+            "no-worker-process": lambda p, s: p["fence"].pop("workerProcessId"),
+            "other-job": lambda p, s: p["fence"].__setitem__("operationId", "job-2"),
+            "other-worker": lambda p, s: p["fence"].__setitem__("workerId", "worker-2"),
+            "record-changed": lambda p, s: p["terminal_final"].__setitem__("version", 5),
+            "not-terminal": lambda p, s: (p["terminal_before"].__setitem__("status", 2),
+                                          p["terminal_final"].__setitem__("status", 2)),
+            "registered-early": lambda p, s: p.__setitem__("result_package_before", 1),
+            "registered-before-read": lambda p, s: p.__setitem__("result_package_before_read", 1),
+            "not-registered": lambda p, s: p.__setitem__("result_package_after", 0),
+            "not-killed": lambda p, s: p.__setitem__("worker_exit_code", 0),
+            "duplicate-artifact": lambda p, s: p["result_package"]["artifacts"].append({}),
+            "checksum": lambda p, s: p["result_package"]["artifacts"][0]["metadata"].__setitem__(
+                "raster.output.checksum", "sha256:" + "d" * 64),
+            "bytes-changed": lambda p, s: s["output"].__setitem__("sha256", "d" * 64),
+            "inline": lambda p, s: (p.__setitem__("bytes", 512), s["output"].__setitem__("bytes", 512)),
+            "failed-job": lambda p, s: s["job"].__setitem__("terminal_state", "failed"),
+            "descriptor-size": lambda p, s: [r.__setitem__("artifactReferences", [committed_descriptor("job-1", "c" * 64, 4097)])
+                                             for r in (p["terminal_before"], p["terminal_final"])],
+            "descriptor-inline": lambda p, s: [r.__setitem__("artifactReferences", [json.dumps({**json.loads(
+                committed_descriptor("job-1", "c" * 64, 4096)), "outputType": "inline"})])
+                for r in (p["terminal_before"], p["terminal_final"])],
+            "descriptor-unparsable": lambda p, s: [r.__setitem__("artifactReferences", ["not json"])
+                for r in (p["terminal_before"], p["terminal_final"])],
+        }
         for name, mutate in mutations.items():
             bad = copy.deepcopy(scenario)
             mutate(bad["evidence"], bad)

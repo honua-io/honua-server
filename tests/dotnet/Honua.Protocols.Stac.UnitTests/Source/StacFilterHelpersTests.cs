@@ -326,6 +326,55 @@ public sealed class StacFilterHelpersTests
         filter!.Value.PropertyName.Should().Be("timestamp");
     }
 
+    [UnitTest]
+    public void ParseDatetime_WithMalformedFractionalSeconds_RejectsInstantAndIntervalBounds()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        foreach (var fraction in new[] { "", "1234567garbage", "12345678e2", "1234567  ", "1234567.8", "1234567\u0668" })
+        {
+            foreach (var zone in new[] { "Z", "+01:00", "-01:00" })
+            {
+                var instant = $"2026-11-16T12:00:00.{fraction}{zone}";
+                foreach (var datetime in new[] { instant, $"{instant}/..", $"../{instant}" })
+                {
+                    StacFilterHelpers.IsValidDatetimeSyntax(datetime).Should().BeFalse("'{0}' has a malformed fraction", datetime);
+                    StacFilterHelpers.ParseDatetime(datetime, resource).Should().BeNull("'{0}' has a malformed fraction", datetime);
+                }
+            }
+        }
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithValidFractionalSeconds_PreservesSupportedPrecisionAndIntervals()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        foreach (var fraction in new[] { "1", "1234567", "123456789" })
+        {
+            foreach (var zone in new[] { "Z", "+01:00", "-01:00", "z" })
+            {
+                var instant = $"2026-11-16T12:00:00.{fraction}{zone}";
+                var supportedFraction = fraction[..Math.Min(fraction.Length, 7)];
+                var expected = DateTimeOffset.Parse($"2026-11-16T12:00:00.{supportedFraction}{zone}", CultureInfo.InvariantCulture);
+                foreach (var datetime in new[] { instant, $"{instant}/..", $"../{instant}", $"{instant}/{instant}" })
+                {
+                    StacFilterHelpers.IsValidDatetimeSyntax(datetime).Should().BeTrue("'{0}' has a valid fraction", datetime);
+                    var filter = StacFilterHelpers.ParseDatetime(datetime, resource);
+                    filter.Should().NotBeNull();
+                    filter!.Value.Start.Should().Be(datetime.StartsWith("../", StringComparison.Ordinal) ? null : expected);
+                    filter.Value.End.Should().Be(datetime.EndsWith("/..", StringComparison.Ordinal) ? null : expected);
+                }
+            }
+        }
+    }
+
     private static async Task<StacV2Lookups.ResolvedStacPublication[]> ResolveVisiblePublicationsAsync(
         MetadataV2Graph graph)
     {

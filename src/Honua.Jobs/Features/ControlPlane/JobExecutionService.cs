@@ -953,6 +953,14 @@ internal sealed partial class JobExecutionService(
             }
         }
 
+        // The terminal record is durable here, but queue cleanup, log retention and terminal
+        // callbacks have not run. Crash qualification arms this fence to kill the worker in
+        // exactly that committed-but-unacknowledged window; ordinary runs never wait.
+        await ExecutionQualificationBarrier.WaitIfArmedAsync(
+                "terminal-committed-registration-pending",
+                cancellationToken)
+            .ConfigureAwait(false);
+
         // Expiry may race a store that commits before observing its cancellation token.
         // The caller's expiry handler replaces that attempt's late success with failure.
         cancellationToken.ThrowIfCancellationRequested();

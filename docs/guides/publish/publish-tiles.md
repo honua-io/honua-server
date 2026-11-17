@@ -14,13 +14,15 @@ You'll have a published layer serving vector tiles, a seeded tile cache, and (op
 
 Every published layer serves Mapbox Vector Tiles immediately; tile operations jobs manage the cache and produce PMTiles archives asynchronously.
 
+The examples use `layerId: 1`; replace it with your published layer's numeric id everywhere, including URL paths. Replace `{serviceId}` with the id of the service that contains that layer. The example bounding box must also overlap your data.
+
 ## Steps
 
 ### 1. Fetch tile metadata and a tile
 
-Open `http://localhost:8080/tiles/{layerId}/tile.json` in a browser, substituting the layer id.
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), request `GET /tiles/{layerId}/tile.json`, substituting the layer id. Tile reads require authentication by default: opening this URL in an unauthenticated browser returns `401`. For browser use, supply credentials with read access on both metadata and tile requests, or explicitly enable anonymous reads for the service; see [authentication](../secure/authentication.md).
 
-The TileJSON `tiles` template is `/tiles/{layerId}/{z}/{x}/{y}.mvt`. Point any MapLibre vector source at the `tile.json` URL; the source-layer name is `layer`.
+The TileJSON `tiles` template is `/tiles/{layerId}/{z}/{x}/{y}.mvt`. Point a [MapLibre vector source](../connect/maplibre-web-maps.md) at the `tile.json` URL with the same read credentials; the source-layer name is `layer`.
 
 ### 2. Seed the cache
 
@@ -39,6 +41,8 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 
 `operation` is one of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `paired-publish`; scope with `serviceId`, `layerId`, `minZoom`/`maxZoom`, `bbox`, `tileMatrixSetId` (currently `WebMercatorQuad`), and the `maxTiles` safety cap. `warm` re-primes existing cache entries on the same request shape.
 
+`maxTiles` defaults to **500** and is clamped to the server's configured limit. Set it explicitly when increasing coverage. If the requested pyramid exceeds the cap, only the selected tiles are processed; archive/publish jobs report a truncation warning and the archive header describes the selected coverage. Inspect job warnings before treating an archive as complete.
+
 ### 3. Poll the job
 
 Run `GET /api/v1/admin/tile-operations/jobs/{jobId}`, substituting the id from step 2.
@@ -55,11 +59,13 @@ Run `POST /api/v1/admin/tile-operations/jobs` with `{"operation":"invalidate","l
 
 ## Verify
 
-Load `/tiles/{layerId}/12/655/1583.mvt` through MapLibre or another MVT client. Browser developer tools should report:
+Load a tile overlapping your layer through MapLibre or another MVT client, using the read credentials from step 1. For example, `/tiles/{layerId}/12/655/1583.mvt` only contains data if your layer has features at those coordinates. A tile containing features returns:
 
 ```text
 200 application/vnd.mapbox-vector-tile
 ```
+
+An empty tile returns `204 No Content` with no tile content type. This is expected outside the data's coverage; navigate to your features to verify rendering.
 
 ## PMTiles
 
@@ -72,15 +78,16 @@ Two job operations produce PMTiles v3 archives from a layer's tiles:
 | Audience | Operator download | Browser MapLibre/PMTiles clients |
 | Partial tile failures | Tolerated | Job fails before upload (never overwrites a good artifact) |
 
-Run `POST /api/v1/admin/tile-operations/jobs` with this body:
+Run `POST /api/v1/admin/tile-operations/jobs` with this body, substituting your service and layer ids. This small initial pyramid has at most 341 tiles, below the explicit 500-tile cap:
 
 ```json
 {
   "operation": "publish",
-  "serviceId": "default",
+  "serviceId": "{serviceId}",
   "layerId": 1,
   "minZoom": 0,
-  "maxZoom": 12
+  "maxZoom": 4,
+  "maxTiles": 500
 }
 ```
 
@@ -88,11 +95,13 @@ Archives never carry fields hidden on the layer (`hidden: true` in its field con
 
 Both operations accept an optional `tileCompression`: `none` (default) or `gzip`. Gzip tiles are typically about half the size of uncompressed MVT tiles and suit archives served by HTTP range requests, where transport compression does not apply. PMTiles clients read the compression from the archive header and decode gzip tiles natively. The job status reports the value written as `TileCompression`.
 
-The completed job status carries `publishedArtifact` with `accessUrl`, `bounds`, `minZoom`/`maxZoom`, and storage details — everything a client needs for a `pmtiles://{accessUrl}` MapLibre source. Re-publishing the same `(serviceId, layerId, tileMatrixSetId)` overwrites the artifact.
+The completed job status carries `publishedArtifact` with `accessUrl`, `bounds`, `minZoom`/`maxZoom`, and storage details. With a browser-accessible URL, use `pmtiles://{accessUrl}` for a MapLibre source. Re-publishing the same `(serviceId, layerId, tileMatrixSetId)` overwrites the artifact.
+
+The quickstart's local file storage can successfully archive and publish. With the default `SignedUrl` strategy, however, `downloadUrl` and `publishedArtifact.accessUrl` are `file:///...` paths on the server (inside the container when containerized). They are not browser download URLs. A reported URL expiry does not make a local file URL signed or remotely accessible. Use a delivery strategy that exposes the artifact over HTTP before connecting a browser client.
 
 How clients reach the artifact is set by `FileStorage:PMTilesPublish:UrlStrategy`:
 
-- `SignedUrl` (default) — presigned/SAS URL, lifetime from `SignedUrlLifetime` (S3 IAM presign caps at 7 days); re-run publish to rotate the URL.
+- `SignedUrl` (default) — presigned/SAS URL for object storage, lifetime from `SignedUrlLifetime` (S3 IAM presign caps at 7 days); re-run publish to rotate the URL. Local storage returns a server-local file URL instead.
 - `PublicUrl` — `{PublicBucketBaseUrl}/{objectKey}` for publicly readable buckets; never expires.
 - `RangeProxy` — server-relative `/api/v1/tiles/pmtiles/{artifactId}`; range reads proxy through Honua, no storage credentials reach the browser.
 
@@ -133,10 +142,11 @@ Every read requires export access to the current source layer and checks its ten
 
 - **Tile request returns `404`** — the layer id is unknown or disabled; check `GET /api/v1/admin/connections/{id}/layers`.
 - **Seed job completes with warnings** — individual tile failures are listed per `z/x/y` in the job progress; commonly bad geometries at high zooms.
-- **`archive`/`publish` fails with a cloud storage error** — both operations require configured cloud file storage; `archiveFileId`/`downloadUrl` are null without it.
+- **Tile request returns `401`** — supply read credentials on TileJSON and tile requests, or explicitly configure anonymous reads for the service.
+- **`archive`/`publish` fails with a storage configuration error** — both operations require a file storage provider. Local storage is supported; object storage is not required for job completion.
 - **`Publish aborted before upload: N tiles failed during generation.`** — fix the failing tiles (or narrow `bbox`/zoom range) and re-run; the previous artifact is untouched.
 - **Range proxy returns `404` for an archive that exists in the bucket** — the archive has no `layerId` metadata (it was uploaded directly, not by a publish job) and `AllowAnonymousUnboundArchives` is off, or its source layer was retired or rebound. The server logs which one at Information level.
-- **Browser cannot read the PMTiles artifact** — usually missing bucket CORS headers for `Range` requests, or an expired `SignedUrl`; re-publish or switch strategy.
+- **Browser cannot read the PMTiles artifact** — check `accessUrl` first: a `file:///...` URL points to server-local storage and needs HTTP delivery. For object storage, check bucket CORS headers for `Range` requests and `SignedUrl` expiry; re-publish or switch strategy.
 
 More help: [troubleshooting](../deploy/troubleshooting.md).
 

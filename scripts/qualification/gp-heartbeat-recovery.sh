@@ -95,7 +95,6 @@ PY
 
 run_heartbeat_recovery_case() {
   local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification/heartbeat-original
-  local -x HONUA_GP_WORKER_POSTGRES_HOST=postgres
   local recovery_deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-900}))
   local original_record winner_record original_worker recovery_worker barrier before_bytes after_bytes
   local peer_name="${project_name}-heartbeat-peer" resume_at stable_until record original_log
