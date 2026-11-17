@@ -26,6 +26,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly SemaphoreSlim _routabilityRefreshGate = new(1, 1);
     private int _activeSessionCount;
+    private int _anonymousClientSessionCount;
     private readonly object _admissionLock = new();
     private readonly Dictionary<string, int> _partitionSessionCounts = new(StringComparer.Ordinal);
     private long _slowConsumerDrops;
@@ -54,6 +55,19 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public int SessionCount => Volatile.Read(ref _activeSessionCount);
 
     public int MaxConcurrentSessions => _options.Value.MaxConcurrentSessions;
+
+    public int MaxNodeSessions => Math.Max(_options.Value.MaxNodeSessions, _options.Value.MaxConcurrentSessions);
+
+    public int AnonymousClientSessionCount
+    {
+        get
+        {
+            lock (_admissionLock)
+            {
+                return _anonymousClientSessionCount;
+            }
+        }
+    }
 
     public int MaximumPartitionSessionCount
     {
@@ -222,7 +236,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     {
         admissionPartition ??= "anonymous";
         var opts = _options.Value;
-        if (!TryReserveSessionSlot(admissionPartition, opts.MaxConcurrentSessions))
+        if (!TryReserveSessionSlot(admissionPartition, opts))
         {
             _metrics.RecordSessionRejected();
             return null;
@@ -250,17 +264,26 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return new FeatureStreamSession(id, channel.Reader, this, cts.Token);
     }
 
-    private bool TryReserveSessionSlot(string partition, int maxConcurrentSessions)
+    internal const string AnonymousClientPartitionPrefix = "anonymous:";
+
+    private bool TryReserveSessionSlot(string partition, FeatureStreamOptions opts)
     {
         lock (_admissionLock)
         {
             var count = _partitionSessionCounts.GetValueOrDefault(partition);
-            if (count >= maxConcurrentSessions)
+            var anonymousClient = partition.StartsWith(AnonymousClientPartitionPrefix, StringComparison.Ordinal);
+            var partitionLimit = anonymousClient
+                ? Math.Min(opts.MaxAnonymousSessionsPerClient, opts.MaxConcurrentSessions)
+                : opts.MaxConcurrentSessions;
+            if (count >= partitionLimit
+                || _activeSessionCount >= MaxNodeSessions
+                || (anonymousClient && _anonymousClientSessionCount >= opts.MaxConcurrentSessions))
             {
                 return false;
             }
 
             _partitionSessionCounts[partition] = count + 1;
+            _anonymousClientSessionCount += anonymousClient ? 1 : 0;
             Interlocked.Increment(ref _activeSessionCount);
             return true;
         }
@@ -284,6 +307,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 _partitionSessionCounts[partition] = count - 1;
             }
 
+            _anonymousClientSessionCount -= partition.StartsWith(AnonymousClientPartitionPrefix, StringComparison.Ordinal) ? 1 : 0;
             Interlocked.Decrement(ref _activeSessionCount);
         }
     }
@@ -732,6 +756,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             _partitionSessionCounts.Clear();
             Interlocked.Exchange(ref _activeSessionCount, 0);
+            _anonymousClientSessionCount = 0;
         }
     }
 
