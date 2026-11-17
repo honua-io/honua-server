@@ -66,7 +66,8 @@ def _json_with_headers(target: str, headers: dict | None = None) -> tuple[dict, 
     import json
 
     with gdalkit.session(headers):
-        path = "/vsicurl?use_head=no&url=" + target
+        # The url option ends at the next "&", so escape the target's own query separators.
+        path = "/vsicurl?use_head=no&url=" + target.replace("?", "%3F").replace("&", "%26").replace("=", "%3D")
         handle = gdal.VSIFOpenL(path, "rb")
         expect(handle is not None, f"GDAL could not open {target}")
         chunks = []
