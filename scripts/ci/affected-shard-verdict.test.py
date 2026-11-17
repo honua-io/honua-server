@@ -169,6 +169,32 @@ class AffectedShardVerdictTests(unittest.TestCase):
             message.startswith("HONUA_AFFECTED_SHARD_REPORT_ONLY ") for message in messages(green)
         ))
 
+    def test_split_lanes_fail_when_either_job_fails_and_ignore_an_empty_lane(self) -> None:
+        combine = verdict.combine_shard_results
+        self.assertEqual(combine("success", "skipped"), "success")
+        self.assertEqual(combine("skipped", "success"), "success")
+        self.assertEqual(combine("success", "success"), "success")
+        self.assertEqual(combine("skipped", "skipped"), "skipped")
+        for failed in ("failure", "cancelled"):
+            self.assertEqual(combine(failed, "success"), "failure")
+            self.assertEqual(combine("success", failed), "failure")
+            self.assertEqual(combine(failed, "skipped"), "failure")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_passing_receipt(root)
+            completed = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/ci/affected-shard-verdict.py"),
+                 "--timings", str(root), "--receipt", str(root / "verdict.json")],
+                check=False, capture_output=True, text=True,
+                env={**os.environ, "MODE": "enforce", "SELECT_RESULT": "success",
+                     "SELECT_SKIP": "false", "SELECT_REASON": "targeted", "SELECT_COUNT": "1",
+                     "SELECT_MATRIX": json.dumps([{"shard_name": "Reporting"}]),
+                     "SELECT_DEFERRED": "[]", "SERVER_SHARDS_RESULT": "success",
+                     "HELD_SHARDS_RESULT": "failure", "GITHUB_STEP_SUMMARY": str(root / "s.md")},
+            )
+            self.assertEqual(completed.returncode, 1, completed.stdout)
+            self.assertEqual(json.loads((root / "verdict.json").read_text())["verdict"], "shard_jobs_not_successful")
+
     def test_green_receipts_cannot_override_a_failed_or_cancelled_job(self) -> None:
         for result in ("failure", "cancelled", "skipped", ""):
             with self.subTest(result=result):

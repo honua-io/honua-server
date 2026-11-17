@@ -31,7 +31,6 @@
       "tests/dotnet/Honua.Server.Tests/Features/Admin/",
       "tests/dotnet/Honua.Server.Tests/Features/Alerts/",
       "tests/dotnet/Honua.Server.Tests/Features/Console/",
-      "tests/dotnet/RedisCollection.cs",
       "tests/dotnet/Shared/AlertUnitSupport/",
       "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",

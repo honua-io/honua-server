@@ -208,7 +208,7 @@ class PullRequestLoadTests(unittest.TestCase):
                     self.assertEqual(jobs[key]["if"], DRAFT_GUARD)
                 else:
                     self.assertEqual(jobs[key]["needs"], "runner-select")
-        for key in ("affected-shards-select", "affected-shard", "affected-shards"):
+        for key in ("affected-shards-select", "affected-shard", "affected-shard-held", "affected-shards"):
             self.assertIn("!github.event.pull_request.draft", jobs[key]["if"])
         self.assertEqual(jobs["required"]["if"], "always()")
         self.assertIn("!github.event.pull_request.draft", jobs["runner-select"].get("if", ""))

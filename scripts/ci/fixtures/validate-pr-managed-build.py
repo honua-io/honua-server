@@ -59,15 +59,20 @@ class PrManagedBuildTests(unittest.TestCase):
         producer = jobs['server-test-producer']
         self.assertIn('managed-sdk', producer['outputs']['managed-sdk-version'])
         self.assertIn('managed-producer', producer['outputs']['producer-attempt'])
-        steps = jobs['affected-shard']['steps']
-        plan = next(step for step in steps if step.get('id') == 'consumer-plan')
-        sdk = next(step for step in steps if step.get('name') == 'Setup .NET')
-        consume = next(step for step in steps if step.get('id') == 'managed-consumer')
-        self.assertLess(steps.index(plan), steps.index(sdk))
-        self.assertIn('partition-managed-producer.py consumer', plan['run'])
-        self.assertIn('needs.server-test-producer.outputs.managed-sdk-version', sdk['with']['artifact-sdk-version'])
-        self.assertIn('needs.server-test-producer.outputs.producer-attempt', consume['with']['producer-attempt'])
-        self.assertIn("outputs.producer != 'none'", consume['with']['enabled'])
+        for name, producer_gate in (
+            ('affected-shard', "outputs.producer == 'server'"),
+            ('affected-shard-held', "outputs.producer != 'none'"),
+        ):
+            steps = jobs[name]['steps']
+            plan = next(step for step in steps if step.get('id') == 'consumer-plan')
+            sdk = next(step for step in steps if step.get('name') == 'Setup .NET')
+            consume = next(step for step in steps if step.get('id') == 'managed-consumer')
+            self.assertLess(steps.index(plan), steps.index(sdk))
+            self.assertIn('partition-managed-producer.py consumer', plan['run'])
+            self.assertIn('needs.server-test-producer.outputs.managed-sdk-version', sdk['with']['artifact-sdk-version'])
+            self.assertIn('needs.server-test-producer.outputs.producer-attempt', consume['with']['producer-attempt'])
+            self.assertIn(producer_gate, consume['with']['enabled'])
+        self.assertTrue(jobs['affected-shard-held']['strategy']['fail-fast'])
 
     def test_required_results_fail_closed(self):
         required = job('required')
@@ -247,10 +252,15 @@ class PrManagedBuildTests(unittest.TestCase):
         for command in commands:
             self.assertIn('--no-build',command)
             self.assertIn('--no-restore',command)
-        shard=job('affected-shard')
-        self.assertIn('needs: [affected-shards-select, pr-gate, server-test-producer]',shard)
-        self.assertIn('needs.pr-gate.outputs.producer-attempt', shard)
-        self.assertIn('needs.server-test-producer.outputs.producer-attempt', shard)
+        early = job('affected-shard')
+        held = job('affected-shard-held')
+        self.assertIn('needs: [affected-shards-select, server-test-producer, runner-select]', early)
+        self.assertNotIn('needs.pr-gate.outputs', early)
+        self.assertIn('needs.server-test-producer.outputs.producer-attempt', early)
+        self.assertIn('needs.server-test-producer.outputs.managed-sdk-version', early)
+        self.assertIn('needs: [affected-shards-select, pr-gate, server-test-producer]', held)
+        self.assertIn('needs.pr-gate.outputs.producer-attempt', held)
+        self.assertIn('needs.server-test-producer.outputs.producer-attempt', held)
 
 
 if __name__ == '__main__':

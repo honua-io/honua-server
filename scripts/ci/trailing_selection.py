@@ -2,21 +2,72 @@
 """Identify affected trunk runs and cap their heavy-runner use beside PR Gate.
 
 Admission bounds the job count before fanout. Full runs retain their normal
-width; optional affected runs use at most two heavy shard runners.
+width; optional affected runs use at most two heavy shard runners. A selective
+affected run does not schedule the router's no-path-match smoke shards, and it
+skips the Honua.Core package proof when every changed file is docs, workflow,
+CI script or test. The twice-daily full run keeps both.
 """
 import json
+import re
 import sys
 
 # run-name of every trunk-affected.yml dispatch; full CI runs never carry it.
 AFFECTED_RUN_TITLE_PREFIX = "CI affected "
 AFFECTED_WIDTH = 2
+# Anything outside this set can change the packed Core package or the server
+# build it checks. Unknown paths fail closed to running the job.
+CORE_PACKAGE_SKIP = re.compile(
+    r"^(docs/|README\.md$|\.github/workflows/[^/]+\.yml$|scripts/ci/|tests/|test/)"
+)
 
 
 def affected_max_parallel(selected_shards: int) -> int:
     return AFFECTED_WIDTH
 
 
-def main() -> None:
+def affected_run_schedules_shards(reason: str) -> bool:
+    """Selective affected runs skip the no-path-match smoke shards.
+
+    `no_path_match` means no watched source path matched, so the configured
+    default shards do not own the diff. The scheduled full run keeps them.
+    """
+    return reason != "no_path_match"
+
+
+def core_package_required(paths: list[str]) -> bool:
+    """Run the Core package proof unless every path is known not to affect it.
+
+    An empty list is not evidence that the package is unchanged, so it runs.
+    """
+    usable = [path for path in paths if path]
+    if not usable:
+        return True
+    return any(CORE_PACKAGE_SKIP.match(path) is None for path in usable)
+
+
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["--core-package"]:
+        paths = [line.strip() for line in sys.stdin if line.strip()]
+        print("true" if core_package_required(paths) else "false")
+        return
+    if argv[:1] == ["--schedule-shards"]:
+        reason = ""
+        selective = False
+        tokens = iter(argv[1:])
+        for token in tokens:
+            if token == "--reason":
+                reason = next(tokens)
+            elif token == "--selective":
+                selective = next(tokens) == "true"
+            else:
+                raise SystemExit(f"unknown argument {token}")
+        # Non-selective and full runs keep the router result, smoke shards included.
+        scheduled = affected_run_schedules_shards(reason) if selective else True
+        print("true" if scheduled else "false")
+        return
+    if argv:
+        raise SystemExit(f"unknown argument {argv[0]}")
     print(affected_max_parallel(len(json.load(sys.stdin))))
 
 

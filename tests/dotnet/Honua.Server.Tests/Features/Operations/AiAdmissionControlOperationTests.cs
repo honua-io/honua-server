@@ -163,7 +163,7 @@ public sealed partial class AiAdmissionControlOperationTests
         { ScopeGoverned = true, RecognizedScopes = [OperatorScopeCatalog.Read] }).Should().BeTrue();
         OperationScopeMapping.ExceedsScopeAuthority(request, new OperationPolicyContext
         { ScopeGoverned = true, RecognizedScopes = [OperatorScopeCatalog.Update] }).Should().BeFalse();
-        OperationsServiceCollectionExtensions.RedisOffDirectOperationIds.Should().Contain(id);
+        OperationsServiceCollectionExtensions.NonDurableDirectOperationIds.Should().Contain(id);
     }
 
     private static OperationRequest Request(IReadOnlyDictionary<string, string?>? parameters = null)
