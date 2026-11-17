@@ -69,10 +69,14 @@ public sealed partial class GrpcFeatureServiceTests
         var storage = Substitute.For<ICloudFileStorage>();
         storage.GetPresignedUrlAsync("private/two", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns("file:///private/two");
+        var metadata = Substitute.For<IAttachmentNativeMetadataStore>();
+        metadata.GetNativeMetadataAsync(Arg.Any<AttachmentNativeMetadataQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, AttachmentNativeMetadata>());
         using var context = CreateCallContext(null, null, null, services =>
         {
             services.AddSingleton(store);
             services.AddSingleton(storage);
+            services.AddSingleton(metadata);
             services.AddDataProtection().UseEphemeralDataProtectionProvider();
         });
         var request = context.GetHttpContext().Request;

@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Metadata;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 

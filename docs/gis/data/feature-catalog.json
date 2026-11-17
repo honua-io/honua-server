@@ -5429,6 +5429,20 @@
       "capability": "analytics.reporting"
     },
     {
+      "id": "get-api-v1-attachments-downloads-token",
+      "route": "/api/v1/attachments/downloads/{token}",
+      "method": "GET",
+      "family": "gRPC",
+      "protocol": "http-route",
+      "code_location": "src/Honua.Server/Features/Protocols/Grpc/AttachmentDownloadLinks.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Grpc.GrpcIntegrationTests.GetAttachmentUrl_LocalStorage_ReturnsAServerLinkThatDownloadsOnlyThatAttachment"
+      ],
+      "proof_ledger_surface": "grpc-attachment-download-link",
+      "maturity": "implemented",
+      "capability": "serve.grpc"
+    },
+    {
       "id": "get-api-v1-capabilities-manifest",
       "route": "/api/v1/capabilities/manifest",
       "method": "GET",

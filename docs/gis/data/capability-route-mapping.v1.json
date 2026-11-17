@@ -402,6 +402,12 @@
       "capability": "ops.health"
     },
     {
+      "family": "gRPC",
+      "routePrefix": "/api/v1/attachments/downloads/",
+      "method": "GET",
+      "capability": "serve.grpc"
+    },
+    {
       "family": "HTTP+gRPC",
       "routePrefix": "/v1/spec/apply",
       "capability": "ai.spec-apply"

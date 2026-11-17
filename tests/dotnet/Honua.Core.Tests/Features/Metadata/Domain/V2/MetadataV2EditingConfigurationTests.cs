@@ -137,12 +137,19 @@ public sealed class MetadataV2EditingConfigurationTests
         var graph = CreateGraph();
         var result = Apply(graph, new MetadataV2EditingPatch
         {
-            CreatorField = "", EditorField = "editor", CreatedAtField = "objectid", UpdatedAtField = "EDITED_ON"
+            CreatorField = "",
+            EditorField = "editor",
+            CreatedAtField = "objectid",
+            UpdatedAtField = "EDITED_ON"
         });
         var editing = result.Resources[0].Editing!;
         editing.Should().BeEquivalentTo(new MetadataV2ObjectEditing
         {
-            CanModify = false, CreatorField = null, EditorField = "Editor", CreatedAtField = "objectid", UpdatedAtField = "edited_on"
+            CanModify = false,
+            CreatorField = null,
+            EditorField = "Editor",
+            CreatedAtField = "objectid",
+            UpdatedAtField = "edited_on"
         });
         result.Publications.Should().Equal(graph.Publications);
         Apply(result, new MetadataV2EditingPatch { SupportsAttachments = true }).Resources[0].Editing!.EditorField.Should().Be("Editor");

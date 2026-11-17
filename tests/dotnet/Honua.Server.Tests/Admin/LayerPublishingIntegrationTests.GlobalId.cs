@@ -64,9 +64,10 @@ public sealed partial class LayerPublishingIntegrationTests
         var published = await PublishLayerAsync(ManagedGidPublishRequest(globalIdField: null));
         _layerId = published.StorageLayerId;
 
+        using var content = JsonContent.Create(new { editing = new { globalIdField = "gid" } });
         var response = await _client.PutAsync(
             $"/api/v1/admin/services/{_serviceName}/layers/{_layerId.Value}/metadata",
-            JsonContent.Create(new { editing = new { globalIdField = "gid" } }));
+            content);
 
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Conflict, $"response: {payload}");
