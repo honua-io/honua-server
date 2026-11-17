@@ -112,7 +112,7 @@ public sealed class PublishedMetadataProjection(
             Publisher = record.Publisher ?? contact?.Organization,
             ContactPoint = contact is null
                 ? null
-                : new MetadataV2ContactPoint { Name = contact.Name, Email = contact.Email, Url = contact.Url },
+                : new MetadataV2ContactPoint { Name = contact.Name, Email = contact.Email, Url = contact.Url, Telephone = contact.Telephone },
             Contacts = record.Contacts,
             Links = record.Links,
         };

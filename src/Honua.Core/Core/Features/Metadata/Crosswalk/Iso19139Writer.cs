@@ -81,6 +81,8 @@ public static class Iso19139Writer
 
     private static XElement Responsible(IsoXml iso, XName property, MetadataV2ResponsibleParty party)
     {
+        var phone = party.Telephone is null ? null : new XElement(Gmd + "phone", new XElement(Gmd + "CI_Telephone",
+            new XElement(Gmd + "voice", iso.Text(party.Telephone))));
         var email = party.Email is null ? null : new XElement(Gmd + "address", new XElement(Gmd + "CI_Address",
             new XElement(Gmd + "electronicMailAddress", iso.Text(party.Email))));
         var online = party.Url is null ? null : new XElement(Gmd + "onlineResource", new XElement(Gmd + "CI_OnlineResource",
@@ -88,7 +90,7 @@ public static class Iso19139Writer
         return new XElement(property, new XElement(Gmd + "CI_ResponsibleParty",
             party.Name is null ? null : new XElement(Gmd + "individualName", iso.Text(party.Name)),
             party.Organization is null ? null : new XElement(Gmd + "organisationName", iso.Text(party.Organization)),
-            email is null && online is null ? null : new XElement(Gmd + "contactInfo", new XElement(Gmd + "CI_Contact", email, online)),
+            phone is null && email is null && online is null ? null : new XElement(Gmd + "contactInfo", new XElement(Gmd + "CI_Contact", phone, email, online)),
             new XElement(Gmd + "role", iso.Code(Gmd + "CI_RoleCode", party.Role))));
     }
 

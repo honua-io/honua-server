@@ -93,6 +93,7 @@ public static class DcatApWriter
                 Add(card, "vcard:organization-name", contact.Name is null ? null : contact.Organization);
                 Add(card, "vcard:hasEmail", contact.Email is null ? null : Reference("mailto:" + contact.Email));
                 Add(card, "vcard:hasURL", contact.Url is null ? null : Reference(contact.Url));
+                Add(card, "vcard:hasTelephone", contact.Telephone is null ? null : Reference(TelephoneIri(contact.Telephone)));
                 return (JsonNode?)card;
             })
             .ToArray();
@@ -151,6 +152,9 @@ public static class DcatApWriter
     private static JsonObject Statement(string type, string label) => new() { ["@type"] = type, ["rdfs:label"] = label };
 
     private static JsonObject Reference(string iri) => new() { ["@id"] = iri };
+
+    private static string TelephoneIri(string telephone) =>
+        "tel:" + string.Concat(telephone.Where(character => !char.IsWhiteSpace(character)));
 
     private static JsonObject Typed(string value, string type) => new() { ["@value"] = value, ["@type"] = type };
 

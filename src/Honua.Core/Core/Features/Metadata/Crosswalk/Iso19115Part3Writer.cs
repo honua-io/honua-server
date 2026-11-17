@@ -91,9 +91,11 @@ public static class Iso19115Part3Writer
 
     private static XElement Responsibility(IsoXml iso, XName property, MetadataV2ResponsibleParty party)
     {
-        var contact = party.Email is null && party.Url is null
+        var contact = party.Telephone is null && party.Email is null && party.Url is null
             ? null
             : new XElement(Cit + "contactInfo", new XElement(Cit + "CI_Contact",
+                party.Telephone is null ? null : new XElement(Cit + "phone", new XElement(Cit + "CI_Telephone",
+                    new XElement(Cit + "number", iso.Text(party.Telephone)))),
                 party.Email is null ? null : new XElement(Cit + "address", new XElement(Cit + "CI_Address",
                     new XElement(Cit + "electronicMailAddress", iso.Text(party.Email)))),
                 party.Url is null ? null : new XElement(Cit + "onlineResource", OnlineResource(iso, new(party.Url)))));

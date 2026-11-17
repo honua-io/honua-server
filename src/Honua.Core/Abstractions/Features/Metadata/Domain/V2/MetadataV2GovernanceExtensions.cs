@@ -51,7 +51,8 @@ public static class MetadataV2GovernanceExtensions
         => contactPoint is not null &&
            (!string.IsNullOrWhiteSpace(contactPoint.Name) ||
             !string.IsNullOrWhiteSpace(contactPoint.Email) ||
-            !string.IsNullOrWhiteSpace(contactPoint.Url));
+            !string.IsNullOrWhiteSpace(contactPoint.Url) ||
+            !string.IsNullOrWhiteSpace(contactPoint.Telephone));
 
     private static IReadOnlyList<MetadataV2Link> MergeLinks(
         IReadOnlyList<MetadataV2Link> resourceLinks,

@@ -24,6 +24,9 @@ public sealed record MetadataV2ResponsibleParty : ExtensibleJsonRecord
 
     [JsonPropertyName("url")]
     public string? Url { get; init; }
+
+    [JsonPropertyName("telephone")]
+    public string? Telephone { get; init; }
 }
 
 public sealed record MetadataV2SpatialResolution : ExtensibleJsonRecord
@@ -106,6 +109,7 @@ internal static class MetadataV2DescriptiveValidation
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].organization", contact.Organization);
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].email", contact.Email);
             RequireStatement(errors, $"{ownerLabel} metadata.contacts[].url", contact.Url);
+            MetadataV2GraphValidator.ValidateContactTelephone(errors, $"{ownerLabel} metadata.contacts[].telephone", contact.Telephone);
             MetadataV2GraphValidator.ValidateContactEmail(errors, $"{ownerLabel} metadata.contacts[].email", contact.Email);
             MetadataV2GraphValidator.ValidateContactUrl(errors, $"{ownerLabel} metadata.contacts[].url", contact.Url);
         }

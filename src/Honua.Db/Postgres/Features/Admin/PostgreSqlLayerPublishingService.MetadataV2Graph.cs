@@ -1762,9 +1762,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Name = RestoreMutationValue(current.Name, previousValue.Name, persistedValue.Name),
             Email = RestoreMutationValue(current.Email, previousValue.Email, persistedValue.Email),
             Url = RestoreMutationValue(current.Url, previousValue.Url, persistedValue.Url),
+            Telephone = RestoreMutationValue(current.Telephone, previousValue.Telephone, persistedValue.Telephone),
         };
 
-        return previous is null && restored.AdditionalProperties is not { Count: > 0 } && restored.Name is null && restored.Email is null && restored.Url is null
+        return previous is null && restored.AdditionalProperties is not { Count: > 0 } &&
+               restored.Name is null && restored.Email is null && restored.Url is null && restored.Telephone is null
             ? null
             : restored;
     }

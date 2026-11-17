@@ -755,6 +755,7 @@ public static class MetadataV2GraphValidator
         }
         ValidateContactEmail(errors, $"{ownerLabel} metadata.contactPoint.email", metadata.ContactPoint?.Email);
         ValidateContactUrl(errors, $"{ownerLabel} metadata.contactPoint.url", metadata.ContactPoint?.Url);
+        ValidateContactTelephone(errors, $"{ownerLabel} metadata.contactPoint.telephone", metadata.ContactPoint?.Telephone);
 
         for (var i = 0; i < metadata.Links.Count; i++)
         {
@@ -818,6 +819,15 @@ public static class MetadataV2GraphValidator
             string.Equals(parsedUrl.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) &&
            !string.IsNullOrWhiteSpace(parsedUrl.Host) &&
            string.IsNullOrEmpty(parsedUrl.UserInfo);
+
+    internal static void ValidateContactTelephone(List<string> errors, string field, string? telephone)
+    {
+        if (telephone is not null &&
+            (string.IsNullOrWhiteSpace(telephone) || !IsValidGovernanceText(telephone, MetadataV2ContactPoint.MaxTelephoneLength)))
+        {
+            errors.Add($"{field} must be non-empty, not exceed {MetadataV2ContactPoint.MaxTelephoneLength} characters and contain no control characters.");
+        }
+    }
 
     private static bool IsValidGovernanceText(string? value, int maxLength)
         => value is null || (value.Length <= maxLength && !value.Any(char.IsControl));

@@ -55,6 +55,8 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
             .Select(element => element.Value).Should().Contain("roads & bridges");
         document.Descendants().Where(element => element.Name.LocalName is "ElectronicMailAddress" or "ContactElectronicMailAddress")
             .Select(element => element.Value).Should().Contain("ops@example.com");
+        document.Descendants().Where(element => element.Name.LocalName is "Voice" or "ContactVoiceTelephone")
+            .Select(element => element.Value).Should().Contain("+1 555 0100");
         identification.Elements().Single(element => element.Name.LocalName == "Fees").Value.Should().Be("USD 5 per request");
         identification.Elements().Single(element => element.Name.LocalName == "AccessConstraints").Value.Should().Be("Registered users");
         text.Should().NotContain("1 Honua Way").And.NotContain("support@honua.local").And.NotContain("Honua Support");
@@ -267,7 +269,10 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
             Keywords = ["roads & bridges"],
             License = "MIT",
             Publisher = "Survey agency",
-            ContactPoint = new MetadataV2ContactPoint { Name = "Operations", Email = "ops@example.com", Url = "https://example.com/contact" }
+            ContactPoint = new MetadataV2ContactPoint
+            {
+                Name = "Operations", Email = "ops@example.com", Url = "https://example.com/contact", Telephone = "+1 555 0100"
+            }
         };
         var graph = snapshot.Graph with
         {
