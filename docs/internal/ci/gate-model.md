@@ -2311,3 +2311,39 @@ The class stays in Server Features Admin Operations Endpoints on selected PR
 runs and full trunk runs. No workflow, shard filter, required check, aggregate
 dependency or runner count changes. Build-host class 39/39 identical passing
 cases, 391 to 88-92 seconds; existing partition 122/122, 981 to 628 seconds.
+
+### Cross-protocol permission matrix write hosts
+
+`CrossProtocolPermissionMatrixTests` write cases (the FeatureServer/gRPC
+ApplyEdits parity theory and the FeatureServer, OData and OGC Features write
+cases) differ only in the grants that the test role holds. They now share one
+application per write catalog (FeatureServer/OData/OGC and gRPC) instead of
+starting one per case: each case replaces the role's grants before its request,
+cases of a class run one at a time, permissions are resolved per request, and
+the test feature store is created per request, so no grant or edit outlives its
+case. Role names, payloads and every status assertion are unchanged; the two
+layer-scoped read cases keep their own applications.
+
+The class stays split across Security and Authorization 1 and 7 on selected PR
+runs and full trunk runs. No workflow, shard filter, required check, aggregate
+dependency or runner count changes. Build-host class 59/59 identical passing
+cases, 349.6 to 31.7-32.5 seconds.
+
+### Capability manifest and deployment profile host reuse
+
+`CapabilityManifestEndpointTests` cases that need only the default manifest
+configuration now use the class's default application, and cases that differ
+only by the manifest source (registry) or the experimental switch share one
+application per configuration, started on first use. Those cases only read the
+manifest. Cases with any other configuration or replaced services keep their own
+applications. `DeploymentCapabilityProfileIntegrationTests` folder-path cases
+share one application per configured capability (8 cases, 4 applications) with
+the test service moved into the "Public" folder once at start.
+
+The classes stay in Server Features Capabilities on selected PR runs and full
+trunk runs. No workflow, shard filter, required check, aggregate dependency or
+runner count changes. Build-host namespace 100/100 identical passing cases in one
+job: wall 633 to 419-438 seconds; DeploymentCapabilityProfileIntegrationTests
+80.4 to 43.0-43.7 seconds and CapabilityManifestEndpointTests 305.0 to
+225.7-241.8 seconds, while the unchanged classes in the same job also ran
+148.5 to 102-110 seconds, so part of that difference is host load.
