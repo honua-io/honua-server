@@ -7,9 +7,14 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.GeoServicesSql;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Queries.Filters;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
@@ -35,11 +40,13 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var schema = Identifier(string.IsNullOrWhiteSpace(request.PostgisSchema) ? "public" : request.PostgisSchema!);
-        var table = Identifier(Require(request.PostgisTable, "table"));
-        var geometryColumn = Identifier(string.IsNullOrWhiteSpace(request.PostgisGeometryColumn) ? "geom" : request.PostgisGeometryColumn!);
-        var sql = BuildSql(schema, table, geometryColumn, request, out var parameters);
-        PostgresSqlSafety.ValidateReadOnlySingleStatement(sql);
+        var sourceTable = GetSourceTable(request);
+        FilterExpression? filter = null;
+        if (!string.IsNullOrWhiteSpace(request.Where))
+        {
+            PostgresSqlSafety.ValidateReadOnlySingleStatement("SELECT 1 WHERE (" + request.Where + ")");
+            filter = new GeoServicesSqlParser().Parse(request.Where);
+        }
 
         await using var connection = await OpenConnectionAsync(request, cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -50,6 +57,13 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
             await readOnly.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        SqlFragment? predicate = null;
+        if (filter is not null)
+        {
+            var context = await ReadFilterContextAsync(transaction, request, cancellationToken).ConfigureAwait(false);
+            predicate = new PostgresSqlFilterTranslator(geometryColumn: sourceTable.GeometryColumn).Translate(filter, context);
+        }
+        var (sql, parameters) = BuildSql(sourceTable, request, predicate);
         await using var command = PostgresSqlSafety.CreateReadCommand(connection, sql);
         command.Transaction = transaction;
         foreach (var (name, value) in parameters)
@@ -58,6 +72,14 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
             // number or text). Sending it as a typed text parameter makes a normal
             // timestamptz >= @since comparison fail with operator-not-found.
             command.Parameters.AddWithValue(name, NpgsqlTypes.NpgsqlDbType.Unknown, value);
+        }
+
+        if (predicate is not null)
+        {
+            for (var i = 0; i < predicate.Parameters.Count; i++)
+            {
+                command.Parameters.AddWithValue($"p{i}", predicate.Parameters[i] ?? DBNull.Value);
+            }
         }
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -80,7 +102,7 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
                 }
 
                 var columnName = reader.GetName(i);
-                if (string.Equals(columnName, geometryColumn, StringComparison.Ordinal))
+                if (string.Equals(columnName, sourceTable.GeometryColumn, StringComparison.Ordinal))
                 {
                     // Geometry is already projected through ST_AsGeoJSON. Do not ask
                     // the scalar Npgsql reader to materialize its unsupported native type.
@@ -117,31 +139,63 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
         return connection;
     }
 
-    private static string BuildSql(
-        string schema,
-        string table,
-        string geometryColumn,
+    private sealed record SourceTable(string Schema, string Table, string GeometryColumn);
+
+    private static SourceTable GetSourceTable(DagSourceRequest request) => new(
+        Identifier(string.IsNullOrWhiteSpace(request.PostgisSchema) ? "public" : request.PostgisSchema!),
+        Identifier(Require(request.PostgisTable, "table")),
+        Identifier(string.IsNullOrWhiteSpace(request.PostgisGeometryColumn) ? "geom" : request.PostgisGeometryColumn!));
+
+    private static async Task<FilterTranslationContext> ReadFilterContextAsync(
+        NpgsqlTransaction transaction,
         DagSourceRequest request,
-        out List<(string Name, object Value)> parameters)
+        CancellationToken cancellationToken)
     {
-        parameters = [];
+        var sourceTable = GetSourceTable(request);
+        var srid = request.OutputSrid ?? 4326;
+        await using var command = new NpgsqlCommand("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = @schema AND table_name = @table
+            ORDER BY ordinal_position
+            """, transaction.Connection, transaction);
+        command.Parameters.AddWithValue("schema", sourceTable.Schema);
+        command.Parameters.AddWithValue("table", sourceTable.Table);
+        var fields = new List<FilterTranslationContext.ContextField>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var name = reader.GetString(0);
+            // Physical columns retain their database types; no JSON attribute casts are needed.
+            fields.Add(new(name, MetadataV2FieldType.Unknown,
+                string.Equals(name, sourceTable.GeometryColumn, StringComparison.Ordinal), false));
+        }
+        return FilterTranslationContext.FromColumns(fields, null, sourceTable.GeometryColumn, srid,
+            GeometryType.None, sourceTable.Table, isGeographic: srid == 4326);
+    }
+
+    private static (string Sql, List<(string Name, object Value)> Parameters) BuildSql(
+        SourceTable sourceTable,
+        DagSourceRequest request,
+        SqlFragment? predicate)
+    {
+        List<(string Name, object Value)> parameters = [];
         var sql = new StringBuilder();
 
         // ST_AsGeoJSON projects the geometry server-side so the reader needs no native
         // geometry library; the alias is filtered out of the attribute projection.
         sql.Append("SELECT *, ST_AsGeoJSON(\"")
-            .Append(geometryColumn)
+            .Append(sourceTable.GeometryColumn)
             .Append("\") AS __honua_geom_geojson FROM \"")
-            .Append(schema)
+            .Append(sourceTable.Schema)
             .Append("\".\"")
-            .Append(table)
+            .Append(sourceTable.Table)
             .Append('"');
 
         var predicates = new List<string>(3);
 
-        if (!string.IsNullOrWhiteSpace(request.Where))
+        if (predicate is not null)
         {
-            predicates.Add($"({request.Where})");
+            predicates.Add($"({predicate.Sql})");
         }
 
         if (!string.IsNullOrWhiteSpace(request.Since) && !string.IsNullOrWhiteSpace(request.WatermarkField))
@@ -156,7 +210,7 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
             var (minX, minY, maxX, maxY) = ParseBbox(request.Bbox);
             var srid = request.OutputSrid ?? 4326;
             predicates.Add(
-                $"\"{geometryColumn}\" && ST_MakeEnvelope("
+                $"\"{sourceTable.GeometryColumn}\" && ST_MakeEnvelope("
                 + $"{minX.ToString(CultureInfo.InvariantCulture)},"
                 + $"{minY.ToString(CultureInfo.InvariantCulture)},"
                 + $"{maxX.ToString(CultureInfo.InvariantCulture)},"
@@ -169,7 +223,7 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
             sql.Append(" WHERE ").Append(string.Join(" AND ", predicates));
         }
 
-        return sql.ToString();
+        return (sql.ToString(), parameters);
     }
 
     private static (double MinX, double MinY, double MaxX, double MaxY) ParseBbox(string bbox)
