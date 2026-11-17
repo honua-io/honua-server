@@ -57,17 +57,7 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
             (await CreateTracker().GetCurrentGenerationAsync()).Should().Be(published);
 
             var replicas = new PostgresReplicaRepository(Connections());
-            var replica = await replicas.RegisterAtCurrentGenerationAsync(new ReplicaRecord
-            {
-                ReplicaId = Guid.NewGuid().ToString("N"),
-                ReplicaName = "horizon",
-                ServiceId = "horizon",
-                SyncModel = "perReplica",
-                LayerIds = [layer.LayerId],
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastSyncTime = DateTimeOffset.UtcNow,
-                LastSyncGeneration = 0
-            });
+            var replica = await RegisterReplicaAsync(replicas, layer.LayerId);
             replica.LastSyncGeneration.Should().Be(published);
             (await replicas.GetAsync(replica.ReplicaId))!.Value.LastSyncGeneration.Should().Be(published);
 
@@ -197,6 +187,19 @@ public sealed class FeatureChangeReadHorizonTests(FeatureChangeDatabaseFixture d
             new FeatureChangeLogQuery(committed, null, null, [layer.LayerId], 10), CancellationToken.None);
         resumed.Should().ContainSingle().Which.ObjectId.Should().Be(objectId);
     }
+
+    private static Task<ReplicaRecord> RegisterReplicaAsync(PostgresReplicaRepository replicas, int layerId)
+        => replicas.RegisterAtCurrentGenerationAsync(new ReplicaRecord
+        {
+            ReplicaId = Guid.NewGuid().ToString("N"),
+            ReplicaName = "horizon",
+            ServiceId = "horizon",
+            SyncModel = "perReplica",
+            LayerIds = [layerId],
+            CreatedAt = DateTimeOffset.UtcNow,
+            LastSyncTime = DateTimeOffset.UtcNow,
+            LastSyncGeneration = 0
+        });
 
     private PostgresChangeTracker CreateTracker() => new(Connections());
 

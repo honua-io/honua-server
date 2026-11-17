@@ -37,17 +37,14 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     private const string Tenant = "tenant-a";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private readonly RedisFixture _redis = new();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         HumanApprovalHttpClient.Configure(_fixture, _identityProvider)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
                 builder.UseSetting("Licensing:Mode", "Disabled");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -75,7 +72,6 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
         _identityProvider.Dispose();
     }
 

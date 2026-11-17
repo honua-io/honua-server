@@ -13,7 +13,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
     public async Task CopyContentAsync(AttachmentUploadSessionKey key, Stream destination, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionOwner = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionOwner.RequireNpgsqlConnection();
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var database = new SessionDatabase(connection, transaction, cancellationToken);
         var session = (await ReadSessionAsync(database, key, "FOR SHARE").ConfigureAwait(false)).Session;

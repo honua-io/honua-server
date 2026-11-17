@@ -25,7 +25,7 @@ FeatureChangeEvents__Webhook__Secret=$WEBHOOK_HMAC_SECRET
 FeatureChangeEvents__Webhook__MaxAttempts=5
 ```
 
-The URL must be HTTPS, carry no embedded credentials, and resolve to a public address — private/loopback targets are rejected at startup. Retries use exponential backoff (`InitialBackoffMs`/`MaxBackoffMs`/`RequestTimeoutSeconds` tune it).
+The URL must be HTTPS, carry no embedded credentials, and resolve to a public address. Startup validation rejects malformed URLs, embedded credentials, localhost names and private or reserved IP literals. Delivery resolves hostnames and rejects private, loopback or unresolvable destinations. Retries use exponential backoff (`InitialBackoffMs`/`MaxBackoffMs`/`RequestTimeoutSeconds` tune it).
 
 ### 2. Verify webhook signatures in your receiver
 
@@ -122,7 +122,7 @@ The workflow is three requests, and the third belongs in a `finally` block:
 
 > Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/feature-events/replay?limit=100`.
 
-Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Events are read from the PostgreSQL change log, which every edit writes in its own transaction. A cursor stays resumable for `Realtime__Retention__features` (default 24 hours) and at most `Realtime__ResumeMaxEvents` (default 10000) events behind the newest change.
+Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Events are read from the PostgreSQL change log, which every edit writes in its own transaction. Admin replay reads the retained change rows after the supplied numeric cursor; it does not enforce the live stream resume window. Live SSE and WebSocket subscriptions apply `Realtime__Retention__features` (default 24 hours) and `Realtime__ResumeMaxEvents` (default 10000) when deciding whether to resume or require a new snapshot. Admin recovery cannot retrieve change rows that have been pruned.
 
 ### 8. Manage live sessions (admin)
 
@@ -169,7 +169,7 @@ Then insert a feature in another terminal ([Edit features](edit-features.md)) an
 | `403` before the stream connects | Community edition fails closed; streaming needs Pro or Enterprise. Capabilities reports `enabled=false`. |
 | `401` on an unfiltered stream | All-layer streams require admin. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
 | `503` on connect | The tenant or principal has exhausted `FeatureStreaming__MaxConcurrentSessions`; free sessions in that partition or raise the configured cap applied to every partition. Other tenants and principals retain their own admission capacity. |
-| Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup logs and your receiver's signature validation. |
+| Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup validation and delivery logs, DNS resolution and your receiver's signature validation. |
 | Duplicate events | Expected: delivery is at-least-once (and once per matching subscription). Dedupe on `eventId` (or `(subscriptionId, eventId)` for multi-subscription sockets). |
 | `400` on `mode=snapshot` | Snapshot subscriptions need an explicit layer scope so the baseline read stays bounded. Add `layers=` (or `layerId` on the control frame). |
 | `400` naming a masked field | A `filter` or `datetime` that reads a field hidden from you by a field mask is refused, as it is on a feature query. Remove that field from the filter. If the mask is added while the subscription is open, events stop arriving until you resubscribe without it. |
