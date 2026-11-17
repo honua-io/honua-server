@@ -976,6 +976,8 @@ Normalization consumers preserve a producer’s recorded superseded admission ac
 
 ### Router validator execution
 
+Shard ownership lookups reuse parsed filter syntax in a bounded, process-local cache keyed by the complete filter text. Each method name is still evaluated separately; changed filters are parsed separately and malformed filters still raise errors. The affected-shard fixture retains its complete ownership and mutation checks. This changes CPU work within existing jobs, without changing their selection, runner count, or required aggregate.
+
 `validate-ci-router.sh` runs independent fixtures in a bounded pool (four workers by default; `HONUA_ROUTER_WORKERS=1..8`), records each fixture duration and collects every exit code before returning failure. A failed or missing result cannot produce success. The routing assertions retain their exact cases and shard ownership checks. Cancellation sends TERM to owned worker groups, escalates to KILL after a bounded grace period, and reaps workers before deleting results.
 
 `--changed-only` is a local feedback mode: stdin routing cases skip only when their complete input closure (router, shard map, jq wrapper and validator infrastructure) is unchanged against the merge base with `origin/trunk`. Staged, unstaged, renamed and untracked inputs count. Unknown base or an ambiguous path runs everything; undeclared fixture input closures also run. CI and GitHub Actions ignore the optimization and always run every fixture.
@@ -1115,7 +1117,11 @@ The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Ga
 
 Capability Impact Comparison was retired after being disabled in repository
 settings; its workflow has been removed. Capability Matrix Aggregation and
-OpenAPI Contract Governance retain their generator/contract input filters. The
+OpenAPI Contract Governance retain their generator/contract input filters.
+Aggregation includes `FeatureCatalog.cs`: its licensing constants resolve manifest
+entitlements, so a change to those constants must run the crosswalk check even
+when the registry is unchanged. This admits the existing single aggregation job
+for that input and adds no jobs to unrelated PRs. The
 operation-capability completeness, registry resolution and authored artifact
 checks run in PR Gate's existing architecture job after canonical feature
 catalog regeneration. Capability Matrix Aggregation retains these checks for
