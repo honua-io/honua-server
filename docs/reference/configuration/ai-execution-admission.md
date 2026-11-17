@@ -146,6 +146,7 @@ The following values are synthetic and use an inert `.invalid` route. `TST` is a
     "actor": { "tokens": 1000, "money": 1000 },
     "cohort": { "tokens": 1000, "money": 1000 },
     "workflow": { "tokens": 1000, "money": 1000 },
+    "monthlyActor": { "tokens": 30000, "money": 30000 },
     "journalCapacity": 128,
     "basis": {
       "id": "synthetic-expired-v1",
@@ -170,6 +171,16 @@ The following values are synthetic and use an inert `.invalid` route. `TST` is a
 ```
 
 Money values are integer units in the explicit currency scale. Rates are those units per million tokens. Input and output charges round upward independently; no exchange rate is inferred. Token allowances count input plus output. Deployment, canonical actor and actor/use-case scopes always apply; a verified workflow scope also applies when present. Reservation of all applicable financial scopes, attempt charge and concurrency admission is one PostgreSQL transaction.
+
+### Monthly actor cap
+
+`monthlyActor` is optional. When present, it is an object with positive integer `tokens` and `money` allowances in the same units as the other scopes. It caps each canonical actor per UTC calendar month (from 00:00 UTC on the first day), independently of `periodAnchorUtc` and `periodSeconds`. Settled charges count in the month they were reserved; reservations that are not yet settled always count, so outstanding liability is never forgotten at a month boundary. A request that would take the actor over either allowance is denied with `financial_monthly_actor_exceeded` before any provider contact. Adding or changing the cap needs stopped, drained admission like any financial change, and once set it can be changed but not removed.
+
+When an actor's charged tokens or money, reservations included, reach 80% of the cap, the server records one notice per deployment, actor and month in `ai_monthly_actor_notices`. Delivering that notice needs a notification channel; the row is kept either way.
+
+### Denial log
+
+A denial caused by a limit (`budget_exceeded`, `financial_budget_exceeded`, `financial_monthly_actor_exceeded`, `ledger_full` or `financial_ledger_full`) writes a Warning log event 9542, `AI invocation denied by admission limit`, with the denial code, deployment, use case, the actor key (the stored SHA-256 digest, the same value as `actor_key` in `ai_monthly_actor_notices`, never the actor name), the UTC month by the server clock (within clock skew of midnight on the 1st it can differ from the database's `month_start`) and the retry delay. The denying transaction rolls back and Reporting falls back to its deterministic narrative, so this event is the record of why a narrative lost its AI text. It is written once per denied request.
 
 The basis binds the provider, exact final invocation URL/model, standard/default tier, effective/expiry times, conservative input bound, output cap and rates. The input bound is an operator assertion covering complete framing and messages; it is not estimated from bytes. Request byte limits are a separate check. Reporting freezes its final request and applies the stricter of its configured output limit and the financial output cap before send. Model disclosure approval and credentials remain separately required.
 

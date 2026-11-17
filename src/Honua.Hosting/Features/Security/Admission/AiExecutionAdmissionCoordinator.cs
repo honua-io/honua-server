@@ -79,7 +79,10 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
         }
 
         if (decision.Reservation is not { } reservation)
+        {
+            LogLimitDenial(context, decision);
             throw new AiAdmissionException(decision.Code, decision.RetryAfterSeconds);
+        }
         if (decision.Code != "admitted" || reservation.DeploymentId != context.DeploymentId || reservation.AttemptId != attemptId
             || reservation.Generation == Guid.Empty || reservation.Epoch <= 0
             || reservation.LeaseExpiresUtc < reservation.DeadlineUtc
@@ -162,6 +165,30 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
             ReleaseFailed(_logger, ex.GetType().Name);
         }
     }
+
+    // A budget or cap denial ends in a caller fallback (Reporting keeps its deterministic narrative) and the
+    // denying transaction rolls back, so this event is the operator's only record of why.
+    // The actor is the stored SHA-256 actor key, which matches ai_monthly_actor_notices.actor_key.
+    private void LogLimitDenial(AiExecutionContext context, AiAdmissionDecision decision)
+    {
+        if (decision.Code is not ("budget_exceeded" or "financial_budget_exceeded" or "financial_monthly_actor_exceeded"
+            or "ledger_full" or "financial_ledger_full"))
+        {
+            return;
+        }
+
+        LimitDenied(
+            _logger,
+            decision.Code,
+            context.DeploymentId,
+            context.UseCase,
+            context.ActorKey,
+            _clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture),
+            decision.RetryAfterSeconds);
+    }
+
+    [LoggerMessage(9542, LogLevel.Warning, "AI invocation denied by admission limit {DenialCode} (deployment {DeploymentId}, use case {UseCase}, actor key {ActorKey}, UTC month {UtcMonth}, retry after {RetryAfterSeconds}s)")]
+    private static partial void LimitDenied(ILogger logger, string denialCode, string deploymentId, string useCase, string actorKey, string utcMonth, int retryAfterSeconds);
 
     [LoggerMessage(9540, LogLevel.Warning, "AI admission state could not be verified ({ExceptionType})")]
     private static partial void StoreFailed(ILogger logger, string exceptionType);

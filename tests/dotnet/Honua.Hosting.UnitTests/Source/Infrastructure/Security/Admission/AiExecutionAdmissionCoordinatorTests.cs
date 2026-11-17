@@ -6,8 +6,10 @@ using Honua.Core.Features.Security.Admission;
 using Honua.Infrastructure.Security.Admission;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Security.Admission;
 
@@ -112,6 +114,58 @@ public sealed class AiExecutionAdmissionCoordinatorTests
         store.Releases.Should().Be(1);
         store.ReleaseWasCancelled.Should().BeFalse();
         store.Acquires.Should().Be(1, "releasing capacity never refunds or reacquires an attempt");
+    }
+
+    [UnitTest]
+    public async Task AcquireAsync_MonthlyCapDenial_LogsCodeActorKeyAndUtcMonth()
+    {
+        var store = new Store { Code = "financial_monthly_actor_exceeded", IncludeReservation = false };
+        using var services = Services(store);
+        var logger = EnabledLogger();
+        var admission = Coordinator(services, logger, new FixedClock(new DateTimeOffset(2026, 11, 30, 23, 59, 0, TimeSpan.FromHours(-8))));
+
+        var denial = await FluentActions.Awaiting(() => admission.AcquireAsync(Context, default)).Should().ThrowAsync<AiAdmissionException>();
+
+        denial.Which.Code.Should().Be("financial_monthly_actor_exceeded");
+        var call = logger.ReceivedCalls().Where(c => c.GetMethodInfo().Name == nameof(ILogger.Log)).Should().ContainSingle().Subject;
+        var arguments = call.GetArguments();
+        arguments[0].Should().Be(LogLevel.Warning);
+        arguments[2].Should().BeAssignableTo<IReadOnlyList<KeyValuePair<string, object?>>>().Which
+            .Should().Contain(new KeyValuePair<string, object?>("DenialCode", "financial_monthly_actor_exceeded"))
+            .And.Contain(new KeyValuePair<string, object?>("DeploymentId", "deployment"))
+            .And.Contain(new KeyValuePair<string, object?>("UseCase", "studio-chat"))
+            .And.Contain(new KeyValuePair<string, object?>("ActorKey", Context.ActorKey))
+            .And.Contain(new KeyValuePair<string, object?>("UtcMonth", "2026-12"), "the monthly cap counts UTC calendar months");
+        arguments[2]!.ToString().Should().NotContain("apikey:api-key:actor", "only the stored actor digest is logged");
+    }
+
+    [UnitTest]
+    public async Task AcquireAsync_NonLimitDenial_IsNotLoggedAsLimitDenial()
+    {
+        var store = new Store { Code = "concurrency_exceeded", IncludeReservation = false };
+        using var services = Services(store);
+        var logger = EnabledLogger();
+
+        await FluentActions.Awaiting(() => Coordinator(services, logger, TimeProvider.System).AcquireAsync(Context, default))
+            .Should().ThrowAsync<AiAdmissionException>();
+
+        logger.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(ILogger.Log));
+    }
+
+    private static ILogger<AiExecutionAdmissionCoordinator> EnabledLogger()
+    {
+        var logger = Substitute.For<ILogger<AiExecutionAdmissionCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        return logger;
+    }
+
+    private static AiExecutionAdmissionCoordinator Coordinator(IServiceProvider services, ILogger<AiExecutionAdmissionCoordinator> logger, TimeProvider clock) => new(
+        services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new AiExecutionAdmissionOptions { DeploymentId = "deployment" }),
+        clock, logger);
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now.ToUniversalTime();
     }
 
     private static ServiceProvider Services(Store store) => new ServiceCollection()
