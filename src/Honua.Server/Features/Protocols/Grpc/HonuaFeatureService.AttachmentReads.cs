@@ -16,6 +16,8 @@ namespace Honua.Server.Features.Protocols.Grpc;
 
 internal sealed partial class HonuaFeatureService
 {
+    private static readonly TimeSpan AttachmentUrlLifetime = TimeSpan.FromMinutes(5);
+
     public override async Task<Proto.ListAttachmentsResponse> ListAttachments(
         Proto.ListAttachmentsRequest request, ServerCallContext context)
     {
@@ -60,35 +62,39 @@ internal sealed partial class HonuaFeatureService
         var attachment = await AttachmentService<IAttachmentStore>(context).GetAsync(
             target.Layer.StorageLayerId, target.FeatureId, request.AttachmentId, context.CancellationToken).ConfigureAwait(false)
             ?? throw AttachmentError(StatusCode.NotFound, "The attachment was not found.");
-        var lifetime = TimeSpan.FromMinutes(5);
-        var expires = DateTimeOffset.UtcNow.Add(lifetime);
-        var url = await AttachmentService<ICloudFileStorage>(context).GetPresignedUrlAsync(
-            attachment.StoragePath, lifetime, context.CancellationToken).ConfigureAwait(false);
-        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile)
+        var expires = DateTimeOffset.UtcNow.Add(AttachmentUrlLifetime);
+        var url = await ResolveAttachmentDownloadUrlAsync(new AttachmentDownloadTarget
         {
-            // Local file storage answers with a file path; serve it through a signed server link instead.
-            url = AttachmentService<AttachmentDownloadLinks>(context).CreateUrl(context.GetHttpContext(), new AttachmentDownloadTarget
-            {
-                LayerId = target.Layer.StorageLayerId,
-                FeatureId = target.FeatureId,
-                AttachmentId = attachment.Id,
-                StoragePath = attachment.StoragePath
-            }, expires);
-        }
-        else if (uri?.Scheme != Uri.UriSchemeHttps)
-        {
-            url = null;
-        }
-        if (url is null)
-        {
-            throw AttachmentError(StatusCode.FailedPrecondition, "Secure attachment downloads are not configured.");
-        }
+            LayerId = target.Layer.StorageLayerId,
+            FeatureId = target.FeatureId,
+            AttachmentId = attachment.Id,
+            StoragePath = attachment.StoragePath
+        }, expires, context).ConfigureAwait(false)
+            ?? throw AttachmentError(StatusCode.FailedPrecondition, "Secure attachment downloads are not configured.");
         return new Proto.GetAttachmentUrlResponse
         {
             Url = url,
             ExpiresAtUtcMs = expires.ToUnixTimeMilliseconds(),
             Attachment = await DescribeAttachmentAsync(attachment, context).ConfigureAwait(false)
         };
+    }
+
+    // Cloud storage signs its own HTTPS URL. Local file storage answers with a file path, so the
+    // server issues a signed link to its own download route instead.
+    private static async Task<string?> ResolveAttachmentDownloadUrlAsync(
+        AttachmentDownloadTarget download, DateTimeOffset expires, ServerCallContext context)
+    {
+        var url = await AttachmentService<ICloudFileStorage>(context).GetPresignedUrlAsync(
+            download.StoragePath, AttachmentUrlLifetime, context.CancellationToken).ConfigureAwait(false);
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+        if (uri.IsFile)
+        {
+            return AttachmentService<AttachmentDownloadLinks>(context).CreateUrl(context.GetHttpContext(), download, expires);
+        }
+        return uri.Scheme == Uri.UriSchemeHttps ? url : null;
     }
 
     public override async Task<Proto.DeleteAttachmentResponse> DeleteAttachment(
