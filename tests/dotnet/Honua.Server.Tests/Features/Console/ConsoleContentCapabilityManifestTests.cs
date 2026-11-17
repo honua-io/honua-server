@@ -18,7 +18,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Honua.Server.Tests.Features.Console;
 
 // The Console keeps Catalog, Share and Open Data behind a "not available yet" gate until the manifest
-// advertises console.content.persistent as supported and available (#8255). The row follows the store the
+// advertises console.content.persistent as supported and available. The row follows the store the
 // host selected: PostgreSQL with a system database, in memory without one. Both composition paths are
 // covered because the hand-curated roster and the registry projection must stay wire-identical.
 [Collection("Database")]
@@ -29,14 +29,14 @@ public sealed class ConsoleContentCapabilityManifestTests
     private const string CapabilityId = "console.content.persistent";
 
     [IntegrationTheory]
-    [InlineData(false, true, null)]
-    [InlineData(true, true, null)]
-    [InlineData(false, false, "dependency-unavailable")]
-    [InlineData(true, false, "dependency-unavailable")]
+    [InlineData(ManifestPath.Curated, ConsoleStore.Postgres, null)]
+    [InlineData(ManifestPath.Registry, ConsoleStore.Postgres, null)]
+    [InlineData(ManifestPath.Curated, ConsoleStore.InMemory, "dependency-unavailable")]
+    [InlineData(ManifestPath.Registry, ConsoleStore.InMemory, "dependency-unavailable")]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task Manifest_PersistentContent_FollowsSelectedStore(bool fromRegistry, bool durable, string? expectedReason)
+    public async Task Manifest_PersistentContent_FollowsSelectedStore(ManifestPath path, ConsoleStore store, string? expectedReason)
     {
-        await using var fixture = CreateFixture(fromRegistry, durable);
+        await using var fixture = CreateFixture(path, store);
         await fixture.InitializeAsync();
         using var client = fixture.CreateAdminClient();
 
@@ -46,7 +46,7 @@ public sealed class ConsoleContentCapabilityManifestTests
         row.GetProperty("category").GetString().Should().Be("console");
         row.GetProperty("lifecycle").GetString().Should().Be("implemented");
         row.GetProperty("supported").GetBoolean().Should().BeTrue("the PostgreSQL Console stores ship in every build");
-        row.GetProperty("available").GetBoolean().Should().Be(durable);
+        row.GetProperty("available").GetBoolean().Should().Be(store == ConsoleStore.Postgres);
         ReasonCode(row).Should().Be(expectedReason);
     }
 
@@ -55,7 +55,7 @@ public sealed class ConsoleContentCapabilityManifestTests
     public async Task Manifest_PersistentContent_IsAvailableToAnonymousReaders()
     {
         // Public share pages read the manifest before anyone signs in.
-        await using var fixture = CreateFixture(fromRegistry: false, durable: true);
+        await using var fixture = CreateFixture(ManifestPath.Curated, ConsoleStore.Postgres);
         await fixture.InitializeAsync();
         using var client = fixture.CreateClient();
 
@@ -65,17 +65,17 @@ public sealed class ConsoleContentCapabilityManifestTests
     }
 
     [IntegrationTheory]
-    [InlineData(true)]
-    [InlineData(false)]
+    [InlineData(ConsoleStore.Postgres)]
+    [InlineData(ConsoleStore.InMemory)]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task Manifest_CompositionPaths_AgreeOnPersistentContent(bool durable)
+    public async Task Manifest_CompositionPaths_AgreeOnPersistentContent(ConsoleStore store)
     {
-        await using var curatedFixture = CreateFixture(fromRegistry: false, durable);
+        await using var curatedFixture = CreateFixture(ManifestPath.Curated, store);
         await curatedFixture.InitializeAsync();
         using var curatedClient = curatedFixture.CreateAdminClient();
         using var curated = await GetManifestAsync(curatedClient);
 
-        await using var derivedFixture = CreateFixture(fromRegistry: true, durable);
+        await using var derivedFixture = CreateFixture(ManifestPath.Registry, store);
         await derivedFixture.InitializeAsync();
         using var derivedClient = derivedFixture.CreateAdminClient();
         using var derived = await GetManifestAsync(derivedClient);
@@ -106,10 +106,10 @@ public sealed class ConsoleContentCapabilityManifestTests
 
     // The fixture host has a system database, so it selects the PostgreSQL stores; the in-memory shape replaces
     // the notice those registrations publish, which is the value the manifest reads.
-    private static WebAppFixture CreateFixture(bool fromRegistry, bool durable)
+    private static WebAppFixture CreateFixture(ManifestPath path, ConsoleStore store)
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
-        if (!durable)
+        if (store == ConsoleStore.InMemory)
         {
             fixture = fixture.ConfigureServices(services =>
             {
@@ -127,9 +127,21 @@ public sealed class ConsoleContentCapabilityManifestTests
             {
                 configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Capabilities:ManifestFromRegistry"] = fromRegistry ? "true" : "false",
+                    ["Capabilities:ManifestFromRegistry"] = path == ManifestPath.Registry ? "true" : "false",
                 });
             });
         });
+    }
+
+    public enum ManifestPath
+    {
+        Curated,
+        Registry,
+    }
+
+    public enum ConsoleStore
+    {
+        Postgres,
+        InMemory,
     }
 }
