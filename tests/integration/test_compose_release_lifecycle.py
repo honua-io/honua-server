@@ -238,7 +238,7 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         human.approve(failed_proposal)
         wait_for_proposal(base, key, failed_proposal, "failed", proposer_key, session)
         dc("start", "redis")
-        wait_until_ready(port, "serving stack did not recover after Redis restarted")
+        wait_until_ready(port, "serving stack did not recover after its stopped dependency restarted")
         convergence = call("honua_propose_platform_release_convergence", {
             "reason": "candidate convergence after failed operation"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
