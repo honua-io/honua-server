@@ -61,6 +61,35 @@ def test_authored_seed_binds_oracle_coordinates_and_style():
     assert "layer_id = 2010 AND public_layer.layer_id = 2000" in protected
 
 
+@pytest.mark.parametrize("auth_mode", (AuthMode.API_KEY, AuthMode.OIDC_BEARER))
+@pytest.mark.parametrize("denial_status", (401, 200))
+def test_protected_style_probe_uses_publication_and_checks_tile_access(auth_mode, denial_status, monkeypatch):
+    monkeypatch.delenv("HONUA_CERT_RASTER_LAYER_ID", raising=False)
+    monkeypatch.delenv("HONUA_CERT_RASTER_PUBLICATION_ID", raising=False)
+    credentials = AuthCredentials("fixture-key", "https://fixture.example", "fixture", "fixture-signing-key")
+    tiles = "http://fixture/tiles/2010/{z}/{x}/{y}.mvt"
+    style = {"sources": {"layer-2010": {"type": "vector", "tiles": [tiles]}}, "layers": [{
+        "id": "layer-2010-circle", "source": "layer-2010", "source-layer": "layer",
+        "paint": {"circle-radius": 4, "circle-color": "#2D69A5", "circle-opacity": 1,
+                  "circle-stroke-width": 0}}]}
+    responses = [SimpleNamespace(status_code=200, json=lambda: style),
+                 SimpleNamespace(status_code=denial_status), SimpleNamespace(status_code=401),
+                 SimpleNamespace(status_code=200, content=b"vector-tile",
+                                 headers={"Content-Type": "application/vnd.mapbox-vector-tile"})]
+    with patch.object(AuthCredentials, "from_environment", return_value=credentials), \
+            patch.object(test_wmts.requests, "get", side_effect=responses) as get:
+        if denial_status == 200:
+            with pytest.raises(AssertionError, match="must not lead to anonymous public tiles"):
+                test_wmts.test_protected_style_keeps_vector_tiles_on_protected_layer("http://fixture", auth_mode)
+        else:
+            test_wmts.test_protected_style_keeps_vector_tiles_on_protected_layer("http://fixture", auth_mode)
+            assert get.call_count == 4
+        assert get.call_args_list[0].args == ("http://fixture/api/styles/pub-cert-auth-raster-ogc-2010.json",)
+        row, column = fixture_tile("WebMercatorQuad", 14)
+        assert get.call_args_list[1].args == (tiles.format(z=14, x=column, y=row),)
+        assert get.call_args_list[1].kwargs["headers"] == {}
+
+
 def test_standard_grids_have_independent_known_anchor_values():
     assert world_pixel("WebMercatorQuad", 0, 0, 0) == (128, 128)
     assert world_pixel("WorldCRS84Quad", 0, 0, 0) == (256, 128)

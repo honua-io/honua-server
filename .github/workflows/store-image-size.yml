@@ -14,6 +14,7 @@ on:
       - 'Directory.*.targets'
       - 'src/Honua.Server/Startup/DataStoreBuildPolicy.cs'
       - 'scripts/ci/*measure-serving-image.py'
+      - 'scripts/ci/test-image-layer-size.py'
       - 'scripts/ci/test-health-probe.py'
       - 'scripts/ci/test-runtime-native.py'
       - 'scripts/ci/Dockerfile.native-runtime-test*'
@@ -24,7 +25,18 @@ on:
       - 'scripts/ci/requirements-image-smoke.txt'
       - '.github/workflows/store-image-size.yml'
   workflow_dispatch:
+    inputs:
+      release_stage:
+        description: Image size budget
+        type: choice
+        options: [rc, ga]
+        default: rc
   workflow_call:
+    inputs:
+      release_stage:
+        description: Image size budget (rc or ga)
+        type: string
+        default: rc
     secrets:
       HONUA_PR_GATE_WAKE_ROLE_ARN:
         required: false
@@ -94,6 +106,7 @@ jobs:
       - name: Test measurement and health probe
         run: |
           python3 scripts/ci/test-measure-serving-image.py
+          python3 scripts/ci/test-image-layer-size.py
           python3 scripts/ci/test-health-probe.py
           if [[ "${{ runner.environment }}" == "github-hosted" ]]; then
             sudo python3 scripts/ci/test-runtime-native.py
@@ -157,7 +170,7 @@ jobs:
           docker pull --platform linux/amd64 "$BASELINE"
           test "$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "honua.store.profile" }}')" = "$PROFILE"
           python3 scripts/ci/measure-serving-image.py "$IMAGE" \
-            --profile "$PROFILE" --baseline "$BASELINE" --output artifacts/image-size.json \
+            --profile "$PROFILE" --release-stage "${{ inputs.release_stage || 'rc' }}" --baseline "$BASELINE" --output artifacts/image-size.json \
             --compilation "${{ matrix.compilation }}" --evidence-directory artifacts/build-evidence \
             --oci-archive artifacts/image.oci.tar
       - name: Verify native packages remain visible to scanners

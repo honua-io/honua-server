@@ -60,6 +60,8 @@ public sealed class OgcFeaturesCsvHeaderTests(OgcFeaturesCsvHeaderTestsFixture f
         Assert.Equal("id_1", header[0]);
         Assert.Equal("geometry", header[^1]);
         Assert.Equal(header.Length, header.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        var objectIdColumn = Array.IndexOf(header, "objectid");
+        Assert.True(objectIdColumn > 0);
         var propertyColumn = Array.IndexOf(header, "id");
         Assert.True(propertyColumn > 0);
         for (var id = 1; id <= count; id++)
@@ -67,10 +69,57 @@ public sealed class OgcFeaturesCsvHeaderTests(OgcFeaturesCsvHeaderTestsFixture f
             var row = reader.ReadLine()!.Split(',');
             Assert.Equal(header.Length, row.Length);
             Assert.Equal(id.ToString(System.Globalization.CultureInfo.InvariantCulture), row[0]);
+            Assert.Equal(id.ToString(System.Globalization.CultureInfo.InvariantCulture), row[objectIdColumn]);
             Assert.Equal($"property-{id}", row[propertyColumn]);
             Assert.Equal(string.Empty, row[^1]);
         }
 
+        Assert.Null(reader.ReadLine());
+    }
+
+    [IntegrationTheory]
+    [InlineData("limit=2&offset=7&sortby=-objectid", 393, 392)]
+    [InlineData("limit=2&filter=objectid%3E397&sortby=objectid", 398, 399)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task Csv_PagedOrFilteredRows_PreservesObjectIdAssociation(string query, int first, int second)
+    {
+        using var response = await fixture.App.Client.GetAsync(
+            $"/ogc/features/collections/0/items?{query}&f=csv");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var reader = new StringReader(await response.Content.ReadAsStringAsync());
+        var header = reader.ReadLine()!.Split(',');
+        var objectIdColumn = Array.IndexOf(header, "objectid");
+        var propertyColumn = Array.IndexOf(header, "id");
+        Assert.True(objectIdColumn > 0);
+        Assert.True(propertyColumn > 0);
+        foreach (var id in new[] { first, second })
+        {
+            var row = reader.ReadLine()!.Split(',');
+            Assert.Equal(id.ToString(System.Globalization.CultureInfo.InvariantCulture), row[objectIdColumn]);
+            Assert.Equal($"property-{id}", row[propertyColumn]);
+        }
+        Assert.Null(reader.ReadLine());
+    }
+
+    [IntegrationTheory]
+    [InlineData("id", false)]
+    [InlineData("id,objectid", true)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task Csv_ProjectedProperties_OnlyIncludesRequestedObjectId(string properties, bool includesObjectId)
+    {
+        using var response = await fixture.App.Client.GetAsync(
+            $"/ogc/features/collections/0/items?ids=1&properties={properties}&f=csv");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var reader = new StringReader(await response.Content.ReadAsStringAsync());
+        var header = reader.ReadLine()!.Split(',');
+        Assert.Equal(includesObjectId, header.Contains("objectid"));
+        var row = reader.ReadLine()!.Split(',');
+        Assert.Equal("1", row[0]);
+        Assert.Equal("property-1", row[Array.IndexOf(header, "id")]);
+        if (includesObjectId)
+        {
+            Assert.Equal("1", row[Array.IndexOf(header, "objectid")]);
+        }
         Assert.Null(reader.ReadLine());
     }
 }

@@ -266,8 +266,9 @@ and password-token sign-in, `X-API-Key`, Basic compatibility, and bearer and
 `token` credentials. It still applies while the key store is unavailable. Nothing
 counts when no administrator password is configured or it cannot be resolved.
 Unknown or expired portal tokens and OIDC access tokens are not compared and do
-not count. For `generateToken`, every exchange the administrator verifier rejects
-counts. A success does not clear earlier failures; they expire with the window.
+not count. For `generateToken`, a value that matches no managed key counts when
+it is sent under any username other than `admin`, or when it does not match the
+administrator password. Managed-key lookups do not reserve password-check slots. A success does not clear earlier failures; they expire with the window.
 OAuth client-credential secrets are not counted.
 
 While a source is refused, no credential from it is checked. Password sign-in
@@ -290,6 +291,12 @@ server instance, and a request without a client address is not counted.
 | `BlockDuration` | `00:15:00` | How long a source stays refused. |
 | `MaxTrackedSources` | `10000` | Addresses tracked per instance; expired entries are evicted first. |
 | `ExemptNetworks` | none | Ranges that are never counted or refused, written as a network address and prefix length: `10.0.0.0/8`, or `/32` and `/128` for one address. |
+
+The `honua_authentication_failed_attempts_total` counter aggregates completed
+failed credential checks across tracked sources on each instance. It has no
+source-address or credential labels. Use its rate to detect failures spread across
+many sources; admission remains per source so one caller cannot exhaust a global
+authentication budget.
 
 `Window` and `BlockDuration` are at most one day. In Development and Test, an
 administrator password of exactly 64 lowercase hex characters is treated as a
@@ -414,6 +421,11 @@ legacy admin aliases and approved-operation/API-key roles. Replacing these optio
 does not establish an approver-only policy for all authentication schemes.
 
 Provider blocks exist for `Generic`, `AzureAd`, `Google`, `Okta`, and `Auth0`; OIDC providers can also be managed at runtime via `/api/v1/admin/oidc/providers`. When OIDC is enabled, `Authorization: Bearer` tokens are evaluated before API keys. Map your IdP's admin group to a role in `Oidc__AdminRoles` (default `admin`, `administrator`) — without it, signed-in users hold no admin rights.
+
+Production deployments require issuer, audience, lifetime and signing-key validation
+to remain enabled; startup fails otherwise. These safeguards also apply when OIDC
+is disabled, so an unsafe configuration cannot be activated later. Prefer provider
+metadata and JWKS discovery.
 
 An explicitly configured static JWT issuer may set
 `Oidc__TokenValidation__SymmetricSigningKey` to an `env:NAME` or

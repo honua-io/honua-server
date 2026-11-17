@@ -191,8 +191,9 @@ Routine [Map](compose-map.md) stays in the direct edit-and-preview loop. This wo
 
 Identify the current saved version, hash, route, audience, and data dependencies.
 Every MCP caller is an agent, administrators included, so
-`honua_studio_propose_publication` always returns `AwaitingApproval`,
-`humanConfirmationRequired: true`, a proposal handle, and no share URL. The
+a new `honua_studio_propose_publication` call returns `AwaitingApproval`,
+`humanConfirmationRequired: true`, a proposal handle, and no share URL. A retry
+with the same arguments returns that proposal and its current status. The
 published pointer moves only after a person approves the proposal in Console;
 see [Approve agent changes](../secure/approve-agent-changes.md). A pending result
 stops short of the workflow's successful output.

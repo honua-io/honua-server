@@ -10,6 +10,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Security;
 using Honua.Geoprocessing.Execution;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -268,15 +269,12 @@ internal static partial class ServerJobArtifactImporter
                 "The artifact reference does not match the completed job output.");
         }
 
-        var stream = new FileStream(
-            CreateScratchPath(Path.GetTempPath(), "honua-job-artifact-" + Guid.NewGuid().ToString("N")),
-            FileMode.CreateNew,
-            FileAccess.ReadWrite,
-            FileShare.None,
-            65536,
-            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        FileStream? stream = null;
         try
         {
+#pragma warning disable CA2000 // Ownership moves to the returned AuthorizedContent; the finally block disposes it otherwise.
+            stream = PrivateTempFile.CreateScratch("honua-job-artifact-", null, 65536);
+#pragma warning restore CA2000
             var summary = await GeoprocessingImportArtifactWriter.WriteAsync(
                 raw,
                 job,
@@ -291,12 +289,16 @@ internal static partial class ServerJobArtifactImporter
                     "A nonempty output with one coordinate frame is required. Mixed coordinate frames cannot be imported together.");
             }
 
-            return new AuthorizedContent(job, raw, stream, summary);
+            var content = new AuthorizedContent(job, raw, stream, summary);
+            stream = null;
+            return content;
         }
-        catch
+        finally
         {
-            await stream.DisposeAsync().ConfigureAwait(false);
-            throw;
+            if (stream is not null)
+            {
+                await stream.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 
@@ -312,35 +314,6 @@ internal static partial class ServerJobArtifactImporter
         IGeoprocessingJobService jobs,
         CancellationToken cancellationToken)
         => await jobs.GetJobAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
-
-    internal static string CreateScratchPath(string tempDirectory, string fileName)
-    {
-        if (string.IsNullOrWhiteSpace(tempDirectory))
-        {
-            throw new InvalidOperationException("A scratch directory is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(fileName)
-            || fileName is "." or ".."
-            || fileName.Contains('/', StringComparison.Ordinal)
-            || fileName.Contains('\\', StringComparison.Ordinal)
-            || Path.IsPathRooted(fileName))
-        {
-            throw new InvalidOperationException("The scratch file name must stay inside the scratch directory.");
-        }
-
-        var root = Path.GetFullPath(tempDirectory);
-        var combined = Path.GetFullPath(Path.Join(root, fileName));
-        var prefix = root.EndsWith(Path.DirectorySeparatorChar)
-            ? root
-            : root + Path.DirectorySeparatorChar;
-        if (!combined.StartsWith(prefix, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("The scratch file name must stay inside the scratch directory.");
-        }
-
-        return combined;
-    }
 
     internal static bool SupportsImportEnvelope(string? reference)
         => !string.IsNullOrWhiteSpace(reference)

@@ -1925,7 +1925,7 @@ internal static partial class GPServerEndpoints
 
         var plan = new AnalysisPlan
         {
-            PlanId = $"gpserver-{serviceId}-{taskSlug}-{Guid.NewGuid():N}",
+            PlanId = ProtocolPlanId.Create($"gpserver-{serviceId}-{taskSlug}", ResolveIdempotencyKey(rawParameters)),
             IntentId = $"gpserver:{serviceId}:{definition.ProcessId}",
             Steps =
             [

@@ -23,7 +23,7 @@ public sealed partial class OpsNotificationServiceTests
     public async Task JobTerminalCallback_FailedJobPreservesCanonicalLineageVerbatim()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        var notificationService = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
+        var notificationService = Create(outbox, out _, enabled: true, channels: ["webhook"]);
         var options = Options.Create(new AlertOptions
         {
             Enabled = true,
@@ -82,7 +82,7 @@ public sealed partial class OpsNotificationServiceTests
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
 
-        var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
+        var sut = Create(outbox, out _, enabled: true, channels: ["webhook"]);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
@@ -106,7 +106,7 @@ public sealed partial class OpsNotificationServiceTests
     public async Task NotifyAsync_WhenDisabled_DoesNotEnqueue()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        var sut = Create(outbox, out _, out _, enabled: false, channels: ["webhook"]);
+        var sut = Create(outbox, out _, enabled: false, channels: ["webhook"]);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
@@ -118,7 +118,7 @@ public sealed partial class OpsNotificationServiceTests
     public async Task NotifyAsync_BelowMinSeverity_DoesNotEnqueue()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"], minSeverity: AlertSeverity.Warning);
+        var sut = Create(outbox, out _, enabled: true, channels: ["webhook"], minSeverity: AlertSeverity.Warning);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Info), CancellationToken.None);
 
@@ -127,28 +127,20 @@ public sealed partial class OpsNotificationServiceTests
     }
 
     [UnitTest]
-    public async Task NotifyAsync_EditionGating_DropsDisallowedChannels()
+    public async Task NotifyAsync_CommunityInstall_KeepsEnterpriseChannelsForOperatorNotices()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
 
-        var sut = Create(
-            outbox,
-            out var editionPolicy,
-            out _,
-            enabled: true,
-            channels: ["webhook", "slack"]);
-
-        // Pro-like edition: webhook allowed, slack (rich channel) not.
-        editionPolicy.IsChannelAllowed(AlertChannelType.Webhook).Returns(true);
-        editionPolicy.IsChannelAllowed(AlertChannelType.Slack).Returns(false);
+        // No alert-product license: ops notices are the deployment's own operator messages, so
+        // the Enterprise alerting channels (SNS, email) must not be filtered out.
+        var sut = Create(outbox, out _, enabled: true, channels: ["aws_sns", "email"]);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
         await outbox.Received(1).CommitEvaluationAsync(
             Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
-                entries[0].Channels.Contains(AlertChannelType.Webhook) &&
-                !entries[0].Channels.Contains(AlertChannelType.Slack)),
+                entries[0].Channels.SequenceEqual(new[] { AlertChannelType.AwsSns, AlertChannelType.Email })),
             Arg.Any<CancellationToken>());
     }
 
@@ -158,7 +150,7 @@ public sealed partial class OpsNotificationServiceTests
         var outbox = Substitute.For<IAlertOutboxWriter>();
 
         // Threshold 1 so a single dead-letter trips the breaker for the webhook channel.
-        var sut = Create(outbox, out _, out var breaker, enabled: true, channels: ["webhook"], circuitThreshold: 1);
+        var sut = Create(outbox, out var breaker, enabled: true, channels: ["webhook"], circuitThreshold: 1);
         breaker.RecordDeadLetter(AlertChannelType.Webhook, DateTimeOffset.UtcNow);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
@@ -177,7 +169,7 @@ public sealed partial class OpsNotificationServiceTests
     public async Task TryNotify_WithoutDeliverableChannel_DoesNotConsumeOutboxIdentity()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        var sut = Create(outbox, out _, out var breaker, enabled: true, channels: ["webhook"], circuitThreshold: 1);
+        var sut = Create(outbox, out var breaker, enabled: true, channels: ["webhook"], circuitThreshold: 1);
         breaker.RecordDeadLetter(AlertChannelType.Webhook, DateTimeOffset.UtcNow);
 
         (await sut.TryNotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None)).Should().BeFalse();
@@ -191,7 +183,7 @@ public sealed partial class OpsNotificationServiceTests
     public async Task TryNotify_AcceptedOrPreviouslyAcceptedIdentity_ReturnsTrue()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
+        var sut = Create(outbox, out _, enabled: true, channels: ["webhook"]);
         (await sut.TryNotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None)).Should().BeTrue();
         outbox.CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>())
@@ -203,8 +195,8 @@ public sealed partial class OpsNotificationServiceTests
     public async Task TryNotify_DisabledOrBelowThreshold_ReturnsFalseWithoutPersisting()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        var disabled = Create(outbox, out _, out _, enabled: false, channels: ["webhook"]);
-        var filtered = Create(outbox, out _, out _, enabled: true, channels: ["webhook"], minSeverity: AlertSeverity.Critical);
+        var disabled = Create(outbox, out _, enabled: false, channels: ["webhook"]);
+        var filtered = Create(outbox, out _, enabled: true, channels: ["webhook"], minSeverity: AlertSeverity.Critical);
         (await disabled.TryNotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None)).Should().BeFalse();
         (await filtered.TryNotifyAsync(Notification(AlertSeverity.Warning), CancellationToken.None)).Should().BeFalse();
         await outbox.DidNotReceive().CommitEvaluationAsync(
@@ -216,7 +208,7 @@ public sealed partial class OpsNotificationServiceTests
     public async Task TryNotify_OutboxUnavailable_PropagatesFailureForDurableRetry()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
+        var sut = Create(outbox, out _, enabled: true, channels: ["webhook"]);
         outbox.CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<ImmutableArray<bool>>(new InvalidOperationException("outbox unavailable")));
@@ -241,7 +233,6 @@ public sealed partial class OpsNotificationServiceTests
 
     private static OpsNotificationService Create(
         IAlertOutboxWriter outbox,
-        out IAlertEditionPolicy editionPolicy,
         out AlertChannelCircuitBreaker breaker,
         bool enabled,
         IReadOnlyList<string> channels,
@@ -256,8 +247,6 @@ public sealed partial class OpsNotificationServiceTests
                 Enumerable.Repeat(true, call.ArgAt<IReadOnlyList<AlertOutboxEntry>>(1).Count)));
 
         var writer = new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance);
-        editionPolicy = Substitute.For<IAlertEditionPolicy>();
-        editionPolicy.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);
 
         var options = Options.Create(new AlertOptions
         {
@@ -275,6 +264,6 @@ public sealed partial class OpsNotificationServiceTests
         });
 
         breaker = new AlertChannelCircuitBreaker(options);
-        return new OpsNotificationService(writer, editionPolicy, breaker, options, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<OpsNotificationService>.Instance);
+        return new OpsNotificationService(writer, breaker, options, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<OpsNotificationService>.Instance);
     }
 }

@@ -32,8 +32,29 @@ public sealed class ExternalPostgisDagSourceSafetyTests
     }
 
     [UnitTheory]
+    [InlineData("nextval('source_read_guard_seq') > 0")]
+    [InlineData("pg_sleep(1) IS NULL")]
+    [InlineData("name = $$external$$")]
+    [InlineData("key IN (SELECT key FROM features)")]
+    public async Task ReadAsync_UnsupportedPredicate_IsRejectedBeforeOpeningConnection(string where)
+    {
+        var source = new ExternalPostgisDagSource();
+        var request = new DagSourceRequest { PostgisTable = "features", Where = where };
+        var act = async () =>
+        {
+            await foreach (var _ in source.ReadAsync(request))
+            {
+                Assert.Fail("An unsupported predicate must be refused before a feature is yielded.");
+            }
+        };
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [UnitTheory]
     [InlineData("active = true")]
     [InlineData("status = 'deleted'")]
+    [InlineData("name = 'O''Brien; -- survey'")]
     public async Task ReadAsync_LegitimateWhere_IsNotRejectedByTheReadOnlyCheck(string where)
     {
         var source = new ExternalPostgisDagSource();

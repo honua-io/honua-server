@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Sql;
+using Honua.Core.Queries.Filters.GeoServicesSql;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Geoprocessing.Execution;
 
@@ -580,11 +581,12 @@ internal static partial class ProcessPlanValidator
         try
         {
             ReadOnlyDynamicSql.ValidateReadOnlySingleStatement(sql);
+            _ = new GeoServicesSqlParser().Parse(where);
         }
         catch (ArgumentException)
         {
             AddRangeViolationIfNew(step, "where",
-                "expected a single read-only predicate without a statement separator, comment, or mutating SQL",
+                "expected a supported filter expression without a statement separator, comment, or mutating SQL",
                 violations);
         }
     }

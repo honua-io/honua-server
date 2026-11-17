@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Helpers;
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
@@ -326,8 +327,13 @@ public sealed class TileExportJobExecutorTests
         var key = TileExportArtifactIdentity.BuildObjectKey(plan, DefaultSubmitter);
         var storage = Substitute.For<ICloudFileStorage>();
         storage.GetMetadataAsync(key, Arg.Any<CancellationToken>()).Returns((CloudFile?)null);
+        string? scratchViolation = "upload was not called";
         storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-            .Returns(UploadResult.CreateSuccess(StoredFile(key, plan, DateTimeOffset.UtcNow.AddHours(1))));
+            .Returns(call =>
+            {
+                scratchViolation = PrivateScratchFileAssertions.OwnerOnlyViolation(call.ArgAt<FileUploadRequest>(0).Content);
+                return UploadResult.CreateSuccess(StoredFile(key, plan, DateTimeOffset.UtcNow.AddHours(1)));
+            });
         var producer = Substitute.For<ITileExportPackageProducer>();
         producer.CanProduce(Arg.Any<TileExportJobPlan>()).Returns(true);
         producer.ProduceAsync(Arg.Any<TileExportJobPlan>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
@@ -337,6 +343,7 @@ public sealed class TileExportJobExecutorTests
 
         var result = await executor.ExecuteAsync(JobFor(plan, context.OperationId), context, CancellationToken.None);
 
+        scratchViolation.Should().BeNull();
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         context.Artifacts.Should().ContainSingle(key);
         await producer.Received(1).ProduceAsync(
