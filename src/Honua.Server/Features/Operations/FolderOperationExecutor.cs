@@ -75,7 +75,7 @@ internal sealed class FolderOperationExecutor(
         };
     }
 
-    private static string FailureReason(FolderOperationResponse response, OperationPolicyContext context)
+    internal static string FailureReason(FolderOperationResponse response, OperationPolicyContext context)
         => !string.IsNullOrWhiteSpace(context.ApprovedProposalId) && response.ApprovalRefusal is { } refusal
             ? refusal
             : $"Admin API returned {response.Status} ({Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(response.Status)}).";

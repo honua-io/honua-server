@@ -44,7 +44,10 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
 
     private static FolderOperationResponse Failure(FolderExecutionFailure failure) => failure switch
     {
-        FolderExecutionFailure.Replay => HttpProblem(403, FolderApprovalAuthorization.FreshProposalRequired),
+        FolderExecutionFailure.Replay => HttpProblem(403, FolderApprovalAuthorization.FreshProposalRequired) with
+        {
+            ApprovalRefusal = FolderApprovalAuthorization.FreshProposalRequired
+        },
         FolderExecutionFailure.Mutation mutation => mutation.Refusal.Status == 404
             ? new(404, string.Empty) : HttpProblem(mutation.Refusal.Status, mutation.Refusal.Detail) with
             {

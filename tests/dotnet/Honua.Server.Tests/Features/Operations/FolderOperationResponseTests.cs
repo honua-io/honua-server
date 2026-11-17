@@ -3,6 +3,7 @@
 
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
 using Honua.Server.Startup;
@@ -42,4 +43,48 @@ public sealed class FolderOperationResponseTests
             .Should().BeTrue("MCP must retain the HTTP refusal contract; native: {0}; HTTP: {1}",
                 response.Payload, httpBody);
     }
+    [UnitTheory]
+    [InlineData("snapshot")]
+    [InlineData("requester")]
+    [InlineData("replay")]
+    public void ApprovedReplay_ClassifiedRefusal_IsTheFailureReason(string refusal)
+    {
+        var (failure, detail) = Classified(refusal);
+        var response = FolderOperationResponse.From(new FolderExecutionResult(null, null, failure), null);
+
+        FolderOperationExecutor.FailureReason(response, new OperationPolicyContext { ApprovedProposalId = "approved" })
+            .Should().Be(detail);
+    }
+
+    [UnitTheory]
+    [InlineData("snapshot")]
+    [InlineData("requester")]
+    [InlineData("replay")]
+    public void DirectCall_ClassifiedRefusal_KeepsGenericReason(string refusal)
+    {
+        var (failure, _) = Classified(refusal);
+        var response = FolderOperationResponse.From(new FolderExecutionResult(null, null, failure), null);
+
+        FolderOperationExecutor.FailureReason(response, new OperationPolicyContext())
+            .Should().Be($"Admin API returned {response.Status} ({Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(response.Status)}).");
+    }
+
+    [UnitFact]
+    public void ApprovedReplay_UnclassifiedRefusal_KeepsGenericReason()
+    {
+        var response = FolderOperationResponse.From(new FolderExecutionResult(null, null,
+            new FolderExecutionFailure.Mutation(FolderMutationFailure.SnapshotChanged)), null);
+
+        FolderOperationExecutor.FailureReason(response, new OperationPolicyContext { ApprovedProposalId = "approved" })
+            .Should().Be("Admin API returned 412 (Precondition Failed).");
+    }
+
+    private static (FolderExecutionFailure Failure, string Detail) Classified(string refusal) => refusal switch
+    {
+        "snapshot" => (new FolderExecutionFailure.Mutation(FolderMutationFailure.ApprovalSnapshotChanged),
+            FolderMutationFailure.ApprovalSnapshotChanged.Detail),
+        "requester" => (new FolderExecutionFailure.Mutation(FolderMutationFailure.RequesterAuthorizationChanged),
+            FolderApprovalAuthorization.FreshProposalRequired),
+        _ => (new FolderExecutionFailure.Replay(), FolderApprovalAuthorization.FreshProposalRequired)
+    };
 }
