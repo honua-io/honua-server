@@ -6,11 +6,19 @@ using System.Text;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.ServiceRegistration;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Hosting;
 
 namespace Honua.Infrastructure.Authentication;
 
 internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidator<OidcAuthenticationOptions>
 {
+    private readonly IHostEnvironment _environment;
+
+    public OidcAuthenticationOptionsValidator(IHostEnvironment environment)
+    {
+        _environment = environment;
+    }
+
     protected override void PerformFeatureSpecificValidation(OidcAuthenticationOptions options, List<string> errors)
     {
         // Complex business rule validations
@@ -18,8 +26,36 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         ValidateProviderSettings(options, errors);
         ValidateClaimsMapping(options.ClaimsMapping, errors);
         ValidateTokenValidation(options.TokenValidation, errors);
+        if (_environment.IsProduction())
+        {
+            ValidateProductionTokenSettings(options.TokenValidation, errors);
+        }
     }
 
+
+    private static void ValidateProductionTokenSettings(TokenValidationOptions options, List<string> errors)
+    {
+        if (!options.ValidateIssuer)
+        {
+            errors.Add("TokenValidation.ValidateIssuer must be enabled in Production");
+        }
+        if (!options.ValidateAudience)
+        {
+            errors.Add("TokenValidation.ValidateAudience must be enabled in Production");
+        }
+        if (!options.ValidateLifetime)
+        {
+            errors.Add("TokenValidation.ValidateLifetime must be enabled in Production");
+        }
+        if (!options.ValidateIssuerSigningKey)
+        {
+            errors.Add("TokenValidation.ValidateIssuerSigningKey must be enabled in Production");
+        }
+        if (!string.IsNullOrWhiteSpace(options.SymmetricSigningKey))
+        {
+            errors.Add("TokenValidation.SymmetricSigningKey is not supported in Production; use provider metadata and JWKS discovery");
+        }
+    }
 
     private static void ValidateGeneralSettings(OidcAuthenticationOptions options, List<string> errors)
     {
