@@ -14,7 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 HEAVY = (
-    "codeql.yml", "compose-release-lifecycle.yml", "geoarrow-interop-fixture.yml",
+    "codeql.yml", "compose-release-lifecycle.yml", "export-portolan-check.yml", "geoarrow-interop-fixture.yml",
     "geoparquet-interop.yml",
     "serving-image-boundary.yml", "worker-gdal-image.yml",
 )
