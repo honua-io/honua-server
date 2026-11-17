@@ -101,8 +101,7 @@ runs:
       shell: bash
       working-directory: honua-sdk-js
       env:
-        # SDK source compilation exceeded the default ~2 GiB V8 heap (full CI
-        # 44183857476, Node 20). Callers pass Node 22.23.3, the SDK engine floor.
+        # SDK source compilation needs more than the default ~2 GiB V8 heap.
         NODE_OPTIONS: --max-old-space-size=4096
       run: |
         echo "HONUA_SUITE_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
