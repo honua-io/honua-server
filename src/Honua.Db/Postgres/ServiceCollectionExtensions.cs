@@ -448,10 +448,10 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetService<TimeProvider>(),
                 configuration["Database:Schema"]));
+        // The analysis content tables are created in honua whatever Database:Schema names.
         services.AddScoped<IAnalysisContentStore>(serviceProvider =>
             new PostgresAnalysisContentStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
 
         // Durable workflow package drafts, versions, and publications.
         // Replaces the in-memory store when PostGIS is composed, including the test host
