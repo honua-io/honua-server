@@ -162,11 +162,8 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     [Fact]
     public async Task TickAsync_RetriesSameOccurrence_WhenCreateRunAsyncFailsTransiently()
     {
-        // Regression: previously the tick advanced both the in-memory and durable
-        // cursors before calling CreateRunAsync. A transient failure inside
-        // CreateRunAsync (e.g. a run-store blip) would then permanently skip the
-        // occurrence. After the fix the winner holds the cursor at the failed
-        // occurrence, releases the claim, and the next tick can retry.
+        // If CreateRunAsync fails, retain the failed occurrence cursor and release its claim
+        // so the next scheduler tick can retry it.
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
         var harness = BuildHarness(start);
         var definition = BuildCronDefinition(start, "* * * * *");
@@ -204,11 +201,8 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     [Fact]
     public async Task TickAsync_DoesNotInheritStaleCache_WhenDefinitionIsDeletedAndRecreated()
     {
-        // MEDIUM regression: after delete+recreate of a workflow id, the scheduler's in-memory
-        // _compiled cache held the deleted definition's LastFireAt, and the durable cursor
-        // carried the old firing time too. A fresh recreate would therefore skip its first
-        // occurrence. The fix clears both state sources on delete, and evicts the compile
-        // cache for any workflow id no longer present in the scheduled list.
+        // Deleting a workflow clears its durable cursor and compiled state so recreating
+        // the same ID fires its first occurrence. Evict absent IDs from the compiled cache.
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
         var harness = BuildHarness(start);
         var original = BuildCronDefinition(start, "* * * * *");
@@ -268,9 +262,6 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     [Fact]
     public async Task TickAsync_LosingReplicaJumpsToDurableCursor_WhenMultipleOccurrencesBehind()
     {
-        // Exercises the !claimed path fix: when a replica's in-memory cursor is far behind
-        // the durable cursor, it should jump directly to the durable position instead of
-        // crawling forward one occurrence per tick.
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
         var harness = BuildHarness(start);
         var definition = BuildCronDefinition(start, "* * * * *");
@@ -294,10 +285,8 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
         harness.Definitions.SeedScheduleCursor(definition.WorkflowId, start.AddMinutes(5));
         harness.Clock.Advance(TimeSpan.FromMinutes(5));
 
-        // The scheduler's in-memory cursor is still at 12:01. Without the fix, each tick
-        // would evaluate the next stale occurrence (12:02, 12:03, …), lose the claim, and
-        // advance by only one — requiring 4 ticks to catch up. With the fix, the first
-        // lost claim jumps to the durable cursor (12:05) and the second tick fires 12:06.
+        // The in-memory cursor is 12:01. Losing the first claim must advance it directly
+        // to the durable cursor at 12:05; the second tick fires 12:06.
         await harness.Scheduler.TickAsync(CancellationToken.None);
         await harness.Scheduler.TickAsync(CancellationToken.None);
 
@@ -350,7 +339,7 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     [Fact]
     public async Task TickAsync_PendingCursorProtectsReplay_WhenCursorAdvanceFails()
     {
-        // Regression: if CreateRunAsync succeeds and AdvanceScheduleCursorAsync fails (simulating
+        // If CreateRunAsync succeeds and AdvanceScheduleCursorAsync fails (simulating
         // a crash between the two), the durable pending cursor marker must prevent a restarted
         // scheduler from replaying the same occurrence after the claim TTL expires.
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
@@ -400,9 +389,8 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
     [Fact]
     public async Task TickAsync_PendingCursorProtectsReplay_AfterLongOutage()
     {
-        // Verifies that replay protection is durable across arbitrarily long outages.
-        // Previously the pending cursor had a 25h TTL, so a crash lasting >25h would
-        // lose both the per-fire claim (24h) and the pending cursor, allowing replay.
+        // Replay protection must remain durable across arbitrarily long outages,
+        // including interruptions longer than the per-fire claim lifetime.
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
         var definitionStore = new FakeWorkflowDefinitionStore();
         var runStore = new FakeWorkflowRunStore();
@@ -610,8 +598,8 @@ public sealed class WorkflowSchedulerBackgroundServiceTests
             Name = "scheduled",
             // Every workflow published through WorkflowPackageService carries this. A cron
             // firing has no requesting principal, so it is the only identity available both to
-            // pin the run's row/field security snapshot (#3068) and to authorize the run's
-            // layer/mutating targets (#3046); a definition without one is refused rather than
+            // pin the run's row/field security snapshot and to authorize the run's
+            // layer/mutating targets; a definition without one is refused rather than
             // falling back to the admin-carrying orchestrator.
             AuthorSecurityContext = new JobSecurityContext(
                 "workflow-author",

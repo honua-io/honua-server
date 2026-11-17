@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Operation(Operations.Security)]
 public sealed class PortalOAuthRaceConditionTests
 {
-    // ─── BH2-022: authorization code TOCTOU ─────────────────────────────────────
+    // ─── authorization code TOCTOU ─────────────────────────────────────
 
     [UnitTest]
     public async Task ConsumeAuthorizationCodeAsync_ConcurrentConsumers_OnlyOneAcquires_Bh2022()
@@ -65,7 +65,7 @@ public sealed class PortalOAuthRaceConditionTests
         second.Should().BeNull("the second consumer must receive null — the code was already consumed");
     }
 
-    // ─── BH2-023: refresh-token rotation race ───────────────────────────────────
+    // ─── refresh-token rotation race ───────────────────────────────────
 
     [UnitTest]
     public async Task ConsumeRefreshTokenAsync_ConcurrentConsumers_OnlyOneAcquires_Bh2023()
@@ -123,7 +123,7 @@ public sealed class PortalOAuthRaceConditionTests
             "after the atomic consume slot is taken the service must return invalid_grant (BH2-023)");
     }
 
-    // ─── BH2-024: refresh token destroyed when IssueAsync throws ────────────────
+    // ─── refresh token destroyed when IssueAsync throws ────────────────
 
     [UnitTest]
     public async Task ExchangeRefreshTokenAsync_WhenIssueAsyncThrows_RefreshTokenIsRestored_Bh2024()

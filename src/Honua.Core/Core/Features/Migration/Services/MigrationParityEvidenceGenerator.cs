@@ -67,14 +67,14 @@ public static class MigrationParityEvidenceGenerator
         return performanceCost with
         {
             State = NormalizeState(performanceCost.State),
-            EvidenceReferences = SanitizeEvidenceReferences(performanceCost.EvidenceReferences),
+            EvidenceReferences = MigrationEvidenceReferences.Sanitize(performanceCost.EvidenceReferences),
             Operations = performanceCost.Operations
                 .OrderBy(static operation => operation.Id, StringComparer.Ordinal)
                 .ThenBy(static operation => operation.Stage, StringComparer.Ordinal)
                 .Select(static operation => operation with
                 {
                     State = NormalizeState(operation.State),
-                    EvidenceReferences = SanitizeEvidenceReferences(operation.EvidenceReferences)
+                    EvidenceReferences = MigrationEvidenceReferences.Sanitize(operation.EvidenceReferences)
                 })
                 .ToArray()
         };
@@ -514,35 +514,6 @@ public static class MigrationParityEvidenceGenerator
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
-
-    private static string[] SanitizeEvidenceReferences(IEnumerable<string> values)
-        => values
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Select(static value => SanitizeEvidenceReference(value.Trim()))
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static value => value, StringComparer.Ordinal)
-            .ToArray();
-
-    private static string SanitizeEvidenceReference(string value)
-    {
-        var sensitiveTailIndex = value.IndexOfAny(['?', '#']);
-        var withoutQueryOrFragment = sensitiveTailIndex >= 0 ? value[..sensitiveTailIndex] : value;
-
-        if (!Uri.TryCreate(withoutQueryOrFragment, UriKind.Absolute, out var uri) ||
-            string.IsNullOrEmpty(uri.UserInfo))
-        {
-            return withoutQueryOrFragment;
-        }
-
-        var builder = new UriBuilder(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty
-        };
-
-        return builder.Uri.AbsoluteUri;
-    }
 
     private static bool IsPartial(string? level)
         => string.Equals(level, "partial", StringComparison.OrdinalIgnoreCase);

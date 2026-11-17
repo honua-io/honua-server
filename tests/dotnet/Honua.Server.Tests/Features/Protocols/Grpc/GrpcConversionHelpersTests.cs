@@ -358,7 +358,7 @@ public sealed class GrpcConversionHelpersTests
     [UnitTest]
     public void ToProtoFeature_WithObjectIdFieldName_DoesNotRepeatTheIdAsAnAttribute()
     {
-        // honua-server#5330: storage returns the primary key as a lowercase
+        // Storage returns the primary key as a lowercase
         // "objectid" attribute while the published id field is "OBJECTID".
         // geospatial.v1.Feature carries the id in Feature.id only.
         var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty
@@ -722,7 +722,7 @@ public sealed class GrpcConversionHelpersTests
     [UnitTest]
     public void ToProtoField_UsesAliasThenTitleThenName()
     {
-        // honua-server#5330: same display-name precedence as GeoServices REST.
+        // Same display-name precedence as GeoServices REST.
         var aliased = new MetadataV2Field { Name = "NAME", Alias = "Park Name", Title = "Name title" };
         var titled = new MetadataV2Field { Name = "NAME", Title = "Name title" };
         var bare = new MetadataV2Field { Name = "NAME" };

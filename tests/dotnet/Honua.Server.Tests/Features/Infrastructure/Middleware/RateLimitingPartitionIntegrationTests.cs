@@ -34,7 +34,7 @@ public sealed class RateLimitingPartitionIntegrationTests
         var client = app.GetTestClient();
 
         // Ordinary Console page traffic from one egress IP, well beyond the auth endpoint's 5/min
-        // limit. Before #2779 this shared the same tenant+IP counter as authorize-url.
+        // limit. This must use a separate counter from authorize-url.
         for (var i = 0; i < 50; i++)
         {
             var page = await client.GetAsync(ConsolePagePath);

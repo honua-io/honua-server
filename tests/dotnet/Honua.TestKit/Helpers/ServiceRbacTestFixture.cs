@@ -88,7 +88,7 @@ public static class ServiceRbacTestFixture
                     services.AddSingleton<IFeatureChangeEventPublisher, ChangeLogOnlyFeatureChangeEventPublisher>();
                     configureServices?.Invoke(services);
 
-                    // #1591: FeatureServer applyEdits is Pro-gated. These RBAC suites assert
+                    // FeatureServer applyEdits is Pro-gated. These RBAC suites assert
                     // role-based authorization (403/200) on FeatureServer write endpoints, so
                     // the host must be Pro-licensed or that surface would 402 before RBAC runs.
                     var proLicense = new TestLicenseEntitlementService(HonuaEdition.Pro);

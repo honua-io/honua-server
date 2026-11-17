@@ -507,10 +507,7 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_BlankNodeId_Returns400WithInvalidNodeId()
     {
-        // Blank ids previously planned and applied, emitting blank `nodeId`
-        // values in the event stream. The resolver now rejects them with a
-        // stable `invalid-node-id` diagnostic that surfaces at the REST
-        // boundary.
+        // Blank node IDs must produce a stable invalid-node-id diagnostic at the REST boundary.
         using var client = _fixture.Application.CreateClient();
 
         var document = BuildDocument(ComputeNode(""));
@@ -527,10 +524,8 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_NullNodesCollection_Returns400WithInvalidRequestBody()
     {
-        // The DTO default is an empty list, but System.Text.Json preserves an
-        // explicit null. Previously the transport swallowed it and the
-        // downstream enumeration tripped a NullReferenceException — today the
-        // boundary validates and maps to the documented 400 contract.
+        // System.Text.Json preserves explicit null despite an empty-list DTO default.
+        // The boundary must validate it and return the documented HTTP 400.
         using var client = _fixture.Application.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -832,7 +827,7 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
         Assert.Equal(contentHash, doc.RootElement.GetProperty("contentHash").GetString());
     }
 
-    // ---- AI-operations guardrail ladder (#1631) -------------------------
+    // ---- AI-operations guardrail ladder -------------------------
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]

@@ -136,7 +136,7 @@ public sealed class GeoservicesServiceUrlValidationTests
         result.ErrorMessage.Should().Contain("not allowed");
     }
 
-    // PA-153: host allowlist tests (SSRF defence)
+    // host allowlist tests (SSRF defence)
 
     [UnitTest]
     public async Task ValidateAsync_AllowlistConfigured_MatchingSuffix_ReturnsSuccess()
@@ -249,7 +249,7 @@ public sealed class GeoservicesServiceUrlValidationTests
         result.ErrorMessage.Should().Be(OgcServiceUrlValidation.DisallowedHostMessage);
     }
 
-    // PA-154: ValidateAndResolveAsync pinned-address helper
+    // ValidateAndResolveAsync pinned-address helper
 
     [UnitTest]
     public async Task ValidateAndResolveAsync_PublicAddress_ReturnsFalseAndAddresses()

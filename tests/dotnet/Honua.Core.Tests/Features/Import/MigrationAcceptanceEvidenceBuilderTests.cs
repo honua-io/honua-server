@@ -145,12 +145,18 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
                     "geoservices-rest",
                     [
                         "https://user:password@example.test/evidence/inventory.json?token=secret#fragment",
-                        " s3://migration-evidence/run/parity.json?X-Amz-Signature=secret "
+                        " s3://migration-evidence/run/parity.json?X-Amz-Signature=secret ",
+                        "https://example.test/evidence/inventory.json#duplicate",
+                        " artifacts/run.json?token=secret ",
+                        "artifacts/run.json#duplicate",
+                        "#secret",
+                        " "
                     ])
             ]);
 
         suite.Entries.Should().ContainSingle()
             .Which.EvidenceReferences.Should().Equal(
+                "artifacts/run.json",
                 "https://example.test/evidence/inventory.json",
                 "s3://migration-evidence/run/parity.json");
 

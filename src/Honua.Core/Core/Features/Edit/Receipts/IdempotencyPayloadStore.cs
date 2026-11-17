@@ -1,17 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Infrastructure.Security;
-
-namespace Honua.Protocols.GeoServices.FeatureServer.Services;
+namespace Honua.Core.Features.Edit.Receipts;
 
 // Both at-most-once stores share this reservation mechanic: concurrent same-key requests race for
 // one reservation, the loser gets no token, and a store failure is reported without failing the request.
-internal sealed class IdempotencyPayloadStore(IIdempotencyReservationStore reservations)
+public sealed class IdempotencyPayloadStore(IIdempotencyReservationStore reservations)
 {
-    internal static readonly TimeSpan DedupeWindow = TimeSpan.FromHours(24);
+    public static readonly TimeSpan DedupeWindow = TimeSpan.FromHours(24);
 
-    internal static readonly TimeSpan ReservationWindow = TimeSpan.FromSeconds(60);
+    public static readonly TimeSpan ReservationWindow = TimeSpan.FromSeconds(60);
 
     // A lookup failure means the retry is applied again rather than deduplicated.
     public async Task<byte[]?> TryGetAsync(string key, Action<Exception> onStoreUnavailable, CancellationToken cancellationToken)
@@ -30,14 +28,13 @@ internal sealed class IdempotencyPayloadStore(IIdempotencyReservationStore reser
     // A store failure lets the request proceed, so an outage costs at most a duplicate. The token
     // is still returned so the caller's release path is uniform; releasing it is a no-op.
     public async Task<string?> TryReserveAsync(
-        string key,
-        TimeSpan reservationWindow,
+        IdempotencyReservationRequest request,
         Action<Exception> onStoreUnavailable,
         CancellationToken cancellationToken)
     {
         try
         {
-            var reservation = await reservations.TryReserveAsync(key, reservationWindow, cancellationToken).ConfigureAwait(false);
+            var reservation = await reservations.TryReserveAsync(request.Key, request.Window, cancellationToken).ConfigureAwait(false);
             return reservation?.ReservationToken;
         }
         catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
@@ -50,16 +47,14 @@ internal sealed class IdempotencyPayloadStore(IIdempotencyReservationStore reser
     // The receipt is written only when the key is free or still holds this request's reservation, so
     // an expired owner cannot overwrite a newer reservation or receipt.
     public async Task<bool> SetIfAbsentOrOwnedAsync(
-        IdempotencyReservation reservation,
-        byte[] payload,
+        IdempotencyReceiptWrite write,
         Action<Exception> onStoreUnavailable,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrEmpty(reservation.ReservationToken);
-        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentException.ThrowIfNullOrEmpty(write.Reservation.ReservationToken);
         try
         {
-            return await reservations.CompleteAsync(reservation, payload, DedupeWindow, cancellationToken).ConfigureAwait(false);
+            return await reservations.CompleteAsync(write, DedupeWindow, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
         {

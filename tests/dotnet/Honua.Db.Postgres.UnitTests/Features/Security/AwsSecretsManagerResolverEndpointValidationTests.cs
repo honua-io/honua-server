@@ -11,10 +11,10 @@ namespace Honua.Db.Postgres.Tests.Features.Security;
 [global::Xunit.Trait("Tier", "Fast")]
 public class AwsSecretsManagerResolverEndpointValidationTests
 {
-    // Bootstrap (HttpClient-based) constructor added for honua-server#3011: Program.cs's Redis
-    // ConnectionMultiplexer wiring must resolve aws:secretsmanager: connection-string references
-    // before WebApplicationBuilder.Build() runs, so it cannot pull the named resilient clients from
-    // an IHttpClientFactory the way the DI-registered instance (used for the Postgres
+    // Bootstrap (HttpClient-based) constructor: Program.cs's pre-build connection wiring
+    // must resolve aws:secretsmanager: connection-string references before
+    // WebApplicationBuilder.Build() runs, so it cannot pull the named resilient clients from an
+    // IHttpClientFactory the way the DI-registered instance (used for the Postgres
     // DefaultConnection string) does. These tests only prove the bootstrap constructor produces a
     // working resolver for reference-recognition purposes — no network call is made.
     [Fact]

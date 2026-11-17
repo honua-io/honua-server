@@ -256,7 +256,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
 
                 // Content-aware evidence validation (existence + gate/lane substantiation) lives in
                 // ProofEvidenceValidator and is asserted by
-                // ProofLedger_EveryImplementedProof_ShouldCiteAGateItsLaneRuns (honua-server#2877).
+                // ProofLedger_EveryImplementedProof_ShouldCiteAGateItsLaneRuns.
 
                 if (!string.Equals(proof.Status, "implemented", StringComparison.OrdinalIgnoreCase))
                 {

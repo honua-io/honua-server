@@ -22,7 +22,7 @@ public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
 
     private async Task EnsureTileCacheSchemaAsync()
     {
-        // honua-server#1568 (signature 2): this DDL creates the literal, process-global
+        // This DDL creates the literal, process-global
         // honua.tile_caches/_entries tables (search_path isolation does not scope them), so apply
         // it under the shared seed advisory lock to keep parallel [Collection("Database")] tests
         // off the 40P01 deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global
@@ -59,7 +59,7 @@ public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
             );
             """);
 
-        // honua-server#1568: honua.tile_caches/_entries are process-global (not search_path
+        // Honua.tile_caches/_entries are process-global (not search_path
         // scoped). These tests assert a first write is Inserted (not AlreadyPresent), so clear
         // the deterministic-cache-id rows up front. The class is one xUnit collection, so its
         // tests do not run concurrently with each other; this also makes the suite robust against

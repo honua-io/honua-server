@@ -13,6 +13,34 @@ internal sealed record RefusedBootRun(bool Exited, int ExitCode, string Output)
 
     public string Tail => Output.Length <= TailLength ? Output : Output[^TailLength..];
 
+    // The cached test payload's server in Production against the given database; callers add the setting under test.
+    public static ProcessStartInfo ProductionServer(string connectionString, IEnumerable<string> inheritedKeysToRemove)
+    {
+        var serverDirectory = AppContext.BaseDirectory;
+        var serverAssembly = Path.Join(serverDirectory, "Honua.Server.dll");
+        File.Exists(serverAssembly).Should().BeTrue("the cached test payload contains the server runtime ({0})", serverDirectory);
+        var start = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = serverDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        start.ArgumentList.Add(serverAssembly);
+        foreach (var key in inheritedKeysToRemove)
+        {
+            start.Environment.Remove(key);
+        }
+
+        start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
+        start.Environment["DOTNET_ENVIRONMENT"] = "Production";
+        start.Environment["ASPNETCORE_URLS"] = "http://127.0.0.1:0";
+        start.Environment["ConnectionStrings__DefaultConnection"] = connectionString;
+        start.Environment["DataSource__Provider"] = "postgis";
+        return start;
+    }
+
     public static async Task<RefusedBootRun> RunAsync(ProcessStartInfo start, TimeSpan deadline)
     {
         using var process = new Process { StartInfo = start };

@@ -164,7 +164,7 @@ public sealed partial class FeatureLockEnforcingFeatureWriterTests
         inner.DeleteCalls.Should().Be(0);
     }
 
-    // ---- Aliased publication: index vs storage handle (SEC-4) -----------
+    // ---- Aliased publication: index vs storage handle -----------
 
     private const string AliasedServiceName = "permits";
 

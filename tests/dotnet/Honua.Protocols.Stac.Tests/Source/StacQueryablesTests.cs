@@ -145,7 +145,7 @@ public sealed class StacQueryablesAuthorizationTests : IAsyncLifetime
         // AccessPolicyHelpers reports RequiresAuthentication for an anonymous principal against
         // AllowAnonymous=false, so the denial is exactly 401 with a challenge — 403 would mean
         // the caller was authenticated and merely unauthorised, which is a different defect.
-        // Before fix BH-S-01 the handler skipped the access check and returned 200.
+
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.WwwAuthenticate.Should().NotBeEmpty(
             "a 401 must carry the authentication challenge that tells the client how to authenticate");

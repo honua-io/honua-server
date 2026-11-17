@@ -118,7 +118,7 @@ public class CogTileResolverTests
             col: 0,
             RasterFormat.JPEG);
 
-        // What #4205 served: GDAL's abbreviated tile has no quantization tables and cannot decode.
+        // GDAL's abbreviated tile has no quantization tables and cannot decode.
         SKBitmap.Decode(rawTile).Should().BeNull();
         result.Should().NotBeNull();
         result!.Value.ContentType.Should().Be("image/jpeg");

@@ -852,8 +852,7 @@ public sealed class ODataEndpointTests : IClassFixture<ODataProHost>, IAsyncLife
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         // Chunked framing is applied by the transport, which the in-memory test server does not
-        // have; ODataStreamingTimeoutAbortTests proves this page is chunked on a real Kestrel host
-        // (#5472).
+        // have; ODataStreamingTimeoutAbortTests proves this page is chunked on a real Kestrel host.
 
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -971,7 +970,7 @@ public sealed class ODataEndpointTests : IClassFixture<ODataProHost>, IAsyncLife
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
 
-        // OData 4.01 Part 1 §11.2.6.3 (#5464): $top=2 requests at most two items, so the
+        // OData 4.01 Part 1 §11.2.6.3: $top=2 requests at most two items, so the
         // response that returns them ends the requested collection with no nextLink.
         document.RootElement.GetProperty("value").EnumerateArray().Should().HaveCount(2);
         document.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeFalse();

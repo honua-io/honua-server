@@ -217,7 +217,7 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Ingest_PromotionFails_MarksActivityAsErrorAndRethrows()
     {
-        // PA-203: IngestAsync already starts a span but never marked it failed when the
+        // IngestAsync already starts a span but never marked it failed when the
         // stage -> register -> promote pipeline's final promote step throws. Force
         // Directory.Move to fail by pre-occupying the final path with a plain file (not a
         // directory), which is exactly what the promotion catch/compensation branch guards

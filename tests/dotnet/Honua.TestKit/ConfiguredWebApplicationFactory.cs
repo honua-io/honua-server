@@ -75,7 +75,7 @@ internal static class ConfiguredWebApplicationFactory
             // default. Unpinned, the host's environment was whatever ASPNETCORE_ENVIRONMENT
             // another host held at that instant: usually unset (Development), but "Test" while
             // a concurrent host was inside StartInEnvironment — and a Test host skips the
-            // infrastructure composition root unless it opts in (#4640). Callers may still
+            // infrastructure composition root unless it opts in. Callers may still
             // override this in their own configure delegate.
             builder.UseEnvironment(_environmentName);
             Infrastructure.TestHostHttpClientLifetime.Apply(builder);

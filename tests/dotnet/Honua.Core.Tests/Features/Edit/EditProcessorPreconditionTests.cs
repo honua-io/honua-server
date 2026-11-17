@@ -156,8 +156,7 @@ public sealed class EditProcessorPreconditionTests
     [UnitTest]
     public void ToFeatureEditBatch_EmitsActivitySpan()
     {
-        // PA-018: the feature-write pipeline (validate/optimize/convert) previously emitted no
-        // telemetry span at all.
+        // Feature-write validation, optimization and conversion emit a telemetry span.
         var activities = new List<Activity>();
         using var listener = new ActivityListener
         {
@@ -183,10 +182,9 @@ public sealed class EditProcessorPreconditionTests
     {
         // A spatial layer does not universally require geometry: a nullable geometry
         // column legitimately accepts attribute-only ("null geometry") creates, which the
-        // GeoServices/OGC/OData edit paths all support (Issue #45). The edit-validation
-        // layer must not blanket-reject null geometry on a spatial layer; a NOT NULL
-        // geometry column is enforced by the database constraint instead. (Reverts the
-        // over-broad BH-014 gate from #2423 that regressed attribute-only creates.)
+        // GeoServices/OGC/OData edit paths all support. The edit-validation layer must
+        // not blanket-reject null geometry on a spatial layer; a NOT NULL geometry column
+        // is enforced by the database constraint instead.
         var processor = CreateProcessor();
 
         var resource = new MetadataV2Object
@@ -211,7 +209,7 @@ public sealed class EditProcessorPreconditionTests
     [UnitTest]
     public void ValidateCreate_SpatialLayerWithGeometry_Succeeds()
     {
-        // BH-014 complement: a create with geometry on a spatial layer must still pass.
+        // a create with geometry on a spatial layer must still pass.
         var processor = CreateProcessor();
 
         var resource = new MetadataV2Object

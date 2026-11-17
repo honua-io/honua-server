@@ -128,7 +128,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         query.OutputFormat.Should().Be(RasterFormat.TIFF);
         query.ClipRegion.Should().NotBeNull();
 
-        // #4424: the requested bbox is the whole raster footprint, so the covered extent is
+        // The requested bbox is the whole raster footprint, so the covered extent is
         // the footprint — but it is now DERIVED from the clip the handler passed down, and the
         // payload is derived from that extent. A handler that dropped `bbox` on the floor, or
         // clipped to the wrong window, produces different bytes and a different Content-Bbox.
@@ -378,11 +378,8 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
                 var width = query.OutputWidth ?? 64;
                 var height = query.OutputHeight ?? 64;
 
-                // #4424: the exported extent and payload are DERIVED from the request, not
-                // hard-coded. Previously the mock returned the same constant extent and the
-                // same four bytes whatever was asked for, so `Content-Bbox` contained
-                // "-122.5" for any bbox on the planet and a regression in which `bbox` was
-                // parsed but never applied passed every Coverages test.
+                // The exported extent and payload derive from the request so bbox assertions
+                // can detect ignored spatial filters.
                 var extent = ClippedExtent(query, srid);
                 return Task.FromResult(new RasterResult
                 {

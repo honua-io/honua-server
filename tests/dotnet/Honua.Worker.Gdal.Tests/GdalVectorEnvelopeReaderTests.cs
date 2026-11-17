@@ -98,7 +98,7 @@ public sealed class GdalVectorEnvelopeReaderTests
     [UnitTest]
     public void TryReadEnvelope_AttributeNamedCoordinatesOrBbox_DoesNotWidenEnvelope()
     {
-        // Codex review P2 (#2826): feature attributes named "coordinates"/"bbox" live under
+        // Feature attributes named "coordinates"/"bbox" live under
         // "properties" and must not contribute to the envelope — only geometry members count.
         const string json =
             "{\"type\":\"Feature\","

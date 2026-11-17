@@ -69,7 +69,7 @@ public sealed class EditingParityConformanceMatrixTests
 
         return
         [
-            // ---- Owner-based edit policy (#2132) ----
+            // ---- Owner-based edit policy ----
             new("owner.match.allow", ParityStatus.Supported, () =>
                 OwnerEditPolicyEvaluator.Evaluate(
                     ownerPolicy, AttributeRuleEditEvent.Update, "alice",
@@ -87,7 +87,7 @@ public sealed class EditingParityConformanceMatrixTests
                     ownerPolicy, AttributeRuleEditEvent.Insert, null,
                     EditPrincipal.Anonymous).IsAllowed.Should().BeFalse()),
 
-            // ---- Contingent values (#2133) ----
+            // ---- Contingent values ----
             new("contingent.valid.accept", ParityStatus.Supported, () =>
                 ContingentValueValidator.Validate(
                     contingentResource, Attributes(("color", "red"), ("size", "S")))
@@ -103,7 +103,7 @@ public sealed class EditingParityConformanceMatrixTests
 
             .. EditGateRows(contingentResource),
 
-            // ---- Attribute-rule depth (#2134) ----
+            // ---- Attribute-rule depth ----
             new("attributeRule.immediateVsBatch", ParityStatus.Supported, () =>
                 AttributeRuleEngine.Apply(
                     BatchRuleResource(), Attributes(("qty", 4)), AttributeRuleEditEvent.Insert)
@@ -121,7 +121,7 @@ public sealed class EditingParityConformanceMatrixTests
                     UnsupportedArcadeResource(), Attributes(("qty", 1)), AttributeRuleEditEvent.Insert)
                     .IsValid.Should().BeTrue()),
 
-            // ---- VersionManagementServer reconcile shapes (#2135) — partial, tracked in receipt ----
+            // ---- VersionManagementServer reconcile shapes — partial, tracked in receipt ----
             new("versionManagement.reconcile.byObject", ParityStatus.Partial, static () => { }),
             new("versionManagement.reconcile.withPost", ParityStatus.Partial, static () => { }),
             new("versionManagement.resolveConflicts.shape", ParityStatus.Partial, static () => { }),

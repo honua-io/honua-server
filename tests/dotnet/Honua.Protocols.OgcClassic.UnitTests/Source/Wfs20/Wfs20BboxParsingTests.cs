@@ -49,7 +49,7 @@ public sealed class Wfs20BboxParsingTests
         method.Should().NotBeNull();
 
         // Third argument is the optional wfsVersion; null exercises the WFS 2.0 path
-        // (CRS-derived axis order), matching these tests' expectations (#2737).
+        // (CRS-derived axis order), matching these tests' expectations.
         var result = method!.Invoke(null, [bbox, resource, null]);
         result.Should().NotBeNull();
 

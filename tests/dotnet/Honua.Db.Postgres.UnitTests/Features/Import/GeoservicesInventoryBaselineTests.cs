@@ -200,7 +200,7 @@ public sealed class GeoservicesInventoryBaselineTests
             record.SourceId == resource.Id &&
             record.Category == "fields" &&
             record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
-        // #4600 (AC4): imported domains are persisted, served, enforced on applyEdits and verified by
+        // Imported domains are persisted, served, enforced on applyEdits and verified by
         // catalog reconciliation, so the classifier reports them as automated, not assisted.
         artifact.FidelityClassifications.Should().Contain(record =>
             record.SourceId == resource.Id &&
@@ -212,7 +212,7 @@ public sealed class GeoservicesInventoryBaselineTests
             record.Category == "subtypes" &&
             record.Code == ImportCompatibilityCodes.GeoServicesSubtypesManualReview &&
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
-        // Issue #1256: per-relationship fidelity records now classify simple
+        // Per-relationship fidelity records classify simple
         // (non-composite, non-attributed, non-many-to-many) relationships as
         // Automated so the apply path can recreate them deterministically.
         var relationshipRecord = artifact.FidelityClassifications.Should().ContainSingle(record =>
@@ -237,10 +237,8 @@ public sealed class GeoservicesInventoryBaselineTests
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
 
         artifact.FidelityMatrix.Should().NotBeNull();
-        // Manual-review categories on current trunk are subtypes, renderers, and
-        // time-metadata (#1256 reclassifies the simple relationship as Automated; #4600
-        // reclassifies domains as Automated). Domains were this fixture's only assisted
-        // construct, so no assisted cell remains.
+        // Manual-review categories are subtypes, renderers, and time-metadata; the
+        // simple relationship and domains are Automated, so no assisted cell remains.
         artifact.FidelityMatrix!.Summary.Should().Match<MigrationFidelityMatrixSummary>(summary =>
             summary.AutomatedCount >= 6 &&
             summary.AssistedCount == 0 &&
@@ -278,7 +276,7 @@ public sealed class GeoservicesInventoryBaselineTests
         var named = resource.Fields.Single(f => f.Name == "ZONING");
         named.DomainType.Should().Be("codedValue");
 
-        // #4600: an over-cap coded-value domain is not persisted, so the classifier must not report the
+        // An over-cap coded-value domain is not persisted, so the classifier must not report the
         // domains construct as automated for this resource.
         artifact.FidelityClassifications.Should().ContainSingle(record =>
                 record.SourceId == resource.Id && record.Category == "domains")

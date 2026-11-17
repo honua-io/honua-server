@@ -739,8 +739,8 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
     [Endpoint("GET /ogc/wcs/{serviceId}")]
     public async Task Wcs_GetCapabilities_DesktopPath_AdvertisesOperationsWithoutServicesSegment()
     {
-        // ArcGIS Pro treats any {root}/services/{name}/ URL as an ArcGIS Server site
-        // (#4584), so every operation URL a client follows must stay on this form.
+        // ArcGIS Pro treats any {root}/services/{name}/ URL as an ArcGIS Server site,
+        // so every operation URL a client follows must stay on this form.
         var response = await _fixture.Client.GetAsync(
             $"/ogc/wcs/{WebAppFixture.TestServiceId}?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
 
@@ -879,7 +879,7 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
     public async Task Wcs_GetCoverage_AdditionalDimensionAxis_ReturnsInvalidAxisLabelException()
     {
-        // #1872: a well-formed slice on a named non-spatial, non-temporal axis (here a
+        // A well-formed slice on a named non-spatial, non-temporal axis (here a
         // vertical/elevation axis) is parsed and validated against the coverage's
         // registered additional dimension axes. The primary-raster coverage offers no
         // additional axes, so the slice names an axis the coverage does not carry and

@@ -164,7 +164,7 @@ public static class CapabilityKeyCatalog
 
         // Field ops
         new("fieldops.forms", "Field Collection Forms", FeatureCatalog.Categories.FieldOps,
-            HonuaEdition.Community, "Read and submit online form packages. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."),
+            HonuaEdition.Community, "Read and submit online Forms. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."),
 
         // Geocoding — Community. Forward and reverse single-address geocoding are the
         // demo/adoption showcase path; batch geocoding (geocoding.batch) remains an Enterprise

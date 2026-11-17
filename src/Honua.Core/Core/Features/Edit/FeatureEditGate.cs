@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Edit;
@@ -11,10 +12,14 @@ namespace Honua.Core.Features.Edit;
 public sealed record FeatureEditCheck(MetadataV2Object Resource, FeatureEditHookScope Scope, FeatureEditBatch Batch)
 {
     public Func<FeatureEditRow, IReadOnlyDictionary<string, object?>>? EffectiveAttributes { get; init; }
+
+    public IUnsupportedExpressionSink? UnsupportedExpressions { get; init; }
+
+    public IReadOnlyList<FeatureEditHookRejection> Rejections { get; init; } = [];
 }
 
 // The pre-write checks every edit protocol shares: contingent values on the effective row, then the plugin before-hooks.
-public static class FeatureEditGate
+public static partial class FeatureEditGate
 {
     // A client error: the row was refused by a contingent-value rule or a plugin, not by a server fault.
     public const int RejectedErrorCode = 400;
@@ -27,20 +32,25 @@ public static class FeatureEditGate
         ArgumentNullException.ThrowIfNull(hooks);
         ArgumentNullException.ThrowIfNull(check);
         var batch = check.Batch;
-        var rejected = ValidateContingentValues(check.Resource, batch, check.EffectiveAttributes);
+        IReadOnlyList<FeatureEditHookRejection> rejected =
+        [
+            .. check.Rejections,
+            .. ValidateContingentValues(check.Resource, batch, check.EffectiveAttributes)
+                .Where(rejection => !check.Rejections.Any(prior => prior.Kind == rejection.Kind && prior.Index == rejection.Index)),
+        ];
         if (!hooks.HasHooks || (rejected.Count > 0 && batch.RollbackOnFailure))
         {
             return rejected;
         }
 
-        var remaining = WithoutRejected(batch, rejected);
+        var remaining = WithoutRejected(WithEffectiveUpdates(batch, check.EffectiveAttributes), rejected);
         if (remaining.IsEmpty)
         {
             return rejected;
         }
 
         var hookRejections = await hooks
-            .RunBeforeAsync(check.Scope, WithEffectiveUpdates(remaining, check.EffectiveAttributes), cancellationToken)
+            .RunBeforeAsync(check.Scope, remaining, cancellationToken)
             .ConfigureAwait(false);
         return [.. rejected, .. ToBatchIndexes(batch, rejected, hookRejections)];
     }
@@ -184,29 +194,18 @@ public static class FeatureEditGate
         }
 
         var rows = FeatureEditRows.Enumerate(batch);
-        if (!batch.Operations.IsDefaultOrEmpty)
-        {
-            return batch with
-            {
-                Operations =
-                [
-                    .. batch.Operations.Select((operation, position) =>
-                        operation.Kind == FeatureEditOperationKind.Update && operation.Feature is { } feature
-                            ? operation with { Feature = Effective(feature, effectiveAttributes(rows[position])) }
-                            : operation),
-                ],
-            };
-        }
-
-        if (batch.Updates.IsDefaultOrEmpty)
-        {
-            return batch;
-        }
-
         var updates = rows.Where(static row => row.Kind == FeatureEditOperationKind.Update).ToArray();
         return batch with
         {
-            Updates = [.. batch.Updates.Select((feature, index) => Effective(feature, effectiveAttributes(updates[index])))],
+            Updates = batch.Updates.IsDefaultOrEmpty ? batch.Updates :
+                [.. batch.Updates.Select((feature, index) => Effective(feature, effectiveAttributes(updates[index])))],
+            Operations = batch.Operations.IsDefaultOrEmpty ? batch.Operations :
+            [
+                .. batch.Operations.Select((operation, position) =>
+                    operation.Kind == FeatureEditOperationKind.Update && operation.Feature is { } feature
+                        ? operation with { Feature = Effective(feature, effectiveAttributes(rows[position])) }
+                        : operation),
+            ],
         };
     }
 

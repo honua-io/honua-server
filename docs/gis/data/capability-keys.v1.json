@@ -309,7 +309,7 @@
       "displayName": "Field Collection Forms",
       "category": "FieldOps",
       "edition": "Community",
-      "description": "Read and submit online form packages. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."
+      "description": "Read and submit online Forms. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."
     },
     {
       "key": "fieldops.offline-sync",

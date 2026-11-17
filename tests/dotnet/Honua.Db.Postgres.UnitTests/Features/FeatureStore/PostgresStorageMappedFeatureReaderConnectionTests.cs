@@ -39,7 +39,7 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
             connectionEncryptionService: null);
 
         // null is the "use the default connection provider" signal honored by
-        // OpenConnectionAsync, restoring the pre-#1662 behavior.
+        // OpenConnectionAsync.
         resolved.Should().BeNull();
     }
 
@@ -68,7 +68,7 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
         var resolved = await ResolveBoundConnectionStringAsync(connection, encryptionService);
 
         // null is the "use the default connection provider" signal honored by
-        // OpenConnectionAsync, restoring the pre-#1662 behavior for the empty-ID sentinel.
+        // OpenConnectionAsync, including for the empty-ID sentinel.
         resolved.Should().BeNull();
     }
 
@@ -179,9 +179,8 @@ public sealed class PostgresStorageMappedFeatureReaderConnectionTests
     [Fact]
     public async Task ResolveBoundConnectionString_SecretReference_ResolvesThroughTheRequestSecretResolver()
     {
-        // honua-server#6499: a connection whose credentials are an external secret reference
-        // (no encrypted bytes, no plaintext) used to fail every read with "no usable connection
-        // string" because the reader never consulted the secret-reference resolver.
+        // A connection with an external secret reference, without encrypted bytes
+        // or plaintext, must resolve its credentials through the secret resolver.
         const string secretConnectionString = "Host=demo-rds;Port=5432;Database=demo;Username=svc;Password=secret";
         var connection = new DataConnection
         {
