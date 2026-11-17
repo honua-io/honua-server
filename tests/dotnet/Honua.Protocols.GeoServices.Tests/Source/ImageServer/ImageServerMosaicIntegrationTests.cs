@@ -168,13 +168,11 @@ public sealed class ImageServerMosaicIntegrationTests : IClassFixture<WebAppFixt
             }
 
             // "east" covers x in [2, 4], so locking it leaves no raster under (1.5, 1).
-            using (var lockedElsewhere = await IdentifyJsonAsync(
+            using var lockedElsewhere = await IdentifyJsonAsync(
                 fixture,
                 "geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326&mosaicRule=" +
-                Uri.EscapeDataString($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{eastId}]}}")))
-            {
-                lockedElsewhere.RootElement.GetProperty("value").GetString().Should().Be("NoData");
-            }
+                Uri.EscapeDataString($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{eastId}]}}"));
+            lockedElsewhere.RootElement.GetProperty("value").GetString().Should().Be("NoData");
         });
     }
 
