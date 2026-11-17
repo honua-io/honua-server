@@ -29,7 +29,7 @@ ROUTING_DATA_FILES = {
 # Recorded CI runs list the files those runs changed; history is not rewritten.
 RECORDED_RUN_ROOTS = ("eng/ci/fixtures/shard-promotion/",)
 
-# The Lambda preview is outside the ECS-on-Fargate scope of the cache retirement (#7354);
+# The Lambda preview is outside the ECS-on-Fargate scope of the cache retirement;
 # its certification harness and event endpoint keep their wording until Lambda is retired.
 LAMBDA_PREVIEW_FILES = {
     "scripts/cloud/lambda-certification.md",
