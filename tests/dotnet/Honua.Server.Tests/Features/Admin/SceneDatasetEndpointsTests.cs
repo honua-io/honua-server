@@ -21,7 +21,8 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public class SceneDatasetEndpointsTests : IAsyncLifetime
+public class SceneDatasetEndpointsTests(SceneDatasetEndpointsTests.SceneHost host)
+    : IClassFixture<SceneDatasetEndpointsTests.SceneHost>
 {
     private const string AdminPassword = "scene-admin-key";
     private const string SharedAssetRoot = "/var/lib/honua/scenes/test";
@@ -32,12 +33,14 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Client;
 
-    public SceneDatasetEndpointsTests()
+    // One host per class: every case registers scenes under its own fresh id and asserts only on
+    // those, so cases do not see each other's rows.
+    public sealed class SceneHost : IAsyncLifetime
     {
-        _fixture = new WebAppFixture()
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {
@@ -45,15 +48,21 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             });
-    }
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-    }
+        internal HttpClient Client { get; private set; } = null!;
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public async Task InitializeAsync()
+        {
+            await Fixture.InitializeAsync();
+            Client = Fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        }
+
+        public async Task DisposeAsync()
+        {
+            Client.Dispose();
+            await Fixture.DisposeAsync();
+        }
+    }
 
     private static string NewSceneId(string suffix) =>
         $"scene-{suffix.ToLowerInvariant()}-{Guid.NewGuid():N}".Substring(0, 32);
