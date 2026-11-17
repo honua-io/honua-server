@@ -147,6 +147,22 @@ qualification_tenant_tokens && exit 61
 ''')
         self.assertEqual(0, completed.returncode, completed.stderr)
 
+    def test_stale_worker_counts_a_lost_execution_lease_as_observed_stale_ownership(self):
+        source = (HARNESS.parent / "gp-heartbeat-recovery.sh").read_text(encoding="utf-8")
+        function = re.search(r"^heartbeat_saw_stale_ownership\(\) \{\n.*?^\}", source, re.M | re.S).group(0)
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash(function + r'''
+job=gp-1
+echo "warn: Execution lease lost for job gp-1 on worker w-1; cancelling the stale attempt" > lease.log
+echo "warn: Skipping state transition for job gp-1: current status is Running" > skip.log
+echo "warn: Execution lease lost for job gp-2 on worker w-1" > other.log
+heartbeat_saw_stale_ownership lease.log || exit 61
+heartbeat_saw_stale_ownership skip.log || exit 62
+heartbeat_saw_stale_ownership other.log && exit 63
+exit 0
+''', directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
     def test_duplicate_delivery_requeues_the_running_row_and_fences_the_first_claim(self):
         functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe", "requeue_claimed_job"))
         with tempfile.TemporaryDirectory() as directory:
