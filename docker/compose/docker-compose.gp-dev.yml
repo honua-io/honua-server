@@ -154,7 +154,7 @@ services:
     security_opt:
       - no-new-privileges:true
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - gp_honua_logs:/tmp/honua-logs
       - gp_honua_cache:/tmp/honua-cache

@@ -158,7 +158,7 @@ services:
       - no-new-privileges:true
     # Writable volumes for runtime data
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - honua_storage:/var/lib/honua/storage
       - honua_logs:/tmp/honua-logs
