@@ -847,10 +847,13 @@ def mapserver() -> None:
         expect(layer.isValid() and layer.extent().width() > 0, layer.extent().toString())
         c.detail = f"crs {layer.crs().authid()}; extent {layer.extent().toString(0)}; sublayers {len(layer.dataProvider().subLayers())}"
     with cell.check("media-schema", "service JSON and PNG32 exports carry their media types") as c:
+        # QGIS keeps fetched tiles in memory, so a second render in this process can draw without
+        # requesting them again; judge the image media types from the first render as well.
+        rendered = list(recorder.exchanges)
         with qgiskit.recording() as recorder:
             qgiskit.render(QgsRasterLayer(source, "ms", "arcgismapserver"), BROWSER_EXTENT_3857, "EPSG:3857")
         types = sorted({("tile" if "/MapServer/tile/" in item.url else item.url.split("?")[0].rsplit("/", 1)[-1], item.content_type)
-                        for item in recorder.exchanges if item.status == 200})
+                        for item in rendered + recorder.exchanges if item.status == 200})
         expect(any(name in ("export", "tile") and (ctype or "").startswith("image/png") for name, ctype in types), types)
         expect(any(name == "MapServer" and "json" in (ctype or "") for name, ctype in types), types)
         c.detail = f"{types}"
