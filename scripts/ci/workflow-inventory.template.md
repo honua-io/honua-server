@@ -14,8 +14,8 @@ Whole-class selections are retained except the GP/NAS routing class, whose
 methods are partitioned with a residual fallback for future tests. Method-union,
 future-method and mutation checks enforce complete, disjoint selection and
 unchanged projects, source triggers and budgets. Historical TRX interval weights
-guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
-refresh measured 23 of those 26 children (gate-model.md, "Measured ranks").
+guide the cuts; they are not measured child elapsed runtimes. The 17 Nov rank
+refresh measured all 26 children (gate-model.md, "Measured ranks").
 
 OGC Classic WMTS exhausted its 20-minute test budget in full run `43612492209`
 (job 132511815046) while producing output three seconds before termination; its
@@ -820,11 +820,18 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (16 Nov 2026): every measured `dispatch_rank` is the median passing
-job duration over ten full trunk runs, counting a run only when the shard's filter at
-its head equals the current filter (gate-model.md, "Measured ranks"). 171 of 219
-shards are measured, ranks sum to 1,644.0 runner-minutes and 189 shards fit the
-10-minute PR shard budget.
+Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the exact median
+passing job duration, rounded half-to-even to 0.1 minute, over the nine full trunk
+runs that started server test children, counting a sample only when its filter
+and project selection match the current definition (gate-model.md, "Measured
+ranks"). Full run 44013566836 passed all 225 children and gives every current
+definition at least one matching measurement, so no split-child estimate
+remains. Ranks sum to 1,522.3 runner-minutes, previously 1,581.4; 203 children
+fit the unchanged 10-minute PR shard budget, previously 196. These are
+scheduling estimates, not runtime savings.
+Temporal's explicit source override uses `prioritize: true` as a tie-breaker
+after changed-test and path-hit counts; candidate admission and caps still apply.
+Override priorities must be boolean; malformed values fail schema validation.
 
 Normalization consumers preserve a producer’s recorded superseded admission across same-SHA draft-to-ready transitions, using exact-attempt Actions job outcomes. If both producer jobs were skipped by job-level admission (draft or non-base edit), the consumer also returns without validation or mutation. Missing envelopes from ordinary producers remain errors.
 
