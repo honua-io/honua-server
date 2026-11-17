@@ -14,7 +14,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-// honua-server#8191: ops notifications are delivered without the Preview geofence pipeline.
+// Ops notifications are delivered without the Preview geofence pipeline.
 public sealed class AlertOpsOnlyDispatchTests
 {
     [UnitTest]

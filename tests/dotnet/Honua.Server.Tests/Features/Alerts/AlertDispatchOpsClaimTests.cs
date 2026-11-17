@@ -11,7 +11,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-// honua-server#8191: with the Preview geofence pipeline off, the dispatcher claims ops-source
+// With the Preview geofence pipeline off, the dispatcher claims ops-source
 // rows only, so a rule-sourced row left from an earlier opt-in is never delivered.
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
