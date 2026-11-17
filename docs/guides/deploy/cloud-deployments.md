@@ -47,7 +47,7 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 The database and observability tiers are separate modules: `aws-data` / `azure-data`
 for the managed PostGIS, and `observability-stack`.
 
-Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the chiseled JIT image with PostGIS as its only database store. Unsuffixed generic release and nightly tags select that image. Native AOT is a separate, optional `-aot` variant; its promotion requires suite and live-journey parity evidence. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
+Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the native-AOT image with PostGIS as its only database store; the 2026.1 release channel and unsuffixed nightly and trunk tags select it. The tag-triggered `latest` and `vX.Y.Z` tags from `deploy.yml` still select the chiseled JIT image, and every channel keeps an explicit `-jit` variant. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
 
 Cloud-targeted tags select their runtime explicitly: `*-ecs-jit` and `*-ecs-jit-full` are JIT variants, while `*-ecs-aot` and `*-lambda-aot` select Native AOT. The shorter `*-ecs` and `*-lambda` compatibility aliases still resolve to the corresponding AOT images; they do not follow the generic default. A published tag does not change the platform support tier in the table above.
 
@@ -63,10 +63,10 @@ These are the generic web image publication contracts (Docker Hub + GHCR). Confi
 | `vX.Y.Z` | A specific PostGIS JIT release | Never (immutable) | `deploy.yml` |
 | `latest-full`, `vX.Y.Z-full` | Corresponding JIT image with additional stores | `latest-full`: stable release or manual default-branch deployment; versioned tag: immutable | `deploy.yml` |
 | `latest-aot`, `vX.Y.Z-aot` | Corresponding optional Native-AOT image | `latest-aot`: stable release or manual default-branch deployment; versioned tag: immutable | `deploy.yml` |
-| `trunk`, `trunk-jit` | Latest certified PostGIS JIT trunk image | A certified nightly candidate is published | `nightly-container-build.yml` |
-| `nightly`, `nightly-YYYYMMDD`, `nightly-<sha7>` | PostGIS JIT moving, dated, and revision-specific nightly images | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `trunk`, `trunk-aot` | Latest certified PostGIS native-AOT trunk image | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `nightly`, `nightly-YYYYMMDD`, `nightly-<sha7>` | PostGIS native-AOT moving, dated, and revision-specific nightly images; each is the same index as its `nightly-aot` tag | A certified nightly candidate is published | `nightly-container-build.yml` |
 | `trunk-jit-full`, `nightly-jit-full`, `nightly-jit-<sha7>-full` | Corresponding JIT nightly with additional stores | A certified nightly candidate is published | `nightly-container-build.yml` |
-| `trunk-aot`, `nightly-aot`, `nightly-aot-<sha7>` | Corresponding optional Native-AOT nightly | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `trunk-jit`, `nightly-jit`, `nightly-jit-<sha7>` | Corresponding PostGIS JIT nightly | A certified nightly candidate is published | `nightly-container-build.yml` |
 
 The getting-started pages use the 2026.1 release channel
 `ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA), which only release
@@ -74,7 +74,7 @@ promotion moves. The exact digest is in the release's `customer-install-manifest
 (`server.image`). Do not infer that a new variant exists from an older tag.
 
 - **Production / demos**: use the release's install manifest and supported platform variant. The mutable `latest` tags can include manual default-branch deployments; select the release image and pin its digest for deployment and rollback.
-- **Trunk-following consumers**: use `trunk` for the default JIT image, or the explicit full/AOT nightly variant required by your workload. Nightlies follow a [certified candidate](../operate/nightly-images.md), rather than every trunk commit.
+- **Trunk-following consumers**: use `trunk` for the default native-AOT image, or the explicit JIT or full nightly variant required by your workload. Nightlies follow a [certified candidate](../operate/nightly-images.md), rather than every trunk commit.
 - **Additional database stores**: select the matching JIT full image and check the installed store inventory before restoring traffic. File-format imports alone do not require the full image.
 
 ## Pattern by team size
