@@ -1049,7 +1049,7 @@ jobs:
           FOUNDATION_FAMILY: ${{ matrix.family }}
         run: |
           case "${FOUNDATION_FAMILY}" in
-            server|protocols) scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis ;;
+            server|protocols) scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 ;;
             providers) scripts/ci/prepare-testcontainer-images.sh ryuk mysql ;;
             *) echo "::error::Unknown container-consuming foundation family"; exit 2 ;;
           esac
@@ -1778,7 +1778,7 @@ jobs:
 
       - name: Prepare GDAL Testcontainers images
         timeout-minutes: 12
-        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18 redis
+        run: scripts/ci/prepare-testcontainer-images.sh ryuk postgis18
 
       - name: Load validated flaky-test quarantine
         env:
