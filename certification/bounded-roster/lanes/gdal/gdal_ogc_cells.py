@@ -122,18 +122,7 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
         bbox_requests = record.fetched_path("bbox=")
         expect(located == {fid: value[2] for fid, value in FIXTURE.items()}, f"lon/lat coordinates differ: {located}")
         expect(windowed == [3, 4], f"bbox window returned {windowed}")
-        if code == "4326":
-            expect(bbox_requests and "bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" in bbox_requests[-1]
-                   and "bbox=37.7" in bbox_requests[-1], f"GDAL did not send a latitude-first EPSG:4326 bbox: {bbox_requests}")
-        else:
-            expect(bbox_requests and "bbox=-122.4" in bbox_requests[-1] and "EPSG/0/4326" not in bbox_requests[-1],
-                   f"GDAL did not send a longitude-first CRS84 bbox: {bbox_requests}")
-            # GDAL chose CRS84, so ask for the same window latitude-first in EPSG:4326 directly.
-            latitude_first, _ = _json_with_headers(
-                OAPIF + "/collections/0/items?bbox=37.715,-122.47,37.745,-122.44"
-                "&bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326")
-            selected = sorted(str(feature.get("id")) for feature in latitude_first.get("features", []))
-            expect(selected == ["3", "4"], f"latitude-first EPSG:4326 bbox returned features {selected}")
+        _expect_bbox_axis_order(code, bbox_requests)
         with gdalkit.session() as projected_record:
             dataset = _open_vector(connection, ["PREFERRED_CRS=EPSG:3857"])
             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
@@ -147,6 +136,22 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
                projected_record.fetched)
         c.detail = (f"layer SRS {code}; lon/lat features match the fixture; bbox {bbox_requests[-1].split('?', 1)[1]} "
                     f"-> features {windowed}; crs=EPSG:3857 feature 1 {projected}")
+
+
+def _expect_bbox_axis_order(code: str | None, bbox_requests: list[str]) -> None:
+    """Check GDAL sent the bbox in the axis order of the CRS it chose."""
+    if code == "4326":
+        expect(bbox_requests and "bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" in bbox_requests[-1]
+               and "bbox=37.7" in bbox_requests[-1], f"GDAL did not send a latitude-first EPSG:4326 bbox: {bbox_requests}")
+        return
+    expect(bbox_requests and "bbox=-122.4" in bbox_requests[-1] and "EPSG/0/4326" not in bbox_requests[-1],
+           f"GDAL did not send a longitude-first CRS84 bbox: {bbox_requests}")
+    # GDAL chose CRS84, so ask for the same window latitude-first in EPSG:4326 directly.
+    latitude_first, _ = _json_with_headers(
+        OAPIF + "/collections/0/items?bbox=37.715,-122.47,37.745,-122.44"
+        "&bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326")
+    selected = sorted(str(feature.get("id")) for feature in latitude_first.get("features", []))
+    expect(selected == ["3", "4"], f"latitude-first EPSG:4326 bbox returned features {selected}")
 
 
 def _srs(code: int) -> osr.SpatialReference:

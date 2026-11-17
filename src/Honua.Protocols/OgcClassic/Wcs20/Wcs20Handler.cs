@@ -1412,23 +1412,24 @@ internal sealed partial class Wcs20Handler
         var baseWidth = Math.Max(raster.Width, 1);
         var baseHeight = Math.Max(raster.Height, 1);
 
-        if (spatialSubsetValues.Count > 0)
+        if (spatialSubsetValues.Count > 0 || !string.IsNullOrWhiteSpace(bbox))
         {
-            if (!TryParseSubsetEnvelope(spatialSubsetValues, raster, subsettingCrs, out var envelope, out error) ||
-                !TryRequireCoverageIntersection(raster, subsettingCrs, envelope, Wcs20Utilities.Parameters.Subset, out error))
+            var bySubset = spatialSubsetValues.Count > 0;
+            Envelope envelope;
+            var parsed = bySubset
+                ? TryParseSubsetEnvelope(spatialSubsetValues, raster, subsettingCrs, out envelope, out error)
+                : TryParseBboxEnvelope(bbox!, subsettingCrs, out envelope, out error);
+            if (!parsed)
             {
                 return false;
             }
 
-            rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(envelope, subsettingCrs.Srid) };
-            sliceBounds = CreateRasterExtent(envelope, subsettingCrs.Srid);
-            TryRefineBaseGrid(raster, subsettingCrs, envelope, ref baseWidth, ref baseHeight);
-        }
-        else if (!string.IsNullOrWhiteSpace(bbox))
-        {
-            if (!TryParseBboxEnvelope(bbox, subsettingCrs, out var envelope, out error) ||
-                !TryRequireCoverageIntersection(raster, subsettingCrs, envelope, Wcs20Utilities.Parameters.BBox, out error))
+            if (TrimMissesCoverage(raster, subsettingCrs, envelope))
             {
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                    "The requested spatial subset does not intersect the coverage extent.",
+                    bySubset ? Wcs20Utilities.Parameters.Subset : Wcs20Utilities.Parameters.BBox);
                 return false;
             }
 
@@ -1952,36 +1953,25 @@ internal sealed partial class Wcs20Handler
            !value.Contains('T', StringComparison.Ordinal) &&
            !value.Contains(':', StringComparison.Ordinal);
 
+    // A trim wholly outside the coverage selects no cells; WCS 2.0 Core answers it with
+    // InvalidSubsetting rather than handing the raster store an empty clip. The extent is
+    // only comparable when the trim is in the coverage's native CRS and the extent is finite.
+    private static bool TrimMissesCoverage(RasterInfo raster, CrsDefinition subsettingCrs, Envelope trim)
+    {
+        if (!IsNativeSubsettingCrs(raster, subsettingCrs) || !TryResolveExtent(raster, out var extent) ||
+            !double.IsFinite(extent.XMin) || !double.IsFinite(extent.YMin) ||
+            !double.IsFinite(extent.XMax) || !double.IsFinite(extent.YMax))
+        {
+            return false;
+        }
+
+        return trim.MaxX < extent.XMin || trim.MinX > extent.XMax || trim.MaxY < extent.YMin || trim.MinY > extent.YMax;
+    }
+
     // Refines the Scaling-extension base grid to the trimmed pixel dimensions when
     // the spatial subset is expressed in the coverage native CRS. For non-native
     // subsetting CRSs the trimmed pixel count is not directly derivable here, so
     // the full native grid remains the base (scaling still applies uniformly).
-    // A trim wholly outside the coverage selects no cells; WCS 2.0 Core answers it with
-    // InvalidSubsetting rather than handing the raster store an empty clip. The extent is
-    // only comparable when the trim is in the coverage's native CRS and the extent is finite.
-    private static bool TryRequireCoverageIntersection(
-        RasterInfo raster,
-        CrsDefinition subsettingCrs,
-        Envelope trim,
-        string locator,
-        out WcsParameterError error)
-    {
-        error = default;
-        if (!IsNativeSubsettingCrs(raster, subsettingCrs) || !TryResolveExtent(raster, out var extent) ||
-            !double.IsFinite(extent.XMin) || !double.IsFinite(extent.YMin) ||
-            !double.IsFinite(extent.XMax) || !double.IsFinite(extent.YMax) ||
-            (trim.MinX <= extent.XMax && trim.MaxX >= extent.XMin && trim.MinY <= extent.YMax && trim.MaxY >= extent.YMin))
-        {
-            return true;
-        }
-
-        error = new WcsParameterError(
-            Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
-            "The requested spatial subset does not intersect the coverage extent.",
-            locator);
-        return false;
-    }
-
     private static void TryRefineBaseGrid(
         RasterInfo raster,
         CrsDefinition subsettingCrs,
