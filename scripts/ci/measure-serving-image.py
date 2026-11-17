@@ -194,26 +194,37 @@ def verified_layer_bytes(stream, diff_id):
     return size
 
 
-def saved_image_bytes(path, image_id, platform=None):
+def saved_image_measurement(path, image_id, platform=None):
     with tarfile.open(path) as archive:
         if 'index.json' in archive.getnames():
-            return uncompressed_oci_bytes(archive, oci_image_payload(archive, image_id, platform))
+            payload = oci_image_payload(archive, image_id, platform)
+            return {'config_digest': json.loads(payload)['config']['digest'],
+                    'uncompressed_layer_bytes': uncompressed_oci_bytes(archive, payload)}
         manifests = json.load(archive.extractfile('manifest.json'))
         for manifest in manifests:
             payload = archive.extractfile(manifest['Config']).read()
             if 'sha256:' + hashlib.sha256(payload).hexdigest() != image_id:
                 continue
             diff_ids = image_diff_ids(json.loads(payload), len(manifest['Layers']))
-            return sum(verified_layer_bytes(archive.extractfile(layer), diff_id)
+            size = sum(verified_layer_bytes(archive.extractfile(layer), diff_id)
                        for layer, diff_id in zip(manifest['Layers'], diff_ids))
+            return {'config_digest': image_id, 'uncompressed_layer_bytes': size}
     raise ValueError('Saved archive does not contain the loaded image')
 
 
-def measure_saved_image(reference, image_id, platform=None):
+def saved_image_bytes(path, image_id, platform=None):
+    return saved_image_measurement(path, image_id, platform)['uncompressed_layer_bytes']
+
+
+def measure_saved_image_evidence(reference, image_id, platform=None):
     with tempfile.TemporaryDirectory(prefix='honua-image-size-') as directory:
         path = Path(directory) / 'image.tar'
         subprocess.run(['docker', 'image', 'save', '--output', str(path), reference], check=True)
-        return saved_image_bytes(path, image_id, platform)
+        return saved_image_measurement(path, image_id, platform)
+
+
+def measure_saved_image(reference, image_id, platform=None):
+    return measure_saved_image_evidence(reference, image_id, platform)['uncompressed_layer_bytes']
 
 
 def compressed_manifest_measurement(payload, image_id):
@@ -336,7 +347,10 @@ def measure_published(args, inspection):
 def measure_export(args, inspection):
     baseline = inspect_image(args.baseline)
     baseline_size = measure_saved_image(args.baseline, baseline['Id'], inspected_platform(baseline))
-    oci = measure_oci_archive(args.oci_archive, inspection['Id'], inspected_platform(inspection)) if args.oci_archive else None
+    loaded = (measure_saved_image_evidence(args.image, inspection['Id'], inspected_platform(inspection))
+              if args.oci_archive else None)
+    oci = (measure_oci_archive(args.oci_archive, loaded['config_digest'], inspected_platform(inspection))
+           if loaded else None)
     size = oci['uncompressed_layer_bytes'] if oci else measure_saved_image(args.image, inspection['Id'], inspected_platform(inspection))
     files, deps = exported_files(args.image)
     evidence = {
@@ -363,6 +377,7 @@ def measure_export(args, inspection):
         'files': app_files,
     }
     if oci:
+        report['image_config_digest'] = loaded['config_digest']
         report['oci'] = oci
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')

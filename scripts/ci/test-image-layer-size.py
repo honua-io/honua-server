@@ -17,6 +17,8 @@ class ArchiveOptions:
     layer_content: str = 'valid'
     compression: str = 'gzip'
     identity: str = 'config'
+    provenance: str = 'first'
+    config_marker: str = ''
 
 
 class ImageLayerSizeTests(unittest.TestCase):
@@ -30,7 +32,8 @@ class ImageLayerSizeTests(unittest.TestCase):
     def archive(self, directory, options=ArchiveOptions()):
         layer = b'uncompressed layer bytes' * 100
         diff_id = 'sha256:' + hashlib.sha256(layer).hexdigest()
-        config = json.dumps({'rootfs': {'type': 'layers', 'diff_ids': [diff_id]}}).encode()
+        config = json.dumps({'rootfs': {'type': 'layers', 'diff_ids': [diff_id]},
+                             'marker': options.config_marker}).encode()
         image_id = 'sha256:' + hashlib.sha256(config).hexdigest()
         contents = {}
         if options.archive_format == 'oci':
@@ -49,7 +52,8 @@ class ImageLayerSizeTests(unittest.TestCase):
                                         'layers': [layer_descriptor]}).encode())
             if options.identity == 'index':
                 manifest['platform'] = {'os': 'linux', 'architecture': 'amd64'}
-                attestation = blob(b'{"config":{},"layers":[]}')
+                attestation = blob(json.dumps({'config': {}, 'layers': [],
+                                               'provenance': options.provenance}).encode())
                 attestation['platform'] = {'os': 'unknown', 'architecture': 'unknown'}
                 index = blob(json.dumps({'manifests': [manifest, attestation]}).encode())
                 image_id = index['digest']
@@ -120,6 +124,55 @@ class ImageLayerSizeTests(unittest.TestCase):
                 registry = self.measurement.measure_registry_image('example/image@' + image_id, image_id)
             self.assertEqual(registry['config_digest'], result['config_digest'])
             self.assertEqual(registry['compressed_layer_bytes'], result['compressed_layer_bytes'])
+
+    def test_separate_oci_export_matches_verified_loaded_config_despite_provenance_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            loaded_root = root / 'loaded'
+            exported_root = root / 'exported'
+            loaded_root.mkdir()
+            exported_root.mkdir()
+            loaded, image_id, expected = self.archive(
+                loaded_root, ArchiveOptions('oci', identity='index'))
+            exported, exported_id, _ = self.archive(
+                exported_root, ArchiveOptions('oci', identity='index', provenance='second'))
+            self.assertNotEqual(image_id, exported_id)
+            (root / 'project.assets.json').write_text('{"targets": {}}')
+            args = type('Args', (), {'image': 'loaded', 'baseline': 'baseline', 'profile': 'postgis',
+                                    'release_stage': 'rc', 'output': root / 'report.json',
+                                    'default_image': True, 'compilation': 'jit',
+                                    'oci_archive': exported, 'evidence_directory': root})()
+            inspection = {'Id': image_id, 'Size': 100000, 'Config': {},
+                          'Os': 'linux', 'Architecture': 'amd64'}
+            def save_loaded(command, **_):
+                if command[:3] != ['docker', 'image', 'save']:
+                    raise AssertionError(command)
+                Path(command[4]).write_bytes(loaded.read_bytes())
+            with patch.object(self.measurement, 'inspect_image',
+                              return_value={'Id': 'baseline', 'Size': 200000}), \
+                 patch.object(self.measurement, 'measure_saved_image', return_value=5000), \
+                 patch.object(self.measurement.subprocess, 'run', side_effect=save_loaded), \
+                 patch.object(self.measurement, 'exported_files', return_value=(
+                     {name: 1 for name in self.measurement.FORMAT_FILES}, {'targets': {}})):
+                self.measurement.measure_export(args, inspection)
+            report = json.loads(args.output.read_text())
+            self.assertEqual(report['bytes'], expected)
+            self.assertEqual(report['oci']['config_digest'], report['image_config_digest'])
+
+    def test_separate_oci_export_rejects_different_runnable_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            loaded_root = root / 'loaded'
+            exported_root = root / 'exported'
+            loaded_root.mkdir()
+            exported_root.mkdir()
+            loaded, image_id, _ = self.archive(loaded_root, ArchiveOptions('oci', identity='index'))
+            exported, _, _ = self.archive(
+                exported_root, ArchiveOptions('oci', identity='index', config_marker='different'))
+            platform = {'os': 'linux', 'architecture': 'amd64'}
+            evidence = self.measurement.saved_image_measurement(loaded, image_id, platform)
+            with self.assertRaisesRegex(ValueError, 'does not contain the loaded image'):
+                self.measurement.measure_oci_archive(exported, evidence['config_digest'], platform)
 
     def test_config_requires_one_diff_id_per_layer(self):
         for rootfs in ({}, {'type': 'layers', 'diff_ids': []},
