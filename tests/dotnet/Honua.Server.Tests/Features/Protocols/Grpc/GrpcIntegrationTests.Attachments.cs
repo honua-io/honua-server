@@ -104,13 +104,14 @@ public sealed partial class GrpcIntegrationTests
         }, _headers);
         download.Url.Should().StartWith("http://localhost/api/v1/attachments/downloads/");
         download.Url.Should().NotContain("attachment-object");
+        var token = download.Url[(download.Url.LastIndexOf('/') + 1)..];
         using var http = _fixture.CreateClient();
-        using var response = await http.GetAsync(new Uri(download.Url).PathAndQuery);
+        using var response = await http.GetAsync($"/api/v1/attachments/downloads/{token}");
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         (await response.Content.ReadAsStringAsync()).Should().Be("local");
         response.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
         response.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
-        using var tampered = await http.GetAsync(new Uri(download.Url).PathAndQuery + "x");
+        using var tampered = await http.GetAsync($"/api/v1/attachments/downloads/{token}x");
         tampered.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
     }
 
