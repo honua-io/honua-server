@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Queries.Filters;
 
@@ -33,14 +34,14 @@ internal sealed class StreamSubscriberSecurity
     public bool Allows(FeatureStreamEnvelope envelope)
     {
         var policy = Volatile.Read(ref _state).Resolve(envelope);
-        if (policy is null)
-        {
-            return false;
-        }
+        return policy is not null && AllowsRow(policy, envelope.Attributes);
+    }
 
+    private static bool AllowsRow(StreamLayerReadPolicy policy, IReadOnlyDictionary<string, JsonElement>? attributes)
+    {
         foreach (var predicate in policy.Predicates)
         {
-            if (envelope.Attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, envelope.Attributes))
+            if (attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, attributes))
             {
                 return false;
             }
@@ -124,12 +125,9 @@ internal sealed class StreamSubscriberSecurity
         var attributes = envelope.AuthorizationAttributes ?? envelope.Attributes;
         try
         {
-            foreach (var predicate in policy.Predicates)
+            if (!AllowsRow(policy, attributes))
             {
-                if (attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, attributes))
-                {
-                    return null;
-                }
+                return null;
             }
         }
         catch (Exception exception) when (exception is UnevaluableLikePatternException or RegexMatchTimeoutException)
