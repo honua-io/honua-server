@@ -42,50 +42,55 @@ const snapshot = ({ state, labels = [] }) => ({
   reviewThreads: page([]),
 });
 
-const runAttest = async ({ snapshotState, liveState, labels, liveError }) => {
-  const statuses = [];
-  const notices = [];
-  let failure = null;
+const fakeCore = result => {
   const summary = {
     addHeading() { return summary; },
     addRaw() { return summary; },
     addTable() { return summary; },
     async write() { return summary; },
   };
-  const core = {
-    notice(message) { notices.push(message); },
+  return {
+    notice(message) { result.notices.push(message); },
     info() {},
     warning() {},
     setOutput() {},
-    setFailed(message) { failure = message; },
+    setFailed(message) { result.failure = message; },
     summary,
   };
-  const github = {
-    rest: {
-      pulls: {
-        async get() {
-          if (liveError) throw liveError;
-          return { data: { number: PR_NUMBER, state: liveState } };
-        },
+};
+
+const fakeGithub = (result, { liveState, liveError }) => ({
+  rest: {
+    pulls: {
+      async get() {
+        if (liveError) throw liveError;
+        return { data: { number: PR_NUMBER, state: liveState } };
       },
-      repos: { async createCommitStatus(status) { statuses.push(status); } },
     },
-  };
+    repos: { async createCommitStatus(status) { result.statuses.push(status); } },
+  },
+});
+
+const runAttest = async ({ snapshotState, liveState, labels, liveError }) => {
+  const result = { statuses: [], notices: [], failure: null };
   const fakeRequire = request => {
     if (request === './scripts/ci/review-gate-snapshot') {
       return { fetchPullRequestSnapshot: async () => snapshot({ state: snapshotState, labels }) };
     }
     return require(path.join(ROOT, request));
   };
-  const context = {
-    repo: { owner: 'honua-io', repo: 'honua-server' },
-    serverUrl: 'https://github.com',
+  const sandbox = {
+    github: fakeGithub(result, { liveState, liveError }),
+    core: fakeCore(result),
+    context: { repo: { owner: 'honua-io', repo: 'honua-server' }, serverUrl: 'https://github.com' },
+    console,
+    require: fakeRequire,
+    process: { env: {} },
   };
-  const sandbox = { github, core, context, console, require: fakeRequire, process: { env: {} } };
   const runner = vm.runInNewContext(
     `(async () => {\n${ATTEST}\n})`, vm.createContext(sandbox), { timeout: 5000 });
   await runner();
-  return { statuses, notices, failure };
+  return result;
 };
 
 test('a pull request merged during attestation gets no red Review Gate status', async () => {
