@@ -290,7 +290,7 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal("ops@example.com", handler.CapturedContactEmail);
     }
 
-    // #2148: a forward-geocode proximity bias (location, no SearchBounds) is expressed as an
+    // A forward-geocode proximity bias (location, no SearchBounds) is expressed as an
     // UNbounded viewbox centred on the bias point — results inside are preferred but outside
     // results are still returned (no &bounded=1).
     [Trait("Tier", "Fast")]

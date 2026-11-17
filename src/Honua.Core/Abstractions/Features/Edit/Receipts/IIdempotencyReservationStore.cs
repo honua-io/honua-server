@@ -1,12 +1,16 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-namespace Honua.Infrastructure.Security;
+namespace Honua.Core.Features.Edit.Receipts;
 
-internal readonly record struct IdempotencyReservation(string ScopeKey, string ReservationToken);
+public readonly record struct IdempotencyReservation(string ScopeKey, string ReservationToken);
+
+public readonly record struct IdempotencyReceiptWrite(IdempotencyReservation Reservation, ReadOnlyMemory<byte> Payload);
+
+public readonly record struct IdempotencyReservationRequest(string Key, TimeSpan Window);
 
 // A scope is reserved by one request at a time. A reservation that is still pending has no receipt.
-internal interface IIdempotencyReservationStore
+public interface IIdempotencyReservationStore
 {
     Task<byte[]?> FindReceiptAsync(string scopeKey, CancellationToken cancellationToken);
 
@@ -14,8 +18,7 @@ internal interface IIdempotencyReservationStore
 
     // False when the reservation was lost to another request that has reserved or completed the scope.
     Task<bool> CompleteAsync(
-        IdempotencyReservation reservation,
-        ReadOnlyMemory<byte> receipt,
+        IdempotencyReceiptWrite write,
         TimeSpan receiptRetention,
         CancellationToken cancellationToken);
 

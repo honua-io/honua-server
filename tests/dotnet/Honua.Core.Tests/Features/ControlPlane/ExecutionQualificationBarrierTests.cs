@@ -160,4 +160,44 @@ public class ExecutionQualificationBarrierTests : IDisposable
         Assert.True(observed.RootElement.GetProperty("tokenCancelled").GetBoolean());
         Assert.True(observed.RootElement.GetProperty("observedAt").TryGetDateTimeOffset(out _));
     }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task WaitIfArmedAsync_Unarmed_ReturnsWithoutWritingReceipts()
+    {
+        using var scope = ExecutionQualificationBarrier.Begin("op-unarmed", "worker-1");
+
+        await ExecutionQualificationBarrier.WaitIfArmedAsync(
+                "terminal-committed-registration-pending", CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.False(Directory.Exists(Path.Join(_root, "op-unarmed")));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task WaitIfArmedAsync_Armed_HoldsAtReadyUntilReleased()
+    {
+        using var scope = ExecutionQualificationBarrier.Begin("op-armed", "worker-2");
+        var operationDirectory = Path.Join(_root, "op-armed");
+        Directory.CreateDirectory(operationDirectory);
+        await File.WriteAllTextAsync(
+            Path.Join(operationDirectory, "terminal-committed-registration-pending.arm"), string.Empty);
+        var readyPath = Path.Join(operationDirectory, "terminal-committed-registration-pending.ready.json");
+
+        var wait = ExecutionQualificationBarrier.WaitIfArmedAsync(
+            "terminal-committed-registration-pending", CancellationToken.None);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (!File.Exists(readyPath))
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+
+        Assert.False(wait.IsCompleted);
+        var ready = JsonDocument.Parse(await File.ReadAllTextAsync(readyPath));
+        Assert.Equal("worker-2", ready.RootElement.GetProperty("workerId").GetString());
+        await File.WriteAllTextAsync(
+            Path.Join(operationDirectory, "terminal-committed-registration-pending.release"), string.Empty);
+        await wait.WaitAsync(TimeSpan.FromSeconds(10));
+    }
 }

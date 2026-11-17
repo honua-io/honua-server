@@ -265,6 +265,10 @@ public static class MetadataV2GraphValidator
                 else
                 {
                     EnsureFieldDeclared(errors, resource, rule.FieldName, "attributeRules.fieldName");
+                    if (rule.FieldName.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))
+                    {
+                        errors.Add($"resource '{resource.Metadata.Id}' calculation attributeRule '{rule.Name}' cannot target the global ID field.");
+                    }
                 }
             }
         }
@@ -834,8 +838,7 @@ public static class MetadataV2GraphValidator
         IReadOnlyList<MetadataV2Service> services,
         Dictionary<string, MetadataV2Layer> publicationsById)
     {
-        // Service→publications is now derived from publication.ServiceId only;
-        // the redundant Service.PublicationIds slot was removed in design slice 55/N.
+        // Service→publications is derived from publication.ServiceId only.
         _ = publicationsById;
 
         foreach (var service in services)

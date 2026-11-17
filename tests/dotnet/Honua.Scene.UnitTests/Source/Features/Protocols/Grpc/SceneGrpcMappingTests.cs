@@ -40,7 +40,7 @@ public sealed class SceneGrpcMappingTests
     public void ToSceneMetadata_FromRecordWithoutExtent_LeavesExtentAndCameraUnset()
     {
         // A record with no persisted extent must leave both the Extent and the
-        // InitialCamera proto fields unset (#8) — fabricating a degenerate
+        // InitialCamera proto fields unset — fabricating a degenerate
         // all-zero extent/camera would break client camera framing.
         var record = new SceneDatasetRecord
         {
@@ -64,7 +64,7 @@ public sealed class SceneGrpcMappingTests
     [UnitTest]
     public void ToSceneMetadata_FromConfigScene_MapsCoreFieldsWithEmptyEditionAndNoExtent()
     {
-        // The config-backed SceneDataset overload (#8) always emits an empty
+        // The config-backed SceneDataset overload always emits an empty
         // edition gate and never sets Extent/InitialCamera (no persisted extent).
         var scene = new SceneDataset
         {
@@ -113,7 +113,7 @@ public sealed class SceneGrpcMappingTests
     public void FormatMergeStrategy_RoundTripsThroughSharedMosaicResolver()
     {
         // The elevation gRPC adapter now resolves the mosaic rule through the
-        // shared RasterMosaicUtilities (#11) rather than a protocol-local parser.
+        // shared RasterMosaicUtilities rather than a protocol-local parser.
         // FormatMergeStrategy must emit a canonical token that the shared resolver
         // round-trips back to the same strategy.
         foreach (var strategy in new[]

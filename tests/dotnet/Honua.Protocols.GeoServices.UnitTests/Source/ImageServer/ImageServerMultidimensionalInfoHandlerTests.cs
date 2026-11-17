@@ -104,7 +104,7 @@ public class ImageServerMultidimensionalInfoHandlerTests
         timeDimension.DimensionSize.Should().Be(2);
         timeDimension.Extent.Should().HaveCount(2);
         // A regular axis whose dimensionSize is known surfaces one coordinate value per
-        // slice so the slices operation can enumerate it (honua-server#1825).
+        // slice so the slices operation can enumerate it.
         timeDimension.HasRegularIntervals.Should().BeTrue();
         timeDimension.Values.Should().NotBeNull();
         timeDimension.Values!.Should().HaveCount(2)

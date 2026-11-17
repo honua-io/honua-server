@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit.Receipts;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Infrastructure.Security;
@@ -98,7 +99,7 @@ internal sealed class DistributedReplicaUploadIdempotencyStore
     public Task<string?> TryReserveAsync(
         ReplicaUploadIdempotencyScope scope,
         CancellationToken cancellationToken = default)
-        => _payloads.TryReserveAsync(BuildKey(scope), _reservationWindow, ex => LogUnavailable(scope, ex), cancellationToken);
+        => _payloads.TryReserveAsync(new IdempotencyReservationRequest(BuildKey(scope), _reservationWindow), ex => LogUnavailable(scope, ex), cancellationToken);
 
     public Task<bool> RecordAsync(
         ReplicaUploadIdempotencyScope scope,
@@ -107,8 +108,8 @@ internal sealed class DistributedReplicaUploadIdempotencyStore
     {
         ArgumentNullException.ThrowIfNull(record);
         return _payloads.SetIfAbsentOrOwnedAsync(
-            new IdempotencyReservation(BuildKey(scope), reservationToken),
-            JsonSerializer.SerializeToUtf8Bytes(record, FeatureServerJsonContext.Default.ReplicaUploadRecord),
+            new IdempotencyReceiptWrite(new IdempotencyReservation(BuildKey(scope), reservationToken),
+                JsonSerializer.SerializeToUtf8Bytes(record, FeatureServerJsonContext.Default.ReplicaUploadRecord)),
             ex => LogUnavailable(scope, ex),
             CancellationToken.None);
     }

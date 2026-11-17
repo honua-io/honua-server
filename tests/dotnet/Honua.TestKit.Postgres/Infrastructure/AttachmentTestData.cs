@@ -53,7 +53,7 @@ public static class AttachmentTestData
             throw new InvalidOperationException("Failed to seed attachment file test2.jpg");
         }
 
-        // #2020: serialize the fixture attachments DELETE + INSERT + setval seed under the
+        // Serialize the fixture attachments DELETE + INSERT + setval seed under the
         // schema-mutation advisory lock (multi-statement, parameterized, sequence reset). The
         // file-cleanup compensation stays OUTSIDE the lock action so it runs only after the lock
         // helper has exhausted its bounded 40P01/40001 retries — a transient deadlock retries the
@@ -140,7 +140,7 @@ public static class AttachmentTestData
             }
         }
 
-        // #2020: route the fixture attachments DELETE through the schema-mutation advisory
+        // Route the fixture attachments DELETE through the schema-mutation advisory
         // lock (parameterized overload). The preceding SELECT is read-only and stays unlocked.
         await fixture.ApplyGlobalSeedSqlAsync(
             $"""

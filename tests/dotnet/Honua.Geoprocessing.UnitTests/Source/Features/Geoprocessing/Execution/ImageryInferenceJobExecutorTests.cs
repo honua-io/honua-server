@@ -640,7 +640,7 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_ExcessivelyCoarseOutput_IsRejectedNotWavedThrough()
     {
-        // Codex's worked example: a 640-unit source and a 1x1 result with a
+        // A 640-unit source and a 1x1 result with a
         // 1000-unit pixel differ by 360 units, which a whole-output-pixel
         // tolerance would have accepted as "extent preserved".
         var coarse = BuildGeoTiff(
@@ -733,7 +733,7 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_InRangeButOffFootprintDetections_AreRejected()
     {
-        // Codex's example: [10, 20] is numerically valid lon/lat, so a global
+        // [10, 20] is numerically valid lon/lat, so a global
         // bounds test accepts it — but the source is an EPSG:32610 (UTM 10N)
         // scene, whose zone spans roughly -129..-117 longitude. Publishing this
         // would place the detection on another continent.
@@ -978,7 +978,7 @@ public sealed class ImageryInferenceJobExecutorTests
     {
         // The same CRS spelled five ways — the four identifier forms the process
         // contract names, plus a lowercase authority. Tightening the declared-CRS
-        // check to exact identifier matching (#3053) must not start refusing a
+        // check to exact identifier matching must not start refusing a
         // backend that spells WGS 84 differently from the one form the first test
         // used.
         string[] spellings =
@@ -1009,8 +1009,8 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_FeaturePayloadDeclaringContrivedNearMissCrs_IsRejected()
     {
-        // Before #3053 the guard accepted any name CONTAINING "4326" or "CRS84",
-        // so these cleared it while naming a different CRS (or none at all).
+        // A guard that accepts any name CONTAINING "4326" or "CRS84" would let these
+        // through while they name a different CRS (or none at all).
         string[] nearMisses = ["EPSG:43260", "EPSG:14326", "NOT_CRS84", "CRS84_LOCAL", "my-4326-grid"];
 
         for (var i = 0; i < nearMisses.Length; i++)

@@ -98,8 +98,7 @@ public sealed class StyledVectorMapRenderTests : IAsyncLifetime
 
         await catalog.SetMapLibreStyleAsync(VectorLayerId, CircleStyle("#ff0000"));
 
-        // Before the fix this threw NotSupportedException on the Postgres path; it must now
-        // render the feature layer with its bound/style-resolved symbology.
+        // Render the Postgres feature layer using its bound and style-resolved symbology.
         var styleId = "default";
         RasterResult result = default;
         var act = async () => result = await renderer.RenderStyledMapAsync(VectorLayerId, styleId, request);

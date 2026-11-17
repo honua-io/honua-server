@@ -15,6 +15,17 @@ def workflow(name):
 
 
 class StoreProfileWorkflowTests(unittest.TestCase):
+    def test_derived_zarr_worker_uses_serving_host_job_database(self):
+        base = yaml.safe_load((ROOT / 'docker/cng/compose.yml').read_text())
+        overlay = yaml.safe_load((ROOT / 'docker/cng/derived-zarr.yml').read_text())
+        server_environment = dict(entry.split('=', 1) for entry in
+                                  base['services']['honua-server']['environment'])
+        worker = overlay['services']['zarr-worker']
+        self.assertEqual(worker['environment']['ConnectionStrings__DefaultConnection'],
+                         server_environment['ConnectionStrings__DefaultConnection'])
+        self.assertEqual(worker['depends_on']['postgres']['condition'], 'service_healthy')
+        self.assertIn('healthcheck', base['services']['postgres'])
+
     def test_serving_formats_smoke_disables_excluded_test_providers(self):
         script = (ROOT / 'scripts/ci/smoke-serving-formats.sh').read_text()
         override = script.split('cat > "$work/override.yml" <<EOF\n', 1)[1].split('\nEOF', 1)[0]
@@ -271,19 +282,45 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(upload['if'], 'always()')
         self.assertEqual(upload['with']['if-no-files-found'], 'error')
 
-    def test_optional_aot_cannot_block_default_publication(self):
+    def test_tag_release_aot_stays_optional(self):
         jobs = workflow('deploy.yml')['jobs']
         self.assertEqual(jobs['build-and-push'].get('continue-on-error'), "${{ matrix.image_key == 'aot' }}")
         self.assertEqual(jobs['publish-manifests'].get('continue-on-error'), "${{ matrix.tag_suffix == '-aot' }}")
+
+    def test_nightly_default_tags_and_customer_package_use_aot(self):
         nightly = workflow('nightly-container-build.yml')['jobs']
-        self.assertIn('manifest-jit', nightly['compose-executor']['needs'])
-        self.assertNotIn('manifest-aot', nightly['compose-executor']['needs'])
-        aot_meta = next(step for step in nightly['manifest-aot']['steps'] if step.get('id') == 'meta')
-        self.assertIn('value=nightly-aot', aot_meta['with']['tags'])
-        self.assertNotIn('value=trunk\n', aot_meta['with']['tags'])
+        executor = nightly['compose-executor']
+        self.assertIn('manifest-aot', executor['needs'])
+        self.assertNotIn('manifest-jit', executor['needs'])
+        executor_text = json.dumps(executor)
+        self.assertIn('needs.manifest-aot.outputs.image', executor_text)
+        self.assertNotIn('needs.manifest-jit.outputs.image', executor_text)
         jit_meta = next(step for step in nightly['manifest-jit']['steps'] if step.get('id') == 'meta')
-        self.assertIn('value=nightly${{ matrix.store_suffix }}', jit_meta['with']['tags'])
-        self.assertIn('value=trunk${{ matrix.store_suffix }}', jit_meta['with']['tags'])
+        bare = [line for line in jit_meta['with']['tags'].splitlines()
+                if re.fullmatch(r'type=raw,value=(nightly|trunk)(-\$\{\{ needs\.[^}]+\}\})?\$\{\{ matrix\.store_suffix \}\}.*', line)]
+        self.assertEqual(len(bare), 4)
+        for line in bare:
+            self.assertTrue(line.endswith(",enable=${{ matrix.store_suffix != '' }}"), line)
+        jit_script = next(step['run'] for step in nightly['manifest-jit']['steps'] if step.get('id') == 'manifest')
+        self.assertIn('subject_ref="${subject_name}:nightly-jit-${{ needs.select-candidate.outputs.sha7 }}"', jit_script)
+
+    def test_nightly_aot_tags_publish_their_default_alias_in_one_index(self):
+        job = workflow('nightly-container-build.yml')['jobs']['manifest-aot']
+        script = next(step['run'] for step in job['steps'] if step.get('id') == 'manifest')
+        mapping = script[script.index('repository='):script.index('destinations=')]
+        create = script[script.index('destinations='):script.index('docker buildx imagetools create')]
+        self.assertIn('"$tag" "$default_tag"', create)
+        for tag, alias in [('nightly-aot', 'nightly'), ('trunk-aot', 'trunk'),
+                           ('nightly-aot-20261117', 'nightly-20261117'), ('nightly-aot-abc1234', 'nightly-abc1234')]:
+            with self.subTest(tag=tag):
+                result = subprocess.run(['bash'], input=mapping + '\nprintf "%s" "$default_tag"',
+                                        env={**os.environ, 'tag': 'ghcr.io/honua/server:' + tag},
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, 'ghcr.io/honua/server:' + alias)
+        result = subprocess.run(['bash'], input=mapping, env={**os.environ, 'tag': 'ghcr.io/honua/server:nightly-jit'},
+                                text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
 
     def test_lifecycle_proves_manual_legacy_and_automated_compatible_rollback(self):
         steps = workflow('compose-release-lifecycle.yml')['jobs']['compose-release-lifecycle']['steps']
@@ -295,6 +332,9 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn('HONUA_DEPLOYMENT_CONFIGURATION_ROOT', journey['env'])
         self.assertLess(journey['run'].index('tests/integration/test_compose_manual_rc1_rollback.py'),
                         journey['run'].index('tests/integration/test_compose_release_lifecycle.py'))
+        candidate = next(step for step in steps if step.get('name') == 'Build production candidate image')
+        self.assertEqual(candidate['with']['file'], 'docker/Dockerfile.aot')
+        self.assertIn('buildcache:honua-aot-amd64', candidate['with']['cache-from'])
 
     def test_nightly_jit_tag_mapping_uses_existing_architecture_tags(self):
         job = workflow('nightly-container-build.yml')['jobs']['manifest-jit']

@@ -32,8 +32,8 @@ the main per-provider variable and is exercised by the conformance matrix tests.
 Each `AudienceRestriction` condition must include the configured SP entity ID among its
 `Audience` values. Alternatives within a condition are allowed; every separate condition
 must pass. Assertions are accepted only once, including concurrent submissions on the same
-node. With Redis configured, replay claims are shared across replicas and fail closed when
-Redis is unavailable. Without Redis, replay protection applies to the current node only.
+node. With a system database, replay claims are shared across replicas and fail closed when
+the database is unavailable. Without one, replay protection applies to the current node only.
 
 ### Per-provider attribute configuration
 

@@ -103,7 +103,7 @@ public sealed class WfsAuthorizationProofTests : IAsyncLifetime
         before.Should().HaveCount(SeededWriteFeatureCount);
         NameOf(before, TargetFeature).Should().Be("Related Feature 1");
 
-        // An insert-only grantee may not Update, Replace or Delete (BH3-001/BH3-014).
+        // An insert-only grantee may not Update, Replace or Delete.
         using var insertOnly = CreateClient("query", "insert");
         using var denied = await insertOnly.PostAsync("/wfs", Transaction(action));
         var error = await denied.Content.ReadAsStringAsync();

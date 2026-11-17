@@ -7,7 +7,7 @@ description: "Run the local GP stack, verify a metric buffer through the Python 
 
 Run a GP job through a local server, inspect its result, and repeat after editing
 your process. This stack needs no cloud account. For direct function development
-without a server or Redis, start with [the authoring guide](gp-devkit-authoring.md).
+without a server, start with [the authoring guide](gp-devkit-authoring.md).
 
 For Python or .NET custom-code breakpoints, start with the
 [Python](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-dotnet/README.md) templates, then return here
@@ -37,9 +37,9 @@ docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml
 ```
 
 Open `http://localhost:8080/healthz/ready` and wait for `Ready`. The stack starts
-PostGIS, Redis, and the serving host. Managed GP runs in the serving host;
-Redis holds durable jobs and results. Compose enables a Development Pro grant
-so local Redis wiring works without a signed license file.
+PostGIS and the serving host. Managed GP runs in the serving host;
+PostGIS holds durable jobs and results. Compose enables a Development Pro grant
+so Pro processes run without a signed license file.
 
 ## 2. Submit and verify a buffer
 
@@ -87,7 +87,7 @@ docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml
 ```
 
 This adds the GDAL/PDAL heavy worker. It claims native-profile jobs from the same
-Redis substrate; managed jobs remain in the serving host. Native functions
+PostgreSQL job store; managed jobs remain in the serving host. Native functions
 include vector conversion, raster/surface processing, and point-cloud operations.
 The heavy worker uses JIT and supports reflection; it needs no AOT build.
 
@@ -98,7 +98,7 @@ converts the checked-in CSV and verifies what to expect in its GeoJSON output.
 
 ## Integration profile
 
-The base file starts the host, PostGIS, and Redis. The integration profile adds
+The base file starts the host and PostGIS. The integration profile adds
 the managed worker, the native heavy worker, and local artifact storage:
 
 ```bash
@@ -106,7 +106,7 @@ docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml
 ```
 
 `managed-worker` is a second serving-image process with no published ports. It
-joins the same Redis substrate and claims managed jobs. `gdal-worker` is the
+joins the same PostgreSQL job store and claims managed jobs. `gdal-worker` is the
 GDAL/PDAL heavy worker from `docker/worker-gdal`. Both mount the named volume
 `gp_artifacts` at `/var/lib/honua/gp-artifacts` and bind-mount local process
 source read-only at `/workspace/process-source` (the checkout, or
@@ -191,7 +191,7 @@ Install Microsoft's vsdbg with the official getvsdbg script into
 read-only. It is a local prerequisite, not part of the image.
 
 Stop the profile's native worker before the one-shot container so two workers
-do not claim the same Redis jobs. The idle container sets
+do not claim the same jobs. The idle container sets
 `DOTNET_EnableDiagnostics=1` only for itself.
 
 ```bash
@@ -270,7 +270,7 @@ links the SDK, native, and MCP examples.
 ## Stop or diagnose the stack
 
 ```bash
-docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker logs --tail=100 honua gdal-worker redis
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker logs --tail=100 honua gdal-worker
 docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker down
 ```
 
@@ -281,7 +281,7 @@ reset this stack's database and jobs.
 | --- | --- |
 | `401` on submission | The SDK's API key matches `HONUA_ADMIN_PASSWORD`. |
 | `403` | The identity has `Process.Execute` and any additional grants required by the selected process. |
-| Async submission refused or job stays queued | Redis is healthy and the matching managed/native worker is running. |
+| Async submission refused or job stays queued | PostGIS is healthy and the matching managed/native worker is running. |
 | Native command unavailable | The heavy image was built and the chosen tag exists locally. |
 | Unknown process | Describe it on the running server; rebuild the catalog or use the plan process where required. |
 | A submitted job failed or stalled | Read `GET /api/v1/admin/jobs/{jobId}/diagnostics`; see [Diagnose a remote geoprocessing job](gp-job-diagnostics.md). |

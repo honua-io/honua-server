@@ -11,7 +11,6 @@ HONUA_HTTP_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SM
 HONUA_GRPC_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_GRPC_PORT --ci-default 18081)"
 HONUA_CONSOLE_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_CONSOLE_PORT --ci-default 15174)"
 POSTGRES_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_POSTGRES_PORT --ci-default 15432)"
-REDIS_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_REDIS_PORT --ci-default 16379)"
 ADMIN_PASSWORD="${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
 
 compose() {
@@ -25,7 +24,6 @@ compose() {
   HONUA_GRPC_PORT="${HONUA_GRPC_PORT}" \
   HONUA_CONSOLE_PORT="${HONUA_CONSOLE_PORT}" \
   POSTGRES_PORT="${POSTGRES_PORT}" \
-  REDIS_PORT="${REDIS_PORT}" \
   HONUA_ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
   HONUA_DEV_GRANT_EDITION="${HONUA_DEV_GRANT_EDITION:-Enterprise}" \
   HONUA_ENABLE_OBSERVABILITY_TEST_SEED="${HONUA_ENABLE_OBSERVABILITY_TEST_SEED:-true}" \
@@ -145,7 +143,7 @@ services:
 YAML
 
 compose_down
-compose up -d --build postgres redis honua console
+compose up -d --build postgres honua console
 
 wait_for_url "http://127.0.0.1:${HONUA_HTTP_PORT}/healthz/ready" "honua" 90
 assert_proposal_roundtrip

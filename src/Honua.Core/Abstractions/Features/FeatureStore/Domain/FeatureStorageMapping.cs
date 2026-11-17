@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -72,42 +71,32 @@ public sealed record FeatureStorageMapping(
         }
 
         var providerOptions = ReadStringOptions(storageBinding.Options);
-        var schemaName = ReadStringOption(storageBinding.Options, "schemaName")
-            ?? ReadStringOption(storageBinding.Options, "schema");
-        var tableName = ReadStringOption(storageBinding.Options, "tableName")
-            ?? ReadStringOption(storageBinding.Options, "table");
-
-        if (string.IsNullOrWhiteSpace(tableName))
-        {
-            var parsed = ParseRelationalLocator(storageBinding.Locator);
-            schemaName ??= parsed.SchemaName;
-            tableName = parsed.TableName;
-        }
+        var (schemaName, tableName) = storageBinding.ResolveRelationalTable();
 
         var mapping = new FeatureStorageMapping(
             TableName: tableName ?? string.Empty,
             SchemaName: schemaName,
-            CatalogName: ReadStringOption(storageBinding.Options, "catalogName")
-                ?? ReadStringOption(storageBinding.Options, "catalog"),
-            DatabaseName: ReadStringOption(storageBinding.Options, "databaseName")
-                ?? ReadStringOption(storageBinding.Options, "database"),
-            PrimaryKeyColumn: ReadStringOption(storageBinding.Options, "primaryKeyColumn")
+            CatalogName: storageBinding.ReadStringOption("catalogName")
+                ?? storageBinding.ReadStringOption("catalog"),
+            DatabaseName: storageBinding.ReadStringOption("databaseName")
+                ?? storageBinding.ReadStringOption("database"),
+            PrimaryKeyColumn: storageBinding.ReadStringOption("primaryKeyColumn")
                 ?? resource.FindPrimaryIdField()?.Name
                 ?? FieldNames.ObjectId,
-            GeometryColumn: ReadStringOption(storageBinding.Options, "geometryColumn")
+            GeometryColumn: storageBinding.ReadStringOption("geometryColumn")
                 ?? resource.FindPrimaryGeometryField()?.Name,
-            StorageSrid: ReadIntOption(storageBinding.Options, "storageSrid")
-                ?? ReadIntOption(storageBinding.Options, "srid")
+            StorageSrid: storageBinding.ReadIntOption("storageSrid")
+                ?? storageBinding.ReadIntOption("srid")
                 ?? resource.Spatial?.StorageCrs?.ResolveSrid()
                 ?? resource.ReadSrid(),
-            TemporalColumn: ReadStringOption(storageBinding.Options, "temporalColumn"),
-            AttributesColumn: ReadStringOption(storageBinding.Options, "attributesColumn"),
+            TemporalColumn: storageBinding.ReadStringOption("temporalColumn"),
+            AttributesColumn: storageBinding.ReadStringOption("attributesColumn"),
             // When the binding advertises a layer-discriminator column (set for layers that
             // share a single physical table, e.g. the shared `features` table keyed by
             // `layer_id`), carry the column name and the bound layer's id so the reader can
             // constrain every query to this layer's rows. The value comes from the binding's
             // StorageLayerId — the same integer the runtime queries by.
-            LayerDiscriminatorColumn: ReadStringOption(storageBinding.Options, "layerDiscriminatorColumn"),
+            LayerDiscriminatorColumn: storageBinding.ReadStringOption("layerDiscriminatorColumn"),
             LayerDiscriminatorValue: storageBinding.StorageLayerId,
             ProviderOptions: providerOptions);
 
@@ -154,62 +143,5 @@ public sealed record FeatureStorageMapping(
         }
 
         return values;
-    }
-
-    private static string? ReadStringOption(IReadOnlyDictionary<string, JsonElement> options, string key)
-    {
-        if (!options.TryGetValue(key, out var value))
-        {
-            return null;
-        }
-
-        return value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : value.ToString();
-    }
-
-    private static int? ReadIntOption(IReadOnlyDictionary<string, JsonElement> options, string key)
-    {
-        if (!options.TryGetValue(key, out var value))
-        {
-            return null;
-        }
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
-        {
-            return number;
-        }
-
-        return value.ValueKind == JsonValueKind.String
-            && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-                ? parsed
-                : null;
-    }
-
-    private static (string? SchemaName, string? TableName) ParseRelationalLocator(string? locator)
-    {
-        var trimmed = locator?.Trim();
-        if (string.IsNullOrWhiteSpace(trimmed) ||
-            trimmed.Contains(':', StringComparison.Ordinal) ||
-            trimmed.Contains('/', StringComparison.Ordinal))
-        {
-            return (null, null);
-        }
-
-        var parts = trimmed.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return parts.Length switch
-        {
-            0 => (null, null),
-            1 => (null, UnquoteIdentifier(parts[0])),
-            _ => (UnquoteIdentifier(parts[^2]), UnquoteIdentifier(parts[^1]))
-        };
-    }
-
-    private static string UnquoteIdentifier(string value)
-    {
-        var trimmed = value.Trim();
-        return trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"'
-            ? trimmed[1..^1].Replace("\"\"", "\"", StringComparison.Ordinal)
-            : trimmed;
     }
 }

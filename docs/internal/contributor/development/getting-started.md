@@ -26,7 +26,6 @@ The root `docker-compose.yml` provisions:
 | Service | Default port | Credentials |
 |---------|-------------|-------------|
 | PostGIS | 5432 | `honua_user` / `honua_password`, database `honua_dev` |
-| Redis | 6379 | none |
 | Honua Server | 8080 | — |
 
 Database migrations run automatically on first boot. The root compose stack also sets the journal-scoped `Gate` policy for contract-phase migrations on existing databases.
@@ -53,7 +52,7 @@ HONUA_STORAGE_PROVIDER=AwsS3 HONUA_S3_BUCKET=honua-dev \
 docker compose -f docker/docker-compose.test-db.yml up -d
 ```
 
-Port overrides: `POSTGRES_PORT`, `REDIS_PORT`, `HONUA_HTTP_PORT`.
+Port overrides: `POSTGRES_PORT`, `HONUA_HTTP_PORT`.
 
 ## 4. Run tests
 

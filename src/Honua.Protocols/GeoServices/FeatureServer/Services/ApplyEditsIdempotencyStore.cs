@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit.Receipts;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Honua.Infrastructure.Security;
@@ -86,7 +87,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
     public Task<string?> TryReserveAsync(
         ApplyEditsIdempotencyScope scope,
         CancellationToken cancellationToken = default)
-        => _payloads.TryReserveAsync(BuildKey(scope), _reservationWindow, ex => LogUnavailable(scope, ex), cancellationToken);
+        => _payloads.TryReserveAsync(new IdempotencyReservationRequest(BuildKey(scope), _reservationWindow), ex => LogUnavailable(scope, ex), cancellationToken);
 
     public Task<bool> SetAsync(
         ApplyEditsIdempotencyScope scope,
@@ -97,8 +98,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         ArgumentNullException.ThrowIfNull(response);
         ArgumentException.ThrowIfNullOrEmpty(reservationToken);
         return _payloads.SetIfAbsentOrOwnedAsync(
-            new IdempotencyReservation(BuildKey(scope), reservationToken),
-            Serialize(response),
+            new IdempotencyReceiptWrite(new IdempotencyReservation(BuildKey(scope), reservationToken), Serialize(response)),
             ex => LogUnavailable(scope, ex),
             cancellationToken);
     }

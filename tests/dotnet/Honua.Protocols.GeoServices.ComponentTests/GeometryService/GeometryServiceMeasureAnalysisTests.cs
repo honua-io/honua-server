@@ -80,7 +80,7 @@ public sealed class GeometryServiceMeasureAnalysisTests
         await response.AssertGeoServicesErrorAsync(400);
     }
 
-    // #1308: ArcGIS clients wrap geometry1/geometry2 as
+    // ArcGIS clients wrap geometry1/geometry2 as
     // {"geometryType":"...","geometry":{...}}. The parser must unwrap them.
     [IntegrationTest]
     [Operation(Operations.Distance)]
@@ -230,7 +230,7 @@ public sealed class GeometryServiceMeasureAnalysisTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/relation")]
     public async Task Relation_CornerTouchingParcels_PointTouchMatchesLineTouchDoesNot()
     {
-        // Two squares meeting only at the corner (1,1): boundary∩boundary is a single point (#2742).
+        // Two squares meeting only at the corner (1,1): boundary∩boundary is a single point.
         const string square1 = """{"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}""";
         const string square2 = """{"rings": [[[1,1],[2,1],[2,2],[1,2],[1,1]]]}""";
 
@@ -245,7 +245,7 @@ public sealed class GeometryServiceMeasureAnalysisTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/relation")]
     public async Task Relation_EdgeSharingParcels_LineTouchMatchesPointTouchDoesNot()
     {
-        // Two squares sharing the full edge x=1 from y=0 to y=1: boundary∩boundary is a line (#2742).
+        // Two squares sharing the full edge x=1 from y=0 to y=1: boundary∩boundary is a line.
         const string square1 = """{"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}""";
         const string square2 = """{"rings": [[[1,0],[2,0],[2,1],[1,1],[1,0]]]}""";
 
@@ -370,7 +370,7 @@ public sealed class GeometryServiceMeasureAnalysisTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
     public async Task Densify_FiveElementArc_AcceptsIssueReproduction()
     {
-        // Preserve the exact payload from #4117. Esri documents four elements for a
+        // Preserve the exact five-element payload. Esri documents four elements for a
         // center-form circle and seven for an ellipse, but clients in the probe sent a
         // fifth trailing rotation value; treating it as the circular form is compatible
         // with that probe shape while the documented seven-element ellipse stays covered.
@@ -418,7 +418,7 @@ public sealed class GeometryServiceMeasureAnalysisTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
     public async Task Densify_TinyMaxSegmentLengthOverLargeExtent_Returns400WithoutOom()
     {
-        // #2064: a 2,000,000-unit polyline at maxSegmentLength=0.001 would densify to ~2e9
+        // A 2,000,000-unit polyline at maxSegmentLength=0.001 would densify to ~2e9
         // interpolated coordinates synchronously and OOM the host. The vertex-count guard must
         // reject it with a 400 (fast, allocation-free) instead of attempting the densify.
         var body = """

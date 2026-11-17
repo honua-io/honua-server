@@ -26,11 +26,6 @@ public sealed class StudioAiProxyJsonContextReflectionSafetyTests
             Function = new OpenAiProxyToolChoiceFunctionRef { Name = "list_incidents" }
         };
 
-        // The pre-fix adapter built this shape with an anonymous type passed to the
-        // parameterless SerializeToElement(value) overload, which resolves metadata through
-        // JsonSerializerOptions.Default and throws once reflection fallback is unavailable.
-        // Calling through the explicit source-generated JsonTypeInfo, as the fixed adapter does,
-        // must never depend on reflection at all.
         var act = () => JsonSerializer.SerializeToElement(dto, StudioAiProxyJsonContext.Default.OpenAiProxyToolChoiceSpecific);
 
         act.Should().NotThrow();

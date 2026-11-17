@@ -55,7 +55,7 @@ public sealed class AdminSessionCrossSiteGuardTests
     public async Task SafeRequest_FromCrossSiteNavigation_IsAuthenticated()
     {
         // Lax cookies ride top-level cross-site GETs by design; safe methods must not mutate,
-        // which is why calculate is POST-only (#6100).
+        // which is why calculate is POST-only.
         (await AuthenticateAsync("GET", secFetchSite: "cross-site")).Succeeded.Should().BeTrue();
     }
 

@@ -83,7 +83,7 @@ public class ZarrTileRendererTests
 
         png.AsSpan(0, 8).ToArray().Should().Equal(PngSignature);
 
-        // #4395: the colour mapping this test is named for was never checked — the assertion above
+        // The colour mapping this test is named for was never checked — the assertion above
         // holds for any non-trivial PNG. The colormap linearly interpolates black at the fixture's
         // minimum to white at its maximum, so cell (r, c) must render as
         // round(Sample(r, c) / 77 * 255) in all three channels, fully opaque.

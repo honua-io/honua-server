@@ -24,7 +24,7 @@ class GpQualificationHarnessTests(unittest.TestCase):
     def test_lifecycle_preserves_existing_scenarios_and_requires_new_mcp_case(self):
         completed, receipts, summary = self.run_harness("lifecycle", HONUA_SERVER_IMAGE="unattested:latest")
         self.assertNotEqual(0, completed.returncode)
-        self.assertEqual(31, summary["declared_scenario_count"])
+        self.assertEqual(27, summary["declared_scenario_count"])
         self.assertIn("mcp-cancel-native-process-started", summary["declared_scenarios"])
         self.assertEqual("fail", receipts["mcp-cancel-native-process-started"]["outcome"])
         self.assertEqual([], summary["missing_scenarios"])

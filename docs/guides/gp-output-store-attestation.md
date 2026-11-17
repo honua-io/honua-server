@@ -85,7 +85,7 @@ ceiling, preserve its descriptor, then read it through
 `GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content` with normal
 authorization. Assert the descriptor identity, media type, length and independently
 expected SHA-256; record readiness and the runtime attestation after recovery.
-Restoring only Redis/Postgres is insufficient when referenced staging is enabled.
+Restoring only PostgreSQL is insufficient when referenced staging is enabled.
 
 ## Object storage provider
 

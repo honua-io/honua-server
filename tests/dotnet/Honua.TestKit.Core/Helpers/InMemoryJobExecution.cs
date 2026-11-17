@@ -120,7 +120,7 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore, IBoundedExec
         {
             var query = _jobs.Values
                 .Where(job => !kind.HasValue || job.Spec.Kind == kind.Value);
-            // BH7-009: apply 2x overfetch budget when a limit is supplied, because
+            // apply 2x overfetch budget when a limit is supplied, because
             // authorization filters may discard some records.
             if (limit.HasValue)
             {

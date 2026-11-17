@@ -417,7 +417,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task PostChat_OverDefaultPromptLimit_Returns400ProblemNamingTheLimit()
     {
-        // honua-server#4919: the host leaves StudioAiProxy:MaxPromptCharacters at its default.
+        // The host leaves StudioAiProxy:MaxPromptCharacters at its default.
         var limit = new Honua.Ai.StudioAiProxy.StudioAiProxyConfiguration().MaxPromptCharacters;
         var client = _fixture.CreateAdminClient();
         _audit.Recorded.Clear();
