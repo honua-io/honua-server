@@ -211,10 +211,14 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `LayerPublishing__MaterializationBatchSize` | `5000` | Positive integer row count per keyset snapshot statement within the publication transaction. Larger batches can increase memory use and lock pressure. Invalid values fail at startup. |
 | `Migration__AllowedServiceHostSuffixes__N` | — (unset) | Optional remote GIS migration/import source allowlist. Each entry matches the exact host or its subdomains. Unset permits any otherwise-safe public host; an explicitly empty array rejects all hosts. |
 | `Limits__MaxUploadSizeBytes` | `104857600` (100 MiB) | General upload ceiling. |
-| `Limits__GeoParquet__MaxRowsPerBatch` | `1024` | Maximum rows per Arrow batch and Parquet row group. |
+| `Limits__GeoParquet__MaxRowsPerBatch` | `1024` | Maximum rows per Arrow batch. A query response starts one Parquet row group per batch. |
 | `Limits__GeoParquet__MaxEstimatedBatchBytes` | `8388608` (8 MiB) | Byte admission estimate per batch; an individual row must fit. |
 | `Limits__GeoParquet__MaxEstimatedInputBytes` | `134217728` (128 MiB) | Byte admission estimate for a materialized GeoParquet query result. |
-| `Limits__GeoParquet__MaxResponseBytes` | `67108864` (64 MiB) | Encoded GeoParquet payload and buffer capacity ceiling, including footer. |
+| `Limits__GeoParquet__MaxResponseBytes` | `67108864` (64 MiB) | Encoded HTTP GeoParquet payload and buffer capacity ceiling, including footer. Stored artifacts use `MaxArtifactBytes` when that is set. |
+| `Limits__GeoParquet__RowsPerRowGroup` | unset | Artifact row-group length. Unset keeps one row group per batch. Values outside 1–150000 are rejected. |
+| `Limits__GeoParquet__MaxArtifactBytes` | unset | Byte cap for a stored artifact. Unset uses `MaxResponseBytes`. |
+| `Limits__GeoParquet__OrderByBboxHilbert` | `false` | When true, artifact rows are ordered by the Hilbert index of each geometry's bbox centre. Query responses stay in source order. |
+| `Limits__GeoParquet__CompressWithZstd` | `false` | When true, artifact columns use Zstandard. Query responses stay uncompressed. |
 | `Limits__Query__MaxRecordCount` | `10000` | Max features per query response. |
 | `Limits__Query__DefaultRecordCount` | `1000` | Default page size when the client does not specify one. |
 | `Limits__Query__MaxOffset` | `1000000` | Max pagination offset. |

@@ -4,6 +4,7 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Apache.Arrow;
 using FluentAssertions;
@@ -1783,6 +1784,193 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             fileMetadata: new Dictionary<string, string> { ["geo"] = "{}" });
 
         act.Should().Throw<ArgumentException>();
+    }
+
+    [UnitTest]
+    public async Task FormatAsGeoParquet_ArtifactLayout_KeepsNeighboursTogether()
+    {
+        const int perCluster = 16;
+        var features = new List<Feature>(perCluster * 2);
+        for (var index = 0; index < perCluster; index++)
+        {
+            // Consecutive points alternate across the same two anchors, so every 4-row
+            // source batch includes x=-120 and a lookup of that point reads every group.
+            var westX = -120 + (index % 2) * 0.0001;
+            var eastX = 10 + (index % 2) * 0.0001;
+            features.Add(Feature.Create(index + 1, FormatterTestResources.CreatePointWkb(westX, 35),
+                ImmutableDictionary<string, object?>.Empty));
+            features.Add(Feature.Create(1_000 + index, FormatterTestResources.CreatePointWkb(eastX, 50),
+                ImmutableDictionary<string, object?>.Empty));
+        }
+
+        var resource = CreateResource();
+        var result = QueryResult<Feature>.Create(features.Count, features.ToImmutableArray());
+        var scattered = new GeoParquetLimits { MaxRowsPerBatch = 4 };
+        var artifact = new GeoParquetLimits
+        {
+            MaxRowsPerBatch = 4,
+            RowsPerRowGroup = 16,
+            OrderByBboxHilbert = true,
+            CompressWithZstd = true,
+            MaxArtifactBytes = 8 * 1024 * 1024,
+            MaxResponseBytes = 64
+        };
+
+        var (before, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            result, resource, true, 4326, false, false, new GeometryLimits(), encodingLimits: scattered);
+        var (after, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            result, resource, true, 4326, false, false, new GeometryLimits(), encodingLimits: artifact);
+
+        using var beforeReader = new ParquetSharp.Arrow.FileReader(new MemoryStream(before));
+        using var afterReader = new ParquetSharp.Arrow.FileReader(new MemoryStream(after));
+        beforeReader.NumRowGroups.Should().Be(8);
+        afterReader.NumRowGroups.Should().Be(2, "row groups follow RowsPerRowGroup, not the 4-row response batch");
+        beforeReader.Schema.Metadata.ContainsKey(GeoParquetFeatureWriter.RowOrderMetadataKey).Should().BeFalse();
+        afterReader.Schema.Metadata[GeoParquetFeatureWriter.RowOrderMetadataKey]
+            .Should().Be(GeoParquetFeatureWriter.HilbertBboxCenterOrder);
+        afterReader.Schema.Metadata[GeoParquetFeatureWriter.RowsPerRowGroupMetadataKey].Should().Be("16");
+
+        var beforeExtents = await ReadGroupExtentsAsync(beforeReader);
+        var afterExtents = await ReadGroupExtentsAsync(afterReader);
+        beforeExtents.Should().OnlyContain(extent => extent.MinX < -100 && extent.MaxX > 0);
+        afterExtents.Should().Contain(extent => extent.MaxX < -100);
+        afterExtents.Should().Contain(extent => extent.MinX > 0);
+        afterExtents.Should().OnlyContain(extent => extent.MaxX - extent.MinX < 1);
+
+        const double probeX = -120;
+        var beforeWatch = Stopwatch.StartNew();
+        var beforeMatch = MatchingGroupBytes(beforeReader, beforeExtents, probeX);
+        beforeWatch.Stop();
+        var afterWatch = Stopwatch.StartNew();
+        var afterMatch = MatchingGroupBytes(afterReader, afterExtents, probeX);
+        afterWatch.Stop();
+
+        beforeMatch.Groups.Should().Be(beforeReader.NumRowGroups);
+        afterMatch.Groups.Should().Be(1);
+        afterMatch.Bytes.Should().BeLessThan(MatchingGroupBytes(afterReader, afterExtents, double.NaN).Bytes);
+        output.WriteLine(
+            "GeoParquet parcel lookup: beforeGroups={0} beforeBytes={1} beforeMs={2:F3}; afterGroups={3} afterBytes={4} afterMs={5:F3}; fileBefore={6} fileAfter={7}",
+            beforeMatch.Groups, beforeMatch.Bytes, beforeWatch.Elapsed.TotalMilliseconds,
+            afterMatch.Groups, afterMatch.Bytes, afterWatch.Elapsed.TotalMilliseconds,
+            before.Length, after.Length);
+
+        using var group = afterReader.ParquetReader.RowGroup(0);
+        using var chunk = group.MetaData.GetColumnChunkMetaData(0);
+        chunk.Compression.Should().Be(ParquetSharp.Compression.Zstd);
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_ArtifactBudget_IgnoresTheResponseCap()
+    {
+        var feature = Feature.Create(1, FormatterTestResources.CreatePointWkb(1, 2), ImmutableDictionary<string, object?>.Empty);
+        var resource = CreateResource();
+        var rejected = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), resource, true, 4326, false, false, new GeometryLimits(),
+            encodingLimits: new GeoParquetLimits { MaxArtifactBytes = 32 });
+        rejected.Should().Throw<GeoParquetLimitExceededException>();
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), resource, true, 4326, false, false, new GeometryLimits(),
+            encodingLimits: new GeoParquetLimits { MaxResponseBytes = 32, MaxArtifactBytes = 8 * 1024 * 1024 });
+        payload.Length.Should().BeGreaterThan(32);
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_RowGroupAboveSpecLimit_IsRejected()
+    {
+        var feature = Feature.Create(1, FormatterTestResources.CreatePointWkb(1, 2), ImmutableDictionary<string, object?>.Empty);
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), CreateResource(), true, 4326, false, false, new GeometryLimits(),
+            encodingLimits: new GeoParquetLimits { RowsPerRowGroup = GeoParquetLimits.SpecMaxRowsPerRowGroup + 1 });
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_ForArtifact_RecordsHilbertZstdAndDefaultRowGroup()
+    {
+        var feature = Feature.Create(1, FormatterTestResources.CreatePointWkb(1, 2), ImmutableDictionary<string, object?>.Empty);
+        var limits = GeoParquetLimits.ForArtifact(8 * 1024 * 1024);
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), CreateResource(), true, 4326, false, false, new GeometryLimits(),
+            encodingLimits: limits);
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        reader.NumRowGroups.Should().Be(1);
+        reader.Schema.Metadata[GeoParquetFeatureWriter.RowOrderMetadataKey]
+            .Should().Be(GeoParquetFeatureWriter.HilbertBboxCenterOrder);
+        reader.Schema.Metadata[GeoParquetFeatureWriter.RowsPerRowGroupMetadataKey]
+            .Should().Be(GeoParquetLimits.DefaultArtifactRowsPerRowGroup.ToString(CultureInfo.InvariantCulture));
+        using var group = reader.ParquetReader.RowGroup(0);
+        using var chunk = group.MetaData.GetColumnChunkMetaData(0);
+        chunk.Compression.Should().Be(ParquetSharp.Compression.Zstd);
+    }
+
+    private static async Task<List<(double MinX, double MaxX)>> ReadGroupExtentsAsync(ParquetSharp.Arrow.FileReader reader)
+    {
+        var ordinates = new List<double>();
+        using (var batches = reader.GetRecordBatchReader())
+        {
+            while (await batches.ReadNextRecordBatchAsync() is { } batch)
+            {
+                using (batch)
+                {
+                    var geometries = (BinaryArray)batch.Column("geometry");
+                    for (var row = 0; row < batch.Length; row++)
+                    {
+                        var point = (Point)new WKBReader().Read(geometries.GetBytes(row).ToArray());
+                        ordinates.Add(point.X);
+                    }
+                }
+            }
+        }
+
+        var extents = new List<(double MinX, double MaxX)>(reader.NumRowGroups);
+        var offset = 0;
+        for (var index = 0; index < reader.NumRowGroups; index++)
+        {
+            using var group = reader.ParquetReader.RowGroup(index);
+            var count = (int)group.MetaData.NumRows;
+            var min = double.PositiveInfinity;
+            var max = double.NegativeInfinity;
+            for (var row = 0; row < count; row++)
+            {
+                var value = ordinates[offset + row];
+                min = Math.Min(min, value);
+                max = Math.Max(max, value);
+            }
+
+            extents.Add((min, max));
+            offset += count;
+        }
+
+        return extents;
+    }
+
+    private static (int Groups, long Bytes) MatchingGroupBytes(
+        ParquetSharp.Arrow.FileReader reader,
+        List<(double MinX, double MaxX)> extents,
+        double probeX)
+    {
+        var groups = 0;
+        long bytes = 0;
+        for (var index = 0; index < extents.Count; index++)
+        {
+            var extent = extents[index];
+            var matches = double.IsNaN(probeX) || (probeX >= extent.MinX && probeX <= extent.MaxX);
+            if (!matches)
+            {
+                continue;
+            }
+
+            groups++;
+            using var group = reader.ParquetReader.RowGroup(index);
+            for (var column = 0; column < group.MetaData.NumColumns; column++)
+            {
+                using var chunk = group.MetaData.GetColumnChunkMetaData(column);
+                bytes += chunk.TotalCompressedSize;
+            }
+        }
+
+        return (groups, bytes);
     }
 
     private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)

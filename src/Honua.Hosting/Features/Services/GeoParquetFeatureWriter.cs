@@ -14,6 +14,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Tiles.PMTiles;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
@@ -44,6 +45,13 @@ public static partial class GeoParquetFeatureWriter
     private const string GeoMetadataKey = "geo";
 
     public const string ContentType = "application/vnd.apache.parquet";
+
+    public const string RowOrderMetadataKey = "honua.geoparquet.row_order";
+    public const string RowsPerRowGroupMetadataKey = "honua.geoparquet.rows_per_row_group";
+    public const string HilbertBboxCenterOrder = "hilbert-bbox-center";
+    public const string SourceOrder = "source";
+
+    private const int HilbertZoom = 16;
 
     [ThreadStatic]
     private static WKBReader? _dimensionPreservingWkbReader;
@@ -111,6 +119,10 @@ public static partial class GeoParquetFeatureWriter
         var features = result.Items;
         var includeGeometry = returnGeometry && resource.HasGeometry();
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        if (encodingLimits.OrderByBboxHilbert && includeGeometry && features.Length > 1)
+        {
+            features = OrderByBboxCenterHilbert(features, srid, geometryLimits, returnZ, returnM, logger);
+        }
 
         // Resolve (and thereby validate) the output-CRS PROJJSON up-front so a non-resolvable
         // SRID fails fast with a precise error before any geometry encoding work happens.
@@ -155,7 +167,7 @@ public static partial class GeoParquetFeatureWriter
         var (schema, fieldsToInclude, resolvedObjectIdFieldName, geometryColumnName, bboxColumnName) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid,
             runtimeFields, geometryTypes, includeCovering: includeCovering);
-        schema = WithFileMetadata(schema, fileMetadata);
+        schema = DocumentedSchema(schema, fileMetadata, encodingLimits, includeGeometry);
 
         return (WriteArrowParquet(schema, writer =>
         {
@@ -178,8 +190,16 @@ public static partial class GeoParquetFeatureWriter
                 var arrays = BuildArrays(batchFeatures, schema, returnGeometry, geometryArray,
                     bboxArray, resolvedObjectIdFieldName, fieldsToInclude, geometryColumnName, bboxColumnName, logger);
                 using var recordBatch = new RecordBatch(schema, arrays, count);
-                // This API flushes a new row group for each batch; do not use the buffered API.
-                writer.WriteRecordBatch(recordBatch, encodingLimits.MaxRowsPerBatch);
+                if (encodingLimits.RowsPerRowGroup is null)
+                {
+                    // One row group per response batch. Artifact row groups use the buffered API
+                    // so several batches share a group sized by RowsPerRowGroup.
+                    writer.WriteRecordBatch(recordBatch, encodingLimits.MaxRowsPerBatch);
+                }
+                else
+                {
+                    writer.WriteBufferedRecordBatch(recordBatch);
+                }
             }
         }, encodingLimits), ContentType);
     }
@@ -193,7 +213,7 @@ public static partial class GeoParquetFeatureWriter
     // return a clean 501 capability response instead of an unhandled 500.
     private static BoundedParquetStream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
     {
-        var stream = new BoundedParquetStream(limits.MaxResponseBytes);
+        var stream = new BoundedParquetStream(OutputByteCap(limits));
         try
         {
             // Construct and dispose the builder itself explicitly (rather than chaining off
@@ -202,7 +222,21 @@ public static partial class GeoParquetFeatureWriter
             using var arrowWriterPropertiesBuilder = new ArrowWriterPropertiesBuilder();
             arrowWriterPropertiesBuilder.StoreSchema();
             using var arrowWriterProperties = arrowWriterPropertiesBuilder.Build();
-            using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
+            using var writerPropertiesBuilder = new ParquetSharp.WriterPropertiesBuilder();
+            if (limits.RowsPerRowGroup is int rowsPerRowGroup)
+            {
+                writerPropertiesBuilder.MaxRowGroupLength(rowsPerRowGroup);
+            }
+
+            if (limits.CompressWithZstd)
+            {
+                writerPropertiesBuilder.Compression(ParquetSharp.Compression.Zstd);
+            }
+
+            using var writerProperties = limits.RowsPerRowGroup is null && !limits.CompressWithZstd
+                ? null
+                : writerPropertiesBuilder.Build();
+            using (var writer = new FileWriter(stream, schema, writerProperties, arrowWriterProperties, true))
             {
                 writeBatches?.Invoke(writer);
 
@@ -280,7 +314,9 @@ public static partial class GeoParquetFeatureWriter
         var (schema, _, _, _, _) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid, isEmpty: true);
 
-        return (WriteArrowParquet(WithFileMetadata(schema, fileMetadata), writeBatches: null, encodingLimits), ContentType);
+        return (WriteArrowParquet(
+            DocumentedSchema(schema, fileMetadata, encodingLimits, includeGeometry: returnGeometry && resource.HasGeometry()),
+            writeBatches: null, encodingLimits), ContentType);
     }
 
     private static Schema WithFileMetadata(Schema schema, IReadOnlyDictionary<string, string>? fileMetadata)
@@ -301,6 +337,120 @@ public static partial class GeoParquetFeatureWriter
 
         return new Schema(schema.FieldsList, metadata);
     }
+
+    private static Schema DocumentedSchema(
+        Schema schema,
+        IReadOnlyDictionary<string, string>? fileMetadata,
+        GeoParquetLimits limits,
+        bool includeGeometry)
+    {
+        schema = WithFileMetadata(schema, fileMetadata);
+        if (limits.RowsPerRowGroup is null && !limits.OrderByBboxHilbert && !limits.CompressWithZstd && limits.MaxArtifactBytes is null)
+        {
+            return schema;
+        }
+
+        var rowsPerGroup = limits.RowsPerRowGroup ?? limits.MaxRowsPerBatch;
+        return WithFileMetadata(schema, new Dictionary<string, string>
+        {
+            [RowOrderMetadataKey] = limits.OrderByBboxHilbert && includeGeometry ? HilbertBboxCenterOrder : SourceOrder,
+            [RowsPerRowGroupMetadataKey] = rowsPerGroup.ToString(CultureInfo.InvariantCulture),
+        });
+    }
+
+    private static ImmutableArray<Feature> OrderByBboxCenterHilbert(
+        ImmutableArray<Feature> features,
+        int srid,
+        GeometryLimits geometryLimits,
+        bool returnZ,
+        bool returnM,
+        ILogger? logger)
+    {
+        var envelopes = new Envelope?[features.Length];
+        var extent = new Envelope();
+        for (var index = 0; index < features.Length; index++)
+        {
+            var (_, envelope, _, _) = ProcessGeometryCore(
+                features[index].Geometry, srid, geometryLimits, returnZ, returnM, features[index].Id, logger, encodeWkb: false);
+            envelopes[index] = envelope;
+            if (HasFiniteEnvelope(envelope))
+            {
+                extent.ExpandToInclude(envelope);
+            }
+        }
+
+        if (extent.IsNull)
+        {
+            return features;
+        }
+
+        var keys = new ulong[features.Length];
+        for (var index = 0; index < features.Length; index++)
+        {
+            keys[index] = HilbertKey(envelopes[index], extent);
+        }
+
+        var order = new int[features.Length];
+        for (var index = 0; index < order.Length; index++)
+        {
+            order[index] = index;
+        }
+
+        System.Array.Sort(order, (left, right) =>
+        {
+            var compared = keys[left].CompareTo(keys[right]);
+            return compared != 0 ? compared : left.CompareTo(right);
+        });
+
+        var ordered = ImmutableArray.CreateBuilder<Feature>(features.Length);
+        foreach (var index in order)
+        {
+            ordered.Add(features[index]);
+        }
+
+        return ordered.MoveToImmutable();
+    }
+
+    private static ulong HilbertKey(Envelope? envelope, Envelope extent)
+    {
+        if (!HasFiniteEnvelope(envelope))
+        {
+            return ulong.MaxValue;
+        }
+
+        var centerX = (envelope!.MinX + envelope.MaxX) / 2;
+        var centerY = (envelope.MinY + envelope.MaxY) / 2;
+        var n = 1 << HilbertZoom;
+        var x = Quantize(centerX, extent.MinX, extent.MaxX, n);
+        var y = Quantize(centerY, extent.MinY, extent.MaxY, n);
+        return HilbertCurve.XYZToTileId(HilbertZoom, x, y);
+    }
+
+    private static int Quantize(double value, double min, double max, int n)
+    {
+        if (!(max > min) || !double.IsFinite(value))
+        {
+            return 0;
+        }
+
+        var span = (value - min) / (max - min);
+        if (span <= 0)
+        {
+            return 0;
+        }
+
+        if (span >= 1)
+        {
+            return n - 1;
+        }
+
+        return (int)(span * (n - 1));
+    }
+
+    private static bool HasFiniteEnvelope(Envelope? envelope)
+        => envelope is not null && !envelope.IsNull
+            && double.IsFinite(envelope.MinX) && double.IsFinite(envelope.MinY)
+            && double.IsFinite(envelope.MaxX) && double.IsFinite(envelope.MaxY);
 
     private static (Schema schema, List<MetadataV2Field> fieldsToInclude, string objectIdFieldName, string geometryColumnName, string bboxColumnName) BuildSchema(
         MetadataV2Object resource,
