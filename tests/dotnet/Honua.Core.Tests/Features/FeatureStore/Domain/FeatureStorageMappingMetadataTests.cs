@@ -77,8 +77,8 @@ public sealed class FeatureStorageMappingMetadataTests
     [UnitTest]
     public void FromMetadata_NonStringOptions_PreserveProviderValuesAndDiscriminator()
     {
-        var binding = Binding("{\"tableName\":123,\"sourceBacked\":true,\"custom\":null,\"layerDiscriminatorColumn\":\"layer_id\"}")
-            with { StorageLayerId = 17 };
+        const string options = "{\"tableName\":123,\"sourceBacked\":true,\"custom\":null,\"layerDiscriminatorColumn\":\"layer_id\"}";
+        var binding = Binding(options) with { StorageLayerId = 17 };
         var mapping = FeatureStorageMapping.FromMetadata(new MetadataV2Object(), binding);
 
         mapping.TableName.Should().Be("123");
