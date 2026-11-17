@@ -34,9 +34,12 @@ public sealed partial class OperationsProgressEndpointsTests
 
         public async Task DrainQueueAsync()
         {
-            while (await _queue.TryClaimAsync("operations-progress-test-reset") is not null)
+            string? claimed;
+            do
             {
+                claimed = await _queue.TryClaimAsync("operations-progress-test-reset");
             }
+            while (claimed is not null);
         }
     }
 }
