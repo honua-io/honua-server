@@ -16,6 +16,8 @@ Honua serves OGC 3D Tiles through `/scenes/{sceneId}/...` so CesiumJS resolves e
 
 **Edition and lifecycle:** Existing serving, discovery, elevation and generation from feature layers remain Community. Specialised CityGML/BIM and point-cloud ingest and I3S remain Enterprise. 3D is Experimental in 2026.1; this guide is for evaluation, with no production commitment. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
+The scene routes are off by default and return `404` until you enable their experimental capabilities (at least `scene.catalog` and `serve.3d-tiles-scene`); see [enable the 3D surfaces](../../reference/protocols/3d-tiles-and-scenes.md#enable-the-3d-surfaces).
+
 ## Steps
 
 ### 1. Generate a tileset from a PostGIS layer
@@ -95,6 +97,18 @@ Open `http://localhost:8080/scenes/downtown-buildings/tileset.json` in a browser
 ```
 
 Nested assets resolve under the same prefix, for example `GET /scenes/downtown-buildings/tile_0000.glb`.
+
+## Scene output storage
+
+The packaged quickstart and production Compose configurations write generated scenes to
+`/var/lib/honua/storage/scenes-generated` on the persistent storage volume. For a custom
+container deployment, set `SceneGeneration__OutputRoot` to a writable persistent mount
+and grant the server user write permission. The default relative directory is unsuitable
+for a read-only container filesystem.
+
+`SCENE_OUTPUT_UNWRITABLE` (500) means local scene output could not be written. Check
+`SceneGeneration:OutputRoot`, mount permissions and free space before trying again.
+The response omits filesystem paths and underlying exception details.
 
 ## Troubleshoot
 

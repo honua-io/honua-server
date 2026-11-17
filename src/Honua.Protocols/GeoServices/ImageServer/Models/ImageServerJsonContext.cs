@@ -9,7 +9,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 // Esri omits null-valued fields from ImageServer documents (descriptor /
 // conf.json). The ArcGIS Maps SDK for .NET native runtime reads these with a
 // strict parser that rejects nulls where it expects a string/array/object, so
-// match Esri and drop nulls on the wire (#1456).
+// match Esri and drop nulls on the wire.
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

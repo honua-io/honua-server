@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Infrastructure.Security;
 
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class BootstrapSecuritySecretResolutionTests
+public sealed partial class BootstrapSecuritySecretResolutionTests
 {
     private const string AdminKey = "HONUA_ADMIN_PASSWORD";
     private const string MasterKey = "Security:ConnectionEncryption:MasterKey";
@@ -58,7 +58,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
         var resolver = new StubSecretResolver(new Dictionary<string, string> { [reference] = signingKey });
 
         await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
-            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, isProduction: true);
+            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, environmentName: "Production");
 
         var options = configuration.GetSection("Oidc").Get<OidcAuthenticationOptions>();
         options.Should().NotBeNull();
@@ -102,7 +102,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
         var resolver = new StubSecretResolver(new Dictionary<string, string>());
 
         await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
-            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, isProduction: true);
+            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, environmentName: "Production");
 
         configuration[OidcSigningKey].Should().Be(value);
         resolver.ResolvedReferences.Should().BeEmpty();
@@ -119,7 +119,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
         var resolver = new StubSecretResolver(new Dictionary<string, string> { [reference] = value });
 
         var action = () => StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
-            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, isProduction: true);
+            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, environmentName: "Production");
 
         var failure = await action.Should().ThrowAsync<InvalidOperationException>();
         failure.Which.ToString().Should().NotContain(reference);
@@ -139,7 +139,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
             : new StubSecretResolver(new Dictionary<string, string>());
 
         var action = () => StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
-            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, isProduction: true);
+            configuration, resolver, StartupConfigurationHelpers.SecuritySecretReferenceKeys, environmentName: "Production");
 
         var failure = await action.Should().ThrowAsync<InvalidOperationException>();
         failure.Which.ToString().Should().NotContain(reference).And.NotContain("secret provider unavailable");
@@ -158,7 +158,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
             configuration,
             resolver,
             StartupConfigurationHelpers.SecuritySecretReferenceKeys,
-            isProduction: true);
+            environmentName: "Production");
 
         configuration[AuditChainKey].Should().Be(key);
         Honua.Core.Features.AuditLog.Abstractions.AuditChainKeyMaterial.Decode(configuration[AuditChainKey])
@@ -210,7 +210,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
             {
                 if (securityEntryPoint)
                 {
-                    await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(configuration, isProduction: true);
+                    await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(configuration, environmentName: "Production");
                 }
                 else
                 {
@@ -249,7 +249,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
             configuration,
             resolver,
             [AdminKey, MasterKey],
-            isProduction: true);
+            environmentName: "Production");
 
         configuration[AdminKey].Should().Be(adminReference);
         configuration[MasterKey].Should().Be("Production-Master-Key-Aa1!Resolved-00000000");
@@ -270,7 +270,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
             configuration,
             resolver,
             [AdminKey, MasterKey],
-            isProduction: true);
+            environmentName: "Production");
 
         configuration[AdminKey].Should().Be("Production-Admin-Aa1!Plain");
         configuration[MasterKey].Should().Be("Production-Master-Key-Aa1!Plain-0000000000");
@@ -288,7 +288,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
             configuration,
             resolver,
             [AdminKey],
-            isProduction: true);
+            environmentName: "Production");
 
         await action.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage($"*{AdminKey}*");
@@ -305,7 +305,7 @@ public sealed class BootstrapSecuritySecretResolutionTests
             configuration,
             resolver,
             [AdminKey],
-            isProduction: true);
+            environmentName: "Production");
 
         await action.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage($"*{AdminKey}*invalid or cannot be resolved*");
@@ -323,19 +323,24 @@ public sealed class BootstrapSecuritySecretResolutionTests
             configuration,
             resolver,
             [AdminKey],
-            isProduction: true);
+            environmentName: "Production");
 
         await action.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Admin password must be at least 16 characters in production environment");
+            .WithMessage("Admin password must be at least 16 characters outside Development and Test environments");
         configuration[AdminKey].Should().Be(reference);
     }
 
-    [UnitTest]
-    public async Task AdminPortalCredentialVerifier_RejectsWeakRotatedProductionPassword()
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    [InlineData("Deployment")]
+    [InlineData("")]
+    [Trait("Tier", "Fast")]
+    public async Task AdminPortalCredentialVerifier_RejectsWeakRotatedDeploymentPassword(string environmentName)
     {
         const string reference = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:admin";
         var resolver = new StubSecretResolver(new Dictionary<string, string> { [reference] = "weak-password" });
-        var verifier = BuildPortalVerifier(reference, resolver);
+        var verifier = BuildPortalVerifier(reference, resolver, environmentName);
 
         var result = await verifier.VerifyAsync("admin", "weak-password", CancellationToken.None);
 
@@ -370,12 +375,13 @@ public sealed class BootstrapSecuritySecretResolutionTests
 
     private static AdminPortalCredentialVerifier BuildPortalVerifier(
         string configuredPassword,
-        IConnectionSecretResolver resolver) =>
+        IConnectionSecretResolver resolver,
+        string environmentName = "Production") =>
         new(
             Options.Create(new ApiKeyAuthenticationOptions
             {
                 AdminPassword = configuredPassword,
-                EnvironmentName = "Production"
+                EnvironmentName = environmentName
             }),
             resolver);
 

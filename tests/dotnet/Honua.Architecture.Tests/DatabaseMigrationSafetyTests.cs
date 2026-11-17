@@ -14,11 +14,12 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class DatabaseMigrationSafetyTests
 {
-    private static readonly string[] PreRc2BoundaryMigrations =
+    private static readonly string[] ReleaseBoundaryMigrations =
     [
         "142_CreateAiFinancialAccounting.sql",
         "144_RenameGeoServicesRestSourceKind.sql",
-        "145_ProtectImportDependencies.sql"
+        "145_ProtectImportDependencies.sql",
+        "183_RemoveUnusedFeatureIndexes.sql"
     ];
 
     [ArchitectureTest]
@@ -77,7 +78,12 @@ public sealed class DatabaseMigrationSafetyTests
         const string name = "src/Honua.Server/Migrations/999_RemoveUnusedFeatureIndexes.sql";
         var sql = File.ReadAllText(Path.Join(root, "eng", "schema", "remove-unused-feature-indexes.sql")) + suffix;
         var scripts = new Dictionary<string, string> { [name] = sql };
-        var pins = new MigrationPins(new(), new() { [name] = MigrationHash(sql) });
+        var pins = new MigrationPins(new(), new() { [name] = MigrationHash(sql) },
+            new()
+            {
+                [Path.GetFileName(name)] = MigrationHash(File.ReadAllText(
+                    Path.Join(root, "eng", "schema", "remove-unused-feature-indexes.sql")))
+            });
 
         MigrationSafetyClassifier.Classify(name, sql).IsBreaking.Should().BeTrue();
         RollingUpgradeViolations(scripts, pins).Any().Should().Be(!accepted);
@@ -143,7 +149,7 @@ public sealed class DatabaseMigrationSafetyTests
     }
 
     [ArchitectureTest]
-    public void MigrationScripts_AfterReleaseBoundary_DeclareExpandForRc2Reader()
+    public void MigrationScripts_AfterReleaseBoundary_DeclareExpandUnlessExactlyPinned()
     {
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
         using var boundary = JsonDocument.Parse(File.ReadAllText(
@@ -153,11 +159,11 @@ public sealed class DatabaseMigrationSafetyTests
         var rasterFloor = boundary.RootElement.GetProperty("lastRasterMigration").GetInt32();
         rasterFloor.Should().Be(8);
         var boundaryHashes = ReadReleaseBoundary(root);
-        boundaryHashes.Keys.Should().BeEquivalentTo(PreRc2BoundaryMigrations);
+        boundaryHashes.Keys.Should().BeEquivalentTo(ReleaseBoundaryMigrations);
         foreach (var (name, hash) in boundaryHashes)
         {
             var file = EnumerateMigrationFiles().Single(path => Path.GetFileName(path) == name);
-            MigrationHash(File.ReadAllText(file)).Should().Be(hash, $"{name}: the pre-rc.2 boundary requires exact bytes");
+            MigrationHash(File.ReadAllText(file)).Should().Be(hash, $"{name}: the release boundary requires exact bytes");
         }
         var scripts = EnumerateMigrationFiles().Where(path => IsAfterReleaseBoundary(path, floor, rasterFloor)).ToArray();
         scripts.Should().NotBeEmpty();
@@ -165,6 +171,12 @@ public sealed class DatabaseMigrationSafetyTests
         {
             var name = Path.GetFileName(file);
             var declaration = MigrationReaderCompatibility.Declare(name, File.ReadAllText(file));
+            if (boundaryHashes.ContainsKey(name))
+            {
+                declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Contract);
+                MigrationReaderCompatibility.Verify(declaration, name, floor).Accepted.Should().BeFalse();
+                continue;
+            }
             declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.Expand,
                 $"{name}: every migration above the pre-rc.2 boundary must declare expand");
             MigrationReaderCompatibility.Verify(declaration, name, floor).Accepted.Should().BeTrue(

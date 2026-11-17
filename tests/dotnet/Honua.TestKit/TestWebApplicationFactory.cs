@@ -10,6 +10,7 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.HealthCheck.Abstractions;
@@ -19,6 +20,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Operations;
@@ -115,6 +117,10 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IAuditLog, PersistedTestAuditLog>();
             }
             UseInMemoryAuthenticationState(services);
+            UseInMemoryFeatureEvents(services);
+            // The connection string names no live database, so feature leases stay in process as well.
+            services.RemoveAll<IFeatureLockService>();
+            services.AddSingleton<IFeatureLockService>(provider => new InMemoryFeatureLockService(provider.GetService<TimeProvider>()));
             RemoveDurableOperationHostedServices(services);
             services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });
@@ -138,6 +144,17 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["FileStorage:LocalStorage:CreateDirectoryIfNotExists"] = "true"
             });
         });
+    }
+
+    private static void UseInMemoryFeatureEvents(IServiceCollection services)
+    {
+        services.RemoveAll<IFeatureChangeEventStore>();
+        services.RemoveAll<IFeatureChangeEventStoreHealth>();
+        services.RemoveAll<IFeatureChangeEventPublisher>();
+        services.AddSingleton<FakeFeatureChangeEventStore>();
+        services.AddSingleton<IFeatureChangeEventStore>(provider => provider.GetRequiredService<FakeFeatureChangeEventStore>());
+        services.AddSingleton<IFeatureChangeEventStoreHealth>(provider => provider.GetRequiredService<FakeFeatureChangeEventStore>());
+        services.AddSingleton<IFeatureChangeEventPublisher>(provider => provider.GetRequiredService<FakeFeatureChangeEventStore>());
     }
 
     // Authentication state belongs to this database-free host, including when

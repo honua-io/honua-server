@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 HEAVY_JOBS = {
     "format", "dotnet-foundation-family-tests", "runtime-proofs",
     "mcp-certification", "mcp-llm-smoke", "postgres-compat",
-    "core-package-compatibility", "docker-build", "quickstart-console-smoke",
+    "docker-build", "quickstart-console-smoke",
 }
 HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "supersede-trailing-runs", "changes", "targeted-shards",
@@ -34,13 +34,14 @@ PINNED_JOBS = {
 }
 
 
-# Even matrix indices of the server test shards; forks never reach self-hosted compute.
+# Forks never reach self-hosted compute; PR Gate retains its proven even-shard split.
 EVEN_INDEX = " || ".join(f"endsWith(format('{{0}}', strategy.job-index), '{digit}')" for digit in "02468")
 FORK_GUARD = (
     " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
     " && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)"
     " && fromJSON(vars.HONUA_HEAVY_RUNNER)"
 )
+TRUSTED_HEAVY_RUNNER = "vars.HONUA_HEAVY_RUNNER" + FORK_GUARD
 HEAVY_SHARD_RUNNER = "vars.HONUA_HEAVY_RUNNER && (" + EVEN_INDEX + ")" + FORK_GUARD
 
 
@@ -73,7 +74,7 @@ ANALYZER_TESTS_RUNNER = ("matrix.analyzer-partition == 'tests' && ("
 # Native AOT is not a matrix: every trusted run takes the heavy pool, forks stay hosted.
 AOT_RUNNER = "${{ vars.HONUA_HEAVY_RUNNER" + FORK_GUARD + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"
 SHARD_JOBS = {
-    "ci.yml": ("server-tests", "${{ " + HEAVY_SHARD_RUNNER + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
+    "ci.yml": ("server-tests", "${{ " + TRUSTED_HEAVY_RUNNER + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
     "pr-gate.yml": ("affected-shard", "${{ needs.pr-gate.outputs.heavy_ready == 'true' && " + HEAVY_SHARD_RUNNER + " || 'ubuntu-latest' }}"),
 }
 
@@ -83,10 +84,34 @@ class ShardRunnerRoutingTests(unittest.TestCase):
         name, _ = SHARD_JOBS[workflow]
         return yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"][name]
 
-    def test_even_shards_use_the_fork_guarded_heavy_pool_with_hosted_fallback(self):
+    def test_shards_use_their_fork_guarded_pool_with_hosted_fallback(self):
         for workflow, (_, runs_on) in SHARD_JOBS.items():
             with self.subTest(workflow=workflow):
                 self.assertEqual(self.shard_job(workflow)["runs-on"], runs_on)
+
+    def test_full_matrix_never_waits_for_hosted_capacity_when_heavy_is_configured(self):
+        expression = self.shard_job("ci.yml")["runs-on"]
+        self.assertNotIn("strategy.job-index", expression)
+        probe = """const {expression, event, fork, heavy, fallback} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const repository = 'owner/repo', source = fork ? 'fork/repo' : repository;
+const payload = event === 'pull_request' ? {pull_request: {head: {repo: {full_name: source}}}} :
+    event === 'workflow_run' ? {workflow_run: {head_repository: {full_name: source}}} : {};
+const github = {repository, event: payload}, vars = {HONUA_HEAVY_RUNNER: heavy, HONUA_CI_HEAVY_RUNNER: fallback};
+process.stdout.write(JSON.stringify(new Function('github', 'vars', 'fromJSON', `return (${expression});`)(github, vars, JSON.parse)));
+"""
+        pool = {"group": "honua-heavy", "labels": ["honua-heavy"]}
+        for event, fork, configured, fallback in product(
+                ["push", "workflow_dispatch", "pull_request", "workflow_run"],
+                [False, True], [False, True], ["", "ubuntu-24.04"]):
+            trusted = event not in {"pull_request", "workflow_run"} or not fork
+            expected = pool if configured and trusted else fallback or "ubuntu-latest"
+            context = {"expression": expression[3:-2].strip(), "event": event,
+                       "fork": fork, "heavy": json.dumps(pool) if configured else "",
+                       "fallback": fallback}
+            with self.subTest(event=event, fork=fork, configured=configured, fallback=fallback):
+                result = subprocess.run(["node", "-e", probe], input=json.dumps(context),
+                                        text=True, capture_output=True, check=True)
+                self.assertEqual(json.loads(result.stdout), expected)
 
     def test_postgres_uses_an_ephemeral_host_port_that_the_tests_receive(self):
         for workflow in SHARD_JOBS:
@@ -161,8 +186,10 @@ class HeavyRunnerContractTests(unittest.TestCase):
                 self.assertEqual(self.jobs[name]["runs-on"],
                                  "${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}")
 
-    def test_aot_build_uses_the_fork_guarded_heavy_pool_with_hosted_fallback(self):
-        self.assertEqual(self.jobs["aot-build"]["runs-on"], AOT_RUNNER)
+    def test_full_server_builds_use_the_fork_guarded_heavy_pool_with_hosted_fallback(self):
+        for name in ("aot-build", "core-package-compatibility"):
+            with self.subTest(job=name):
+                self.assertEqual(self.jobs[name]["runs-on"], AOT_RUNNER)
 
     def test_hosted_jobs_stay_on_ubuntu_latest(self):
         for name in HOSTED_JOBS:
@@ -181,7 +208,7 @@ class HeavyRunnerContractTests(unittest.TestCase):
                 self.assertNotIn("runs-on", self.jobs[name])
 
     def test_every_ci_job_has_a_runner_class(self):
-        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | set(REUSABLE_JOBS) | {"build", "aot-build", SHARD_JOBS["ci.yml"][0]})
+        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | set(REUSABLE_JOBS) | {"build", "aot-build", "core-package-compatibility", SHARD_JOBS["ci.yml"][0]})
 
 
 PR_GATE_SELECTED_JOBS = {"pr-gate", "server-test-producer"}

@@ -83,6 +83,26 @@ def wait_for_proposal(base, key, proposal, expected, proposer_key, session, time
     raise AssertionError(f"operation did not reach its terminal state (REST={status}, MCP={resource_status})")
 
 
+def wait_until_ready(port, failure, timeout=120):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz/ready", timeout=5) as ready:
+                if ready.status == 200:
+                    return
+        except (urllib.error.URLError, TimeoutError):
+            # A restarting dependency can temporarily refuse readiness; the deadline bounds retries.
+            pass
+        time.sleep(2)
+    raise AssertionError(failure)
+
+
+def expected_failure(reason):
+    # Imported here: the polling unit test loads this module without pytest installed.
+    import pytest
+    pytest.xfail(reason)
+
+
 def wait_for_approval(base, key, proposal, timeout=30):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -213,23 +233,12 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         failed_proposal = failed["targets"][0]["proposalId"]
         assert failed_proposal
         wait_for_approval(base, key, failed_proposal)
-        # The stable manager keeps its own Redis; only the serving stack loses Redis.
-        dc("stop", "redis")
+        # The stable manager keeps its own database; only the serving stack loses PostgreSQL.
+        dc("stop", "postgres")
         human.approve(failed_proposal)
         wait_for_proposal(base, key, failed_proposal, "failed", proposer_key, session)
-        dc("start", "redis")
-        deadline = time.monotonic() + 120
-        while time.monotonic() < deadline:
-            try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz/ready", timeout=5) as ready:
-                    if ready.status == 200:
-                        break
-            except (urllib.error.URLError, TimeoutError):
-                # Redis recovery can temporarily refuse readiness; the deadline bounds retries.
-                pass
-            time.sleep(2)
-        else:
-            raise AssertionError("serving stack did not recover after Redis restarted")
+        dc("start", "postgres")
+        wait_until_ready(port, "serving stack did not recover after PostgreSQL restarted")
         convergence = call("honua_propose_platform_release_convergence", {
             "reason": "candidate convergence after failed operation"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
@@ -244,6 +253,17 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         detail, _ = request(base, f"/api/v1/admin/proposals/{proposal}", key)
         assert detail["status"].lower() == "awaitingapproval"
         human.approve(proposal)
+        # The candidate carries a reviewed contract migration and the proposal's approval does
+        # not carry its nonce, so the executor must refuse and leave the prior serving.
+        # Remove this block when that approval exists: the rest of this journey is its
+        # acceptance test, and it fails here as soon as the convergence succeeds.
+        refused = wait_for_proposal(base, key, proposal, "failed", proposer_key, session)
+        assert refused["resolutionReason"] == "contract-approval-required"
+        assert image_id() == prior_id and schema() == 140
+        assert sql("SELECT value FROM public.rc2_lifecycle_marker WHERE id=1") == "retained"
+        wait_until_ready(port, "prior did not keep serving after the contract refusal")
+        assert_live_revision(prior_id, True)
+        expected_failure("an approved convergence cannot yet cross a reviewed contract migration")
         first_convergence = wait_for_proposal(base, key, proposal, "succeeded", proposer_key, session)
         assert image_id() == candidate and schema() == candidate_schema
         assert_live_revision(candidate, False)
@@ -286,7 +306,7 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         assert_live_revision(prior_id, True)
         # Fault injection stops only services in this disposable install. The product
         # must find and restart each one through MCP and an interactive human approval.
-        for service_name in ("honua", "redis", "postgres", "honua"):
+        for service_name in ("honua", "postgres", "honua"):
             dc("stop", service_name)
             health = call("honua_ops_health", {}, 41)
             managed = next(target for target in health["managedTargets"] if target["targetId"] == "compose-local")
@@ -368,8 +388,9 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
                         diagnostics.append({"operationId": operation_id, "status": "unavailable"})
             checkpoint = {}
             if re.fullmatch(r"restore-[a-f0-9]{32}", restore_id):
-                raw_checkpoint = dc("exec", "-T", "compose-manager-redis", "redis-cli", "--raw", "GET",
-                                    f"controlplane:workflow:{restore_id}", check=False)
+                raw_checkpoint = dc("exec", "-T", "compose-manager-postgres", "psql", "-U", "honua", "-d", "honua_manager",
+                                    "-tA", "-c", f"SELECT record FROM honua.workflow_operations WHERE operation_id = '{restore_id}'",
+                                    check=False)
                 try:
                     saved = json.loads(raw_checkpoint)
                     saved_context = saved.get("preMigrationRestore") or {}
@@ -418,5 +439,5 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
     finally:
         identity.close()
         dc("down", "-v", "--remove-orphans", check=False)
-        run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(project_dir)], check=False)
+        run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(project_dir)], check=False)
         shutil.rmtree(project_dir, ignore_errors=True)

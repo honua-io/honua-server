@@ -219,39 +219,3 @@ groups:
           summary: "Circuit breaker opened for external service"
           description: "Circuit breaker for {{ $labels.service }} has opened - external integration degraded"
           runbook_url: "https://honua.io/docs/guides/deploy/scaling-and-performance/#outbound-http-resilience"
-
-  # Redis-specific alerts (if using Redis for caching)
-  - name: honua.redis.alerts
-    rules:
-      - alert: RedisDown
-        expr: redis_up == 0
-        for: 1m
-        labels:
-          severity: critical
-          component: cache
-        annotations:
-          summary: "Redis is down"
-          description: "Redis instance is down - cache functionality impacted"
-          runbook_url: "https://honua.io/docs/guides/deploy/scaling-and-performance/#what-needs-redis-when-multi-node"
-
-      - alert: RedisMemoryHigh
-        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
-        for: 5m
-        labels:
-          severity: warning
-          component: cache
-        annotations:
-          summary: "Redis memory usage is high"
-          description: "Redis memory usage is {{ $value | humanizePercentage }}"
-          runbook_url: "https://honua.io/docs/guides/deploy/scaling-and-performance/#redis-capacity-and-latency"
-
-      - alert: RedisLatencyHigh
-        expr: redis_latency_percentiles_usec{quantile="0.99"} > 10000
-        for: 5m
-        labels:
-          severity: warning
-          component: cache
-        annotations:
-          summary: "Redis latency is high"
-          description: "99th percentile Redis latency is {{ $value }}μs"
-          runbook_url: "https://honua.io/docs/guides/deploy/scaling-and-performance/#redis-capacity-and-latency"

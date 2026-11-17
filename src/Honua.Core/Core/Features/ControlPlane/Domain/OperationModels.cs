@@ -128,19 +128,13 @@ public enum ExecutionJobStatus
 
 public enum DeployTargetKind
 {
-    Kubernetes,
+    Kubernetes = 0,
 
-    AwsEcs,
+    AwsEcs = 1,
 
-    AzureContainerApps,
+    AwsLambda = 3,
 
-    AwsLambda,
-
-    AzureFunctions,
-
-    SelfHostedRolling,
-
-    LocalCompose
+    LocalCompose = 6
 }
 
 public enum BatchComputeTargetKind
@@ -600,6 +594,10 @@ public sealed record ExecutionJobRecord : Honua.Core.Serialization.ExtensibleJso
     public JobHeartbeatPolicy? HeartbeatPolicy { get; init; }
 
     public JobTimeoutPolicy? TimeoutPolicy { get; init; }
+
+    // -----------------------------------------------------------------------
+    // Artifact references
+    // -----------------------------------------------------------------------
 
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
 

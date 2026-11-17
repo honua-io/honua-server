@@ -4,7 +4,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using StackExchange.Redis;
 using Npgsql;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
@@ -18,7 +17,6 @@ namespace Honua.Server.Features.HealthCheck;
 internal static class ProductionHealthChecks
 {
     private static readonly string[] DatabaseTags = ["db", "sql", "postgres"];
-    private static readonly string[] RedisTags = ["cache", "redis"];
     private static readonly string[] UploadTags = ["upload", "queue"];
     private static readonly string[] MetricsTags = ["metrics", "monitoring"];
     private static readonly string[] OutboxTags = ["outbox", "events"];
@@ -42,19 +40,6 @@ internal static class ProductionHealthChecks
                 DatabaseTags);
         }
 
-        // Community deployments may retain a Redis connection string for configuration parity
-        // while the caching.redis entitlement deliberately leaves IConnectionMultiplexer
-        // unregistered. Only add the check when its dependency can be resolved.
-        var redisConnectionString = configuration.GetConnectionString("Redis");
-        if (!string.IsNullOrEmpty(redisConnectionString)
-            && services.Any(descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer)))
-        {
-            healthChecksBuilder.AddCheck<RedisHealthCheck>(
-                "redis",
-                HealthStatus.Degraded,
-                RedisTags);
-        }
-
         // File upload service health check
         healthChecksBuilder.AddCheck<FileUploadHealthCheck>(
             "file-upload",
@@ -67,7 +52,7 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             MetricsTags);
 
-        // Feature-change transactional outbox dispatcher (#692). Surfaces dispatch backlog
+        // Feature-change transactional outbox dispatcher. Surfaces dispatch backlog
         // and dead-letter accumulation on the readiness endpoint so deployments observe
         // CDC durability regressions before they cause silent event loss.
         healthChecksBuilder.AddCheck<Honua.Infrastructure.Events.Outbox.OutboxHealthCheck>(
@@ -75,7 +60,7 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             OutboxTags);
 
-        // Alert delivery outbox (#2427): surfaces dispatch backlog growth and dead-letter
+        // Alert delivery outbox: surfaces dispatch backlog growth and dead-letter
         // accumulation through the HealthCheckService roll-up / ops-health snapshot
         // overallStatus (not the /healthz/ready probe, which uses ReadinessCheckService and
         // does not run registered health checks) so notification-delivery stalls are visible
@@ -85,16 +70,16 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             AlertsTags);
 
-        // Alert evaluation loop (#2810): the evaluator previously had no health coverage. Surfaces a
-        // hung leader (stale productive-pass heartbeat) and a fleet-wide no-leader stall (no node can
-        // acquire the advisory lease) so a silently-halted evaluation loop is visible on the roll-up
-        // and the paged readiness path. Reports Healthy when the pipeline is disabled.
+        // Alert evaluation loop: surfaces a hung leader (stale productive-pass heartbeat) and a
+        // fleet-wide no-leader stall (no node can acquire the advisory lease) so a silently-halted
+        // evaluation loop is visible on the roll-up and the paged readiness path. Reports Healthy
+        // when the pipeline is disabled.
         healthChecksBuilder.AddCheck<Honua.Alerts.AlertEvaluationHealthCheck>(
             "alert-evaluation",
             HealthStatus.Degraded,
             AlertsTags);
 
-        // Real-time feature streams (#2428, GA promotion): surfaces backpressure
+        // Real-time feature streams (GA promotion): surfaces backpressure
         // (slow-consumer disconnects, session saturation) and cross-node broadcast backlog
         // loss through the HealthCheckService roll-up so streaming degradation is visible
         // before clients silently miss events. Never Unhealthy — best-effort delivery with
@@ -104,14 +89,14 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             StreamingTags);
 
-        // Plugin/extension SDK (#347): reports loaded plugins and whether the Enterprise
+        // Plugin/extension SDK: reports loaded plugins and whether the Enterprise
         // entitlement is active. Always healthy — plugins are optional.
         healthChecksBuilder.AddCheck<PluginHealthCheck>(
             "plugins",
             HealthStatus.Healthy,
             PluginTags);
 
-        // Scheduled audit hash-chain verification (#2810): surfaces a broken/tampered append-only
+        // Scheduled audit hash-chain verification: surfaces a broken/tampered append-only
         // audit chain through the roll-up / ops-health snapshot as a paged signal, rather than only
         // catching it on a manual /verify. Reads the cached signal; never replays the chain on a
         // probe. Healthy before the first pass and while the chain is intact.
@@ -227,96 +212,6 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
             ProductionHealthChecksLog.DatabaseHealthCheckFailed(_logger, ex);
             return HealthCheckResult.Unhealthy(
                 "Database connectivity failed",
-                ex,
-                new Dictionary<string, object>
-                {
-                    ["errorType"] = ex.GetType().Name
-                });
-        }
-    }
-}
-
-internal sealed class RedisHealthCheck : IHealthCheck
-{
-    private readonly IConnectionMultiplexer? _redis;
-    private readonly IDistributedCache _distributedCache;
-    private readonly ILogger<RedisHealthCheck> _logger;
-
-    public RedisHealthCheck(
-        IConnectionMultiplexer? redis,
-        IDistributedCache distributedCache,
-        ILogger<RedisHealthCheck> logger)
-    {
-        _redis = redis;
-        _distributedCache = distributedCache;
-        _logger = logger;
-    }
-
-    public async Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            if (_redis == null)
-            {
-                return HealthCheckResult.Healthy(
-                    "Redis not configured, using in-memory cache",
-                    new Dictionary<string, object>
-                    {
-                        ["cacheType"] = "in-memory"
-                    });
-            }
-
-            var startTime = DateTimeOffset.UtcNow;
-            var database = _redis.GetDatabase();
-
-            // Test Redis connectivity with ping
-            var pingLatency = await database.PingAsync();
-
-            // Test cache set/get operations
-            var testKey = $"health-check:{Guid.NewGuid()}";
-            var testValue = "test-value";
-
-            await _distributedCache.SetStringAsync(testKey, testValue, cancellationToken);
-            var retrievedValue = await _distributedCache.GetStringAsync(testKey, cancellationToken);
-            await _distributedCache.RemoveAsync(testKey, cancellationToken);
-
-            var totalLatency = DateTimeOffset.UtcNow - startTime;
-
-            var data = new Dictionary<string, object>
-            {
-                ["pingLatencyMs"] = pingLatency.TotalMilliseconds,
-                ["totalLatencyMs"] = totalLatency.TotalMilliseconds,
-                ["isConnected"] = _redis.IsConnected,
-                ["cacheOperationSuccess"] = retrievedValue == testValue
-            };
-
-            // Determine health status
-            if (pingLatency.TotalMilliseconds > 1000 || !_redis.IsConnected)
-            {
-                return HealthCheckResult.Degraded(
-                    "Redis is experiencing high latency or connection issues",
-                    data: data);
-            }
-
-            if (retrievedValue != testValue)
-            {
-                return HealthCheckResult.Degraded(
-                    "Redis cache operations are failing",
-                    data: data);
-            }
-
-            return HealthCheckResult.Healthy("Redis is healthy", data);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentional broad catch: this is the IHealthCheck request boundary; any
-            // failure probing Redis must be reported as an Unhealthy result below rather
-            // than throwing out of the health-check pipeline.
-            ProductionHealthChecksLog.RedisHealthCheckFailed(_logger, ex);
-            return HealthCheckResult.Unhealthy(
-                "Redis connectivity failed",
                 ex,
                 new Dictionary<string, object>
                 {

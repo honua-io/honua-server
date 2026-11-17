@@ -35,7 +35,7 @@ internal sealed class AdminConnectImportOperationExecutor(
             .Select(parameter => $"Required parameter '{parameter.Name}' is missing.").ToArray();
         var messages = missing.ToList();
         // Read-only connection tests take the same credential body as create/update. An inline
-        // password is rejected there too (#4880); callers pass secretReference instead.
+        // password is rejected there too; callers pass secretReference instead.
         // The check is case-insensitive so "Password" cannot bypass the ordinal dictionary lookup.
         if (AdminConnectImportApprovalPayload.HasInlinePassword(request.Parameters))
         {
@@ -122,7 +122,8 @@ internal sealed class AdminConnectImportOperationExecutor(
                 current.Features.Get<RateLimitAdmission>() is not null
                 ? new OperationLoopbackAdmission(executionCredential.Id, definition.Method.Method, uri.AbsolutePath, context.TenantId)
                 : null;
-            OperationLineageHeaders.Apply(message, context, lineageAttestationStore, admission);
+            OperationLineageHeaders.Apply(
+                message, new OperationLoopbackHop(context, current) { Admission = admission }, lineageAttestationStore);
             if (definition.Method != HttpMethod.Get && definition.Method != HttpMethod.Delete)
                 message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, routeNames) : BuildJson(request, routeNames, OperationId);
             response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);

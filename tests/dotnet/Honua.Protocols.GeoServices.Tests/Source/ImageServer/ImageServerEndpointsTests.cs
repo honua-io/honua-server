@@ -30,12 +30,27 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-// Retaining PostgreSQL between cases avoids infrastructure restarts while each case owns
-// its host, schema, and substitutes.
+// Default raster reads share one host; cases with custom stores, authorization, or elevation
+// retain isolated hosts and schemas. The collection serializes access to the default substitute.
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
+public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
+    IClassFixture<ImageServerEndpointsTests.DefaultRasterHost>
 {
+    private readonly DefaultRasterHost _defaultHost;
+
+    public ImageServerEndpointsTests(DefaultRasterHost defaultHost) => _defaultHost = defaultHost;
+
+    public sealed class DefaultRasterHost : IAsyncLifetime
+    {
+        public WebAppFixture Application { get; } = new WebAppFixture()
+            .ConfigureServices(services => services.AddSingleton(CreateRasterStoreSubstitute()));
+
+        public Task InitializeAsync() => Application.InitializeAsync();
+
+        public Task DisposeAsync() => Application.DisposeAsync();
+    }
+
     private const int TestLayerId = 0;
 
     private static IRasterStore CreateRasterStoreSubstitute(int bandCount = 1)
@@ -1018,21 +1033,14 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task ExportImage_WithInvalidClipGeometry_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var renderingRule = Uri.EscapeDataString(
-                """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingGeometry":{"rings":[]}}}""");
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
+        var fixture = _defaultHost.Application;
+        var renderingRule = Uri.EscapeDataString(
+            """{"rasterFunction":"Clip","rasterFunctionArguments":{"ClippingGeometry":{"rings":[]}}}""");
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1040,22 +1048,14 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task ExportImage_WithUnknownRenderingRule_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            // Hillshade/Slope/Aspect are now implemented terrain functions; use a name that
-            // is genuinely not a known raster function so the unknown-chain -> 400 path is exercised.
-            var renderingRule = Uri.EscapeDataString("""{"rasterFunction":"NonExistentRasterFunction"}""");
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
+        var fixture = _defaultHost.Application;
+        // Use an unknown raster function to exercise the unknown-chain 400 response.
+        var renderingRule = Uri.EscapeDataString("""{"rasterFunction":"NonExistentRasterFunction"}""");
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1064,37 +1064,30 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task Wmts_GetCapabilities_ReturnsImageServerCapabilities()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-            var content = await response.Content.ReadAsStringAsync();
-            content.Should().Contain("<ows:ServiceType>OGC WMTS</ows:ServiceType>");
-            content.Should().Contain("<ows:Identifier>0</ows:Identifier>");
-            content.Should().Contain("<ows:Identifier>WebMercatorQuad</ows:Identifier>");
-            content.Should().Contain("ResourceURL");
-            content.Should().Contain("<Format>image/png</Format>");
-            content.Should().Contain("<Format>image/jpeg</Format>");
-            content.Should().Contain("<InfoFormat>application/json</InfoFormat>");
-            content.Should().Contain("name=\"GetFeatureInfo\"");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("<ows:ServiceType>OGC WMTS</ows:ServiceType>");
+        content.Should().Contain("<ows:Identifier>0</ows:Identifier>");
+        content.Should().Contain("<ows:Identifier>WebMercatorQuad</ows:Identifier>");
+        content.Should().Contain("ResourceURL");
+        content.Should().Contain("<Format>image/png</Format>");
+        content.Should().Contain("<Format>image/jpeg</Format>");
+        content.Should().Contain("<InfoFormat>application/json</InfoFormat>");
+        content.Should().Contain("name=\"GetFeatureInfo\"");
 
-            var serviceId = WebAppFixture.TestServiceId;
-            var restfulResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{serviceId}/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml");
+        var serviceId = WebAppFixture.TestServiceId;
+        var restfulResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{serviceId}/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml");
 
-            restfulResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var restfulContent = await restfulResponse.Content.ReadAsStringAsync();
-            restfulContent.Should().Contain($"<ows:Identifier>{serviceId}</ows:Identifier>");
-            restfulContent.Should().Contain($"/ImageServer/WMTS/{serviceId}/{{Style}}/{{TileMatrixSet}}");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        restfulResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var restfulContent = await restfulResponse.Content.ReadAsStringAsync();
+        restfulContent.Should().Contain($"<ows:Identifier>{serviceId}</ows:Identifier>");
+        restfulContent.Should().Contain($"/ImageServer/WMTS/{serviceId}/{{Style}}/{{TileMatrixSet}}");
     }
 
     [IntegrationTest]
@@ -1102,22 +1095,15 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task Issue5522_GetCapabilities_ResourceUrlUsesLiteralLayerIdentifier()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var serviceId = WebAppFixture.TestServiceId;
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{serviceId}/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml");
+        var fixture = _defaultHost.Application;
+        var serviceId = WebAppFixture.TestServiceId;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{serviceId}/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml");
 
-            var content = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-            content.Should().Contain($"/ImageServer/WMTS/{serviceId}/{{Style}}/{{TileMatrixSet}}");
-            content.Should().NotContain("/ImageServer/WMTS/{Layer}/");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain($"/ImageServer/WMTS/{serviceId}/{{Style}}/{{TileMatrixSet}}");
+        content.Should().NotContain("/ImageServer/WMTS/{Layer}/");
     }
 
     [IntegrationTest]
@@ -1358,28 +1344,21 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetMetadata)]
     public async Task Wmts_GetCapabilities_AdvertisedLegend_ResolvesToPngWithLegendSwatches()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            using var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var capabilities = System.Xml.Linq.XDocument.Parse(await response.Content.ReadAsStringAsync());
-            var legendUrl = capabilities.Descendants().Single(element => element.Name.LocalName == "LegendURL")
-                .Attribute(System.Xml.Linq.XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value;
-            legendUrl.Should().Contain("/legend?f=png").And.NotContain("GetTile");
-            using var legend = await fixture.Client.GetAsync(new Uri(legendUrl).PathAndQuery);
-            legend.StatusCode.Should().Be(HttpStatusCode.OK);
-            legend.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
-            using var bitmap = SkiaSharp.SKBitmap.Decode(await legend.Content.ReadAsByteArrayAsync());
-            bitmap.Should().NotBeNull();
-            bitmap.Height.Should().BeLessThan(256);
-            bitmap.GetPixel(10, 10).Alpha.Should().BeGreaterThan(0);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        var fixture = _defaultHost.Application;
+        using var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var capabilities = System.Xml.Linq.XDocument.Parse(await response.Content.ReadAsStringAsync());
+        var legendUrl = capabilities.Descendants().Single(element => element.Name.LocalName == "LegendURL")
+            .Attribute(System.Xml.Linq.XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value;
+        legendUrl.Should().Contain("/legend?f=png").And.NotContain("GetTile");
+        using var legend = await fixture.Client.GetAsync(new Uri(legendUrl).PathAndQuery);
+        legend.StatusCode.Should().Be(HttpStatusCode.OK);
+        legend.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+        using var bitmap = SkiaSharp.SKBitmap.Decode(await legend.Content.ReadAsByteArrayAsync());
+        bitmap.Should().NotBeNull();
+        bitmap.Height.Should().BeLessThan(256);
+        bitmap.GetPixel(10, 10).Alpha.Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
@@ -1438,26 +1417,19 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task QueryCatalog_Get_ReturnsFeatureCollection()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/query?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/query?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("geometryType").GetString().Should().Be("esriGeometryPolygon");
-            json.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
-            json.RootElement.GetProperty("features")[0]
-                .GetProperty("attributes")
-                .GetProperty("OBJECTID").GetInt64().Should().Be(100);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("geometryType").GetString().Should().Be("esriGeometryPolygon");
+        json.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
+        json.RootElement.GetProperty("features")[0]
+            .GetProperty("attributes")
+            .GetProperty("OBJECTID").GetInt64().Should().Be(100);
     }
 
     [IntegrationTest]
@@ -1465,24 +1437,17 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task GetRasterCatalogItem_ExistingRaster_ReturnsFeature()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/100?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/100?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
-            var feature = JsonElement.Parse(await response.Content.ReadAsStringAsync());
-            feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
-            feature.GetProperty("attributes").GetProperty("Name").GetString().Should().Be("test-raster");
-            feature.GetProperty("geometry").GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        var feature = JsonElement.Parse(await response.Content.ReadAsStringAsync());
+        feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
+        feature.GetProperty("attributes").GetProperty("Name").GetString().Should().Be("test-raster");
+        feature.GetProperty("geometry").GetProperty("rings").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
@@ -1490,20 +1455,13 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task GetRasterCatalogItem_ByServiceName_ReturnsFeature()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/100?f=pjson");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/100?f=pjson");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var feature = JsonElement.Parse(await response.Content.ReadAsStringAsync());
-            feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var feature = JsonElement.Parse(await response.Content.ReadAsStringAsync());
+        feature.GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
     }
 
     [IntegrationTest]
@@ -1511,21 +1469,14 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task GetRasterCatalogItem_UnknownRaster_ReturnsNotFoundError()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/999?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/999?f=json");
 
-            // GeoServices errors use HTTP 200 and carry the status in the Esri error body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
-            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // GeoServices errors use HTTP 200 and carry the status in the Esri error body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
+        body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
     }
 
     [IntegrationTest]
@@ -1587,38 +1538,31 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task GetRasterItemInfo_ExistingRaster_ReturnsCanonicalMetadata()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/100/info?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/100/info?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var info = JsonElement.Parse(await response.Content.ReadAsStringAsync());
-            info.EnumerateObject().Select(static property => property.Name).Should().BeEquivalentTo([
-                "origin",
-                "blockWidth",
-                "blockHeight",
-                "pixelSizeX",
-                "pixelSizeY",
-                "extent",
-                "bandCount",
-                "pixelType",
-                "firstPyramidLevel",
-                "maxPyramidLevel",
-            ]);
-            info.GetProperty("blockWidth").GetInt32().Should().Be(256);
-            info.GetProperty("bandCount").GetInt32().Should().Be(1);
-            info.GetProperty("pixelType").GetString().Should().Be("U8");
-            info.GetProperty("extent").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
-            info.GetProperty("firstPyramidLevel").GetInt32().Should().Be(0);
-            info.GetProperty("maxPyramidLevel").GetInt32().Should().Be(0);
-            info.TryGetProperty("maximumPyramidLevel", out _).Should().BeFalse();
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var info = JsonElement.Parse(await response.Content.ReadAsStringAsync());
+        info.EnumerateObject().Select(static property => property.Name).Should().BeEquivalentTo([
+            "origin",
+            "blockWidth",
+            "blockHeight",
+            "pixelSizeX",
+            "pixelSizeY",
+            "extent",
+            "bandCount",
+            "pixelType",
+            "firstPyramidLevel",
+            "maxPyramidLevel",
+        ]);
+        info.GetProperty("blockWidth").GetInt32().Should().Be(256);
+        info.GetProperty("bandCount").GetInt32().Should().Be(1);
+        info.GetProperty("pixelType").GetString().Should().Be("U8");
+        info.GetProperty("extent").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        info.GetProperty("firstPyramidLevel").GetInt32().Should().Be(0);
+        info.GetProperty("maxPyramidLevel").GetInt32().Should().Be(0);
+        info.TryGetProperty("maximumPyramidLevel", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -1627,21 +1571,14 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/100/info/keyProperties?f=pjson");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/100/info/keyProperties?f=pjson");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var properties = JsonElement.Parse(await response.Content.ReadAsStringAsync());
-            properties.GetProperty("BandCount").GetInt32().Should().Be(1);
-            properties.GetProperty("DataType").GetString().Should().Be("U8");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var properties = JsonElement.Parse(await response.Content.ReadAsStringAsync());
+        properties.GetProperty("BandCount").GetInt32().Should().Be(1);
+        properties.GetProperty("DataType").GetString().Should().Be("U8");
     }
 
     [IntegrationTest]
@@ -1650,22 +1587,15 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/100/info/histograms?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/100/info/histograms?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var histograms = JsonElement.Parse(await response.Content.ReadAsStringAsync())
-                .GetProperty("histograms");
-            histograms.GetArrayLength().Should().Be(1);
-            histograms[0].GetProperty("counts").GetArrayLength().Should().Be(4);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var histograms = JsonElement.Parse(await response.Content.ReadAsStringAsync())
+            .GetProperty("histograms");
+        histograms.GetArrayLength().Should().Be(1);
+        histograms[0].GetProperty("counts").GetArrayLength().Should().Be(4);
     }
 
     [IntegrationTest]
@@ -1717,20 +1647,13 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     {
         // The default substitute returns an empty sensor-metadata dictionary, so the item carries
         // no image support data and the resource must report not-available honestly.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/100/imageSupportData?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/100/imageSupportData?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
-            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
+        body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
     }
 
     [IntegrationTest]
@@ -1788,20 +1711,13 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     {
         // Honua stores raster pixels in the provider with no downloadable source file, so rasterFile
         // must be a precise capability-honest not-available response rather than a raw error.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/100/rasterFile?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/100/rasterFile?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
-            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonElement.Parse(await response.Content.ReadAsStringAsync());
+        body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
     }
 
     [IntegrationTest]
@@ -1833,28 +1749,21 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task QueryCatalog_Post_FormBody_ReturnsFeatureCollection()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
+        var fixture = _defaultHost.Application;
+        using var content = new FormUrlEncodedContent(new[]
         {
-            using var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("returnGeometry", "false"),
-            });
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("returnGeometry", "false"),
+        });
 
-            var response = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/query",
-                content);
+        var response = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/query",
+            content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("features")[0]
-                .TryGetProperty("geometry", out _).Should().BeFalse();
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("features")[0]
+            .TryGetProperty("geometry", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -1862,19 +1771,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task QueryCatalog_NonExistentLayer_ReturnsNotFound()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                "/rest/services/99999/ImageServer/query?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            "/rest/services/99999/ImageServer/query?f=json");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1906,24 +1808,17 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task QueryCatalog_Get_OutFields_ProjectsAttributes()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/query?f=json&outFields=Name,BandCount");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/query?f=json&outFields=Name,BandCount");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var attributes = json.RootElement.GetProperty("features")[0].GetProperty("attributes");
-            attributes.TryGetProperty("OBJECTID", out _).Should().BeTrue();
-            attributes.TryGetProperty("Name", out _).Should().BeTrue();
-            attributes.TryGetProperty("BandCount", out _).Should().BeTrue();
-            attributes.TryGetProperty("PixelType", out _).Should().BeFalse();
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var attributes = json.RootElement.GetProperty("features")[0].GetProperty("attributes");
+        attributes.TryGetProperty("OBJECTID", out _).Should().BeTrue();
+        attributes.TryGetProperty("Name", out _).Should().BeTrue();
+        attributes.TryGetProperty("BandCount", out _).Should().BeTrue();
+        attributes.TryGetProperty("PixelType", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -1931,19 +1826,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task QueryCatalog_Get_OutFieldsUnknownField_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/query?f=json&outFields=Bogus");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/query?f=json&outFields=Bogus");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1954,67 +1842,60 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task Find_GetAndPost_ReturnsImagesContainingTargetGeometry()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string targetGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":4326}}""";
-            var encodedTargetGeometry = Uri.EscapeDataString(targetGeometry);
+        var fixture = _defaultHost.Application;
+        const string targetGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":4326}}""";
+        var encodedTargetGeometry = Uri.EscapeDataString(targetGeometry);
 
-            var getResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/find?f=json&toGeometry={encodedTargetGeometry}&maxCount=1");
+        var getResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/find?f=json&toGeometry={encodedTargetGeometry}&maxCount=1");
 
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var find = JsonSerializer.Deserialize(
-                await getResponse.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerFindResponse);
-            AssertFindResponse(find);
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var find = JsonSerializer.Deserialize(
+            await getResponse.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerFindResponse);
+        AssertFindResponse(find);
 
-            using var findContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("toGeometry", targetGeometry),
-                new KeyValuePair<string, string>("maxCount", "1"),
-            ]);
-            var postResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/find",
-                findContent);
+        using var findContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("toGeometry", targetGeometry),
+            new KeyValuePair<string, string>("maxCount", "1"),
+        ]);
+        var postResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/find",
+            findContent);
 
-            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            find = JsonSerializer.Deserialize(
-                await postResponse.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerFindResponse);
-            AssertFindResponse(find);
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        find = JsonSerializer.Deserialize(
+            await postResponse.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerFindResponse);
+        AssertFindResponse(find);
 
-            var serviceId = WebAppFixture.TestServiceId;
-            var serviceGetResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{serviceId}/ImageServer/find?f=json&toGeometry={encodedTargetGeometry}&objectIds=100");
+        var serviceId = WebAppFixture.TestServiceId;
+        var serviceGetResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{serviceId}/ImageServer/find?f=json&toGeometry={encodedTargetGeometry}&objectIds=100");
 
-            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            find = JsonSerializer.Deserialize(
-                await serviceGetResponse.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerFindResponse);
-            AssertFindResponse(find);
+        serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        find = JsonSerializer.Deserialize(
+            await serviceGetResponse.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerFindResponse);
+        AssertFindResponse(find);
 
-            using var serviceFindContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("toGeometry", targetGeometry),
-                new KeyValuePair<string, string>("objectIds", "[100]"),
-            ]);
-            var servicePostResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{serviceId}/ImageServer/find",
-                serviceFindContent);
+        using var serviceFindContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("toGeometry", targetGeometry),
+            new KeyValuePair<string, string>("objectIds", "[100]"),
+        ]);
+        var servicePostResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{serviceId}/ImageServer/find",
+            serviceFindContent);
 
-            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            find = JsonSerializer.Deserialize(
-                await servicePostResponse.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerFindResponse);
-            AssertFindResponse(find);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        find = JsonSerializer.Deserialize(
+            await servicePostResponse.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerFindResponse);
+        AssertFindResponse(find);
     }
 
     [IntegrationTest]
@@ -2060,19 +1941,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task Find_MissingToGeometry_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/find?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/find?f=json");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -2083,71 +1957,64 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Distance)]
     public async Task Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
-            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
-            var query = string.Join('&',
-            [
-                "f=json",
-                "measureOperation=esriMensurationDistanceAndAngle",
-                "geometryType=esriGeometryPoint",
-                $"fromGeometry={Uri.EscapeDataString(fromGeometry)}",
-                $"toGeometry={Uri.EscapeDataString(toGeometry)}",
-                "linearUnit=esriMeters",
-                "angularUnit=esriDUDecimalDegrees",
-            ]);
+        var fixture = _defaultHost.Application;
+        const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+        const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+        var query = string.Join('&',
+        [
+            "f=json",
+            "measureOperation=esriMensurationDistanceAndAngle",
+            "geometryType=esriGeometryPoint",
+            $"fromGeometry={Uri.EscapeDataString(fromGeometry)}",
+            $"toGeometry={Uri.EscapeDataString(toGeometry)}",
+            "linearUnit=esriMeters",
+            "angularUnit=esriDUDecimalDegrees",
+        ]);
 
-            var getResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?{query}");
+        var getResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure?{query}");
 
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            AssertDistanceMeasure(await getResponse.Content.ReadAsStringAsync());
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertDistanceMeasure(await getResponse.Content.ReadAsStringAsync());
 
-            using var measureContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
-                new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
-                new KeyValuePair<string, string>("fromGeometry", fromGeometry),
-                new KeyValuePair<string, string>("toGeometry", toGeometry),
-                new KeyValuePair<string, string>("linearUnit", "esriMeters"),
-                new KeyValuePair<string, string>("angularUnit", "esriDUDecimalDegrees"),
-            ]);
-            var postResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure",
-                measureContent);
+        using var measureContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
+            new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+            new KeyValuePair<string, string>("fromGeometry", fromGeometry),
+            new KeyValuePair<string, string>("toGeometry", toGeometry),
+            new KeyValuePair<string, string>("linearUnit", "esriMeters"),
+            new KeyValuePair<string, string>("angularUnit", "esriDUDecimalDegrees"),
+        ]);
+        var postResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure",
+            measureContent);
 
-            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            AssertDistanceMeasure(await postResponse.Content.ReadAsStringAsync());
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertDistanceMeasure(await postResponse.Content.ReadAsStringAsync());
 
-            var serviceId = WebAppFixture.TestServiceId;
-            var serviceGetResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{serviceId}/ImageServer/measure?{query}");
+        var serviceId = WebAppFixture.TestServiceId;
+        var serviceGetResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{serviceId}/ImageServer/measure?{query}");
 
-            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            AssertDistanceMeasure(await serviceGetResponse.Content.ReadAsStringAsync());
+        serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertDistanceMeasure(await serviceGetResponse.Content.ReadAsStringAsync());
 
-            using var serviceMeasureContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
-                new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
-                new KeyValuePair<string, string>("fromGeometry", fromGeometry),
-                new KeyValuePair<string, string>("toGeometry", toGeometry),
-            ]);
-            var servicePostResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{serviceId}/ImageServer/measure",
-                serviceMeasureContent);
+        using var serviceMeasureContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
+            new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+            new KeyValuePair<string, string>("fromGeometry", fromGeometry),
+            new KeyValuePair<string, string>("toGeometry", toGeometry),
+        ]);
+        var servicePostResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{serviceId}/ImageServer/measure",
+            serviceMeasureContent);
 
-            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            AssertDistanceMeasure(await servicePostResponse.Content.ReadAsStringAsync());
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertDistanceMeasure(await servicePostResponse.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
@@ -2155,32 +2022,25 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Distance)]
     public async Task Measure_AreaAndPerimeterEnvelope_ReturnsBasicMensuration()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string envelope = """{"xmin":0,"ymin":0,"xmax":10,"ymax":5,"spatialReference":{"wkid":3857}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationAreaAndPerimeter&geometryType=esriGeometryEnvelope&fromGeometry={Uri.EscapeDataString(envelope)}");
+        var fixture = _defaultHost.Application;
+        const string envelope = """{"xmin":0,"ymin":0,"xmax":10,"ymax":5,"spatialReference":{"wkid":3857}}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationAreaAndPerimeter&geometryType=esriGeometryEnvelope&fromGeometry={Uri.EscapeDataString(envelope)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var measure = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var measure = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerMeasureResponse);
 
-            measure.Should().NotBeNull();
-            measure!.Area.Should().NotBeNull();
-            // Independent PROJ WGS84 geodesic reference after inverse EPSG:3857 projection.
-            // Web Mercator's spherical northing differs from ellipsoidal ground distance.
-            measure.Area!.Value.Should().BeApproximately(49.665281d, 0.2d);
-            measure.Area.Unit.Should().Be("esriSquareMeters");
-            measure.Perimeter.Should().NotBeNull();
-            measure.Perimeter!.Value.Should().BeApproximately(29.933056d, 0.1d);
-            measure.Perimeter.Unit.Should().Be("esriMeters");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        measure.Should().NotBeNull();
+        measure!.Area.Should().NotBeNull();
+        // Independent PROJ WGS84 geodesic reference after inverse EPSG:3857 projection.
+        // Web Mercator's spherical northing differs from ellipsoidal ground distance.
+        measure.Area!.Value.Should().BeApproximately(49.665281d, 0.2d);
+        measure.Area.Unit.Should().Be("esriSquareMeters");
+        measure.Perimeter.Should().NotBeNull();
+        measure.Perimeter!.Value.Should().BeApproximately(29.933056d, 0.1d);
+        measure.Perimeter.Unit.Should().Be("esriMeters");
     }
 
     [IntegrationTest]
@@ -2188,27 +2048,22 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Distance)]
     public async Task Measure_DistanceAndAngle_GeographicDegrees_ReturnsGroundMeters()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string fromGeometry = """{"x":0,"y":40,"spatialReference":{"wkid":4269}}""";
-            const string toGeometry = """{"x":1,"y":40,"spatialReference":{"wkid":4269}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+        // EPSG:4269 (NAD83) 1° of longitude at 40°N. A planar path would return the raw
+        // degree delta (~1.0) as "meters"; the ground distance is ~85 km.
+        var fixture = _defaultHost.Application;
+        const string fromGeometry = """{"x":0,"y":40,"spatialReference":{"wkid":4269}}""";
+        const string toGeometry = """{"x":1,"y":40,"spatialReference":{"wkid":4269}}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var measure = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var measure = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerMeasureResponse);
 
-            measure.Should().NotBeNull();
-            measure!.Distance.Should().NotBeNull();
-            measure.Distance!.Value.Should().BeInRange(84_500d, 85_500d);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        measure.Should().NotBeNull();
+        measure!.Distance.Should().NotBeNull();
+        measure.Distance!.Value.Should().BeInRange(84_500d, 85_500d);
     }
 
     [IntegrationTest]
@@ -2219,26 +2074,19 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         // A ~2°x1° polygon straddling the antimeridian (179°E .. -179°E) in WGS 84. Without
         // longitude unwrapping this projects to a ~358°-wide polygon (area ~1e14 m²); unwrapping
         // keeps it a small finite quadrangle of a few 1e10 m².
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationAreaAndPerimeter&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
+        var fixture = _defaultHost.Application;
+        const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationAreaAndPerimeter&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var measure = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var measure = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerMeasureResponse);
 
-            measure.Should().NotBeNull();
-            measure!.Area.Should().NotBeNull();
-            measure.Area!.Value.Should().BeInRange(1e10, 1e12);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        measure.Should().NotBeNull();
+        measure!.Area.Should().NotBeNull();
+        measure.Area!.Value.Should().BeInRange(1e10, 1e12);
     }
 
     [IntegrationTest]
@@ -2252,30 +2100,23 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         // the Mercator abscissa of lon 1°). The WGS84 ellipsoidal ground distance between them is
         // 55799.470393 m (independent PROJ geodesic reference). The buggy planar
         // sqrt(dx²+dy²) would report 111319.49 m — ~2x overstated, exactly 1/cos(60°).
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string fromGeometry = """{"x":0.0,"y":8399737.889818361,"spatialReference":{"wkid":3857}}""";
-            const string toGeometry = """{"x":111319.49079327357,"y":8399737.889818361,"spatialReference":{"wkid":3857}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+        var fixture = _defaultHost.Application;
+        const string fromGeometry = """{"x":0.0,"y":8399737.889818361,"spatialReference":{"wkid":3857}}""";
+        const string toGeometry = """{"x":111319.49079327357,"y":8399737.889818361,"spatialReference":{"wkid":3857}}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var measure = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var measure = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerMeasureResponse);
 
-            measure.Should().NotBeNull();
-            measure!.Distance.Should().NotBeNull();
-            measure.Distance!.Value.Should().BeApproximately(55799.470393d, 1d);
-            measure.Distance.Unit.Should().Be("esriMeters");
-            // Guard against a regression back to the planar (2x overstated) value.
-            measure.Distance.Value.Should().BeLessThan(60000d);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        measure.Should().NotBeNull();
+        measure!.Distance.Should().NotBeNull();
+        measure.Distance!.Value.Should().BeApproximately(55799.470393d, 1d);
+        measure.Distance.Unit.Should().Be("esriMeters");
+        // Guard against a regression back to the planar (2x overstated) value.
+        measure.Distance.Value.Should().BeLessThan(60000d);
     }
 
     [IntegrationTest]
@@ -2288,30 +2129,23 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         // (independent PROJ geodesic reference), consistent with the
         // geodesic distance in the same response. The buggy planar atan2(dLon, dLat) reported
         // 45° regardless of latitude.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string fromGeometry = """{"x":0.0,"y":60.0,"spatialReference":{"wkid":4326}}""";
-            const string toGeometry = """{"x":1.0,"y":61.0,"spatialReference":{"wkid":4326}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+        var fixture = _defaultHost.Application;
+        const string fromGeometry = """{"x":0.0,"y":60.0,"spatialReference":{"wkid":4326}}""";
+        const string toGeometry = """{"x":1.0,"y":61.0,"spatialReference":{"wkid":4326}}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationDistanceAndAngle&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var measure = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var measure = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerMeasureResponse);
 
-            measure.Should().NotBeNull();
-            measure!.AzimuthAngle.Should().NotBeNull();
-            measure.AzimuthAngle!.Value.Should().BeApproximately(25.819476d, 1e-3);
-            measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
-            // Guard against a regression to the cos(lat)-free planar bearing (45°).
-            measure.AzimuthAngle.Value.Should().BeLessThan(40d);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        measure.Should().NotBeNull();
+        measure!.AzimuthAngle.Should().NotBeNull();
+        measure.AzimuthAngle!.Value.Should().BeApproximately(25.819476d, 1e-3);
+        measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
+        // Guard against a regression to the cos(lat)-free planar bearing (45°).
+        measure.AzimuthAngle.Value.Should().BeLessThan(40d);
     }
 
     [IntegrationTest]
@@ -2322,28 +2156,21 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         // The area-weighted centroid of the dateline-straddling [179,181]x[0,1] ring is at
         // lon ±180°, lat 0.5°. The buggy vertex mean of (179, -179, -179, 179) collapses to lon 0°
         // — the opposite side of the globe.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationCentroid&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
+        var fixture = _defaultHost.Application;
+        const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationCentroid&geometryType=esriGeometryPolygon&fromGeometry={Uri.EscapeDataString(polygon)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var measure = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerMeasureResponse);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var measure = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerMeasureResponse);
 
-            measure.Should().NotBeNull();
-            measure!.Point.Should().NotBeNull();
-            // Centroid longitude is ±180 (the antimeridian), never near 0.
-            Math.Abs(measure.Point!.Value.X).Should().BeApproximately(180d, 1e-6);
-            measure.Point.Value.Y.Should().BeApproximately(0.5d, 1e-6);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        measure.Should().NotBeNull();
+        measure!.Point.Should().NotBeNull();
+        // Centroid longitude is ±180 (the antimeridian), never near 0.
+        Math.Abs(measure.Point!.Value.X).Should().BeApproximately(180d, 1e-6);
+        measure.Point.Value.Y.Should().BeApproximately(0.5d, 1e-6);
     }
 
     [IntegrationTest]
@@ -2352,22 +2179,14 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     public async Task Measure_HeightOperation_ReturnsNotImplemented()
     {
         // No DEM/sensor metadata on the default substitute, so height is honestly 501.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
-            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+        var fixture = _defaultHost.Application;
+        const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+        const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            // Not-implemented operations now surface body error.code 501 (pass-through) instead
-            // of collapsing to 500, so clients can distinguish "unsupported" from a server fault.
-            await response.AssertGeoServicesErrorAsync(501);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // Unsupported operations surface error.code 501 so clients can distinguish a server fault.
+        await response.AssertGeoServicesErrorAsync(501);
     }
 
     [IntegrationTest]
@@ -2559,20 +2378,13 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     {
         // The default substitute models no sun geometry, so shadow-based height is honestly 501
         // (never a fabricated height), mirroring the DEM-height 501 discipline (ADR-0065).
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
-            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTopShadow&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+        var fixture = _defaultHost.Application;
+        const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+        const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTopShadow&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            await response.AssertGeoServicesErrorAsync(501);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        await response.AssertGeoServicesErrorAsync(501);
     }
 
     [IntegrationTest]
@@ -2675,18 +2487,11 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         // The default substitute models no sensor metadata / control points. Automatic feature
         // matching is out of scope by design, so the honest answer is 501 — never a fabricated or
         // empty tie-point set (ADR-0065), mirroring the DEM-height 501 discipline.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeTiePoints?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeTiePoints?f=json");
 
-            await response.AssertGeoServicesErrorAsync(501);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        await response.AssertGeoServicesErrorAsync(501);
     }
 
     [IntegrationTest]
@@ -2773,20 +2578,13 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     {
         // The default substitute models no DEM/sensor metadata, so volume is honestly 501 rather
         // than a fabricated result or a 500 (ADR-0065).
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string geometries =
-                """[{"rings":[[[0,0],[100,0],[100,-100],[0,-100],[0,0]]],"spatialReference":{"wkid":3857}}]""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/calculateVolume?f=json&geometryType=esriGeometryPolygon&baseType=0&constantZ=10&geometries={Uri.EscapeDataString(geometries)}");
+        var fixture = _defaultHost.Application;
+        const string geometries =
+            """[{"rings":[[[0,0],[100,0],[100,-100],[0,-100],[0,0]]],"spatialReference":{"wkid":3857}}]""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/calculateVolume?f=json&geometryType=esriGeometryPolygon&baseType=0&constantZ=10&geometries={Uri.EscapeDataString(geometries)}");
 
-            await response.AssertGeoServicesErrorAsync(501);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        await response.AssertGeoServicesErrorAsync(501);
     }
 
     [IntegrationTest]
@@ -2864,21 +2662,14 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfo_WithMeasureRoute_AdvertisesBasicMensuration()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var root = JsonElement.Parse(await response.Content.ReadAsStringAsync());
-            root.GetProperty("capabilities").GetString().Should().Contain("Mensuration");
-            root.GetProperty("mensurationCapabilities").GetString().Should().Be("Basic");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var root = JsonElement.Parse(await response.Content.ReadAsStringAsync());
+        root.GetProperty("capabilities").GetString().Should().Contain("Mensuration");
+        root.GetProperty("mensurationCapabilities").GetString().Should().Be("Basic");
     }
 
     [IntegrationTest]
@@ -2886,19 +2677,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task ComputeStatisticsHistograms_Get_WithoutGeometry_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -2906,26 +2690,19 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task ComputeStatisticsHistograms_Get_WithEnvelope_ReturnsStatisticsAndHistograms()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var geometry = Uri.EscapeDataString(
-                """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}");
+        var fixture = _defaultHost.Application;
+        var geometry = Uri.EscapeDataString(
+            """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
-            json.RootElement.GetProperty("statistics")[0].GetProperty("min").GetDouble().Should().Be(0);
-            json.RootElement.GetProperty("statistics")[0].GetProperty("max").GetDouble().Should().Be(255);
-            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
-            json.RootElement.GetProperty("histograms")[0].GetProperty("counts").GetArrayLength().Should().Be(4);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
+        json.RootElement.GetProperty("statistics")[0].GetProperty("min").GetDouble().Should().Be(0);
+        json.RootElement.GetProperty("statistics")[0].GetProperty("max").GetDouble().Should().Be(255);
+        json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
+        json.RootElement.GetProperty("histograms")[0].GetProperty("counts").GetArrayLength().Should().Be(4);
     }
 
     [IntegrationTest]
@@ -3032,29 +2809,22 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task ComputeStatisticsHistograms_Post_WithGeometry_ReturnsStatisticsAndHistograms()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
+        var fixture = _defaultHost.Application;
+        using var content = new FormUrlEncodedContent(new[]
         {
-            using var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("geometryType", "esriGeometryEnvelope"),
-                new KeyValuePair<string, string>("geometry", "{\"xmin\":-180,\"ymin\":-90,\"xmax\":180,\"ymax\":90,\"spatialReference\":{\"wkid\":4326}}"),
-            });
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("geometryType", "esriGeometryEnvelope"),
+            new KeyValuePair<string, string>("geometry", "{\"xmin\":-180,\"ymin\":-90,\"xmax\":180,\"ymax\":90,\"spatialReference\":{\"wkid\":4326}}"),
+        });
 
-            var response = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms",
-                content);
+        var response = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms",
+            content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
-            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
+        json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
     }
 
     [IntegrationTest]
@@ -3062,24 +2832,17 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task ComputeHistograms_Get_WithEnvelope_ReturnsHistograms()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var geometry = Uri.EscapeDataString(
-                """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}");
+        var fixture = _defaultHost.Application;
+        var geometry = Uri.EscapeDataString(
+            """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
-            json.RootElement.GetProperty("histograms")[0].GetProperty("size").GetInt32().Should().Be(4);
-            json.RootElement.TryGetProperty("statistics", out _).Should().BeFalse();
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
+        json.RootElement.GetProperty("histograms")[0].GetProperty("size").GetInt32().Should().Be(4);
+        json.RootElement.TryGetProperty("statistics", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -3087,28 +2850,21 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task ComputeHistograms_Post_WithGeometry_ReturnsHistograms()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
+        var fixture = _defaultHost.Application;
+        using var content = new FormUrlEncodedContent(new[]
         {
-            using var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("geometryType", "esriGeometryEnvelope"),
-                new KeyValuePair<string, string>("geometry", "{\"xmin\":-180,\"ymin\":-90,\"xmax\":180,\"ymax\":90}"),
-            });
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("geometryType", "esriGeometryEnvelope"),
+            new KeyValuePair<string, string>("geometry", "{\"xmin\":-180,\"ymin\":-90,\"xmax\":180,\"ymax\":90}"),
+        });
 
-            var response = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeHistograms",
-                content);
+        var response = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeHistograms",
+            content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
     }
 
     [IntegrationTest]
@@ -3116,19 +2872,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task ComputeHistograms_Get_WithoutGeometry_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?f=json");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -3213,31 +2962,24 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task ComputeCacheInfo_GetAndPost_ReturnsDynamicCacheInfo()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var getResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeCacheInfo?f=json");
+        var fixture = _defaultHost.Application;
+        var getResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeCacheInfo?f=json");
 
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
-            var cacheInfo = json.RootElement.GetProperty("cacheInfo");
-            cacheInfo.GetProperty("extent").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
-            cacheInfo.TryGetProperty("tileInfo", out _).Should().BeFalse();
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        var cacheInfo = json.RootElement.GetProperty("cacheInfo");
+        cacheInfo.GetProperty("extent").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        cacheInfo.TryGetProperty("tileInfo", out _).Should().BeFalse();
 
-            using var cacheInfoContent = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
-            var postResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeCacheInfo",
-                cacheInfoContent);
+        using var cacheInfoContent = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
+        var postResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeCacheInfo",
+            cacheInfoContent);
 
-            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
-            postJson.RootElement.GetProperty("cacheInfo").GetProperty("extent").GetProperty("xmin").GetDouble().Should().Be(-180);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+        postJson.RootElement.GetProperty("cacheInfo").GetProperty("extent").GetProperty("xmin").GetDouble().Should().Be(-180);
     }
 
     [IntegrationTest]
@@ -3248,38 +2990,31 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Query)]
     public async Task ComputePixelLocation_GetAndPost_UsesRasterGeoTransform()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string geometries = """{"geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}],"geometryType":"esriGeometryPoint"}""";
-            var encoded = Uri.EscapeDataString(geometries);
-            var getResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computePixelLocation?f=json&geometries={encoded}");
+        var fixture = _defaultHost.Application;
+        const string geometries = """{"geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}],"geometryType":"esriGeometryPoint"}""";
+        var encoded = Uri.EscapeDataString(geometries);
+        var getResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computePixelLocation?f=json&geometries={encoded}");
 
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
-            var point = json.RootElement.GetProperty("geometries")[0];
-            point.GetProperty("x").GetDouble().Should().BeApproximately(128, 0.0001);
-            point.GetProperty("y").GetDouble().Should().BeApproximately(128, 0.0001);
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        var point = json.RootElement.GetProperty("geometries")[0];
+        point.GetProperty("x").GetDouble().Should().BeApproximately(128, 0.0001);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(128, 0.0001);
 
-            using var pixelLocationContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("geometries", geometries),
-            ]);
-            var postResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computePixelLocation",
-                pixelLocationContent);
+        using var pixelLocationContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("geometries", geometries),
+        ]);
+        var postResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computePixelLocation",
+            pixelLocationContent);
 
-            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
-            postJson.RootElement.GetProperty("geometries")[0].GetProperty("x").GetDouble()
-                .Should().BeApproximately(128, 0.0001);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+        postJson.RootElement.GetProperty("geometries")[0].GetProperty("x").GetDouble()
+            .Should().BeApproximately(128, 0.0001);
     }
 
     [IntegrationTest]
@@ -3290,32 +3025,25 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task QueryBoundary_GetAndPost_ReturnsShapeAndArea()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var getResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/queryBoundary?f=json");
+        var fixture = _defaultHost.Application;
+        var getResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/queryBoundary?f=json");
 
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("shape").GetProperty("spatialReference").GetProperty("wkid").GetInt32()
-                .Should().Be(4326);
-            json.RootElement.GetProperty("shape").GetProperty("rings")[0].GetArrayLength().Should().Be(5);
-            json.RootElement.GetProperty("area").GetDouble().Should().BeGreaterThan(0);
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("shape").GetProperty("spatialReference").GetProperty("wkid").GetInt32()
+            .Should().Be(4326);
+        json.RootElement.GetProperty("shape").GetProperty("rings")[0].GetArrayLength().Should().Be(5);
+        json.RootElement.GetProperty("area").GetDouble().Should().BeGreaterThan(0);
 
-            using var boundaryContent = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
-            var postResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/queryBoundary",
-                boundaryContent);
+        using var boundaryContent = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
+        var postResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/queryBoundary",
+            boundaryContent);
 
-            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
-            postJson.RootElement.GetProperty("shape").GetProperty("rings")[0].GetArrayLength().Should().Be(5);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+        postJson.RootElement.GetProperty("shape").GetProperty("rings")[0].GetArrayLength().Should().Be(5);
     }
 
     [IntegrationTest]
@@ -3326,57 +3054,50 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Project)]
     public async Task Project_GetAndPost_ReprojectsGeometries()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
-            var encoded = Uri.EscapeDataString(geometries);
+        var fixture = _defaultHost.Application;
+        const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
+        var encoded = Uri.EscapeDataString(geometries);
 
-            var getResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&geometries={encoded}");
+        var getResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&geometries={encoded}");
 
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            AssertProjectedOrigin(await getResponse.Content.ReadAsStringAsync());
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertProjectedOrigin(await getResponse.Content.ReadAsStringAsync());
 
-            using var projectContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("inSR", "4326"),
-                new KeyValuePair<string, string>("outSR", "3857"),
-                new KeyValuePair<string, string>("geometries", geometries),
-            ]);
-            var postResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/project",
-                projectContent);
+        using var projectContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("inSR", "4326"),
+            new KeyValuePair<string, string>("outSR", "3857"),
+            new KeyValuePair<string, string>("geometries", geometries),
+        ]);
+        var postResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/project",
+            projectContent);
 
-            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            AssertProjectedOrigin(await postResponse.Content.ReadAsStringAsync());
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertProjectedOrigin(await postResponse.Content.ReadAsStringAsync());
 
-            var serviceId = WebAppFixture.TestServiceId;
-            var serviceGetResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{serviceId}/ImageServer/project?f=json&inSR=4326&outSR=3857&geometries={encoded}");
+        var serviceId = WebAppFixture.TestServiceId;
+        var serviceGetResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{serviceId}/ImageServer/project?f=json&inSR=4326&outSR=3857&geometries={encoded}");
 
-            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            AssertProjectedOrigin(await serviceGetResponse.Content.ReadAsStringAsync());
+        serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertProjectedOrigin(await serviceGetResponse.Content.ReadAsStringAsync());
 
-            using var serviceProjectContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("inSR", "4326"),
-                new KeyValuePair<string, string>("outSR", "3857"),
-                new KeyValuePair<string, string>("geometries", geometries),
-            ]);
-            var servicePostResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{serviceId}/ImageServer/project",
-                serviceProjectContent);
+        using var serviceProjectContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("inSR", "4326"),
+            new KeyValuePair<string, string>("outSR", "3857"),
+            new KeyValuePair<string, string>("geometries", geometries),
+        ]);
+        var servicePostResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{serviceId}/ImageServer/project",
+            serviceProjectContent);
 
-            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            AssertProjectedOrigin(await servicePostResponse.Content.ReadAsStringAsync());
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertProjectedOrigin(await servicePostResponse.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
@@ -3385,42 +3106,35 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Project)]
     public async Task Project_WithDatumTransformationWkid_AppliesSelectedPipeline()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            // WKID 108001 (NAD_1983_To_WGS_1984_1) is the catalog default for NAD83 (4269)
-            // -> WGS84 (4326); supplying it must be honored (no longer rejected) and yield
-            // coordinates within datum tolerance of the input.
-            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":-100.0,"y":40.0,"spatialReference":{"wkid":4269}}]}""";
-            var encoded = Uri.EscapeDataString(geometries);
+        var fixture = _defaultHost.Application;
+        // WKID 108001 (NAD_1983_To_WGS_1984_1) is the catalog default for NAD83 (4269)
+        // -> WGS84 (4326); supplying it must be honored and yield
+        // coordinates within datum tolerance of the input.
+        const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":-100.0,"y":40.0,"spatialReference":{"wkid":4269}}]}""";
+        var encoded = Uri.EscapeDataString(geometries);
 
-            var getResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4269&outSR=4326&datumTransformation=108001&geometries={encoded}");
+        var getResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4269&outSR=4326&datumTransformation=108001&geometries={encoded}");
 
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
-            var geometry = json.RootElement.GetProperty("geometries")[0];
-            geometry.GetProperty("x").GetDouble().Should().BeApproximately(-100.0, 0.01);
-            geometry.GetProperty("y").GetDouble().Should().BeApproximately(40.0, 0.01);
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        var geometry = json.RootElement.GetProperty("geometries")[0];
+        geometry.GetProperty("x").GetDouble().Should().BeApproximately(-100.0, 0.01);
+        geometry.GetProperty("y").GetDouble().Should().BeApproximately(40.0, 0.01);
 
-            using var datumProjectContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("inSR", "4269"),
-                new KeyValuePair<string, string>("outSR", "4326"),
-                new KeyValuePair<string, string>("datumTransformation", "108001"),
-                new KeyValuePair<string, string>("geometries", geometries),
-            ]);
-            var postResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/project",
-                datumProjectContent);
+        using var datumProjectContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("inSR", "4269"),
+            new KeyValuePair<string, string>("outSR", "4326"),
+            new KeyValuePair<string, string>("datumTransformation", "108001"),
+            new KeyValuePair<string, string>("geometries", geometries),
+        ]);
+        var postResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/project",
+            datumProjectContent);
 
-            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -3428,23 +3142,16 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Project)]
     public async Task Project_WithUnsupportedDatumTransformationWkid_Returns400()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            // WKID 108001 does not connect the 4326 -> 3857 pair, so an explicit request
-            // for it must be rejected rather than silently substituted.
-            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
-            var encoded = Uri.EscapeDataString(geometries);
+        var fixture = _defaultHost.Application;
+        // WKID 108001 does not connect the 4326 -> 3857 pair, so an explicit request
+        // for it must be rejected rather than silently substituted.
+        const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
+        var encoded = Uri.EscapeDataString(geometries);
 
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&datumTransformation=108001&geometries={encoded}");
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&datumTransformation=108001&geometries={encoded}");
 
-            await response.AssertGeoServicesErrorAsync(400);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        await response.AssertGeoServicesErrorAsync(400);
     }
 
     [IntegrationTest]
@@ -3454,22 +3161,15 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     {
         // The default raster substitute carries no RPC/sensor metadata, so the image-coordinate
         // -system `transformation` parameter is genuinely unsupported for it and returns 400.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
-            var encoded = Uri.EscapeDataString(geometries);
+        var fixture = _defaultHost.Application;
+        const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
+        var encoded = Uri.EscapeDataString(geometries);
 
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&transformation=1&geometries={encoded}");
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&transformation=1&geometries={encoded}");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -3599,67 +3299,60 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Export)]
     public async Task EstimateExportTilesSize_GetAndPost_ReturnsStorageBackedEstimate()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var query = "f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1";
-            var getResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/estimateExportTilesSize?{query}");
+        var fixture = _defaultHost.Application;
+        var query = "f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1";
+        var getResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/estimateExportTilesSize?{query}");
 
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var estimate = JsonSerializer.Deserialize(
-                await getResponse.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
-            AssertExportTilesEstimate(estimate);
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var estimate = JsonSerializer.Deserialize(
+            await getResponse.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
+        AssertExportTilesEstimate(estimate);
 
-            using var estimateContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("levels", "0"),
-                new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
-                new KeyValuePair<string, string>("maxTiles", "1"),
-            ]);
-            var postResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/estimateExportTilesSize",
-                estimateContent);
+        using var estimateContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("levels", "0"),
+            new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+            new KeyValuePair<string, string>("maxTiles", "1"),
+        ]);
+        var postResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/estimateExportTilesSize",
+            estimateContent);
 
-            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            estimate = JsonSerializer.Deserialize(
-                await postResponse.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
-            AssertExportTilesEstimate(estimate);
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        estimate = JsonSerializer.Deserialize(
+            await postResponse.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
+        AssertExportTilesEstimate(estimate);
 
-            var serviceId = WebAppFixture.TestServiceId;
-            var serviceGetResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{serviceId}/ImageServer/estimateExportTilesSize?{query}");
+        var serviceId = WebAppFixture.TestServiceId;
+        var serviceGetResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{serviceId}/ImageServer/estimateExportTilesSize?{query}");
 
-            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            estimate = JsonSerializer.Deserialize(
-                await serviceGetResponse.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
-            AssertExportTilesEstimate(estimate);
+        serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        estimate = JsonSerializer.Deserialize(
+            await serviceGetResponse.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
+        AssertExportTilesEstimate(estimate);
 
-            using var serviceEstimateContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("levels", "0"),
-                new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
-                new KeyValuePair<string, string>("maxTiles", "1"),
-            ]);
-            var servicePostResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{serviceId}/ImageServer/estimateExportTilesSize",
-                serviceEstimateContent);
+        using var serviceEstimateContent = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("levels", "0"),
+            new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+            new KeyValuePair<string, string>("maxTiles", "1"),
+        ]);
+        var servicePostResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{serviceId}/ImageServer/estimateExportTilesSize",
+            serviceEstimateContent);
 
-            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            estimate = JsonSerializer.Deserialize(
-                await servicePostResponse.Content.ReadAsStringAsync(),
-                ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
-            AssertExportTilesEstimate(estimate);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        estimate = JsonSerializer.Deserialize(
+            await servicePostResponse.Content.ReadAsStringAsync(),
+            ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
+        AssertExportTilesEstimate(estimate);
     }
 
     [IntegrationTest]
@@ -3905,19 +3598,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task KeyProperties_NonExistentLayer_ReturnsNotFound()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                "/rest/services/99999/ImageServer/keyProperties?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            "/rest/services/99999/ImageServer/keyProperties?f=json");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -3925,22 +3611,15 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task GetLegend_Get_ReturnsSwatches()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/legend?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/legend?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.TryGetProperty("layers", out var layers).Should().BeTrue();
-            layers.GetArrayLength().Should().BeGreaterThan(0);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.TryGetProperty("layers", out var layers).Should().BeTrue();
+        layers.GetArrayLength().Should().BeGreaterThan(0);
     }
 
     // The ArcGIS API for Python ImageryLayer.legend() (and the JS API)
@@ -3950,28 +3629,21 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task GetLegend_Post_ReturnsSwatches()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
+        var fixture = _defaultHost.Application;
+        using var content = new FormUrlEncodedContent(new[]
         {
-            using var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("f", "json"),
-            });
+            new KeyValuePair<string, string>("f", "json"),
+        });
 
-            var response = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/legend",
-                content);
+        var response = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/legend",
+            content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.TryGetProperty("layers", out var layers).Should().BeTrue();
-            layers.GetArrayLength().Should().BeGreaterThan(0);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.TryGetProperty("layers", out var layers).Should().BeTrue();
+        layers.GetArrayLength().Should().BeGreaterThan(0);
     }
 
     // A renderingRule supplied in the POST body must drive the legend just like the
@@ -3981,31 +3653,24 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task GetLegend_PostWithColormapRenderingRule_ReflectsColormapStops()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
+        var fixture = _defaultHost.Application;
+        using var content = new FormUrlEncodedContent(new[]
         {
-            using var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>(
-                    "renderingRule",
-                    """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[128,255,0,0],[255,255,255,255]]}}"""),
-            });
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>(
+                "renderingRule",
+                """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[128,255,0,0],[255,255,255,255]]}}"""),
+        });
 
-            var response = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/legend",
-                content);
+        var response = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/legend",
+            content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var legend = json.RootElement.GetProperty("layers")[0].GetProperty("legend");
-            legend.GetArrayLength().Should().Be(3);
-            legend[0].GetProperty("label").GetString().Should().Be("0");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var legend = json.RootElement.GetProperty("layers")[0].GetProperty("legend");
+        legend.GetArrayLength().Should().Be(3);
+        legend[0].GetProperty("label").GetString().Should().Be("0");
     }
 
     [IntegrationTest]
@@ -4013,25 +3678,18 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task GetLegend_WithColormapRenderingRule_ReflectsColormapStops()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            // A 3-stop colormap must yield 3 legend swatches, not the default 5 class breaks.
-            var renderingRule = Uri.EscapeDataString(
-                """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[128,255,0,0],[255,255,255,255]]}}""");
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/legend?f=json&renderingRule={renderingRule}");
+        var fixture = _defaultHost.Application;
+        // A 3-stop colormap must yield 3 legend swatches, not the default 5 class breaks.
+        var renderingRule = Uri.EscapeDataString(
+            """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[128,255,0,0],[255,255,255,255]]}}""");
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/legend?f=json&renderingRule={renderingRule}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var legend = json.RootElement.GetProperty("layers")[0].GetProperty("legend");
-            legend.GetArrayLength().Should().Be(3);
-            legend[0].GetProperty("label").GetString().Should().Be("0");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var legend = json.RootElement.GetProperty("layers")[0].GetProperty("legend");
+        legend.GetArrayLength().Should().Be(3);
+        legend[0].GetProperty("label").GetString().Should().Be("0");
     }
 
     [IntegrationTest]
@@ -4039,19 +3697,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task GetLegend_InvalidFormat_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/legend?f=xml");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/legend?f=xml");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -4059,30 +3710,23 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task ComputeClassStatistics_Get_WithClassDescriptions_ReturnsClassSignature()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string classDescriptions = """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json&classDescriptions={Uri.EscapeDataString(classDescriptions)}");
+        var fixture = _defaultHost.Application;
+        const string classDescriptions = """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json&classDescriptions={Uri.EscapeDataString(classDescriptions)}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var classStatistics = document.RootElement.GetProperty("classStatistics");
-            classStatistics.GetArrayLength().Should().Be(1);
-            var entry = classStatistics[0];
-            entry.GetProperty("classId").GetInt32().Should().Be(1);
-            entry.GetProperty("name").GetString().Should().Be("water");
-            // Deterministic substitute pixels [1,2,3,4] on one band => count 4, mean 2.5.
-            entry.GetProperty("count").GetInt64().Should().Be(4);
-            entry.GetProperty("mean")[0].GetDouble().Should().BeApproximately(2.5, 1e-9);
-            // Sample covariance of [1,2,3,4] = 5/3.
-            entry.GetProperty("covarianceMatrix")[0][0].GetDouble().Should().BeApproximately(5.0 / 3.0, 1e-9);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var classStatistics = document.RootElement.GetProperty("classStatistics");
+        classStatistics.GetArrayLength().Should().Be(1);
+        var entry = classStatistics[0];
+        entry.GetProperty("classId").GetInt32().Should().Be(1);
+        entry.GetProperty("name").GetString().Should().Be("water");
+        // Deterministic substitute pixels [1,2,3,4] on one band => count 4, mean 2.5.
+        entry.GetProperty("count").GetInt64().Should().Be(4);
+        entry.GetProperty("mean")[0].GetDouble().Should().BeApproximately(2.5, 1e-9);
+        // Sample covariance of [1,2,3,4] = 5/3.
+        entry.GetProperty("covarianceMatrix")[0][0].GetDouble().Should().BeApproximately(5.0 / 3.0, 1e-9);
     }
 
     [IntegrationTest]
@@ -4090,30 +3734,23 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task ComputeClassStatistics_Post_FormBody_ReturnsClassSignature()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
+        var fixture = _defaultHost.Application;
+        using var content = new FormUrlEncodedContent(new[]
         {
-            using var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}},{"id":2,"name":"land","geometry":{"rings":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}}]}"""),
-            });
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}},{"id":2,"name":"land","geometry":{"rings":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}}]}"""),
+        });
 
-            var response = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics",
-                content);
+        var response = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics",
+            content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var classStatistics = document.RootElement.GetProperty("classStatistics");
-            classStatistics.GetArrayLength().Should().Be(2);
-            classStatistics[0].GetProperty("classId").GetInt32().Should().Be(1);
-            classStatistics[1].GetProperty("classId").GetInt32().Should().Be(2);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var classStatistics = document.RootElement.GetProperty("classStatistics");
+        classStatistics.GetArrayLength().Should().Be(2);
+        classStatistics[0].GetProperty("classId").GetInt32().Should().Be(1);
+        classStatistics[1].GetProperty("classId").GetInt32().Should().Be(2);
     }
 
     [IntegrationTest]
@@ -4121,25 +3758,17 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task ComputeClassStatistics_WithRenderingRule_ReturnsNotImplemented()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            const string classDescriptions = """{"classes":[{"id":1,"geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""";
-            const string renderingRule = """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""";
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json" +
-                $"&classDescriptions={Uri.EscapeDataString(classDescriptions)}" +
-                $"&renderingRule={Uri.EscapeDataString(renderingRule)}");
+        var fixture = _defaultHost.Application;
+        const string classDescriptions = """{"classes":[{"id":1,"geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""";
+        const string renderingRule = """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""";
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json" +
+            $"&classDescriptions={Uri.EscapeDataString(classDescriptions)}" +
+            $"&renderingRule={Uri.EscapeDataString(renderingRule)}");
 
-            // Class signatures are computed on source pixels; a renderingRule is explicitly rejected.
-            // Not-implemented operations now surface body error.code 501 (pass-through) instead
-            // of collapsing to 500, so clients can distinguish "unsupported" from a server fault.
-            await response.AssertGeoServicesErrorAsync(501);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // Class signatures are computed on source pixels; a renderingRule is explicitly rejected.
+        // Unsupported operations surface error.code 501 so clients can distinguish a server fault.
+        await response.AssertGeoServicesErrorAsync(501);
     }
 
     [IntegrationTest]
@@ -4147,19 +3776,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.Metadata)]
     public async Task ComputeClassStatistics_MissingClassDescriptions_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/computeClassStatistics?f=json");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -4167,23 +3789,16 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task MultidimensionalInfo_Get_NonMultidimensionalLayer_ReturnsEmptyVariables()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/multidimensionalInfo?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/multidimensionalInfo?f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("multidimensionalInfo")
-                .GetProperty("variables").GetArrayLength().Should().Be(0);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("multidimensionalInfo")
+            .GetProperty("variables").GetArrayLength().Should().Be(0);
     }
 
     [IntegrationTest]
@@ -4191,27 +3806,20 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task MultidimensionalInfo_Post_NonMultidimensionalLayer_ReturnsEmptyVariables()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
+        var fixture = _defaultHost.Application;
+        using var content = new FormUrlEncodedContent(new[]
         {
-            using var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("f", "json"),
-            });
+            new KeyValuePair<string, string>("f", "json"),
+        });
 
-            var response = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/multidimensionalInfo",
-                content);
+        var response = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/multidimensionalInfo",
+            content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            json.RootElement.GetProperty("multidimensionalInfo")
-                .GetProperty("variables").GetArrayLength().Should().Be(0);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("multidimensionalInfo")
+            .GetProperty("variables").GetArrayLength().Should().Be(0);
     }
 
     [IntegrationTest]
@@ -4219,19 +3827,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task MultidimensionalInfo_NonExistentLayer_ReturnsNotFound()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                "/rest/services/99999/ImageServer/multidimensionalInfo?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            "/rest/services/99999/ImageServer/multidimensionalInfo?f=json");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // For a hasMultidimensions:true service the /slices route must be mapped (GET and
@@ -4243,33 +3844,26 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task Slices_GetAndPost_NonMultidimensionalLayer_ReturnEmptySlices()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
+        var fixture = _defaultHost.Application;
+        var getResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/slices?f=json");
+
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        getResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var getJson = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        getJson.RootElement.GetProperty("slices").GetArrayLength().Should().Be(0);
+
+        using var content = new FormUrlEncodedContent(new[]
         {
-            var getResponse = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/slices?f=json");
+            new KeyValuePair<string, string>("f", "json"),
+        });
+        var postResponse = await fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/slices",
+            content);
 
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            getResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-            var getJson = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
-            getJson.RootElement.GetProperty("slices").GetArrayLength().Should().Be(0);
-
-            using var content = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("f", "json"),
-            });
-            var postResponse = await fixture.Client.PostAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/slices",
-                content);
-
-            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
-            postJson.RootElement.GetProperty("slices").GetArrayLength().Should().Be(0);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+        postJson.RootElement.GetProperty("slices").GetArrayLength().Should().Be(0);
     }
 
     [IntegrationTest]
@@ -4277,19 +3871,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
     [Operation(Operations.GetServiceInfo)]
     public async Task Slices_NonExistentLayer_ReturnsNotFound()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                "/rest/services/99999/ImageServer/slices?f=json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            "/rest/services/99999/ImageServer/slices?f=json");
 
-            // GeoServices always returns HTTP 200; error code is in the JSON body.
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -4304,32 +3891,25 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>
         // allowedMosaicMethods as a comma-separated STRING (not an array) and no
         // tile-cache storageInfo for a dynamic service. Any of these trips
         // LoadAsync with "could not read configuration data" / "Invalid configuration file".
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
-        try
-        {
-            var response = await fixture.Client.GetAsync(
-                $"/rest/services/{TestLayerId}/ImageServer/conf.json");
+        var fixture = _defaultHost.Application;
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/conf.json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
-            var root = JsonElement.Parse(await response.Content.ReadAsStringAsync());
+        var root = JsonElement.Parse(await response.Content.ReadAsStringAsync());
 
-            // conf.json returns the service descriptor. Honua does not advertise an ArcGIS
-            // Server version (see NoGeoServicesServerVersionTests).
-            root.TryGetProperty("currentVersion", out _).Should().BeFalse();
-            root.TryGetProperty("extent", out _).Should().BeTrue();
+        // conf.json returns the service descriptor. Honua does not advertise an ArcGIS
+        // Server version (see NoGeoServicesServerVersionTests).
+        root.TryGetProperty("currentVersion", out _).Should().BeFalse();
+        root.TryGetProperty("extent", out _).Should().BeTrue();
 
-            // allowedMosaicMethods must serialize as a string, not an array.
-            root.GetProperty("allowedMosaicMethods").ValueKind.Should().Be(JsonValueKind.String);
+        // allowedMosaicMethods must serialize as a string, not an array.
+        root.GetProperty("allowedMosaicMethods").ValueKind.Should().Be(JsonValueKind.String);
 
-            // Dynamic service: no tile-cache storage block.
-            root.TryGetProperty("storageInfo", out _).Should().BeFalse();
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        // Dynamic service: no tile-cache storage block.
+        root.TryGetProperty("storageInfo", out _).Should().BeFalse();
     }
 
     private static void AssertProjectedOrigin(string content)

@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Publishing.Domain;
+using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -37,7 +38,7 @@ internal static partial class SceneGenerationEndpoints
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/", HandleGenerateScene)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("GenerateScene")
             .WithSummary("Generate a 3D Tiles tileset from a feature layer.")
             .Accepts<GenerateSceneRequest>("application/json")
@@ -45,6 +46,7 @@ internal static partial class SceneGenerationEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         return endpoints;
@@ -110,6 +112,12 @@ internal static partial class SceneGenerationEndpoints
             SceneGenerationEndpointsLog.ValidationFailed(logger, intent.IntentId, vex.Message);
             var (status, detail) = ClassifyValidationError(vex.Message);
             return ProblemDetailsHelpers.CreateAdminProblem(context, status, detail);
+        }
+        catch (SceneOutputUnwritableException ex)
+        {
+            SceneGenerationEndpointsLog.OperationFailed(logger, intent.IntentId, ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
+                SceneOutputUnwritableException.OperatorMessage);
         }
         catch (ServiceUnavailableException sue)
         {

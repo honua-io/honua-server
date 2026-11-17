@@ -16,22 +16,45 @@ namespace Honua.Server.Tests;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
-public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
+public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelatedRecordsEndpointTests.ReadOnlyProHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    // The class host by default; a case that writes switches to its own private host.
+    private WebAppFixture _fixture;
+    private WebAppFixture? _mutableFixture;
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const int TestRelationshipId = 1;
     private const int MaxRequestAttempts = 3;
     private static readonly TimeSpan _requestTimeout = TimeSpan.FromMinutes(5);
 
-    public async Task InitializeAsync()
+    public QueryRelatedRecordsEndpointTests(ReadOnlyProHost host) => _fixture = host.Fixture;
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync() => _mutableFixture?.DisposeAsync() ?? Task.CompletedTask;
+
+    private static async Task StartEditableProFixtureAsync(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
+        await fixture.InitializeAsync();
+        fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    private async Task UseMutableFixtureAsync()
+    {
+        _mutableFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await StartEditableProFixtureAsync(_mutableFixture);
+        _fixture = _mutableFixture;
+    }
+
+    // Related-record GET queries only read, so they share one Pro host per class.
+    public sealed class ReadOnlyProHost : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+
+        public Task InitializeAsync() => StartEditableProFixtureAsync(Fixture);
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     #region Success Cases
 
@@ -127,6 +150,16 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithHighObjectId_ResolvesRelatedRecords()
     {
+        await UseMutableFixtureAsync();
+        // queryRelatedRecords must resolve related records for ANY
+        // origin object-id magnitude, not just the low seeded ids. Build the fixture in
+        // the arrange step against the unmodified shared seed: insert a NEW origin feature
+        // into the editable layer 0 (the server assigns a high auto-incremented object id),
+        // then insert a child into layer 1 whose related_id points at that assigned origin
+        // object id (relationship 1: layer0.objectid -> layer1.related_id). Querying related
+        // records for the freshly assigned (non-low) origin object id exercises the
+        // FeatureDataAccess high-oid SQL/grouping fix end-to-end. The created rows are
+        // cleaned up at the end so the shared seed is unperturbed.
         long originObjectId = 0;
         long childObjectId = 0;
         try
@@ -460,6 +493,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithPostRequest_ReturnsRelatedFeatures()
     {
+        await UseMutableFixtureAsync();
         // Arrange
         var requestBody = JsonSerializer.Serialize(new
         {
@@ -491,6 +525,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        await UseMutableFixtureAsync();
         var requestBody = JsonSerializer.Serialize(new
         {
             objectIds = "1,2",
@@ -986,6 +1021,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("PUT /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithWrongHttpMethod_Returns405()
     {
+        await UseMutableFixtureAsync();
         // Act
         var response = await _fixture.Client.PutAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords", null);
@@ -999,6 +1035,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("DELETE /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithDeleteMethod_Returns405()
     {
+        await UseMutableFixtureAsync();
         // Act
         var response = await _fixture.Client.DeleteAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords");

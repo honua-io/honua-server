@@ -1,11 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
 
-// The policy snapshot is replaced as a whole, so a change applies to frames matched after the refresh.
+// The policy snapshot is replaced as a whole for matching and delivery.
 internal sealed class StreamSubscriberSecurity
 {
     private PolicyState _state;
@@ -32,20 +34,51 @@ internal sealed class StreamSubscriberSecurity
     public bool Allows(FeatureStreamEnvelope envelope)
     {
         var policy = Volatile.Read(ref _state).Resolve(envelope);
-        if (policy is null)
-        {
-            return false;
-        }
+        return policy is not null && AllowsRow(policy, envelope.Attributes);
+    }
 
+    private static bool AllowsRow(StreamLayerReadPolicy policy, IReadOnlyDictionary<string, JsonElement>? attributes)
+    {
         foreach (var predicate in policy.Predicates)
         {
-            if (envelope.Attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, envelope.Attributes))
+            if (attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, attributes))
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    // A client predicate may only read fields the subscriber can read on the event's route. A
+    // route with no current policy is not readable at all, so it counts as masked.
+    public bool MasksAny(FeatureStreamEnvelope envelope, IReadOnlyList<string> fields)
+    {
+        var policy = Volatile.Read(ref _state).Resolve(envelope);
+        return policy is null || FirstMaskedField(policy, fields) is not null;
+    }
+
+    public string? FindMaskedField(IReadOnlyList<string> fields)
+        => Volatile.Read(ref _state).ExactRoutes.Values
+            .Select(policy => FirstMaskedField(policy, fields))
+            .FirstOrDefault(static field => field is not null);
+
+    private static string? FirstMaskedField(StreamLayerReadPolicy policy, IReadOnlyList<string> fields)
+    {
+        if (policy.MaskedFields.Count == 0)
+        {
+            return null;
+        }
+
+        for (var index = 0; index < fields.Count; index++)
+        {
+            if (policy.MaskedFields.Contains(fields[index]))
+            {
+                return fields[index];
+            }
+        }
+
+        return null;
     }
 
     public FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope)
@@ -59,6 +92,11 @@ internal sealed class StreamSubscriberSecurity
             return envelope with { Attributes = null, ChangedAttributes = null };
         }
 
+        return Project(envelope, policy);
+    }
+
+    private static FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope, StreamLayerReadPolicy policy)
+    {
         if (policy.MaskedFields.Count == 0)
         {
             return envelope;
@@ -66,11 +104,38 @@ internal sealed class StreamSubscriberSecurity
 
         return envelope with
         {
+            AuthorizationAttributes = envelope.AuthorizationAttributes ?? envelope.Attributes,
             Attributes = envelope.Attributes?.Where(pair => !policy.MaskedFields.Contains(pair.Key))
                 .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal),
             ChangedAttributes = envelope.ChangedAttributes?.Where(pair => !policy.MaskedFields.Contains(pair.Key))
                 .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal)
         };
+    }
+
+    public FeatureStreamEnvelope? PrepareDelivery(FeatureStreamEnvelope envelope, IReadOnlyList<string> filterFields)
+    {
+        var policy = Volatile.Read(ref _state).Resolve(envelope);
+        if (policy is null ||
+            (!string.Equals(envelope.Operation, "delete", StringComparison.OrdinalIgnoreCase) &&
+             FirstMaskedField(policy, filterFields) is not null))
+        {
+            return null;
+        }
+
+        var attributes = envelope.AuthorizationAttributes ?? envelope.Attributes;
+        try
+        {
+            if (!AllowsRow(policy, attributes))
+            {
+                return null;
+            }
+        }
+        catch (Exception exception) when (exception is UnevaluableLikePatternException or RegexMatchTimeoutException)
+        {
+            return null;
+        }
+
+        return Project(envelope, policy);
     }
 
     // The refresh source runs on the tick, never on each event.

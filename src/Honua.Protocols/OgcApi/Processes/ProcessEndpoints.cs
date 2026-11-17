@@ -21,9 +21,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// OGC API Processes process discovery and execution endpoints.
-/// </summary>
 internal static class ProcessEndpoints
 {
     private const string BasePath = "/ogc/processes";
@@ -91,7 +88,7 @@ internal static class ProcessEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .ExcludeFromDescription();
 
-        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // HANDLER-AUTHORIZED: the handler calls
         // IGeoprocessingJobService.EnsureCallerAuthorizedAsync for Process+Execute
         // before reading the body so unauthenticated callers get 401 ahead of
         // 400. Marked AllowAnonymous so the audit architecture guard records
@@ -203,20 +200,8 @@ internal static class ProcessEndpoints
         return Results.Json(processList, OgcProcessesJsonContext.Default.OgcProcessList, MediaTypes.Json);
     }
 
-    /// <summary>
-    /// Maximum accepted <c>Idempotency-Key</c> header length (server#4627). Bounds abusive
-    /// payloads; the resolved GP job id is a fixed-size hash of the key regardless of length.
-    /// </summary>
     private const int MaxIdempotencyKeyLength = 512;
 
-    /// <summary>
-    /// Resolves the optional <c>Idempotency-Key</c> request header (server#4627): OGC API
-    /// Processes has no native idempotency-key concept, so this is a documented, additive
-    /// Honua extension wired to the same canonical <c>Idempotency-Key</c> header semantics
-    /// MCP and the admin/webhook endpoints already use. Absent header ⇒ unchanged legacy
-    /// behavior (a fresh job id every submission). Present but malformed ⇒ a clear 400
-    /// rather than silently ignoring a client's deduplication intent.
-    /// </summary>
     private static bool TryResolveIdempotencyKey(HttpContext context, out string? idempotencyKey, out string? error)
     {
         idempotencyKey = null;
@@ -563,6 +548,11 @@ internal static class ProcessEndpoints
                     idempotencyKeyError!);
             }
 
+            if (definition != null && idempotencyKey != null)
+            {
+                analysisPlan = analysisPlan! with { PlanId = ProtocolPlanId.Create(OgcPlanIdPrefix(definition), idempotencyKey) };
+            }
+
             var submissionCatalog = definition != null
                 && OgcProcessesCiteEchoFixture.IsDefinition(definition)
                     ? processCatalog
@@ -649,7 +639,7 @@ internal static class ProcessEndpoints
         {
             // Log the operation the denied check actually evaluated (e.g.
             // ExecuteMutatingProcess) so a mutating-tier 403 is distinguishable from a
-            // baseline Execute denial rather than always reading as Execute (#2798).
+            // baseline Execute denial rather than always reading as Execute.
             OgcProcessesLog.AuthorizationDenied(
                 logger,
                 (authEx.ResourceType ?? OperatorResourceType.Process).ToString(),
@@ -910,16 +900,16 @@ internal static class ProcessEndpoints
             }
         }
 
-        var slug = processDefinition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
+        var prefix = OgcPlanIdPrefix(processDefinition);
         plan = new AnalysisPlan
         {
-            PlanId = $"ogc-{slug}-{Guid.NewGuid():N}",
+            PlanId = ProtocolPlanId.Create(prefix, idempotencyKey: null),
             IntentId = $"ogc-process:{processDefinition.ProcessId}",
             Steps =
             [
                 new AnalysisPlanStep
                 {
-                    StepId = $"ogc-{slug}",
+                    StepId = prefix,
                     Kind = AnalysisPlanStepKind.Geoprocess,
                     ProcessId = processDefinition.ProcessId,
                     Inputs = inputs
@@ -930,6 +920,9 @@ internal static class ProcessEndpoints
 
         return true;
     }
+
+    private static string OgcPlanIdPrefix(ProcessDefinition definition)
+        => $"ogc-{definition.ProcessId.Replace(".", "-", StringComparison.Ordinal)}";
 
     private static int? TryReadInputSrid(ImmutableDictionary<string, JsonElement> inputs)
     {

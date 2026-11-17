@@ -237,8 +237,7 @@ public static partial class Extensions
                         options.RecordException = false;
                     })
                     .AddHttpClientInstrumentation()
-                    .AddNpgsql()
-                    .AddRedisInstrumentation();
+                    .AddNpgsql();
 
                 if (ShouldAddSpanSanitizer(tracingOptions))
                 {
@@ -654,29 +653,6 @@ public static partial class Extensions
             Level = LogLevel.Error,
             Message = "Error in memory monitoring service")]
         public static partial void MemoryMonitoringServiceFailed(ILogger logger, Exception exception);
-    }
-
-    public static IHostApplicationBuilder AddDefaultHealthChecks(this IHostApplicationBuilder builder)
-    {
-        builder.Services.AddHealthChecks()
-            .AddCheck("self", () => HealthCheckResult.Healthy(), ["live"]);
-
-        return builder;
-    }
-
-    public static WebApplication MapDefaultEndpoints(this WebApplication app)
-    {
-        // Map development health endpoints
-        if (app.Environment.IsDevelopment())
-        {
-            app.MapHealthChecks("/healthz");
-            app.MapHealthChecks("/alive", new HealthCheckOptions
-            {
-                Predicate = r => r.Tags.Contains("live")
-            });
-        }
-
-        return app;
     }
 
     private static IHostApplicationBuilder AddAdaptiveSampling(this IHostApplicationBuilder builder)

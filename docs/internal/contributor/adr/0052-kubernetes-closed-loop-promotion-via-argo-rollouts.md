@@ -10,8 +10,7 @@ The operator-promotion control plane (`src/Honua.Server/Features/ControlPlane/`)
 drives Console-initiated release packages through a durable, leased reconciler
 (`DeployWorkflowReconciler`) over the `IDeployBackend` abstraction and the
 `WorkflowOperationRecord` lifecycle. Every managed deploy target is already
-closed-loop — AWS Lambda alias, AWS ECS + ALB, Azure Container Apps revision,
-and Azure Functions slot all observe real provider state and drive automatic
+closed-loop — AWS Lambda alias and AWS ECS + ALB both observe real provider state and drive automatic
 promotion or rollback, gated by `PrometheusDeployTelemetrySignalEvaluator`.
 
 Kubernetes was the one open target. `KubernetesGitOpsDeployBackend`

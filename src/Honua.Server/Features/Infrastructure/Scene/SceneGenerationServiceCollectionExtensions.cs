@@ -41,14 +41,14 @@ internal static class SceneGenerationServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishExecutor, SceneTilesPublishExecutor>());
         }
 
-        // CityGML/BIM ingest path (#1207): registered alongside the feature-layer
+        // CityGML/BIM ingest path: registered alongside the feature-layer
         // executor so the Enterprise-gated admin ingest endpoint can resolve it.
         if (sceneBimEnabled)
         {
             services.TryAddScoped<CityGmlScenePublishExecutor>();
         }
 
-        // LAS/LAZ/COPC point-cloud ingest path (#1201): registered alongside the
+        // LAS/LAZ/COPC point-cloud ingest path: registered alongside the
         // other scene executors so the Enterprise-gated admin point-cloud ingest
         // endpoint can resolve it.
         if (scenePointCloudEnabled)
@@ -58,8 +58,8 @@ internal static class SceneGenerationServiceCollectionExtensions
 
         if (scenePointCloudEnabled)
         {
-            // LAZ/COPC decompression + projected-CRS reprojection auto-dispatch
-            // (#1854): bind the request principal only when point-cloud ingest is composed.
+            // LAZ/COPC decompression + projected-CRS reprojection auto-dispatch:
+            // bind the request principal only when point-cloud ingest is composed.
             services.Configure<PointCloudDecompressionOptions>(
                 configuration.GetSection(PointCloudDecompressionOptions.SectionName));
             services.TryAddSingleton<IPointCloudDecompressorFactory, GeoprocessingPointCloudDecompressorFactory>();

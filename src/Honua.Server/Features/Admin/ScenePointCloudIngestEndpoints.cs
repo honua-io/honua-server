@@ -42,7 +42,7 @@ internal static partial class ScenePointCloudIngestEndpoints
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/pointcloud", HandleIngestPointCloud)
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("IngestPointCloudScene")
             .WithSummary("Ingest a LAS point cloud into a servable 3D Tiles point tileset (Enterprise).")
             .Accepts<IFormFile>("multipart/form-data")
@@ -114,7 +114,7 @@ internal static partial class ScenePointCloudIngestEndpoints
             document = buffer.ToArray();
         }
 
-        // Auto-dispatch (#1854): a compressed (LAZ/COPC) buffer or a projected
+        // Auto-dispatch: a compressed (LAZ/COPC) buffer or a projected
         // source CRS cannot be tiled by the pure-managed reader, so route it
         // through the out-of-tree pcloud.translate worker to obtain uncompressed,
         // geographic (EPSG:4979) LAS, then tile that inline. When no decompressor

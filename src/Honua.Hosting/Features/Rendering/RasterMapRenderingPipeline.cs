@@ -254,16 +254,14 @@ internal static partial class RasterMapRenderingPipeline
             var layer = renderLayers[layerIndex];
             cancellationToken.ThrowIfCancellationRequested();
 
-            // DOCUMENTED DIVERGENCE (#1792 Shape A): the elevation/vertical selection
-            // resolved from the WMTS `elevation=` dimension or the OGC API Tiles
-            // `subset=Z(...)` axis is RECORDED (telemetry-tagged) here but is NOT applied
-            // to the vector render below — there is no Z-aware vector source yet. This is
-            // an intentional, honest divergence from the shared pipeline per AGENTS.md
-            // ("intentionally diverges" rule): we validate + record the vertical dimension
-            // instead of advertising-but-ignoring it (WMTS) or blanket-rejecting it (Tiles).
-            // Actually slicing a Zarr datacube into the raster is the deferred Shape B
-            // follow-up (after #1790). Direct endpoint tests cover this record-but-don't-render
-            // behavior.
+            // DOCUMENTED DIVERGENCE: the elevation/vertical selection resolved from the WMTS
+            // `elevation=` dimension or the OGC API Tiles `subset=Z(...)` axis is RECORDED
+            // (telemetry-tagged) here but is NOT applied to the vector render below — there is
+            // no Z-aware vector source yet. This is an intentional, honest divergence from the
+            // shared pipeline per AGENTS.md ("intentionally diverges" rule): we validate +
+            // record the vertical dimension instead of advertising-but-ignoring it (WMTS) or
+            // blanket-rejecting it (Tiles). Actually slicing a Zarr datacube into the raster is
+            // deferred. Direct endpoint tests cover this record-but-don't-render behavior.
             if (layer.VerticalSelection is { } verticalSelection)
             {
                 System.Diagnostics.Activity.Current?.SetTag(
@@ -925,7 +923,7 @@ internal static partial class RasterMapRenderingPipeline
         FeatureQuery query,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // ArcGIS raster operations do not define a feature-count truncation contract (#4044).
+        // ArcGIS raster operations do not define a feature-count truncation contract.
         // Treat the configured limit as a bounded page size, not a total cap: every page is
         // rendered immediately, while the request timeout token bounds total database/render work.
         var pageSize = Math.Max(1, query.Limit ?? MaxFeaturesPerLayer);

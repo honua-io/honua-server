@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Helpers;
 using System.Globalization;
 using System.Text;
 using FluentAssertions;
@@ -204,6 +205,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
     public async Task SpillableKeySet_BeyondInMemoryLimit_StaysExact()
     {
         // Drive the spillable key set past its in-memory cap so the on-disk path is exercised.
+        var existingSpills = PrivateScratchFileAssertions.Snapshot("honua-dedup-");
         using var keys = new SpillableKeySet(inMemoryDigestLimit: 1_000, windowLimit: 500);
 
         var firstSeen = 0;
@@ -215,6 +217,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
             }
         }
 
+        PrivateScratchFileAssertions.AssertOwnerOnly("honua-dedup-", existingSpills);
         firstSeen.Should().Be(5_000, "every distinct key is seen for the first time exactly once");
 
         // Re-adding any previously seen key must report a duplicate even after the spill.

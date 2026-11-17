@@ -238,6 +238,41 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_RetryWithTheSameIdempotencyKey_ReturnsTheOriginalJob()
+    {
+        _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var created = new List<ExecutionJobRecord>();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                created.Add(call.Arg<ExecutionJobRecord>());
+                return true;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => created.Find(job => job.OperationId == call.Arg<string>()) is { } job ? job with { Version = 1 } : null);
+
+        var first = await SubmitKeyedSlopeAsync("client-retry-key-7");
+        var retry = await SubmitKeyedSlopeAsync("client-retry-key-7");
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        retry.StatusCode.Should().Be(HttpStatusCode.Created, await retry.Content.ReadAsStringAsync());
+        created.Should().ContainSingle();
+        retry.Headers.Location.Should().Be(first.Headers.Location);
+    }
+
+    private async Task<HttpResponseMessage> SubmitKeyedSlopeAsync(string idempotencyKey)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/processes/processes/surface.slope/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        request.Content = new StringContent("""{"inputs":{"source":"AAAA","units":"degrees"}}""", Encoding.UTF8, "application/json");
+        return await _fixture.Client.SendAsync(request);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WithOversizedIdempotencyKeyHeader_ReturnsBadRequest()
     {
         using var request = new HttpRequestMessage(

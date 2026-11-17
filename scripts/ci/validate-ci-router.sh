@@ -58,6 +58,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture shard-identities "${PYTHON_BIN}" scripts/ci/check-shard-identities.py
   run_fixture publish-authorization-tests "${PYTHON_BIN}" scripts/ci/check-publish-authorization.test.py
   run_fixture publish-authorization "${PYTHON_BIN}" scripts/ci/check-publish-authorization.py
+  run_fixture trivy-release-gate "${PYTHON_BIN}" scripts/ci/trivy-release-gate.test.py
   run_fixture hygiene-cancellation "${PYTHON_BIN}" scripts/ci/fixtures/test-repo-hygiene-cancellation.py
 fi
 
@@ -161,6 +162,7 @@ jq -e '
         .[]
         | (.prefix | type == "string" and length > 0)
           and (.reason | type == "string" and length > 0)
+          and ((has("prioritize") | not) or (.prioritize | type == "boolean"))
           and (.shards | type == "array" and length > 0)
       ] | all)
     )
@@ -168,6 +170,9 @@ jq -e '
 ' .github/ci-shards.json >/dev/null
 }
 run_fixture shard-structure validate_shard_structure
+if [[ -n "${PYTHON_BIN}" ]]; then
+  run_fixture shard-structure-controls "${PYTHON_BIN}" scripts/ci/fixtures/test-shard-structure.py
+fi
 
 # #2721: the artifact registry must cover the exact unique shard-project set, and
 # its package/restore contract must fail closed on RID leakage, tampering and limits.
@@ -232,7 +237,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Validating server-test archive entry checks..."
   run_fixture scripts/ci/validate-server-test-archive.test.py "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
 
-  echo "Validating native-image impact observation contract..."
+  echo "Validating native-image content-address inputs contract..."
   run_fixture scripts/ci/trusted-pr-workflow-run.test.js node --test scripts/ci/trusted-pr-workflow-run.test.js
   run_fixture scripts/ci/trusted-pr-workflow-run-draft-admission.test.js node --test scripts/ci/trusted-pr-workflow-run-draft-admission.test.js
   run_fixture scripts/ci/native-image-impact.py "${PYTHON_BIN}" scripts/ci/native-image-impact.py validate
@@ -490,6 +495,10 @@ assert_exact_shards \
   "headroom-split-cloud-streaming-import" \
   "tests/dotnet/Honua.Server.Tests/Import/StreamingImportTests.cs" \
   '["Cloud and Streaming Import","File and Raster Import"]'
+assert_exact_shards \
+  "geojson-preview-validation-import-owner" \
+  "tests/dotnet/Honua.Server.Tests/Import/GeoJsonPreviewValidationTests.cs" \
+  '["File and Raster Import"]'
 assert_exact_shards \
   "geometry-audit-test-only-owner" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/GeoServicesGeometryConverterAuditTests.cs" \
@@ -1720,6 +1729,10 @@ run_fixture scripts/ci/test-live-output-capacity-partitions.py "${PYTHON_BIN}" s
 run_fixture scripts/ci/check-server-test-shard-coverage.test.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
+    "Honua.Server.Tests.Import.GeoJsonPreviewValidationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "File and Raster Import 3" \
+  --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.CatalogCapabilitiesMetadataTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
     "OGC Classic Maps Supporting" \
@@ -1833,6 +1846,10 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
     "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration 1" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.ImportProgressRepairTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Migration 3" \
   --assert-owner \
     "Honua.Server.Tests.Import.ImportExecutionJobQueueTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -2149,6 +2166,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/test-owned-server.py "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
   run_fixture scripts/ci/fixtures/test-quickstart-console-smoke.py "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
   run_fixture scripts/ci/test-store-profile-workflows.py "${PYTHON_BIN}" scripts/ci/test-store-profile-workflows.py
+  run_fixture scripts/ci/test-core-package-consumers.py "${PYTHON_BIN}" scripts/ci/test-core-package-consumers.py
   run_fixture scripts/ci/test-manual-rollback-readiness.py "${PYTHON_BIN}" scripts/ci/test-manual-rollback-readiness.py
 fi
 

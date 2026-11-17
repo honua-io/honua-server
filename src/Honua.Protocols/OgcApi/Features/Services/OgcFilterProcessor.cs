@@ -19,14 +19,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
-/// <summary>
-/// Simple bounding box representation.
-/// </summary>
 internal sealed record BoundingBox(double MinX, double MinY, double MaxX, double MaxY);
 
-/// <summary>
-/// Processes and combines CQL2, spatial, and temporal filters for OGC Features queries.
-/// </summary>
 internal sealed partial class OgcFilterProcessor
 {
     private const string InvalidCqlFilterPrefix = "Invalid CQL filter";
@@ -35,9 +29,6 @@ internal sealed partial class OgcFilterProcessor
     private const string InvalidFilterProcessingMessage = "Invalid filter parameters.";
     private const string InvalidCqlSyntaxMessage = "Syntax error in filter expression.";
 
-    /// <summary>
-    /// Result of filter processing operation.
-    /// </summary>
     internal sealed class FilterProcessingResult
     {
         public bool IsSuccess { get; init; }
@@ -89,9 +80,6 @@ internal sealed partial class OgcFilterProcessor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Processes all filter types against a V2 canonical resource.
-    /// </summary>
     public async Task<FilterProcessingResult> ProcessFiltersAsync(
         HttpRequest request,
         MetadataV2Object resource,
@@ -531,7 +519,7 @@ internal sealed partial class OgcFilterProcessor
         // A 6-value bbox (minx,miny,minz,maxx,maxy,maxz) is spec-legal per OGC API Features
         // Part 1. This 2D feature surface cannot filter on the vertical (minZ/maxZ) component,
         // so use the horizontal coordinates and ignore Z rather than rejecting the request —
-        // 3D-aware OGC/ArcGIS clients send 6-element boxes (#1987). The horizontal ordinates
+        // 3D-aware OGC/ArcGIS clients send 6-element boxes. The horizontal ordinates
         // live at indices 0,1,3,4 in a 6-value box and 0,1,2,3 in a 4-value box.
         var maxLowIndex = partCount == 6 ? 3 : 2; // index of the max-X (or max-lat in NE order)
         var maxHighIndex = partCount == 6 ? 4 : 3; // index of the max-Y (or max-lon in NE order)
@@ -694,16 +682,6 @@ internal sealed partial class OgcFilterProcessor
         public static BboxFilterResult Failure(string errorMessage) => new() { IsSuccess = false, ErrorMessage = errorMessage };
     }
 
-    private sealed class TemporalParseResult
-    {
-        public bool IsSuccess { get; init; }
-        public string? ErrorMessage { get; init; }
-        public TemporalFilter? TemporalFilter { get; init; }
-
-        public static TemporalParseResult Success(TemporalFilter? temporalFilter) => new() { IsSuccess = true, TemporalFilter = temporalFilter };
-        public static TemporalParseResult Failure(string errorMessage) => new() { IsSuccess = false, ErrorMessage = errorMessage };
-    }
-
     private sealed class TemporalFilterResult
     {
         public bool IsSuccess { get; init; }
@@ -716,10 +694,6 @@ internal sealed partial class OgcFilterProcessor
 
     private static partial class FilterLog
     {
-        [LoggerMessage(EventId = 5470, Level = LogLevel.Warning,
-            Message = "Axis swap failed for spatial filter geometry, returning original geometry")]
-        public static partial void AxisSwapFailed(ILogger logger, Exception exception);
-
         [LoggerMessage(EventId = 5471, Level = LogLevel.Warning,
             Message = "Filter processing failed with an unexpected exception")]
         public static partial void FilterProcessingFailed(ILogger logger, Exception exception);

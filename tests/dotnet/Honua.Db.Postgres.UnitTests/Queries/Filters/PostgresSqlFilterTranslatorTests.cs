@@ -1322,7 +1322,7 @@ public class PostgresSqlFilterTranslatorTests
 
         var result = _translator.Translate(expression, _resource);
 
-        result.Sql.Should().Be("CONCAT(\"name\", @p0, \"description\") = @p1");
+        result.Sql.Should().Be("CONCAT(CAST(\"name\" AS text), CAST(@p0 AS text), CAST(\"description\" AS text)) = @p1");
         result.Parameters.Should().HaveCount(2);
         result.Parameters[0].Should().Be(" ");
         result.Parameters[1].Should().Be("a b");

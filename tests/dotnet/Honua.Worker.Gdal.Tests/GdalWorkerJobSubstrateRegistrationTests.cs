@@ -9,7 +9,6 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
@@ -21,7 +20,6 @@ public sealed class GdalWorkerJobSubstrateRegistrationTests
     public void AddGdalWorker_WithSystemDatabaseAndNoRedis_ResolvesTheJobSubstrateFromPostgres()
     {
         var services = ComposeWorker();
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer));
         using var provider = services.BuildServiceProvider();
 
         AssertStoreClockAndCandidateSourceAreTheJobStore(provider);

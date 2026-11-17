@@ -68,6 +68,23 @@ class ReadinessDiagnosticTests(unittest.TestCase):
                 manual.wait_ready_with_diagnostics(1234, 'initial rc.1', ([], {}, Path('/unused')))
         self.assertIs(original, caught.exception.__cause__)
 
+    def test_starts_only_dependencies_the_candidate_does_not_compose(self):
+        configs = {'candidate': {'honua': {}, 'postgres': {}},
+                   'retained': {'honua': {'depends_on': {'postgres': {}, 'cache': {}}}, 'postgres': {}}}
+        started = []
+        def command(arguments, **kwargs):
+            if arguments[-3:] == ['config', '--format', 'json']:
+                return json.dumps({'services': configs[arguments[0]]})
+            started.append((arguments[0], arguments[1:], kwargs['env']))
+            return ''
+        with patch.object(manual, 'run', side_effect=command):
+            manual.start_legacy_only_dependencies((['candidate'], {'stack': 'new'}), (['retained'], {'stack': 'old'}))
+            self.assertEqual([('retained', ['up', '-d', '--wait', 'cache'], {'stack': 'old'})], started)
+            started.clear()
+            configs['retained']['honua']['depends_on'].pop('cache')
+            manual.start_legacy_only_dependencies((['candidate'], {}), (['retained'], {}))
+        self.assertEqual([], started)
+
     def test_failed_journey_collects_evidence_before_volume_cleanup(self):
         events = []
         env = {'COMPOSE_PROJECT_NAME': 'fixture'}
@@ -81,6 +98,7 @@ class ReadinessDiagnosticTests(unittest.TestCase):
                 patch.object(manual, 'run', side_effect=command), \
                 patch.object(manual, 'manual_install', return_value=(Path('/unused'), 1234, env)), \
                 patch.object(manual, 'legacy_configuration', return_value=(['legacy'], env)), \
+                patch.object(manual, 'start_legacy_only_dependencies'), \
                 patch.object(manual, 'wait_ready', side_effect=AssertionError('not ready')), \
                 patch.object(manual, 'readiness_diagnostics', side_effect=evidence):
             with self.assertRaisesRegex(AssertionError, 'initial published rc.1 startup'):
@@ -104,7 +122,7 @@ class ReadinessDiagnosticTests(unittest.TestCase):
             stack.enter_context(patch.object(manual, 'run', side_effect=command))
             stack.enter_context(patch.object(manual, 'manual_install', return_value=(Path('/unused'), 1234, env)))
             stack.enter_context(patch.object(manual, 'legacy_configuration', return_value=(['legacy'], env)))
-            for name in ('assert_revision', 'assert_secret_isolation', 'assert_current_schema',
+            for name in ('start_legacy_only_dependencies', 'assert_revision', 'assert_secret_isolation', 'assert_current_schema',
                          'save_database_backup', 'restore_database_backup'):
                 stack.enter_context(patch.object(manual, name))
             readiness = stack.enter_context(patch.object(manual, 'wait_ready_with_diagnostics'))

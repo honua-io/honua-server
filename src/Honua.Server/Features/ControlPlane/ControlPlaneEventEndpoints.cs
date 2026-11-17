@@ -25,7 +25,7 @@ internal static class ControlPlaneEventEndpoints
             return;
         }
 
-        // HANDLER-AUTHORIZED (#1144): these internal event/backstop routes enforce their own
+        // HANDLER-AUTHORIZED: these internal event/backstop routes enforce their own
         // authorization in-handler via the shared-secret X-Honua-ControlPlane-Token check
         // (see CheckAuthorization) and are reachable only from the EventBridge-invoked Lambda inside
         // the deployment trust boundary — they are not a framework-policy surface. Marked
@@ -57,7 +57,7 @@ internal static class ControlPlaneEventEndpoints
         }
 
         // A degraded start (database unreachable, or schema behind this build) answers a typed 503
-        // so the event is retried (honua-server#5916).
+        // so the event is retried.
         if (ControlPlaneNotReadyGuard.TryRefuse(httpRequest.HttpContext) is { } notReady)
         {
             return notReady;
@@ -84,7 +84,7 @@ internal static class ControlPlaneEventEndpoints
         }
 
         // A degraded start (database unreachable, or schema behind this build) answers a typed 503
-        // so the event is retried (honua-server#5916).
+        // so the event is retried.
         if (ControlPlaneNotReadyGuard.TryRefuse(httpRequest.HttpContext) is { } notReady)
         {
             return notReady;
@@ -104,9 +104,9 @@ internal static class ControlPlaneEventEndpoints
         var expected = configuration["ControlPlane:EventToken"]
             ?? configuration["HONUA_CONTROL_PLANE_EVENT_TOKEN"];
 
-        // No token configured => fail closed (PA-060). Previously this returned true (fail-open),
-        // allowing unauthenticated access on deployments that had not set a token. Now 503 is
-        // returned so operators discover a misconfiguration rather than silently getting no auth.
+        // No token configured => fail closed (PA-060) with 503, so a deployment that has not set a
+        // token does not allow unauthenticated access and operators discover the misconfiguration
+        // rather than silently getting no auth.
         if (string.IsNullOrEmpty(expected))
         {
             return Problem(

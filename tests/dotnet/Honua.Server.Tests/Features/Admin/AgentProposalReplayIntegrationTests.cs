@@ -18,6 +18,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -26,6 +27,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -183,6 +185,42 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
         {
             await RemovePublishedLayerAsync(connectionId, table, service);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    [Endpoint("POST /api/v1/admin/connections")]
+    public async Task ConnectionCreate_AgentKeyThroughTheOperationsApi_ReachesTheAdminRouteOverLoopback()
+    {
+        using var agent = await CreateCallerAsync("agent-key-rest");
+
+        // Approval permits the loopback replay; the missing password makes the handler reject it.
+        var proposalId = await SubmitRestAsync(agent, "admin.connections.create", new(StringComparer.Ordinal)
+        {
+            ["name"] = $"agent-replay-{Guid.NewGuid():N}",
+            ["host"] = "127.0.0.1",
+            ["port"] = "5432",
+            ["databaseName"] = "honua",
+            ["username"] = "honua",
+            ["sslRequired"] = "false",
+            ["sslMode"] = "Disable",
+        });
+
+        using var response = await _approver.ApproveAsync(proposalId);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var proposal = (await _proposals.GetAsync(proposalId, CancellationToken.None))!;
+        proposal.Status.Should().Be(OperationProposalStatus.Failed);
+        proposal.ResolvedBy.Should().Contain("agent-change-approver");
+        var instance = await _fixture.Services.GetRequiredService<IOperationInstanceStore>()
+            .GetAsync(proposal.Audit.OperationInstanceId!);
+        instance.Should().NotBeNull();
+        instance!.Status.Should().Be(OperationHandleStatus.Failed);
+        instance.Result.Should().NotBeNull();
+        instance.Result!.Details["statusCode"].Should().Be("400", "the connection handler answered the approved replay");
+        instance.Result.Details["response"].Should().Contain("Must specify either Password or SecretReference",
+            "the replay reached the connection handler's credential validation");
+        await AssertReplayedWithServerMintedCredentialAsync(proposalId);
     }
 
     private Task CreatePointTableAsync(string table) => _fixture.Postgres.ExecuteDdlUnderLockAsync($"""

@@ -47,6 +47,41 @@ public sealed class OgcCsvHeaderTests
         Assert.Equal(expected, Encoding.UTF8.GetString(stream.ToArray()));
     }
 
+    [UnitTheory]
+    [InlineData("objectid", "objectid", "42")]
+    [InlineData("OBJECTID", "objectid", "42")]
+    [InlineData("objectid", "public_id", "")]
+    [InlineData("objectid", null, "")]
+    public async Task BuildCsvResponse_MissingProperty_OnlyFallsBackForDeclaredIdentifier(
+        string fieldName, string? identifierFieldName, string expectedValue)
+    {
+        GeoJsonFeature[] features = [new() { Id = 42, Properties = [] }];
+        string[] fields = [fieldName];
+        var expected = $"id,{fieldName},geometry{Environment.NewLine}42,{expectedValue},{Environment.NewLine}";
+
+        Assert.Equal(expected, OgcResponseFormatter.BuildCsvResponse(features, fields, identifierFieldName));
+        using var stream = new MemoryStream();
+        await OgcResponseFormatter.StreamCsvResponseAsync(stream, Enumerate(features),
+            new(fields, IdentifierFieldName: identifierFieldName));
+        Assert.Equal(expected, Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
+    [UnitTheory]
+    [InlineData("stored-value")]
+    [InlineData(null)]
+    public async Task BuildCsvResponse_ExistingIdentifierProperty_PreservesStoredValue(string? value)
+    {
+        GeoJsonFeature[] features = [new() { Id = 42, Properties = new() { ["public_id"] = value } }];
+        string[] fields = ["public_id"];
+        var expected = $"id,public_id,geometry{Environment.NewLine}42,{value},{Environment.NewLine}";
+
+        Assert.Equal(expected, OgcResponseFormatter.BuildCsvResponse(features, fields, "public_id"));
+        using var stream = new MemoryStream();
+        await OgcResponseFormatter.StreamCsvResponseAsync(stream, Enumerate(features),
+            new(fields, IdentifierFieldName: "public_id"));
+        Assert.Equal(expected, Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
     private static async IAsyncEnumerable<GeoJsonFeature> Enumerate(IEnumerable<GeoJsonFeature> features)
     {
         foreach (var feature in features)

@@ -190,7 +190,7 @@ public static partial class GeoParquetFeatureWriter
     // of ArrowWriterPropertiesBuilder / FileWriter raises DllNotFoundException (possibly
     // wrapped in TypeInitializationException).
     // Translate that into a typed ParquetRuntimeUnavailableException so protocol adapters can
-    // return a clean 501 capability response instead of an unhandled 500 (honua-server#1942).
+    // return a clean 501 capability response instead of an unhandled 500.
     private static BoundedParquetStream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
     {
         var stream = new BoundedParquetStream(limits.MaxResponseBytes);
@@ -422,7 +422,7 @@ public static partial class GeoParquetFeatureWriter
 
         // GeoParquet 1.1 "covering" declares the per-row bbox column used for spatial pruning.
         // The paths point at the fields of the emitted `bbox` struct column so a reader can map
-        // xmin/ymin/xmax/ymax without decoding geometry (honua-server#2843).
+        // xmin/ymin/xmax/ymax without decoding geometry.
         var coveringPart = includeCovering
             ? $@",""covering"":{{""bbox"":{{""{BboxXMinFieldName}"":[""{bboxColumnName}"",""{BboxXMinFieldName}""],""{BboxYMinFieldName}"":[""{bboxColumnName}"",""{BboxYMinFieldName}""],""{BboxXMaxFieldName}"":[""{bboxColumnName}"",""{BboxXMaxFieldName}""],""{BboxYMaxFieldName}"":[""{bboxColumnName}"",""{BboxYMaxFieldName}""]}}}}"
             : string.Empty;

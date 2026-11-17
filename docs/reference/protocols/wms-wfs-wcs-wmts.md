@@ -208,7 +208,7 @@ deferred to release/2026.2.
 | `GetTile` | `LAYER`, `STYLE`, `TILEMATRIXSET`, `TILEMATRIX`, `TILEROW`, `TILECOL`, `FORMAT`, optional `TIME` (temporal layers) and `ELEVATION` (elevation-aware layers); serves built-in and custom gridsets. RESTful tile paths also supported. |
 | `GetFeatureInfo` | Tile-coordinate identify with `I`/`J` and `INFOFORMAT`; resolves the requested gridset through the same `ITileMatrixSetRegistry` as `GetTile`, so the built-in `WebMercatorQuad`/`WorldCRS84Quad` gridsets and operator-defined custom gridsets are supported. The clicked pixel is mapped to a world coordinate using the gridset's own origin, cell size and matrix dimensions (WebMercatorQuad stays byte-identical to before); unsupported gridsets are rejected with `InvalidParameterValue`. |
 
-> Open `https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png` in a browser.
+> Open `https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png` in a browser.
 
 WMTS GetTile and GetFeatureInfo ignore unknown KVP parameters, including
 unadvertised `TIME` and `ELEVATION` dimensions. Known parameters and advertised
@@ -231,6 +231,128 @@ format. Consumers of the earlier envelope must accept `FeatureCollection` and
 typed values. The `text/plain` / `.txt` representation is unchanged, including
 an empty value after `=` for NULL. This JSON compatibility behavior is separate
 from the WMTS core conformance results and Preview release status.
+
+## Declaring WMS and WMTS dimensions
+
+A layer can advertise dimensions such as elevation, time or a named scenario.
+You declare them on the layer's catalog resource, under `extensions.wms` and
+`extensions.wmts`. The server advertises what you declare in GetCapabilities.
+It does not check the declaration against the data.
+
+```json
+{
+  "extensions": {
+    "wms": {
+      "dimensions": [
+        {
+          "name": "elevation",
+          "units": "CRS:88",
+          "unitSymbol": "m",
+          "nearestValue": true,
+          "default": "500",
+          "extent": "500,490,480"
+        }
+      ]
+    },
+    "wmts": {
+      "queryable": true,
+      "dimensions": [
+        {
+          "identifier": "elevation",
+          "values": ["100", "200", "300"],
+          "default": "100",
+          "supportsCurrent": true,
+          "current": "300"
+        }
+      ]
+    }
+  }
+}
+```
+
+| Key | Fields |
+| --- | --- |
+| `extensions.wms.dimensions[]` | `name` (required), `units`, `extent`, and optional `unitSymbol`, `multipleValues`, `nearestValue`, `default`, `current`. |
+| `extensions.wmts.dimensions[]` | `identifier` (required), `values` (required, at least one), and optional `default`, `supportsCurrent`, `current`. |
+| `extensions.wmts.queryable` | `false` turns off WMTS GetFeatureInfo for the layer and removes its feature-info formats from GetCapabilities. Default `true`. |
+
+Rules to know:
+
+- An entry without a `name` (WMS) or without an `identifier` and `values` (WMTS)
+  is ignored. Malformed metadata never fails a request.
+- A WMS layer that declares a `time` dimension owns it. The server does not add
+  a time dimension computed from the data for that layer, and it does not filter
+  that layer by the `TIME` parameter. Other layers in the same request are still
+  filtered.
+- WMS 1.1.1 advertises a dimension named `elevation` with the units
+  `EPSG:5703`. WMS 1.3.0 advertises the `units` you declare.
+- A WMTS layer with declared dimensions advertises those instead of a time
+  dimension computed from the data. Requested values are checked against
+  `values`. Give each dimension a `default`, because a request that omits a
+  dimension without one is rejected with `MissingParameterValue`.
+- The WMTS identifier `time` is reserved for the dimension computed from the
+  data. A declared entry with that identifier is ignored.
+
+A layer in the legacy layer catalog takes the same `wms` and `wmts` objects as
+top-level keys of its layer `metadata` JSON.
+
+## Declaring a WFS application schema
+
+By default every WFS feature type is in the server namespace
+(`honua`, `http://honua.io/wfs`) and its schema is generated from the layer's
+fields. A layer that must follow an application schema defined elsewhere
+declares that under `extensions.wfs` on its catalog resource.
+
+```json
+{
+  "extensions": {
+    "wfs": {
+      "namespace": { "prefix": "ex", "uri": "https://example.org/schemas/roads" },
+      "legacyEncoding": {
+        "omitNullProperties": true,
+        "geometryAfterAttributes": true,
+        "hiddenFields": ["objectid"],
+        "gmlFields": ["pointProperty"],
+        "wfs10Schema": "<?xml version=\"1.0\"?><xsd:schema ...>...</xsd:schema>",
+        "wfs10BoundedBy": { "srsName": "EPSG:32615", "coordinates": "500000,500000 500100,500100" }
+      }
+    }
+  }
+}
+```
+
+| Key | Effect |
+| --- | --- |
+| `namespace.prefix`, `namespace.uri` | The XML namespace of the feature type in WFS 1.0, 1.1 and 2.0. Both are required. |
+| `legacyEncoding.omitNullProperties` | WFS 1.0 and 1.1 leave out a nullable property that has no value. |
+| `legacyEncoding.geometryAfterAttributes` | WFS 1.0 and 1.1 write the geometry after the attributes instead of before them. |
+| `legacyEncoding.hiddenFields` | Fields that WFS 1.0 and 1.1 do not write. |
+| `legacyEncoding.gmlFields` | Fields that WFS 1.0 and 1.1 write in the GML namespace, such as `gml:pointProperty`. |
+| `legacyEncoding.wfs10Schema` | The schema document that WFS 1.0 DescribeFeatureType returns for the feature type. |
+| `legacyEncoding.wfs10BoundedBy` | A fixed `gml:boundedBy` box that WFS 1.0 writes on every feature. |
+
+Rules to know:
+
+- The server does not check the declaration against the data or against the
+  schema document. You are responsible for keeping them consistent.
+- A prefix must be a valid XML name. The prefixes `honua`, `xml`, `xmlns`,
+  `xsi`, `xsd`, `xs`, `xlink`, `wfs`, `gml`, `ogc`, `ows` and `fes` cannot be
+  declared. A namespace with an unusable prefix or a URI without a scheme
+  is ignored, and the feature type stays in the server namespace.
+- A prefix names one namespace and a namespace has one prefix. When two layers
+  visible to a caller disagree, the layer whose publication identifier sorts
+  first keeps its declaration and the other stays in the server namespace. The
+  server namespace `http://honua.io/wfs` cannot be declared.
+- `hiddenFields` does not hide the geometry and does not change the schema the
+  server generates for WFS 1.1 and 2.0.
+- A WFS 1.0 DescribeFeatureType response is one schema document. When a request
+  selects feature types with different declared documents, the server returns
+  the one whose namespace URI sorts first.
+- Malformed metadata never fails a request. A member with the wrong type is
+  ignored.
+
+A layer in the legacy layer catalog takes the same `wfs` object as a top-level
+key of its layer `metadata` JSON.
 
 ## Conformance
 

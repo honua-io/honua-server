@@ -76,7 +76,7 @@ internal static class PortalCredentialSourceVersion
             }
         }
 
-        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, options.EnvironmentName);
+        AdminPasswordValidation.ValidateForEnvironment(resolvedPassword, options.EnvironmentName);
         return resolvedPassword;
     }
 

@@ -1237,22 +1237,29 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         try
         {
             using var client = submitFixture.CreateAdminClient();
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            async Task<HttpResponseMessage> SubmitAsync()
             {
-                ["f"] = "json",
-                ["wkb"] = PointWkbBase64,
-                ["srid"] = "4326",
-                ["distance"] = "25.5",
-                ["idempotencyKey"] = "client-retry-key-1"
-            });
+                using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["f"] = "json",
+                    ["wkb"] = PointWkbBase64,
+                    ["srid"] = "4326",
+                    ["distance"] = "25.5",
+                    ["idempotencyKey"] = "client-retry-key-1"
+                });
+                return await client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
+            }
 
-            var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
-                content);
+            var response = await SubmitAsync();
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             recordingService.LastIdempotencyKey.Should().Be("client-retry-key-1");
             recordingService.LastPlan!.Steps[0].Inputs.Should().NotContainKey("idempotencyKey");
+
+            // The plan id is part of the idempotency fingerprint, so a retry must name the same plan.
+            var firstPlanId = recordingService.LastPlan!.PlanId;
+            (await SubmitAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+            recordingService.LastPlan!.PlanId.Should().Be(firstPlanId);
         }
         finally
         {

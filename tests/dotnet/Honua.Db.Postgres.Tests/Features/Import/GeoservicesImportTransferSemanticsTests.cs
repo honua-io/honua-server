@@ -192,7 +192,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
                     try
                     {
                         competing = competingService
-                            .ImportLayerAsync(BuildRequest(schemaName) with { JobId = "competing" }, progress: null, bounded.Token)
+                            .ImportLayerAsync(BuildRequest(schemaName) with { JobId = JobIdFor("competing", schemaName) }, progress: null, bounded.Token)
                             .GetAwaiter()
                             .GetResult();
                     }
@@ -204,7 +204,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
             };
 
             var result = await CreateService(handler, targetSchema: schemaName).ImportLayerAsync(
-                BuildRequest(schemaName) with { BatchSize = 1, JobId = "original" });
+                BuildRequest(schemaName) with { BatchSize = 1, JobId = JobIdFor("original", schemaName) });
 
             competingError.Should().BeNull();
             competing.Should().NotBeNull();
@@ -328,9 +328,9 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         var schemaName = await fixture.CreateIsolatedSchemaAsync("ImportTransferLongName");
         try
         {
-            var request = BuildRequest(schemaName) with { TableName = longTable, JobId = "long-name-job" };
+            var request = BuildRequest(schemaName) with { TableName = longTable };
             var first = await CreateService(new TransferFeatureServerHandler(["AAA", "BBB"]), targetSchema: schemaName)
-                .ImportLayerAsync(request with { JobId = "first-import" });
+                .ImportLayerAsync(request with { JobId = JobIdFor("first-import", schemaName) });
             first.Success.Should().BeTrue(first.ErrorMessage);
             var firstImportRelations = await ReadRelationsAsync(schemaName);
             firstImportRelations.Should().HaveCount(4, "a first import creates the table, its key, its sequence and its spatial index");
@@ -338,13 +338,20 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
             for (var attempt = 1; attempt <= 2; attempt++)
             {
                 var replacement = await CreateService(new TransferFeatureServerHandler(["CCC", "DDD"]), targetSchema: schemaName)
-                    .ImportLayerAsync(request);
+                    .ImportLayerAsync(request with { JobId = JobIdFor($"replacement-{attempt}", schemaName) });
 
-                replacement.Success.Should().BeTrue($"replacement {attempt} by the same job must succeed: {replacement.ErrorMessage}");
+                replacement.Success.Should().BeTrue($"replacement {attempt} must succeed: {replacement.ErrorMessage}");
                 (await ReadRelationsAsync(schemaName)).Should().Equal(
                     firstImportRelations,
                     $"replacement {attempt} must leave the relation names a first import creates");
             }
+
+            using var rerunHandler = new TransferFeatureServerHandler(["EEE", "FFF"]);
+            var rerun = await CreateService(rerunHandler, targetSchema: schemaName)
+                .ImportLayerAsync(request with { JobId = JobIdFor("replacement-2", schemaName) });
+            rerun.Success.Should().BeFalse("a committed job is not replayed");
+            rerun.NeedsReview.Should().BeTrue();
+            (await ReadRelationsAsync(schemaName)).Should().Equal(firstImportRelations);
         }
         finally
         {
@@ -371,13 +378,13 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
 
                 using var bounded = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 competing = competingService
-                    .ImportLayerAsync(BuildRequest(schemaName) with { JobId = "competing" }, progress: null, bounded.Token)
+                    .ImportLayerAsync(BuildRequest(schemaName) with { JobId = JobIdFor("competing", schemaName) }, progress: null, bounded.Token)
                     .GetAwaiter()
                     .GetResult();
             });
 
             var result = await CreateService(new TransferFeatureServerHandler(["CCC", "DDD"]), targetSchema: schemaName)
-                .ImportLayerAsync(BuildRequest(schemaName) with { JobId = "original" }, progress);
+                .ImportLayerAsync(BuildRequest(schemaName) with { JobId = JobIdFor("original", schemaName) }, progress);
 
             result.Success.Should().BeTrue(result.ErrorMessage);
             competing.Should().NotBeNull("the completed progress report is emitted after the commit");
@@ -471,6 +478,10 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
     {
         public void Report(Honua.Core.Features.Migration.Abstractions.GeoservicesImportProgress value) => onReport(value);
     }
+
+    // Commit receipts are keyed by job id in the shared metadata schema and outlive each test's
+    // isolated schema, so every job id here is unique to its test.
+    private static string JobIdFor(string name, string schemaName) => $"{name}-{schemaName}";
 
     private static GeoservicesImportRequest BuildRequest(string schemaName) => new()
     {

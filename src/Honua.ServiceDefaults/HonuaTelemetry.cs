@@ -74,11 +74,6 @@ public static class HonuaTelemetry
     private const double MediumLatencyThresholdMs = 1000.0;
     private const double SlowLatencyThresholdMs = 5000.0;
 
-    // Memory categorization thresholds
-    private const long SmallMemoryThresholdBytes = 1024; // 1KB
-    private const long MediumMemoryThresholdBytes = 1024 * 1024; // 1MB
-    private const long LargeMemoryThresholdBytes = 10 * 1024 * 1024; // 10MB
-
     // Stack trace detail threshold
     internal const int MinStackTraceDetailLength = 2048;
     private static readonly Regex EmailPattern = new(
@@ -441,33 +436,6 @@ public static class HonuaTelemetry
         return activity;
     }
 
-    public static Activity? StartBusinessIntelligenceActivity(string metricType, string? userId = null, string? clientId = null)
-    {
-        var activity = ActivitySource.StartActivity(Activities.BusinessIntelligence, ActivityKind.Internal);
-        activity?.SetTag(Tags.BusinessMetric, metricType);
-
-        if (userId != null)
-        {
-            activity?.SetTag(Tags.UserId, userId);
-        }
-
-        if (clientId != null)
-        {
-            activity?.SetTag(Tags.ClientId, clientId);
-        }
-
-        return activity;
-    }
-
-    public static Activity? StartSecurityActivity(string checkType, string riskLevel = "low")
-    {
-        var activity = ActivitySource.StartActivity(Activities.SecurityMonitoring, ActivityKind.Internal);
-        activity?.SetTag(Tags.Operation, checkType);
-        activity?.SetTag(Tags.SecurityRisk, riskLevel);
-
-        return activity;
-    }
-
     public static void RecordException(Activity? activity, Exception exception)
     {
         if (activity == null)
@@ -581,24 +549,6 @@ public static class HonuaTelemetry
         };
 
         activity.SetTag(Tags.LatencyCategory, category);
-    }
-
-    public static void CategorizeMemoryAllocation(Activity? activity, long allocationBytes)
-    {
-        if (activity == null)
-        {
-            return;
-        }
-
-        var category = allocationBytes switch
-        {
-            <= SmallMemoryThresholdBytes => "small",
-            < MediumMemoryThresholdBytes => "medium",
-            < LargeMemoryThresholdBytes => "large",
-            _ => "xlarge"
-        };
-
-        activity.SetTag(Tags.MemoryCategory, category);
     }
 }
 

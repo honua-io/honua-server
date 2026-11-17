@@ -153,7 +153,7 @@ internal static partial class ComplianceAdminEndpoints
     }
 
     private static async Task<IResult> HandleEvaluateResidency(
-        [FromServices] IDataResidencyPolicyProvider provider,
+        [FromServices] DefaultDataResidencyPolicyProvider provider,
         [FromServices] IAuditLog auditLog,
         [FromServices] ILogger<ComplianceAdminEndpointsLog> logger,
         HttpContext context)

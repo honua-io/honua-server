@@ -64,7 +64,7 @@ internal static class NAServerResultMapping
         }
 
         // The directions name the route they describe even when returnRoutes=false, so a client
-        // that later pairs them with the route feature resolves the same single route (#4035).
+        // that later pairs them with the route feature resolves the same single route.
         NAServerDirection[] directions = includeDirections
             && result.Solved
             && MapDirections(
@@ -174,7 +174,7 @@ internal static class NAServerResultMapping
             });
 
             // One direction set per route, named after the route it describes, rather than
-            // every route's steps merged into a single unnamed set (#4035).
+            // every route's steps merged into a single unnamed set.
             if (includeDirections
                 && MapDirections(
                     route.Directions,

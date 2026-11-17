@@ -24,11 +24,10 @@ internal static class ClientCertificateAdminEndpoints
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/security/client-certificates")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-            // #2431 promoted native mTLS / client-certificate authentication from experimental
-            // to GA; #2958 DEMOTED it back to experimental (release-safety follow-up): the
-            // always-on client-certificate scheme/RBAC layer interposed on admin requests
-            // regardless of bearer-token validity. These routes are gated OFF the default
-            // surface again until a customer opts in via
+            // Native mTLS / client-certificate authentication is experimental for release
+            // safety: the always-on client-certificate scheme/RBAC layer interposes on admin
+            // requests regardless of bearer-token validity. These routes are gated OFF the
+            // default surface until a customer opts in via
             // Capabilities:Experimental:security.mtls:Enabled=true (Enterprise entitlement is
             // enforced separately, on top, once the capability is enabled).
             .WithCapabilityGate("security.mtls")
@@ -119,7 +118,8 @@ internal static class ClientCertificateAdminEndpoints
 
         group.MapPost("/validate", HandleValidateCertificate)
             .WithDisplayName("Validate Client Certificate")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .WithRouteAgentRule("Changes nothing.");
     }
 
     private static async Task<IResult> HandleListProfiles(

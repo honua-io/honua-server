@@ -5,18 +5,14 @@ using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
-using Honua.Infrastructure.MultiTenancy;
-using Honua.Infrastructure.Security;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;
 
@@ -130,14 +126,14 @@ internal static partial class FeatureStreamEndpoints
             ResolveAdmissionPartition(context));
         if (session is null)
         {
-            return CreateSessionLimitExceeded(context, deps.Options.Value.MaxConcurrentSessions);
+            return CreateSessionLimitExceeded(context);
         }
 
         using var sessionLease = session;
 
         // Snapshot servability is decided here, ahead of the transport handshake: it is the last
         // point at which an unservable baseline can still be reported as a typed problem document
-        // rather than as a dead stream (honua-server#3181 REQ-002).
+        // rather than as a dead stream.
         var snapshotError = await ValidateSnapshotServabilityAsync(
             deps,
             logger,
@@ -246,7 +242,7 @@ internal static partial class FeatureStreamEndpoints
             MaxSnapshotScanRows = options.MaxSnapshotScanRows,
             MaxSnapshotBytes = options.MaxSnapshotBytes,
             // The mutable release version and the immutable deployment revision are separate
-            // fields: evidence bound to a deployment must reference the revision (#3038).
+            // fields: evidence bound to a deployment must reference the revision.
             ServerVersion = deploymentIdentity.ReleaseVersion,
             DeploymentRevision = deploymentIdentity.Revision,
             DeploymentRevisionSource = deploymentIdentity.RevisionSource,
@@ -349,26 +345,12 @@ internal static partial class FeatureStreamEndpoints
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    internal static string ResolveAdmissionPartition(HttpContext context)
-    {
-        // Single-tenant deployments resolve every request to the deployment tenant, so a
-        // tenant partition there would let one principal exhaust the whole node.
-        var tenancyEnabled = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value.Enabled == true;
-        var tenant = tenancyEnabled ? context.RequestServices.GetService<ITenantContext>()?.TenantId : null;
-        if (!string.IsNullOrWhiteSpace(tenant))
-        {
-            return $"tenant:{tenant}";
-        }
-
-        var actor = CanonicalSecurityActor.Resolve(context.User);
-        return actor is null ? "anonymous" : $"principal:{actor.ActorId}";
-    }
-
-    private static IResult CreateSessionLimitExceeded(HttpContext context, int maxConcurrentSessions)
+    // Several limits can refuse a session (per client, per tenant or principal, per node), so the answer names none.
+    private static IResult CreateSessionLimitExceeded(HttpContext context)
         => ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status503ServiceUnavailable,
-                $"Feature stream session limit of {maxConcurrentSessions} concurrent sessions reached.");
+                "Feature stream session limit reached; try again later.");
 }
 
 internal sealed class FeatureStreamEndpointsLog;

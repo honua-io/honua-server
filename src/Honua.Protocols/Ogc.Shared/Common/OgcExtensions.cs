@@ -10,13 +10,6 @@ namespace Honua.Protocols.Ogc.Common;
 
 public static class OgcExtensions
 {
-    public static SpatialExtent ToSpatialExtent(this FeatureExtent extent)
-        => new()
-        {
-            BoundingBox = [ImmutableArray.Create(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY)],
-            Crs = ExtentExtensions.ToOgcCrsUri(extent.SpatialReference)
-        };
-
     public static FeatureExtent ToFeatureExtent(this SpatialExtent spatialExtent)
     {
         if (spatialExtent.BoundingBox.Length == 0 || spatialExtent.BoundingBox[0].Length != 4)
@@ -87,24 +80,6 @@ public static class OgcExtensions
             ogcFeature.Properties.AsReadOnly(),
             ogcFeature.Geometry != null);
     }
-
-    public static SimpleGeoJsonGeometry ToSimpleGeoJsonGeometry(this GeoJsonGeometryBase geometryBase,
-        string? coordinatesJson = null,
-        string? geometriesJson = null)
-        => new()
-        {
-            Type = geometryBase.Type,
-            CoordinatesJson = coordinatesJson,
-            GeometriesJson = geometriesJson
-        };
-
-    public static GeoJsonGeometryBase ToGeoJsonGeometryBase(this SimpleGeoJsonGeometry simpleGeometry)
-        => GeoJsonGeometryBase.Create(
-            simpleGeometry.Type,
-            !string.IsNullOrEmpty(simpleGeometry.CoordinatesJson) || !string.IsNullOrEmpty(simpleGeometry.GeometriesJson));
-
-    public static (long? NumberMatched, int NumberReturned) ToFeatureCollectionProperties(this PagedResponseBase pagedBase)
-        => (pagedBase.TotalCount, pagedBase.ReturnedCount);
 
     public static PagedResponseBase ToPagedResponseBase(long? numberMatched, int numberReturned)
         => PagedResponseBase.Create(numberReturned, numberMatched);

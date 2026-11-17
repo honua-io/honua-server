@@ -66,8 +66,8 @@ for session lifecycle and CSRF requirements.
 | `FeatureService` | `DescribeService`, `DescribeLayer`, `QueryFeatures`, `QueryFeaturesStream` (server streaming), `ApplyEdits`, `ListAttachments`, `GetAttachmentUrl`, `UploadAttachment`, `BeginAttachmentUpload`, `UploadAttachmentChunk`, `CommitAttachmentUpload`, `AbortAttachmentUpload`, `DeleteAttachment` | Feature query and edits; respects per-service protocol enablement and access policy. |
 | `ProcessService` | `ValidatePlan`, `DryRunPlan`, `ExecutePlan`, `ExecutePlanStream` (server streaming), `SubmitJob`, `GetJob`, `GetJobResult`, `CancelJob` | Canonical geoprocessing runtime (same backend as GPServer and OGC API Processes). |
 | `SpecService` | `PlanSpec`, `ApplySpec` (server streaming), `CancelApply` | Spec plan/apply engine. |
-| `SceneService` | `ListScenes`, `GetScene` | Scene dataset discovery. |
-| `TileService` | `GetTile`, `StreamTiles` (server streaming) | Tile retrieval. |
+| `SceneService` | `ListScenes`, `GetScene` | Scene dataset discovery. Experimental: registered only when `Capabilities__Experimental__scene.catalog__Enabled=true`; otherwise `UNIMPLEMENTED`. |
+| `TileService` | `GetTile`, `StreamTiles` (server streaming) | Tile retrieval. Experimental: registered only when `Capabilities__Experimental__serve.3d-tiles-scene__Enabled=true`; otherwise `UNIMPLEMENTED`. See [enable the 3D surfaces](3d-tiles-and-scenes.md#enable-the-3d-surfaces). |
 | `ElevationService` | `GetElevation`, `GetElevationProfile` | Elevation point and profile queries. |
 
 ```bash
@@ -103,6 +103,14 @@ Managed edit capabilities require a writable storage binding, declared publicati
 capability and caller authorization. Unsupported operations remain false;
 attachment editing additionally requires explicit attachment enablement. Clients must
 respect these flags and surface unsupported operations explicitly.
+
+The server maintains the editing tracking fields, as GeoServices `applyEdits`
+does. `ApplyEdits` ignores client values for the creator, created-at, editor and
+updated-at fields. An insert stamps all four from the authenticated caller and
+the server clock. An update stamps the editor and updated-at fields and keeps
+the stored creator values. Timestamps are stamped into DateTime, Date,
+TimestampOffset, String, BigInteger and Double fields; a tracking field of any
+other type, such as a 32-bit Integer, is left empty.
 
 ## Attachments over gRPC-Web
 

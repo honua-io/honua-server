@@ -122,7 +122,10 @@ public sealed partial class AdminAuthEndpointsTests
         admin.StatusCode.Should().Be(HttpStatusCode.OK);
         var sessionId = cookie.Split(';')[0].Split('=', 2)[1];
         var store = _fixture.Services.GetRequiredService<AdminAuthSessionStore>();
-        (await store.GetInteractiveSessionForApprovalAsync(sessionId, CancellationToken.None)).Should().BeNull();
+        // The person who typed the admin password may approve; the session keeps its password origin.
+        var approver = await store.GetInteractiveSessionForApprovalAsync(sessionId, CancellationToken.None);
+        approver.Should().NotBeNull();
+        approver!.Origin.Should().Be(AdminAuthSessionOrigin.Builtin);
         client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
         var rejected = await client.PostAsync("/api/v1/admin/auth/logout", null);
         rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -304,6 +307,9 @@ public sealed partial class AdminAuthEndpointsTests
         browser.BaseAddress = new Uri("https://localhost");
         using var response = await browser.GetAsync("/admin/auth/callback?code=code-123&state=untrusted");
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+        var page = await response.Content.ReadAsStringAsync();
+        page.Should().Contain("expired").And.Contain("href=\"/console/auth/signin\"");
     }
 
     [IntegrationTheory]

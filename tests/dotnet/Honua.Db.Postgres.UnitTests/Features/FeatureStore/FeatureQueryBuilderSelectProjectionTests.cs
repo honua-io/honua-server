@@ -28,7 +28,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         // The jsonb key is bound as a parameter alongside the value accessor (both reuse
         // $2), so no part of a field name is interpolated into the SQL text.
-        result.Sql.Should().Contain("jsonb_build_object($2::text, attributes -> $2::text)::text AS attributes");
+        result.Sql.Should().Contain("(CASE WHEN attributes ? $2::text THEN jsonb_build_object($2::text, attributes -> $2::text) ELSE '{}'::jsonb END)::text AS attributes");
         result.Sql.Should().NotContain("SELECT objectid, ST_AsBinary(geometry), attributes FROM");
         result.WhereParameters.Should().Equal("population");
     }
@@ -104,7 +104,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         var result = queryBuilder.BuildOptimizedSelectQuery(layerId: 1, query);
 
-        result.Sql.Should().Contain("jsonb_build_object($2::text, attributes -> $2::text)::text AS attributes");
+        result.Sql.Should().Contain("(CASE WHEN attributes ? $2::text THEN jsonb_build_object($2::text, attributes -> $2::text) ELSE '{}'::jsonb END)::text AS attributes");
         result.Sql.Should().Contain("COUNT(*) OVER()");
         result.Sql.Should().Contain("LIMIT $");
         // The optimized builder emits the LIMIT placeholder, but AddQueryParameters
@@ -252,7 +252,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
 
-        result.Sql.Should().Contain("jsonb_build_object($2::text, attributes -> $2::text)::text AS attributes");
+        result.Sql.Should().Contain("(CASE WHEN attributes ? $2::text THEN jsonb_build_object($2::text, attributes -> $2::text) ELSE '{}'::jsonb END)::text AS attributes");
         result.Sql.Should().NotContain("eo:cloud_cover");
         result.WhereParameters.Should().Equal("eo:cloud_cover");
     }

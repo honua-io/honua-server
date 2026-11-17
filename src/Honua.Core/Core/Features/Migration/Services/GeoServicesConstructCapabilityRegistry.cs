@@ -187,7 +187,9 @@ public sealed class GeoServicesConstructCapabilityRegistry
         },
         new GeoServicesConstructCapabilityDescriptor
         {
-            // Simple relationship classes are automated (relationship apply persists each and reports its
+            // The classifier emitted simple relationships as automated while this descriptor said
+            // manual review for every relationship, so the two disagreed. The descriptor now reads per
+            // relationship: simple classes are automated (relationship apply persists each and reports its
             // outcome); composite, attributed and many-to-many classes take the fallback.
             ConstructKey = Keys.ResourceRelationships,
             AutomationStatus = MigrationFidelityAutomationStatuses.Automated,

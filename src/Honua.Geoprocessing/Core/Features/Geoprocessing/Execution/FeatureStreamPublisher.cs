@@ -72,6 +72,7 @@ internal static class FeatureStreamPublisher
                     }
 
                     spillPath = FeatureStreamArtifact.AllocateSpillPath(outputRootDirectory, operationId, processId);
+                    // AllocateSpillPath makes the streams directory owner-only, so other local users cannot reach the spill.
                     spill = new FileStream(spillPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, useAsync: true);
                     foreach (var buffered in buffer)
                     {

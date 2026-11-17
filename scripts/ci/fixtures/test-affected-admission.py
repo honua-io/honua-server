@@ -48,6 +48,18 @@ class AdmissionTests(unittest.TestCase):
         with patch.object(admission, "selection", side_effect=subprocess.CalledProcessError(1, "probe")):
             self.assertFalse(admission.admission("base", "head")[0])
 
+    def test_only_a_lasting_refusal_is_recorded_as_owed_to_full_ci(self):
+        cases = ((admission.UNAVAILABLE, "false"), ("Routing requires full coverage.", "true"))
+        with tempfile.TemporaryDirectory() as directory:
+            for reason, deferred in cases:
+                output = Path(directory) / "output"
+                output.write_text("")
+                environment = {"GITHUB_OUTPUT": str(output), "GITHUB_STEP_SUMMARY": f"{directory}/summary"}
+                with patch.dict(os.environ, environment), patch.object(sys, "argv", ["admission", "b", "h"]), \
+                        patch.object(admission, "admission", return_value=(False, reason)):
+                    admission.main()
+                self.assertIn(f"deferred={deferred}\n", output.read_text(), reason)
+
     def test_unknown_descriptor_defers(self):
         for descriptor in ({"shards": [], "run_all": "false"}, {"shards": "bad", "run_all": False}, {"shards": []}):
             with patch.object(admission, "selection", return_value=descriptor):
@@ -102,8 +114,8 @@ class AdmissionTests(unittest.TestCase):
 CANCELLATION = re.compile(r"gh run cancel|actions/runs/\S*/(force-)?cancel|cancelWorkflowRun|supersede_trailing_runs\.cancel\b"
                           r"|from supersede_trailing_runs import[^\n]*\bcancel\b|from supersede_trailing_runs import \([^)]*\bcancel\b")
 # Only these may cancel trunk CI: a full run cancels selective runs it covers, a
-# selective run cancels itself, and the native-image check lists the pattern as forbidden.
-ALLOWED_CANCELLERS = {"supersede_trailing_runs.py", "resolve-trailing-base.py", "native-image-impact.py"}
+# selective run cancels itself.
+ALLOWED_CANCELLERS = {"supersede_trailing_runs.py", "resolve-trailing-base.py"}
 
 
 class CoexistenceTests(unittest.TestCase):

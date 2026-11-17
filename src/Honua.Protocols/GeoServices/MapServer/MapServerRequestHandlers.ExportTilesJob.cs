@@ -25,7 +25,7 @@ using Honua.Protocols.GeoServices;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
-// Asynchronous durable exportTiles (Compact Cache V2 / TPKX) job lifecycle for MapServer (#2706).
+// Asynchronous durable exportTiles (Compact Cache V2 / TPKX) job lifecycle for MapServer.
 // The durable path is selected only when the request explicitly negotiates Compact Cache V2 and
 // the shared tile-export lifecycle service is registered; every other request keeps the existing
 // synchronous flat-ZIP / exploded-TPK behavior byte-for-byte.

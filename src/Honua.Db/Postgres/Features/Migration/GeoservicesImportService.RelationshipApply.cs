@@ -71,9 +71,10 @@ internal sealed partial class GeoservicesImportService
             {
                 if (!IsApplyEligible(relationship.Classification))
                 {
-                    // Emit an explicit deferred outcome for composite, many-to-many, or unsupported
-                    // relationships so the fidelity gate blocks cutover when the target is missing
-                    // a construct present in the source.
+                    // A composite / many-to-many / unsupported relationship used to drop out
+                    // of the apply loop here without leaving any trace, so the run reported success
+                    // while the target was missing a construct the source had. Emit an explicit
+                    // deferred outcome instead so the fidelity gate blocks on it.
                     skipped.Add(BuildSkippedOutcome(
                         relationship.SourceRelationshipId,
                         $"Relationship is classified '{relationship.Classification}' and is not recreated by automated "

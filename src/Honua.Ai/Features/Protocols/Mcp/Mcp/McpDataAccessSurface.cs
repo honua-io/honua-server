@@ -17,20 +17,6 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Central JSON-RPC dispatcher and registry for the open MCP data-access
-/// surface — the studio/data-access tools plus the bounded, read-only
-/// ops-evidence tools this repo serves publicly. This is the evidence side of
-/// the evidence-vs-intelligence boundary (ADR-0066); operator <em>intelligence</em>
-/// (diagnose/tune/upgrade-planning with rollback gates) lives in the private
-/// <c>honua-devops</c> operator surface, not here.
-/// Hosts the tool and resource catalogs, routes <c>initialize</c>,
-/// <c>ping</c>, <c>notifications/initialized</c>, <c>tools/list</c>,
-/// <c>tools/call</c>, <c>resources/list</c>, <c>resources/templates/list</c>,
-/// <c>resources/read</c>, <c>prompts/list</c>, and <c>prompts/get</c> methods,
-/// and converts domain exceptions into JSON-RPC errors via
-/// <see cref="McpErrorMapper"/>.
-/// </summary>
 internal sealed partial class McpDataAccessSurface
 {
     public static readonly IReadOnlyList<string> SupportedLegacyProtocolVersions = ["2025-06-18", "2025-03-26"];
@@ -53,7 +39,7 @@ internal sealed partial class McpDataAccessSurface
         ProposalEvidenceVerifier? proposalEvidenceVerifier = null)
     {
         _tools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
-        // Dynamic, runtime-published tools (#2483). None composed by default, so the
+        // Dynamic, runtime-published tools. None composed by default, so the
         // surface behaves exactly as before unless a host opts a source in.
         _toolSources = toolSources?.ToList() ?? [];
         _resources = [.. resources, OperatingSkillsResource.Instance];
@@ -69,31 +55,10 @@ internal sealed partial class McpDataAccessSurface
 
     public IReadOnlyCollection<string> ToolNames => (IReadOnlyCollection<string>)_tools.Keys;
 
-    /// <summary>
-    /// The registered tool handlers, exposed so the <c>honua_list_capabilities</c>
-    /// tool (#1949) can project the live tool catalog into a self-describing
-    /// manifest. This is the same single source-of-truth catalog served over both
-    /// the HTTP-SSE and stdio transports (#1950), so the manifest is
-    /// transport-symmetric.
-    /// </summary>
     public IReadOnlyCollection<IMcpTool> ToolHandlers => (IReadOnlyCollection<IMcpTool>)_tools.Values;
 
     public IReadOnlyList<IMcpResource> Resources => _resources;
 
-    /// <summary>
-    /// Dispatches a JSON-RPC request and returns a response envelope, or
-    /// <c>null</c> when the input is a valid MCP notification — meaning a
-    /// <c>notifications/*</c> method with no <c>id</c>. Per MCP 2025-03-26 the
-    /// <c>notifications/*</c> prefix is the only way a message carries
-    /// notification semantics: a non-<c>notifications/*</c> method without an
-    /// <c>id</c>, or a <c>notifications/*</c> message that carries an
-    /// <c>id</c>, is malformed and surfaced as <c>invalid_request</c>
-    /// (<c>id: null</c> when the server cannot echo one) so clients see the
-    /// error instead of an HTTP 202 that looks like success. Callers are
-    /// expected to validate the shape of the request id (string or integer)
-    /// before calling this method; invalid ids must be surfaced as JSON-RPC
-    /// <c>invalid_request</c> errors by the transport layer.
-    /// </summary>
     public async Task<McpJsonRpcResponse?> DispatchAsync(
         HttpContext httpContext,
         McpJsonRpcRequest request,
@@ -186,13 +151,6 @@ internal sealed partial class McpDataAccessSurface
         }
     }
 
-    /// <summary>
-    /// <see cref="HttpContext.Items"/> key under which <c>initialize</c> records
-    /// whether the client advertised the MCP elicitation capability, so the
-    /// transport can bind the flag to the session it issues on success
-    /// (honua-server#2484). Request-scoped: initialize and the session-creating
-    /// code run within the same <see cref="HttpContext"/>.
-    /// </summary>
     internal const string ElicitationCapabilityItemKey = "honua.mcp.client.elicitation";
 
     private static McpJsonRpcResponse HandleInitialize(HttpContext httpContext, McpJsonRpcRequest request)
@@ -228,14 +186,14 @@ internal sealed partial class McpDataAccessSurface
                 McpErrorMapper.InvalidArgument("initialize.params.clientInfo.name is required."));
         }
 
-        // honua-server#2484: record whether the client advertised the elicitation
+        // Record whether the client advertised the elicitation
         // capability so the session issued on success carries it. Per MCP
         // 2025-06-18 an elicitation-capable client sends `capabilities.elicitation`
         // as an object; presence of the key (as an object) is the signal.
         httpContext.Items[ElicitationCapabilityItemKey] =
             AdvertisesElicitation(parameters.Capabilities.Value);
 
-        // honua-server#3428: the SESSION leg of the workflow-view negotiation
+        // The SESSION leg of the workflow-view negotiation
         // contract. A client that wants the bounded surface for the whole session
         // sends initialize.params._meta["honua.io/workflow-view"]; the transport
         // binds the negotiated name to the session it issues on success, exactly
@@ -262,13 +220,13 @@ internal sealed partial class McpDataAccessSurface
         var negotiatedVersion = NegotiateProtocolVersion(parameters.ProtocolVersion);
         // list_changed is delivered only on the optional GET /mcp stream. Advertising
         // it while that stream is off (the default) tells clients a notification
-        // channel exists that this transport can never send (honua-server#5629).
+        // channel exists that this transport can never send.
         var listChanged = httpContext.RequestServices?.GetService<IOptions<McpOptions>>()
             ?.Value.ServerInitiatedStreamEnabled == true;
         var result = new McpInitializeResult
         {
             ProtocolVersion = negotiatedVersion,
-            // honua-server#1954: when the stream is enabled the server emits
+            // When the stream is enabled the server emits
             // notifications/tools/list_changed and notifications/resources/list_changed.
             // The prompt catalog stays static, so prompts.listChanged remains false.
             Capabilities = new McpServerCapabilities
@@ -287,10 +245,6 @@ internal sealed partial class McpDataAccessSurface
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpInitializeResult);
     }
 
-    /// <summary>
-    /// Wire name of a <see cref="McpSessionMode"/> for
-    /// <c>_meta["honua.io/session-mode"]</c>.
-    /// </summary>
     internal static string SessionModeName(McpSessionMode mode) => mode switch
     {
         McpSessionMode.Shared => "shared",
@@ -298,13 +252,6 @@ internal sealed partial class McpDataAccessSurface
         _ => "in-memory"
     };
 
-    /// <summary>
-    /// Returns <c>true</c> when the client's <c>initialize</c> capabilities object
-    /// advertises the MCP elicitation capability (honua-server#2484). Per MCP
-    /// 2025-06-18 a supporting client declares <c>"elicitation": {}</c>; presence
-    /// of the key as an object is the contract. A non-object <c>elicitation</c>
-    /// value is treated as not advertised.
-    /// </summary>
     private static bool AdvertisesElicitation(JsonElement capabilities) =>
         capabilities.ValueKind == JsonValueKind.Object
         && capabilities.TryGetProperty("elicitation", out var elicitation)
@@ -328,12 +275,12 @@ internal sealed partial class McpDataAccessSurface
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
-        // Merge the static, registry-bound catalog with any runtime-published tools
-        // (#2483). Static tools always win on a name collision, and the dynamic set is
+        // Merge the static, registry-bound catalog with any runtime-published tools.
+        // Static tools always win on a name collision, and the dynamic set is
         // empty unless a host composed a tool source, so default hosts are unchanged.
         var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);
 
-        // honua-server#3428: resolve the effective workflow view from the explicit
+        // Resolve the effective workflow view from the explicit
         // request / session / HTTP / server-profile negotiation contract. Selecting a view
         // can only NARROW discovery — it never grants authority. The reserved
         // `full` export is explicit and authenticated. Discovery is not authority: every tools/call still
@@ -420,43 +367,22 @@ internal sealed partial class McpDataAccessSurface
         }
     }
 
-    /// <summary>
-    /// Reads the view bound to the current session (negotiated at
-    /// <c>initialize</c>), which the transport rehydrates onto
-    /// <see cref="HttpContext.Items"/> for every request on that session.
-    /// </summary>
     private static string? SessionWorkflowView(HttpContext httpContext) =>
         httpContext.Items.TryGetValue(McpWorkflowViewNegotiation.HttpContextItemKey, out var value)
             ? value as string
             : null;
 
-    /// <summary>
-    /// Reads the server-profile default view
-    /// (<c>Mcp:WorkflowViews:DefaultView</c>). Resolved leniently so a lightweight
-    /// host that never bound the options behaves as if no default were configured.
-    /// </summary>
     private static string? ProfileDefaultWorkflowView(HttpContext httpContext) =>
         httpContext.RequestServices?
             .GetService<IOptionsMonitor<McpWorkflowViewOptions>>()?
             .CurrentValue.DefaultView
         ?? McpWorkflowViewCatalog.DefaultViewName;
 
-    /// <summary>
-    /// The client-facing message for a view name this server does not publish. It
-    /// names the published views so a client can recover without keeping its own
-    /// inventory.
-    /// </summary>
     private static string UnknownViewMessage(string requested) =>
         $"Unknown workflow view '{requested}'. Published views: "
         + string.Join(", ", McpWorkflowViewCatalog.Names)
         + $". Authenticated clients can use the '{McpWorkflowViewNegotiation.FullCatalogViewName}' export for the complete paginated catalog.";
 
-    /// <summary>
-    /// Resolves the runtime-published dynamic tools (#2483) from every registered
-    /// <see cref="IMcpToolSource"/>, excluding any name that collides with a static
-    /// tool (static wins) or a name already yielded by an earlier source (first
-    /// wins). Returns an empty list when no source is composed — the default host.
-    /// </summary>
     private async Task<IReadOnlyList<IMcpTool>> ResolveDynamicToolsAsync(CancellationToken cancellationToken)
     {
         if (_toolSources.Count == 0)
@@ -483,7 +409,6 @@ internal sealed partial class McpDataAccessSurface
         return merged;
     }
 
-    /// <summary>Returns the exact merged tool catalog served by <c>tools/list</c>.</summary>
     public async Task<IReadOnlyList<IMcpTool>> GetAllToolsAsync(CancellationToken cancellationToken = default)
     {
         var tools = _tools.Values.ToList();
@@ -491,14 +416,6 @@ internal sealed partial class McpDataAccessSurface
         return tools;
     }
 
-    /// <summary>
-    /// Returns the exact merged tool catalog served by <c>tools/list</c>, flagged
-    /// with whether each entry came from a runtime tool source (#2483) rather than
-    /// the static, registry-bound roster. The server-authored workflow-view
-    /// projection (honua-server#3428) derives from this, so a view never owns a
-    /// catalog of its own; the flag also fixes the wire order so a runtime
-    /// publication appends to the tools array instead of re-sorting it.
-    /// </summary>
     public async Task<IReadOnlyList<(IMcpTool Tool, bool IsDynamic)>> GetCatalogEntriesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -656,7 +573,7 @@ internal sealed partial class McpDataAccessSurface
 
         if (!_tools.TryGetValue(parameters.Name, out var tool))
         {
-            // Fall back to the runtime-published dynamic tools (#2483) before
+            // Fall back to the runtime-published dynamic tools before
             // declaring the name unknown, so a published operation tool advertised in
             // tools/list is callable. Static tools were checked first, so they win.
             tool = await ResolveDynamicToolAsync(parameters.Name, cancellationToken).ConfigureAwait(false);
@@ -717,6 +634,7 @@ internal sealed partial class McpDataAccessSurface
             }
 
             invocationStarted = true;
+            McpDeclaredArgumentGuard.EnsureDeclared(tool, parameters.Arguments);
             result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);
@@ -767,12 +685,6 @@ internal sealed partial class McpDataAccessSurface
             : SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
     }
 
-    /// <summary>
-    /// Reads only the tools/call name so the anonymous authentication gate can
-    /// identify a registered Studio tool for denial auditing. This intentionally
-    /// does not deserialize the full params object: malformed payloads and
-    /// unknown names must remain indistinguishable to anonymous callers.
-    /// </summary>
     private static bool TryResolveRegisteredToolName(JsonElement? parameters, out string toolName)
     {
         toolName = string.Empty;
@@ -839,12 +751,6 @@ internal sealed partial class McpDataAccessSurface
         }
     }
 
-    /// <summary>
-    /// Parses the optional opaque <c>cursor</c> from a paginated list request's
-    /// <c>params</c>. Returns <c>false</c> with a populated
-    /// <paramref name="errorResponse"/> when the params shape is malformed; a
-    /// missing or null cursor is valid and yields <c>null</c>.
-    /// </summary>
     private static bool TryReadCursor(
         McpJsonRpcRequest request,
         out string? cursor,
@@ -1037,11 +943,6 @@ internal sealed partial class McpDataAccessSurface
         return McpErrorMapper.Codes.Internal;
     }
 
-    /// <summary>
-    /// MCP <c>ping</c> is a liveness check. The result must be a successful
-    /// JSON-RPC response whose <c>result</c> is an empty object, not
-    /// method-not-found.
-    /// </summary>
     private static McpJsonRpcResponse Ping(McpJsonRpcRequest request)
     {
         using var document = JsonDocument.Parse("{}");

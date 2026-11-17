@@ -32,8 +32,8 @@ the main per-provider variable and is exercised by the conformance matrix tests.
 Each `AudienceRestriction` condition must include the configured SP entity ID among its
 `Audience` values. Alternatives within a condition are allowed; every separate condition
 must pass. Assertions are accepted only once, including concurrent submissions on the same
-node. With Redis configured, replay claims are shared across replicas and fail closed when
-Redis is unavailable. Without Redis, replay protection applies to the current node only.
+node. With a system database, replay claims are shared across replicas and fail closed when
+the database is unavailable. Without one, replay protection applies to the current node only.
 
 ### Per-provider attribute configuration
 
@@ -82,6 +82,13 @@ shared record before clearing the cookie, including for other replicas.
   operator's role-mapping configuration.
 
 ## SCIM 2.0 provisioning
+
+`Scim:BearerToken` must contain at least 32 characters; use a randomly generated secret.
+SCIM authentication shares the `Authentication:FailedAttempts` source limit. A blocked
+source receives HTTP 429 with `Retry-After`, including on discovery endpoints.
+Hosted IdPs provision from egress addresses shared by many tenants, so wrong tokens
+sent from one tenant could block your provisioning. Add your IdP's published egress
+ranges to `Authentication:FailedAttempts:ExemptNetworks`; the token check still applies.
 
 `Scim:OidcIssuer` is required whenever `Scim:BearerToken` enables provisioning and must
 match the exact OIDC `iss` value for the IdP connected to this SCIM endpoint. Honua

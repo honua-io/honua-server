@@ -5,11 +5,6 @@ using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Registers source-generated <see cref="JsonTypeInfoResolver"/> entries with ASP.NET Core's
-/// minimal-API JSON pipeline. Splitting this off keeps <c>Program.cs</c> manageable while
-/// preserving the exact resolver order (the first matching context wins per type).
-/// </summary>
 internal static class JsonContextRegistration
 {
     public static IServiceCollection AddHonuaJsonContexts(this IServiceCollection services)
@@ -96,6 +91,7 @@ internal static class JsonContextRegistration
         Honua.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
 #endif
         Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
+        Honua.Server.Features.Admin.Models.SettingsRevisionJsonContext.Default,
         Honua.Server.Features.Admin.Models.TenantJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
@@ -148,10 +144,10 @@ internal static class JsonContextRegistration
 #if !HONUA_EXCLUDE_OGC_API
         Honua.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default,
 #endif
-        // Temporal history slice 2-5 request/response bodies (#1166): registered for [FromBody]
+        // Temporal history slice 2-5 request/response bodies: registered for [FromBody]
         // deserialization through the HTTP JSON options chain.
         Honua.Server.Features.Temporal.TemporalHistorySlicesJsonContext.Default,
-        // Data-enrichment admin DTOs (#2280): RegisterEnrichmentDatasetRequest /
+        // Data-enrichment admin DTOs: RegisterEnrichmentDatasetRequest /
         // UpdateEnrichmentDatasetRequest are [FromBody]-bound, so the source-generated context
         // must be part of the minimal-API resolver or the host aborts at startup.
         Honua.Server.Features.DataEnrichment.Models.EnrichmentJsonContext.Default);

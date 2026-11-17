@@ -24,9 +24,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// OGC API Processes job lifecycle endpoints (status, results, dismiss, list).
-/// </summary>
 internal static class JobEndpoints
 {
     private const string BasePath = "/ogc/processes";
@@ -57,7 +54,7 @@ internal static class JobEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .ExcludeFromDescription();
 
-        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // HANDLER-AUTHORIZED: the handler calls
         // OperatorApprovalGate.CheckAuthorizationAsync (with destructive=true) for
         // OperatorResourceType.Job + Execute before any mutation; unauth
         // callers receive an OGC-shaped 401/403. Marked AllowAnonymous so the
@@ -748,7 +745,7 @@ internal static class JobEndpoints
                 continue;
             }
 
-            // Staged output artifacts (#3089) link through the canonical authenticated
+            // Staged output artifacts link through the canonical authenticated
             // content route, so no provider location or expiring URL leaks into result
             // links. A link is only
             // advertised when this host's registered output store can actually serve

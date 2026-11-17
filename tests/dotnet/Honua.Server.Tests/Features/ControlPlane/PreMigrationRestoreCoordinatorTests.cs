@@ -2,8 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.ControlPlane;
@@ -170,63 +168,6 @@ public sealed class PreMigrationRestoreCoordinatorTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ComposeSocketMissing_DoesNotStartThePriorImage()
-    {
-        using var root = new TempBackup();
-        var harness = NewHarness();
-        harness.TargetKind = DeployTargetKind.SelfHostedRolling;
-        harness.Cell.ComposeBackupDirectory = root.Path;
-        harness.Cell.ComposeProject = "honua";
-        harness.Cell.ComposeSocketPath = string.Empty;
-        var completion = await harness.Coordinator.ExecuteAsync(Payload(root.BackupId), Request(), harness.Starter, CancellationToken.None);
-
-        completion.Code.Should().Be(PreMigrationRestoreCodes.TransportUnavailable);
-        harness.Events.Should().NotContain("compose");
-        harness.Events.Should().NotContain("start");
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task ComposeRestore_PriorImageAppliesItsMigrations_CompletesReadback()
-    {
-        using var root = new TempBackup();
-        var harness = NewHarness();
-        harness.TargetKind = DeployTargetKind.SelfHostedRolling;
-        harness.Cell.ComposeBackupDirectory = root.Path;
-        harness.Cell.ComposeProject = "honua";
-        harness.Cell.ComposeSocketPath = "/tmp/honua-compose.sock";
-        harness.Cell.Revisions = [new RevisionSchemaOption { Revision = "rev-141", MaxSchema = 142 }];
-        harness.JournalSnapshot = Journal(143, "reader-incompatible");
-        harness.Probed = Journal(142, "expand");
-        harness.ComposeConfigured = true;
-        harness.ComposeResult = new ComposeRollbackResult(true, null, true, 141, true);
-        var completion = await harness.Coordinator.ExecuteAsync(Payload(root.BackupId), Request(), harness.Starter, CancellationToken.None);
-        ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeTrue();
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task ComposeSuccess_DoesNotCallTheDeployStarter()
-    {
-        using var root = new TempBackup();
-        var harness = NewHarness();
-        harness.TargetKind = DeployTargetKind.SelfHostedRolling;
-        harness.Cell.ComposeBackupDirectory = root.Path;
-        harness.Cell.ComposeProject = "honua";
-        harness.Cell.ComposeSocketPath = "/tmp/honua-compose.sock";
-        harness.ComposeConfigured = true;
-        harness.ComposeResult = new ComposeRollbackResult(true, null, true, 141, true);
-        var completion = await harness.Coordinator.ExecuteAsync(Payload(root.BackupId), Request(), harness.Starter, CancellationToken.None);
-
-        ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeTrue();
-        harness.Events.Should().Contain("compose");
-        harness.Events.Should().NotContain("start");
-        harness.Events.Should().NotContain("restore");
-        completion.OperationId.Should().StartWith("restore-");
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
     public async Task CompatibleRollback_StartsWithoutRestoring()
     {
         var harness = NewHarness();
@@ -295,38 +236,10 @@ public sealed class PreMigrationRestoreCoordinatorTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task CompatibleAzureRollback_StartsWithoutRestoring()
-    {
-        var harness = NewHarness();
-        harness.TargetKind = DeployTargetKind.AzureContainerApps;
-        harness.JournalSnapshot = Journal(141, "expand");
-        harness.Cell.Revisions = [new RevisionSchemaOption { Revision = "rev-141", MaxSchema = 141 }];
-        var completion = await harness.Coordinator.ExecuteAsync(Payload(backupId: null), Request(), harness.Starter, CancellationToken.None);
-
-        ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeTrue();
-        harness.Events.Should().Contain("start");
-        harness.Events.Should().NotContain("restore");
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
     public async Task LambdaRestoreRequired_FailsClosedWhenNoDurableWorkerIsAvailable()
     {
         var harness = NewHarness();
         harness.TargetKind = DeployTargetKind.AwsLambda;
-        var completion = await harness.Coordinator.ExecuteAsync(Payload(SnapshotId), Request(), harness.Starter, CancellationToken.None);
-
-        completion.Code.Should().Be(PreMigrationRestoreCodes.RetargetUnsupported);
-        harness.Events.Should().NotContain("restore");
-        harness.Events.Should().NotContain("start");
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task AzureRestoreRequired_DoesNotStartThePriorImage()
-    {
-        var harness = NewHarness();
-        harness.TargetKind = DeployTargetKind.AzureFunctions;
         var completion = await harness.Coordinator.ExecuteAsync(Payload(SnapshotId), Request(), harness.Starter, CancellationToken.None);
 
         completion.Code.Should().Be(PreMigrationRestoreCodes.RetargetUnsupported);
@@ -346,25 +259,6 @@ public sealed class PreMigrationRestoreCoordinatorTests
         harness.Events.Should().Contain("start");
         harness.Events.Should().NotContain("customer");
         ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeFalse();
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public async Task ComposeOmitsBackupId_SelectsNewestVerifyingManifest()
-    {
-        using var root = new TempBackup();
-        root.Write("backup-" + new string('a', 32), "rev-999", "2026-10-31T00:00:00Z", "dump");
-        var harness = NewHarness();
-        harness.TargetKind = DeployTargetKind.SelfHostedRolling;
-        harness.Cell.ComposeBackupDirectory = root.Path;
-        harness.Cell.ComposeProject = "honua";
-        harness.Cell.ComposeSocketPath = "/tmp/honua-compose.sock";
-        harness.ComposeConfigured = true;
-        harness.ComposeResult = new ComposeRollbackResult(true, null, true, 141, true);
-        var completion = await harness.Coordinator.ExecuteAsync(Payload(backupId: null), Request(), harness.Starter, CancellationToken.None);
-
-        ReaderIncompatibleRestorePolicy.IsReportedSuccess(completion).Should().BeTrue();
-        harness.ComposeBackupId.Should().Be(root.BackupId);
     }
 
     [UnitTest]
@@ -524,12 +418,6 @@ public sealed class PreMigrationRestoreCoordinatorTests
 
         public bool AuditOk { get; set; } = true;
 
-        public bool ComposeConfigured { get; set; }
-
-        public ComposeRollbackResult ComposeResult { get; set; } = new(false, null, false, null, false);
-
-        public string? ComposeBackupId { get; set; }
-
         public string? StartId { get; set; } = "op-1";
 
         public OperationBackendStatus? AuditStatus { get; set; }
@@ -542,7 +430,7 @@ public sealed class PreMigrationRestoreCoordinatorTests
                 new RecordingSecrets(this), new StaticMonitor(this), Options.Create(Cell)),
             new PreMigrationRestoreExecutionService(
                 new RecordingRevisions(this), new RecordingRds(this), new RecordingSecrets(this),
-                new RecordingCompose(this), new RecordingProbe(this), new RecordingCustomer(this),
+                new RecordingProbe(this), new RecordingCustomer(this),
                 new RecordingAudit(this), Options.Create(Cell)));
 
     }
@@ -607,21 +495,9 @@ public sealed class PreMigrationRestoreCoordinatorTests
             => Task.FromResult<string?>("db.internal");
     }
 
-    private sealed class RecordingCompose(Harness harness) : IComposeRollbackTransport
-    {
-        public bool IsConfigured => harness.ComposeConfigured;
-
-        public Task<ComposeRollbackResult> RollbackAsync(string image, string? backupId, string? requestId, CancellationToken cancellationToken)
-        {
-            harness.Events.Add("compose");
-            harness.ComposeBackupId = backupId;
-            return Task.FromResult(harness.ComposeResult);
-        }
-    }
-
     private sealed class RecordingProbe(Harness harness) : IRestoredSchemaProbe
     {
-        public Task<SchemaJournalSnapshot> ProbeAsync(string? endpoint, CancellationToken cancellationToken)
+        public Task<SchemaJournalSnapshot> ProbeAsync(string endpoint, CancellationToken cancellationToken)
         {
             harness.Events.Add("probe");
             return Task.FromResult(harness.Probed);
@@ -666,60 +542,5 @@ public sealed class PreMigrationRestoreCoordinatorTests
             {
             }
         }
-    }
-
-    private sealed class TempBackup : IDisposable
-    {
-        public TempBackup()
-        {
-            Path = Directory.CreateTempSubdirectory("honua-restore-").FullName;
-            var bytes = Encoding.UTF8.GetBytes("dump");
-            var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-            BackupId = "backup-" + hash[..32];
-            var directory = System.IO.Path.Combine(Path, BackupId);
-            Directory.CreateDirectory(directory);
-            File.WriteAllBytes(System.IO.Path.Combine(directory, "database.dump"), bytes);
-            var manifest = new ComposeManifestFile
-            {
-                BackupId = BackupId,
-                Project = "honua",
-                Image = "rev-141",
-                SchemaVersion = 141,
-                Sha256 = hash,
-                DumpFile = "database.dump",
-                CreatedAt = DateTimeOffset.Parse("2026-10-30T00:00:00Z", CultureInfo.InvariantCulture),
-            };
-            File.WriteAllText(
-                System.IO.Path.Combine(directory, "manifest.json"),
-                JsonSerializer.Serialize(manifest, PreMigrationRestoreJsonContext.Default.ComposeManifestFile));
-        }
-
-        public string Path { get; }
-
-        public string BackupId { get; }
-
-        public void Write(string backupId, string image, string createdAt, string body)
-        {
-            var bytes = Encoding.UTF8.GetBytes(body);
-            var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-            var directory = System.IO.Path.Combine(Path, backupId);
-            Directory.CreateDirectory(directory);
-            File.WriteAllBytes(System.IO.Path.Combine(directory, "database.dump"), bytes);
-            var manifest = new ComposeManifestFile
-            {
-                BackupId = backupId,
-                Project = "honua",
-                Image = image,
-                SchemaVersion = 141,
-                Sha256 = hash,
-                DumpFile = "database.dump",
-                CreatedAt = DateTimeOffset.Parse(createdAt, CultureInfo.InvariantCulture),
-            };
-            File.WriteAllText(
-                System.IO.Path.Combine(directory, "manifest.json"),
-                JsonSerializer.Serialize(manifest, PreMigrationRestoreJsonContext.Default.ComposeManifestFile));
-        }
-
-        public void Dispose() => Directory.Delete(Path, recursive: true);
     }
 }

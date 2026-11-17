@@ -7,8 +7,7 @@ variable `HONUA_SERVING_IMAGE_SKIP` is exactly `true`.
 
 The content address is the v3 digest introduced by #3331 and produced by
 `scripts/ci/native-image-impact.py`: a SHA-256 over the selected Git tree paths,
-file modes, and blob IDs for `serving_generic`, `serving_lambda`, or
-`serving_functions`. It therefore consumes the same selector contract built in
+file modes, and blob IDs for `serving_generic` or `serving_lambda`. It therefore consumes the same selector contract built in
 #3227 and moved into trusted default-branch observation by #3237. Branch names,
 commit proximity, Buildx cache hits, and path-only comparisons are not reuse
 evidence.
@@ -42,9 +41,11 @@ Keep `HONUA_SERVING_IMAGE_SKIP` absent or `false` until all of these are true:
    an earlier successful authoritative leg;
 4. zero missing/malformed-marker cases produce a skip in fixtures or retained
    run summaries;
-5. a seven-day receipt audit of the native-image observer shows receipt loss
-   below 5% (the earlier Impact Routing Evidence Ledger was retired under
-   #7880, so this audit has to be rebuilt first); and
+5. a seven-day audit of authoritative `Serving Image Boundary` runs shows
+   missing digest, decision, or verification evidence for fewer than 5% of all
+   selected variant legs, including failed legs (the native-image observer and
+   earlier Impact Routing Evidence Ledger were retired under #7880 and cannot
+   supply this audit); and
 6. a reviewer confirms PR Gate path filters, fork handling, permissions,
    publication lanes, and nightly/release/deploy re-verification are unchanged.
 

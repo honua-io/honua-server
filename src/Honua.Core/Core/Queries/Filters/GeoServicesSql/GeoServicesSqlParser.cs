@@ -85,7 +85,9 @@ public sealed class GeoServicesSqlParser
         "ST_DISTANCE", "ST_LENGTH", "ST_AREA", "ST_X", "ST_Y",
     };
 
-    public FilterExpression Parse(string whereClause)
+    public FilterExpression Parse(string whereClause) => Parse(whereClause, null);
+
+    public FilterExpression Parse(string whereClause, Func<string, object>? parseNumber)
     {
         if (string.IsNullOrWhiteSpace(whereClause))
         {
@@ -93,7 +95,7 @@ public sealed class GeoServicesSqlParser
         }
 
         _tokens.Clear();
-        _tokens.AddRange(new Lexer(whereClause).Tokenize());
+        _tokens.AddRange(new Lexer(whereClause, parseNumber).Tokenize());
         _current = 0;
         _expressionDepth = 0;
 
@@ -952,6 +954,7 @@ public sealed class GeoServicesSqlParser
     private sealed class Lexer
     {
         private readonly string _source;
+        private readonly Func<string, object>? _parseNumber;
         private readonly List<Token> _tokens = [];
         private int _start;
         private int _current;
@@ -981,9 +984,10 @@ public sealed class GeoServicesSqlParser
             ["END"] = TokenType.End
         };
 
-        public Lexer(string source)
+        public Lexer(string source, Func<string, object>? parseNumber)
         {
             _source = source ?? string.Empty;
+            _parseNumber = parseNumber;
         }
 
         public List<Token> Tokenize()
@@ -1246,7 +1250,7 @@ public sealed class GeoServicesSqlParser
                 {
                     throw new ArgumentException($"Numeric literal '{text}' is not a finite number.");
                 }
-                AddToken(TokenType.Number, doubleValue);
+                AddToken(TokenType.Number, _parseNumber?.Invoke(text) ?? doubleValue);
                 return;
             }
 

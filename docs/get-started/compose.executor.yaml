@@ -35,7 +35,6 @@ services:
       PUBLIC_BASE_URL: "http://localhost:${HONUA_MANAGER_PORT:-18082}"
       ConnectionStrings__DefaultConnection: "Host=compose-manager-postgres;Database=honua_manager;Username=honua"
       HONUA_DATABASE_PASSWORD_FILE: /run/secrets/honua_manager_postgres_password
-      ConnectionStrings__Redis: compose-manager-redis:6379
       HONUA_SECRET_FILE__HONUA_ADMIN_PASSWORD: /run/secrets/honua_manager_admin_password
       HONUA_SECRET_FILE__AuditLog__ChainVerification__Key: /run/secrets/honua_manager_audit_chain_key
       HONUA_SECRET_FILE__Security__ConnectionEncryption__MasterKey: /run/secrets/honua_manager_master_key
@@ -44,6 +43,7 @@ services:
       Database__MigrationSafety__ContractApplyPolicy: Gate
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
+      SceneGeneration__OutputRoot: /var/lib/honua/storage/scenes-generated
       ControlPlane__PlatformRelease__Version: ${HONUA_RELEASE_VERSION:?Set the release version}
       ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
       ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
@@ -62,8 +62,6 @@ services:
         condition: service_completed_successfully
       compose-manager-postgres:
         condition: service_healthy
-      compose-manager-redis:
-        condition: service_healthy
       compose-executor:
         condition: service_healthy
     restart: unless-stopped
@@ -78,18 +76,6 @@ services:
       - compose-executor-socket:/run/honua-compose
     secrets: [honua_manager_postgres_password, honua_manager_admin_password, honua_manager_audit_chain_key,
               honua_manager_master_key, honua_keyring_password]
-  compose-manager-redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
-    volumes:
-      - compose-manager-redis:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
-
   compose-manager-postgres:
     image: pgrouting/pgrouting:17-3.5-3.7.3
     environment:
@@ -162,7 +148,6 @@ services:
       - compose-executor-socket:/run/honua-compose
     secrets: [honua_admin_password]
 volumes:
-  compose-manager-redis:
   compose-manager-postgres:
   compose-manager-storage:
   compose-executor-socket:

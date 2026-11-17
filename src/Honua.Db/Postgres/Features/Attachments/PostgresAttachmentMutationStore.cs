@@ -21,7 +21,8 @@ internal sealed partial class PostgresAttachmentMutationStore(
     public async Task DeleteAsync(AttachmentDeleteRequest request, CancellationToken cancellationToken = default)
     {
         Validate(request);
-        await using var connection = (NpgsqlConnection)await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionOwner = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionOwner.RequireNpgsqlConnection();
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var database = new AttachmentPublicationTransaction(connection, transaction, cancellationToken);
         var fingerprint = Fingerprint(request.AttachmentId);

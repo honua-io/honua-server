@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Security.Cryptography;
-using System.Text;
 using Honua.Infrastructure.Authentication;
 using Npgsql;
 using NpgsqlTypes;
@@ -18,7 +16,7 @@ internal sealed class PostgresAdminApiKeyStore(
 
     private const string Columns =
         "id, name, key_prefix, key_hash, permissions, created_at, updated_at, expires_at, last_used_at, rotated_at, revoked_at, created_by, " +
-        "allowed_referrers, allowed_ip_ranges";
+        "allowed_referrers, allowed_ip_ranges, key_salt";
 
     private const int DisplayPrefixLength = 12;
     private const int WriteAttempts = 16;
@@ -62,7 +60,7 @@ internal sealed class PostgresAdminApiKeyStore(
         var now = _timeProvider.GetUtcNow();
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
         var record = new AdminApiKeyRecord(
-            Guid.NewGuid(), name, DisplayPrefix(key), HashKey(key), NormalizePermissions(permissions),
+            Guid.NewGuid(), name, DisplayPrefix(key), AdminApiKeyHashing.HashLegacy(key), NormalizePermissions(permissions),
             now, now, expiresAt, null, null, null, createdBy,
             AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
             AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
@@ -71,7 +69,7 @@ internal sealed class PostgresAdminApiKeyStore(
         await using var command = new NpgsqlCommand($"""
             INSERT INTO {_table} ({Columns})
             VALUES (@id, @name, @prefix, @hash, @permissions, @created, @updated, @expires, NULL, NULL, NULL, @createdBy,
-                    @allowedReferrers, @allowedIpRanges)
+                    @allowedReferrers, @allowedIpRanges, NULL)
             """, connection);
         command.Parameters.AddWithValue("id", record.Id);
         command.Parameters.AddWithValue("name", record.Name);
@@ -135,14 +133,15 @@ internal sealed class PostgresAdminApiKeyStore(
             // unconditional write would put an unrevoked record back over a concurrent revocation.
             await using var command = new NpgsqlCommand($"""
                 UPDATE {_table}
-                SET key_prefix = @prefix, key_hash = @hash, updated_at = @now, rotated_at = @now, last_used_at = NULL
-                WHERE id = @id AND key_hash = @previous AND revoked_at IS NULL
+                SET key_prefix = @prefix, key_hash = @hash, key_salt = NULL, updated_at = @now, rotated_at = @now, last_used_at = NULL
+                WHERE id = @id AND key_hash = @previous AND key_salt IS NOT DISTINCT FROM @previousSalt AND revoked_at IS NULL
                 RETURNING {Columns}
                 """, connection);
             command.Parameters.AddWithValue("id", id);
             command.Parameters.AddWithValue("prefix", DisplayPrefix(key));
-            command.Parameters.Add(new NpgsqlParameter("hash", NpgsqlDbType.Bytea) { Value = HashKey(key) });
+            command.Parameters.Add(new NpgsqlParameter("hash", NpgsqlDbType.Bytea) { Value = AdminApiKeyHashing.HashLegacy(key) });
             command.Parameters.Add(new NpgsqlParameter("previous", NpgsqlDbType.Bytea) { Value = existing.KeyHash });
+            command.Parameters.Add(new NpgsqlParameter("previousSalt", NpgsqlDbType.Bytea) { Value = (object?)existing.KeySalt ?? DBNull.Value });
             command.Parameters.AddWithValue("now", now);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -205,22 +204,10 @@ internal sealed class PostgresAdminApiKeyStore(
             return null;
         }
 
-        var hash = HashKey(keyMaterial);
         var now = _timeProvider.GetUtcNow();
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        AdminApiKeyRecord? record;
-        await using (var select = new NpgsqlCommand($"""
-            SELECT {Columns} FROM {_table}
-            WHERE key_hash = @hash AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > @now)
-            """, connection))
-        {
-            select.Parameters.Add(new NpgsqlParameter("hash", NpgsqlDbType.Bytea) { Value = hash });
-            select.Parameters.AddWithValue("now", now);
-            await using var reader = await select.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            record = await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? Read(reader) : null;
-        }
-
-        if (record is null || !CryptographicOperations.FixedTimeEquals(hash, record.KeyHash))
+        var record = await FindMatchingKeyAsync(connection, keyMaterial, cancellationToken).ConfigureAwait(false);
+        if (record is null)
         {
             return null;
         }
@@ -235,16 +222,41 @@ internal sealed class PostgresAdminApiKeyStore(
         await using var update = new NpgsqlCommand($"""
             UPDATE {_table}
             SET last_used_at = @now, updated_at = @now
-            WHERE id = @id AND key_hash = @hash AND revoked_at IS NULL
+            WHERE id = @id AND key_hash = @hash AND key_salt IS NOT DISTINCT FROM @salt AND revoked_at IS NULL
             RETURNING {Columns}
             """, connection);
         update.Parameters.AddWithValue("id", record.Id);
-        update.Parameters.Add(new NpgsqlParameter("hash", NpgsqlDbType.Bytea) { Value = hash });
+        update.Parameters.Add(new NpgsqlParameter("hash", NpgsqlDbType.Bytea) { Value = record.KeyHash });
+        update.Parameters.Add(new NpgsqlParameter("salt", NpgsqlDbType.Bytea) { Value = (object?)record.KeySalt ?? DBNull.Value });
         update.Parameters.AddWithValue("now", now);
         await using var updated = await update.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await updated.ReadAsync(cancellationToken).ConfigureAwait(false)
             ? new AdminApiKeyValidationResult(Read(updated))
             : null;
+    }
+
+    private async Task<AdminApiKeyRecord?> FindMatchingKeyAsync(
+        NpgsqlConnection connection, string keyMaterial, CancellationToken cancellationToken)
+    {
+        await using var select = new NpgsqlCommand($"""
+            SELECT {Columns} FROM {_table}
+            WHERE ((key_salt IS NULL AND key_hash = @hash) OR (key_salt IS NOT NULL AND key_prefix = @prefix))
+              AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > @now)
+            """, connection);
+        select.Parameters.Add(new NpgsqlParameter("hash", NpgsqlDbType.Bytea) { Value = AdminApiKeyHashing.HashLegacy(keyMaterial) });
+        select.Parameters.AddWithValue("prefix", DisplayPrefix(keyMaterial));
+        select.Parameters.AddWithValue("now", _timeProvider.GetUtcNow());
+        await using var reader = await select.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var candidate = Read(reader);
+            if (AdminApiKeyHashing.Verify(keyMaterial, candidate.KeyHash, candidate.KeySalt))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private async Task<AdminApiKeyRecord?> ReadOneAsync(NpgsqlConnection connection, Guid id, CancellationToken cancellationToken)
@@ -269,7 +281,8 @@ internal sealed class PostgresAdminApiKeyStore(
         reader.IsDBNull(10) ? null : reader.GetFieldValue<DateTimeOffset>(10),
         reader.IsDBNull(11) ? null : reader.GetString(11),
         reader.IsDBNull(12) ? null : reader.GetFieldValue<string[]>(12),
-        reader.IsDBNull(13) ? null : reader.GetFieldValue<string[]>(13));
+        reader.IsDBNull(13) ? null : reader.GetFieldValue<string[]>(13),
+        reader.IsDBNull(14) ? null : reader.GetFieldValue<byte[]>(14));
 
     private static NpgsqlParameter TextArrayOrNull(string name, IReadOnlyList<string>? values)
         => new(name, NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = values is { Count: > 0 } ? values.ToArray() : DBNull.Value };
@@ -292,6 +305,4 @@ internal sealed class PostgresAdminApiKeyStore(
     }
 
     private static string DisplayPrefix(string key) => key[..Math.Min(DisplayPrefixLength, key.Length)];
-
-    private static byte[] HashKey(string key) => SHA256.HashData(Encoding.UTF8.GetBytes(key));
 }

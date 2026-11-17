@@ -305,7 +305,6 @@ test('every paid step of the trusted attestation is behind the shed', () => {
   const steps = attestJob.split('\n      - ').slice(1);
   for (const marker of [
     'uses: actions/checkout@',
-    'name: Bind the immutable review-first measurement policy',
     'name: Attest current PR head',
   ]) {
     const step = steps.find(candidate => candidate.includes(marker));
@@ -333,6 +332,8 @@ const runReviewStatus = async (review, statusError) => {
   const sandbox = {
     evaluateCurrentReview: async () => review,
     prNumber: 42,
+    // These cases model an open pull request; closed ones are covered separately.
+    shedIfClosed: async () => false,
     context: { repo: { owner: 'honua-io', repo: 'honua-server' }, serverUrl: 'https://github.com' },
     core: { notice() {}, summary, setFailed(message) { result.failure = message; } },
     github: { rest: { repos: { async createCommitStatus(status) {

@@ -32,7 +32,9 @@ internal static partial class SensorThingsEndpoints
             .WithName("StaServiceDocument")
             .WithSummary("Discover the available SensorThings entity sets")
             .WithTags("SensorThings")
-            .Produces<StaServiceDocument>(200, "application/json");
+            .Produces<StaServiceDocument>(200, "application/json")
+            .Produces(401)
+            .Produces(403);
 
         // Each route is a literal first argument to MapGet so the source-scan
         // governance can anchor every EndpointRegistry entry to a concrete
@@ -55,6 +57,8 @@ internal static partial class SensorThingsEndpoints
             .WithTags("SensorThings")
             .Produces<StaEntitySet<StaObservation>>(200, "application/json")
             .Produces(400)
+            .Produces(401)
+            .Produces(403)
             .Produces(404)
             .Produces(501);
 
@@ -84,6 +88,8 @@ internal static partial class SensorThingsEndpoints
             .WithTags("SensorThings")
             .Produces(200, contentType: "application/json")
             .Produces(400)
+            .Produces(401)
+            .Produces(403)
             .Produces(501);
 
     private static void ConfigureById(RouteHandlerBuilder builder, string entitySet) =>
@@ -94,6 +100,8 @@ internal static partial class SensorThingsEndpoints
             .WithTags("SensorThings")
             .Produces(200, contentType: "application/json")
             .Produces(400)
+            .Produces(401)
+            .Produces(403)
             .Produces(404)
             .Produces(501);
 
@@ -103,6 +111,11 @@ internal static partial class SensorThingsEndpoints
         HttpContext context,
         [FromServices] ISensorThingsEntityStore store)
     {
+        if (RequireReadAccess(context) is { } denied)
+        {
+            return denied;
+        }
+
         var staBase = StaBase(context);
         var unresolved = await store.CountUnresolvedFeaturesAsync(context.RequestAborted).ConfigureAwait(false);
         if (context.RequestServices.GetRequiredService<IConfiguration>().GetValue<bool>("SensorThings:ConformantProfile") && unresolved > 0)

@@ -322,9 +322,24 @@ runs:
       shell: bash
       run: |
         python3 -m pip install -r scripts/ci/okf-requirements.txt
+        if [[ "${GITHUB_EVENT_NAME}" == 'pull_request' ]]; then
+          git rev-parse --verify 'HEAD^2^{commit}' >/dev/null
+          python3 scripts/ci/check-submitted-generated-files.py --base HEAD^1 --prepare
+        fi
         timeout "${{ inputs.architecture-timeout-minutes }}m" \
           bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
+        if [[ "${GITHUB_EVENT_NAME}" == 'pull_request' ]]; then
+          git rev-parse --verify 'HEAD^2^{commit}' >/dev/null
+          python3 scripts/ci/check-submitted-generated-files.py --base HEAD^1
+        fi
         bash scripts/ci/report-generated-file-drift.sh
+
+    - name: Validate operation-capability join against fresh catalog
+      if: inputs.phase != 'build' && contains(fromJSON('["all","architecture"]'), inputs.test-group)
+      shell: bash
+      run: |
+        python3 scripts/ci/generate-operation-capability.test.py
+        python3 scripts/ci/generate-operation-capability.py --check
 
     # Server.Tests compares the admin parity exports with the current contract,
     # so the server groups refresh them as the full regeneration above does.

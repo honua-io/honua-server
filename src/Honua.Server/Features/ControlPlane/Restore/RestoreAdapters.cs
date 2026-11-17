@@ -3,7 +3,6 @@
 
 using System.Data.Common;
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -18,7 +17,7 @@ namespace Honua.ControlPlane;
 
 internal interface IRestoredConnectionOpener
 {
-    Task<DbConnection?> OpenAsync(string? endpoint, CancellationToken cancellationToken);
+    Task<DbConnection?> OpenAsync(string endpoint, CancellationToken cancellationToken);
 }
 
 // The repointed connection string must not be logged.
@@ -298,7 +297,7 @@ internal sealed class FilePreMigrationRestoreAudit(IOptions<RestoreCellOptions> 
 
 internal sealed class JournalRestoredSchemaProbe(IRestoredConnectionOpener opener) : IRestoredSchemaProbe
 {
-    public async Task<SchemaJournalSnapshot> ProbeAsync(string? endpoint, CancellationToken cancellationToken)
+    public async Task<SchemaJournalSnapshot> ProbeAsync(string endpoint, CancellationToken cancellationToken)
     {
         DbConnection? connection;
         try
@@ -352,87 +351,6 @@ internal sealed class HttpServingCustomerProbe(IHttpClientFactory httpClientFact
     }
 }
 
-internal sealed class ComposeRollbackSocketClient(IOptions<RestoreCellOptions> options) : IComposeRollbackTransport
-{
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(10);
-
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(options.Value.ComposeSocketPath);
-
-    public async Task<ComposeRollbackResult> RollbackAsync(
-        string image,
-        string? backupId,
-        string? requestId,
-        CancellationToken cancellationToken)
-    {
-        var socketPath = options.Value.ComposeSocketPath;
-        if (string.IsNullOrWhiteSpace(socketPath))
-        {
-            return Unavailable();
-        }
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(RequestTimeout);
-        using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-        try
-        {
-            await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), timeout.Token).ConfigureAwait(false);
-            await using var stream = new NetworkStream(socket, ownsSocket: false);
-            var request = new ComposeRollbackWireRequest
-            {
-                Op = "rollback",
-                Image = image,
-                BackupId = backupId,
-                RequestId = requestId,
-            };
-            var line = JsonSerializer.Serialize(request, PreMigrationRestoreJsonContext.Default.ComposeRollbackWireRequest);
-            var payload = Encoding.UTF8.GetBytes(line + "\n");
-            await stream.WriteAsync(payload, timeout.Token).ConfigureAwait(false);
-            var responseLine = await ReadLineAsync(stream, timeout.Token).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(responseLine))
-            {
-                return Failed();
-            }
-
-            var parsed = JsonSerializer.Deserialize(responseLine, ComposeRollbackResponseJsonContext.Default.ComposeRollbackWireResponse);
-            if (parsed is null)
-            {
-                return Failed();
-            }
-
-            var started = parsed.Ok && parsed.ReadbackComplete;
-            return new ComposeRollbackResult(parsed.Ok, parsed.Code, parsed.ReadbackComplete, parsed.SchemaVersion, started);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return Unavailable();
-        }
-    }
-
-    private static async Task<string> ReadLineAsync(NetworkStream stream, CancellationToken cancellationToken)
-    {
-        using var buffer = new MemoryStream();
-        var one = new byte[1];
-        while (buffer.Length <= 64 * 1024)
-        {
-            var read = await stream.ReadAsync(one, cancellationToken).ConfigureAwait(false);
-            if (read == 0 || one[0] == (byte)'\n')
-            {
-                break;
-            }
-
-            buffer.WriteByte(one[0]);
-        }
-
-        return Encoding.UTF8.GetString(buffer.ToArray());
-    }
-
-    private static ComposeRollbackResult Unavailable()
-        => new(false, PreMigrationRestoreCodes.TransportUnavailable, false, null, false);
-
-    private static ComposeRollbackResult Failed()
-        => new(false, PreMigrationRestoreCodes.ProviderFailed, false, null, false);
-}
-
 internal sealed class UnconfiguredRdsSnapshotRestore : IRdsSnapshotRestore
 {
     public Task<RdsSnapshotEvidence?> DescribeAsync(string snapshotId, string cellPrefix, CancellationToken cancellationToken)
@@ -460,21 +378,8 @@ internal sealed class UnconfiguredConnectionSecretRetarget : IConnectionSecretRe
 }
 
 // A restored endpoint cannot be probed without the cloud secret.
-internal sealed class AppDatabaseConnectionOpener(IServiceProvider services) : IRestoredConnectionOpener
+internal sealed class UnconfiguredRestoredConnectionOpener : IRestoredConnectionOpener
 {
-    public async Task<DbConnection?> OpenAsync(string? endpoint, CancellationToken cancellationToken)
-    {
-        if (endpoint is not null)
-        {
-            return null;
-        }
-
-        var dataSource = services.GetService<NpgsqlDataSource>();
-        if (dataSource is null)
-        {
-            return null;
-        }
-
-        return await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-    }
+    public Task<DbConnection?> OpenAsync(string endpoint, CancellationToken cancellationToken)
+        => Task.FromResult<DbConnection?>(null);
 }

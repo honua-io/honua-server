@@ -16,10 +16,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
 
-/// <summary>
-/// Handler for OGC API - Maps TileSet operations.
-/// Provides map tile set metadata for integration with OGC API - Tiles.
-/// </summary>
 internal sealed class OgcMapsTileSetHandler
 {
     private const string OgcApiTilesProtocol = "OGC-API-Tiles";
@@ -35,9 +31,6 @@ internal sealed class OgcMapsTileSetHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Gets available map tile sets for a collection.
-    /// </summary>
     public async Task<IResult> GetMapTileSetsAsync(
         int layerId,
         HttpContext? context = null,
@@ -108,9 +101,6 @@ internal sealed class OgcMapsTileSetHandler
         }
     }
 
-    /// <summary>
-    /// Gets map tile set metadata for a single tile matrix set.
-    /// </summary>
     public async Task<IResult> GetMapTileSetAsync(
         int layerId,
         string tileMatrixSetId,

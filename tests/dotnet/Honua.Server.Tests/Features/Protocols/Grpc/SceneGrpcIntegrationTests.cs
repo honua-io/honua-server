@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 [Collection("Database.SceneGrpc")]
 [Protocol(TestProtocols.Grpc)]
-public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
+public sealed partial class SceneGrpcIntegrationTests : IAsyncLifetime, IClassFixture<SceneGrpcIntegrationTests.SharedSceneHost>
 {
     private const string FixtureSceneId = "fixture-tileset";
     private const string MissingContentSceneId = "missing-content-tileset";
@@ -51,68 +51,20 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture;
     private readonly string _missingContentRoot;
-    private readonly string _missingTilesetRoot;
-    private readonly string _malformedTilesetRoot;
-    private readonly string _oversizedTileRoot;
     private GrpcChannel? _channel;
     private Proto.SceneService.SceneServiceClient? _sceneClient;
     private Proto.TileService.TileServiceClient? _tileClient;
     private Proto.ElevationService.ElevationServiceClient? _elevationClient;
     private Metadata? _headers;
 
-    public SceneGrpcIntegrationTests()
+    public SceneGrpcIntegrationTests(SharedSceneHost host)
     {
-        var fixtureRoot = ResolveFixtureRoot();
-        _missingContentRoot = CreateMissingContentTilesetRoot();
-        _missingTilesetRoot = CreateMissingTilesetRoot();
-        _malformedTilesetRoot = CreateMalformedTilesetRoot();
-        _oversizedTileRoot = CreateOversizedTileRoot();
-        _fixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["Scenes:Datasets:0:Id"] = FixtureSceneId,
-                        ["Scenes:Datasets:0:Name"] = "Honua Fixture Tileset",
-                        ["Scenes:Datasets:0:Description"] = "Static 3D Tiles fixture used by gRPC tests",
-                        ["Scenes:Datasets:0:AssetRoot"] = fixtureRoot,
-
-                        // A scene whose root node references a content uri that
-                        // does not exist on disk, to exercise the GetTile
-                        // content-resolution NotFound path.
-                        ["Scenes:Datasets:1:Id"] = MissingContentSceneId,
-                        ["Scenes:Datasets:1:Name"] = "Missing Content Tileset",
-                        ["Scenes:Datasets:1:AssetRoot"] = _missingContentRoot,
-
-                        // A scene whose asset root has NO tileset.json, exercising
-                        // the LoadCatalogAsync missing-tileset NotFound branch.
-                        ["Scenes:Datasets:2:Id"] = MissingTilesetSceneId,
-                        ["Scenes:Datasets:2:Name"] = "Missing Tileset",
-                        ["Scenes:Datasets:2:AssetRoot"] = _missingTilesetRoot,
-
-                        // A scene whose tileset.json deserializes to null (root:
-                        // null), exercising the LoadTilesetAsync Internal branch.
-                        ["Scenes:Datasets:3:Id"] = MalformedTilesetSceneId,
-                        ["Scenes:Datasets:3:Name"] = "Malformed Tileset",
-                        ["Scenes:Datasets:3:AssetRoot"] = _malformedTilesetRoot,
-
-                        // A scene whose root content uri points at a file larger
-                        // than MaxTileContentBytes, exercising the GetTile/
-                        // StreamTiles ResourceExhausted oversized-tile branch.
-                        ["Scenes:Datasets:4:Id"] = OversizedTileSceneId,
-                        ["Scenes:Datasets:4:Name"] = "Oversized Tile",
-                        ["Scenes:Datasets:4:AssetRoot"] = _oversizedTileRoot,
-                    });
-                });
-            });
+        _fixture = host.Fixture;
+        _missingContentRoot = host.MissingContentRoot;
     }
 
     public async Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
-
         var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, _fixture.CreateHandler());
         _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions { HttpHandler = grpcWebHandler });
         _sceneClient = new Proto.SceneService.SceneServiceClient(_channel);
@@ -156,22 +108,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     {
         _channel?.Dispose();
         await DeleteRegisteredScenesAsync();
-        await _fixture.DisposeAsync();
-
-        foreach (var root in new[] { _missingContentRoot, _missingTilesetRoot, _malformedTilesetRoot, _oversizedTileRoot })
-        {
-            try
-            {
-                if (Directory.Exists(root))
-                {
-                    Directory.Delete(root, recursive: true);
-                }
-            }
-            catch (IOException)
-            {
-                // Best-effort cleanup of the temp fixture root.
-            }
-        }
     }
 
     [IntegrationTest]
@@ -1184,105 +1120,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         return tiles;
     }
 
-    private static string CreateMissingContentTilesetRoot()
-    {
-        // Every Path.Combine call below only ever joins a temp directory with
-        // fixed/generated relative literal segments, so no later segment can be
-        // rooted and silently discard the one before it.
-        var root = Path.Join(Path.GetTempPath(), "honua-grpc-missing-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
 
-        const string tilesetJson = """
-        {
-          "asset": { "version": "1.1" },
-          "geometricError": 100.0,
-          "root": {
-            "boundingVolume": { "region": [-1.31970, 0.69886, -1.31965, 0.69890, 0.0, 20.0] },
-            "geometricError": 100.0,
-            "refine": "REPLACE",
-            "content": { "uri": "tiles/does-not-exist.b3dm" }
-          }
-        }
-        """;
-        File.WriteAllText(Path.Join(root, "tileset.json"), tilesetJson);
-        return root;
-    }
-
-    private static string CreateMissingTilesetRoot()
-    {
-        // Second segment is a generated relative literal, so it can never be
-        // rooted and silently discard Path.GetTempPath().
-        var root = Path.Join(Path.GetTempPath(), "honua-grpc-no-tileset-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        return root;
-    }
-
-    private static string CreateMalformedTilesetRoot()
-    {
-        // Both Path.Combine calls below only join a temp directory with a fixed
-        // or generated relative literal segment, so neither later segment can be
-        // rooted and silently discard the one before it.
-        var root = Path.Join(Path.GetTempPath(), "honua-grpc-malformed-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Join(root, "tileset.json"), "null");
-        return root;
-    }
-
-    private static string CreateOversizedTileRoot()
-    {
-        // Every Path.Combine call below only joins a temp directory with fixed
-        // or generated relative literal segments, so no later segment can be
-        // rooted and silently discard the one before it.
-        var root = Path.Join(Path.GetTempPath(), "honua-grpc-oversized-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-
-        const string tilesetJson = """
-        {
-          "asset": { "version": "1.1" },
-          "geometricError": 100.0,
-          "root": {
-            "boundingVolume": { "region": [-1.31970, 0.69886, -1.31965, 0.69890, 0.0, 20.0] },
-            "geometricError": 100.0,
-            "refine": "REPLACE",
-            "content": { "uri": "tiles/oversized.b3dm" }
-          }
-        }
-        """;
-        File.WriteAllText(Path.Join(root, "tileset.json"), tilesetJson);
-
-        var tilesDir = Path.Join(root, "tiles");
-        Directory.CreateDirectory(tilesDir);
-        // 256 MiB + 1 byte: one byte over MaxTileContentBytes. SetLength on a
-        // fresh file produces a sparse extent on the platforms CI runs on, so no
-        // bytes are actually written.
-        const long oversized = (256L * 1024 * 1024) + 1;
-        using (var fs = new FileStream(Path.Join(tilesDir, "oversized.b3dm"), FileMode.CreateNew, FileAccess.Write))
-        {
-            fs.SetLength(oversized);
-        }
-
-        return root;
-    }
-
-    private static string ResolveFixtureRoot()
-    {
-        var directory = AppContext.BaseDirectory;
-        while (directory is not null)
-        {
-            // All later segments are fixed relative literals, so none can be
-            // rooted and silently discard directory.
-            var candidate = Path.Join(directory, "tests", "fixtures", "scenes", "fixture-tileset");
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = Path.GetDirectoryName(directory);
-        }
-
-        throw new DirectoryNotFoundException(
-            "Could not locate tests/fixtures/scenes/fixture-tileset from the test base directory.");
-    }
 }
 
 [Collection("Database")]
@@ -1471,20 +1309,23 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
-    public async Task ListScenes_ProtectedScene_WithoutAuth_StillListsScene()
+    public async Task ListScenes_ProtectedScene_WithoutAuth_OmitsScene()
     {
-        // Documented intentional divergence (HonuaSceneGrpcService.ListScenes):
-        // ListScenes is ungated and mirrors the public HTTP scene-discovery
-        // catalog, so it lists EVERY active scene — including protected ones —
-        // while per-scene authorization is enforced only when metadata or tiles are
-        // actually fetched (GetScene / GetTile / StreamTiles, covered above). This
-        // pins that discovery parity so a future change that filters protected
-        // scenes from the anonymous listing fails here instead of silently
-        // diverging from the HTTP surface.
         var response = await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers);
 
-        response.Scenes.Should().Contain(scene => scene.SceneId == ProtectedSceneId,
-            "ListScenes is intentionally ungated and lists protected scenes for discovery parity.");
+        response.Scenes.Should().NotContain(scene => scene.SceneId == ProtectedSceneId,
+            "a listing shows only the scenes the caller may read, as the HTTP catalog does.");
+        response.Scenes.Should().Contain(scene => scene.SceneId == PublicSceneId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_ProtectedScene_WithAuthorizedRole_ListsScene()
+    {
+        var response = await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _authHeaders);
+
+        response.Scenes.Should().Contain(scene => scene.SceneId == ProtectedSceneId);
         response.Scenes.Should().Contain(scene => scene.SceneId == PublicSceneId);
     }
 

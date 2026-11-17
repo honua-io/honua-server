@@ -218,7 +218,8 @@ internal sealed class GdbGeometryReader
             zValues = ReadZCoordinates(blob, ref offset, numPoints);
         }
 
-        // Read M (measure) coordinates if present.
+        // Read M (measure) coordinates if present. Previously these were skipped,
+        // silently dropping measures from XYM/XYZM polylines and polygons.
         double[]? mValues = null;
         if (hasM)
         {

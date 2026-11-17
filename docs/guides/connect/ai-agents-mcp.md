@@ -119,6 +119,7 @@ Give an agent its own key with the `agent` grant, never the bootstrap admin pass
 
 - An access-policy change, a staged dataset import or a publish (`honua_admin_services_access_policy_set`, `honua_op_dataset_stage_import`, `honua_admin_layer_publish`, `honua_publish_service`, or the same operations through `POST /api/v1/operations/{operationId}/submit`) does not execute. It files a proposal and returns `status: "RequiresApproval"` with its `proposalId`. A person approves it in Console **Approvals**; see [approve an agent-proposed change](../secure/approve-agent-changes.md).
 - The administrator exemption from approval does not apply, even when the key also carries `admin` or `admin:write`. A direct admin REST call to change an access policy or publish a layer is refused with `type: "urn:honua:approval-required"`, and the message says how to submit the change for approval.
+- Any other change made by calling a REST route directly that is under `/api/v1/admin` or `/api/v1/console`, or that requires administrator authority (`POST`, `PUT`, `PATCH` or `DELETE`), is refused the same way, with policy `operator.agent.admin-route`. Make the change through `POST /api/v1/operations/{operationId}/submit` or the matching MCP tool, which runs it or files a proposal as the operation policy decides; if no operation covers the change, ask a person. Reads are not affected. The exceptions are routes that apply their own agent rule, such as creating or editing a Console content item the agent keeps personal, and routes that change nothing, such as connection tests, validation and preview calls, source discovery and scans, and the permission check `POST /api/v1/console/actions/check`. Deleting a Console content item, commenting on a shared map, running a published workflow, and writes that require administrator authority outside the admin API (SensorThings writes, field collection sync, spec apply, OGC style changes, temporal rollback, enrichment dataset changes) are made by a person.
 - A Studio publication an agent requests is a proposal too, even when the caller is an administrator.
 - Some changes are refused for an agent and must be made by a person in Console: a layer's access settings, enabling, disabling or refreshing a layer, role permissions, OAuth scopes, and publishing, republishing or rolling back Console content publications or changing their sharing.
 - The key cannot create, rotate or revoke API keys, so it cannot mint itself a key without the `agent` grant.
@@ -240,6 +241,10 @@ To upgrade the platform, an agent reads `honua_platform_release_status` and `GET
 ### Stage a job artifact for publication
 
 Import a completed job artifact in two steps, without touching an existing table.
+
+The target schema must be the configured default operational schema, `public`, or a schema listed in `Database:OperationalSchemas`. Preview and proposal preparation refuse metadata and PostgreSQL system schemas even when listed as operational. Proposal preparation checks the current schema configuration again, so an earlier preview cannot retain permission for a removed destination.
+
+Read `honua_get_job_results` for the completed job. Use its `jobId`, `resultPackageId`, and a supported feature artifact's `artifactId` and `referenceSha256` as the source inputs. The matching `honua://jobs/{jobId}/results` resource returns the same artifact metadata. `referenceSha256` hashes the exact UTF-8 `uri` string, including any escaping; it is distinct from the preview's content checksum. A checksum alone does not make an artifact importable. Choose your own stable `targetId` replay label and reuse it across preview, import and retries.
 
 1. `honua_op_dataset_stage_preview` (`dataset.stage.preview`) is read-only. It reads the artifact with your own job access, checks it is the server's verified result, and returns:
    - `previewFingerprint`;
@@ -385,7 +390,7 @@ layer over an illustrative extent in EPSG:4326:
 
 Replace the example pair and extent with the selected layer and the requested area.
 
-Layer display and spatial configuration are available through the admin `full` catalog as
+Layer display and spatial configuration tools are discoverable through the authenticated `full` catalog as
 `honua_admin_layer_display_get`, `honua_admin_layer_display_set`,
 `honua_admin_layer_spatial_get`, and `honua_admin_layer_spatial_set`.
 Use the storage layer ID from connection-layer discovery. Read the current configuration
@@ -397,7 +402,7 @@ A view is **discovery, not authority**:
 
 - Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.
 - Every `tools/call` is independently reauthenticated and reauthorized against the current actor, tenant, roles/grants, OAuth scope, and policy — whether or not the tool was discovered through a view.
-- The complete paginated catalog is an explicit admin operation: pass the reserved name `full`, which overrides a session or profile default and requires an admin role. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
+- To discover the complete paginated catalog, authenticate and pass the reserved name `full`, which overrides a session or profile default. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
 - `honua_list_capabilities` returns at most 12 tools and 12 resources by default. Follow `nextToolCursor` and `nextResourceCursor`; `fullExport: true` is admin-only.
 - `resources/read` returns at most 64,000 characters by default. A caller may explicitly request `maxChars` up to the hard ceiling of 1,000,000.
 - Members carry the **exact** canonical description, annotations, and input/output schemas the full catalog serves; nothing is truncated or re-described.

@@ -106,8 +106,8 @@ public sealed class ComplianceDependencyGateTests
     [Fact]
     public void DataResidency_NotSatisfied_WhenOnlyEnforcedFlagIsSet()
     {
-        // Enforced=true flips the policy view but no egress code
-        // actually consults IDataResidencyPolicyProvider yet. Requires explicit attestation.
+        // Reviewer concern: Enforced=true flips the policy view but no egress code
+        // actually consults DefaultDataResidencyPolicyProvider yet. Requires explicit attestation.
         var options = new ComplianceOptions
         {
             DataResidency = new ComplianceResidencyOptions { Enforced = true },

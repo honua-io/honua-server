@@ -485,8 +485,8 @@ internal sealed partial class FeatureDataAccess
             // For the non-transactional path the partial accumulators above capture
             // every result that was recorded before the exception. Only operations that did
             // not yet produce a result (the unprocessed tail) should be reported as failed.
-            // Reporting committed rows as failed drives clients to re-submit, creating
-            // duplicates. Cancellation uses the same shape so an autocommit
+            // Reporting all as failed previously drove clients to re-submit already-committed
+            // rows, creating duplicates. Cancellation uses the same shape so an autocommit
             // that already landed is not reported as a clean rollback.
             var unrecordedMessage = ex is OperationCanceledException
                 ? "Edit cancelled."

@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Streaming;
@@ -1309,6 +1310,44 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     public Task SendStampedWebSocketJsonAsync_ReplacementAfterClaim_SkipsStaleAndLetsReplacementDeliver()
         => AssertClaimRaceDoesNotBlockReplacementAsync(replaceBeforeStaleSendCompletes: true);
 
+    [UnitTest]
+    public async Task SendStampedWebSocketJsonAsync_RefreshWhileWaitingForWriter_UsesCurrentPolicy()
+    {
+        var unrestricted = new StreamLayerReadPolicy([], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var masked = new StreamLayerReadPolicy([], new HashSet<string>(["secret"], StringComparer.OrdinalIgnoreCase));
+        static StreamSubscriberSecurity Security(StreamLayerReadPolicy policy) => new(
+            new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
+            new Dictionary<(string, int), StreamLayerReadPolicy>());
+        var security = Security(unrestricted);
+        security.EnableRefresh(_ => Task.FromResult(Security(masked)));
+        using var session = _manager.CreateSession("WebSocket", null, new StreamSubscriptionFilter(subscriberSecurity: security));
+        var envelope = CreateEnvelope(cursor: 500) with
+        {
+            ServiceId = "svc",
+            LayerId = 0,
+            Attributes = new Dictionary<string, JsonElement>
+            {
+                ["secret"] = JsonSerializer.SerializeToElement("private")
+            }
+        };
+        _manager.Broadcast(FeatureStreamMessage.Data(envelope));
+        Assert.True(session.Reader.TryRead(out var queued));
+        using var writeLock = new SemaphoreSlim(0, 1);
+        using var webSocket = new RecordingWebSocket();
+        var send = FeatureStreamEndpoints.SendStampedWebSocketJsonAsync(
+            webSocket, writeLock, queued.Envelope, _manager, session.SessionId,
+            FeatureStreamSessionManager.DefaultSubscriptionId, queued.SubscriptionGeneration, CancellationToken.None);
+        Assert.False(send.IsCompleted);
+        await _manager.RefreshSubscriberSecurityAsync();
+        writeLock.Release();
+
+        Assert.True(await send);
+        using var payload = JsonDocument.Parse(webSocket.LastPayload!);
+        Assert.Empty(payload.RootElement.GetProperty("attributes").EnumerateObject());
+        Assert.True(envelope.Attributes.ContainsKey("secret"));
+    }
+
     private async Task AssertClaimRaceDoesNotBlockReplacementAsync(bool replaceBeforeStaleSendCompletes)
     {
         using var session = _manager.CreateSession("WebSocket", "stamp-race");
@@ -1458,6 +1497,8 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
 
         public int SendCount => Volatile.Read(ref _sendCount);
 
+        public byte[]? LastPayload { get; private set; }
+
         public override WebSocketCloseStatus? CloseStatus => null;
 
         public override string? CloseStatusDescription => null;
@@ -1499,6 +1540,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             bool endOfMessage,
             CancellationToken cancellationToken)
         {
+            LastPayload = buffer.ToArray();
             Interlocked.Increment(ref _sendCount);
             return Task.CompletedTask;
         }

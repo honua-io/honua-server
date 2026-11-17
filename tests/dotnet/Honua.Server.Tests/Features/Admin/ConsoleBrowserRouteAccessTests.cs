@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
-public class ConsoleBrowserRouteAccessTests : IAsyncLifetime
+public class ConsoleBrowserRouteAccessTests : IClassFixture<ConsoleBrowserRouteAccessTests.RouteHost>, IAsyncLifetime
 {
     private const string ConsoleOrigin = "https://console.example.com";
     private const string AdminPassword = "test-admin-key";
@@ -32,35 +32,24 @@ public class ConsoleBrowserRouteAccessTests : IAsyncLifetime
     private static readonly HttpStatusCode[] CredentialDenials =
         [HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden];
 
-    private readonly WebAppFixture _fixture;
+    private readonly RouteHost _host;
+    private readonly Action<IWebHostBuilder> _configureTenancy;
+    private readonly string? _configuredSourcePathBase;
     private readonly string _expectedSourcePathBase;
+    private WebAppFixture _fixture = null!;
 
-    public ConsoleBrowserRouteAccessTests()
-        : this(ConfigureSingleTenant, configuredSourcePathBase: null)
+    public ConsoleBrowserRouteAccessTests(RouteHost host)
+        : this(host, ConfigureSingleTenant, configuredSourcePathBase: null)
     {
     }
 
-    protected ConsoleBrowserRouteAccessTests(Action<IWebHostBuilder> configureTenancy, string? configuredSourcePathBase)
+    protected ConsoleBrowserRouteAccessTests(
+        RouteHost host, Action<IWebHostBuilder> configureTenancy, string? configuredSourcePathBase)
     {
+        _host = host;
+        _configureTenancy = configureTenancy;
+        _configuredSourcePathBase = configuredSourcePathBase;
         _expectedSourcePathBase = configuredSourcePathBase?.TrimEnd('/') ?? string.Empty;
-        _fixture = new WebAppFixture()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                builder.UseSetting("Oidc:Enabled", "false");
-                builder.UseSetting("Cors:AllowedOrigins:0", ConsoleOrigin);
-                builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
-                builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorBearerSigningKey);
-                builder.UseSetting("Studio:Session:EnvironmentId", ConsoleEnvironmentId);
-                configureTenancy(builder);
-                if (configuredSourcePathBase is not null)
-                {
-                    builder.UseSetting("Studio:Session:SourcePathBase", configuredSourcePathBase);
-                }
-            });
     }
 
     private static void ConfigureSingleTenant(IWebHostBuilder builder) =>
@@ -70,9 +59,48 @@ public class ConsoleBrowserRouteAccessTests : IAsyncLifetime
     protected static void ConfigureMultiTenant(IWebHostBuilder builder) =>
         builder.UseSetting("MultiTenancy:Enabled", "true");
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync() => _fixture = await _host.StartAsync(ConfigureHost);
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    private void ConfigureHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Test");
+        builder.UseSetting("HONUA_DEV_AUTH", "false");
+        builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+        builder.UseSetting("Oidc:Enabled", "false");
+        builder.UseSetting("Cors:AllowedOrigins:0", ConsoleOrigin);
+        builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+        builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorBearerSigningKey);
+        builder.UseSetting("Studio:Session:EnvironmentId", ConsoleEnvironmentId);
+        _configureTenancy(builder);
+        if (_configuredSourcePathBase is not null)
+        {
+            builder.UseSetting("Studio:Session:SourcePathBase", _configuredSourcePathBase);
+        }
+    }
+
+    // One host per test class, started by its first case: no case depends on state another leaves behind.
+    public sealed class RouteHost : IAsyncLifetime
+    {
+        private WebAppFixture? _fixture;
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public Task DisposeAsync() => _fixture?.DisposeAsync() ?? Task.CompletedTask;
+
+        internal async Task<WebAppFixture> StartAsync(Action<IWebHostBuilder> configure)
+        {
+            if (_fixture is not null)
+            {
+                return _fixture;
+            }
+
+            var fixture = new WebAppFixture().UseSeed("tests/seed/server.yaml").ConfigureWebHost(configure);
+            await fixture.InitializeAsync();
+            return _fixture = fixture;
+        }
+    }
 
     [IntegrationTheory]
     [InlineData("/rest/services?f=json")]
@@ -251,4 +279,5 @@ public class ConsoleBrowserRouteAccessTests : IAsyncLifetime
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
-public sealed class ConsoleBrowserRouteAccessMultiTenantTests() : ConsoleBrowserRouteAccessTests(ConfigureMultiTenant, configuredSourcePathBase: "/gis/api/");
+public sealed class ConsoleBrowserRouteAccessMultiTenantTests(ConsoleBrowserRouteAccessTests.RouteHost host)
+    : ConsoleBrowserRouteAccessTests(host, ConfigureMultiTenant, configuredSourcePathBase: "/gis/api/");

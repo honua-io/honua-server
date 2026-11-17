@@ -178,7 +178,9 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
 
         // 2. Queue the next ready children (dependencies satisfied, no blocking failure).
         // A dependency is satisfied once its layer has published, which a review-routed
-        // (NeedsReview) layer has. The review-routed layer still blocks the service-level verdict.
+        // (NeedsReview) layer has. Counting only Succeeded stranded every dependent of a review-routed
+        // origin layer as pending forever, so the batch never reached a terminal status and never
+        // reported a verdict. The review-routed layer still blocks the service-level verdict.
         var publishedIds = children
             .Where(static c => c.Status is MigrationBatchChildStatus.Succeeded or MigrationBatchChildStatus.NeedsReview)
             .Select(static c => c.SourceResourceId)

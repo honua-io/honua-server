@@ -31,24 +31,20 @@ namespace Honua.Server.Tests.Features.Studio;
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
 {
-    private const string JsonMediaType = "application/json";
     private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
     private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
     private const string SigningKey = "studio-admin-publication-signing-key-at-least-32-chars";
     private const string Tenant = "tenant-a";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private readonly RedisFixture _redis = new();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         HumanApprovalHttpClient.Configure(_fixture, _identityProvider)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
                 builder.UseSetting("Licensing:Mode", "Disabled");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -64,6 +60,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
             })
             .ConfigureServices(services =>
             {
+                ApprovedStudioDraftCall.ConfigureDurableOperationInstances(services);
                 services.RemoveAll<IStudioPackageStore>();
                 services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
                 services.RemoveAll<IOperatorAuthorizationEvaluator>();
@@ -75,7 +72,6 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
         _identityProvider.Dispose();
     }
 
@@ -85,7 +81,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/published/{*route}")]
     public async Task AdminKey_ProposePublication_RequiresHumanBeforePublishingActiveRoute()
     {
-        using var admin = _fixture.CreateAdminClient();
+        using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
         var route = $"/maps/admin-{Guid.NewGuid():N}";
 
         var (proposed, itemId) = await ProposeAsync(admin, route, "public");
@@ -191,7 +187,109 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         after.CurrentVersionId.Should().Be(before!.CurrentVersionId);
     }
 
-    private static async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    public async Task ProposePublication_IdenticalRetry_ReturnsOriginalProposalAndItsState()
+    {
+        using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
+        var version = await SaveVersionAsync(admin);
+        var arguments = ProposeArguments(version, $"/maps/retry-{Guid.NewGuid():N}");
+
+        var first = await CallToolAsync(admin, "honua_studio_propose_publication", arguments);
+        var retry = await CallToolAsync(admin, "honua_studio_propose_publication", arguments);
+        var proposalId = first.GetProperty("proposalId").GetString()!;
+        retry.GetProperty("proposalId").GetString().Should().Be(proposalId);
+        retry.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+
+        var explicitKey = arguments[..^1] + $$""","idempotencyKey":"{{Guid.NewGuid():N}}"}""";
+        var separate = await CallToolAsync(admin, "honua_studio_propose_publication", explicitKey);
+        separate.GetProperty("proposalId").GetString().Should().NotBe(proposalId);
+
+        using var approver = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "studio-retry-publisher");
+        using var approval = await approver.ApproveAsync(proposalId);
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, await approval.Content.ReadAsStringAsync());
+
+        var afterApproval = await CallToolAsync(admin, "honua_studio_propose_publication", arguments);
+        afterApproval.GetProperty("proposalId").GetString().Should().Be(proposalId);
+        afterApproval.GetProperty("status").GetString().Should().Be("Published");
+        afterApproval.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    public async Task ProposePublication_KeyReusedForDifferentRoute_IsRefused()
+    {
+        using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
+        var version = await SaveVersionAsync(admin);
+        var key = $$""","idempotencyKey":"reuse-{{Guid.NewGuid():N}}"}""";
+        var first = await CallToolAsync(admin, "honua_studio_propose_publication",
+            ProposeArguments(version, $"/maps/first-{Guid.NewGuid():N}")[..^1] + key);
+
+        var response = await ApprovedStudioDraftCall.RpcAsync(
+            admin,
+            $$$"""{"jsonrpc":"2.0","id":"reuse","method":"tools/call","params":{"name":"honua_studio_propose_publication","arguments":{{{ProposeArguments(version, $"/maps/second-{Guid.NewGuid():N}")[..^1] + key}}}}}""");
+
+        string.Join('\n', DecodedStrings(response)).Should().Contain("Send a new idempotencyKey");
+        response.GetRawText().Should().NotContain(first.GetProperty("proposalId").GetString()!);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    public async Task ProposePublication_RouteWithoutLeadingSlash_IsRefusedWithThePathForm()
+    {
+        using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
+        var version = await SaveVersionAsync(admin);
+
+        var response = await ApprovedStudioDraftCall.RpcAsync(
+            admin,
+            $$$"""{"jsonrpc":"2.0","id":"route","method":"tools/call","params":{"name":"honua_studio_propose_publication","arguments":{{{ProposeArguments(version, "parks-map")}}}}}""");
+
+        // The serializer escapes apostrophes and the message may be nested JSON text, so assert
+        // on decoded string values rather than the raw response.
+        var text = string.Join('\n', DecodedStrings(response));
+        text.Should().Contain("must start with '/'").And.Contain("'/parks-map'");
+        response.GetRawText().Should().NotContain("proposalId");
+        var lifecycle = _fixture.Services.GetRequiredService<IStudioPackageLifecycleService>();
+        (await lifecycle.GetPointersAsync(version.GetProperty("itemId").GetGuid()))!.PublishedVersionId.Should().BeNull();
+    }
+
+    private static IEnumerable<string> DecodedStrings(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                return element.EnumerateObject().SelectMany(property => DecodedStrings(property.Value));
+            case JsonValueKind.Array:
+                return element.EnumerateArray().SelectMany(DecodedStrings);
+            case JsonValueKind.String:
+                var value = element.GetString()!;
+                return value.TrimStart().StartsWith('{') ? [value, .. DecodedJson(value)] : [value];
+            default:
+                return [];
+        }
+    }
+
+    private static string[] DecodedJson(string value)
+    {
+        try
+        {
+            using var nested = JsonDocument.Parse(value);
+            return DecodedStrings(nested.RootElement.Clone()).ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string ProposeArguments(JsonElement version, string route) =>
+        $$"""{"itemId":"{{version.GetProperty("itemId").GetGuid():D}}","versionId":"{{version.GetProperty("versionId").GetGuid():D}}","contentHash":"{{version.GetProperty("contentHash").GetString()}}","route":"{{route}}","visibility":"public"}""";
+
+    private async Task<(JsonElement Proposed, Guid ItemId)> ProposeAsync(HttpClient client, string route, string visibility)
     {
         var version = await SaveVersionAsync(client);
         var itemId = version.GetProperty("itemId").GetGuid();
@@ -200,7 +298,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         return (proposed, itemId);
     }
 
-    private static async Task<JsonElement> SaveVersionAsync(HttpClient client)
+    private async Task<JsonElement> SaveVersionAsync(HttpClient client)
     {
         var packageKey = $"admin-publish-{Guid.NewGuid():N}";
         var created = await CallToolAsync(client, "honua_studio_create_draft",
@@ -225,34 +323,14 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         return client;
     }
 
-    private static async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
+    private async Task<JsonElement> CallToolAsync(HttpClient client, string toolName, string argumentsJson)
     {
-        var response = await RpcAsync(
+        var response = await ApprovedStudioDraftCall.RpcAsync(
             client,
             $$$"""{"jsonrpc":"2.0","id":"{{{toolName}}}","method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}""");
-        var hasProtocolError = response.TryGetProperty("error", out var protocolError);
-        hasProtocolError.Should().BeFalse(
-            $"tool '{toolName}' should return a tool result: {(hasProtocolError ? protocolError.GetRawText() : "(none)")}");
-        var result = response.GetProperty("result");
-        if (result.TryGetProperty("isError", out var isError))
-        {
-            isError.GetBoolean().Should().BeFalse($"tool '{toolName}' failed: {result.GetRawText()}");
-        }
-
-        return result.GetProperty("structuredContent").Clone();
-    }
-
-    private static async Task<JsonElement> RpcAsync(HttpClient client, string body)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = new StringContent(body, Encoding.UTF8) { Headers = { ContentType = new MediaTypeHeaderValue(JsonMediaType) } },
-        };
-        using var response = await client.SendAsync(request);
-        var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
-        using var document = JsonDocument.Parse(payload);
-        return document.RootElement.Clone();
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, toolName, (_fixture, _identityProvider, Tenant, null));
+        if (completed is { } value) return value;
+        return ApprovedStudioDraftCall.ReadResult(response, toolName);
     }
 
     private static string CreateToken(string subject, params string[] roles)

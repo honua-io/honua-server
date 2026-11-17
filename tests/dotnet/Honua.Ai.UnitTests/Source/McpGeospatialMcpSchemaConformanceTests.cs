@@ -51,8 +51,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_get_style"] = "get_style",
             ["honua_apply_style_preset"] = "apply_style_preset",
             ["honua_publish_service"] = "publish_service",
-            // honua_publish_result: promotes a completed analysis job's
-            // materialized artifact into a hosted layer. The standard
+            // honua_publish_result promotes a completed analysis job's
+            // materialized artifact into a Layer. The standard
             // publish_result requires only `sourceId`; the live schema mirrors that
             // required set (additionalProperties allowed) so the required-field
             // match and standard-fixture assertions both hold.

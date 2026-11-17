@@ -2,13 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Alerts;
 using Honua.Alerts.Ops;
+using Honua.Alerts;
+using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
-using Honua.ControlPlane;
-using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
@@ -16,16 +16,16 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
-using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-public sealed class OperationGatewayAutonomyTests
+public sealed partial class OperationGatewayAutonomyTests
 {
     private const string Rule = "alert-dispatch-backlog";
     private const string FindingId = "alert-dispatch-backlog-test";
@@ -76,7 +76,7 @@ public sealed class OperationGatewayAutonomyTests
             auditLog,
             CreateOpsNotifier(outbox));
 
-        var result = await sut.RouteAsync(Request());
+        var result = await sut.RouteRemediationAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Executed);
         result.ExecutionOperationId.Should().Be(RecordingExecutor.OperationId);
@@ -93,10 +93,10 @@ public sealed class OperationGatewayAutonomyTests
             "operation.auto_verified",
             "operation.auto_applied");
         auditLog.Events.Should().OnlyContain(item =>
-            item.Actor == "ops-findings-autonomy"
-            && item.ActorAgent == "ops-findings-autonomy");
+            item.Actor == "service:ops-findings"
+            && item.ActorAgent == null);
         auditLog.Events.Where(item => item.Action.StartsWith("operation.auto_", StringComparison.Ordinal))
-            .Should().OnlyContain(item => item.ActorType == AuditActorType.System);
+            .Should().OnlyContain(item => item.ActorType == AuditActorType.UserId);
         outbox.Events.Should().ContainSingle();
         outbox.Events[0].Source.Should().Be(AlertEventSources.Ops);
         outbox.Events[0].ServiceId.Should().Be("ops-autonomy");
@@ -113,9 +113,10 @@ public sealed class OperationGatewayAutonomyTests
                 ShouldAutoApply = false,
                 Reason = "policy-propose-only",
             });
-        var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
+        var executor = new RecordingExecutor();
+        var sut = BuildGateway(store, evaluator, executor, RecordingConvergence.Converged());
 
-        var result = await sut.RouteAsync(Request());
+        var result = await sut.RouteRemediationAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         result.ProposalId.Should().NotBeNullOrWhiteSpace();
@@ -125,7 +126,9 @@ public sealed class OperationGatewayAutonomyTests
 
         var proposal = await store.GetAsync(result.ProposalId!);
         proposal.Should().NotBeNull();
-        proposal!.AutonomyMetadata.Should().NotBeNull();
+        proposal!.RequestedBy.Should().Be("service:ops-findings");
+        proposal.RequestedByAgent.Should().BeNull();
+        proposal.AutonomyMetadata.Should().NotBeNull();
         proposal.AutonomyMetadata!.FindingId.Should().Be(FindingId);
         proposal.AutonomyMetadata.Rule.Should().Be(Rule);
         proposal.AutonomyMetadata.ActionDiscriminator.Should().Be(RedriveAction);
@@ -136,6 +139,8 @@ public sealed class OperationGatewayAutonomyTests
         approved.Should().NotBeNull();
         evaluator.ProposalApprovedCount.Should().Be(1);
         evaluator.ProposalRejectedCount.Should().Be(0);
+        executor.ExecuteCount.Should().Be(1);
+        await AssertReplayRetainsServiceAuthorityAsync(sut, proposal, executor);
     }
 
     [Fact]
@@ -149,7 +154,7 @@ public sealed class OperationGatewayAutonomyTests
                 Reason = "policy-propose-only",
             });
         var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
-        var routed = await sut.RouteAsync(Request());
+        var routed = await sut.RouteRemediationAsync(Request());
 
         var rejected = await sut.RejectProposalAsync(routed.ProposalId!, "human-reviewer", "not during incident");
 
@@ -174,7 +179,7 @@ public sealed class OperationGatewayAutonomyTests
             FailNextProposalResolution = true,
         };
         var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
-        var routed = await sut.RouteAsync(Request());
+        var routed = await sut.RouteRemediationAsync(Request());
 
         var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "human-approver", TenantId = string.Empty });
         await first.Should().ThrowAsync<InvalidOperationException>()
@@ -201,7 +206,7 @@ public sealed class OperationGatewayAutonomyTests
             });
         var sut = BuildGateway(store, evaluator, new ThrowingExecutor(), RecordingConvergence.Converged());
 
-        var result = await sut.RouteAsync(Request());
+        var result = await sut.RouteRemediationAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
         result.Message.Should().Contain("actuation failed");
@@ -222,7 +227,7 @@ public sealed class OperationGatewayAutonomyTests
             RecordingConvergence.Converged(),
             auditLog);
 
-        var result = await sut.RouteAsync(Request());
+        var result = await sut.RouteRemediationAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.NotSupported);
         evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Failed);
@@ -240,7 +245,7 @@ public sealed class OperationGatewayAutonomyTests
             executor,
             RecordingConvergence.Unavailable());
 
-        var result = await sut.RouteAsync(Request());
+        var result = await sut.RouteRemediationAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
         result.Message.Should().Contain("No post-action convergence verifier");
@@ -265,7 +270,7 @@ public sealed class OperationGatewayAutonomyTests
             auditLog,
             CreateOpsNotifier(outbox));
 
-        var result = await sut.RouteAsync(Request());
+        var result = await sut.RouteRemediationAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
         result.ExecutionOperationId.Should().Be(RecordingExecutor.OperationId);
@@ -303,7 +308,7 @@ public sealed class OperationGatewayAutonomyTests
             convergence,
             auditLog);
 
-        var result = await sut.RouteAsync(Request());
+        var result = await sut.RouteRemediationAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.RolledBack);
         result.Message.Should().Contain("post-action observation regressed");
@@ -337,7 +342,7 @@ public sealed class OperationGatewayAutonomyTests
             auditLog,
             CreateOpsNotifier(outbox));
 
-        var result = await sut.RouteAsync(Request());
+        var result = await sut.RouteRemediationAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Indeterminate);
         result.Message.Should().Contain("verification evidence: finding persisted");
@@ -369,7 +374,7 @@ public sealed class OperationGatewayAutonomyTests
             auditLog,
             CreateOpsNotifier(outbox));
 
-        var act = () => sut.RouteAsync(Request());
+        var act = () => sut.RouteRemediationAsync(Request());
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Canceled);
@@ -401,6 +406,9 @@ public sealed class OperationGatewayAutonomyTests
             services =>
             {
                 services.AddScoped<IAuditLog>(_ => auditLog ?? new RecordingAuditLog());
+                services.AddSingleton(TimeProvider.System);
+                services.AddScoped<Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory,
+                    Honua.Core.Features.Operations.Services.OperationEnvelopeFactory>();
                 services.AddScoped(_ => evaluator);
                 services.AddScoped(_ => convergence);
                 if (opsNotificationService is not null)
@@ -438,7 +446,6 @@ public sealed class OperationGatewayAutonomyTests
 
         return new OpsNotificationService(
             new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance),
-            new AllowAllAlertEditionPolicy(),
             new AlertChannelCircuitBreaker(Options.Create(options)),
             Options.Create(options),
             TestTelemetry.CreateAlertPipelineMetrics(),
@@ -485,6 +492,8 @@ public sealed class OperationGatewayAutonomyTests
     {
         public int OutcomeCount { get; private set; }
 
+        public int RouteCount { get; private set; }
+
         public int ProposalRaisedCount { get; private set; }
 
         public int ProposalApprovedCount { get; private set; }
@@ -509,7 +518,10 @@ public sealed class OperationGatewayAutonomyTests
             GuardrailDecision currentDecision,
             string? actionDiscriminator,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(routeDecision);
+        {
+            RouteCount++;
+            return Task.FromResult(routeDecision);
+        }
 
         public Task RecordAutoActionOutcomeAsync(
             OpsAutonomyRouteDecision decision,
@@ -637,7 +649,10 @@ public sealed class OperationGatewayAutonomyTests
 
         public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
-            Events.Add(auditEvent);
+            lock (Events)
+            {
+                Events.Add(auditEvent);
+            }
             return Task.FromResult<string?>("audit-test");
         }
     }
@@ -666,28 +681,17 @@ public sealed class OperationGatewayAutonomyTests
         }
     }
 
-    private sealed class AllowAllAlertEditionPolicy : IAlertEditionPolicy
-    {
-        public bool IsRuleAllowed(AlertRuleDefinition rule) => true;
-
-        public bool IsTriggerAllowed(AlertTriggerType triggerType) => true;
-
-        public bool IsChannelAllowed(AlertChannelType channelType) => true;
-
-        public bool IsChannelConfigured(AlertChannelType channelType) => true;
-
-        public AlertEditionDenialReason GetEntitlementDenialReason(string entitlementKey)
-            => AlertEditionDenialReason.None;
-
-        public AlertEditionDenialReason GetChannelDenialReason(AlertChannelType channelType)
-            => AlertEditionDenialReason.None;
-    }
-
     private sealed class RecordingExecutor : IOperationExecutor
     {
         public const string OperationId = "ops-action-op";
 
-        public int ExecuteCount { get; private set; }
+        private int _executeCount;
+
+        public int ExecuteCount => _executeCount;
+
+        public bool YieldOnExecute { get; init; }
+
+        public OperationGatewayRequest? LastRequest { get; private set; }
 
         public string? LastActionDiscriminator { get; private set; }
 
@@ -702,14 +706,20 @@ public sealed class OperationGatewayAutonomyTests
                 ExecutionPayload = request.ExecutionPayload,
             });
 
-        public Task<string?> ExecuteAsync(
+        public async Task<string?> ExecuteAsync(
             OperationGatewayRequest request,
             string? executionPayload,
             CancellationToken cancellationToken = default)
         {
-            ExecuteCount++;
+            Interlocked.Increment(ref _executeCount);
+            LastRequest = request;
             LastActionDiscriminator = request.ActionDiscriminator;
-            return Task.FromResult<string?>(OperationId);
+            if (YieldOnExecute)
+            {
+                await Task.Yield();
+            }
+
+            return OperationId;
         }
     }
 

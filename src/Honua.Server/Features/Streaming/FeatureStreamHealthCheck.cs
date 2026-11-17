@@ -32,6 +32,8 @@ internal sealed class FeatureStreamHealthCheck : IHealthCheck
             ["maximum_partition_sessions"] = maximumPartitionSessions,
             ["max_concurrent_sessions"] = maxSessions,
             ["slow_consumer_drops"] = slowConsumerDrops,
+            ["anonymous_sessions"] = _sessionManager.AnonymousClientSessionCount,
+            ["max_node_sessions"] = _sessionManager.MaxNodeSessions,
         };
 
         // Session saturation: at the cap, new stream connections are rejected with 503.
@@ -44,6 +46,16 @@ internal sealed class FeatureStreamHealthCheck : IHealthCheck
                 data: data));
         }
 
+        if (IsNear(_sessionManager.AnonymousClientSessionCount, maxSessions) || IsNear(activeSessions, _sessionManager.MaxNodeSessions))
+        {
+            return Task.FromResult(HealthCheckResult.Degraded(
+                "Feature-stream anonymous or node-wide sessions are near capacity; new connections will be rejected once the cap is reached.",
+                data: data));
+        }
+
         return Task.FromResult(HealthCheckResult.Healthy("Feature-stream pipeline is healthy.", data));
     }
+
+    private static bool IsNear(int count, int cap)
+        => cap > 0 && count >= Math.Max(1, (int)Math.Ceiling(cap * SaturationRatio));
 }

@@ -20,19 +20,19 @@ using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Server.Tests.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Admin;
 
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]
-public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyncLifetime, IClassFixture<RedisFixture>
+public sealed class AgenticOpsLoopDeadLetterE2eTests(DatabaseFixtureAdapter database) : IAsyncLifetime
 {
     private const int SeededDeadLetters = 2;
     private const string FindingRule = "alert-dispatch-backlog";
@@ -46,17 +46,15 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
 
     public async Task InitializeAsync()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture().WithProductionJobSubstrate(), _identity)
             .ConfigureWebHost(builder =>
             {
-                // Host settings are required because Program decides whether Redis-backed
-                // durable control-plane services are wired before ConfigureAppConfiguration runs.
+                // Host settings are visible to Program before ConfigureAppConfiguration runs.
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             })
             .ConfigureServices(services =>
@@ -81,6 +79,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
             });
 
         await _fixture.InitializeAsync();
+        await ClearAlertStateAsync(_fixture);
         _dispatchHealth.Refresh = cancellationToken => _fixture
             .GetService<IAlertDispatchStore>()
             .GetBacklogAsync(cancellationToken);
@@ -99,7 +98,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
             await _fixture.DisposeAsync();
         }
 
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
     }
 
     [IntegrationTest]
@@ -263,37 +262,31 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         await MarkSeededDispatchesDeadLetterAsync(fixture, eventIds);
     }
 
+    private static async Task ClearAlertStateAsync(WebAppFixture fixture)
+    {
+        var dataSource = fixture.GetService<NpgsqlDataSource>();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "TRUNCATE TABLE honua.alert_event_lifecycle, honua.alert_dispatch, honua.alert_events CASCADE",
+            connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task MarkSeededDispatchesDeadLetterAsync(WebAppFixture fixture, HashSet<long> eventIds)
     {
+        var store = fixture.GetService<IAlertDispatchStore>();
         var now = DateTimeOffset.UtcNow;
-        var updated = 0;
+        var claimed = await store.ClaimPendingAsync(eventIds.Count, now.AddMinutes(1));
+        claimed.Select(item => item.EventId).Should().BeEquivalentTo(eventIds,
+            "the isolated fixture must claim exactly the dispatch rows seeded for this fault");
 
-        await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        foreach (var item in claimed)
         {
-            await using var connection = await fixture.Postgres.GetConnectionAsync();
-            await using var command = new NpgsqlCommand(
-                """
-                UPDATE honua.alert_dispatch
-                SET status = @status,
-                    attempts = attempts + 1,
-                    next_attempt_at = @now,
-                    last_attempt_at = @now,
-                    last_error = @last_error,
-                    updated_at = now()
-                WHERE event_id = ANY(@event_ids)
-                """,
-                connection);
-            command.Parameters.AddWithValue("status", (short)AlertDispatchStatus.DeadLetter);
-            command.Parameters.AddWithValue("now", now);
-            command.Parameters.AddWithValue("last_error", "seeded dead-letter storm for #2568");
-            command.Parameters.AddWithValue("event_ids", eventIds.ToArray());
-
-            updated = await command.ExecuteNonQueryAsync();
-        });
-
-        updated.Should().Be(
-            eventIds.Count,
-            "only the dispatch rows enqueued for the seeded fault should be marked dead-lettered");
+            var updated = await store.MarkFailedAsync(
+                item.DispatchId, item.ClaimToken, now, now,
+                deadLetter: true, errorMessage: "seeded dead-letter storm");
+            updated.Should().BeTrue("the seeded dispatch must transition under its current claim");
+        }
     }
 
     private async Task RefreshCachedBacklogAsync(IAlertDispatchStore store)
@@ -456,29 +449,6 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
                 new Claim(ClaimTypes.Role, "admin"),
             ],
             AuthenticationExtensions.ApiKeyScheme));
-
-    private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = multiplexer.GetDatabase();
-        var server = GetServer(multiplexer);
-        var keys = server.Keys(pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await database.KeyDeleteAsync(keys);
-        }
-    }
-
-    private static IServer GetServer(ConnectionMultiplexer multiplexer)
-    {
-        var endpoints = multiplexer.GetEndPoints();
-        if (endpoints.Length == 0)
-        {
-            throw new InvalidOperationException("Redis connection string did not provide any endpoints.");
-        }
-
-        return multiplexer.GetServer(endpoints[0]);
-    }
 
     private sealed class StoreBackedAlertDispatchHealth : IAlertDispatchHealth
     {

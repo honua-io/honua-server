@@ -159,17 +159,6 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
         return Math.Clamp(maxResults, 1, Capabilities.MaxResultsPerRequest);
     }
 
-    protected static double NormalizeScore(double rawScore, double minScore = 0.0, double maxScore = 1.0)
-    {
-        if (maxScore <= minScore)
-        {
-            return 0.0;
-        }
-
-        var normalized = (rawScore - minScore) / (maxScore - minScore);
-        return Math.Clamp(normalized * 100.0, 0.0, 100.0);
-    }
-
     protected Dictionary<string, string?> BuildAttributes(
         string? providerId = null,
         IReadOnlyDictionary<string, string?>? additionalAttributes = null)

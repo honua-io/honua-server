@@ -20,7 +20,8 @@ internal sealed class PostgresAttachmentMaintenance(
     {
         var sessions = SchemaSearchPath.QualifyTable("attachment_upload_sessions", schema);
         var receipts = SchemaSearchPath.QualifyTable("attachment_mutation_receipts", schema);
-        await using var connection = (NpgsqlConnection)await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionOwner = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionOwner.RequireNpgsqlConnection();
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await attachmentStore.ExpireUploadSessionsAsync(
             new AttachmentPublicationTransaction(connection, transaction, cancellationToken), sessions).ConfigureAwait(false);

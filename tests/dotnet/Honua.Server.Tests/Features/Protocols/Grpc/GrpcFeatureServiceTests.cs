@@ -747,7 +747,10 @@ public sealed partial class GrpcFeatureServiceTests
         // locked row when this flag is set, including fields the caller cannot see.
         update.Attributes.ContainsKey("code").Should().BeFalse();
         update.PreserveOmittedMaskedAttributes.Should().BeTrue();
-        captured.Value.Preconditions.IsDefaultOrEmpty.Should().BeTrue();
+        var precondition = captured.Value.Preconditions.Should().ContainSingle().Subject;
+        precondition.ObjectId.Should().Be(stored.Id);
+        precondition.ExpectedStateToken.Should().Be(FeatureStateToken.FromReadSnapshot(stored));
+        precondition.MaskedFields.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -2439,6 +2442,7 @@ public sealed partial class GrpcFeatureServiceTests
         public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
             => Task.FromResult(permissions);
     }
+
 
     // ---- Aliased publication: service-local index vs storage handle ------
 

@@ -120,7 +120,7 @@ internal sealed class ImageServerIdentifyHandler
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
             }
 
-            // CONTRACT CHANGE (#1660): when a renderingRule is supplied, identify returns the
+            // CONTRACT CHANGE: when a renderingRule is supplied, identify returns the
             // RENDERED pixel value (post clip/stretch/colormap), matching Esri ImageServer's
             // identify-with-renderingRule behaviour, instead of the raw source value. When no
             // renderingRule is supplied the raw-value contract is preserved unchanged. The same
@@ -142,7 +142,7 @@ internal sealed class ImageServerIdentifyHandler
                 return editionError;
             }
 
-            // identify parses mosaicRule with the same parser as exportImage (#4064), so an
+            // identify parses mosaicRule with the same parser as exportImage, so an
             // esriMosaicLockRaster rule pins the identified catalog items exactly as export does
             // and a malformed rule is rejected instead of silently falling back to the mosaic.
             if (!ImageServerMosaicRule.TryParse(request.MosaicRule, out var mosaicRule, out var mosaicRuleError, out var mosaicRuleNotImplemented))
@@ -257,7 +257,7 @@ internal sealed class ImageServerIdentifyHandler
 
             // A mosaic names the raster that supplied the pixel. Sort position is not that
             // raster: the store reports the id the same union kept, and a NoData neighbor stays
-            // at visibility 0 (#6561).
+            // at visibility 0.
             var winner = WinningCatalogRaster(selectedRasters, pixelResult.ContributingRasterIds);
             var nameMasked = ImageServerCatalogSecurity.IsMasked(maskedFields, "Name");
             var response = new IdentifyResponse
@@ -432,7 +432,7 @@ internal sealed class ImageServerIdentifyHandler
         // An Identity-only / StretchType=0 chain is an executable no-op: preserve the raw-value
         // contract by leaving rendering null so the store samples the source pixel. Band
         // arithmetic and terrain functions are now threaded through so the sampled value matches
-        // the rendered exportImage output (identify parity, #1803).
+        // the rendered exportImage output (identify parity).
         var resolved = new RasterIdentifyRendering(
             mapping.Stretch, mapping.Colormap, mapping.ClipRegion, mapping.BandArithmetic, mapping.Terrain);
         rendering = resolved.HasRendering ? resolved : null;
@@ -505,7 +505,7 @@ internal sealed class ImageServerIdentifyHandler
     }
 
     // Esri identify reports the pixel as the band values in band order joined by ", "
-    // ("17, 22, 39, 45"), or "NoData" when no band holds a value (#4064). Values are formatted
+    // ("17, 22, 39, 45"), or "NoData" when no band holds a value. Values are formatted
     // with the invariant culture so a client splitting on "," always recovers one value per band.
     private static string FormatPixelValues(Dictionary<int, object?> bandValues)
     {

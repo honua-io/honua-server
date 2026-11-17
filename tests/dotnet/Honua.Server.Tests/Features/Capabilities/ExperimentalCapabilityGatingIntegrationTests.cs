@@ -18,7 +18,9 @@ namespace Honua.Server.Tests.Features.Capabilities;
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
-public sealed class ExperimentalCapabilityGatingIntegrationTests
+public sealed class ExperimentalCapabilityGatingIntegrationTests(
+    ExperimentalCapabilityGatingIntegrationTests.DisabledPostureHost disabledPosture)
+    : IClassFixture<ExperimentalCapabilityGatingIntegrationTests.DisabledPostureHost>
 {
     private static readonly string[] ExperimentalCapabilityIds =
     [
@@ -47,7 +49,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // every built-experimental capability resolves experimental-disabled, so the
         // manifest omits it entirely (wire-compatible absence), while the in-release
         // capabilities stay present.
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
         try
@@ -220,12 +222,12 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities")]
     public async Task TemporalEndpoint_AfterGaPromotion_IsNotExperimentalGated()
     {
-        // temporal.* is Implemented (GA). The temporal route group must not short-circuit
-        // as experimental-disabled even with the global experimental switch OFF — the
-        // request reaches the handler (which then returns a normal not-found for the
-        // deliberately unseeded service/layer, a DIFFERENT 404 than the
-        // experimental-disabled gate produces).
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        // temporal.* is Implemented (GA). The temporal route
+        // group must no longer short-circuit as experimental-disabled even with the global
+        // experimental switch OFF — the request reaches the handler (which then returns a
+        // normal not-found for the deliberately unseeded service/layer, a DIFFERENT 404
+        // than the experimental-disabled gate).
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
         try
@@ -246,10 +248,10 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
     public async Task VmsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
     {
-        // The VMS REST surface (versioning.branch) is gated Preview.
-        // With experimental OFF the capability-gate filter must short-circuit with
-        // 404 honua:capability-experimental-disabled before any handler runs.
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        // The VMS REST surface (versioning.branch) is gated Preview. With experimental OFF the capability-gate filter must short-circuit with
+        // 404 honua:capability-experimental-disabled before any handler runs — proving the GA
+        // surface no longer exposes the VMS endpoints by default.
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
         try
@@ -272,7 +274,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     {
         // Operator ruling 2026-09-04 keeps alerts.geofence Preview for 2026.1. The
         // admin group must remain hidden behind the canonical explicit opt-in.
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
         try
@@ -292,7 +294,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
     public async Task SharedStreamingOperations_WhenAlertsPreviewDisabled_RemainAvailable()
     {
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
         try
@@ -316,7 +318,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // The security.mtls capability is experimental, so the client-certificate trust-profile
         // admin group is gated Preview: with experimental OFF the capability-gate filter must
         // short-circuit with 404 honua:capability-experimental-disabled before any handler runs.
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
         try
@@ -367,7 +369,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // bootstrap endpoint fails DI activation (500) instead of serving a clean 200 for
         // every OIDC/bearer-only deployment that has never opted into the experimental
         // capability (the production default).
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
         try
@@ -387,10 +389,11 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /api/v1/streaming/features/capabilities")]
     public async Task StreamingEndpoint_WhenPreviewDisabled_Returns404ExperimentalDisabled()
     {
-        // realtime.feature-streams is Experimental: with the global experimental switch
-        // OFF the streaming operations admin group must short-circuit as
-        // experimental-disabled before the handler runs.
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        // realtime.feature-streams is Implemented (GA). The
+        // streaming operations admin group must no longer short-circuit as
+        // experimental-disabled even with the global experimental switch OFF — the request
+        // reaches the handler (subject to admin auth).
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
         try
@@ -410,9 +413,11 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /api/v1/admin/services/{serviceId}/replicas")]
     public async Task ReplicasEndpoint_WhenPreviewDisabled_IsNotMapped()
     {
-        // sync.offline is Preview: with the Preview gate off the disconnected-sync
-        // replica/conflict-review admin group is not mapped, so the request gets a plain 404.
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        // sync.offline is Implemented (GA). The disconnected-sync
+        // replica/conflict-review admin group must no longer short-circuit as
+        // experimental-disabled even with the global experimental switch OFF — the request
+        // reaches the handler (subject to admin auth / edition).
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
         try
@@ -444,7 +449,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     // The ImageServer cases are GA since 2026-10-24 and must still serve by default (not 404).
     public async Task PreviewRasterRoutes_RetainTheirExistingAvailability(string method, string path)
     {
-        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
         try
         {
@@ -495,6 +500,32 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 builder.ConfigureAppConfiguration((_, configurationBuilder) =>
                     configurationBuilder.AddInMemoryCollection(configuration));
             });
+    }
+
+    // One host for the cases that run with every experimental capability off, the production
+    // default. Those cases only read, so they share it.
+    public sealed class DisabledPostureHost : IAsyncLifetime
+    {
+        private readonly WebAppFixture _fixture = CreateFixture(experimentalGlobalEnabled: false);
+
+        public Task InitializeAsync() => _fixture.InitializeAsync();
+
+        public Task DisposeAsync() => _fixture.DisposeAsync();
+
+        internal SharedHost Share() => new(_fixture);
+    }
+
+    // A case's view of the shared host. A case keeps the start and dispose calls it makes on a
+    // host of its own; here they do nothing, because the class fixture owns the host.
+    internal sealed class SharedHost(WebAppFixture fixture)
+    {
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public Task DisposeAsync() => Task.CompletedTask;
+
+        public HttpClient CreateClient() => fixture.CreateClient();
+
+        public HttpClient CreateAdminClient() => fixture.CreateAdminClient();
     }
 
     private static async Task AssertExperimentalDisabledAsync(HttpResponseMessage response)

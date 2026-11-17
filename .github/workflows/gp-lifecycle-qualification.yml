@@ -209,7 +209,10 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gp-lifecycle-receipts-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/gp-lifecycle/*.json
+          # A failed scenario also leaves <scenario>.log, the compose logs taken when it failed.
+          path: |
+            artifacts/gp-lifecycle/*.json
+            artifacts/gp-lifecycle/*.log
           if-no-files-found: error
           retention-days: 90
       - name: Build immutable lifecycle evidence pack
