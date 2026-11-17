@@ -75,8 +75,7 @@ internal sealed class GeometryServiceOverlayBudget
     public Geometry Buffer(Geometry geometry, double distance, BufferParameters bufferParameters)
     {
         ArgumentNullException.ThrowIfNull(geometry);
-        var curveBuilder = new OffsetCurveBuilder(geometry.PrecisionModel, bufferParameters);
-        var curves = new OffsetCurveSetBuilder(geometry, distance, curveBuilder).GetCurves();
+        var curves = new BufferCurveSetBuilder(geometry, distance, geometry.PrecisionModel, bufferParameters).GetCurves();
         if (OverlayCandidatePairs.CountLines(curves.Select(static curve => curve.Coordinates), PerOperation) > PerOperation)
         {
             throw new GeometryServiceLimitException(RefusalMessage);
