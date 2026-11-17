@@ -422,6 +422,12 @@ Geometry Service request budgets:
   `Limits:Edits:MaxPayloadSize` for a signed-in caller and a quarter of it for a caller
   that is not signed in. `buffer` checks the input geometries times the number of
   distances before buffering. A request over the budget returns a 400 error.
+- Overlay operations (`intersect`, `difference`, `clip`, `union`, `cut`, `autoComplete`,
+  `reshape`, `offset`, `simplify`, `relation`, and `buffer` and its `unionResults`) add a
+  vertex wherever two segments cross. Before each one runs, the segment pairs of its
+  inputs that could cross are counted, up to `Limits:Geometry:MaxOverlayCandidatePairs`
+  (default 2,000,000) for a signed-in caller and a quarter of it for a caller that is not
+  signed in. An operation over that count returns a 400 error before any work is done.
 - Each server process runs a bounded number of Geometry Service operations at once
   (twice its processor count, between 8 and 32) and bounds the request bytes they hold
   together to one and a quarter times `Limits:Edits:MaxPayloadSize`; a signed-in request

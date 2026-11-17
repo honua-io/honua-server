@@ -14,6 +14,7 @@ using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries.Prepared;
 using NetTopologySuite.IO;
 using NetTopologySuite.LinearReferencing;
 
@@ -174,7 +175,8 @@ internal sealed class GeometryServiceHandler(
                 DistanceUnitToMetersFactor = distanceUnitToMetersFactor,
                 UnionResults = unionResults,
                 Geodesic = geodesic,
-                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings),
+                OverlayBudget = GeometryServiceOverlayBudget.Create(context)
             };
 
             // Geodesic buffers always execute in geographic space (effectively EPSG:4326);
@@ -269,7 +271,8 @@ internal sealed class GeometryServiceHandler(
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 SR = sr!.Value,
-                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings),
+                OverlayBudget = GeometryServiceOverlayBudget.Create(context)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "simplify", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -528,7 +531,8 @@ internal sealed class GeometryServiceHandler(
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 SR = sr!.Value,
-                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings),
+                OverlayBudget = GeometryServiceOverlayBudget.Create(context)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "union", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -966,7 +970,8 @@ internal sealed class GeometryServiceHandler(
                 Geometries2Json = geometries2,
                 SR = sr!.Value,
                 Relation = relation,
-                RelationParam = relationParam
+                RelationParam = relationParam,
+                OverlayBudget = GeometryServiceOverlayBudget.Create(context)
             };
 
             return ExecuteRelation(parameters, scope, ct);
@@ -1420,7 +1425,8 @@ internal sealed class GeometryServiceHandler(
                 GeometryType = geomType,
                 CutterJson = cutter,
                 SR = sr!.Value,
-                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings, [cutter])
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings, [cutter]),
+                OverlayBudget = GeometryServiceOverlayBudget.Create(context)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "cut", parameters.TargetJsonStrings.Length, parameters.GeometryType);
@@ -1623,7 +1629,8 @@ internal sealed class GeometryServiceHandler(
                 OffsetUnit = offsetUnit,
                 OffsetHow = GeometryServiceRequestParser.GetValue(values, "offsetHow"),
                 BevelRatio = bevelRatio,
-                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings)
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings),
+                OverlayBudget = GeometryServiceOverlayBudget.Create(context)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "offset", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -1713,7 +1720,8 @@ internal sealed class GeometryServiceHandler(
                 PolygonJsonStrings = polygonStrings,
                 PolylineJsonStrings = polylineStrings,
                 SR = sr!.Value,
-                ResultBudget = GeometryServiceResultBudget.Create(context, polygonStrings, polylineStrings)
+                ResultBudget = GeometryServiceResultBudget.Create(context, polygonStrings, polylineStrings),
+                OverlayBudget = GeometryServiceOverlayBudget.Create(context)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "autoComplete", parameters.PolylineJsonStrings.Length, "esriGeometryPolygon");
@@ -1794,7 +1802,8 @@ internal sealed class GeometryServiceHandler(
                 TargetJson = target,
                 ReshaperJson = reshaper,
                 SR = sr!.Value,
-                ResultBudget = GeometryServiceResultBudget.Create(context, [target], [reshaper])
+                ResultBudget = GeometryServiceResultBudget.Create(context, [target], [reshaper]),
+                OverlayBudget = GeometryServiceOverlayBudget.Create(context)
             };
 
             GeometryServiceLog.RequestParsed(_logger, "reshape", 1, null);
@@ -2381,6 +2390,7 @@ internal sealed class GeometryServiceHandler(
         for (var i = 0; i < parameters.TargetJsonStrings.Length; i++)
         {
             var target = ReadGeometry(parameters.TargetJsonStrings[i]);
+            parameters.OverlayBudget.Check(target, cutter);
             foreach (var piece in CutGeometry(target, cutter))
             {
                 resultWkbs.Add(parameters.ResultBudget.Add(writer.Write(piece)));
@@ -2423,9 +2433,11 @@ internal sealed class GeometryServiceHandler(
             var nodedEdges = boundary.Union(cutter);
             var polygonizer = new NetTopologySuite.Operation.Polygonize.Polygonizer();
             polygonizer.Add(nodedEdges);
+            // One cut makes a piece per crossing; test them against an indexed target.
+            var preparedTarget = PreparedGeometryFactory.Prepare(target);
             var pieces = polygonizer.GetPolygons()
                 .Cast<Geometry>()
-                .Where(p => target.Contains(p.InteriorPoint))
+                .Where(p => preparedTarget.Contains(p.InteriorPoint))
                 .ToArray();
             return pieces.Length > 1 ? pieces : Array.Empty<Geometry>();
         }
@@ -2441,8 +2453,9 @@ internal sealed class GeometryServiceHandler(
             var merged = merger.GetMergedLineStrings().Cast<Geometry>().ToArray();
 
             // Keep only pieces that belong to the original target (drop the cutter's own runs).
+            var targetArea = PreparedGeometryFactory.Prepare(target.Buffer(target.Length * 1e-9 + 1e-12));
             var pieces = merged
-                .Where(piece => target.Buffer(target.Length * 1e-9 + 1e-12).Contains(piece))
+                .Where(targetArea.Contains)
                 .ToArray();
             return pieces.Length > 1 ? pieces : Array.Empty<Geometry>();
         }
@@ -2690,6 +2703,7 @@ internal sealed class GeometryServiceHandler(
             .Select(geomJson =>
             {
                 var geometry = ReadGeometry(geomJson);
+                parameters.OverlayBudget.Check(geometry);
 
                 // For polygons an offset is the buffer of the area by the (signed) distance.
                 // For polylines, OffsetCurve produces a line offset to one side of the input
@@ -2734,6 +2748,7 @@ internal sealed class GeometryServiceHandler(
         edges.AddRange(parameters.PolylineJsonStrings.Select(ReadGeometry));
 
         // Union all boundary/polyline edges to node them, then polygonize the closed regions.
+        parameters.OverlayBudget.Check(edges.ToArray());
         Geometry noded = factory.CreateGeometryCollection(edges.ToArray());
         noded = NetTopologySuite.Operation.Union.UnaryUnionOp.Union(noded);
 
@@ -2743,11 +2758,11 @@ internal sealed class GeometryServiceHandler(
         // Polygonization returns every closed face, which includes faces coincident with the
         // existing input polygons. autoComplete must return ONLY the new gap-filling polygons,
         // so drop faces whose interior falls inside the union of the input polygons.
-        Geometry? inputUnion = null;
+        IPreparedGeometry? inputUnion = null;
         if (inputPolygons.Count > 0)
         {
             Geometry inputCollection = factory.CreateGeometryCollection(inputPolygons.ToArray());
-            inputUnion = NetTopologySuite.Operation.Union.UnaryUnionOp.Union(inputCollection);
+            inputUnion = PreparedGeometryFactory.Prepare(NetTopologySuite.Operation.Union.UnaryUnionOp.Union(inputCollection));
         }
 
         var writer = new WKBWriter();
@@ -2772,6 +2787,7 @@ internal sealed class GeometryServiceHandler(
     {
         var target = ReadGeometry(parameters.TargetJson);
         var reshaper = ReadGeometry(parameters.ReshaperJson);
+        parameters.OverlayBudget.Check(target, reshaper);
         var reshaped = ReshapeGeometry(target, reshaper);
 
         var reshapedWkb = parameters.ResultBudget.Add(new WKBWriter().Write(reshaped));
@@ -3329,6 +3345,7 @@ internal sealed class GeometryServiceHandler(
             ct.ThrowIfCancellationRequested();
             for (var j = 0; j < geometries2.Length; j++)
             {
+                parameters.OverlayBudget.Check(geometries1[i], geometries2[j]);
                 if (EvaluateRelation(parameters.Relation, parameters.RelationParam, geometries1[i], geometries2[j]))
                 {
                     matches.Add(new GeometryServiceRelationPair { Geometry1Index = i, Geometry2Index = j });
@@ -3556,6 +3573,7 @@ internal sealed class GeometryServiceHandler(
                     wkb = await _operationService.ProjectAsync(wkb, parameters.InSR, bufferSrid, ct).ConfigureAwait(false);
                 }
 
+                parameters.OverlayBudget.Check(wkb);
                 var result = await _operationService.BufferAsync(
                     wkb,
                     parameters.Geodesic ? 4326 : bufferSrid,
@@ -3571,6 +3589,11 @@ internal sealed class GeometryServiceHandler(
                 }
 
                 bufferedAtDistance.Add(parameters.ResultBudget.Add(result));
+            }
+
+            if (parameters.UnionResults && bufferedAtDistance.Count > 1)
+            {
+                parameters.OverlayBudget.Check(bufferedAtDistance.ToArray());
             }
 
             if (parameters.UnionResults)
@@ -3602,6 +3625,7 @@ internal sealed class GeometryServiceHandler(
         foreach (var geomJson in parameters.GeometryJsonStrings)
         {
             var wkb = _geometryConverter.ConvertGeoServicesJsonToWkb(geomJson);
+            parameters.OverlayBudget.Check(wkb);
             var result = await _operationService.MakeValidAsync(wkb, parameters.SR, ct).ConfigureAwait(false);
             simplifiedGeometries.Add(parameters.ResultBudget.Add(result));
         }
@@ -3642,6 +3666,7 @@ internal sealed class GeometryServiceHandler(
             wkbs[i] = _geometryConverter.ConvertGeoServicesJsonToWkb(parameters.GeometryJsonStrings[i]);
         }
 
+        parameters.OverlayBudget.Check(wkbs);
         var unionResult = parameters.ResultBudget.Add(
             await _operationService.UnionAsync(wkbs, parameters.SR, ct).ConfigureAwait(false));
         // The Esri /union operation returns a single `geometry`, not a `geometries`
@@ -3720,7 +3745,8 @@ internal sealed class GeometryServiceHandler(
                 GeometryType = geomType,
                 OperatorGeometryJson = operatorGeometry,
                 SR = sr!.Value,
-                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings, [operatorGeometry])
+                ResultBudget = GeometryServiceResultBudget.Create(context, geomStrings, [operatorGeometry]),
+                OverlayBudget = GeometryServiceOverlayBudget.Create(context)
             };
 
             GeometryServiceLog.RequestParsed(_logger, operationName, parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -3760,6 +3786,7 @@ internal sealed class GeometryServiceHandler(
         foreach (var geomJson in parameters.GeometryJsonStrings)
         {
             var targetWkb = _geometryConverter.ConvertGeoServicesJsonToWkb(geomJson);
+            parameters.OverlayBudget.Check(targetWkb, operatorWkb);
             var result = await operation(targetWkb, operatorWkb, parameters.SR, ct).ConfigureAwait(false);
             results.Add(parameters.ResultBudget.Add(result));
         }

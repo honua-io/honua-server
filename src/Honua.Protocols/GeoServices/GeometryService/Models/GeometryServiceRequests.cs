@@ -18,6 +18,7 @@ internal sealed class BufferParameters
     public bool UnionResults { get; init; }
     public bool Geodesic { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class SimplifyParameters
@@ -26,6 +27,7 @@ internal sealed class SimplifyParameters
     public string? GeometryType { get; init; }
     public int SR { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class ProjectParameters
@@ -46,6 +48,7 @@ internal sealed class BinaryGeometryOperationParameters
     public required string OperatorGeometryJson { get; init; }
     public int SR { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class UnionParameters
@@ -54,6 +57,7 @@ internal sealed class UnionParameters
     public string? GeometryType { get; init; }
     public int SR { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class DistanceParameters
@@ -72,6 +76,7 @@ internal sealed class RelationParameters
     public int SR { get; init; }
     public required string Relation { get; init; }
     public string? RelationParam { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class DensifyParameters
@@ -119,6 +124,7 @@ internal sealed class CutParameters
     public required string CutterJson { get; init; }
     public int SR { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class TrimExtendParameters
@@ -141,6 +147,7 @@ internal sealed class OffsetParameters
     public string? OffsetHow { get; init; }
     public double BevelRatio { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class AutoCompleteParameters
@@ -149,6 +156,7 @@ internal sealed class AutoCompleteParameters
     public required string[] PolylineJsonStrings { get; init; }
     public int SR { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class ReshapeParameters
@@ -157,6 +165,7 @@ internal sealed class ReshapeParameters
     public required string ReshaperJson { get; init; }
     public int SR { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class FindTransformationsParameters
