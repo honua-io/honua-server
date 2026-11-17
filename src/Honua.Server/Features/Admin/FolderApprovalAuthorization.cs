@@ -351,5 +351,4 @@ internal sealed class FolderProposalRefusal(string message, OperationGatewayOutc
     internal OperationGatewayOutcome Outcome { get; } = outcome;
 }
 
-/// <summary>Current requester for an approved folder replay, or the classified refusal that stops it.</summary>
 internal sealed record FolderRequesterCheck(ClaimsPrincipal? Requester, FolderMutationFailure? Failure);

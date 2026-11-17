@@ -115,9 +115,7 @@ public sealed class FolderServiceAuthorizationTests
         policyEvaluator.Evaluate(requester, Arg.Any<AccessPolicy?>(), Arg.Any<AccessPolicy?>(), AccessScope.Write)
             .Returns(call => denyLastFacet && ReferenceEquals(call.ArgAt<AccessPolicy?>(2), last)
                 ? AccessDecision.Forbidden() : AccessDecision.Allowed());
-        await using var services = new ServiceCollection().AddSingleton(policyEvaluator)
-            .AddSingleton(new OperatorApprovalGate(operatorEvaluator, Substitute.For<IOperatorApprovalEvaluator>(),
-                NullLogger<OperatorApprovalGate>.Instance)).BuildServiceProvider();
+        await using var services = GateServices(policyEvaluator, operatorEvaluator);
         var graph = CreateFacetGraph(first, last);
 
         var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
@@ -154,9 +152,7 @@ public sealed class FolderServiceAuthorizationTests
         operatorEvaluator.EvaluateAsync(principal, Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(AccessDecision.Forbidden()));
         var policyEvaluator = Substitute.For<IAccessPolicyEvaluator>();
-        await using var services = new ServiceCollection().AddSingleton(policyEvaluator)
-            .AddSingleton(new OperatorApprovalGate(operatorEvaluator, Substitute.For<IOperatorApprovalEvaluator>(),
-                NullLogger<OperatorApprovalGate>.Instance)).BuildServiceProvider();
+        await using var services = GateServices(policyEvaluator, operatorEvaluator);
         var graph = CreateTenantGraph();
 
         var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
@@ -189,6 +185,11 @@ public sealed class FolderServiceAuthorizationTests
         policyEvaluator.DidNotReceive().Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<AccessPolicy?>(),
             Arg.Any<AccessPolicy?>(), Arg.Any<AccessScope>());
     }
+
+    private static ServiceProvider GateServices(IAccessPolicyEvaluator policyEvaluator, IOperatorAuthorizationEvaluator operatorEvaluator)
+        => new ServiceCollection().AddSingleton(policyEvaluator)
+            .AddSingleton(new OperatorApprovalGate(operatorEvaluator, Substitute.For<IOperatorApprovalEvaluator>(),
+                NullLogger<OperatorApprovalGate>.Instance)).BuildServiceProvider();
 
     private static void RecordEffectivePermissions(IRoleStore roleStore, List<string> evaluatedUsers)
     {

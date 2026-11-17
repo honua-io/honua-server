@@ -16,7 +16,6 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
 {
     internal string? Location { get; init; }
 
-    /// <summary>Classified approval-freshness refusal detail an approved replay may surface as its failure reason.</summary>
     internal string? ApprovalRefusal { get; init; }
 
     internal Dictionary<string, string> Details()

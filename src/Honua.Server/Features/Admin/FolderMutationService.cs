@@ -81,13 +81,9 @@ internal static class FolderMutationService
         var folderTenant = execution.Namespace is null ? null : MetadataV2ServicePaths.NormalizeTenant(tenant);
         var operatorPrincipal = replay?.OperatorPrincipal ?? execution.Principal;
         var store = services.GetRequiredService<IMetadataV2GraphStore>();
-        var requester = execution.Principal;
-        if (replay is not null)
-        {
-            var current = await FolderApprovalAuthorization.ResolveCurrentRequesterAsync(replay.Proposal, services, cancellationToken).ConfigureAwait(false);
-            if (current.Failure is not null) return new(null, null, new FolderExecutionFailure.Mutation(current.Failure));
-            requester = current.Requester!;
-        }
+        var current = await ResolveRequesterAsync(execution, replay, cancellationToken).ConfigureAwait(false);
+        if (current.Failure is not null) return new(null, null, new FolderExecutionFailure.Mutation(current.Failure));
+        var requester = current.Requester!;
         var snapshot = await store.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot.Etag != execution.ExpectedEtag)
             return new(null, null, new FolderExecutionFailure.Mutation(SnapshotChanged(replay)));
@@ -111,10 +107,21 @@ internal static class FolderMutationService
         if (authorization.Failure is not null)
             return new(null, mutation, new FolderExecutionFailure.AffectedServices(authorization));
         var saved = await store.SaveAsync(mutation.Graph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
-        var logger = services.GetService<ILoggerFactory>()?.CreateLogger("FolderMutations")
+        AuditMutation(execution, saved);
+        return new(saved, mutation, null) { Authorization = authorization };
+    }
+
+    private static async Task<FolderRequesterCheck> ResolveRequesterAsync(
+        FolderMutationExecution execution, FolderReplayAuthority? replay, CancellationToken cancellationToken)
+        => replay is null
+            ? new(execution.Principal, null)
+            : await FolderApprovalAuthorization.ResolveCurrentRequesterAsync(replay.Proposal, execution.Services, cancellationToken).ConfigureAwait(false);
+
+    private static void AuditMutation(FolderMutationExecution execution, MetadataV2GraphSnapshot saved)
+    {
+        var logger = execution.Services.GetService<ILoggerFactory>()?.CreateLogger("FolderMutations")
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         FolderAuditLog.Mutated(logger, execution.Command.OperationId, saved.Graph.Revision);
-        return new(saved, mutation, null) { Authorization = authorization };
     }
 
     private static async Task<FolderReplayAuthority?> AuthorizeReplayAsync(

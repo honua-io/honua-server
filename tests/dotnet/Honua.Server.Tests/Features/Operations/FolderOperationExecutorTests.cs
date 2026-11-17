@@ -68,25 +68,7 @@ public sealed class FolderOperationExecutorTests
         await using var scope = provider.CreateAsyncScope();
         var executor = scope.ServiceProvider.GetRequiredKeyedService<IOperationExecutor>(operationId);
 
-        var handle = await executor.SubmitAsync(new OperationRequest
-        {
-            OperationId = operationId,
-            ServiceName = "parcels",
-            Parameters = new Dictionary<string, string?>
-            {
-                ["name"] = "survey",
-                ["id"] = "folder",
-                ["folderId"] = null,
-                ["If-Match"] = "revision"
-            }
-        }, new OperationPolicyContext
-        {
-            ApprovedProposalId = "forged",
-            ApprovedPlanHash = "forged",
-            PrincipalId = "requester",
-            OperationInstanceId = "instance",
-            CorrelationId = "correlation"
-        });
+        var handle = await executor.SubmitAsync(ForgedRequest(operationId), ForgedApproval());
 
         handle.Status.Should().Be(OperationHandleStatus.Failed);
         handle.Result!.Details["statusCode"].Should().Be("403");
@@ -96,4 +78,26 @@ public sealed class FolderOperationExecutorTests
         clients.ReceivedCalls().Should().BeEmpty();
         catalog.ReceivedCalls().Should().BeEmpty();
     }
+
+    private static OperationRequest ForgedRequest(string operationId) => new()
+    {
+        OperationId = operationId,
+        ServiceName = "parcels",
+        Parameters = new Dictionary<string, string?>
+        {
+            ["name"] = "survey",
+            ["id"] = "folder",
+            ["folderId"] = null,
+            ["If-Match"] = "revision"
+        }
+    };
+
+    private static OperationPolicyContext ForgedApproval() => new()
+    {
+        ApprovedProposalId = "forged",
+        ApprovedPlanHash = "forged",
+        PrincipalId = "requester",
+        OperationInstanceId = "instance",
+        CorrelationId = "correlation"
+    };
 }
