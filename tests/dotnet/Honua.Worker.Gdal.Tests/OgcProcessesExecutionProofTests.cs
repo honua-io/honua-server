@@ -168,12 +168,10 @@ public sealed class OgcProcessesExecutionProofTests
         }
     }
 
-    // The empty Redis address outranks one in the process environment, so the host composes the
-    // production job store, queue and worker with no Redis.
+    // The host composes the production job store, queue and worker.
     private static WebAppFixture BuildFixture(IGdalCommandRunner? runner = null, string? scratch = null)
         => new WebAppFixture()
             .WithProductionJobSubstrate()
-            .ConfigureWebHost(builder => builder.UseSetting("ConnectionStrings:redis", string.Empty))
             .ConfigureServices(services =>
             {
                 if (runner is not null)
