@@ -101,7 +101,9 @@ public sealed partial class PublishedContentProjectionTests
         var store = _fixture.Services.GetRequiredService<IAuthoredConsoleContent>();
         await store.CreateAsync(new()
         {
-            Id = "resource", Name = "shadow", ItemType = ConsoleContentItemType.Layer,
+            Id = "resource",
+            Name = "shadow",
+            ItemType = ConsoleContentItemType.Layer,
             Visibility = ConsoleVisibility.Public
         });
         var graph = Graph();
