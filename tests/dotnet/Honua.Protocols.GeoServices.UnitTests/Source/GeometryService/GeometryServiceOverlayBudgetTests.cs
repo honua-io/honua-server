@@ -7,6 +7,7 @@ using Honua.Protocols.GeoServices.GeometryService.Services;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NetTopologySuite.Operation.Buffer;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
@@ -75,8 +76,8 @@ public sealed class GeometryServiceOverlayBudgetTests
     [Operation(Operations.Intersect)]
     public void TwoChainsAlongsideEachOther_CountTheirSegmentPairs()
     {
-        // Two staircases of 64 steps, each one monotone chain, a quarter step apart: four chain
-        // visits, and every step meets its neighbours in the other staircase.
+        // Two staircases of 64 steps, each one monotone chain, a quarter step apart: one chain pair,
+        // and every step meets its neighbours in the other staircase.
         var lower = Staircase(0);
         var upper = Staircase(0.25);
 
@@ -106,6 +107,47 @@ public sealed class GeometryServiceOverlayBudgetTests
 
         OverlayCandidatePairs.Count(parcels, long.MaxValue)
             .Should().BeLessThan(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Union)]
+    public void ClusteredBuffersUnioned_FitTheNotSignedInBudget()
+    {
+        // 100 points a few metres apart, each buffered by 10 metres and unioned in one request.
+        var buffers = Enumerable.Range(0, 100)
+            .Select(i => _factory.CreatePoint(new Coordinate(i % 10 * 0.5, i / 10 * 0.5)).Buffer(10))
+            .ToArray();
+
+        OverlayCandidatePairs.Count(buffers, long.MaxValue)
+            .Should().BeLessThan(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Offset)]
+    public void Buffer_RefusesOffsetCurvesThatCrossTooOften()
+    {
+        // A comb of 1,000 thin teeth offset by more than the gap between them: the teeth do not
+        // touch, but the curves drawn around them all cross their neighbours'.
+        var comb = Comb(1_000);
+        const long limit = 500_000;
+        var budget = new GeometryServiceOverlayBudget(limit);
+
+        OverlayCandidatePairs.Count([comb], limit).Should().BeLessThan(limit, "the comb itself crosses nothing");
+        var act = () => budget.Buffer(comb, 60, new BufferParameters());
+
+        act.Should().Throw<GeometryServiceLimitException>().WithMessage(GeometryServiceOverlayBudget.RefusalMessage);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Offset)]
+    public void Buffer_DetailedPolygonByItsRadius_FitsTheNotSignedInBudget()
+    {
+        var circle = Circle(0, 5_000);
+        var budget = new GeometryServiceOverlayBudget(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+
+        var buffered = budget.Buffer(circle, 1_000, new BufferParameters());
+
+        buffered.Area.Should().BeGreaterThan(circle.Area);
     }
 
     [UnitTest]
@@ -161,6 +203,19 @@ public sealed class GeometryServiceOverlayBudgetTests
         => _factory.CreateMultiLineString(Enumerable.Range(0, count)
             .Select(i => _factory.CreateLineString([new Coordinate(i, -1), new Coordinate(i, count)]))
             .ToArray());
+
+    // A base strip with thin teeth one unit wide, two units apart and 100 high.
+    private static Polygon Comb(int teeth)
+    {
+        var points = new List<Coordinate> { new(0, -10), new(2 * teeth, -10), new(2 * teeth, 0) };
+        for (var i = teeth - 1; i >= 0; i--)
+        {
+            points.AddRange([new((2 * i) + 1, 0), new((2 * i) + 1, 100), new(2 * i, 100), new(2 * i, 0)]);
+        }
+
+        points.Add(new Coordinate(0, -10));
+        return _factory.CreatePolygon([.. points]);
+    }
 
     private static LineString Staircase(double offset)
         => _factory.CreateLineString([.. Enumerable.Range(0, OverlayCandidatePairs.MaxChainSegments + 1)

@@ -227,7 +227,7 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `Limits__Geometry__MaxVerticesPerGeometry` | `50000` | Max vertices accepted per geometry. Also the most vertices a Geometry Service request may add to one geometry (`densify`, shape-preserving measurement). |
 | `Limits__Geometry__MaxGeometrySize` | `5242880` (5 MiB) | Max geometry payload size. |
 | `Limits__Geometry__MaxCoordinatePrecision` | `8` | Max coordinate decimal precision. |
-| `Limits__Geometry__MaxOverlayCandidatePairs` | `2000000` | Max segment pairs that could cross in one Geometry Service overlay, union, cut, repair or relation; a quarter of it for callers that are not signed in. Checked before the operation runs; a request over it returns a 400 error. |
+| `Limits__Geometry__MaxOverlayCandidatePairs` | `2000000` | Max segment pairs that could cross in one Geometry Service overlay, union, cut, trim, generalization, repair, relation or offset; a quarter of it for callers that are not signed in. Checked before each geometry or pair is computed; a request over it returns a 400 error. |
 | `Limits__Edits__MaxFeaturesPerEdit` | `500` | Max features per edit operation. |
 | `Limits__Edits__MaxEditsPerTransaction` | `2500` | Max edits per transaction. |
 | `Limits__Edits__MaxPayloadSize` | `26214400` (25 MiB) | Max edit payload size. |

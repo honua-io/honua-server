@@ -108,6 +108,7 @@ internal sealed class GeneralizeParameters
     public int SR { get; init; }
     public double MaxDeviation { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class LabelPointsParameters
@@ -135,6 +136,7 @@ internal sealed class TrimExtendParameters
 
     public string? ExtendHow { get; init; }
     public required GeometryServiceResultBudget ResultBudget { get; init; }
+    public required GeometryServiceOverlayBudget OverlayBudget { get; init; }
 }
 
 internal sealed class OffsetParameters

@@ -14,7 +14,9 @@ namespace Honua.Protocols.GeoServices.GeometryService.Services;
 // indexed by envelope. Every chain whose envelope a query meets, and every pair of segments
 // whose envelopes overlap, is one unit of work; every crossing lies in one such pair, so the
 // count bounds the crossings an engine can find. Counting stops once the limit is passed: the
-// work is O(n log n + limit) and the memory O(n) for n segments.
+// work is O(n log n + limit) and the memory O(n) for n segments. Inside one comparison of two
+// chains NTS also tests the envelopes of their halves; those tests are not counted, so one counted
+// unit can cost up to a few hundred cheap envelope tests.
 internal static class OverlayCandidatePairs
 {
     // NTS compares two chains without a way to stop part-way, so a chain holds at most this many
@@ -26,7 +28,17 @@ internal static class OverlayCandidatePairs
     {
         ArgumentNullException.ThrowIfNull(inputs);
 
-        var chains = BuildChains(inputs);
+        return CountLines(
+            inputs.SelectMany(LinearComponentExtracter.GetLines).Select(static line => line.Coordinates),
+            limit);
+    }
+
+    // The same count over lines given as coordinates, such as the curves a buffer is about to node.
+    public static long CountLines(IEnumerable<Coordinate[]> lines, long limit)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+
+        var chains = BuildChains(lines);
         var index = new HPRtree<MonotoneChain>();
         foreach (var chain in chains)
         {
@@ -49,21 +61,17 @@ internal static class OverlayCandidatePairs
         return counter.Pairs;
     }
 
-    private static List<MonotoneChain> BuildChains(IReadOnlyList<Geometry> inputs)
+    private static List<MonotoneChain> BuildChains(IEnumerable<Coordinate[]> lines)
     {
         var chains = new List<MonotoneChain>();
-        foreach (var input in inputs)
+        foreach (var points in lines.Where(static points => points.Length > 1))
         {
-            foreach (var line in LinearComponentExtracter.GetLines(input).Cast<LineString>())
+            foreach (var chain in MonotoneChainBuilder.GetChains(points))
             {
-                var points = line.Coordinates;
-                foreach (var chain in MonotoneChainBuilder.GetChains(points))
+                for (var start = chain.StartIndex; start < chain.EndIndex; start += MaxChainSegments)
                 {
-                    for (var start = chain.StartIndex; start < chain.EndIndex; start += MaxChainSegments)
-                    {
-                        var end = Math.Min(start + MaxChainSegments, chain.EndIndex);
-                        chains.Add(new MonotoneChain(points, start, end, null) { Id = chains.Count });
-                    }
+                    var end = Math.Min(start + MaxChainSegments, chain.EndIndex);
+                    chains.Add(new MonotoneChain(points, start, end, null) { Id = chains.Count });
                 }
             }
         }
@@ -88,11 +96,15 @@ internal static class OverlayCandidatePairs
                 return;
             }
 
-            Pairs++;
-            if (item.Id > Current.Id)
+            // Each pair is counted once, from its lower chain. A visit from the higher chain, or to
+            // itself, mirrors a counted one, so uncounted visits are at most the counted ones plus n.
+            if (item.Id <= Current.Id)
             {
-                Current.ComputeOverlaps(item, this);
+                return;
             }
+
+            Pairs++;
+            Current.ComputeOverlaps(item, this);
         }
 
         // The base action reads each candidate pair of segments and passes them here.

@@ -92,6 +92,46 @@ public sealed class GeometryServiceOverlayLimitTests(GeometryServiceComponentFix
     }
 
     [IntegrationTest]
+    [Operation(Operations.Generalize)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/generalize")]
+    public async Task Generalize_RingThatCrossesItselfTooOften_Returns400BeforeTheRepair()
+    {
+        // A star of 1,101 points joined 550 apart: every edge crosses about 1,100 others, and the
+        // simplifier repairs the invalid ring it keeps.
+        var body = $$"""
+        {"geometries": {"geometryType": "esriGeometryPolygon", "geometries": [{{Star()}}]}, "maxDeviation": 0.000001, "sr": "3857"}
+        """;
+
+        await AssertRefusedAsync(await PostAsync("generalize", body));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TrimExtend)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/trimExtend")]
+    public async Task TrimExtend_LinesThatCrossTooOften_Returns400BeforeTrimming()
+    {
+        var body = $$"""
+        {"polylines": [{{_rows}}], "trimExtendTo": {{_columns}}, "extendHow": 0, "sr": "3857"}
+        """;
+
+        await AssertRefusedAsync(await PostAsync("trimExtend", body));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Offset)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/offset")]
+    public async Task Offset_CurvesThatCrossTooOften_Returns400()
+    {
+        // 1,000 thin teeth two units apart offset by 60: the teeth cross nothing, the curves drawn
+        // around them cross their neighbours'.
+        var body = $$"""
+        {"geometries": {"geometryType": "esriGeometryPolygon", "geometries": [{{Comb()}}]}, "offsetDistance": 60, "offsetUnit": "esriMeters", "sr": "3857"}
+        """;
+
+        await AssertRefusedAsync(await PostAsync("offset", body));
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Intersect)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/intersect")]
     public async Task Intersect_OverlappingDetailedPolygons_ReturnsTheOverlay()
@@ -120,6 +160,32 @@ public sealed class GeometryServiceOverlayLimitTests(GeometryServiceComponentFix
     }
 
     private static string Polyline(IEnumerable<string> paths) => $$"""{"paths": [{{string.Join(',', paths)}}]}""";
+
+    private static string Star()
+    {
+        const int points = 1_101;
+        var vertices = Enumerable.Range(0, points + 1).Select(i =>
+        {
+            var angle = -2 * Math.PI * (i * 550 % points) / points;
+            return string.Create(CultureInfo.InvariantCulture, $"[{1_000 * Math.Cos(angle):F6},{1_000 * Math.Sin(angle):F6}]");
+        });
+        return $$"""{"rings": [[{{string.Join(',', vertices)}}]]}""";
+    }
+
+    // A base strip with 1,000 teeth one unit wide, two apart and 100 high, as a clockwise ring.
+    private static string Comb()
+    {
+        const int teeth = 1_000;
+        var points = new List<string> { "[0,-10]", "[0,0]" };
+        for (var i = 0; i < teeth; i++)
+        {
+            var x = 2 * i;
+            points.AddRange([$"[{x},100]", $"[{x + 1},100]", $"[{x + 1},0]", $"[{x + 2},0]"]);
+        }
+
+        points.AddRange([$"[{2 * teeth},-10]", "[0,-10]"]);
+        return $$"""{"rings": [[{{string.Join(',', points)}}]]}""";
+    }
 
     // A 5,000-vertex circle of radius 1,000 around (centerX, 0).
     private static string Circle(double centerX)
