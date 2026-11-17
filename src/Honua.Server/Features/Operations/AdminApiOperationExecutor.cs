@@ -42,7 +42,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
     {
         ArgumentNullException.ThrowIfNull(request);
         var descriptor = AdminApiOperationCatalog.Descriptors.Single(item => item.OperationId == OperationId);
-        var missing = GetMissingRouteParameters(request).ToList();
+        var missing = GetRouteParameterErrors(request).ToList();
         foreach (var parameter in descriptor.InputSchema.Where(static parameter => parameter.Required))
         {
             var present = parameter.Name switch
@@ -281,13 +281,39 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         var path = definition.Path;
         foreach (var name in RouteNames(path))
         {
-            var value = name switch { "connectionId" => request.ConnectionId, "serviceName" => request.ServiceName, _ => request.Parameters.GetValueOrDefault(name) };
-            path = path.Replace($"{{{name}}}", Uri.EscapeDataString(value ?? throw new ArgumentException($"Required route parameter '{name}' is missing.")), StringComparison.Ordinal);
+            var value = GetRouteParameterValue(request, name);
+            var error = GetRouteParameterError(name, value);
+            if (error is not null)
+                throw new ArgumentException(error, nameof(request));
+            path = path.Replace($"{{{name}}}", Uri.EscapeDataString(value!), StringComparison.Ordinal);
         }
         return path;
     }
 
-    private string[] GetMissingRouteParameters(OperationRequest request) => RouteNames(_definition.Path).Where(name => string.IsNullOrWhiteSpace(name switch { "connectionId" => request.ConnectionId, "serviceName" => request.ServiceName, _ => request.Parameters.GetValueOrDefault(name) })).Select(name => $"Required route parameter '{name}' is missing.").ToArray();
+    private IEnumerable<string> GetRouteParameterErrors(OperationRequest request)
+    {
+        foreach (var name in RouteNames())
+        {
+            var error = GetRouteParameterError(name, GetRouteParameterValue(request, name));
+            if (error is not null)
+                yield return error;
+        }
+    }
+
+    private static string? GetRouteParameterValue(OperationRequest request, string name) => name switch
+    {
+        "connectionId" => request.ConnectionId,
+        "serviceName" => request.ServiceName,
+        _ => request.Parameters.GetValueOrDefault(name)
+    };
+
+    private static string? GetRouteParameterError(string name, string? value) => value switch
+    {
+        null => $"Required route parameter '{name}' is missing.",
+        _ when string.IsNullOrWhiteSpace(value) => $"Required route parameter '{name}' is missing.",
+        "." or ".." => $"Route parameter '{name}' must not be a dot segment.",
+        _ => null
+    };
     private HashSet<string> RouteNames() => RouteNames(_definition.Path);
     private static HashSet<string> RouteNames(string path) => path.Split('/').Where(static segment => segment.StartsWith('{') && segment.EndsWith('}')).Select(static segment => segment[1..^1]).ToHashSet(StringComparer.Ordinal);
     private static void CopyHeader(HttpContext current, HttpRequestMessage message, string name)

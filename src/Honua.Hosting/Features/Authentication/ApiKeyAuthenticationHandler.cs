@@ -603,7 +603,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             }
         }
 
-        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, dependencies.Options.EnvironmentName);
+        AdminPasswordValidation.ValidateForEnvironment(resolvedPassword, dependencies.Options.EnvironmentName);
         return resolvedPassword;
     }
 
