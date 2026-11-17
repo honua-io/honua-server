@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import gzip
 import hashlib
 import importlib.util
@@ -10,6 +11,13 @@ import unittest
 from unittest.mock import patch
 
 
+@dataclass(frozen=True)
+class ArchiveOptions:
+    archive_format: str = 'docker'
+    layer_content: str = 'valid'
+    compression: str = 'gzip'
+
+
 class ImageLayerSizeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -18,30 +26,30 @@ class ImageLayerSizeTests(unittest.TestCase):
         cls.measurement = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.measurement)
 
-    def archive(self, directory, *, oci=False, corrupt=False, compression='gzip'):
+    def archive(self, directory, options=ArchiveOptions()):
         layer = b'uncompressed layer bytes' * 100
         diff_id = 'sha256:' + hashlib.sha256(layer).hexdigest()
         config = json.dumps({'rootfs': {'type': 'layers', 'diff_ids': [diff_id]}}).encode()
         image_id = 'sha256:' + hashlib.sha256(config).hexdigest()
         contents = {}
-        if oci:
+        if options.archive_format == 'oci':
             def blob(payload):
                 digest = 'sha256:' + hashlib.sha256(payload).hexdigest()
                 contents['blobs/sha256/' + digest.split(':')[1]] = payload
                 return {'digest': digest, 'size': len(payload)}
             config_descriptor = blob(config)
-            layer_payload = b'wrong' if corrupt else layer
+            layer_payload = b'wrong' if options.layer_content == 'corrupt' else layer
             layer_descriptor = blob(gzip.compress(layer_payload, mtime=0)
-                                    if compression == 'gzip' else layer_payload)
+                                    if options.compression == 'gzip' else layer_payload)
             layer_descriptor['mediaType'] = 'application/vnd.oci.image.layer.v1.tar'
-            if compression == 'gzip':
+            if options.compression == 'gzip':
                 layer_descriptor['mediaType'] += '+gzip'
             manifest = blob(json.dumps({'config': config_descriptor,
                                         'layers': [layer_descriptor]}).encode())
             contents['index.json'] = json.dumps({'manifests': [manifest]}).encode()
         else:
             contents['config.json'] = config
-            contents['layer.tar'] = b'wrong' if corrupt else layer
+            contents['layer.tar'] = b'wrong' if options.layer_content == 'corrupt' else layer
             contents['manifest.json'] = json.dumps([
                 {'Config': 'config.json', 'Layers': ['layer.tar']}]).encode()
         path = Path(directory) / 'image.tar'
@@ -53,28 +61,28 @@ class ImageLayerSizeTests(unittest.TestCase):
         return path, image_id, len(layer)
 
     def test_saved_image_counts_uncompressed_layers_for_both_archive_formats(self):
-        for oci in (False, True):
-            with self.subTest(oci=oci), tempfile.TemporaryDirectory() as directory:
-                path, image_id, expected = self.archive(directory, oci=oci)
+        for archive_format in ('docker', 'oci'):
+            with self.subTest(archive_format=archive_format), tempfile.TemporaryDirectory() as directory:
+                path, image_id, expected = self.archive(directory, ArchiveOptions(archive_format))
                 self.assertEqual(self.measurement.saved_image_bytes(path, image_id), expected)
 
     def test_saved_image_rejects_layer_not_matching_config_diff_id(self):
-        for oci in (False, True):
-            with self.subTest(oci=oci), tempfile.TemporaryDirectory() as directory:
-                path, image_id, _ = self.archive(directory, oci=oci, corrupt=True)
+        for archive_format in ('docker', 'oci'):
+            with self.subTest(archive_format=archive_format), tempfile.TemporaryDirectory() as directory:
+                path, image_id, _ = self.archive(directory, ArchiveOptions(archive_format, 'corrupt'))
                 with self.assertRaisesRegex(ValueError, 'diff ID'):
                     self.measurement.saved_image_bytes(path, image_id)
 
     def test_saved_image_rejects_different_selected_image(self):
-        for oci in (False, True):
-            with self.subTest(oci=oci), tempfile.TemporaryDirectory() as directory:
-                path, _, _ = self.archive(directory, oci=oci)
+        for archive_format in ('docker', 'oci'):
+            with self.subTest(archive_format=archive_format), tempfile.TemporaryDirectory() as directory:
+                path, _, _ = self.archive(directory, ArchiveOptions(archive_format))
                 with self.assertRaisesRegex(ValueError, 'loaded image'):
                     self.measurement.saved_image_bytes(path, 'sha256:' + '0' * 64)
 
     def test_saved_oci_uncompressed_layers_use_the_same_measurement(self):
         with tempfile.TemporaryDirectory() as directory:
-            path, image_id, expected = self.archive(directory, oci=True, compression='none')
+            path, image_id, expected = self.archive(directory, ArchiveOptions('oci', compression='none'))
             self.assertEqual(self.measurement.saved_image_bytes(path, image_id), expected)
 
     def test_config_requires_one_diff_id_per_layer(self):
