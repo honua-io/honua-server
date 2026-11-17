@@ -5,12 +5,13 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
 public sealed partial class PbfQueryFormatterTests
 {
-    [Fact]
+    [UnitTest]
     public void FormatAsPbf_ExactDecimalAndOffsetTimestamp_EncodeDoubleAndEpoch()
     {
         var resource = CreateLayer([

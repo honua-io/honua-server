@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.GeoJson;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -24,7 +25,7 @@ public sealed class GeoJsonFeatureBaseBuilderExactTypesTests
         ]
     };
 
-    [Fact]
+    [UnitTest]
     public void Create_DecimalText_BecomesRawJsonNumberWithEveryDigit()
     {
         var properties = Build("12345678901234567890123456789.50", "2024-01-01T14:00:00+02:00");
@@ -34,7 +35,7 @@ public sealed class GeoJsonFeatureBaseBuilderExactTypesTests
         amount.GetRawText().Should().Be("12345678901234567890123456789.50");
     }
 
-    [Fact]
+    [UnitTest]
     public void Create_OffsetTimestamp_BecomesUtcDateTime()
     {
         var properties = Build("1.5", "2024-01-01T14:00:00+02:00");
@@ -42,7 +43,7 @@ public sealed class GeoJsonFeatureBaseBuilderExactTypesTests
         properties["observed"].Should().Be("2024-01-01T12:00:00Z");
     }
 
-    [Fact]
+    [UnitTest]
     public void Create_NonCanonicalDecimalText_FallsBackToDouble()
     {
         var properties = Build("1e3", null);

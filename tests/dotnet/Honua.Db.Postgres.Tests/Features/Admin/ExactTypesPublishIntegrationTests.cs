@@ -13,6 +13,7 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
@@ -52,7 +53,7 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
         await fixture.DropSchemaAsync(_schema);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task PublishWithExactTypes_PersistsExactFieldsAndKeepsThemOnRepublish()
     {
         var service = CreateService();
@@ -69,7 +70,7 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
         (await ReadFieldTypesAsync(published.StorageLayerId)).Should().BeEquivalentTo(fieldTypes);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task ReadPublishedExactRow_ReturnsExactDecimalTextAndOffsetInstant()
     {
         var published = await CreateService().PublishLayerAsync(ConnectionString(), ExactRequest());
