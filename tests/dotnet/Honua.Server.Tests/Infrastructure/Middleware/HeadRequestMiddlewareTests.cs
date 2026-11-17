@@ -76,7 +76,7 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         // Registered last, exactly as Program.cs does, so it is the final middleware before the endpoint runs.
         _app.UseHonuaHeadRequestGetSemantics();
 
-        // GET-only: the shape of nearly every Honua route before #3389.
+        // GET-only: the shape of nearly every Honua route when using GET-only mappings.
         _app.MapGet("/text", async context =>
         {
             context.Response.Headers["X-Method-Seen"] = context.Request.Method;

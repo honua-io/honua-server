@@ -213,12 +213,6 @@ internal sealed partial class FeatureQueryBuilder
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
 
-            // Drop out-of-range / missing values in WHERE rather than HAVING. A HAVING
-            // expression over the raw attribute is rejected by PostgreSQL (SQLSTATE 42803)
-            // unless it is syntactically identical to a grouped expression, which the
-            // previous CASE was not — every fixed-boundaries bins query failed at
-            // execution. Values outside [first, last] (and NULLs) are exactly the rows
-            // whose bin_idx CASE yields NULL, so this WHERE guard is equivalent.
             var rangeLower = boundaries[0].ToString(CultureInfo.InvariantCulture);
             var rangeUpper = boundaries[^1].ToString(CultureInfo.InvariantCulture);
             sql.Append(CultureInfo.InvariantCulture,

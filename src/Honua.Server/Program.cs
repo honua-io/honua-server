@@ -1552,6 +1552,13 @@ app.UseAuthentication();
 app.UsePortalTokenAuthentication();
 app.UseBrowserSessionSecurity();
 
+// Canonical governed-lineage headers are accepted only when accompanied by a
+// one-use, process-local attestation issued by an operation loopback executor.
+// Public callers cannot attach mutations or audit evidence to unrelated operations.
+// It runs before agent marking and authorization so a loopback hop made for an agent
+// is an agent to the authorization handlers too.
+app.UseOperationLineageAttestation();
+
 // Mark MCP callers and agent-grant API keys before authorization, so approval gates and the
 // operation policy treat them as agents on every path.
 Honua.Infrastructure.Authentication.AgentPrincipal.UseAgentPrincipalMarking(app);
@@ -1572,11 +1579,6 @@ app.UseAnonymousImportPayloadClamp();
 // Required-authentication routes must see every validated credential type. Running
 // this before the portal bridge rejects valid SensorThings subscription tokens.
 app.UseAuthorization();
-
-// Canonical governed-lineage headers are accepted only when accompanied by a
-// one-use, process-local attestation issued by an operation loopback executor.
-// Public callers cannot attach mutations or audit evidence to unrelated operations.
-app.UseOperationLineageAttestation();
 
 // MCP bearer credentials must be fully validated before tenant context, schema
 // routing, or tenant status observes the request. The endpoint filter remains

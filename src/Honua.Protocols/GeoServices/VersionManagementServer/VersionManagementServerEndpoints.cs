@@ -460,9 +460,14 @@ public static class VersionManagementServerEndpoints
 
         // Match the exact served identity rather than a bare name: different owners may use the
         // same branch name, and storage can hold either a bare or already-qualified create input.
+        // Hidden private versions are left out before counting, so neither the not-found answer
+        // nor the ambiguity conflict reveals another owner's private version.
+        var callerName = context.User?.Identity?.Name;
+        var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
         var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
         var matches = versions.Where(version =>
-            ToWireVersionName(version).Equals(versionName, StringComparison.OrdinalIgnoreCase)).ToArray();
+            ToWireVersionName(version).Equals(versionName, StringComparison.OrdinalIgnoreCase)
+            && VersionAccessPolicy.IsVersionVisible(version, callerName, isAdmin)).ToArray();
         if (matches.Length == 0)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionName}' was not found.");
@@ -723,6 +728,11 @@ public static class VersionManagementServerEndpoints
         {
             var callerName = context.User?.Identity?.Name;
             var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
+            if (!VersionAccessPolicy.IsVersionVisible(conflictVersion, callerName, isAdmin))
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
+            }
+
             if (!VersionAccessPolicy.CanManageVersion(conflictVersion, callerName, isAdmin))
             {
                 return StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
@@ -1128,6 +1138,13 @@ public static class VersionManagementServerEndpoints
 
         var callerName = context.User?.Identity?.Name;
         var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
+        // A private version the caller cannot see answers exactly like an unknown GUID, so a
+        // refusal never confirms that someone else's private version exists.
+        if (!VersionAccessPolicy.IsVersionVisible(version, callerName, isAdmin))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuidString}' was not found.");
+        }
+
         if (!VersionAccessPolicy.CanManageVersion(version, callerName, isAdmin))
         {
             return StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);

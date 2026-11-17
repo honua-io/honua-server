@@ -94,14 +94,9 @@ def select_offline(
     cap: int = 6,
 ) -> dict[str, Any]:
     """Exercise the pure selection with a supplied router answer."""
-    return selector.select(
-        config=config,
-        changed_files=changed_files,
-        descriptor=descriptor,
-        affected_projects=projects,
-        cap=cap,
-        test_class_hits=selector.count_test_class_hits(REPO_ROOT, config, changed_files),
-    )
+    inputs = selector.SelectionInputs(descriptor, projects, cap,
+                                      selector.count_test_class_hits(REPO_ROOT, config, changed_files))
+    return selector.select(config, changed_files, inputs)
 
 
 def router(
@@ -264,6 +259,39 @@ def check_cap_is_enforced(config: dict[str, Any]) -> None:
             )
         if len(result["dropped"]) != len(config["shards"]) - cap:
             raise FixtureError("dropped families were not reported")
+
+
+def check_explicit_source_priority(config: dict[str, Any]) -> None:
+    """Explicit ownership survives timing drift without overriding test ownership."""
+    probe = copy.deepcopy(config)
+    owners = capacity_split_names(probe, "Server Features Packages and Temporal")
+    owner = next(shard for shard in probe["shards"] if shard["name"] == owners[0])
+    competitor = next(shard for shard in probe["shards"] if shard["name"] not in owners)
+    prefix = "src/Honua.Server/Features/Temporal/"
+    for shard, rank in ((owner, 1), (competitor, 100)):
+        shard.update(paths=[prefix], dispatch_rank=rank)
+    changed = [prefix + "Probe.cs"]
+    descriptor = {"run_all": False, "reason": "targeted", "shards": [owner["name"], competitor["name"]]}
+    selected = select_offline(probe, changed, descriptor=descriptor, cap=1)
+    if selected["shards"] != [owner["name"]]:
+        raise FixtureError("explicit source owner lost its slot to timing drift")
+    for enabled in (False, None):
+        unmarked = copy.deepcopy(probe)
+        for override in unmarked["targeted_override_prefixes"]:
+            if enabled is None:
+                override.pop("prioritize", None)
+            else:
+                override["prioritize"] = enabled
+        selected = select_offline(unmarked, changed, descriptor=descriptor, cap=1)
+        if selected["shards"] != [competitor["name"]]:
+            raise FixtureError("unmarked source override changed priority")
+    signals = selector.SelectionInputs(descriptor, None, 1, {competitor["name"]: 1})
+    selected = selector.select(probe, changed, signals)
+    if selected["shards"] != [competitor["name"]]:
+        raise FixtureError("source priority displaced changed-test ownership")
+    descriptor["shards"] = [competitor["name"]]
+    if select_offline(probe, changed, descriptor=descriptor, cap=1)["candidate_count"] != 1:
+        raise FixtureError("source priority admitted a noncandidate")
 
 
 def check_largest_impact_first(config: dict[str, Any]) -> None:
@@ -754,23 +782,23 @@ def check_failure_injections(config: dict[str, Any]) -> None:
     """
     original = selector.select
 
-    def ignores_the_cap(**kwargs):
-        return original(**{**kwargs, "cap": len(kwargs["config"]["shards"])})
+    def ignores_the_cap(config, changed_files, inputs):
+        return original(config, changed_files, inputs._replace(cap=len(config["shards"])))
 
-    def forgets_advisory(**kwargs):
-        stripped = copy.deepcopy(kwargs["config"])
+    def forgets_advisory(config, changed_files, inputs):
+        stripped = copy.deepcopy(config)
         for shard in stripped["shards"]:
             shard.pop("advisory", None)
-        return original(**{**kwargs, "config": stripped})
+        return original(stripped, changed_files, inputs)
 
-    def never_narrows(**kwargs):
-        return original(**{**kwargs, "affected_projects": None})
+    def never_narrows(config, changed_files, inputs):
+        return original(config, changed_files, inputs._replace(affected_projects=None))
 
-    def ranks_by_duration_only(**kwargs):
-        return original(**{**kwargs, "changed_files": []})
+    def ranks_by_duration_only(config, changed_files, inputs):
+        return original(config, [], inputs)
 
-    def ignores_test_ownership(**kwargs):
-        return original(**{**kwargs, "test_class_hits": None})
+    def ignores_test_ownership(config, changed_files, inputs):
+        return original(config, changed_files, inputs._replace(test_class_hits=None))
 
     injections = (
         ("cap", ignores_the_cap, lambda: check_cap_is_enforced(config)),
@@ -886,6 +914,7 @@ def main() -> int:
     covered = check_feature_namespace_selects_its_shard(config)
     check_cap_is_enforced(config)
     check_temporal_source_survives_the_cap(config)
+    check_explicit_source_priority(config)
     check_largest_impact_first(config)
     owned = check_changed_test_file_selects_its_running_shard(config)
     check_wps_and_h3_tests_select_both_owners(config)

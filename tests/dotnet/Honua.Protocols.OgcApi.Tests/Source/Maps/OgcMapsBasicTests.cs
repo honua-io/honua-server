@@ -411,7 +411,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     public async Task GetCollection_MapServingCollection_ReturnsDescriptionWhoseMapLinksRender()
     {
-        // #4991: GDAL's OGCAPI driver (QGIS's OGC API - Maps provider) reads the collection
+        // GDAL's OGCAPI driver (QGIS's OGC API - Maps provider) reads the collection
         // resource before it requests /map, so a collection that renders must also describe
         // itself. GDAL takes the map URL only from the http:// relation with a media type; for any
         // other link it keeps whichever comes last, so without it QGIS requested the
@@ -479,7 +479,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     public async Task GetCollection_ProtectedCollection_RefusesAnonymousWith401AndAdmitsEntitledCaller()
     {
-        // #4991: a protected collection answers anonymous callers with 401, on the collection
+        // A protected collection answers anonymous callers with 401, on the collection
         // resource and on its map, instead of the 404 that told clients it did not exist.
         const string entitledRole = "maps-reader";
         const string referer = "https://ogcapi-maps-collection-proof.example/";
@@ -588,12 +588,12 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [Operation(Operations.Render)]
     public async Task GetStyledMap_VectorCollectionTiff_ReturnsCleanErrorNeverPngLabeledTiff()
     {
-        // Regression for #2365: the Skia styled-vector renderer (ADR-0048) has no TIFF
-        // encoder and silently fell back to PNG, while the response Content-Type was set
-        // from the requested format — so f=tiff on a vector collection returned PNG bytes
-        // mislabeled as image/tiff, corrupting GDAL/rasterio clients. TIFF is only encodable
-        // on the GDAL raster-coverage path, so the styled-vector path must reject it cleanly.
-        // Layer 0 is a seeded vector (Point) collection, so this exercises the Skia path.
+        // The Skia styled-vector renderer (ADR-0048) has no TIFF encoder. It must not
+        // silently fall back to PNG while the response Content-Type is set from the requested
+        // format: f=tiff on a vector collection would return PNG bytes mislabeled as
+        // image/tiff, corrupting GDAL/rasterio clients. TIFF is only encodable on the GDAL
+        // raster-coverage path, so the styled-vector path must reject it cleanly. Layer 0 is
+        // a seeded vector (Point) collection, so this exercises the Skia path.
         var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=tiff";
         var styleId = await StoreCollectionStyleAsync();
 

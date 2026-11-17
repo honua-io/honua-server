@@ -49,7 +49,7 @@ public sealed class StandardErrorHelpersTests : IClassFixture<StandardErrorRespo
             var result = StandardErrorHelpers.CreateBadRequest(context, "Invalid request parameters", additionalDetails);
             await result.ExecuteAsync(context);
 
-            // Assert — PA-070/PA-117 (#2418): GeoServices paths transport errors as
+            // Assert — GeoServices paths transport errors as
             // HTTP 200 + {"error":{"code":400}}; other protocols keep the real status.
             var expectedStatus = path.StartsWith("/rest/services", StringComparison.Ordinal) ? 200 : 400;
             context.Response.StatusCode.Should().Be(expectedStatus, $"because path {path} should return {expectedStatus}");
@@ -79,7 +79,7 @@ public sealed class StandardErrorHelpersTests : IClassFixture<StandardErrorRespo
             var result = StandardErrorHelpers.CreateNotFound(context, "Resource not found");
             await result.ExecuteAsync(context);
 
-            // Assert — PA-070/PA-117 (#2418): GeoServices paths transport errors as
+            // Assert — GeoServices paths transport errors as
             // HTTP 200 + {"error":{"code":404}}; other protocols keep the real status.
             var expectedStatus = path.StartsWith("/rest/services", StringComparison.Ordinal) ? 200 : 404;
             context.Response.StatusCode.Should().Be(expectedStatus, $"because path {path} should return {expectedStatus}");
@@ -109,7 +109,7 @@ public sealed class StandardErrorHelpersTests : IClassFixture<StandardErrorRespo
             var result = StandardErrorHelpers.CreateConflict(context, "Resource already exists");
             await result.ExecuteAsync(context);
 
-            // Assert — PA-070/PA-117 (#2418): GeoServices paths transport errors as
+            // Assert — GeoServices paths transport errors as
             // HTTP 200 + {"error":{"code":409}}; other protocols keep the real status.
             var expectedStatus = path.StartsWith("/rest/services", StringComparison.Ordinal) ? 200 : 409;
             context.Response.StatusCode.Should().Be(expectedStatus, $"because path {path} should return {expectedStatus}");
@@ -168,7 +168,7 @@ public sealed class StandardErrorHelpersTests : IClassFixture<StandardErrorRespo
         var result = StandardErrorHelpers.CreateFromException(context, serviceException);
         await result.ExecuteAsync(context);
 
-        // Assert — PA-070/PA-117 (#2418): the GeoServices path transports the 503 as
+        // Assert — the GeoServices path transports the 503 as
         // HTTP 200 + {"error":{"code":503}}; the Retry-After header is still emitted.
         context.Response.StatusCode.Should().Be(200);
         context.Response.Headers.Should().ContainKey("Retry-After");
@@ -324,7 +324,7 @@ public sealed class StandardErrorHelpersTests : IClassFixture<StandardErrorRespo
         var result = StandardErrorHelpers.CreateGeometryError(context, "Polygon is self-intersecting");
         await result.ExecuteAsync(context);
 
-        // Assert — PA-070/PA-117 (#2418): the GeoServices path transports the error as
+        // Assert — the GeoServices path transports the error as
         // HTTP 200; the 400 is carried in the body envelope asserted below.
         context.Response.StatusCode.Should().Be(200);
 

@@ -288,9 +288,6 @@ public class ConsoleActionEvaluatorTests
     [UnitTest]
     public async Task Viewer_OnOthersPersonalItem_HasNoView()
     {
-        // Viewer principal has metadata.read; this test guards the
-        // CanView fallthrough fix — metadata.read alone must not bypass
-        // Personal owner-only visibility.
         var evaluator = BuildEvaluator();
         var item = Sample(visibility: ConsoleVisibility.Personal, owner: "other-user");
 

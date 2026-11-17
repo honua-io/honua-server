@@ -48,7 +48,7 @@ public sealed class SeedRbacTableParityTests
 
     private static HashSet<string> EnumerateAuthorizationStoreTables(string projectRoot)
     {
-        // Identity is scanned alongside Authorization (#3141): the durable managed-user /
+        // Identity is scanned alongside Authorization: the durable managed-user /
         // SCIM stores (PostgresUserStore, PostgresScimGroupStore) are registered in the
         // same migration-skipping test host and read explicitly-qualified honua.* tables
         // exactly like the RBAC stores, so they need the same seed mirror.

@@ -498,7 +498,7 @@ public sealed partial class DeployWorkflowServiceTests
 
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         var succeeded = await store.GetAsync(operation.OperationId);
-        // honua-server#4618: promotion opens a post-activation observation window instead of finishing
+        // Promotion opens a post-activation observation window instead of finishing
         // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
         succeeded!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         succeeded.CompletedAt.Should().BeNull();
@@ -545,7 +545,7 @@ public sealed partial class DeployWorkflowServiceTests
     [Fact]
     public async Task GenericGitOpsBackend_RollbackAsync_FailsLoudly_DoesNotSilentlySucceed()
     {
-        // Default GitOps hand-off rollback (#2811): the base backend cannot revert the running workload
+        // Default GitOps hand-off rollback: the base backend cannot revert the running workload
         // itself (an external GitOps controller owns the revision), so RollbackAsync must FAIL LOUDLY
         // (ManualInterventionRequired) rather than return RollbackRequested — which the reconciler would
         // treat as "rollback took", reporting a rollback that never happened.
@@ -619,7 +619,7 @@ public sealed partial class DeployWorkflowServiceTests
         var updated = await store.GetAsync(operation.OperationId);
 
         updated.Should().NotBeNull();
-        // honua-server#4618: promotion opens a post-activation observation window instead of settling
+        // Promotion opens a post-activation observation window instead of settling
         // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
         updated!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         updated.Deploy!.Protection.Should().NotBeNull();
@@ -684,7 +684,7 @@ public sealed partial class DeployWorkflowServiceTests
             });
         await store.TryCreateAsync(operation);
 
-        // The Kubernetes preset also contributes a latency signal; #4617 requires every configured
+        // The Kubernetes preset also contributes a latency signal; every configured
         // signal to carry evidence, so the fixture answers all three queries (sample, error, latency).
         var evaluator = CreateTelemetryEvaluator(
             $$$"""
@@ -702,7 +702,7 @@ public sealed partial class DeployWorkflowServiceTests
         var promoted = await store.GetAsync(operation.OperationId);
 
         promoted.Should().NotBeNull();
-        // honua-server#4618: promotion opens a post-activation observation window instead of settling
+        // Promotion opens a post-activation observation window instead of settling
         // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
         promoted!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         promoted.Deploy!.Protection.Should().NotBeNull();
@@ -737,7 +737,7 @@ public sealed partial class DeployWorkflowServiceTests
             await Task.Delay(10);
             await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
             var snapshot = await store.GetAsync(operation.OperationId);
-            // honua-server#4618: the terminal step's promotion opens a post-activation observation
+            // The terminal step's promotion opens a post-activation observation
             // window rather than settling immediately, so "promoted" is now signalled by an open
             // Protection record rather than a terminal Succeeded status.
             if (snapshot!.Deploy?.Protection != null)
@@ -823,7 +823,7 @@ public sealed partial class DeployWorkflowServiceTests
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         var promoted = await store.GetAsync(operation.OperationId);
 
-        // honua-server#4618: promotion opens a post-activation observation window instead of settling
+        // Promotion opens a post-activation observation window instead of settling
         // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
         promoted!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         promoted.Deploy!.Protection.Should().NotBeNull();
@@ -911,7 +911,7 @@ public sealed partial class DeployWorkflowServiceTests
     [Fact]
     public async Task CreateAsync_SubmitImmediately_WithInvalidTelemetryPolicy_NeverMutatesBackend()
     {
-        // Validation happens before mutation (#4617): the operation is recorded as Planned with the
+        // Validation happens before mutation: the operation is recorded as Planned with the
         // blocking reason, the backend is never started, and a later submit is refused.
         var store = new TestWorkflowOperationStore();
         var backend = new ImmediateDeployBackend();
@@ -1166,7 +1166,7 @@ public sealed partial class DeployWorkflowServiceTests
     [InlineData("telemetry.healthz.url", "http://192.168.1.20/healthz/ready")]
     public async Task PlanAsync_WithProbeUrlTheRuntimeProbeRefuses_BlocksSubmission(string key, string url)
     {
-        // honua-server#4988: a probe URL the runtime probe always refuses must not be admitted at plan
+        // A probe URL the runtime probe always refuses must not be admitted at plan
         // time; otherwise the gate reports itself misconfigured and fails a correct candidate at the
         // exposure deadline.
         var backend = new ImmediateDeployBackend();
@@ -1433,7 +1433,7 @@ public sealed partial class DeployWorkflowServiceTests
         };
     }
 
-    // Prometheus samples are stamped "now" so the gate's default 5-minute freshness bound (#4617)
+    // Prometheus samples are stamped "now" so the gate's default 5-minute freshness bound
     // accepts them as current evidence.
     private static string NowUnixSeconds => DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
 

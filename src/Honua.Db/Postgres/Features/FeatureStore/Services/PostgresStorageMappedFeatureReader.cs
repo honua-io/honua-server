@@ -127,7 +127,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var objectIdField = _resource.SchemaFields.FirstOrDefault(field =>
             field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase));
         var injectObjectId = objectIdField is null || objectIdField.Name.Equals(primaryIdFieldName, StringComparison.OrdinalIgnoreCase);
-        // Preserve the historical encoded column name unless a source attribute owns it.
+        // Encode the primary key as objectid unless a source attribute owns that name.
         var encodedPrimaryIdName = injectObjectId ? FieldNames.ObjectId : primaryIdFieldName;
         return (primaryIdFieldName, injectObjectId, encodedPrimaryIdName);
     }
@@ -842,8 +842,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     }
 
     // OGC API Features `datetime` (and any temporal query) lands here as a
-    // TemporalFilter. The storage-mapped reader previously dropped it, so the
-    // filter was silently ignored. Row interval is [start, COALESCE(end, start)];
+    // TemporalFilter. Row interval is [start, COALESCE(end, start)];
     // it must intersect the query interval [Start, End].
     private string BuildTemporalFilter(TemporalFilter filter, SqlBuilder sql)
     {

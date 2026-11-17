@@ -90,7 +90,7 @@ public sealed class AdminAccessInstallerCredentialTests
             statusData.GetProperty("correlationId").GetString().Should().Be(effective.GetProperty("correlationId").GetString());
 
             // The host-composed projection (its catalog, approval mappers and actuators) keeps the installer
-            // checks eligible and never advertises key issuance. Serving it over /mcp is #3363's publication
+            // checks eligible and never advertises key issuance. Serving it over /mcp is the publication
             // step, so the projection is enabled here rather than in host configuration.
             var source = new PublishedOperationToolSource(
                 fixture.Services.GetRequiredService<IOperationCatalog>(),

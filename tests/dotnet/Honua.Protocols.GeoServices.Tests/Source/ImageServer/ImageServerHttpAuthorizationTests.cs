@@ -55,7 +55,7 @@ public sealed class ImageServerHttpAuthorizationTests
         var fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
-                // Displace the F1 development-authentication bypass; without this every caller is
+                // Displace the development-authentication bypass; without this every caller is
                 // an admin and the handler policy under test is unreachable.
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);

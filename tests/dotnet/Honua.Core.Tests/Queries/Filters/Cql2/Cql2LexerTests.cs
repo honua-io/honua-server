@@ -33,6 +33,7 @@ public class Cql2LexerTests
     [Theory]
     [InlineData("=", Cql2TokenType.Equal)]
     [InlineData("<>", Cql2TokenType.NotEqual)]
+    [InlineData("!=", Cql2TokenType.NotEqual)]
     [InlineData("<", Cql2TokenType.LessThan)]
     [InlineData("<=", Cql2TokenType.LessThanOrEqual)]
     [InlineData(">", Cql2TokenType.GreaterThan)]
@@ -278,6 +279,7 @@ public class Cql2LexerTests
     [InlineData("@")]
     [InlineData("#")]
     [InlineData("$")]
+    [InlineData("!")]
     public void Tokenize_InvalidCharacters_ThrowsArgumentException(string invalidChar)
     {
         // Arrange

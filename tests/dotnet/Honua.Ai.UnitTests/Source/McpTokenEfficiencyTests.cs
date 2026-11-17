@@ -33,7 +33,7 @@ public sealed partial class McpTaxonomyAlignmentTests
 
         _output?.WriteLine($"tools/list: {descriptors.Length} tools, {serialized.Length:N0} chars, ~{tokens:N0} tokens");
 
-        // The teaching descriptions (#2499) are worth their tokens; response
+        // The teaching descriptions are worth their tokens; response
         // shaping — not description trimming — is the A1 lever. Guard DENSITY
         // (average tokens per tool), not a fixed total: a legitimately growing
         // tool surface must not trip the guard, while description bloat that

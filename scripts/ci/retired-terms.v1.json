@@ -112,6 +112,11 @@
       "literal": "package",
       "replacement": "The actual saved kind (Map, App, Form, Workflow, and so on)",
       "exceptions": "Dependency distributions, signed release archives and protocol-required wire names"
+    },
+    {
+      "literal": "Console workspace access and ownership",
+      "replacement": "Environment identity, Layer and Dataset field scopes, and environment-membership ownership grants",
+      "exceptions": "Migration input and negative wire assertions only; test wire names, permission replacement and the persisted ownership migration together"
     }
   ]
 }

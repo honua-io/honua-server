@@ -119,10 +119,9 @@ public sealed partial class StudioDraftOperationRuntimeTests
         handle.ResourceIds.Should().NotContainKey("activeUrl");
     }
 
-    // honua-server#3980: ValidateAsync binds the proposal to the item's current version, but
-    // actuation runs later (approved replay) and used to reload only the version and hash. These
-    // two tests pin the compare-and-set that closes that window, driven through the real
-    // lifecycle + in-memory store so the pointer write is the one production uses.
+    // Validation binds the proposal to the current item version. Approved replay must
+    // compare-and-set that version and hash through the production lifecycle and store
+    // to reject changes between validation and actuation.
     [UnitTest]
     public async Task PublicationRequestActuation_DraftSavedAfterValidation_ConflictsInsteadOfPublishingStaleVersion()
     {
@@ -174,7 +173,7 @@ public sealed partial class StudioDraftOperationRuntimeTests
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         handle.ResourceIds!["versionId"].Should().Be(approved.VersionId.ToString("D"));
-        // honua-server#4907: the intent route is a governed key; activeUrl names the resolver
+        // The intent route is a governed key; activeUrl names the resolver
         // that serves it, and that resolver resolves the route back to this publication.
         handle.ResourceIds["route"].Should().Be("/studio/parcels");
         handle.ResourceIds["activeUrl"].Should().Be("/api/v1/studio/published/studio/parcels");
@@ -195,7 +194,7 @@ public sealed partial class StudioDraftOperationRuntimeTests
         StudioPublishedRoutes.ToRouteKey(null).Should().Be("/");
     }
 
-    // honua-server#3980 follow-up: OperationDispatcher stops after ValidateAsync for every
+    // OperationDispatcher stops after ValidateAsync for every
     // non-Allow decision, so an approval-gated deployment never reaches
     // CreatePublicationRequestAsync -- the actuation-path authority on intent validity. An
     // invalid intent therefore has to be rejected pre-policy, and the rejection has to keep the
@@ -261,7 +260,7 @@ public sealed partial class StudioDraftOperationRuntimeTests
         (await store.GetPointersAsync(other!.ItemId))!.PublishedVersionId.Should().BeNull();
     }
 
-    // honua-server#5825: the pre-policy route check must not reject a bridged family whose
+    // The pre-policy route check must not reject a bridged family whose
     // native store, not the Studio store, owns the publication.
     [UnitTest]
     public async Task PublicationRequestValidation_BridgedFamily_AllowsRouteOwnedByNativeItem()
@@ -300,7 +299,7 @@ public sealed partial class StudioDraftOperationRuntimeTests
             .ItemId.Should().Be(owner.ItemId);
     }
 
-    // honua-server#5825: a Form saved in the inner store before the bridge existed still owns
+    // A Form saved in the inner store before the bridge existed still owns
     // Studio routes. The pre-policy check must reject it, or an approval deployment returns
     // 202 and actuation then fails inside the inner store.
     [UnitTest]
@@ -379,7 +378,7 @@ public sealed partial class StudioDraftOperationRuntimeTests
     [UnitTest]
     public async Task PublicationProposal_DirectExecuteEdition_AwaitsApprovalWithoutMovingPublishedPointer()
     {
-        // #3429: on a Community deployment Studio draft mutations execute directly. Before the
+        // On a Community deployment Studio draft mutations execute directly. Before the
         // publication-proposal floor, an agent proposal published immediately and only then reported
         // that it had not entered approval. The same request without the proposal action keeps the
         // edition's direct-execute behavior for the REST publish-request surface.
@@ -453,9 +452,9 @@ public sealed partial class StudioDraftOperationRuntimeTests
     [UnitTest]
     public async Task LicensingDisabled_ComposesDirectly_WhilePublicationAndRollbackAwaitApproval()
     {
-        // #4758: Licensing:Mode=Disabled reports Enterprise, which used to route every Studio draft
-        // mutation, including create, to approval. Composition now executes directly, while the
-        // REST publish-request, the agent publication proposal and rollback still wait for approval.
+        // Licensing:Mode=Disabled reports Enterprise, which must not route every Studio draft
+        // mutation, including create, to approval. Composition executes directly, while the REST
+        // publish-request, the agent publication proposal and rollback still wait for approval.
         var store = new InMemoryStudioPackageStore();
         var lifecycle = BuildLifecycle(store);
         var saved = await SaveFirstVersionAsync(lifecycle);

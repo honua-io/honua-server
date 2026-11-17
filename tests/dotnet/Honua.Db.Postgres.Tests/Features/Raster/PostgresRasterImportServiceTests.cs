@@ -132,7 +132,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task ImportAsync_WhenMigration055Applied_PreservesExternalToastStorage()
     {
-        // Regression guard for #1625: the monolithic raster payload must be stored EXTERNAL
+        // The monolithic raster payload must be stored EXTERNAL
         // (out-of-line, uncompressed) so dynamic tile/terrain/statistics reads fetch only the
         // chunks they touch instead of detoasting and decompressing the whole row. Migration
         // 055 owns that policy; the import path must consume it without issuing its own ALTER.
@@ -165,7 +165,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task ImportAsync_WithZoomLevels_PreGeneratesTilesForIndexedLookups()
     {
-        // Regression guard for #1625: importing with tile zoom levels must populate raster_tiles
+        // Importing with tile zoom levels must populate raster_tiles
         // so the hot tile-serving path is an indexed lookup rather than an ST_Clip over the
         // detoasted monolith. (The API import endpoint defaults to zooms 0..8.)
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterImportServiceTests));

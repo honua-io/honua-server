@@ -218,6 +218,28 @@ fi
 
 docker cp docker/cite/shared/seed/mapserver.sql "$POSTGRES_CONTAINER":/tmp/cite-mapserver-seed.sql
 docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cite_wms -f /tmp/cite-mapserver-seed.sql >/dev/null
+
+# WMS names layers by their service-local identifier, which the v1-compat projection
+# makes numeric. Persist a snapshot that names the CITE layers the way the ETS expects.
+{
+    echo 'CREATE TEMP TABLE cite_source_graph AS'
+    awk '
+      /internal const string BuildDocumentFromV1Catalog =/ { declaration = 1; next }
+      declaration && /^[[:space:]]*"""/ {
+        if (reading) { closed = 1; exit }
+        reading = 1
+        next
+      }
+      reading {
+        gsub(/__CATALOG_SCHEMA__/, "honua")
+        gsub(/@environment/, "\047Test\047")
+        print
+      }
+      END { if (!closed) exit 1 }
+    ' src/Honua.Db/Postgres/Features/Metadata/MetadataV2CompatSnapshotSql.cs
+    echo ';'
+    cat docker/cite/shared/scripts/author-wms-publications.sql
+} | docker exec -i "$POSTGRES_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres -d honua_cite_wms >/dev/null
 echo -e "${GREEN}CITE WMS database seeded${NC}"
 
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server cite-engine
@@ -249,7 +271,7 @@ HONUA_BASE_URL="http://localhost:${HONUA_CITE_WMS_SERVER_PORT}"
 CAPS_URL_HOST="${HONUA_BASE_URL}/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0"
 CAPS_URL_CONTAINER="http://honua-server:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0"
 CAPS_URL="$CAPS_URL_HOST"
-GETMAP_URL="${HONUA_BASE_URL}/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=EPSG:4326&WIDTH=256&HEIGHT=256&LAYERS=0&FORMAT=image/png"
+GETMAP_URL="${HONUA_BASE_URL}/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=EPSG:4326&WIDTH=256&HEIGHT=256&LAYERS=BasicPolygons&FORMAT=image/png"
 
 if ! curl -s -f "$CAPS_URL_HOST" > /dev/null; then
     echo -e "${RED}WMS GetCapabilities endpoint not accessible${NC}"

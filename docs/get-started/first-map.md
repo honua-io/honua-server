@@ -24,9 +24,9 @@ The `honua_admin_services_access_policy_set` MCP tool sets a service's access po
 through the server's MCP endpoint (`POST /mcp`) with the official MCP Python client.
 `$HONUA_SERVICE` is the service name the publish step exported.
 
-The tool requires the Redis-backed operator workflow capability. A Redis-off deployment
-refuses the operation; it does not enable anonymous access. Use the Redis-backed quickstart
-profile and retain a successful policy-change result before opening the map.
+The tool requires the durable operator workflow capability, which needs the system database.
+A deployment without one refuses the operation; it does not enable anonymous access. Use the
+quickstart profile and retain a successful policy-change result before opening the map.
 
 ```bash
 python3 -m pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1' 'mcp==2.1.1'

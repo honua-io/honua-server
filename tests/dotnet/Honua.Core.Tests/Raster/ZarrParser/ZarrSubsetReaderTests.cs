@@ -266,7 +266,7 @@ public class ZarrSubsetReaderTests
         // shape=[4,4] but chunks=[8200,8200] with dtype=<f4:
         //   chunkBytes = 8200 * 8200 * 4 = 268,960,000 > MaxBytesPerRequest (256 MiB)
         // The array total (4*4*4=64 bytes) is well under the total-bytes cap so
-        // only the per-chunk guard added by BH-017 stops the allocation.
+        // only the per-chunk guard stops the allocation.
         var objects = new System.Collections.Generic.Dictionary<string, byte[]>(StringComparer.Ordinal)
         {
             ["datasets/huge/.zarray"] = System.Text.Encoding.UTF8.GetBytes(
@@ -335,7 +335,6 @@ public class ZarrSubsetReaderTests
         }
     }
 
-    // ─── BH3-022 regressions ──────────────────────────────────────────────────────
 
     [Trait("Tier", "Fast")]
     [Fact]
@@ -408,7 +407,6 @@ public class ZarrSubsetReaderTests
             "an inconsistent uncompressed object must be rejected before its payload is consumed");
     }
 
-    // ─── BH2-015 regressions ──────────────────────────────────────────────────────
 
     [Trait("Tier", "Fast")]
     [Fact]

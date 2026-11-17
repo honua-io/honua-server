@@ -161,9 +161,8 @@ public sealed class StudioInteractionMcpToolTests
     [Endpoint("POST /mcp tools/call honua_studio_bind_interaction")]
     public async Task BindInteraction_WithAControlRef_ResolvesOnceTheControlIsAdded()
     {
-        // End-to-end inverse of the pre-ADR-0031 behaviour: the same bind that used to be
-        // rejected outright now succeeds against a draft whose controls collection declares
-        // the control, and still fails while it does not.
+        // ADR-0031 permits binding a control declared in the draft’s controls collection
+        // and rejects the same binding when that control is undeclared.
         var harness = await StudioDraftHarness.CreateAsync();
         const string bind =
             """

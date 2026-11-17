@@ -7,8 +7,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Tests.Features.Import;
 
-// Regression coverage for honua-server#2353: a WKB payload (one or more concatenated WKB
-// geometries) must import instead of failing with a generic "Multipart import request is invalid."
+// A WKB payload (one or more concatenated WKB geometries) must import instead of failing with a
+// generic "Multipart import request is invalid."
 public sealed class WkbFormatReaderTests
 {
     private static async Task<List<NetTopologySuite.Features.IFeature>> ReadAsync(byte[] bytes)

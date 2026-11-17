@@ -415,7 +415,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
 
         var result = await _featureStore.QueryAsync(TestLayerId, query);
 
-        // Distinct totals follow the projected tuples (#6196): TypeA and TypeB, not the
+        // Distinct totals follow the projected tuples: TypeA and TypeB, not the
         // three source rows. Continuation stays on the extra-row probe, so a full last
         // page does not report another page.
         Assert.Equal(2, result.TotalCount);
@@ -638,7 +638,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
     public async Task ApplyEditsAsync_ReturnsDetailedOperationResults()
     {
         // This test verifies that the enhanced FeatureEditResult structure
-        // provides detailed operation results as required by issue #12
+        // provides detailed operation results for each requested operation
 
         // Arrange
         var feature1 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature1"));

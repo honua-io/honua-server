@@ -28,4 +28,7 @@ internal static partial class AdminAuthLog
 
     [LoggerMessage(EventId = 4014, Level = LogLevel.Warning, Message = "Failed to create logout URL for provider {ProviderKey}.")]
     public static partial void CreateLogoutUrlFailed(ILogger logger, string providerKey, Exception exception);
+
+    [LoggerMessage(EventId = 4018, Level = LogLevel.Warning, Message = "Identity provider {ProviderKey} returned sign-in error {ErrorCode}: {ErrorDescription}")]
+    public static partial void ProviderReturnedError(ILogger logger, string providerKey, string errorCode, string errorDescription);
 }

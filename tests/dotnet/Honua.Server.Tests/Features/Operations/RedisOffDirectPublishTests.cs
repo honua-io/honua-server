@@ -158,10 +158,6 @@ public sealed class RedisOffDirectPublishTests
     [Trait("Tier", "Fast")]
     public async Task RedisOffProduction_PolicyAllowedAdminStylePreset_ExecutesDirectlyWithCanonicalHandle(string role)
     {
-        // Owner decision 3: a Redis-off cell is a serving + configure + style/render topology, so
-        // terminal-journey stage 4 (style.apply-preset) must execute there. Before this change
-        // honua-release run 38249563601 (aws-ecs, redis-off) refused it with
-        // code=unavailable, missingDependency=redis.
         var catalog = StyleCatalog();
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
         var audit = new CapturingAuditLog();

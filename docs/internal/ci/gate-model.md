@@ -27,8 +27,8 @@ Whole-class selections are retained except the GP/NAS routing class, whose
 methods are partitioned with a residual fallback for future tests. Method-union,
 future-method and mutation checks enforce complete, disjoint selection and
 unchanged projects, source triggers and budgets. Historical TRX interval weights
-guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
-refresh measured 23 of those 26 children (see "Measured ranks" below).
+guide the cuts; they are not measured child elapsed runtimes. The 17 Nov rank
+refresh measured all 26 children (see "Measured ranks" below).
 
 OGC Classic WMTS exhausted its 20-minute test budget in full run `43612492209`
 (job 132511815046) while producing output three seconds before termination; its
@@ -214,6 +214,15 @@ Stage 3 details:
   The newest 100 completed runs are ordered by completion update time.
   Failed and cancelled runs cannot advance the base, including deferred runs whose
   cancellation request fails. With no eligible ancestor, defer to scheduled full CI.
+- A dispatcher that defers runs `Record coverage deferred to scheduled full CI`.
+  Later pushes start from the newest such ancestor head after the completed base
+  (`scripts/ci/completed_ci_base.py` reads the step from the newest 100 successful
+  dispatcher runs, at most 20 job lookups), so a range already owed to the full run
+  does not defer every later merge. Before this, one infrastructure merge after the
+  last successful run deferred all 100 dispatches from 14:02 UTC on 16 Nov to
+  16:27 UTC on 17 Nov; replaying the router per push over the same 99 ranges admits
+  34 (30 docs/CI-only, 4 targeted). Unavailable history keeps the completed base,
+  and a transient selection failure is not recorded, so the next push retries it.
 - The dispatch summary separately lists the culprit range from the latest
   full green ancestor (searched among the newest 100 successful runs,
   excluding affected titles that cannot clear earlier failures). It passes
@@ -976,6 +985,8 @@ Normalization consumers preserve a producer’s recorded superseded admission ac
 
 ### Router validator execution
 
+Shard ownership lookups reuse parsed filter syntax in a bounded, process-local cache keyed by the complete filter text. Each method name is still evaluated separately; changed filters are parsed separately and malformed filters still raise errors. The affected-shard fixture retains its complete ownership and mutation checks. This changes CPU work within existing jobs, without changing their selection, runner count, or required aggregate.
+
 `validate-ci-router.sh` runs independent fixtures in a bounded pool (four workers by default; `HONUA_ROUTER_WORKERS=1..8`), records each fixture duration and collects every exit code before returning failure. A failed or missing result cannot produce success. The routing assertions retain their exact cases and shard ownership checks. Cancellation sends TERM to owned worker groups, escalates to KILL after a bounded grace period, and reaps workers before deleting results.
 
 `--changed-only` is a local feedback mode: stdin routing cases skip only when their complete input closure (router, shard map, jq wrapper and validator infrastructure) is unchanged against the merge base with `origin/trunk`. Staged, unstaged, renamed and untracked inputs count. Unknown base or an ambiguous path runs everything; undeclared fixture input closures also run. CI and GitHub Actions ignore the optimization and always run every fixture.
@@ -1054,33 +1065,45 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (16 Nov 2026): every `dispatch_rank` with a passing job is the
-median passing job duration of full trunk runs 43348507021, 43471044721,
-43540829683, 43564575677, 43580101834, 43612492209, 43661416329, 43703260559,
-43709972683 and 43726623779. The four newest runs were cancelled before they
-finished: only 43709972683 has passing shard jobs, so seven runs supply samples. A run counts for a shard only when
-that shard's filter at the run's head equals the current filter, so re-split
-children are never ranked by their predecessor. 171 of 219 shards are measured
-(1 to 7 samples, median 2); `scripts/ci/fixtures/measured-dispatch-ranks.json`
-records the values and runs, and `test-full-run-capacity-partitions.py` fails when
-a rank drifts from it. Split-contract tests require each child to carry its
-measured rank, else its contract estimate, else its parent's rank. A measured
-child's estimate is removed from its contract, and the rule that estimates may
-not add up to less than the parent applies only while every child of a split is
-still estimated: measured children of the 15 Nov splits ran in 2.5 to 8.6 minutes,
-well under their estimates. Of the 48 unmeasured shards, 44 keep a contract
-estimate: 16 are a still-unmeasured child of an earlier split and 28 are children of the
-nine shards split in #7678, before the subsequent full-run timing repair described above. These historical counts predate the six additional children; the repaired children keep estimates until measured. STAC Protocol 4 (no passing job yet) keeps its parent's
-13.6. Three changed their filter after the newest run and so leave the record,
-keeping their previous rank until a run measures the new filter: Server Features
-Streaming Snapshot and Conformance (#7820), and Admin Layer Publishing and Admin
-Runtime Operations (renamed publishing test method, 49518429d9). Ranks sum to
-1,644.0 runner-minutes (was 1,894.8); 189 of 219 shards fit the 10-minute PR
-shard budget (was 178). Run 43709972683 is the only sample for 41 shards and ran
-at a median 0.63 times the duration of the older runs on the 56 shards they share,
-for a cause not yet identified. A single-sample rank between 6.5 and 9.3 minutes
-may therefore prove over 10 on the next full run; the cost is a PR shard of about
-12 minutes, not lost coverage, and the next refresh settles it. The 14 Nov refresh is superseded.
+Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the exact median
+passing job duration (whole-second job timestamps), rounded half-to-even to
+0.1 minute, across full trunk runs 43348507021, 43471044721, 43540829683,
+43564575677, 43580101834, 43612492209, 43709972683, 43819793722 and
+44013566836. Runs 43661416329, 43703260559 and 43726623779 were also read but
+started no server test children, so they supply no samples. A sample counts
+only when the shard's filter and project selection at the run's head match the
+current definition. Passing children count even when their full workflow fails
+or is cancelled; failed, skipped and cancelled children do not supply timing
+samples.
+
+The latest completed run, [44013566836](https://github.com/honua-io/honua-server/actions/runs/44013566836),
+passed all 225 current server children on trunk `532565b`. Every current
+definition now has matching passing samples: 1 to 8 each, median 3; 16 have
+one sample (the ten timing-repair children, Migration 3, Migration Source
+Imports, File and Raster Import 1–3 and Server Features Miscellaneous 8). Samples from
+before a definition's filter or project change are excluded, so those 16 rest
+on the single run since their change. Failed duration is not a successful
+completion estimate, and failures remain gating.
+
+`scripts/ci/fixtures/measured-dispatch-ranks.json` records the ranks and runs;
+`test-full-run-capacity-partitions.py` rejects rank drift. Split children use
+their measured rank, else their contract estimate, else the parent's rank.
+Remove a child's estimate once measured; the estimate-sum conservation rule
+applies only while every child is estimated. This refresh removes the last
+eleven child estimates, including the ten timing-repair children.
+The timing repair's exact partitions, execution policies and evidence remain intact.
+
+An explicit Temporal source override uses `prioritize: true` to keep a narrow
+source owner ahead of broad inherited coverage when changed-test and path-hit
+counts tie. It changes ranking only: candidate admission, the six-job cap and
+time budgets still apply. Unmarked overrides retain their previous ranking.
+The schema accepts only boolean override priorities; malformed values fail validation.
+
+Ranks sum to 1,522.3 runner-minutes, previously 1,581.4;
+203 of 225 children fit the unchanged 10-minute PR shard budget, previously 196.
+These are scheduling estimates, not measured runtime savings. The separate tiny-shard
+consolidation measurement remains 75.38 to 12.11 runner-minutes (63.27 saved).
+The 16 single-sample ranks need subsequent passing full-run evidence.
 
 ### Standalone tooling in affected producer builds
 
@@ -1115,7 +1138,11 @@ The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Ga
 
 Capability Impact Comparison was retired after being disabled in repository
 settings; its workflow has been removed. Capability Matrix Aggregation and
-OpenAPI Contract Governance retain their generator/contract input filters. The
+OpenAPI Contract Governance retain their generator/contract input filters.
+Aggregation includes `FeatureCatalog.cs`: its licensing constants resolve manifest
+entitlements, so a change to those constants must run the crosswalk check even
+when the registry is unchanged. This admits the existing single aggregation job
+for that input and adds no jobs to unrelated PRs. The
 operation-capability completeness, registry resolution and authored artifact
 checks run in PR Gate's existing architecture job after canonical feature
 catalog regeneration. Capability Matrix Aggregation retains these checks for
@@ -2185,3 +2212,75 @@ methods in selected PR and full trunk runs. No workflow, shard definition,
 required check name, timeout, or aggregate dependency changes. This removes
 repeated initialization rather than adding runners. The authored inventory
 template is updated; its generated inventory projection remains producer-owned.
+
+## Generated proposal reconciliation
+
+The existing nightly/on-demand generated-files publisher refreshes the fixed
+`automation/regenerate-generated-files` branch and reuses its open PR when
+regeneration changes protected outputs. When validated current trunk has no
+generated diff, it closes an obsolete proposal after verifying the publication's
+source ancestry and rechecking the PR head, automation head and trunk. Changed
+heads or moved trunk preserve the proposal. The workflow concurrency group
+serializes publishers; the retained branch supplies diagnostic evidence.
+Required checks, aggregate dependencies and PR-time work are unchanged: before
+and after this cleanup there are zero additional workflows, jobs or runners.
+
+## Review Gate attestation after merge
+
+Live trunk branch protection on 17 November lists four required contexts:
+`PR Gate`, `PR Gate / Affected shards`, `clean-code / Clean code` and
+`repo-hygiene / Repository hygiene`; `Review Gate` is not among them. The attestation already sheds pull requests
+that are closed before it starts. A pull request that merges or closes while the
+attestation runs used to receive a red status anyway, from the initial snapshot
+(`pull request is not open`) or the final double snapshot (state changed between
+reads). Six of 40 server PRs updated between 16 Nov 17:00Z and 17 Nov 17:10Z
+carried that red status, each posted 1 to 8 seconds after the merge or close.
+The attestation now re-reads the pull request before any red status and sheds
+it when it is no longer open. Open pull requests keep every blocking reason, and
+the success and dispatch paths are unchanged. A failed re-read keeps the red status. No trigger, job, runner, required
+check or aggregate dependency changes.
+
+### Durable GP SOAP authentication host lifetime
+
+`GPServerDurableRuntimeTests.AuthenticationTests` shares one authenticated
+PostgreSQL job host across the anonymous, invalid API key and invalid bearer
+cases. Each case still creates its own owner job and clients, checks all seven
+SOAP operations for an unauthorized fault without job details, and verifies
+that job count, successful status and the independently computed area survive.
+
+The nested class keeps the existing serialized job-substrate collection and
+ends the shared worker lifetime before restart, migration and private-host
+cases clear the substrate. Those cases retain their private applications.
+The existing GPServer Durable and Aliases filter matches the parent class prefix,
+including the nested class, in selected PR and full trunk runs. No workflow,
+shard filter, required check or aggregate dependency changes; runner delta zero.
+Paired class build-host measurement: 25/25 identical passing cases, 498 to 470
+seconds.
+
+### Geocoding batch response fixture
+
+`GeocodingEndpointTests` shares an Enterprise-licensed batch application across
+11 response-only cases with identical provider capabilities. Provider results
+are derived from the current request; these cases never inspect request capture.
+The existing Community application remains separate. Each case owns its client
+and response. Cases that inspect captured requests, override capabilities or
+batch limits, exercise failover, or vary licensing retain private applications.
+The class fixture disposes both shared applications after the class completes.
+
+All existing case data, endpoint attributes, requests and assertions remain.
+The class stays in its existing PR-selected and full-trunk partition; this
+changes host lifetime without adding runners, jobs or required check names.
+
+### Catalog service typing host lifetime
+
+`GeoservicesCatalogServiceTypingTests.DefaultTypingFixture` initializes one
+application with the default typing graph and raster store for the four read-only
+service-directory cases. The lifecycle loop and duplicate-publication case retain
+their private applications and custom graphs. All service-name selection and
+response assertions remain in place; the class stays in its database collection.
+
+The existing Catalog and ImageServer Support partition retains these cases on
+selected PR runs and full trunk runs. No workflow, shard filter, required check,
+aggregate dependency or runner count changes. Paired class and existing-partition
+measurements are collected separately; test-body time excludes class-fixture
+startup and disposal, and does not establish complete CI job-wall savings.

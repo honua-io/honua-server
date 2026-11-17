@@ -48,12 +48,6 @@ public sealed class GeoPackagePreviewTests
     [Fact]
     public async Task PreviewFileAsync_GeoPackage_ResolvesLocalSrsIdViaSpatialRefSys()
     {
-        // A spec-legal GeoPackage may number its srs_id locally (here srs_id=1) while the
-        // gpkg_spatial_ref_sys row maps it to EPSG:27700 via organization_coordsys_id. Reading
-        // srs_id as the EPSG code directly (the old behavior) would mis-georeference every
-        // feature; the resolver must return 27700, not 1 (#2743).
-        // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
-        // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
         var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
 
         try
@@ -80,7 +74,7 @@ public sealed class GeoPackagePreviewTests
     public async Task PreviewFileAsync_GeoPackage_NonEpsgOrganizationIsUndetected()
     {
         // A non-EPSG authority (or custom WKT-only CRS) must not be guessed as an EPSG code;
-        // the resolver returns null so the import requires an explicit source SRID (#2743).
+        // the resolver returns null so the import requires an explicit source SRID.
         // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
         // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
         var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
@@ -109,7 +103,7 @@ public sealed class GeoPackagePreviewTests
         // A malformed GeoPackage missing the (spec-required) gpkg_spatial_ref_sys table must not
         // throw "no such table" when enumerating layers. The reader probes for the table and, when
         // absent, falls back to a join-less query that treats the raw srs_id as a best-effort EPSG
-        // code; import-path SRID validation still guards nonsense codes downstream (#2743).
+        // code; import-path SRID validation still guards nonsense codes downstream.
         // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
         // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
         var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");

@@ -60,10 +60,8 @@ public static class I3sAttributeBufferBuilder
             for (var i = 0; i < features.Count; i++)
             {
                 var rawId = features[i].Id;
-                // BH-S-03: guard against silent truncation — Oid32 only holds values in
-                // [0, Int32.MaxValue]. A feature ID that exceeds this range (e.g. OSM building
-                // IDs) would previously silently wrap to a negative/wrong value, causing ArcGIS
-                // identify to return wrong attributes. Fail loudly so the caller can remap IDs.
+                // Oid32 only holds values in [0, Int32.MaxValue]. Fail loudly for IDs
+                // outside this range so the caller can remap them without silent truncation.
                 if (rawId < 0 || rawId > int.MaxValue)
                 {
                     throw new InvalidOperationException(
@@ -114,7 +112,7 @@ public static class I3sAttributeBufferBuilder
             var recordOffset = featureIdOffset + (i * I3sGeometryTranscoder.FeatureIdBytes);
             var id = BinaryPrimitives.ReadUInt64LittleEndian(
                 span.Slice(recordOffset, I3sGeometryTranscoder.FeatureIdBytes));
-            // BH-S-03: guard against silent truncation — Oid32 only holds values up to
+            // Guard against silent truncation — Oid32 only holds values up to
             // Int32.MaxValue. Fail loudly if a geometry transcoded with a large ID was
             // somehow persisted so the caller can diagnose the mismatch.
             if (id > (ulong)int.MaxValue)

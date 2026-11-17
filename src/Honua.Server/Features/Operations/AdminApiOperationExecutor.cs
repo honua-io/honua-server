@@ -86,7 +86,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         AdminOperationLoopbackTls.PinServedCertificate(message, current);
         if (request.Parameters.TryGetValue("If-Match", out var expectedEtag))
             message.Headers.TryAddWithoutValidation("If-Match", expectedEtag);
-        OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
+        OperationLineageHeaders.Apply(message, new OperationLoopbackHop(context, current), _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {

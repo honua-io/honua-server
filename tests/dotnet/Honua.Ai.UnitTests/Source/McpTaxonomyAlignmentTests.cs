@@ -368,7 +368,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     // -------------------------------------------------------------------
-    // Tool annotations (#1953): every tool must advertise read/write hints
+    // Tool annotations: every tool must advertise read/write hints
     // -------------------------------------------------------------------
 
     private static readonly HashSet<string> ReadOnlyToolNames = new(StringComparer.Ordinal)
@@ -427,7 +427,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_create_map_package"] = (Destructive: false, Idempotent: false),
             ["honua_create_app_package"] = (Destructive: false, Idempotent: false),
             ["honua_apply_style_preset"] = (Destructive: false, Idempotent: true),
-            // Studio draft lifecycle + composition tools (honua-server#3002).
+            // Studio draft lifecycle + composition tools.
             // No honua_studio_publish/honua_studio_rollback tool exists — only
             // honua_studio_propose_publication, which records intent (REQ-003).
             ["honua_studio_save_version"] = (Destructive: false, Idempotent: false),
@@ -575,7 +575,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     // -------------------------------------------------------------------
-    // Output schemas (#1953): structuredContent schema per tool result
+    // Output schemas: structuredContent schema per tool result
     // -------------------------------------------------------------------
 
     [UnitTest]
@@ -604,7 +604,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     public void StructuredTools_ErrorEnvelopeMatchesEveryAdvertisedOutputSchema()
     {
         // BuildLiveToolRoster() advertises the full static /mcp roster wired by
-        // DI, including package-review tools (#2853).
+        // DI, including package-review tools.
         foreach (var tool in BuildLiveToolRoster())
         {
             AssertSharedErrorEnvelopeValidates(tool.Describe());
@@ -615,8 +615,8 @@ public sealed partial class McpTaxonomyAlignmentTests
     public void DynamicOperationTools_ErrorEnvelopeMatchesAdvertisedOutputSchema()
     {
         // The honua_op_* family is projected from the operations catalog at runtime
-        // and never appears in the static roster, so it is validated separately here
-        // (#2853). Its advertised outputSchema flows through the same
+        // and never appears in the static roster, so it is validated separately here.
+        // Its advertised outputSchema flows through the same
         // McpToolDescriptor.OutputSchema widening setter, so the shared error
         // envelope must validate against both a read-only and a mutating projection.
         var descriptors = new[]
@@ -642,7 +642,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         // DynamicOperationTools_ErrorEnvelopeMatchesAdvertisedOutputSchema) — must
         // appear in BuildLiveToolRoster(). A newly registered tool that is not
         // added to the roster fails here loudly rather than silently escaping
-        // envelope certification (#2853).
+        // envelope certification.
         var mcpAssembly = typeof(ValidatePackageTool).Assembly;
         var registeredToolTypes = mcpAssembly.GetTypes()
             .Where(t => t is { IsClass: true, IsAbstract: false })

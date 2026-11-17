@@ -36,7 +36,7 @@ public sealed class DeployWorkflowReconcilerPromotionGateTests
         var updated = await store.GetAsync(operation.OperationId);
 
         backend.PromoteCalls.Should().Be(1, "with no telemetry policy the backend health gate must drive the cutover");
-        // honua-server#4618: promotion opens a post-activation observation window instead of finishing
+        // Promotion opens a post-activation observation window instead of finishing
         // immediately, so the operation stays Reconciling (non-terminal) with a Protection record.
         updated!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         updated.Deploy!.Protection.Should().NotBeNull();

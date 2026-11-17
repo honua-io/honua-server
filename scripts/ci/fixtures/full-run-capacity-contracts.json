@@ -421,7 +421,7 @@
         "tests/dotnet/Honua.Server.Tests/Import/OgcWfsImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/PostgresMigrationStyleApplicatorTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionJobQueueTests.cs",
-      "tests/dotnet/Honua.Server.Tests/Import/ImportProgressRepairTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportProgressRepairTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportExecutionTestJobs.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalImportJobServiceTests.cs",
@@ -533,9 +533,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: 3.8 min per-job overhead (12.8 job minutes less 9.0 minutes of serial class spans, TRX of run 43580101834) plus each child's class spans.",
-      "ranks": {
-        "Server Features Packages and Temporal 2": 8.0
-      }
+      "ranks": {}
     }
   },
   {
@@ -601,9 +599,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 15.38 job minutes, 19.50 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Core and Cloud Contracts 4": 7.1
-      }
+      "ranks": {}
     }
   },
   {
@@ -654,9 +650,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 13.55 job minutes, 9.82 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Raster Serving Scene Geometry and Terrain 2": 8.4
-      }
+      "ranks": {}
     }
   },
   {
@@ -728,9 +722,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 12.38 job minutes, 11.14 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "OGC API Maps Rendering and Records 3": 5.0
-      }
+      "ranks": {}
     }
   },
   {
@@ -772,9 +764,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 17.85 job minutes, 18.11 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "OGC API Tiles Coverages and Processes 4": 5.8
-      }
+      "ranks": {}
     }
   },
   {
@@ -822,9 +812,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 31.08 job minutes, 28.13 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "GeoServices ImageServer 6": 4.9
-      }
+      "ranks": {}
     }
   },
   {
@@ -872,9 +860,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 21.32 job minutes, 31.11 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "GeoServices Geometry VectorTile and Versioning 6": 7.8
-      }
+      "ranks": {}
     }
   },
   {
@@ -918,9 +904,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 10.78 job minutes, 8.02 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "GeoServices Versioning 2": 6.6
-      }
+      "ranks": {}
     }
   },
   {
@@ -960,9 +944,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 12.53 job minutes, 11.51 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Geocoding 3": 4.8
-      }
+      "ranks": {}
     }
   },
   {
@@ -1007,9 +989,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 10.08 job minutes, 6.51 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Server Features Console Sessions and Access 2": 5.6
-      }
+      "ranks": {}
     }
   },
   {
@@ -1054,9 +1034,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 13.13 job minutes, 9.65 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Server Features Console and Alerts 2": 8.3
-      }
+      "ranks": {}
     }
   },
   {
@@ -1103,9 +1081,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 19.68 job minutes, 30.97 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "GeoServices Catalog and ImageServer Support 6": 7.6
-      }
+      "ranks": {}
     }
   },
   {
@@ -1149,9 +1125,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 14.00 job minutes, 11.72 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "GeoServices ImageServer Rendering and Support 3": 4.8
-      }
+      "ranks": {}
     }
   },
   {
@@ -1194,9 +1168,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 12.38 job minutes, 9.79 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "GeoServices ImageServer Raster Rendering 1": 8.8
-      }
+      "ranks": {}
     }
   },
   {
@@ -1234,9 +1206,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 11.97 job minutes, 8.19 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "OGC API Tiles Endpoints and CRS 2": 7.0
-      }
+      "ranks": {}
     }
   },
   {
@@ -1288,9 +1258,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 11.47 job minutes, 8.90 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans for classes above 5.5 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Elevation and Terrain Analysis 2": 8.0
-      }
+      "ranks": {}
     }
   },
   {
@@ -1379,11 +1347,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 15.9 median job minutes, 15.07 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Server Features Admin Catalog and Configuration 1": 9.5,
-        "Server Features Admin Catalog and Configuration 2": 9.4,
-        "Server Features Admin Catalog and Configuration 3": 8.3
-      }
+      "ranks": {}
     }
   },
   {
@@ -1436,11 +1400,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 16.9 median job minutes, 12.99 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Server Features Admin Network and Jobs 1": 9.5,
-        "Server Features Admin Network and Jobs 2": 9.1,
-        "Server Features Admin Network and Jobs 3": 6.5
-      }
+      "ranks": {}
     }
   },
   {
@@ -1488,11 +1448,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 15.8 median job minutes, 13.46 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Server Features Admin Platform and Connections 1": 9.5,
-        "Server Features Admin Platform and Connections 2": 9.4,
-        "Server Features Admin Platform and Connections 3": 6.7
-      }
+      "ranks": {}
     }
   },
   {
@@ -1531,11 +1487,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 14.9 median job minutes, 11.68 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "OData Mutations and Batch 1": 9.4,
-        "OData Mutations and Batch 2": 8.9,
-        "OData Mutations and Batch 3": 5.5
-      }
+      "ranks": {}
     }
   },
   {
@@ -1624,13 +1576,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 11.3 median job minutes, 7.33 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run. Rebalanced children use run 43819793722 TRX start/end intervals (including per-test lifecycle time), with max(4 min, old job minus summed intervals) plus 0.5 min overhead. Estimates require a scheduled full-run pass.",
-      "ranks": {
-        "Server Features Miscellaneous 9": 8.6,
-        "Server Features Miscellaneous 10": 8.6,
-        "Server Features Miscellaneous 11": 8.6,
-        "Server Features Miscellaneous 12": 8.7,
-        "Server Features Miscellaneous 13": 8.7
-      }
+      "ranks": {}
     },
     "rebalanceEvidence": [
       {
@@ -1758,12 +1704,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 25.1 median job minutes, 21.30 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Server Features Miscellaneous 5": 9.5,
-        "Server Features Miscellaneous 6": 9.5,
-        "Server Features Miscellaneous 7": 9.5,
-        "Server Features Miscellaneous 8": 9.5
-      }
+      "ranks": {}
     }
   },
   {
@@ -1828,10 +1769,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 11.4 median job minutes, 10.28 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "Cloud and Streaming Import 1": 9.5,
-        "Cloud and Streaming Import 2": 8.9
-      }
+      "ranks": {}
     }
   },
   {
@@ -1865,14 +1803,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 31.8 median job minutes, 28.38 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run.",
-      "ranks": {
-        "SensorThings 1": 9.5,
-        "SensorThings 2": 9.5,
-        "SensorThings 3": 9.5,
-        "SensorThings 4": 9.4,
-        "SensorThings 5": 9.2,
-        "SensorThings 6": 5.4
-      }
+      "ranks": {}
     }
   },
   {
@@ -1915,13 +1846,7 @@
     ],
     "estimatedRanks": {
       "basis": "Unmeasured children: TRX run 43580101834, 11.2 median job minutes, 8.97 summed class-span minutes; 4.00 min overhead = max(4, job minus class spans), plus child class spans (method spans plus class fixture time for classes above 5.50 min), rounded up to 0.1 min. Refresh after the first passing full run. Rebalanced children use run 43819793722 TRX start/end intervals (including per-test lifecycle time), with max(4 min, old job minus summed intervals) plus 0.5 min overhead. Estimates require a scheduled full-run pass.",
-      "ranks": {
-        "gRPC Protocol and Scene 3": 8.3,
-        "gRPC Protocol and Scene 4": 8.3,
-        "gRPC Protocol and Scene 5": 8.5,
-        "gRPC Protocol and Scene 6": 8.5,
-        "gRPC Protocol and Scene 7": 8.5
-      }
+      "ranks": {}
     },
     "rebalanceEvidence": [
       {
