@@ -296,6 +296,44 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
             .Select(member => member.GetString()).Should().Contain("bob");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/community/groups/{groupId}/addUsers")]
+    [Endpoint("POST /sharing/rest/content/items/{itemId}/share")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task TenantGroup_ForeignTenantAdminAndSameNamedMember_CannotJoinShareOrRead()
+    {
+        using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("Referer", Referer));
+        var owner = await IssueAsync("alice", "publisher", "tenant-a");
+        var member = await IssueAsync("bob", "org_user", "tenant-a");
+        var bystander = await IssueAsync("mallory", "org_user", "tenant-a");
+        var foreignAdmin = await IssueAsync("root", "admin", "tenant-b");
+        var foreignMember = await IssueAsync("bob", "org_user", "tenant-b");
+        var group = await CreateGroupAsync(client, owner);
+        using (var add = await PostAsync(client, $"/sharing/rest/community/groups/{group}/addUsers?token={owner}", ("users", "bob")))
+        {
+            add.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // An administrator of another tenant can neither add a member nor grant the group.
+        using (var refused = await PostAsync(client, $"/sharing/rest/community/groups/{group}/addUsers?token={foreignAdmin}", ("users", "mallory")))
+        {
+            await refused.AssertGeoServicesErrorAsync(403, 404);
+        }
+        (await PostAsync(client, $"/sharing/rest/content/items/{ItemId}/share?token={foreignAdmin}", ("groups", group))).Dispose();
+        await AssertQueryDeniedAsync(client, member);
+
+        // Once the owner shares, the member reads; the same username in another tenant and a
+        // tenant user the foreign administrator tried to add do not.
+        using (var share = await PostAsync(client, $"/sharing/rest/content/items/{ItemId}/share?token={owner}", ("groups", group)))
+        {
+            (await DocumentAsync(share)).GetProperty("notSharedWith").GetArrayLength().Should().Be(0);
+        }
+        await AssertQueryMatchesSqlAsync(client, member);
+        await AssertQueryDeniedAsync(client, foreignMember);
+        await AssertQueryDeniedAsync(client, bystander);
+    }
+
     private async Task AssertMemberWriteDeniedAndSqlUnchangedAsync(HttpClient client, string token)
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
