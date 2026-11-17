@@ -344,14 +344,19 @@ def measure_published(args, inspection):
           f"{report['oci']['compressed_layer_bytes']} compressed layer bytes")
 
 
-def measure_export(args, inspection):
-    baseline = inspect_image(args.baseline)
-    baseline_size = measure_saved_image(args.baseline, baseline['Id'], inspected_platform(baseline))
+def exported_image_measurement(args, inspection):
     loaded = (measure_saved_image_evidence(args.image, inspection['Id'], inspected_platform(inspection))
               if args.oci_archive else None)
     oci = (measure_oci_archive(args.oci_archive, loaded['config_digest'], inspected_platform(inspection))
            if loaded else None)
     size = oci['uncompressed_layer_bytes'] if oci else measure_saved_image(args.image, inspection['Id'], inspected_platform(inspection))
+    return oci, size
+
+
+def measure_export(args, inspection):
+    baseline = inspect_image(args.baseline)
+    baseline_size = measure_saved_image(args.baseline, baseline['Id'], inspected_platform(baseline))
+    oci, size = exported_image_measurement(args, inspection)
     files, deps = exported_files(args.image)
     evidence = {
         'assets': json.loads((args.evidence_directory / 'project.assets.json').read_text()),
@@ -377,7 +382,7 @@ def measure_export(args, inspection):
         'files': app_files,
     }
     if oci:
-        report['image_config_digest'] = loaded['config_digest']
+        report['image_config_digest'] = oci['config_digest']
         report['oci'] = oci
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')

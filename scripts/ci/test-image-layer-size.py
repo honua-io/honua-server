@@ -64,13 +64,17 @@ class ImageLayerSizeTests(unittest.TestCase):
             contents['layer.tar'] = b'wrong' if options.layer_content == 'corrupt' else layer
             contents['manifest.json'] = json.dumps([
                 {'Config': 'config.json', 'Layers': ['layer.tar']}]).encode()
+        path = self.write_archive(directory, contents)
+        return path, image_id, len(layer)
+
+    def write_archive(self, directory, contents):
         path = Path(directory) / 'image.tar'
         with tarfile.open(path, 'w') as archive:
             for name, payload in contents.items():
                 member = tarfile.TarInfo(name)
                 member.size = len(payload)
                 archive.addfile(member, io.BytesIO(payload))
-        return path, image_id, len(layer)
+        return path
 
     def test_saved_image_counts_uncompressed_layers_for_both_archive_formats(self):
         for archive_format in ('docker', 'oci'):
