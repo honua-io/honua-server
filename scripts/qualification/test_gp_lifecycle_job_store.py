@@ -15,13 +15,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 HARNESS = ROOT / "scripts/qualification/gp-lifecycle-harness.sh"
 JOB_STORE = ROOT / "scripts/qualification/gp-job-store.sh"
+TENANT_TOKENS = ROOT / "scripts/qualification/gp-tenant-tokens.sh"
 COMPOSE = ROOT / "docker/gp-reliability/compose.yml"
 JOB_STATUSES = re.search(r"^job_statuses=.*$", JOB_STORE.read_text(encoding="utf-8"), re.M).group(0) + "\n"
 LIFECYCLE_FUNCTIONS = ("cancel_barrier_job", "run_timeout_case", "run_duplicate_delivery")
 
 
 def harness_function(name):
-    source = HARNESS.read_text(encoding="utf-8") + JOB_STORE.read_text(encoding="utf-8")
+    source = "".join(path.read_text(encoding="utf-8") for path in (HARNESS, JOB_STORE, TENANT_TOKENS))
     match = re.search(rf"^{name}\(\) \{{ .*? \}}$", source, re.M) or re.search(
         rf"^{name}\(\) \{{\n.*?^\}}", source, re.M | re.S)
     if match is None:
