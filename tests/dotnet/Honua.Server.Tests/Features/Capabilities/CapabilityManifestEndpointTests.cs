@@ -66,7 +66,8 @@ public sealed partial class CapabilityManifestEndpointTests
         _configured = configured;
     }
 
-    // Read-only default application shared by the class; tests that need other configuration
+    // Read-only default application shared by the class. Registry and experimental-switch
+    // variants come from ConfiguredApplications; tests that need any other configuration
     // build and dispose their own application.
     public sealed class DefaultApplication : IAsyncLifetime
     {
