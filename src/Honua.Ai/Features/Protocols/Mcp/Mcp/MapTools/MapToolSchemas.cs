@@ -46,7 +46,7 @@ internal static class MapToolSchemas
               "type": "integer",
               "minimum": 0,
               "default": 0,
-              "description": "Number of matching layers to skip before returning results (pagination). When a response reports hasMore=true, re-issue the same call with offset set to the returned nextOffset until hasMore is false."
+              "description": "Matching layers to skip (pagination). While a response reports hasMore=true, repeat the call with offset set to the returned nextOffset."
             }
           }
         }
@@ -100,12 +100,12 @@ internal static class MapToolSchemas
               "type": "integer",
               "minimum": 0,
               "default": 0,
-              "description": "Number of matching features to skip before returning results (pagination). Pair with limit to page mechanically through large result sets: when a response reports exceededTransferLimit=true, re-issue the same query with resultOffset set to the returned nextOffset until exceededTransferLimit is false."
+              "description": "Matching features to skip (pagination). While a response reports exceededTransferLimit=true, repeat the query with resultOffset set to the returned nextOffset."
             },
             "cursor": {
               "type": "string",
               "pattern": "^[0-9]+$",
-              "description": "SDK-facing pagination cursor. Encodes the same zero-based result offset as resultOffset. When a response reports exceededTransferLimit=true, re-issue the same query with cursor set to nextCursor until exceededTransferLimit is false."
+              "description": "SDK-facing cursor for the same offset as resultOffset. While a response reports exceededTransferLimit=true, repeat the query with cursor set to nextCursor."
             },
             "returnGeometry": {
               "type": "boolean",
@@ -125,7 +125,7 @@ internal static class MapToolSchemas
             "geometryPrecision": {
               "type": "integer",
               "default": 6,
-              "description": "x-honua extension: decimal places to round returned geometry coordinates to. Defaults to 6 (~0.1 m at the equator) so coordinates stay compact instead of emitting 15-digit full-precision noise that inflates the response token budget. Pass a higher value for finer precision, or a negative value for full unrounded coordinates. Ignored when returnGeometry=false."
+              "description": "x-honua extension: decimal places for returned coordinates (default 6, about 0.1 m) to keep responses compact. Higher is finer; negative returns full precision. Ignored when returnGeometry=false."
             }
           }
         }
@@ -194,7 +194,7 @@ internal static class MapToolSchemas
               "type": "integer",
               "minimum": 0,
               "default": 0,
-              "description": "x-honua extension: opt-in ceiling (bytes) for inlining the rendered PNG as a base64 image content block. When the encoded image is at or below this size it is returned inline; otherwise, and by default (0), the tool returns a fetchable artifact href (resource_link) with the image dimensions and byte size in text so a multi-megabyte render never floods the model context."
+              "description": "x-honua extension: largest encoded PNG (bytes) returned inline as a base64 image block. Larger images, and every image by default (0), come back as a resource_link href with dimensions and size."
             }
           }
         }
@@ -247,7 +247,6 @@ internal static class MapToolSchemas
     private const string ApplyStylePresetArgumentSchemaJson = """
         {
           "type": "object",
-          "description": "Open schema for geospatial-mcp compatibility: members beyond these properties are accepted and ignored; only the listed properties are read.",
           "additionalProperties": true,
           "required": ["serviceId", "serviceLayerIndex", "styleId"],
           "properties": {

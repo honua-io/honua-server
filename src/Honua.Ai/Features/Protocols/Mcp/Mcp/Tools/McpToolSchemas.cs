@@ -133,7 +133,6 @@ internal static class McpToolSchemas
     private const string PublishResultArgumentSchemaJson = """
         {
           "type": "object",
-          "description": "Open schema for geospatial-mcp compatibility: members beyond these properties are accepted and ignored; only the listed properties are read.",
           "additionalProperties": true,
           "required": ["sourceId"],
           "properties": {
@@ -182,7 +181,6 @@ internal static class McpToolSchemas
     private const string CreateMapPackageArgumentSchemaJson = """
         {
           "type": "object",
-          "description": "Open schema for geospatial-mcp compatibility: members beyond these properties are accepted and ignored; only the listed properties are read.",
           "additionalProperties": true,
           "properties": {
             "templateId": {
@@ -218,7 +216,6 @@ internal static class McpToolSchemas
     private const string CreateAppPackageArgumentSchemaJson = """
         {
           "type": "object",
-          "description": "Open schema for geospatial-mcp compatibility: members beyond these properties are accepted and ignored; only the listed properties are read.",
           "additionalProperties": true,
           "properties": {
             "templateId": {
@@ -475,7 +472,7 @@ internal static class McpToolSchemas
                           "inputs": {
                             "type": "object",
                             "additionalProperties": { "type": "string" },
-                            "description": "Process inputs keyed by parameter name, as string-encoded values specified by the process catalog entry for this step's processId. Consult honua://catalog/processes for each parameter's name, value type, whether it is required, and how the value must be encoded (for example base64 WKB, a data URI FeatureCollection, an SRID, or a layer id)."
+                            "description": "Process inputs keyed by parameter name, as strings encoded per the catalog entry for this step's processId. honua://catalog/processes gives each parameter's name, type, whether it is required and its encoding (base64 WKB, data URI FeatureCollection, SRID, layer id)."
                           },
                           "dependsOn": {
                             "type": "array",

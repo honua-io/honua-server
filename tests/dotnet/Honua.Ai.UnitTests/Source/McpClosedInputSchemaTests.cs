@@ -65,7 +65,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             using var standard = JsonDocument.Parse(File.ReadAllText(standardPath));
             var liveClosed = IsClosed(tool.Describe().InputSchema);
             var standardClosed = IsClosed(standard.RootElement);
-            if (liveClosed != standardClosed)
+            // Reference-shape tools require members the standard cannot express, so its schema stays open.
+            if (liveClosed != standardClosed && !ReferenceShapeTargetedTools.ContainsKey(tool.Name))
             {
                 disagreements.Add($"{tool.Name} (live closed={liveClosed}) vs {standardName} (standard closed={standardClosed})");
             }
