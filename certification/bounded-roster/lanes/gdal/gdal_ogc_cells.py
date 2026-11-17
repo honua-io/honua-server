@@ -100,6 +100,15 @@ def _oapif_auth(cell: Cell, target: str) -> None:
         c.detail = f"{target}: {outcomes}"
 
 
+def _bbox_matches_crs(crs84: bool, last_bbox: str) -> bool:
+    # GDAL treats the first advertised CRS84 as EPSG:4326 and then sends lon/lat.
+    if crs84:
+        return ("bbox=-122." in last_bbox
+                and "bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" not in last_bbox)
+    return ("bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" in last_bbox
+            and "bbox=37.7" in last_bbox)
+
+
 def _oapif_crs_axis(cell: Cell, connection: str) -> None:
     with cell.check("crs-axis", "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture") as c:
         with gdalkit.session() as record:
@@ -108,7 +117,6 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
             srs = layer.GetSpatialRef()
             authority = (srs.GetAuthorityName(None) if srs is not None else "") or ""
             code = srs.GetAuthorityCode(None) if srs is not None else None
-            # GDAL treats the first advertised CRS84 as the same as EPSG:4326.
             crs84 = authority.upper() == "OGC" and code == "CRS84"
             epsg4326 = authority.upper() == "EPSG" and code == "4326"
             expect(crs84 or epsg4326, f"layer SRS is {authority}:{code}, not CRS84 or EPSG:4326")
@@ -121,13 +129,8 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
         expect(located == {fid: value[2] for fid, value in FIXTURE.items()}, f"lon/lat coordinates differ: {located}")
         expect(windowed == [3, 4], f"bbox window returned {windowed}")
         last_bbox = bbox_requests[-1] if bbox_requests else ""
-        if crs84:
-            axis_ok = ("bbox=-122." in last_bbox
-                       and "bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" not in last_bbox)
-        else:
-            axis_ok = ("bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" in last_bbox
-                       and "bbox=37.7" in last_bbox)
-        expect(axis_ok, f"bbox axis order does not match {authority}:{code}: {bbox_requests}")
+        expect(_bbox_matches_crs(crs84, last_bbox),
+               f"bbox axis order does not match {authority}:{code}: {bbox_requests}")
         with gdalkit.session() as projected_record:
             dataset = _open_vector(connection, ["PREFERRED_CRS=EPSG:3857"])
             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
