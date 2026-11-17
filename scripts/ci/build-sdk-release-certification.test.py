@@ -202,11 +202,11 @@ class FacetEnforcementTests(unittest.TestCase):
 
 
 class GateTests(unittest.TestCase):
+    """The producer's own jq gates must reject a facet-incomplete fragment."""
+
     def test_release_consumer_supports_the_current_sdk_runtime(self) -> None:
         runner = SCRIPT.with_name("run-sdk-release-certification.sh").read_text(encoding="utf-8")
         self.assertIn("new console --framework net11.0 --no-restore", runner)
-
-    """The producer's own jq gates must reject a facet-incomplete fragment."""
 
     def test_runner_gate_checks_facet_scope(self) -> None:
         runner = SCRIPT.with_name("run-sdk-release-certification.sh").read_text(encoding="utf-8")
