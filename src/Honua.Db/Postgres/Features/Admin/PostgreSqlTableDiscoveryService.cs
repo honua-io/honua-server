@@ -26,6 +26,18 @@ internal sealed class PostgreSqlTableDiscoveryService(
         PostgresSchemaConfiguration.DefaultDataSchema,
         [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
 
+    private async ValueTask<NpgsqlConnection> CreateConnectionAsync(
+        string connectionString,
+        CancellationToken cancellationToken)
+    {
+        if (connectionFactory is not null)
+        {
+            return await connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new NpgsqlConnection(connectionString);
+    }
+
     public async Task<List<TableInfo>> DiscoverPostGisTablesAsync(
         string connectionString,
         CancellationToken cancellationToken = default)
@@ -34,9 +46,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
         try
         {
-            await using var connection = connectionFactory is null
-                ? new NpgsqlConnection(connectionString)
-                : await connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
+            await using var connection = await CreateConnectionAsync(connectionString, cancellationToken).ConfigureAwait(false);
             await connection.OpenAsync(cancellationToken);
 
             return await DiscoverPostGisTablesCoreAsync(connection, cancellationToken);
@@ -235,9 +245,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
         try
         {
-            await using var connection = connectionFactory is null
-                ? new NpgsqlConnection(connectionString)
-                : await connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
+            await using var connection = await CreateConnectionAsync(connectionString, cancellationToken).ConfigureAwait(false);
             await connection.OpenAsync(cancellationToken);
 
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
