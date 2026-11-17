@@ -57,11 +57,15 @@ public sealed class FeatureChangePrefixDriverTests(FeatureChangeDatabaseFixture 
         provider.Releases.Should().Be(provider.Opens);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    [Trait("Category", "Integration")]
-    public async Task ClaimPending_OpenWriter_HoldsPrefixUntilCommitOrRollback(bool commit)
+    [IntegrationTest(Timeout = 120000)]
+    public Task ClaimPending_OpenWriter_HoldsPrefixUntilCommit() =>
+        AssertOpenWriterAsync(transaction => transaction.CommitAsync());
+
+    [IntegrationTest(Timeout = 120000)]
+    public Task ClaimPending_OpenWriter_HoldsPrefixUntilRollback() =>
+        AssertOpenWriterAsync(transaction => transaction.RollbackAsync());
+
+    private async Task AssertOpenWriterAsync(Func<NpgsqlTransaction, Task> completeTransaction)
     {
         await using var writer = await database.DataSource.OpenConnectionAsync();
         await using var transaction = await writer.BeginTransactionAsync();
@@ -74,14 +78,7 @@ public sealed class FeatureChangePrefixDriverTests(FeatureChangeDatabaseFixture 
             (await PublishedAsync()).Should().Be(0);
         }
 
-        if (commit)
-        {
-            await transaction.CommitAsync();
-        }
-        else
-        {
-            await transaction.RollbackAsync();
-        }
+        await completeTransaction(transaction);
 
         await TickAsync(repository);
         (await PublishedAsync()).Should().Be(1);
