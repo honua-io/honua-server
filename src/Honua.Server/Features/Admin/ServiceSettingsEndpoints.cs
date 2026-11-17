@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -326,6 +327,7 @@ internal static partial class ServiceSettingsEndpoints
             UpdateLayerMetadataRequest request,
             [FromServices] IMetadataV2GraphProvider graphProvider,
             [FromServices] IMetadataV2GraphStore graphStore,
+            [FromServices] IAdoNetDatabaseConnectionProvider connections,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -371,9 +373,8 @@ internal static partial class ServiceSettingsEndpoints
 
             var mutation = await MutateResourceByIdAsync(
                 graphStore,
-                serviceName,
-                serviceLayerIndex,
-                resource.Metadata.Id,
+                new LayerMetadataMutation(
+                    connections, serviceName, serviceLayerIndex, resource.Metadata.Id, request.Editing),
                 next =>
                 {
                     if (request.AccessPolicy is { } incomingAccessPolicy)
@@ -428,7 +429,6 @@ internal static partial class ServiceSettingsEndpoints
                     // GET responses can still echo what the caller PUT.
                     return next;
                 },
-                request.Editing,
                 context.RequestAborted).ConfigureAwait(false);
             if (mutation.BindingConflict)
             {
@@ -782,11 +782,8 @@ internal static partial class ServiceSettingsEndpoints
 
     private static async Task<(MetadataV2Object? Resource, bool BindingConflict)> MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
-        string serviceName,
-        int serviceLayerIndex,
-        string resourceId,
+        LayerMetadataMutation mutation,
         Func<MetadataV2Object, MetadataV2Object> mutate,
-        MetadataV2EditingPatch? editingPatch,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
@@ -794,9 +791,9 @@ internal static partial class ServiceSettingsEndpoints
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var bindingState = ResolveFeatureLayerBindingState(
                 snapshot.Graph,
-                serviceName,
-                serviceLayerIndex,
-                resourceId);
+                mutation.ServiceName,
+                mutation.ServiceLayerIndex,
+                mutation.ResourceId);
             if (bindingState == FeatureLayerBindingState.Conflict)
             {
                 return (null, true);
@@ -808,7 +805,7 @@ internal static partial class ServiceSettingsEndpoints
 
             var resources = snapshot.Graph.Resources.ToArray();
             var resourceIndex = Array.FindIndex(resources, resource =>
-                string.Equals(resource.Metadata.Id, resourceId, StringComparison.Ordinal));
+                string.Equals(resource.Metadata.Id, mutation.ResourceId, StringComparison.Ordinal));
             if (resourceIndex < 0)
             {
                 return (null, false);
@@ -823,19 +820,10 @@ internal static partial class ServiceSettingsEndpoints
                 Revision = snapshot.Graph.Revision + 1,
             };
 
-            if (editingPatch is not null)
+            if (mutation.EditingPatch is not null)
             {
-                var serviceIds = snapshot.Graph.Services.Where(service =>
-                        string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) &&
-                        ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
-                    .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-                var publicationIds = snapshot.Graph.Publications.Where(publication =>
-                        publication.ResourceId == resourceId && serviceIds.Contains(publication.ServiceId) &&
-                        publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
-                        publication.LayerIndex == serviceLayerIndex && snapshot.IsRoutable(publication))
-                    .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-                updated = MetadataV2EditingConfiguration.Apply(updated, resourceId, publicationIds, editingPatch);
-                mutatedResource = updated.Resources.Single(resource => resource.Metadata.Id == resourceId);
+                (updated, mutatedResource) = await ApplyEditingPatchAsync(
+                    mutation, snapshot, updated, cancellationToken).ConfigureAwait(false);
             }
 
             try

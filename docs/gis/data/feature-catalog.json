@@ -5445,7 +5445,7 @@
       "protocol": "http-route",
       "code_location": "src/Honua.Server/Features/Protocols/Grpc/AttachmentDownloadLinks.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Grpc.GrpcIntegrationTests.GetAttachmentUrl_LocalStorage_ReturnsAServerLinkThatDownloadsOnlyThatAttachment"
+        "Honua.Server.Tests.Features.Protocols.Grpc.GrpcIntegrationTests+GrpcHost.GetAttachmentUrl_LocalStorage_ReturnsAServerLinkThatDownloadsOnlyThatAttachment"
       ],
       "proof_ledger_surface": "grpc-attachment-download-link",
       "maturity": "implemented",
@@ -11653,6 +11653,7 @@
         "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.Display_Update_RoundTripsAndChangesProtocolMetadata",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFields_WithAliasDomainAndHiddenField_PersistsAndHydratesCatalog",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.EditorTracking_IsStoredAndPublishedAndAnEmptyStringClearsIt",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols",
         "Honua.Server.Tests.Features.Protocols.GeoServices.BigIntegerFieldContractTests.Get_BigIntegerField_UsesEsriTypeAndPreservesValues",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_AdminAndRoleControlsAgreeWithServiceAndLayerHandoffs",
@@ -17594,6 +17595,8 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_IntoManagedStoreOverPublishedTable_CopiesWithoutSourceKeyAndScopesExtents",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_IntoManagedStore_AcceptsWfsTransactionThroughTheAdvertisedType",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_ListAndToggle_ReturnsExpectedResults",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_ManagedWithGlobalIdFieldOverDuplicates_RefusesWithValidationError",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_ManagedWithGlobalIdField_BuildsIdentityIndexInsideThePublish",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_MaterializesFeaturesAndExtentForFeatureServer",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_PrimaryKeyNotInFields_ReturnsBadRequest",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_RawEnabledProperty_PreservesDefaultAndActualReadback",
@@ -27224,12 +27227,15 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.UpdateLayerMetadata_GlobalIdOverDuplicateValues_RefusesWithConflict",
         "Honua.Server.Tests.Features.Admin.AdminLayerDisplaySpatialTests.LayerMetadata_Get_ReturnsPreviouslyWrittenGovernance",
         "Honua.Server.Tests.Features.Admin.AgentSettingsApprovalTests.AgentAdministrator_CannotChangeEditingCapabilities",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_InvalidBoolean_IsRejectedWithoutMutation",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_OmittedOrNullPreservesLegacyMetadata_ExplicitValueUsesCanonicalDefaults",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_WhenPublicationRelinks_DoesNotChangeEitherResource",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.EditorTracking_IsStoredAndPublishedAndAnEmptyStringClearsIt",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.EditorTracking_WrongTypeOrUnknownProperty_IsRejectedWithoutMutation",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.LegacyLayer_WithoutSourceGovernance_OmitsOptionalProjectionFields",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_AdminCannotEnableCompositeOwnershipEdits",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_GovernancePatch_ClearsUnmanagedCanonicalLinks",

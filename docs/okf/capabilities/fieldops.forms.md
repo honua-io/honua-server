@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "Field Collection Forms"
-description: "Read and submit online form packages. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."
+description: "Read and submit online Forms. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."
 resource: "honua://capability/fieldops.forms"
 tags: [capability, fieldops, community]
 ---
@@ -9,7 +9,7 @@ tags: [capability, fieldops, community]
 
 # Field Collection Forms
 
-Read and submit online form packages. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync.
+Read and submit online Forms. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync.
 
 | | |
 | --- | --- |
