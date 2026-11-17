@@ -616,6 +616,26 @@ def check_matrix_include_shape(config: dict[str, Any]) -> None:
                 f"matrix entry {entry.get('shard_name')!r} would cancel the runner before the "
                 "inner cap could upload its receipt"
             )
+    early, held = selector.partition_producer_matrices(include)
+    if [entry["shard_name"] for entry in early + held] != [entry["shard_name"] for entry in include]:
+        raise FixtureError("producer partition dropped, duplicated, or reordered a selected shard")
+    server = selector.DEFAULT_TEST_PROJECT
+    for entry in early:
+        if entry.get("csprojs") or entry.get("csproj") != server:
+            raise FixtureError(f"{entry.get('shard_name')!r} is not a server-producer shard")
+    for entry in held:
+        if not entry.get("csprojs") and entry.get("csproj") == server:
+            raise FixtureError(f"{entry.get('shard_name')!r} was held off the server-producer lane")
+    synthetic = [
+        {"csproj": server, "shard_name": "server"},
+        {"csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj", "shard_name": "protocol"},
+        {"csproj": "", "csprojs": [server, "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj"], "shard_name": "mixed"},
+    ]
+    synthetic_early, synthetic_held = selector.partition_producer_matrices(synthetic)
+    if [entry["shard_name"] for entry in synthetic_early] != ["server"]:
+        raise FixtureError("only an exact Server.Tests closure starts with the parallel producer")
+    if [entry["shard_name"] for entry in synthetic_held] != ["protocol", "mixed"]:
+        raise FixtureError("protocol and mixed closures must wait for the main producer")
 
 
 def check_skip_paths() -> None:

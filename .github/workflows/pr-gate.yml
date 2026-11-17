@@ -722,6 +722,8 @@ jobs:
       reason: ${{ steps.generated-only.outputs.generated_only == 'true' && 'validated_generated_only' || steps.docs-only.outputs.docs_only == 'true' && 'docs_only' || steps.select.outputs.reason }}
       selected_count: ${{ steps.select.outputs.selected_count }}
       matrix_include: ${{ steps.select.outputs.matrix_include }}
+      matrix_server: ${{ steps.select.outputs.matrix_server }}
+      matrix_other: ${{ steps.select.outputs.matrix_other }}
       receipt_matrix: ${{ steps.select.outputs.receipt_matrix }}
       deferred_to_trunk: ${{ steps.select.outputs.deferred_to_trunk }}
     steps:
@@ -814,7 +816,158 @@ jobs:
       !github.event.pull_request.draft
       && github.event_name == 'pull_request'
       && needs.affected-shards-select.outputs.skip != 'true'
-      && needs.affected-shards-select.outputs.matrix_include != '[]'
+      && needs.affected-shards-select.outputs.matrix_server != '[]'
+    # Server.Tests shards restore the parallel producer. They do not read
+    # pr-gate outputs, so they start when that producer finishes instead of
+    # waiting for Build and tests (median 2.4 min later on 15-17 Nov).
+    needs: [affected-shards-select, server-test-producer, runner-select]
+    # Even matrix indices run on the build host's honua-heavy runners when
+    # fresh pool proof and vars.HONUA_HEAVY_RUNNER are present; forks stay hosted.
+    # heavy_ready comes from runner-select, which finishes before the producer.
+    runs-on: ${{ needs.runner-select.outputs.heavy_ready == 'true' && vars.HONUA_HEAVY_RUNNER && (endsWith(format('{0}', strategy.job-index), '0') || endsWith(format('{0}', strategy.job-index), '2') || endsWith(format('{0}', strategy.job-index), '4') || endsWith(format('{0}', strategy.job-index), '6') || endsWith(format('{0}', strategy.job-index), '8')) && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
+    # The shard's OWN outer budget from .github/ci-shards.json, exactly as
+    # ci.yml::server-tests applies it. Substituting a flat cap here would make
+    # this lane time out on shards the trailing matrix runs comfortably, which
+    # is precisely the false red measured in docs/internal/ci/affected-shards-promotion.md.
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJson(needs.affected-shards-select.outputs.matrix_server) }}
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: false
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
+      HONUA_TEST_CONFIGURATION: Release
+    services:
+      postgres:
+        # Service images pull before checkout; use the verified linux/amd64
+        # Docker Hub manifest from its mirror without changing PostGIS bytes.
+        image: ${{ toJSON(matrix.needs_postgres) != 'false' && 'mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5' || '' }}
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        # An ephemeral host port: several self-hosted runners share one host.
+        ports:
+          - 5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Several self-hosted runners share one host and its /tmp; each job keeps temp files and the
+      # app's local storage directories under its own runner temp. Set in a step because the runner
+      # context is unavailable in job env.
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TemporaryFiles__StorageDirectory=${RUNNER_TEMP}/honua-temp"
+            echo "FileStorage__LocalStorage__BasePath=${RUNNER_TEMP}/honua-storage"
+          } >> "${GITHUB_ENV}"
+
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
+      - name: Start freeing disk space
+        run: scripts/ci/server-test-shard-free-disk.sh
+
+      - name: Plan affected shard binary consumer
+        id: consumer-plan
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+          SHARD_CSPROJS: ${{ toJSON(matrix.csprojs) }}
+        run: |
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --projects-json "${SHARD_CSPROJS}" --output "artifacts/pr-gate/managed-projects.json"
+
+          python3 scripts/ci/partition-managed-producer.py consumer --projects-file "artifacts/pr-gate/managed-projects.json" --output "${GITHUB_OUTPUT}"
+
+      - name: Require the server test producer
+        if: steps.consumer-plan.outputs.producer != 'server'
+        run: |
+          echo "This lane only runs Honua.Server.Tests shards. Producer '${{ steps.consumer-plan.outputs.producer }}' belongs on the held lane."
+          exit 1
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ needs.server-test-producer.outputs.managed-sdk-version }}
+
+      - name: Wait for free disk space
+        run: scripts/ci/server-test-shard-free-disk.sh --await
+
+      - name: Restore verified managed test outputs
+        id: managed-consumer
+        uses: ./.github/actions/managed-test-artifacts
+        with:
+          mode: consume
+          projects-file: artifacts/pr-gate/managed-projects.json
+          producer-attempt: ${{ needs.server-test-producer.outputs.producer-attempt }}
+          enabled: ${{ steps.consumer-plan.outputs.producer == 'server' && vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
+
+      - name: Build missing managed test outputs
+        timeout-minutes: 20
+        env:
+          RESTORED_PROJECTS: ${{ steps.managed-consumer.outputs.restored-projects-file }}
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "artifacts/pr-gate/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./artifacts/test-results
+
+      - name: Run affected shard
+        id: shard
+        env:
+          HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
+          HONUA_TEST_DB_URL: ${{ toJSON(matrix.needs_postgres) != 'false' && format('Host=localhost;Port={2};Database=honua_test;Username=honua;Password=ci-{0}-{1}', github.run_id, github.run_attempt, job.services.postgres.ports['5432']) || '' }}
+          HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
+          HONUA_SERVER_TEST_LOG_NAME: ${{ matrix.log_name }}
+          HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
+          HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
+          HONUA_SERVER_TEST_RESULTS_DIR: ./artifacts/test-results
+          HONUA_SERVER_TEST_CONFIGURATION: Release
+          HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
+          HONUA_SERVER_TEST_CSPROJS: ${{ toJSON(matrix.csprojs) }}
+        run: scripts/ci/run-server-test-shard.sh
+
+      # The timing artifact run-server-test-shard.sh writes is what the
+      # aggregate context reads; a shard that never produced one is reported as
+      # infrastructure, not as a shard red. The attempt suffix keeps a rerun's
+      # receipt apart from the earlier attempt's artifact of the same shard.
+      - name: Upload affected shard results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        timeout-minutes: 3
+        with:
+          name: pr-gate-affected-shard-${{ matrix.artifact_suffix }}-attempt-${{ github.run_attempt }}
+          path: artifacts/test-results/
+          retention-days: 7
+
+  affected-shard-held:
+    name: PR Gate / Affected shard (${{ matrix.shard_name }})
+    # An `include:` that evaluates to `[]` is a workflow error ("matrix vector
+    # 'include' does not contain any values"), so the empty selection is
+    # short-circuited here, before the strategy is expanded, rather than by the
+    # selector emitting a sentinel entry.
+    # Non-server and mixed closures consume the main producer inside Build and
+    # tests, or rebuild locally. They keep that dependency. Server.Tests shards
+    # run on affected-shard and do not wait here.
+    if: >-
+      !github.event.pull_request.draft
+      && github.event_name == 'pull_request'
+      && needs.affected-shards-select.outputs.skip != 'true'
+      && needs.affected-shards-select.outputs.matrix_other != '[]'
     needs: [affected-shards-select, pr-gate, server-test-producer]
     # Even matrix indices run on the build host's honua-heavy runners when
     # fresh pool proof and vars.HONUA_HEAVY_RUNNER are present; forks stay hosted.
@@ -827,7 +980,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        include: ${{ fromJson(needs.affected-shards-select.outputs.matrix_include) }}
+        include: ${{ fromJson(needs.affected-shards-select.outputs.matrix_other) }}
     env:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
@@ -942,13 +1095,14 @@ jobs:
           path: artifacts/test-results/
           retention-days: 7
 
+
   affected-shards:
     # Enforce measured execution receipts before the required gate can succeed.
     # A draft run reports under a draft-only name, so its skipped result never
     # stands in for this required context; see the `required` job.
     name: ${{ github.event.pull_request.draft && 'PR Gate / Affected shards (draft)' || 'PR Gate / Affected shards' }}
     if: always() && github.event_name == 'pull_request' && !github.event.pull_request.draft
-    needs: [affected-shards-select, affected-shard, server-test-producer]
+    needs: [affected-shards-select, affected-shard, affected-shard-held, server-test-producer]
     runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
@@ -987,7 +1141,8 @@ jobs:
           SELECT_COUNT: ${{ needs.affected-shards-select.outputs.selected_count }}
           SELECT_MATRIX: ${{ needs.affected-shards-select.outputs.receipt_matrix }}
           SELECT_DEFERRED: ${{ needs.affected-shards-select.outputs.deferred_to_trunk }}
-          SHARDS_RESULT: ${{ needs.affected-shard.result }}
+          SERVER_SHARDS_RESULT: ${{ needs.affected-shard.result }}
+          HELD_SHARDS_RESULT: ${{ needs.affected-shard-held.result }}
         run: |
           mkdir -p artifacts/pr-gate
           python3 scripts/ci/affected-shard-verdict.py --timings artifacts/pr-gate/shard-results --receipt artifacts/pr-gate/affected-shard-verdict.json
