@@ -277,13 +277,21 @@ internal sealed partial class PostgresExecutionJobStore
         }
     }
 
-    private static async Task<List<ExecutionJobRecord>> ReadJobsAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+    // One unreadable row must not hide every other job from listings and the reconciler.
+    private async Task<List<ExecutionJobRecord>> ReadJobsAsync(NpgsqlCommand command, CancellationToken cancellationToken)
     {
         var jobs = new List<ExecutionJobRecord>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            jobs.Add(ExecutionJobRow.Read(reader));
+            if (ExecutionJobRow.TryRead(reader) is { } job)
+            {
+                jobs.Add(job);
+            }
+            else
+            {
+                Log.UnreadableJobSkipped(_logger, ExecutionJobRow.ReadOperationId(reader));
+            }
         }
 
         return jobs;

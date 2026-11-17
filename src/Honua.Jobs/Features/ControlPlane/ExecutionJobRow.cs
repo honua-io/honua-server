@@ -26,10 +26,14 @@ internal sealed record ExecutionJobRow(
 {
     public const string TableName = "execution_jobs";
 
-    // Select list that Read expects, in order.
+    // Select list that Read expects, in order. operation_id comes last so a row whose record
+    // cannot be read can still be named.
     public const string SelectColumns =
         "version, status, attempt_count, claimed_by, claimed_at, last_heartbeat_at, next_retry_at, "
-        + "completed_at, percent_complete, current_phase, updated_at, record";
+        + "completed_at, percent_complete, current_phase, updated_at, record, operation_id";
+
+    // The phase of a job failed because its stored record cannot be read.
+    public const string UnreadableRecordPhase = "Failed: unreadable record";
 
     public const string RecordColumns =
         "record, kind, runtime_profile, backend, priority, created_at, tenant_id, cancellation_requested, "
@@ -77,9 +81,30 @@ internal sealed record ExecutionJobRow(
         };
 
     public static ExecutionJobRecord Read(NpgsqlDataReader reader)
+        => TryRead(reader) ?? throw new InvalidOperationException(
+            $"Execution job {ReadOperationId(reader)} holds a record this build cannot read.");
+
+    public static string ReadOperationId(NpgsqlDataReader reader) => reader.GetString(12);
+
+    // Null when the stored record is empty or not a record this build can deserialize, for
+    // example after corruption or when a newer build wrote it. Callers that scan many rows skip
+    // such a row instead of failing the whole read.
+    public static ExecutionJobRecord? TryRead(NpgsqlDataReader reader)
     {
-        var record = JsonSerializer.Deserialize(reader.GetString(11), ControlPlaneJsonContext.Default.ExecutionJobRecord)
-            ?? throw new InvalidOperationException("An execution job row holds an empty record.");
+        ExecutionJobRecord? record;
+        try
+        {
+            record = JsonSerializer.Deserialize(reader.GetString(11), ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        if (record is null)
+        {
+            return null;
+        }
 
         return record with
         {

@@ -303,5 +303,8 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
 
         [LoggerMessage(9012, LogLevel.Debug, "Version conflict for execution job {OperationId} at version {Version}; a concurrent write was detected")]
         public static partial void CasConflict(ILogger logger, string operationId, long version);
+
+        [LoggerMessage(9013, LogLevel.Warning, "Skipped execution job {OperationId}: its stored record cannot be read")]
+        public static partial void UnreadableJobSkipped(ILogger logger, string operationId);
     }
 }

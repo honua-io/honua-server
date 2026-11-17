@@ -110,18 +110,23 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
         {
             var recovered = await FindClaimWithLostReplyAsync(workerId, cancellationToken).ConfigureAwait(false);
             ClearUnconfirmedClaim(workerId);
-            if (recovered is not null)
+            if (recovered?.Job is { } job)
             {
-                Log.ClaimRecoveredAfterLostReply(_logger, recovered.OperationId, workerId);
-                return recovered.OperationId;
+                Log.ClaimRecoveredAfterLostReply(_logger, job.OperationId, workerId);
+                return job.OperationId;
+            }
+
+            if (recovered?.UnreadableOperationId is { } unreadable)
+            {
+                await FailUnreadableClaimAsync(unreadable, workerId, cancellationToken).ConfigureAwait(false);
             }
         }
 
         var runtimeProfiles = (acceptedRuntimeProfiles ?? RuntimeProfiles.DefaultAccepted).ToArray();
-        ExecutionJobRecord? claimed;
+        ClaimedRow? row;
         try
         {
-            claimed = await _database.ExecuteAsync(
+            row = await _database.ExecuteAsync(
                 async (connection, _, token) =>
                 {
                     await using var command = new NpgsqlCommand(
@@ -134,7 +139,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
                     command.Parameters.Add(runtimeProfiles.Length == 1
                         ? new NpgsqlParameter("runtime_profile", NpgsqlDbType.Text) { Value = runtimeProfiles[0] }
                         : new NpgsqlParameter("runtime_profiles", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = runtimeProfiles });
-                    return await ReadJobOrNullAsync(command, token).ConfigureAwait(false);
+                    return await ReadClaimedRowAsync(command, token).ConfigureAwait(false);
                 },
                 StatementRepeat.NotAfterSend,
                 cancellationToken).ConfigureAwait(false);
@@ -147,7 +152,14 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             throw;
         }
 
-        if (claimed is null)
+        if (row?.UnreadableOperationId is { } unreadableClaim)
+        {
+            // Nothing can execute it, and left claimed it would be reclaimed and fail again forever.
+            await FailUnreadableClaimAsync(unreadableClaim, workerId, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        if (row?.Job is not { } claimed)
         {
             return null;
         }
@@ -238,22 +250,61 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
-    private async Task<ExecutionJobRecord?> FindClaimWithLostReplyAsync(string workerId, CancellationToken cancellationToken)
+    private async Task<ClaimedRow?> FindClaimWithLostReplyAsync(string workerId, CancellationToken cancellationToken)
         => await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(_findClaimWithLostReply, connection);
                 command.Parameters.Add(new NpgsqlParameter("worker_id", NpgsqlDbType.Text) { Value = workerId });
-                return await ReadJobOrNullAsync(command, token).ConfigureAwait(false);
+                return await ReadClaimedRowAsync(command, token).ConfigureAwait(false);
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
 
-    private static async Task<ExecutionJobRecord?> ReadJobOrNullAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+    private static async Task<ClaimedRow?> ReadClaimedRowAsync(NpgsqlCommand command, CancellationToken cancellationToken)
     {
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ExecutionJobRow.Read(reader) : null;
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return ExecutionJobRow.TryRead(reader) is { } job
+            ? new ClaimedRow(job, UnreadableOperationId: null)
+            : new ClaimedRow(Job: null, ExecutionJobRow.ReadOperationId(reader));
     }
+
+    // Fails the claim this worker holds on a job whose record cannot be read. Only this worker's
+    // claim is touched, so a row another worker or the reconciler has since moved is left alone.
+    private async Task FailUnreadableClaimAsync(string operationId, string workerId, CancellationToken cancellationToken)
+    {
+        await _database.ExecuteAsync(
+            async (connection, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    UPDATE {_jobs}
+                    SET status = '{nameof(ExecutionJobStatus.Failed)}', version = version + 1,
+                        claimed_by = NULL, claimed_at = NULL, last_heartbeat_at = NULL, next_retry_at = NULL,
+                        queue_visible_at = NULL, queue_priority = NULL,
+                        current_phase = '{ExecutionJobRow.UnreadableRecordPhase}',
+                        completed_at = now(), updated_at = now()
+                    WHERE operation_id = @operation_id AND claimed_by = @worker_id
+                      AND status = '{nameof(ExecutionJobStatus.Provisioning)}'
+                    """,
+                    connection);
+                command.Parameters.Add(new NpgsqlParameter("operation_id", NpgsqlDbType.Text) { Value = operationId });
+                command.Parameters.Add(new NpgsqlParameter("worker_id", NpgsqlDbType.Text) { Value = workerId });
+                await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken).ConfigureAwait(false);
+
+        Log.UnreadableJobFailed(_logger, operationId, workerId);
+        _jobChanged?.Wake();
+    }
+
+    private readonly record struct ClaimedRow(ExecutionJobRecord? Job, string? UnreadableOperationId);
 
     private bool HasUnconfirmedClaim(string workerId)
     {
@@ -328,5 +379,8 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
 
         [LoggerMessage(9025, LogLevel.Warning, "Recovered claim of {OperationId} by worker {WorkerId} after its reply was lost")]
         public static partial void ClaimRecoveredAfterLostReply(ILogger logger, string operationId, string workerId);
+
+        [LoggerMessage(9028, LogLevel.Error, "Failed job {OperationId} claimed by worker {WorkerId}: its stored record cannot be read")]
+        public static partial void UnreadableJobFailed(ILogger logger, string operationId, string workerId);
     }
 }
