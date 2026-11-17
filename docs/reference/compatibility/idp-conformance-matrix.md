@@ -83,6 +83,10 @@ shared record before clearing the cookie, including for other replicas.
 
 ## SCIM 2.0 provisioning
 
+`Scim:BearerToken` must contain at least 32 characters; use a randomly generated secret.
+SCIM authentication shares the `Authentication:FailedAttempts` source limit. A blocked
+source receives HTTP 429 with `Retry-After`, including on discovery endpoints.
+
 `Scim:OidcIssuer` is required whenever `Scim:BearerToken` enables provisioning and must
 match the exact OIDC `iss` value for the IdP connected to this SCIM endpoint. Honua
 persists that trusted configuration with each SCIM `externalId`, forming an
