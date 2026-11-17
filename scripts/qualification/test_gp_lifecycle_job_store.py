@@ -1,5 +1,9 @@
 """The GP lifecycle harness reads jobs from PostgreSQL and holds the native child for its probes."""
 
+import base64
+import hashlib
+import hmac
+import json
 import os
 import re
 import subprocess
@@ -110,6 +114,38 @@ grep -q "WHERE operation_id = 'gp-1' AND queue_visible_at IS NOT NULL" calls || 
 exit 0
 ''', directory)
             self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def tenant_tokens(self, script):
+        functions = "\n".join(harness_function(name) for name in ("qualification_tenant_tokens", "mint_tenant_token"))
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("HONUA_GP_TENANT_", "HONUA_GP_OIDC_"))}
+        with tempfile.TemporaryDirectory() as directory:
+            return subprocess.run(["bash", "-c", functions + script], cwd=directory, env=env,
+                                  capture_output=True, text=True, check=False)
+
+    def test_resilience_run_without_an_identity_provider_mints_signed_tenant_tokens(self):
+        completed = self.tenant_tokens(r'''
+qualification_tenant_tokens || exit 61
+for token in "$HONUA_GP_TENANT_A_TOKEN" "$HONUA_GP_TENANT_B_TOKEN"; do printf '%s\n' "$token"; done
+printf '%s\n' "$HONUA_GP_OIDC_SIGNING_KEY" "$HONUA_GP_OIDC_ISSUER" "$HONUA_GP_OIDC_AUDIENCE"
+''')
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        token_a, token_b, key, issuer, audience = completed.stdout.split()
+        self.assertGreaterEqual(len(key), 32)
+        for token, tenant in ((token_a, "tenant-a"), (token_b, "tenant-b")):
+            header, payload, signature = token.split(".")
+            expected = base64.urlsafe_b64encode(
+                hmac.new(key.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest()).rstrip(b"=").decode()
+            self.assertEqual(expected, signature)
+            claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+            self.assertEqual((tenant, issuer, audience), (claims["tenant_id"], claims["iss"], claims["aud"]))
+
+    def test_resilience_run_refuses_a_partial_identity_configuration(self):
+        completed = self.tenant_tokens(r'''
+HONUA_GP_TENANT_A_TOKEN=supplied
+qualification_tenant_tokens && exit 61
+[[ "$preflight_failure" == "HONUA_GP_TENANT_B_TOKEN is required when any tenant identity value is supplied" ]] || exit 62
+''')
+        self.assertEqual(0, completed.returncode, completed.stderr)
 
     def test_duplicate_delivery_requeues_the_running_row_and_fences_the_first_claim(self):
         functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe", "requeue_claimed_job"))
