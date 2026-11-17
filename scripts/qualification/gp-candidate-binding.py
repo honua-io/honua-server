@@ -80,7 +80,8 @@ def verify_terminal_recovery(scenario, proof):
     gp-store-crash.sh routes this one cell through run_terminal_result_recovery, whose evidence is
     {fence, terminal_before, terminal_final, result_package*, sha256, bytes, ...} rather than the
     sha256_before/sha256_after/job_before/job_after layout of the other five cells. The same facts are
-    required: the exact committed CAS with the acknowledgement withheld, an immutable terminal record,
+    required: the worker held after its committed terminal CAS and before any acknowledgement (the
+    unreleased product fence), an immutable terminal record,
     no result package before recovery and exactly one after, one staged artifact whose bytes match.
     """
     job = scenario["job"]["id"]
@@ -89,8 +90,8 @@ def verify_terminal_recovery(scenario, proof):
     sha, size = proof["sha256"], proof["bytes"]
     artifacts = package.get("artifacts") if isinstance(package, dict) else None
     if (fence["barrier"] != "terminal-committed-registration-pending" or fence["operationId"] != job
-            or fence["reply_forwarded"] is not False or fence["redis_reply"] != ":1"
-            or fence.get("terminal_record") != before
+            or fence["released"] is not False or fence["workerId"] != before.get("claimedBy")
+            or type(fence["workerProcessId"]) is not int
             or proof["submitted_job"] != job or scenario["job"]["terminal_state"] != "successful"
             or before.get("status") not in (3, "succeeded") or len(before.get("artifactReferences") or []) != 1
             or final != before
@@ -147,7 +148,7 @@ def verify_crashes(pin, summary):
                 or proof["result_package_after"] != 1):
             raise ValueError("crash recovery did not prove one registered, byte-identical staged artifact")
         if boundary == "terminal-committed-registration-pending":
-            if (proof["fence"]["reply_forwarded"] is not False or proof["fence"]["redis_reply"] != ":1"
+            if (not proof["fence"].get("workerId") or type(proof["fence"].get("workerProcessId")) is not int
                     or proof["job_before"]["status"] not in (3, "succeeded") or proof["result_package_before"] != 0):
                 raise ValueError("terminal crash did not precede result registration")
     return summary

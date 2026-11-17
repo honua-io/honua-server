@@ -50,12 +50,6 @@ if [[ "$source_sha" != "$remote_trunk" ]]; then
   fi
   echo "Validated source $source_sha; trunk is now $remote_trunk. Publishing on the validated source; PR Gate checks the merge."
 fi
-# A clean source can still miss drift introduced by newer trunk commits; the
-# next nightly run picks that up.
-if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
-  echo 'Generated files are up to date; nothing to publish.'
-  exit 0
-fi
 # A completed newer publisher may predate this run's lease observation.
 # Fetch the captured head, then compare sources; the lease still guards changes
 # after that observation. Checkout's shallow history cannot prove ancestry.
@@ -74,6 +68,34 @@ if [[ -n "$remote_branch" ]]; then
     echo "Preserving publication from newer or unrelated source $published_source; candidate source is $source_sha."
     exit 0
   fi
+fi
+# A clean, current, validated source makes an older proposal obsolete. Keep
+# its branch for evidence, but do not leave its PR red until the next drift.
+# The ancestry check above applies to cleanup as well as branch replacement.
+if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
+  echo 'Generated files are up to date; nothing to publish.'
+  if [[ -n "$remote_branch" ]]; then
+    : "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to reconcile a generated-files PR}"
+    repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required to address the REST pulls API}"
+    existing="$(gh api "repos/${repo}/pulls?state=open&base=trunk&head=${repo%%/*}:${branch}" \
+      --jq '.[0].number // empty')"
+    if [[ -n "$existing" ]]; then
+      pr_head="$(gh api "repos/${repo}/pulls/${existing}" --jq '.head.sha')"
+      current_trunk="$(git ls-remote --exit-code origin refs/heads/trunk)"
+      current_trunk="${current_trunk%%[[:space:]]*}"
+      current_branch="$(git ls-remote --exit-code origin "refs/heads/${branch}")"
+      current_branch="${current_branch%%[[:space:]]*}"
+      # The workflow concurrency group serializes publishers; observations
+      # also reject a changed PR head or trunk before closing anything.
+      if [[ "$pr_head" == "$remote_branch" && "$current_branch" == "$remote_branch" && "$current_trunk" == "$source_sha" ]]; then
+        gh api --method PATCH "repos/${repo}/pulls/${existing}" -f state=closed --silent
+        echo "Closed obsolete generated-files PR #${existing}; validated trunk has no generated drift."
+      else
+        echo 'Publication or trunk changed during reconciliation; preserving generated-files PR.'
+      fi
+    fi
+  fi
+  exit 0
 fi
 : "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to publish a PR and trigger its admission checks}"
 git diff --stat HEAD -- "${GENERATED_FILES[@]}"

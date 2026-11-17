@@ -5,29 +5,28 @@ description: "Use this runbook before handing a self-hosted pilot to an operator
 ---
 # Pilot onboarding runbook
 
-Use this runbook before handing a self-hosted pilot to an operator or customer team. It focuses on the first-hour failures that look like generic server errors but usually come from missing runtime prerequisites, Redis, or an inactive Metadata v2 snapshot.
+Use this runbook before handing a self-hosted pilot to an operator or customer team. It focuses on the first-hour failures that look like generic server errors but usually come from missing database prerequisites, incompatible worker configuration, or an inactive Metadata v2 snapshot.
 
-**Prerequisites:** shell access to the deployment, the admin password, access to the PostGIS database, and either `redis-cli` or the managed Redis provider's connectivity test.
+**Prerequisites:** shell access to the deployment, the admin password, access to the PostGIS database, and `psql`.
 
 ## Runtime prerequisites
 
 ### Local or disposable pilot
 
-The repository Docker Compose stack supplies PostGIS, Redis, and migrations. A local pilot still needs explicit runtime secrets:
+The repository Docker Compose stack supplies PostGIS and migrations. A local pilot still needs explicit runtime secrets:
 
 ```bash
 HONUA_ADMIN_PASSWORD=replace-with-admin-password
 Security__ConnectionEncryption__MasterKey=replace-with-32-plus-character-secret
-HONUA_REDIS_URL=redis:6379
 ```
 
-Start the stack normally; Redis is part of the root Compose baseline because durable jobs, queued imports, OGC Processes, GPServer async jobs, tile-operation jobs, workflow runs, and proposal flows use it:
+Start the stack normally. PostgreSQL holds shared durable job, queue, workflow, and coordination state:
 
 ```bash
 docker compose up -d
 ```
 
-The stock Compose file maps host `HONUA_REDIS_URL` into the container's `ConnectionStrings__Redis`. If you use a `docker-compose.override.yml`, setting `ConnectionStrings__Redis: redis:6379` on the `honua` service is equivalent.
+The stock Compose stack uses its PostgreSQL database for application and system state. Each replica keeps its cache in memory.
 
 For a disposable fresh-stack smoke test only, clear volumes first:
 
@@ -51,9 +50,9 @@ Production pilots need these prerequisites before traffic is routed:
 | `HONUA_ADMIN_PASSWORD` | Strong admin secret delivered through the platform secret store. Admin endpoints refuse to operate without it in production. |
 | `Security__ConnectionEncryption__MasterKey` | 32+ character secret when storing encrypted connection credentials. |
 | `Metadata__Environment` | Stable environment id for this deployment, for example `dev`, `staging`, or `prod`. Defaults to `default` if unset. |
-| `ConnectionStrings__Redis` | Required for durable jobs/workflows, queued imports, geoprocessing jobs, workflow definitions/runs, execution logs, and cross-replica job coordination. |
+| Durable job prerequisites | All participating replicas and compatible workers must reach the shared system PostgreSQL database. Retain output artifacts in storage accessible to the workers and clients that need them. |
 
-Redis cache fallback only protects cache reads. It is not a durable job/workflow substitute. If a production pilot includes background imports, OGC Processes, GPServer async jobs, tile jobs, or workflow orchestration, run Redis with persistence enabled, for example managed Redis persistence or Redis AOF.
+Include system state and retained job outputs in the backup and recovery plan. A healthy per-replica cache does not prove that durable queues, workers, or output storage are working.
 
 ## Verify dependencies
 
@@ -70,15 +69,14 @@ Use the environment id from `Metadata__Environment` for `METADATA_ENV`; if neith
 | Dependency | Check | Healthy result |
 |---|---|---|
 | Process liveness | Open `/healthz/live` at the deployment origin in a browser | `Healthy` |
-| Readiness, migrations, database, configured cache | Open `/healthz/ready` at the deployment origin in a browser | `Ready` |
+| Readiness, migrations, database, per-replica cache | Open `/healthz/ready` at the deployment origin in a browser | `Ready` |
 | PostGIS | `psql "$ConnectionStrings__DefaultConnection" -c "select postgis_full_version();"` | PostGIS version text |
 | Compose PostGIS | `docker compose exec postgres pg_isready -U honua_user -d honua_dev` | `accepting connections` |
-| Redis from Compose | `docker compose exec redis redis-cli ping` | `PONG` |
-| Honua cache/Redis view | Run `GET /api/v1/admin/cache/status` in the authorized [API explorer](../../reference/openapi-and-explorer.md) | `isHealthy: true`; `isUsingFallback: false` when Redis is required |
+| Honua per-replica cache | Run `GET /api/v1/admin/cache/status` in the authorized [API explorer](../../reference/openapi-and-explorer.md) | `isHealthy: true`; `isUsingFallback: false` |
 | Runtime config | Run `GET /api/v1/admin/config` in the authorized API explorer | Effective env-derived config is visible |
 | Performance and license health | Open Honua Console's **Operate → Health** view (backed by `/healthz/metrics`) | JSON status is `healthy` |
 
-If `/healthz/ready` returns `503` and the body is `Not Ready`, use `/api/v1/admin/cache/status`, database logs, and server logs to identify whether the failing check is migrations, PostGIS, or cache/Redis.
+If `/healthz/ready` returns `503` and the body is `Not Ready`, use `/api/v1/admin/cache/status`, database logs, and server logs to identify whether the failing check is migrations, PostGIS, the local cache, or feature-change storage.
 
 ## Activate Metadata v2
 
@@ -119,8 +117,8 @@ No rows means no active snapshot for that environment. A row in another environm
 |---|---|---|---|
 | Runtime metadata routes return `500`; logs contain `No Metadata v2 snapshot has been activated for environment '<env>'.` | The running `Metadata__Environment` has no active Metadata v2 snapshot and no compatible legacy catalog to synthesize from. | Inventory endpoint returns `404`; SQL query against `metadata_v2_current` returns no row. | Publish a layer or make a metadata authoring update in the same environment. If this is a restore, restore the metadata-v2 tables with the catalog. |
 | `GET /api/v1/admin/metadata/environments/<env>/inventory` returns `404` with `does not have an active revision` | No active snapshot for the requested environment, or the request used the wrong environment id. | Compare `Metadata__Environment` with rows in `honua.metadata_v2_current`. | Use the correct environment id or activate a snapshot by publishing/updating metadata. |
-| OGC Processes, GPServer async job routes, workflow routes, queued imports, or tile-operation jobs return `503` | Redis-backed durable queue/store is missing or unavailable. | `/api/v1/admin/cache/status` reports fallback or unhealthy; Redis `PING` fails; logs mention job queue/store or distributed import coordination. | Configure `ConnectionStrings__Redis`, restore Redis, restart affected replicas, then resubmit the job. |
-| `503 Distributed import coordination is unavailable` | Queued GeoServices REST/GeoServer import coordination cannot reach Redis. | Redis `PING` fails or import logs contain Redis connection failures. | Restore Redis and retry the import; queued import requests are not safely durable without Redis. |
+| OGC Processes, GPServer async job routes, workflow routes, queued imports, or tile-operation jobs return `503` | A durable PostgreSQL dependency or compatible worker configuration is unavailable. | Inspect server and worker logs, database connectivity, migrations, and the existing job status. | Restore the named dependency or worker configuration. Inspect the previous job outcome before resubmitting. |
+| `503 Distributed import coordination is unavailable` | Queued GeoServices REST/GeoServer import coordination is unavailable. | Inspect import logs, shared PostgreSQL connectivity, and migrations. | Restore the named dependency and inspect the import status before retrying. |
 | `/healthz/ready` returns `503` with body `Not Ready` | Migrations, PostGIS, configured cache, or feature-change storage failed readiness. | Check server logs, database health, and `/api/v1/admin/cache/status`. | Fix the named dependency and restart only if configuration changed. |
 | Admin calls return `401` in a fresh pilot | `HONUA_ADMIN_PASSWORD` was not set in the running container or the request omitted `X-API-Key`. | Check effective deployment env and request headers. | Set the admin password through the deployment secret store and send `X-API-Key: <password>`. |
 | Creating a saved connection fails with `Master key not configured` | `Security__ConnectionEncryption__MasterKey` is absent or shorter than 32 characters. | Check env configuration. | Set a 32+ character master key and restart before storing encrypted connection credentials. |
@@ -128,11 +126,11 @@ No rows means no active snapshot for that environment. A row in another environm
 ## Before handoff
 
 - `/healthz/ready` at the deployment origin returns `Ready` in a browser.
-- Redis `PING` returns `PONG` when jobs/workflows are in scope.
-- `/api/v1/admin/cache/status` is healthy and not using fallback when Redis is required.
+- A representative job reaches its terminal outcome and its retained output can be retrieved when jobs/workflows are in scope.
+- `/api/v1/admin/cache/status` is healthy and reports `isUsingFallback: false`.
 - The metadata inventory endpoint for `Metadata__Environment` returns `200 OK`.
 - At least one published layer can be fetched through the expected public protocol.
-- Server logs contain no startup validation errors, migration failures, Redis connection loops, or `No Metadata v2 snapshot has been activated` messages.
+- Server logs contain no startup validation errors, migration failures, shared-state connection failures, or `No Metadata v2 snapshot has been activated` messages.
 
 ## Related pages
 

@@ -1219,7 +1219,9 @@ run_tenant_limits() {
   local scenario=tenant-quotas-backpressure-nondisclosure a="${HONUA_GP_TENANT_A_TOKEN:-}" b="${HONUA_GP_TENANT_B_TOKEN:-}" tmp headers code job retry body
   [[ -n "${a}" && -n "${b}" ]] || { write_receipt "${scenario}" fail "two tenant bearer tokens are required"; return 1; }
   tmp="$(mktemp)"; headers="$(mktemp)"; export HONUA_GP_MAX_CONCURRENT_PARTITION=1 HONUA_GP_MAX_CONCURRENT_GLOBAL=2
-  compose up -d --force-recreate server >/dev/null; wait_ready || return 1; compose stop worker >/dev/null
+  compose up -d --force-recreate server >/dev/null; wait_ready || return 1
+  provision_tenant_role || { write_receipt "${scenario}" fail "non-admin tenant execute role could not be provisioned"; return 1; }
+  compose stop worker >/dev/null
   code="$(tenant_curl "${a}" -o "${tmp}" -w '%{http_code}' -H 'Content-Type: application/json' -H 'Prefer: respond-async' -d "${native_payload}" "${base_url}/ogc/processes/processes/gdal.ogr2ogr/execution")"; job="$(jq -r '.jobID // .jobId // empty' "${tmp}")"
   [[ "${code}" == 201 && -n "${job}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "tenant A seed failed: HTTP ${code}"; return 1; }
   code="$(tenant_curl "${a}" -D "${headers}" -o "${tmp}" -w '%{http_code}' -H 'Content-Type: application/json' -H 'Prefer: respond-async' -d "${native_payload}" "${base_url}/ogc/processes/processes/gdal.ogr2ogr/execution")"; retry="$(awk 'tolower($1)=="retry-after:" {gsub("\r","");print $2}' "${headers}")"

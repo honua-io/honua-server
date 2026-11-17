@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Sourced at the actual terminal-CAS acknowledgement fence by gp-store-crash.sh.
 # The caller retains failure isolation and restores its topology after this case.
+# The worker writes the ready receipt after its terminal UPDATE commits in
+# honua.execution_jobs and before queue cleanup or terminal callbacks; the
+# unreleased hold is the withheld acknowledgement.
 terminal_assert_fence() {
+  [[ ! -e "$(barrier_directory "$job")/terminal-committed-registration-pending.released.json" ]] || return 1
   jq -e --arg job "$job" --argjson before "$before_record" '
     .operationId == $job and .barrier == "terminal-committed-registration-pending"
-    and .redis_reply == ":1" and .reply_forwarded == false
-    and .workerId == $before.claimedBy and .terminal_record == $before
+    and .workerId == $before.claimedBy and (.workerProcessId | type) == "number"
     and ($before.status == 3 or $before.status == "succeeded")
     and ($before.artifactReferences | length) == 1' <<<"$ready" >/dev/null
 }
@@ -78,8 +81,9 @@ run_terminal_result_recovery() {
   services_before="$receipt_root/$scenario-services-before.json"
   services_after="$receipt_root/$scenario-services-after.json"
   printf '%s\n' "$before_record" > "$baseline" || return 1
-  printf '%s\n' "$ready" > "$receipt_root/$scenario-terminal-fence.json" || return 1
   terminal_assert_fence || { scenario_fail "terminal fence did not prove exact committed CAS with withheld acknowledgement"; return 1; }
+  # Recorded while the hold is still unreleased: the worker never acknowledged the commit.
+  jq '. + {released:false}' <<<"$ready" > "$receipt_root/$scenario-terminal-fence.json" || return 1
   before_bytes="$receipt_root/$scenario-before.geojson"
   cp "$content" "$before_bytes" || return 1
   (( $(wc -c < "$before_bytes") > $(compose_staging_value MaxInlineArtifactBytes) )) || {
@@ -95,7 +99,7 @@ run_terminal_result_recovery() {
   terminal_assert_killed "$killed" || { scenario_fail "worker did not actually exit from SIGKILL (137)"; return 1; }
   # The old process is dead before the withheld response can be released.
   release_barrier "$job" terminal-committed-registration-pending || return 1
-  HONUA_GP_QUALIFICATION_BARRIER_ROOT="" HONUA_GP_WORKER_REDIS=redis:6379
+  HONUA_GP_QUALIFICATION_BARRIER_ROOT=""
   # Deliberately do not restart serving hosts, Redis or PostgreSQL in this cell.
   compose up -d --no-deps --force-recreate worker >/dev/null || return 1
   replacement_container="$(compose ps -q worker)" || return 1
