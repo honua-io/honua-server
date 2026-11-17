@@ -41,6 +41,22 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [UnitTest]
+    public void BuildLinkedLayerMetadataV2Graph_RelinkOfLegacySecondPrimary_DemotesLinkedPublication()
+    {
+        var once = LinkIntoService(CreateLinkPrimaryGraph(MetadataV2LayerType.EsriFeatureLayer), "beta");
+        var legacy = once with
+        {
+            Publications = once.Publications.Select(p => p with { IsPrimary = true }).ToArray()
+        };
+
+        var repaired = LinkIntoService(legacy, "beta");
+
+        LinkedPublication(repaired, "beta").IsPrimary.Should().BeFalse();
+        repaired.Publications.Single(publication => publication.Metadata.Id == "pub-alpha-101")
+            .IsPrimary.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void BuildLinkedLayerMetadataV2Graph_ResourceWithoutPrimary_LinksAsPrimary()
     {
         var graph = CreateLinkPrimaryGraph(MetadataV2LayerType.EsriFeatureLayer);

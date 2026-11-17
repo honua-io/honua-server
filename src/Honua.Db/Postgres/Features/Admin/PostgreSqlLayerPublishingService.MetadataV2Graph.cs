@@ -2836,10 +2836,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
     // A link reuses an existing resource, so it is primary only when nothing else is. The
     // resource's first primary publication stays its canonical service, and writes through
     // the linked publication must also satisfy that service's data-editor grant.
-    private static bool HasPrimaryPublication(MetadataV2Graph graph, string resourceId)
+    private static bool HasPrimaryPublication(MetadataV2Graph graph, string resourceId, string? exceptPublicationId)
         => graph.Publications.Any(publication =>
             publication.IsPrimary &&
-            string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal));
+            string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal) &&
+            !string.Equals(publication.Metadata.Id, exceptPublicationId, StringComparison.Ordinal));
 
     internal static MetadataV2Graph BuildLinkedLayerMetadataV2Graph(
         MetadataV2Graph graph,
@@ -2913,7 +2914,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             featurePublication = existingFeaturePublication with
             {
-                Status = WithReadyStatus(existingFeaturePublication.Status, readyStatus)
+                Status = WithReadyStatus(existingFeaturePublication.Status, readyStatus),
+                // Re-linking repairs a graph written before links became secondary.
+                IsPrimary = existingFeaturePublication.IsPrimary &&
+                            !HasPrimaryPublication(graph, resource.Metadata.Id, existingFeaturePublication.Metadata.Id)
             };
         }
         else
@@ -2941,7 +2945,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
                 MetadataV2LayerType.EsriFeatureLayer,
-                isPrimary: !HasPrimaryPublication(graph, resource.Metadata.Id),
+                isPrimary: !HasPrimaryPublication(graph, resource.Metadata.Id, exceptPublicationId: null),
                 idPrefix: "pub",
                 enabled,
                 now);
