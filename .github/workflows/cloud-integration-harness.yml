@@ -160,8 +160,8 @@ jobs:
     name: Local Substrate (local process + migration gate)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # PostgreSQL is the only service: the deploy workflow store uses the migrated system database
-    # (PostgresDatabaseMigrationRunner).
+    # The only container is the Testcontainers PostgreSQL: the deploy workflow store uses the
+    # migrated system database (PostgresDatabaseMigrationRunner).
     # ADR-0060 substrate-neutral lane: single-host, zero-cloud (no Kubernetes, no
     # cloud). GP = LocalProcessPoolBatchComputeBackend + real child processes; migration gate = the
     # real PostgresDatabaseMigrationRunner over a Testcontainers Postgres. FREE (no cloud secrets),

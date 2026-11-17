@@ -1044,7 +1044,7 @@ skipping or missing results fail the shell check. The required name and both
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
-Operator Eval capacity children keep the parent's PostGIS 17 preparation; the other split children prepare no images, as their parents did. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+Operator Eval children keep Ryuk and PostGIS 17, and Core and Cloud Contracts children keep Ryuk, PostGIS 16 and PostGIS 18; the other split children prepare no images. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 
 ### Lightweight workflow runner admission
 
