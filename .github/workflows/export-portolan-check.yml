@@ -12,6 +12,7 @@ on:
     branches: [trunk]
     paths:
       - '.github/workflows/export-portolan-check.yml'
+      - '.github/actions/setup-dotnet-ci/**'
       - 'scripts/ci/check-export-portolan.py'
       - 'scripts/ci/portolan-pin.v1.json'
       - 'src/**/PairedPublication*/**'

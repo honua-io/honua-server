@@ -71,9 +71,14 @@ def summary_markdown(report: dict, pin: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def escape_annotation(text: str) -> str:
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
 def annotations(report: dict) -> list[str]:
     errors = [finding for finding in report.get("findings", []) if finding.get("severity") == "error"]
-    lines = [f"::warning title=Portolan {finding['rule_id']}::{finding.get('path', '')}: {finding['message']}"
+    lines = [f"::warning title=Portolan {finding['rule_id']}::"
+             + escape_annotation(f"{finding.get('path') or '.'}: {finding['message']}")
              for finding in errors[:MAX_ANNOTATIONS]]
     if len(errors) > MAX_ANNOTATIONS:
         lines.append(f"::warning title=Portolan::{len(errors) - MAX_ANNOTATIONS} more errors in the report artifact")

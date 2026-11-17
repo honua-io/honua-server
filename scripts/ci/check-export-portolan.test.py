@@ -78,6 +78,11 @@ class ExportPortolanCheckTests(unittest.TestCase):
         self.assertEqual(len(lines), MODULE.MAX_ANNOTATIONS + 1)
         self.assertIn("5 more errors", lines[-1])
 
+    def test_annotations_escape_newlines_and_missing_paths(self):
+        finding = {**FINDING, "path": None, "message": "bad\nvalue 100%"}
+        line = MODULE.annotations(report(findings=[finding]))[0]
+        self.assertTrue(line.endswith("::.: bad%0Avalue 100%25"))
+
 
 if __name__ == "__main__":
     unittest.main()
