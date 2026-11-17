@@ -2212,3 +2212,15 @@ methods in selected PR and full trunk runs. No workflow, shard definition,
 required check name, timeout, or aggregate dependency changes. This removes
 repeated initialization rather than adding runners. The authored inventory
 template is updated; its generated inventory projection remains producer-owned.
+
+## Generated proposal reconciliation
+
+The existing nightly/on-demand generated-files publisher refreshes the fixed
+`automation/regenerate-generated-files` branch and reuses its open PR when
+regeneration changes protected outputs. When validated current trunk has no
+generated diff, it closes an obsolete proposal after verifying the publication's
+source ancestry and rechecking the PR head, automation head and trunk. Changed
+heads or moved trunk preserve the proposal. The workflow concurrency group
+serializes publishers; the retained branch supplies diagnostic evidence.
+Required checks, aggregate dependencies and PR-time work are unchanged: before
+and after this cleanup there are zero additional workflows, jobs or runners.
