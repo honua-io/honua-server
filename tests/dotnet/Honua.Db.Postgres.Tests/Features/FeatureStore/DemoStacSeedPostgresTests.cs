@@ -3,6 +3,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -603,7 +604,18 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
         => await ExecuteAsync(dataSource, MetadataV2TablesSql);
 
     private static async Task CreateChangeTrackingTablesAsync(NpgsqlDataSource dataSource)
-        => await ExecuteAsync(dataSource, ChangeTrackingTablesSql);
+    {
+        await ExecuteAsync(dataSource, ChangeTrackingTablesSql);
+        await ExecuteAsync(dataSource, await ReadServerMigrationAsync("213_CreateFeatureChangeReadHorizon.sql"));
+    }
+
+    private static async Task<string> ReadServerMigrationAsync(string fileName)
+    {
+        await using var stream = Assembly.Load("Honua.Server").GetManifestResourceStream($"Honua.Server.Migrations.{fileName}")
+            ?? throw new InvalidOperationException($"Embedded migration {fileName} not found.");
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
+    }
 
     private static async Task InstallCurrentChangeTrackingFunctionsAsync(NpgsqlDataSource dataSource)
     {
