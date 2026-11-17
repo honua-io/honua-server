@@ -1137,7 +1137,8 @@ run_disruption() {
 run_poison_job() {
   local scenario=poison-job poison="poison-$(date +%s%N)" job terminal digest
   compose stop worker >/dev/null
-  job="$(submit_async)" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "valid submission failed"; return 1; }
+  # A native job waits in the queue while the worker is stopped; a managed one may not.
+  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "valid submission failed"; return 1; }
   insert_poison_job "${poison}" "${job}" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "poison row could not be queued ahead of the valid job" "${job}"; return 1; }
   compose start worker >/dev/null
   terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: poison blocked queue progress" "${job}"; return 1; }
@@ -1207,7 +1208,7 @@ run_tenant_limits() {
   tmp="$(mktemp)"; headers="$(mktemp)"; export HONUA_GP_MAX_CONCURRENT_PARTITION=1 HONUA_GP_MAX_CONCURRENT_GLOBAL=2
   compose up -d --force-recreate server >/dev/null; wait_ready || return 1; compose stop worker >/dev/null
   code="$(tenant_curl "${a}" -o "${tmp}" -w '%{http_code}' -H 'Content-Type: application/json' -H 'Prefer: respond-async' -d "${native_payload}" "${base_url}/ogc/processes/processes/gdal.ogr2ogr/execution")"; job="$(jq -r '.jobID // .jobId // empty' "${tmp}")"
-  [[ "${code}" == 201 && -n "${job}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "tenant A seed failed"; return 1; }
+  [[ "${code}" == 201 && -n "${job}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "tenant A seed failed: HTTP ${code}"; return 1; }
   code="$(tenant_curl "${a}" -D "${headers}" -o "${tmp}" -w '%{http_code}' -H 'Content-Type: application/json' -H 'Prefer: respond-async' -d "${native_payload}" "${base_url}/ogc/processes/processes/gdal.ogr2ogr/execution")"; retry="$(awk 'tolower($1)=="retry-after:" {gsub("\r","");print $2}' "${headers}")"
   [[ "${code}" == 503 && -n "${retry}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "FINDING: quota/concurrency lacked 503 Retry-After" "${job}"; return 1; }
   code="$(tenant_curl "${b}" -o "${tmp}" -w '%{http_code}' "${base_url}/ogc/processes/jobs/${job}")"; body="$(<"${tmp}")"; compose start worker >/dev/null
