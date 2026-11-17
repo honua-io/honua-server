@@ -30,7 +30,7 @@ public sealed class CogOverzoomTileTests
     private const string Fixture = "cog_roster_z12_deflate";
     private const int TileSize = 256;
 
-    [Theory]
+    [UnitTheory]
     [InlineData(14, 6333, 2621)]
     [InlineData(13, 3166, 1310)]
     [Operation(Operations.GetTile)]
@@ -51,7 +51,7 @@ public sealed class CogOverzoomTileTests
         InflateSamples(chunks["IDAT"]).Should().Equal(expected);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(RasterFormat.TIFF)]
     [InlineData(RasterFormat.COG)]
     [Operation(Operations.GetTile)]
@@ -75,7 +75,7 @@ public sealed class CogOverzoomTileTests
         output.Extent.YMax.Should().BeApproximately(bounds.YMax, 1e-6);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(14, 1, 1)]
     [InlineData(23, 6333 << 9, 2621 << 9)]
     [Operation(Operations.GetTile)]
@@ -89,7 +89,7 @@ public sealed class CogOverzoomTileTests
         tile.Should().BeNull();
     }
 
-    [Fact]
+    [UnitTest]
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_NativeZoom_StillServesStoredTile()
     {

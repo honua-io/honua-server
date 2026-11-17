@@ -140,8 +140,13 @@ public sealed class ZarrCfGeoreferencingTests
             .SelectMany(cell => BitConverter.GetBytes(100f + (cell / 4 * 10) + (cell % 4))).ToArray();
         var registration = new ZarrRegistration
         {
-            Id = 1, LayerId = 5200, Name = "roster zarr", Provider = CloudStorageProvider.AwsS3,
-            Bucket = "roster-fixtures", RootPath = Root, CreatedAt = DateTimeOffset.UnixEpoch,
+            Id = 1,
+            LayerId = 5200,
+            Name = "roster zarr",
+            Provider = CloudStorageProvider.AwsS3,
+            Bucket = "roster-fixtures",
+            RootPath = Root,
+            CreatedAt = DateTimeOffset.UnixEpoch,
             Metadata = await ReadAsync(objects),
         };
         var store = Substitute.For<IZarrStore>();
