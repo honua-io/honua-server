@@ -303,6 +303,10 @@ internal static class LayerPublishingEndpoints
                 result.ServiceName,
                 [result.StorageLayerId],
                 logger).ConfigureAwait(false);
+            await LayerPublishCatalogNotifications.BroadcastAsync(
+                context.RequestServices,
+                exception => LayerPublishingLog.LayerPublishNotificationFailed(logger, result.StorageLayerId, exception))
+                .ConfigureAwait(false);
 
             var location = $"/api/v1/admin/connections/{id}/layers/{result.StorageLayerId}";
             return TypedResults.Created(location, ApiResponse<PublishedLayerSummary>.CreateSuccess(result));

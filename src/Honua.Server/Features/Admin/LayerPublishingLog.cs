@@ -111,4 +111,7 @@ internal static partial class LayerPublishingLog
 
     [LoggerMessage(EventId = 9655, Level = LogLevel.Error, Message = "Layer feature refresh failed due to invalid operation")]
     public static partial void LayerFeatureRefreshInvalidOperation(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 9658, Level = LogLevel.Warning, Message = "Layer {StorageLayerId} published but the MCP catalog notification failed")]
+    public static partial void LayerPublishNotificationFailed(ILogger logger, int storageLayerId, Exception exception);
 }
