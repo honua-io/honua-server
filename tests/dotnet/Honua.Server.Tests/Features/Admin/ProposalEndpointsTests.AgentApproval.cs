@@ -341,18 +341,17 @@ public sealed partial class ProposalEndpointsTests
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/operations/{id}/submit")]
-    public async Task SubmitOtherGatedOperation_AgentKey_IsRefusedWithAgentPolicyRef()
+    public async Task SubmitOtherChangeOperation_AgentKey_FilesProposalForHumanApproval()
     {
         using var agent = await CreateKeyClientAsync("agent-fields-operation", AgentKeyPermissions);
         var request = new OperationInvokeRequest
         {
-            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["layerId"] = "1" },
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["storageLayerId"] = "1" },
         };
 
         var response = await agent.PostAsJsonAsync("/api/v1/operations/admin.layer.fields.set/submit", request, JsonOptions);
 
-        await AssertAgentApprovalRefusalAsync(response, ConsoleGuidance, AgentApprovalFilter.OperationRef);
-        _executor.ExecutionCount.Should().Be(0);
+        await AssertAgentProposalFiledAsync(response);
     }
 
     [IntegrationTest]
@@ -403,6 +402,12 @@ public sealed partial class ProposalEndpointsTests
         var response = await agent.PostAsJsonAsync(
             "/api/v1/operations/admin.services.access-policy.set/submit", request, JsonOptions);
 
+        await AssertAgentProposalFiledAsync(response);
+    }
+
+    // An agent's change is not executed: the dispatcher's agent rule files a proposal for a person.
+    private async Task AssertAgentProposalFiledAsync(HttpResponseMessage response)
+    {
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         using var document = JsonDocument.Parse(body);
