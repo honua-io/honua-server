@@ -62,4 +62,12 @@ public sealed class ExactAttributeValuesConversionTests
     {
         ExactAttributeValues.IsCanonicalDecimalText(text).Should().BeFalse();
     }
+
+    [UnitTest]
+    public void ToFiniteDouble_OutOfRangeJsonNumber_ReturnsNull()
+    {
+        using var document = JsonDocument.Parse("1e400");
+
+        ExactAttributeValues.ToFiniteDouble(document.RootElement).Should().BeNull();
+    }
 }

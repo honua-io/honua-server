@@ -111,6 +111,10 @@ internal static class McpToolSchemas
               "type": "string",
               "description": "Primary key column if none detected."
             },
+            "exactTypes": {
+              "type": "boolean",
+              "description": "Publish numeric as decimal, timestamptz as timestamp-offset."
+            },
             "fields": {
               "type": "array",
               "items": { "type": "string" },

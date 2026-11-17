@@ -73,7 +73,12 @@ internal sealed class PostgresFeatureLayerCopyService(
         await using var schemaCommand = new NpgsqlCommand("SELECT current_schema()", connection);
         var schema = (string)(await schemaCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         var qualified = SqlIdentifier.QuoteIdentifier(schema) + "." + SqlIdentifier.QuoteIdentifier(table);
-        var columnDefinitions = fields.Select(f => SqlIdentifier.QuoteIdentifier(f.Name) + " " + SqlType(f) + (f.Nullable ? "" : " NOT NULL"));
+        // A source with exact fields is copied as an exact layer; its DateTime fields then use a
+        // zone-less column so the exact republish keeps them DateTime rather than TimestampOffset.
+        var exactCopy = fields.Any(f => f.Type is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset);
+        var columnDefinitions = fields.Select(f => SqlIdentifier.QuoteIdentifier(f.Name) + " "
+            + (exactCopy && f.Type == MetadataV2FieldType.DateTime ? "timestamp without time zone" : SqlType(f))
+            + (f.Nullable ? "" : " NOT NULL"));
         var ddl = $"CREATE TABLE {qualified} ({string.Join(",", columnDefinitions)}, {SqlIdentifier.QuoteIdentifier(geometryField)} geometry, "
             + $"PRIMARY KEY ({SqlIdentifier.QuoteIdentifier(primary)}), CHECK (ST_SRID({SqlIdentifier.QuoteIdentifier(geometryField)}) = {srid.ToString(CultureInfo.InvariantCulture)}))";
         long count = 0;
@@ -132,7 +137,8 @@ internal sealed class PostgresFeatureLayerCopyService(
                 Fields = fields.Select(f => f.Name).ToArray(),
                 Srid = srid,
                 ServiceName = serviceName,
-                Enabled = false
+                Enabled = false,
+                ExactTypes = exactCopy
             }, cancellationToken).ConfigureAwait(false);
             var current = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var targetResource = current.Index.ResourcesByStorageLayerId[target.StorageLayerId];

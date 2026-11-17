@@ -51,7 +51,10 @@ internal sealed class PublishFieldTypePolicy
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(columns);
         return request.ExactTypes
-            ? Exact([.. columns.Where(static column => column.IsPrimaryKey).Select(static column => column.Name), request.PrimaryKey])
+            ? Exact([
+                .. columns.Where(static column => column.IsPrimaryKey).Select(static column => column.Name),
+                request.PrimaryKey,
+                request.TemporalColumn])
             : Default;
     }
 

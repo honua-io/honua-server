@@ -298,6 +298,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     AllowEmptyTable = request.AllowEmptyTable,
                     ManagedStore = isManagedStore,
                     ExactTypes = request.ExactTypes,
+                    TemporalColumn = request.TemporalColumn,
                     Schema = schema,
                     Table = table,
                     LayerName = request.LayerName,

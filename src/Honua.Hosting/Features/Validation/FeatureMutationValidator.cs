@@ -413,6 +413,10 @@ internal static class MetadataV2AttributeValidation
             }
 
             var normalizedValue = NormalizeAttributeValue(rawValue);
+            if (mode != ValidationExtensions.AttributeValidationMode.Strict)
+            {
+                normalizedValue = CoerceExactNumber(field, rawValue, normalizedValue);
+            }
             var error = ValidateAttributeValue(field, normalizedValue, mode);
             if (error != null)
             {
@@ -442,6 +446,16 @@ internal static class MetadataV2AttributeValidation
 
         return ValidationResult<ImmutableDictionary<string, object?>>.Success(builder.ToImmutable());
     }
+
+    // Clients without an exact wire type send numbers; the stored value stays canonical text.
+    private static object? CoerceExactNumber(MetadataV2Field field, object? rawValue, object? normalizedValue)
+        => field.Type switch
+        {
+            MetadataV2FieldType.Decimal => ExactAttributeValues.FormatDecimalNumber(
+                rawValue is JsonElement ? rawValue : normalizedValue) ?? normalizedValue,
+            MetadataV2FieldType.TimestampOffset => ExactAttributeValues.FormatEpochMilliseconds(normalizedValue) ?? normalizedValue,
+            _ => normalizedValue
+        };
 
     private static object? NormalizeAttributeValue(object? value)
     {

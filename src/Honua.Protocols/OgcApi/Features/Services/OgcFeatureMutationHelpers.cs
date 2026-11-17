@@ -112,7 +112,7 @@ internal static class OgcFeatureMutationHelpers
         var attributesResult = mutationValidator.ValidateAttributes(
             resource,
             effectiveProperties,
-            ValidationExtensions.AttributeValidationMode.Strict,
+            ValidationExtensions.AttributeValidationMode.Json,
             isUpdate);
         if (!attributesResult.IsValid)
         {

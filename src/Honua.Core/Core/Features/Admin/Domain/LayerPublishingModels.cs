@@ -107,6 +107,9 @@ public sealed class TablePublishValidationRequest
     // Reports numeric/decimal and timestamptz columns with their exact published types.
     public bool ExactTypes { get; init; }
 
+    // With ExactTypes, this column keeps DateTime as it does on publish.
+    public string? TemporalColumn { get; init; }
+
     public required string Schema { get; init; }
 
     public required string Table { get; init; }

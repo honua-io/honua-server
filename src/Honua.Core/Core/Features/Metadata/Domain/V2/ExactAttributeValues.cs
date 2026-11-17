@@ -138,12 +138,58 @@ public static partial class ExactAttributeValues
             int i => i,
             short s => s,
             string text => ParseInvariantDouble(text),
-            JsonElement { ValueKind: JsonValueKind.Number } element => element.GetDouble(),
+            JsonElement { ValueKind: JsonValueKind.Number } element when element.TryGetDouble(out var parsed) => parsed,
             JsonElement { ValueKind: JsonValueKind.String } element => ParseInvariantDouble(element.GetString()),
             _ => double.NaN
         };
         return double.IsFinite(number) ? number : null;
     }
+
+    // Canonical exact text for a client-supplied number, keeping a JSON number's own digits; null
+    // when the value is not a finite number. Used by adapters whose wire format has no exact type.
+    public static string? FormatDecimalNumber(object? value) => value switch
+    {
+        JsonElement { ValueKind: JsonValueKind.Number } element => CanonicalDecimalText(element.GetRawText()),
+        long l => l.ToString(CultureInfo.InvariantCulture),
+        int i => i.ToString(CultureInfo.InvariantCulture),
+        decimal m => m.ToString(CultureInfo.InvariantCulture),
+        double d when double.IsFinite(d) => CanonicalDecimalText(d.ToString("R", CultureInfo.InvariantCulture)),
+        float f when float.IsFinite(f) => CanonicalDecimalText(((double)f).ToString("R", CultureInfo.InvariantCulture)),
+        _ => null
+    };
+
+    // RFC 3339 UTC text for an integral epoch-millisecond number; null for anything else.
+    public static string? FormatEpochMilliseconds(object? value) => value switch
+    {
+        long l => FormatUtcInstant(l),
+        int i => FormatUtcInstant(i),
+        double d when double.IsFinite(d) && Math.Truncate(d) == d && Math.Abs(d) < MaxEpochMilliseconds => FormatUtcInstant((long)d),
+        JsonElement { ValueKind: JsonValueKind.Number } element when element.TryGetInt64(out var epoch) => FormatUtcInstant(epoch),
+        _ => null
+    };
+
+    private const double MaxEpochMilliseconds = 253_402_300_800_000d;
+
+    private static string? CanonicalDecimalText(string text)
+    {
+        if (IsCanonicalDecimalText(text))
+        {
+            return text;
+        }
+
+        return decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+            ? number.ToString(CultureInfo.InvariantCulture)
+            : null;
+    }
+
+    private static string? FormatUtcInstant(long epochMilliseconds)
+        => epochMilliseconds is < MinEpochMilliseconds or > MaxUtcEpochMilliseconds
+            ? null
+            : DateTimeOffset.FromUnixTimeMilliseconds(epochMilliseconds).UtcDateTime
+                .ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fff'Z'", CultureInfo.InvariantCulture);
+
+    private const long MinEpochMilliseconds = -62_135_596_800_000;
+    private const long MaxUtcEpochMilliseconds = 253_402_300_799_999;
 
     private static double ParseInvariantDouble(string? text)
         => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)

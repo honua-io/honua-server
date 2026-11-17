@@ -3,7 +3,9 @@
 
 using FluentAssertions;
 using Honua.Server.Features.Admin;
+using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -41,6 +43,16 @@ public sealed class ExactTypesPublishPayloadTests
         var domain = LayerPublishRequestMapper.CreateDomain(restored!.Request, payload.ConnectionId, null);
         domain.ExactTypes.Should().BeFalse();
         LayerPublishRequestMapper.ToHttp(domain).ExactTypes.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ServicePublishDescriptor_DeclaresOptionalExactTypesFlag()
+    {
+        var parameter = ServicePublishOperation.BuildDescriptor().InputSchema
+            .Single(candidate => candidate.Name == "exactTypes");
+
+        parameter.Required.Should().BeFalse();
+        parameter.Schema.Type.Should().Be(WorkflowSchemaValueType.Flag);
     }
 
     private static LayerPublishJobPayload CreatePayload(PublishLayerRequest request)

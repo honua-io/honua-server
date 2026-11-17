@@ -15,7 +15,11 @@ public static class ValidationExtensions
     public enum AttributeValidationMode
     {
         Strict,
-        GeoServices
+        GeoServices,
+
+        // Strict typing for JSON feature adapters, except that exact Decimal fields also accept
+        // JSON numbers and TimestampOffset fields epoch milliseconds.
+        Json
     }
 
     internal static bool IsReservedMutationAttribute(string attributeName)
