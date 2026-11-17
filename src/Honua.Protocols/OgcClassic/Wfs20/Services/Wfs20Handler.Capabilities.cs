@@ -120,6 +120,7 @@ internal sealed partial class Wfs20Handler
             IndividualName = metadata.ContactPoint?.Name,
             ContactInfo = metadata.ContactPoint is { } contact ? new ContactInfo
             {
+                Phone = string.IsNullOrWhiteSpace(contact.Phone) ? null : new Phone { Voice = contact.Phone },
                 Address = string.IsNullOrWhiteSpace(contact.Email) ? null : new Address { ElectronicMailAddress = contact.Email },
                 OnlineResource = string.IsNullOrWhiteSpace(contact.Url) ? null : new OnlineResource { Href = contact.Url }
             } : null
