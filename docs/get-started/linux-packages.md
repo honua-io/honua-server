@@ -88,7 +88,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - storage:/var/lib/honua/storage
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
