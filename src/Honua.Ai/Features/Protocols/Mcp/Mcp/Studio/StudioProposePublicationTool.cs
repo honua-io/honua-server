@@ -203,10 +203,10 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         private readonly DateTimeOffset _startedAt =
             (httpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
 
-        // A caller-chosen key is honoured as given; a replayed proposal that ended without
-        // publishing is refused with the advice to choose a new key.
         public const int MaxDerivedChain = 8;
 
+        // A caller-chosen key is honoured as given; a replayed proposal that ended without
+        // publishing is refused with the advice to choose a new key.
         public async Task<(OperationHandle Operation, string Key)> SubmitAsync(string key)
         {
             var operation = await SubmitOnceAsync(key).ConfigureAwait(false);

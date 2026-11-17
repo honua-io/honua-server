@@ -273,7 +273,7 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
         }
     }
 
-    private static IEnumerable<string> DecodedJson(string value)
+    private static string[] DecodedJson(string value)
     {
         try
         {

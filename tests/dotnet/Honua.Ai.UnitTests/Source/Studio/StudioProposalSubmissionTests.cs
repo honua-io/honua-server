@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
