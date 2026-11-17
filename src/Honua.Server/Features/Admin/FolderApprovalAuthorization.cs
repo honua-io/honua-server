@@ -104,29 +104,32 @@ internal static class FolderApprovalAuthorization
         return expiry;
     }
 
-    internal static async Task<bool> IsCurrentAsync(OperationProposal proposal, IServiceProvider services, CancellationToken cancellationToken)
+    internal static async Task<FolderMutationFailure?> ValidateCurrentAsync(OperationProposal proposal, IServiceProvider services, CancellationToken cancellationToken)
     {
         var authorization = proposal.Plan.FolderAuthorization;
         if (authorization is null || authorization.OperationId != proposal.OperationId || authorization.RequesterId != proposal.RequestedBy ||
-            authorization.ExpiresAt <= services.GetRequiredService<TimeProvider>().GetUtcNow()) return false;
+            authorization.ExpiresAt <= services.GetRequiredService<TimeProvider>().GetUtcNow()) return FolderMutationFailure.RequesterAuthorizationChanged;
         try
         {
-            if (proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan)) return false;
+            if (proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan)) return FolderMutationFailure.RequesterAuthorizationChanged;
             var replay = FolderReplayRequest.ReadSealedRequest(proposal.Plan, proposal.OperationId, proposal.TenantId);
-            if (replay.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) return false;
+            if (replay.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) return FolderMutationFailure.RequesterAuthorizationChanged;
+            if (authorization.PolicyRevision != await PolicyRevisionAsync(services, authorization, null, cancellationToken).ConfigureAwait(false))
+                return FolderMutationFailure.RequesterAuthorizationChanged;
             var snapshot = await services.GetRequiredService<IMetadataV2GraphStore>()
                 .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             if (snapshot.Etag != authorization.SnapshotEtag ||
-                replay.Request.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag ||
-                authorization.PolicyRevision != await PolicyRevisionAsync(services, authorization, null, cancellationToken).ConfigureAwait(false)) return false;
+                replay.Request.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag)
+                return FolderMutationFailure.ApprovalSnapshotChanged;
             var affected = BuildMutation(snapshot.Graph, replay.Request, proposal.TenantId)
                 .AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal);
-            return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal);
+            return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal)
+                ? null : FolderMutationFailure.RequesterAuthorizationChanged;
         }
         catch (Exception exception) when (exception is FolderProposalRefusal or JsonException or ArgumentException or KeyNotFoundException ||
             (exception is InvalidOperationException && exception is not ServiceUnavailableException))
         {
-            return false;
+            return FolderMutationFailure.RequesterAuthorizationChanged;
         }
     }
 
