@@ -31,7 +31,12 @@ docker compose -f "$compose_file" --profile multidim-fixture up \
   --wait \
   honua gdal-worker seed
 
+# The stack above is already up and seeded. Without --no-deps, `run --build` rebuilds
+# the dependencies and recreates honua and seed. The seed installs postgis_raster, so
+# the recreated server finds the raster migration root pending on an existing journal,
+# and the contract-migration gate refuses to start it.
 docker compose -f "$compose_file" --profile multidim-fixture run \
   --build \
+  --no-deps \
   --rm \
   multidim-fixture
