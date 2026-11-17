@@ -555,9 +555,10 @@ internal static partial class ServiceCollectionExtensions
         // Register table discovery implementation
         services.AddScoped<ITableDiscoveryService>(provider => new PostgreSqlTableDiscoveryService(
             provider.GetRequiredService<ILogger<PostgreSqlTableDiscoveryService>>(),
-            provider.GetService<ISchemaContext>(),
-            provider.GetRequiredService<PostgresSchemaConfiguration>(),
-            (connectionString, cancellationToken) => CreateTargetConnectionAsync(provider, connectionString, cancellationToken)));
+            new PostgreSqlTableDiscoveryOptions(
+                provider.GetService<ISchemaContext>(),
+                provider.GetRequiredService<PostgresSchemaConfiguration>(),
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(provider, connectionString, cancellationToken))));
 
         // Register layer publishing implementation
         // Snapshot copies of large imported tables need a longer, explicit budget than ordinary

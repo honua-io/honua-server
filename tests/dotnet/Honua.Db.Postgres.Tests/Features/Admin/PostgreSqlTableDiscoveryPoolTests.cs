@@ -55,10 +55,19 @@ public sealed class PostgreSqlTableDiscoveryPoolTests(PostgresFixture fixture, I
         await fixture.DropDatabaseAsync(_database);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Discovery_WhenConfiguredPoolIsFull_WaitsThenSucceeds(bool singleTable)
+    [Fact]
+    public Task DiscoveryList_WhenConfiguredPoolIsFull_WaitsThenSucceeds() => AssertConfiguredPoolAsync(DiscoverListAsync);
+
+    [Fact]
+    public Task DiscoveryTable_WhenConfiguredPoolIsFull_WaitsThenSucceeds() => AssertConfiguredPoolAsync(DiscoverTableAsync);
+
+    [Fact]
+    public Task DiscoveryList_WithExplicitDifferentTarget_PreservesTarget() => AssertDifferentTargetAsync(DiscoverListAsync);
+
+    [Fact]
+    public Task DiscoveryTable_WithExplicitDifferentTarget_PreservesTarget() => AssertDifferentTargetAsync(DiscoverTableAsync);
+
+    private async Task AssertConfiguredPoolAsync(Func<PostgreSqlTableDiscoveryService, string, CancellationToken, Task> discover)
     {
         await using var scope = _services.CreateAsyncScope();
         var service = (PostgreSqlTableDiscoveryService)scope.ServiceProvider.GetRequiredService<ITableDiscoveryService>();
@@ -66,9 +75,9 @@ public sealed class PostgreSqlTableDiscoveryPoolTests(PostgresFixture fixture, I
         {
             using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
             var elapsed = Stopwatch.StartNew();
-            var exception = await Record.ExceptionAsync(() => DiscoverAsync(service, _configured, singleTable, cancellation.Token));
+            var exception = await Record.ExceptionAsync(() => discover(service, _configured, cancellation.Token));
             elapsed.Stop();
-            output.WriteLine("Single table: {0}; capacity: 1; cancelled: {1}; elapsed: {2:F1} ms", singleTable, exception is OperationCanceledException, elapsed.Elapsed.TotalMilliseconds);
+            output.WriteLine("Capacity: 1; cancelled: {0}; elapsed: {1:F1} ms", exception is OperationCanceledException, elapsed.Elapsed.TotalMilliseconds);
             exception.Should().BeAssignableTo<OperationCanceledException>("discovery must borrow from the configured pool");
             await using var command = fixture.DataSource.CreateCommand("SELECT count(*) FROM pg_stat_activity WHERE datname = @database AND application_name = @application");
             command.Parameters.AddWithValue("database", _database);
@@ -77,13 +86,10 @@ public sealed class PostgreSqlTableDiscoveryPoolTests(PostgresFixture fixture, I
         }
 
         using var available = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await DiscoverAsync(service, _configured, singleTable, available.Token);
+        await discover(service, _configured, available.Token);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Discovery_WithExplicitDifferentTarget_PreservesTarget(bool singleTable)
+    private async Task AssertDifferentTargetAsync(Func<PostgreSqlTableDiscoveryService, string, CancellationToken, Task> discover)
     {
         await using var scope = _services.CreateAsyncScope();
         var service = (PostgreSqlTableDiscoveryService)scope.ServiceProvider.GetRequiredService<ITableDiscoveryService>();
@@ -91,20 +97,18 @@ public sealed class PostgreSqlTableDiscoveryPoolTests(PostgresFixture fixture, I
         await using var held = await _source.OpenConnectionAsync();
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-        var exception = await Record.ExceptionAsync(() => DiscoverAsync(service, alternate.ConnectionString, singleTable, cancellation.Token));
+        var exception = await Record.ExceptionAsync(() => discover(service, alternate.ConnectionString, cancellation.Token));
 
         exception.Should().BeOfType<PostgresException>().Which.SqlState.Should().Be("3D000");
     }
 
-    private static async Task DiscoverAsync(PostgreSqlTableDiscoveryService service, string target, bool singleTable, CancellationToken cancellationToken)
+    private static async Task DiscoverTableAsync(PostgreSqlTableDiscoveryService service, string target, CancellationToken cancellationToken)
     {
-        if (singleTable)
-        {
-            (await service.DiscoverPostGisTableAsync(target, "public", "points", cancellationToken)).Should().NotBeNull();
-        }
-        else
-        {
-            (await service.DiscoverPostGisTablesAsync(target, cancellationToken)).Should().Contain(table => table.Table == "points");
-        }
+        (await service.DiscoverPostGisTableAsync(target, "public", "points", cancellationToken)).Should().NotBeNull();
+    }
+
+    private static async Task DiscoverListAsync(PostgreSqlTableDiscoveryService service, string target, CancellationToken cancellationToken)
+    {
+        (await service.DiscoverPostGisTablesAsync(target, cancellationToken)).Should().Contain(table => table.Table == "points");
     }
 }
