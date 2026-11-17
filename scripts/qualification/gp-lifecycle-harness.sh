@@ -58,7 +58,6 @@ case "${lane}" in
       mcp-cancel-native-process-started idempotency retry timeout-cooperative timeout-ignoring \
       restart-worker-accepted restart-worker-running restart-worker-terminal restart-worker-results-read \
       restart-server-accepted restart-server-running restart-server-terminal restart-server-results-read \
-      restart-redis-accepted restart-redis-running restart-redis-terminal restart-redis-results-read \
       restart-postgres-accepted restart-postgres-running restart-postgres-terminal restart-postgres-results-read \
       duplicate-delivery cleanup)
     ;;
@@ -1167,8 +1166,7 @@ run_stale_lease() {
 }
 
 run_output_write_failure() {
-  # Release native execution into an actual unavailable staged store. Stopping Redis
-  # cannot establish output-store durability, even if a job later succeeds.
+  # Release native execution into an actual unavailable staged store.
   source "${repo_root}/scripts/qualification/gp-store-crash.sh"
   run_store_crash_boundary native-process-started store
 }
@@ -1443,7 +1441,7 @@ else
       run_scenario retry run_retry || failures=$((failures + 1))
       run_scenario timeout-cooperative run_timeout_cooperative || failures=$((failures + 1))
       run_scenario timeout-ignoring run_timeout_ignoring || failures=$((failures + 1))
-      for component in worker server redis postgres; do
+      for component in worker server postgres; do
         for boundary in accepted running terminal results-read; do
           run_scenario "restart-${component}-${boundary}" run_disruption "${component}" "${boundary}" || failures=$((failures + 1))
         done

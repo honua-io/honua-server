@@ -659,7 +659,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         AssertCountedPopulation(bands[0], 1, [0, 1, 2, 3, 4, NoData]);
         AssertCountedPopulation(bands[1], 2, [-5, NoData, 5, NoData, 15, 25]);
         // The hand-derived valid-population oracles reject both bands on validCount,
-        // which is the exact-count assertion #4407 added. The moment assertions are
+        // which is the exact-count assertion. The moment assertions are
         // demonstrated separately, by a wrong result whose counts already agree, in
         // StatisticsOracle_QuantizedSourceMatchesCountsButNotMoments_IsRejected.
         Action first = () => AssertStatistics(bands[0], 1, 5, 0, 4, 2, Math.Sqrt(2));

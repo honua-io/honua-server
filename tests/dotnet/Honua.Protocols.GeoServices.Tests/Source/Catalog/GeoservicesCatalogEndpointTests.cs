@@ -142,7 +142,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
 
         var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         // ArcGIS Pro 3.7's native ImageServer reader requires this REST compatibility
-        // selector before it will execute any image operation (honua-server#3375).
+        // selector before it will execute any image operation.
         payload.RootElement.GetProperty("currentVersion").GetDouble().Should().Be(10.8);
         payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
         payload.RootElement.GetProperty("soapUrl").GetString().Should().Be("http://localhost/arcgis/services");
@@ -157,7 +157,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /rest/services")]
     public async Task PostServicesDirectory_WithFormBody_ReturnsCatalogPayload()
     {
-        // honua-server#5012: Esri clients POST to the catalog roots during connection and token
+        // Esri clients POST to the catalog roots during connection and token
         // negotiation, and the GeoServices REST contract is that a resource answers either verb.
         using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
         var response = await _fixture.Client.PostAsync("/rest/services", form);
@@ -192,7 +192,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /rest/info")]
     public async Task PostRestInfo_WithFormBody_ReturnsRootInfo()
     {
-        // honua-server#5012: see PostServicesDirectory_WithFormBody_ReturnsCatalogPayload.
+        // See PostServicesDirectory_WithFormBody_ReturnsCatalogPayload.
         using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
         var response = await _fixture.Client.PostAsync("/rest/info", form);
 
@@ -1711,7 +1711,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
         finally { await fixture.DisposeAsync(); }
     }
 
-    // #4063: SOAP GetServiceInfo advertises the same AllowedMosaicMethods as REST, so every advertised
+    // SOAP GetServiceInfo advertises the same AllowedMosaicMethods as REST, so every advertised
     // method must be accepted by SOAP ExportImage; Center is not advertised and stays a fault.
     [IntegrationTest]
     [Operation(Operations.Export)]

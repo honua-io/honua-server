@@ -57,7 +57,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
                 payloadContent);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -269,7 +269,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task ReplicaInfo_PerLayerReplica_EmitsLayerServerGensAsArray()
     {
-        // #4020: layerServerGens was a JSON-encoded string, so info['layerServerGens'][0]['serverGen']
+        // LayerServerGens was a JSON-encoded string, so info['layerServerGens'][0]['serverGen']
         // failed in every client. The expected generations come from the createReplica and
         // synchronizeReplica responses, not from the info resource under test.
         var createPayload = JsonSerializer.Serialize(new
@@ -348,7 +348,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -371,7 +371,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             "/rest/services/nonexistent/FeatureServer/createReplica",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -392,7 +392,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -416,7 +416,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -473,10 +473,9 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task ReplicaDownload_PointZMFeature_KeepsZMAndLayerSpatialReference()
     {
-        // #4027: every replica download used to flatten Z/M and carry no spatial reference, so a 3D or
-        // measured layer synced offline lost its ordinates and wrote them back flattened on upload.
-        // The expected ordinates are the literal values written below, and 4326 is the SRID the test
-        // layer is seeded with (TestDataBuilder), not values read back from the server under test.
+        // Replica downloads preserve Z/M ordinates and spatial reference for offline
+        // round trips. Expected ordinates are literal seeded values below; SRID 4326
+        // comes from TestDataBuilder rather than the server response.
         const double ExpectedX = -157.85;
         const double ExpectedY = 21.30;
         const double ExpectedZ = 123.5;
@@ -528,7 +527,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_RollbackOnFailureOmitted_RollsBackTheLayerBatch()
     {
-        // #4031: Esri documents rollbackOnFailure=true as the Synchronize Replica default. A client that
+        // Esri documents rollbackOnFailure=true as the Synchronize Replica default. A client that
         // omits it must not get the valid add committed next to the failing update.
         EnableSyncEditing();
         var replicaId = await CreateReplicaForEditsAsync("RollbackDefault");
@@ -545,7 +544,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_RollbackOnFailureFalse_CommitsTheValidRowBestEffort()
     {
-        // #4031 control: best-effort per-row apply stays available as an explicit opt-in.
+        // Control: best-effort per-row apply stays available as an explicit opt-in.
         EnableSyncEditing();
         var replicaId = await CreateReplicaForEditsAsync("RollbackFalse");
         const string name = "rollback-false-persists";
@@ -772,7 +771,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -804,7 +803,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -867,7 +866,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -903,7 +902,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -965,7 +964,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/unRegisterReplica",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -981,7 +980,7 @@ public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/unRegisterReplica",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();

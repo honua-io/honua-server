@@ -77,7 +77,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         var progress = await sut.GetAsync(jobId);
         if (operation == "publish" && !serviceScoped)
         {
-            // #5624: the bare storage-layer id resolves to the "other" resource, which no routable
+            // The bare storage-layer id resolves to the "other" resource, which no routable
             // publication serves. A published archive must be bound to a routable source, so the
             // upload is refused rather than published under a source the proxy cannot authorize.
             progress!.Status.Should().Be(OperationStatus.Failed);
@@ -101,7 +101,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         fields.GetProperty(serviceScoped ? "requested_field" : "other_field").GetString()
             .Should().Be(serviceScoped ? "string" : "integer");
 
-        // honua-server#4421: the metadata assertions above describe what the archive CLAIMS to
+        // The metadata assertions above describe what the archive CLAIMS to
         // contain. Decode each declared tile so the payload is proven too — with the provider
         // stubbed on four arbitrary bytes, as it was, this suite validated archives of junk.
         AssertEveryArchivedTileDecodes(stub.LastUploadBytes!, header);
@@ -771,7 +771,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         graph ??= AddRoutableStorageLayers(new TestMetadataV2GraphBuilder()
             .AddService("svc-publish-test", "publish-test")
             .AddResource("res-publish", "publish-layer")
-            // #5624: an unscoped publish binds the archive to the routable source of its storage
+            // An unscoped publish binds the archive to the routable source of its storage
             // layer and refuses the upload when there is none, so layer 7 needs a storage binding.
             .AddStorageBinding("res-publish-binding", "res-publish", "features", storageLayerId: 7)
             .AddPublication("pub-publish", "svc-publish-test", "res-publish", layerIndex: 7)
@@ -803,7 +803,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
                     Arg.Any<TileLimits>(),
                     Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
                     Arg.Any<CancellationToken>())
-                // honua-server#4421: this stub returned `[0x01, 0x02, 0x03, 0x04]`, which is not a
+                // This stub returned `[0x01, 0x02, 0x03, 0x04]`, which is not a
                 // Mapbox Vector Tile, so every "published PMTiles archive" this suite validated held
                 // four arbitrary bytes per tile. Push a real, decodable tile instead — it costs one
                 // call and lets the archive assertions read back what a client would actually get.

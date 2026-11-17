@@ -727,12 +727,12 @@ public class ExpressionEvaluatorTests
     }
 
     // ---------------------------------------------------------------------------------------
-    // ["zoom"] as an expression input (honua-server#2873).
+    // ["zoom"] as an expression input.
     //
     // Every expected value below is the output of MapLibre GL JS's own reference implementation
     // (@maplibre/maplibre-gl-style-spec v26.1.0) for the same expression at the same zoom, obtained
-    // via createExpression(expr, rootKey, propertySpec).evaluate({ zoom }, { properties }) — the
-    // method PR #2870 established. They are not derived from this implementation.
+    // via createExpression(expr, rootKey, propertySpec).evaluate({ zoom }, { properties }).
+    // They are not derived from this implementation.
     // ---------------------------------------------------------------------------------------
 
     private const string ZoomWidthRamp =

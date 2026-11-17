@@ -13,6 +13,8 @@ Find your layer id at `http://localhost:8080/odata/Layers`. Replace `{layerId}` 
 
 The root feed exposes **Layers** and **Features**. Loading **Layers** shows catalog rows. The unfiltered **Features** entity requires a `LayerId` filter and cannot be loaded directly from the root Navigator.
 
+Feature attributes are dynamic properties. In `/odata/$metadata` the `Feature` entity is an open type that declares only `LayerId`, `ObjectId` and `Geometry`; every other layer field arrives as a dynamic property in the JSON rows. Power Query builds the table's columns from `$metadata` and shows dynamic properties only when the `MoreColumns` option is on, so the dialog steps below load those three columns. To load the attributes, use the [Power Query source](#power-query-attributes-and-api-keys) below.
+
 ## Excel
 
 1. Go to **Data → Get Data → From Other Sources → From OData Feed**.
@@ -28,21 +30,23 @@ The root feed exposes **Layers** and **Features**. Loading **Layers** shows cata
 3. Load the resulting feature table, or choose **Transform Data**, then **Close & Apply**. If a Navigator appears, select the scoped feature table.
 4. Refresh with **Home → Refresh**. Published reports use Power BI gateway and scheduled refresh settings.
 
-## Power Query and API keys
+## Power Query: attributes and API keys
 
-For a reproducible source, create a blank query and paste this into the **Advanced Editor**. Replace `{layerId}` with your published id. The built-in credential dialog has no API-key header field, so add the `Headers` option when required:
+For a reproducible source that includes the layer's attributes, create a blank query and paste this into the **Advanced Editor**. Replace `{layerId}` with your published id. `MoreColumns = true` adds a **More Columns** record column that holds the dynamic properties. The built-in credential dialog has no API-key header field, so add the `Headers` option when required:
 
 ```text
 let
     Source = OData.Feed(
         "http://localhost:8080/odata/Layers({layerId})/Features",
         null,
-        [Implementation = "2.0", Headers = [#"x-api-key" = "YOUR_KEY"]])
+        [Implementation = "2.0", MoreColumns = true, Headers = [#"x-api-key" = "YOUR_KEY"]])
 in
     Source
 ```
 
-For anonymous deployments, omit `Headers` and keep `[Implementation = "2.0"]`.
+For anonymous deployments, omit `Headers` and keep `[Implementation = "2.0", MoreColumns = true]`.
+
+To turn the attributes into columns, click the expand icon in the **More Columns** header, choose the fields you need, and clear **Use original column name as prefix**. Power Query records this as a `Table.ExpandRecordColumn` step.
 
 ## Server-side query options
 
@@ -55,7 +59,7 @@ Power Query can fold transforms to OData. Supported options include `$filter`, `
 
 ## Verify
 
-Complete **Load** and confirm that the table contains feature rows with `ObjectId` and `LayerId`, then refresh it. Seeing entity sets in the Navigator alone does not verify a successful feature load.
+Complete **Load** and confirm that the table contains feature rows with `ObjectId`, `LayerId` and at least one of the layer's own attribute columns, then refresh it. If only `LayerId`, `ObjectId` and `Geometry` appear, the source was loaded without `MoreColumns`; use the Power Query source above. Seeing entity sets in the Navigator alone does not verify a successful feature load.
 
 The service document at `/odata`, EDM schema at `/odata/$metadata`, and catalog at `/odata/Layers` can also be inspected in a browser.
 
@@ -65,6 +69,7 @@ The service document at `/odata`, EDM schema at `/odata/$metadata`, and catalog 
 - **Connection refused** — check `http://localhost:8080/healthz/ready` and your server address. See [troubleshooting](../deploy/troubleshooting.md).
 - **401 Unauthorized** — use the deployment's credentials or the API-key `Headers` snippet above. An anonymous request for a scoped feed returns `401`; a signed-in caller without read access to that layer gets `403`.
 - **No layers** — `/odata/Layers` lists only the layers the caller can read, so an anonymous request to a deployment that requires authentication returns an empty catalog, not `401`. Add credentials first; if the list is still empty, publish a layer and confirm its id in `/odata/Layers`.
+- **Only `LayerId`, `ObjectId` and `Geometry` columns** — the layer's attributes are dynamic properties; load them with `MoreColumns = true` and expand the **More Columns** record (see the Power Query source above).
 - **Geometry column unusable in Excel** — Excel has no spatial type; use `$select` to load only the attributes you need.
 - **Slow loads** — filter rows and select columns before loading large layers.
 

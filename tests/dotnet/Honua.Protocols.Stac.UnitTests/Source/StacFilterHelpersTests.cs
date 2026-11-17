@@ -394,8 +394,8 @@ public sealed class StacFilterHelpersTests
     // A doubly-open / empty datetime interval (datetime=../.., /, /..) is NOT a valid
     // OGC API-Features / STAC value — an interval must have at least one bounded end. The
     // STAC API conformance validator requires these to be rejected with 400, so the syntax
-    // check must fail and ParseDatetime must return null. (Reverts BH-S-02 from #2423, which
-    // accepted them as a no-op filter and regressed STAC item-search conformance.)
+    // check must fail and ParseDatetime must return null. Accepting them as a no-op
+    // filter breaks STAC item-search conformance.
 
     [UnitTest]
     public void IsValidDatetimeSyntax_WithDoublyOpenInterval_ReturnsFalse()

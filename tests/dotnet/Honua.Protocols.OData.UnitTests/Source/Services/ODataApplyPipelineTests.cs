@@ -52,8 +52,8 @@ public sealed class ODataApplyPipelineTests
     [Fact]
     public void ParseApplyExpression_FilterSegmentOfPipeline_ParsesFilterOnly()
     {
-        // Each segment parses independently — the leading filter must capture only its own
-        // expression, not the trailing groupby it used to greedily absorb.
+        // Parse each segment independently: the leading filter captures only its
+        // expression, excluding the trailing groupby.
         var segments = ODataAggregationHandler.SplitApplyTransforms(
             "filter(gisacres gt 5)/groupby((gisacres))");
 

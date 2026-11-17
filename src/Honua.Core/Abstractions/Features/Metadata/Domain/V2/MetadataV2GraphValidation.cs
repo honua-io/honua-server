@@ -838,8 +838,7 @@ public static class MetadataV2GraphValidator
         IReadOnlyList<MetadataV2Service> services,
         Dictionary<string, MetadataV2Layer> publicationsById)
     {
-        // Service→publications is now derived from publication.ServiceId only;
-        // the redundant Service.PublicationIds slot was removed in design slice 55/N.
+        // Service→publications is derived from publication.ServiceId only.
         _ = publicationsById;
 
         foreach (var service in services)

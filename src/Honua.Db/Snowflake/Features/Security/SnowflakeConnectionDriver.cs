@@ -70,7 +70,7 @@ internal sealed partial class SnowflakeConnectionDriver : IConnectionDriver, ISe
         // Snowflake addresses an account identifier rather than a host:port; the console surfaces the
         // "host" field as "Account" for this provider, and the "database" field as the default database.
         // Snowflake.Data parses the string with DbConnectionStringBuilder, so build it with the same type:
-        // values containing ';', '=' or quotes are quoted and cannot add keys of their own (SEC-23).
+        // values containing ';', '=' or quotes are quoted and cannot add keys of their own.
         var builder = new DbConnectionStringBuilder
         {
             ["account"] = target.Host ?? string.Empty,

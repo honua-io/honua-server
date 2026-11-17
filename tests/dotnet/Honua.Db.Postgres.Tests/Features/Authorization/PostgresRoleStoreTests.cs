@@ -305,7 +305,7 @@ public sealed class PostgresRoleStoreTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task GetEffectivePermissions_RbacTablesAbsent_ReturnsNoGrants_DoesNotThrow()
     {
-        // Regression (#1385): integration-test fixtures and fresh/legacy DBs that
+        // Integration-test fixtures and fresh/legacy DBs that
         // never ran migration 041 lack the rbac_* tables. The store must treat the
         // missing relation (42P01) as "no grants" so PermissionResolver yields
         // NoMatch and AccessPolicyHelpers falls back to the coarse AccessPolicy,

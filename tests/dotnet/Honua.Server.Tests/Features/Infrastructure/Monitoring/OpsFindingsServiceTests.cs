@@ -187,7 +187,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction(int deadLetters, int expectedBound)
     {
-        // #2556: the registered alerts.redrive_dead_letters actuator (#2579) means dead-letters now
+        // The registered alerts.redrive_dead_letters actuator means dead-letters now
         // carry a real recommended action instead of being purely informational.
         var alertHealth = new FakeAlertDispatchHealth
         {
@@ -753,8 +753,6 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_DbPoolPressure_FromRealAdmissionGateExhaustion_FiresFinding()
     {
-        // #2805: prove the finding fires from the REAL admission gate under a simulated exhaustion, not from
-        // a fake snapshot — this is the regression the dead ConnectionPoolMetrics counters could not catch.
         using var gate = new QueryConcurrencyGate(new ConnectionLimits
         {
             MaxConcurrentQueries = 1,
@@ -879,7 +877,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_ServingLatencyBelowMinSampleCount_SuppressesFinding()
     {
-        // #2809: a huge p95 from a single unlucky request must NOT flap a finding. The min-sample guard
+        // A huge p95 from a single unlucky request must NOT flap a finding. The min-sample guard
         // (default 20) suppresses protocols with too few in-window requests to be statistically meaningful.
         var now = DateTimeOffset.UtcNow;
         var rollupStore = Substitute.For<IOpsHealthRollupStore>();
@@ -913,7 +911,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_ServingP99BreachWithP95BelowThreshold_ProducesFinding()
     {
-        // #2805: the p99 tail catches a slow-outlier regression that a p95-only check misses.
+        // The p99 tail catches a slow-outlier regression that a p95-only check misses.
         var now = DateTimeOffset.UtcNow;
         var rollupStore = Substitute.For<IOpsHealthRollupStore>();
         rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
@@ -1069,8 +1067,8 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public void AllRecommendedActions_AdminConfigChangeActionNamesAreRegistered()
     {
-        // RC-2556: every recommendedAction's embedded ops-action name (for AdminConfigChange-kind
-        // actions) must exist in the actuator registry (#2579) — enumerate both sides and assert subset.
+        // Every recommendedAction's embedded ops-action name (for AdminConfigChange-kind
+        // actions) must exist in the actuator registry — enumerate both sides and assert subset.
         var registeredActions = new[]
         {
             OpsActionExecutionPayloads.RedriveDeadLetters(),
@@ -1613,7 +1611,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public void ServiceComposition_WithoutRedisOperationGateway_ResolvesOpsFindingsService()
     {
-        // Reproduces the #2511 startup failure at the composition level: the server registers
+        // Guards against startup failure at the composition level: the server registers
         // IOpsFindingsService unconditionally, but IOperationGateway is only registered when the
         // durable backend (Redis) is present. With ValidateOnBuild — exactly as Program.cs builds
         // the host — resolving the service must NOT throw when the gateway is absent.

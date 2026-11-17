@@ -96,7 +96,7 @@ public sealed class MigrationScriptDbUpSafetyTests
         _namedDollarQuoteTag.IsMatch("EXECUTE $ddl$ CREATE TABLE t() $ddl$;").Should().BeTrue();
         _namedDollarQuoteTag.IsMatch("EXECUTE $cmt$COMMENT ON TABLE t IS 'x'$cmt$;").Should().BeTrue();
         _namedDollarQuoteTag.IsMatch("DO $body$ BEGIN END $body$;").Should().BeTrue();
-        // The comment-embedded literal that re-triggered the original bug.
+        // Exercise a comment-embedded literal.
         _namedDollarQuoteTag.IsMatch("-- do not use $ddl$ tags").Should().BeTrue();
 
         // The anonymous "$$ ... $$" block (DbUp-safe) must NOT be flagged, including

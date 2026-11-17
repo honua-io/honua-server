@@ -7,8 +7,8 @@ using NetTopologySuite.Geometries;
 
 namespace Honua.Core.Tests.Features.Import;
 
-// Regression coverage for honua-server#2352: Esri JSON feature sets must parse into features with
-// their geometry and attributes rather than being mis-read as GeoJSON.
+// Esri JSON feature sets must parse into features with their geometry and attributes rather than
+// being mis-read as GeoJSON.
 public sealed class GeoServicesJsonFormatReaderTests
 {
     private static async Task<List<NetTopologySuite.Features.IFeature>> ReadAsync(string json)

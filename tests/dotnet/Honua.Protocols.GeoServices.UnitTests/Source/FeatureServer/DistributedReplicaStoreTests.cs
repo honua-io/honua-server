@@ -119,7 +119,7 @@ public sealed class DistributedReplicaStoreTests
     [Operation(Operations.TestInfrastructure)]
     public async Task SetGetRemove_IndependentReplicasInParallel_DoNotThrowAndLeaveNoReplica()
     {
-        // #4405: each task uses its own replica id, so there is no contention. Renamed to say
+        // Each task uses its own replica id, so there is no contention. Renamed to say
         // what it proves — 40 independent sequences interleave without throwing or leaking —
         // and paired with SetGetRemove_ContendingOnOneReplicaId_... below, which is the
         // contended case the old name promised.

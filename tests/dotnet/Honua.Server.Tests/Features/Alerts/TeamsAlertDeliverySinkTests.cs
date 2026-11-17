@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Alerts;
 public sealed class TeamsAlertDeliverySinkTests
 {
     // Destination is an IP literal so the sink's outbound SSRF guard does not perform a live DNS
-    // lookup; see AlertTestFixtures.RoutableWebhookBaseUrl (#3056).
+    // lookup; see AlertTestFixtures.RoutableWebhookBaseUrl.
     private static AlertDeliveryOptions CreateOptionsWithTeams(
         string webhookUrl = AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook/xxx") =>
         new()

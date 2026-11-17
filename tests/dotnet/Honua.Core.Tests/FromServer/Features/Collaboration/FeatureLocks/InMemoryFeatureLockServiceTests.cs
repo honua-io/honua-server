@@ -229,7 +229,7 @@ public sealed class InMemoryFeatureLockServiceTests
     [Operation(Operations.Update)]
     public async Task HasAnyActiveLeasesAsync_TracksWhetherEnforcementMustEvaluatePerFeature()
     {
-        // Write paths skip per-feature guard evaluation when this reports false (#4402), so a
+        // Write paths skip per-feature guard evaluation when this reports false, so a
         // wrong false would silently disable lease enforcement for the whole request. It must
         // flip to true the moment a lease exists and back once it is released.
         var service = new InMemoryFeatureLockService(new MutableTimeProvider(Instant()));

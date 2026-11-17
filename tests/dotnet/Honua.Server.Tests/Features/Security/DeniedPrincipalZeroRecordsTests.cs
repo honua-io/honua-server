@@ -118,7 +118,7 @@ public sealed class DeniedPrincipalZeroRecordsTests
                 deniedBody);
         }
 
-        // The assertion #4386 was filed for: zero records, not merely a status.
+        // Assert zero records, not merely a status.
         ReadRecordIds(surface, deniedBody).Should().BeEmpty(
             "a denied principal must receive no record from the denied resource, body was: {0}",
             deniedBody);

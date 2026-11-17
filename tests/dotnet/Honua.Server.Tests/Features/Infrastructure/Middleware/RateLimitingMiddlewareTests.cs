@@ -314,7 +314,7 @@ public sealed class RateLimitingMiddlewareTests
     public async Task InvokeAsync_WithMatchingTenantTierPolicy_AppliesPolicyLimitOverGlobalDefault()
     {
         // A per-tenant tier policy (limit 1) is more specific than the generous global default and
-        // must drive the enforced limit (issue #2158 tier precedence applied at runtime).
+        // must drive the enforced limit (tier precedence applied at runtime).
         var store = new TestRateLimitPolicyStore(new RateLimitPolicy
         {
             Name = "tenant-tier",
@@ -423,7 +423,7 @@ public sealed class RateLimitingMiddlewareTests
     {
         // Global limit is generous; each endpoint declares its own 1/min override. A single
         // tenant+IP exhausting one endpoint must not consume a different endpoint's allowance
-        // (issue #2779: Console traffic exhausting the OIDC authorize-url 5/min limit).
+        // (Console traffic exhausting the OIDC authorize-url 5/min limit).
         var middleware = CreateMiddleware(limit: 10_000);
 
         // Exhaust endpoint A's own 1/min bucket from one IP.
@@ -448,7 +448,7 @@ public sealed class RateLimitingMiddlewareTests
         // Global ceiling is 2; the endpoint's own limit is generous (100). Traffic to an
         // attributed endpoint must still count against the subject's shared global ceiling, so the
         // third request trips the global limit even though the endpoint's own budget is untouched
-        // (regression guard: post-#2779 the scoped counter must not replace the global one).
+        // (regression guard: the scoped counter must not replace the global one).
         var middleware = CreateMiddleware(limit: 2);
 
         var first = CreateContext("198.51.100.211", endpointName: "endpoint-generous", endpointLimit: 100);
@@ -490,7 +490,7 @@ public sealed class RateLimitingMiddlewareTests
     public async Task InvokeAsync_EndpointScope_PartitionsByHttpMethod()
     {
         // The same endpoint reached by different verbs must not share a scoped counter: a GET
-        // exhausting its 1/min budget must not 429 a POST to the same endpoint (issue #2779 scope
+        // exhausting its 1/min budget must not 429 a POST to the same endpoint (scope
         // must include the HTTP method).
         var middleware = CreateMiddleware(limit: 10_000);
 

@@ -1218,11 +1218,10 @@ public sealed partial class ServiceSettingsEndpointsTests
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task UpdateLayerMetadata_WithTimeInfoPayload_ReturnsOkAndRoundTrips()
     {
-        // Regression for honua-io/honua-server#1910 symptom 3: PUTting a timeInfo block
-        // on a layer must succeed (HTTP 200) and round-trip the configured fields rather
-        // than 500ing with a NullReferenceException. The typed V2 temporal write path
-        // (ToV2Temporal -> MutateResourcesForLayerAsync) must null-guard every slot it
-        // consumes.
+        // PUTting a timeInfo block on a layer must succeed (HTTP 200) and round-trip the
+        // configured fields rather than 500ing with a NullReferenceException. The typed
+        // V2 temporal write path (ToV2Temporal -> MutateResourcesForLayerAsync) must
+        // null-guard every slot it consumes.
         var body = """
             {
               "timeInfo": {
@@ -1396,7 +1395,7 @@ public sealed partial class ServiceSettingsEndpointsTests
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var layerMetadataResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer/1?f=json");
-        // PA-070/PA-117 (#2418): a blocked GeoServices surface reports HTTP 200 + {"error":{"code":404}}
+        // a blocked GeoServices surface reports HTTP 200 + {"error":{"code":404}}
         await layerMetadataResponse.AssertGeoServicesErrorAsync(404);
     }
 

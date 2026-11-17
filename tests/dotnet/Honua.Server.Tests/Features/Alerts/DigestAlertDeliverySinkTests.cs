@@ -238,7 +238,7 @@ public sealed class DigestAlertDeliverySinkTests
                 Digest = new DigestAlertOptions
                 {
                     // IP literal keeps the outbound SSRF guard off live DNS; see
-                    // AlertTestFixtures.RoutableWebhookBaseUrl (#3056). Tests that exercise host
+                    // AlertTestFixtures.RoutableWebhookBaseUrl. Tests that exercise host
                     // resolution pass a host name here and inject a resolver instead.
                     WebhookUrl = webhookUrl ?? AlertTestFixtures.RoutableWebhookBaseUrl + "/digest",
                     WebhookSecret = "digest-secret",

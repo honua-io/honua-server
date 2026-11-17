@@ -112,7 +112,7 @@ public sealed class RingWindingNormalizerTests
     public void NormalizeToRightHandRule_ReorientedCopy_PreservesSourceSrid()
     {
         // A factory whose SRID is 0 does not stamp the geometry's SRID onto the reoriented copy;
-        // the normalizer must carry the source geometry's SRID (3857) across the reversal (#2745).
+        // the normalizer must carry the source geometry's SRID (3857) across the reversal.
         var sridlessFactory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 0);
         var cw = sridlessFactory.CreatePolygon(Reverse(_ccwShell));
         cw.SRID = 3857;

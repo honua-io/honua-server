@@ -50,7 +50,7 @@ public sealed class TestInfrastructureRegistrationPolicyTests
     [Fact]
     public void ShouldRegisterInfrastructure_StandaloneTestImageWithFixtureEnabled_Registers()
     {
-        // honua-server#2350: standalone Test image that runs its own migrations and enables the
+        // Standalone Test image that runs its own migrations and enables the
         // Operate observability fixture must register the providers the seeder depends on.
         TestInfrastructureRegistrationPolicy.ShouldRegisterInfrastructure(
                 isTestEnvironment: true,
