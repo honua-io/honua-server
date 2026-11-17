@@ -129,7 +129,7 @@ internal sealed partial class ConsoleJobService(
                 : new ConsoleJobFailure
                 {
                     Message = job.ErrorMessage,
-                    Classification = ClassifyFailure(job)
+                    Classification = ClassifyFailureDetailed(job)
                 },
             RetryPolicy = MapRetryPolicy(job.RetryPolicy ?? JobRetryPolicy.Default),
             ParentJobId = GetParameter(job, ExecutionJobParameterKeys.ParentId),
