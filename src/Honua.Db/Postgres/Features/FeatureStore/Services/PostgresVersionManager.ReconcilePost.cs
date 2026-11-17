@@ -412,7 +412,7 @@ internal sealed partial class PostgresVersionManager
         }
 
         long serverGeneration;
-        await using (var genCommand = new NpgsqlCommand("SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes", connection) { Transaction = transaction })
+        await using (var genCommand = new NpgsqlCommand("SELECT honua.feature_change_read_horizon()", connection) { Transaction = transaction })
         {
             var result = await genCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             serverGeneration = result is long gen ? gen : 0;
@@ -461,7 +461,7 @@ internal sealed partial class PostgresVersionManager
         // which makes this MAX gap-free for feature_changes (same rule as PostgresChangeTracker).
         long visibleGeneration;
         await using (var generationCommand = new NpgsqlCommand(
-            "SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes", connection)
+            "SELECT honua.feature_change_read_horizon()", connection)
         { Transaction = transaction })
         {
             var result = await generationCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

@@ -26,7 +26,6 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
 {
-    private readonly RedisFixture _redis = new();
 
     // The Test host adds its real Postgres catalog after the production MCP
     // composition gate runs. Advertise the same concrete style tools once the
@@ -46,10 +45,8 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         _fixture.ConfigureWebHost(builder =>
         {
-            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Public:BaseUrl", "http://localhost");
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
         });
@@ -59,7 +56,6 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
     }
 
     [IntegrationTest]

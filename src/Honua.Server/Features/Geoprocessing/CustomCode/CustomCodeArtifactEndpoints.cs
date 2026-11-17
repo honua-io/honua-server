@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Infrastructure.Models;
@@ -177,9 +178,7 @@ internal static class CustomCodeArtifactEndpoints
 
         // Bound disk use before the cloud upload. Reservations stay charged on any failure,
         // so repeated interrupted requests cannot bypass the per-job byte and count caps.
-        await using var spool = new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
-            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024,
-            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        await using var spool = PrivateTempFile.CreateScratch("honua-custom-code-upload-", null, 64 * 1024);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[64 * 1024];
         long readTotal = 0;
@@ -354,9 +353,9 @@ internal static class CustomCodeArtifactEndpoints
         // Verify the stored content before returning any bytes. A changed bucket/account
         // under the same provider must not serve unrelated content with the original ETag.
         await using var cloudStream = stream;
-        var verified = new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
-            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024,
-            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+#pragma warning disable CA2000 // Ownership moves to the response when responseOwnsStream is set; disposed below otherwise.
+        var verified = PrivateTempFile.CreateScratch("honua-custom-code-download-", null, 64 * 1024);
+#pragma warning restore CA2000
         var responseOwnsStream = false;
         try
         {

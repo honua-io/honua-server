@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Identity;
 [Operation(Operations.IdentityManagement)]
 public class ScimProvisioningEndpointsTests : IAsyncLifetime
 {
-    private const string ScimToken = "scim-integration-bearer-token";
+    private const string ScimToken = "scim-integration-bearer-token-32-characters";
     private const string ScimOidcIssuer = "https://issuer.example.com";
     private static readonly JsonSerializerOptions _json = new()
     {

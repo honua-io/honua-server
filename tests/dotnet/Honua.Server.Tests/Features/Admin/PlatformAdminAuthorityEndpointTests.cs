@@ -27,48 +27,68 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
-public sealed class PlatformAdminAuthorityEndpointTests : IAsyncLifetime
+public sealed class PlatformAdminAuthorityEndpointTests : IClassFixture<PlatformAdminAuthorityEndpointTests.PlatformAuthorityHost>
 {
-    private readonly IAdminApiKeyStore _keys = Substitute.For<IAdminApiKeyStore>();
-    private readonly IWorkflowOperationStore _workflows = Substitute.For<IWorkflowOperationStore>();
+    private readonly IAdminApiKeyStore _keys;
+    private readonly IWorkflowOperationStore _workflows;
     private readonly WebAppFixture _fixture;
 
-    public PlatformAdminAuthorityEndpointTests()
+    public PlatformAdminAuthorityEndpointTests(PlatformAuthorityHost host)
     {
-        _keys.ListAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<AdminApiKeyRecord>());
-        _fixture = new WebAppFixture()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "platform-authority-test-bootstrap");
-            })
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IAdminApiKeyStore>();
-                services.AddSingleton(_keys);
-                services.RemoveAll<IWorkflowOperationStore>();
-                services.AddSingleton(_workflows);
-                services.RemoveAll<MetadataReleaseControlService>();
-                services.AddSingleton<MetadataReleaseControlService>();
-                services.Configure<TenantContextOptions>(options => options.Enabled = true);
-                services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PlatformAdminTestAuthentication>(
-                    PlatformAdminTestAuthentication.SchemeName, _ => { });
-                services.PostConfigure<AuthorizationOptions>(options =>
-                {
-                    var policy = new AuthorizationPolicyBuilder(PlatformAdminTestAuthentication.SchemeName)
-                        .RequireAuthenticatedUser().RequireRole("admin").Build();
-                    options.AddPolicy(AuthenticationExtensions.AdminPolicy, policy);
-                    options.AddPolicy(AuthenticationExtensions.AdminPolicyAlias, policy);
-                    options.AddPolicy(AuthenticationExtensions.AdminCredentialManagementPolicy, policy);
-                });
-            });
+        _keys = host.Keys;
+        _workflows = host.Workflows;
+        _fixture = host.Fixture;
+        // The stores outlive a case; each case asserts only on its own calls.
+        _keys.ClearReceivedCalls();
+        _workflows.ClearReceivedCalls();
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    // One host for the class: the stores are substitutes and every case is an authorization outcome.
+    public sealed class PlatformAuthorityHost : IAsyncLifetime
+    {
+        public PlatformAuthorityHost()
+        {
+            Keys.ListAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<AdminApiKeyRecord>());
+            Fixture = new WebAppFixture()
+                .UseSeed("tests/seed/server.yaml")
+                .ConfigureWebHost(builder =>
+                {
+                    builder.UseEnvironment("Test");
+                    builder.UseSetting("HONUA_DEV_AUTH", "false");
+                    builder.UseSetting("HONUA_ADMIN_PASSWORD", "platform-authority-test-bootstrap");
+                })
+                .ConfigureServices(services =>
+                {
+                    services.RemoveAll<IAdminApiKeyStore>();
+                    services.AddSingleton(Keys);
+                    services.RemoveAll<IWorkflowOperationStore>();
+                    services.AddSingleton(Workflows);
+                    services.RemoveAll<MetadataReleaseControlService>();
+                    services.AddSingleton<MetadataReleaseControlService>();
+                    services.Configure<TenantContextOptions>(options => options.Enabled = true);
+                    services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PlatformAdminTestAuthentication>(
+                        PlatformAdminTestAuthentication.SchemeName, _ => { });
+                    services.PostConfigure<AuthorizationOptions>(options =>
+                    {
+                        var policy = new AuthorizationPolicyBuilder(PlatformAdminTestAuthentication.SchemeName)
+                            .RequireAuthenticatedUser().RequireRole("admin").Build();
+                        options.AddPolicy(AuthenticationExtensions.AdminPolicy, policy);
+                        options.AddPolicy(AuthenticationExtensions.AdminPolicyAlias, policy);
+                        options.AddPolicy(AuthenticationExtensions.AdminCredentialManagementPolicy, policy);
+                    });
+                });
+        }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        internal IAdminApiKeyStore Keys { get; } = Substitute.For<IAdminApiKeyStore>();
+
+        internal IWorkflowOperationStore Workflows { get; } = Substitute.For<IWorkflowOperationStore>();
+
+        internal WebAppFixture Fixture { get; }
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTheory]
     [InlineData("api-keys")]

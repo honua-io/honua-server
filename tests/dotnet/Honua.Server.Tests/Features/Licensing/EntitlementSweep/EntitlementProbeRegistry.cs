@@ -51,7 +51,7 @@ internal static class EntitlementProbeRegistry
     private static void WithScimBearer(HttpRequestMessage request)
         => request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", IdentityScimBearerToken);
 
-    public const string IdentityScimBearerToken = "entitlement-sweep-scim-token";
+    public const string IdentityScimBearerToken = "entitlement-sweep-scim-token-32-characters";
 
     public static IReadOnlyDictionary<string, EntitlementProbe> Probes { get; } =
         new EntitlementProbe[]

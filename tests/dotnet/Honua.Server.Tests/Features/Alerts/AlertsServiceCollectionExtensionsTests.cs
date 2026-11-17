@@ -80,6 +80,18 @@ public sealed class AlertsServiceCollectionExtensionsTests
     }
 
     [UnitTest]
+    public async Task AddAlerts_OpsNoticesOnSchemaRoutedInstance_RejectsAtStartup()
+    {
+        var services = CreateServices(tenantResolution: null, schemaRouting: true, alertsEnabled: false, previewEnabled: false);
+        services.Configure<AlertOptions>(options => options.Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] });
+        using var provider = services.BuildServiceProvider();
+
+        Func<Task> validate = () => provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(CancellationToken.None);
+        (await validate.Should().ThrowAsync<OptionsValidationException>())
+            .Which.Failures.Should().ContainSingle().Which.Should().StartWith("Ops notification delivery cannot run");
+    }
+
+    [UnitTest]
     public void AddAlerts_WithDefaultConfiguration_LeavesBufferedChannelsUnsupported()
     {
         var configuration = new ConfigurationBuilder().Build();

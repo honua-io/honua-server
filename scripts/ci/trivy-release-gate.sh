@@ -3,7 +3,7 @@
 # executor that the customer quickstart pins. Fails on HIGH/CRITICAL findings that have
 # an upstream fix; unfixed findings are ignored by design, which is looser than the
 # release-bundle container scan (that one also blocks on unfixed). Exceptions come only
-# from .trivyignore-release in the commit being published.
+# from the committed OpenVEX decisions and .trivyignore-release.
 #
 # Usage: TRIVY_IMAGE=<pinned trivy image> trivy-release-gate.sh <image@sha256:digest>
 # The image is pulled into the local Docker daemon and scanned there, so the scan
@@ -12,18 +12,24 @@
 set -euo pipefail
 
 image="${1:?usage: trivy-release-gate.sh <image@sha256:digest>}"
-if [[ "$image" != *@sha256:* ]]; then
+if [[ ! "$image" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; then
   echo "::error::release gate needs a digest reference, got $image" >&2
   exit 2
 fi
 : "${TRIVY_IMAGE:?TRIVY_IMAGE must name the pinned Trivy image}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cache_dir="${TRIVY_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/trivy-cache}"
 mkdir -p "$cache_dir"
+vex_dir="$(mktemp -d)"
+trap 'rm -f "$vex_dir/release-gate.openvex.json"; rmdir "$vex_dir"' EXIT
+python3 "$repo_root/scripts/security/release_images.py" vex-generate \
+  --name tag-release-gate --output "$vex_dir/release-gate.openvex.json"
 
 docker pull --quiet "$image" >/dev/null
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -v "$PWD:/work:ro" \
+  -v "$repo_root:/work:ro" \
+  -v "$vex_dir:/vex:ro" \
   -v "$cache_dir:/root/.cache/trivy" \
   "$TRIVY_IMAGE" image \
   --scanners vuln \
@@ -31,6 +37,8 @@ docker run --rm \
   --severity HIGH,CRITICAL \
   --ignore-unfixed \
   --ignorefile /work/.trivyignore-release \
+  --vex /vex/release-gate.openvex.json \
+  --show-suppressed \
   --exit-code 1 \
   --format table \
   "$image"

@@ -148,8 +148,9 @@ internal static class McpPromptCatalog
                 + "add widgets with honua_studio_add_widget, and add controls with honua_studio_add_control.\n"
                 + "4. Call honua_studio_validate_draft, then honua_studio_save_version. Read the saved version with "
                 + "honua_studio_get_version (versionId and contentHash are top-level on that result; save nests them under version).\n"
-                + "5. Call honua_studio_propose_publication. An admin's result includes the share URL. Finish publication in this session.\n"
-                + "Hand back the dashboard layout, the included layers, and the share URL."),
+                + "5. Call honua_studio_propose_publication with a route that starts with '/'. Every MCP call returns an approval "
+                + "proposal; the route is served only after it is approved in Console.\n"
+                + "Hand back the dashboard layout, the included layers, the route, and the proposalId."),
 
         new McpPromptDefinition(
             Name: "setup_and_publish",
@@ -175,8 +176,8 @@ internal static class McpPromptCatalog
             Template:
                 "You are setting up this Honua server and publishing {source} as the service {serviceName}, "
                 + "delivered as a {deliverable}.\n"
-                + "Select tools/list view \"configure\". You are an admin and finish configuration, publication, "
-                + "and the Studio share URL in this session.\n"
+                + "Select tools/list view \"configure\". You are an admin and finish configuration and publication in this "
+                + "session; the Studio publication itself is an approval proposal.\n"
                 + "Work only through MCP tool calls; the Console and browser Studio are not required.\n\n"
                 + "Drive the workflow with the honua MCP tools on that view:\n"
                 + "1. Either call honua_ingest_dataset with inline CSV or GeoJSON content (up to 4 MB), its format "
@@ -203,8 +204,9 @@ internal static class McpPromptCatalog
                 + "5. Call honua_studio_save_version (versionId and contentHash are nested under version) and "
                 + "honua_studio_get_version (those two fields are top-level). Reopen with honua_studio_reopen_version "
                 + "when you need another draft.\n"
-                + "6. Call honua_studio_propose_publication. An admin's result includes the share URL.\n"
-                + "Report the published service and layer identifiers, the saved version, and the share URL."),
+                + "6. Call honua_studio_propose_publication with a route that starts with '/'. Every MCP call returns an approval "
+                + "proposal; the route is served only after it is approved in Console.\n"
+                + "Report the published service and layer identifiers, the saved version, the route, and the proposalId."),
     ];
 
     private static readonly Dictionary<string, McpPromptDefinition> ByName =

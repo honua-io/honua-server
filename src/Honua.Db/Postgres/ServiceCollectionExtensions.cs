@@ -553,7 +553,12 @@ internal static partial class ServiceCollectionExtensions
                 configuration["Database:Schema"]));
 
         // Register table discovery implementation
-        services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
+        services.AddScoped<ITableDiscoveryService>(provider => new PostgreSqlTableDiscoveryService(
+            provider.GetRequiredService<ILogger<PostgreSqlTableDiscoveryService>>(),
+            new PostgreSqlTableDiscoveryOptions(
+                provider.GetService<ISchemaContext>(),
+                provider.GetRequiredService<PostgresSchemaConfiguration>(),
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(provider, connectionString, cancellationToken))));
 
         // Register layer publishing implementation
         // Snapshot copies of large imported tables need a longer, explicit budget than ordinary
@@ -1057,13 +1062,7 @@ internal static partial class ServiceCollectionExtensions
         // Register the read-only journal/physical-schema guard and migration runner. Both
         // canonical numbered roots flow through this runner and its public.schema_versions
         // journal; the guard rejects divergence instead of repairing it from a store path.
-        services.AddSingleton(coreSchemaMigrations);
-        services.AddSingleton(serviceProvider =>
-            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
-                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
-                configuration));
-        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
-            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
+        AddCoreSchemaGuard(services, configuration, coreSchemaMigrations);
 
         // Register migration runner for schema upgrades
         services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();
@@ -1080,9 +1079,41 @@ internal static partial class ServiceCollectionExtensions
             .Bind(configuration.GetSection(Honua.Core.Configuration.MigrationSafetyOptions.SectionName));
 
         // Register database compatibility checker for PostGIS preflight validation
-        services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();
+        services.AddSingleton<IDatabaseCompatibilityChecker>(provider =>
+            new PostgresDatabaseCompatibilityChecker(
+                provider.GetRequiredService<ILogger<PostgresDatabaseCompatibilityChecker>>(),
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(provider, connectionString, cancellationToken)));
 
         return services;
+    }
+
+    private static void AddCoreSchemaGuard(
+        IServiceCollection services, IConfiguration configuration, PostgresCoreSchemaMigrationManifest coreSchemaMigrations)
+    {
+        services.AddSingleton(coreSchemaMigrations);
+        services.AddSingleton(serviceProvider =>
+            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
+                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
+                configuration,
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(serviceProvider, connectionString, cancellationToken)));
+        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
+            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
+    }
+
+    private static async ValueTask<NpgsqlConnection> CreateTargetConnectionAsync(
+        IServiceProvider provider, string connectionString, CancellationToken cancellationToken)
+    {
+        // Migrate-only composition has no serving pool. Discovery and explicit migration targets retain their
+        // connection string; only the resolved serving configuration shares its managed budget.
+        var cache = provider.GetService<PostgresConnectionStringCache>();
+        if (cache is not null && string.Equals(connectionString,
+                await cache.ResolvedConnectionStringTask.WaitAsync(cancellationToken).ConfigureAwait(false),
+                StringComparison.Ordinal))
+        {
+            return provider.GetRequiredService<NpgsqlDataSource>().CreateConnection();
+        }
+
+        return new NpgsqlConnection(connectionString);
     }
 
     private static void AddAttachmentUploadServices(
