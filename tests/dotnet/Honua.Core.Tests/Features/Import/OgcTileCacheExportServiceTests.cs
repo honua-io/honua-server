@@ -304,31 +304,7 @@ public sealed class OgcTileCacheExportServiceTests
     [UnitTest]
     public async Task ExportAsync_MatrixHostOutsideAllowlist_DoesNotFetchThatLevel()
     {
-        var inventory = BuildWmtsInventory(trivial: true);
-        inventory = inventory with
-        {
-            ExternalDependencies =
-            [
-                .. inventory.ExternalDependencies,
-                new MigrationExternalDependency
-                {
-                    Id = "resource-url:matrix-host",
-                    ContainerId = "service:wmts",
-                    ResourceId = $"wmts-layer:{LayerId}",
-                    Kind = "ogc-endpoint",
-                    Name = "ResourceURL",
-                    Address = "https://{TileMatrix}.example/tiles/{TileCol}/{TileRow}.png",
-                    Metadata = new Dictionary<string, string>
-                    {
-                        ["operation"] = "ResourceURL",
-                        ["format"] = "image/png"
-                    },
-                    Compatibility = Partial(
-                        "ResourceURL template captured.",
-                        ImportCompatibilityCodes.OgcWmtsTileOnlySource)
-                }
-            ]
-        };
+        var inventory = WithResourceUrl(BuildWmtsInventory(trivial: true), "https://{TileMatrix}.example/tiles/{TileCol}/{TileRow}.png");
         var handler = new CountingTileHandler();
         using var httpClient = new HttpClient(handler);
         var sink = new InMemoryTileCacheSink();
@@ -353,6 +329,58 @@ public sealed class OgcTileCacheExportServiceTests
         result.TilesFailed.Should().Be(4);
         result.TileSets.Should().ContainSingle().Which.Code.Should().Be(ImportCompatibilityCodes.OgcWmtsTileCacheFetchFailed);
     }
+
+    [UnitTest]
+    public async Task ExportAsync_RootRelativeResourceUrl_FallsBackToServiceGetTile()
+    {
+        var inventory = WithResourceUrl(BuildWmtsInventory(trivial: true), "/wmts/{TileMatrix}/{TileCol}/{TileRow}.png");
+        var handler = new CountingTileHandler();
+        using var httpClient = new HttpClient(handler);
+        var service = new OgcTileCacheExportService(
+            new InMemoryScanner(inventory),
+            new InMemoryTileCacheSink(),
+            httpClient,
+            NullLogger<OgcTileCacheExportService>.Instance);
+
+        var result = await service.ExportAsync(new OgcTileCacheExportRequest
+        {
+            ServiceUrl = ServiceUrl,
+            ApplyMode = true,
+            AllowUnsafeLocalUrls = true,
+            MinZoom = 0,
+            MaxZoom = 0
+        });
+
+        result.TilesPersisted.Should().Be(1);
+        handler.RequestUris.Should().ContainSingle().Which.AbsoluteUri.Should()
+            .StartWith("https://wmts.example.test/wmts?service=WMTS&version=1.0.0&request=GetTile");
+    }
+
+    private static MigrationSourceInventoryArtifact WithResourceUrl(MigrationSourceInventoryArtifact inventory, string template) =>
+        inventory with
+        {
+            ExternalDependencies =
+            [
+                .. inventory.ExternalDependencies,
+                new MigrationExternalDependency
+                {
+                    Id = "resource-url:matrix-host",
+                    ContainerId = "service:wmts",
+                    ResourceId = $"wmts-layer:{LayerId}",
+                    Kind = "ogc-endpoint",
+                    Name = "ResourceURL",
+                    Address = template,
+                    Metadata = new Dictionary<string, string>
+                    {
+                        ["operation"] = "ResourceURL",
+                        ["format"] = "image/png"
+                    },
+                    Compatibility = Partial(
+                        "ResourceURL template captured.",
+                        ImportCompatibilityCodes.OgcWmtsTileOnlySource)
+                }
+            ]
+        };
 
     private static MigrationSourceInventoryArtifact BuildWmtsInventory(bool trivial)
     {
