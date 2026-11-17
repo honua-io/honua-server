@@ -2191,3 +2191,18 @@ methods in selected PR and full trunk runs. No workflow, shard definition,
 required check name, timeout, or aggregate dependency changes. This removes
 repeated initialization rather than adding runners. The authored inventory
 template is updated; its generated inventory projection remains producer-owned.
+
+## Review Gate attestation after merge
+
+`Review Gate` is not a required context; the four required contexts are `PR Gate`,
+`PR Gate / Affected shards`, `clean-code / Clean code` and
+`repo-hygiene / Repository hygiene`. Its attestation already sheds pull requests
+that are closed before it starts. A pull request that merges or closes while the
+attestation runs used to receive a red status anyway, from the initial snapshot
+(`pull request is not open`) or the final double snapshot (state changed between
+reads). Six of 40 server PRs updated between 16 Nov 17:00Z and 17 Nov 17:10Z
+carried that red status, each posted 1 to 8 seconds after the merge or close.
+The attestation now re-reads the pull request before any red status and sheds
+it when it is no longer open. Open pull requests keep every blocking reason, and
+the success and dispatch paths are unchanged. No trigger, job, runner, required
+check or aggregate dependency changes.
