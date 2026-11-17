@@ -69,7 +69,7 @@ public sealed class FolderOperationResponseTests
             .Should().Be($"Admin API returned {response.Status} ({Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(response.Status)}).");
     }
 
-    [UnitFact]
+    [UnitTest]
     public void ApprovedReplay_UnclassifiedRefusal_KeepsGenericReason()
     {
         var response = FolderOperationResponse.From(new FolderExecutionResult(null, null,
