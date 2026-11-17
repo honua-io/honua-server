@@ -2833,6 +2833,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             JsonSerializer.SerializeToElement(left, typeInfo),
             JsonSerializer.SerializeToElement(right, typeInfo));
 
+    // A link reuses an existing resource, so it is primary only when nothing else is. The
+    // resource's first primary publication stays its canonical service, and writes through
+    // the linked publication must also satisfy that service's data-editor grant.
+    private static bool HasPrimaryPublication(MetadataV2Graph graph, string resourceId)
+        => graph.Publications.Any(publication =>
+            publication.IsPrimary &&
+            string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal));
+
     internal static MetadataV2Graph BuildLinkedLayerMetadataV2Graph(
         MetadataV2Graph graph,
         string serviceName,
@@ -2933,7 +2941,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
                 MetadataV2LayerType.EsriFeatureLayer,
-                isPrimary: true,
+                isPrimary: !HasPrimaryPublication(graph, resource.Metadata.Id),
                 idPrefix: "pub",
                 enabled,
                 now);
