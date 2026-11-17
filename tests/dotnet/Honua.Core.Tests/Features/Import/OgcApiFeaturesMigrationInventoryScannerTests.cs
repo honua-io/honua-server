@@ -290,7 +290,8 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
     [InlineData("")]
     public async Task ScanSourceAsync_WithFixtureSource_CapturesCollectionsSchemaPagingAndItems(string landingLinkPrefix)
     {
-        using var httpClient = new HttpClient(new FixtureOgcApiFeaturesHandler(landingLinkPrefix))
+        using var handler = new FixtureOgcApiFeaturesHandler(landingLinkPrefix);
+        using var httpClient = new HttpClient(handler, disposeHandler: false)
         {
             BaseAddress = new Uri("https://demo.example")
         };

@@ -334,8 +334,8 @@ public sealed class OgcTileCacheExportServiceTests
     public async Task ExportAsync_RootRelativeResourceUrl_FallsBackToServiceGetTile()
     {
         var inventory = WithResourceUrl(BuildWmtsInventory(trivial: true), "/wmts/{TileMatrix}/{TileCol}/{TileRow}.png");
-        var handler = new CountingTileHandler();
-        using var httpClient = new HttpClient(handler);
+        using var handler = new CountingTileHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
         var service = new OgcTileCacheExportService(
             new InMemoryScanner(inventory),
             new InMemoryTileCacheSink(),
