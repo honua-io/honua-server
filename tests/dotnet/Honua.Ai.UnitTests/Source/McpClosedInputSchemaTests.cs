@@ -108,9 +108,12 @@ public sealed partial class McpTaxonomyAlignmentTests
         {
             if (entry.TryGetProperty("referenceToolName", out var toolName)
                 && toolName.GetString() is { Length: > 0 } name
-                && entry.TryGetProperty("schema", out var schema))
+                && entry.TryGetProperty("schema", out var schema)
+                && Path.Join(SchemaRoot, schema.GetString()) is var path
+                && File.Exists(path))
             {
-                paths.TryAdd(name, Path.Join(SchemaRoot, schema.GetString()));
+                // The index also lists extension schemas this snapshot does not vendor.
+                paths.TryAdd(name, path);
             }
         }
 

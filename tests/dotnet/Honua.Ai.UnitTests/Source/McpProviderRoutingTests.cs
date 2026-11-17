@@ -113,11 +113,8 @@ public sealed class McpProviderRoutingTests
             [], NullLogger<McpDataAccessSurface>.Instance);
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services;
-        using var parameters = JsonDocument.Parse($$"""
-            {"name":"{{toolName}}","arguments":{
-              "serviceId":"svc-remote","serviceLayerIndex":0,"returnCountOnly":{{(countOnly ? "true" : "false")}}
-            }
-            }
+        using var parameters = JsonDocument.Parse($$$"""
+            {"name":"{{{toolName}}}","arguments":{{{RoutingArguments(toolName, countOnly)}}}}
             """);
         var response = await surface.DispatchAsync(context, new McpJsonRpcRequest
         {
@@ -204,4 +201,12 @@ public sealed class McpProviderRoutingTests
         reader.ClearReceivedCalls();
         return reader;
     }
+
+    // Closed input schemas refuse undeclared arguments, so each tool gets only its own.
+    private static string RoutingArguments(string toolName, bool countOnly) => toolName switch
+    {
+        ListLayersTool.ToolName => "{}",
+        DescribeLayerTool.ToolName => """{"serviceId":"svc-remote","serviceLayerIndex":0}""",
+        _ => $$$"""{"serviceId":"svc-remote","serviceLayerIndex":0,"returnCountOnly":{{{(countOnly ? "true" : "false")}}}}""",
+    };
 }
