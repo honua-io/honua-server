@@ -21,7 +21,8 @@ public static class CapabilityUnavailableCodes
 
     public const string SystemDatabaseRemediation =
         "Set ConnectionStrings__DefaultConnection to the PostgreSQL system database and restart the " +
-        "server. Durable jobs, the job queue and governed proposals are tables in it.";
+        "server. Durable jobs, the job queue and governed proposals are tables in it. Only a PostgreSQL/PostGIS " +
+        "primary data source has a system database; a DuckDB or MySQL primary does not.";
 
     public const string SystemDatabaseRemediationRef =
         "https://honua.io/docs/guides/deploy/troubleshooting/#database-connections";

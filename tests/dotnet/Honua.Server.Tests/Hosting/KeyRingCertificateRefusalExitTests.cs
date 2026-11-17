@@ -52,38 +52,20 @@ public sealed class KeyRingCertificateRefusalExitTests
 
     private static async Task<string> RunRefusedBootAsync(string? certificatePath)
     {
-        var serverDirectory = AppContext.BaseDirectory;
-        var serverAssembly = Path.Join(serverDirectory, "Honua.Server.dll");
-        File.Exists(serverAssembly).Should().BeTrue("the cached test payload contains the server runtime ({0})", serverDirectory);
-
-        var start = new ProcessStartInfo
+        var environment = new Dictionary<string, string>
         {
-            FileName = "dotnet",
-            WorkingDirectory = serverDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
+            ["ConnectionStrings__DefaultConnection"] = "Host=127.0.0.1;Port=5432;Database=honua;Username=honua;Password=unused",
+            ["DataSource__Provider"] = "postgis",
+            ["HONUA_ADMIN_PASSWORD"] = "KeyRing-Refusal-1a",
+            ["Security__ConnectionEncryption__MasterKey"] = "keyring-refusal-connection-encryption-key",
+            ["Security__ConnectionEncryption__Salt"] = "a2V5cmluZy1yZWZ1c2FsLXNhbHQ=",
         };
-        start.ArgumentList.Add(serverAssembly);
-        foreach (var key in InheritedKeysToRemove)
-        {
-            start.Environment.Remove(key);
-        }
-
-        start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
-        start.Environment["DOTNET_ENVIRONMENT"] = "Production";
-        start.Environment["ASPNETCORE_URLS"] = "http://127.0.0.1:0";
-        start.Environment["ConnectionStrings__DefaultConnection"] =
-            "Host=127.0.0.1;Port=5432;Database=honua;Username=honua;Password=unused";
-        start.Environment["DataSource__Provider"] = "postgis";
         if (certificatePath is not null)
         {
-            start.Environment["Operations__SecretChannel__KeyRingCertificatePath"] = certificatePath;
+            environment["Operations__SecretChannel__KeyRingCertificatePath"] = certificatePath;
         }
 
-        start.Environment["HONUA_ADMIN_PASSWORD"] = "KeyRing-Refusal-1a";
-        start.Environment["Security__ConnectionEncryption__MasterKey"] = "keyring-refusal-connection-encryption-key";
-        start.Environment["Security__ConnectionEncryption__Salt"] = "a2V5cmluZy1yZWZ1c2FsLXNhbHQ=";
+        var start = ServerProcessLaunch.CreateProductionStartInfo(InheritedKeysToRemove, environment);
 
         using var process = new Process { StartInfo = start };
         process.Start().Should().BeTrue();
