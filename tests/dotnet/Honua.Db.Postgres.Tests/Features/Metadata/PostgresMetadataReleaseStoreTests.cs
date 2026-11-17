@@ -165,11 +165,11 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task ReleasePackageStore_ListAsync_WithEmptyFilter_DoesNotThrowParameterTypeError()
     {
-        // Regression for #1688: GET /api/v1/admin/metadata/release-packages returned HTTP 500
-        // "42P08: could not determine data type of parameter $1" because the nullable
-        // source/target/status filters were bound as untyped DBNull while the SQL wraps them in
-        // LOWER(...). An unfiltered list (every filter null) is the common GitOps/console discovery
-        // call, and it must succeed and return all packages newest-first.
+        // GET /api/v1/admin/metadata/release-packages must not return HTTP 500 "42P08: could not
+        // determine data type of parameter $1": the SQL wraps the nullable source/target/status
+        // filters in LOWER(...), so binding them as untyped DBNull fails. An unfiltered list (every
+        // filter null) is the common GitOps/console discovery call, and it must succeed and return
+        // all packages newest-first.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataReleaseStoreTests));
         try
         {

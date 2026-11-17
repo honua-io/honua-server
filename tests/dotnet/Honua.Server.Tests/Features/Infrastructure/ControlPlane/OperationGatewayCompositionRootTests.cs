@@ -37,8 +37,8 @@ public sealed class OperationGatewayCompositionRootTests
         // Program.cs AddSingleton<IOperationGateway, OperationGateway>()).
         services.AddSingleton<IOperationGateway, OperationGateway>();
 
-        // ValidateScopes + ValidateOnBuild reproduce the Development/production default
-        // that surfaced #1908: the provider walks every singleton's constructor graph at
+        // ValidateScopes + ValidateOnBuild reproduce the Development/production default:
+        // the provider walks every singleton's constructor graph at
         // build time and fails closed if a singleton consumes a scoped service.
         var build = () => services.BuildServiceProvider(new ServiceProviderOptions
         {

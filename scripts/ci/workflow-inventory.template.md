@@ -352,6 +352,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 | `worker-gdal-image.yml` | GDAL Worker Image | `pull_request` (base `trunk`, path-filtered), weekly `schedule`, `workflow_dispatch` | Builds the GDAL worker image, proves native handoff/PDAL/public API execution, and enforces unchanged Trivy policy; publishes SARIF. Explicit canonical-trunk dispatch can publish the exact tested amd64 bytes under a unique nightly tag with verified source provenance, including a trunk-reachable `candidate_sha` whose nightly tag and image revision name that commit while the attestation stays on the trunk workflow SHA; PR/schedule runs never publish images and receipts are qualification:false. |
 | `geoarrow-interop-fixture.yml` | GeoArrow Interop Fixture | GeoArrow-named `pull_request`, `workflow_dispatch`, `workflow_call` | Produces the GeoArrow 0.2 interop fixture. Pull requests run it for GeoArrow-named files, the shared formatter/CRS helpers it names and the package graph; scheduled CI and manual `full_ci=true` runs call it on their own commit and `CI Gate` requires its success there. |
 | `geoparquet-interop.yml` | GeoParquet Interop Evidence | Parquet-named `pull_request`, `workflow_dispatch`, `workflow_call` | Pull requests run it for Parquet-named sources and tests, the Python readers and seed data, and the package graph; scheduled CI and manual `full_ci=true` runs call it on their own commit and `CI Gate` requires its success there. Builds the exact source head and requires 3 OData, 8 import, 10 schema and 5 independent-reader cells. Retains TRX/JUnit and JSON execution receipts; skipped or missing cells fail. Pre-cut source evidence, not exact-candidate certification (#4396). |
+| `export-portolan-check.yml` | Export Portolan Check | Export-path `pull_request`, `workflow_dispatch` | Advisory, not required (#8268). The paired-publish integration test publishes an Export and copies its version files to disk; `scripts/ci/check-export-portolan.py` runs the validator pinned in `scripts/ci/portolan-pin.v1.json` over them. Specification findings are summary, warnings and a retained report and never fail it; a test failure, an empty snapshot, a validator crash or a different specification than the pin does. Drafts skip it. |
 | `docs-link-gate.yml` | Docs Link Gate | `pull_request` (base `trunk`, path-filtered to `docs/**/*.md`, the data files the checkers read, and the checker), `workflow_dispatch` | Stdlib-Python `scripts/ci/check-doc-links.py`: relative links AND `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). Warns when a URL survives only via a `.gitbook.yaml` redirect; errors on a `docs.honua.io` URL (that host is dark until 2026.2) and on a phase-A URL that lacks the trailing slash or is not listed in the manifest; treats a `pendingPr` entry as warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot is carried in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Not folded into `PR Gate` (which must stay unfiltered) or `ci.yml` (no `pull_request` trigger). Reachability grades tracked pages still present after generation; links to deleted targets still fail. Older PR heads without either the inventory generator or its template validate their existing documentation; partial generator/template pairs and generator failures remain errors. |
 | `availability-evidence-contract.yml` | Availability evidence contract | `pull_request` (comparison-checker paths), `workflow_dispatch` | Regression tests for the exact two-replica/four-cell evidence checker; retains JUnit results. Synthetic checker fixtures do not certify an immutable candidate or provide a distributed SLI source. |
 | `normalize-derived-artifacts.yml` | Derived Artifact Normalization | `pull_request` | Untrusted producer: may execute PR code but can only read the repo/packages and upload a bounded data artifact (#3219). Runs only when its recipe or a pinned generator input changes; PR Gate's architecture job regenerates the projections and reports drift on every ready PR. |
@@ -747,7 +748,13 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most two at once for every `selective_base` dispatch. Optional affected
+run at most two at once for every `selective_base` dispatch. A selective
+dispatch whose router reason is `no_path_match` does not schedule those default
+smoke shards. Honua.Core package compatibility runs on that dispatch only when a
+changed file is outside docs, workflows, `scripts/ci/` and tests. An empty path
+list still runs it. A skipped Core
+package does not cancel a selected AOT or MCP lane; a failed Core package or
+Postgres compatibility job still does. Optional affected
 runs above 40 total jobs defer to scheduled full CI; manual full-coverage overrides
 retain every shard. Scheduled and non-selective full runs run at most 16 concurrent shards. Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use
@@ -841,7 +848,7 @@ Normalization consumers preserve a producer’s recorded superseded admission ac
 
 `--changed-only` is a local feedback mode: stdin routing cases skip only when their complete input closure (router, shard map, jq wrapper and validator infrastructure) is unchanged against the merge base with `origin/trunk`. Staged, unstaged, renamed and untracked inputs count. Unknown base or an ambiguous path runs everything; undeclared fixture input closures also run. CI and GitHub Actions ignore the optimization and always run every fixture.
 
-The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project and the full-coverage architecture collector, whose imported references pull Server.Tests into its graph. The independent architecture path and analyzer jobs retain collector compilation and verification. The shared import-aware project parser rejects any other reverse dependency on Server.Tests. Each producer publishes only the assemblies consumed by selected shards. The final required context directly requires the parallel producer on both pull-request and manual events; the PR-only affected-shards aggregate also checks it for an empty shard matrix. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
+The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project and the full-coverage architecture collector, whose imported references pull Server.Tests into its graph. The independent architecture path and analyzer jobs retain collector compilation and verification. The shared import-aware project parser rejects any other reverse dependency on Server.Tests. Each producer publishes only the assemblies consumed by selected shards. The final required context directly requires the parallel producer on both pull-request and manual events; the PR-only affected-shards aggregate also checks it for an empty shard matrix. Honua.Server.Tests shards start when that producer and the selector finish, and read heavy-runner readiness from runner select. Every other selected project stays behind Build and tests, which publishes its managed outputs. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
 
 Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` across producer, fast-test and aggregate jobs. The aggregate checks out code only for enforced attempt-2 review validation. Generated-output classification shares `scripts/ci/classify-generated-output.sh`; executable skip policy still comes from the immutable PR base, and uncertainty preserves all checks.
 
@@ -1555,3 +1562,48 @@ methods in selected PR and full trunk runs. No workflow, shard definition,
 required check name, timeout, or aggregate dependency changes. This removes
 repeated initialization rather than adding runners. The authored inventory
 template is updated; its generated inventory projection remains producer-owned.
+
+### Durable GP SOAP authentication host lifetime
+
+`GPServerDurableRuntimeTests.AuthenticationTests` shares one authenticated
+PostgreSQL job host across the anonymous, invalid API key and invalid bearer
+cases. Each case still creates its own owner job and clients, checks all seven
+SOAP operations for an unauthorized fault without job details, and verifies
+that job count, successful status and the independently computed area survive.
+
+The nested class keeps the existing serialized job-substrate collection and
+ends the shared worker lifetime before restart, migration and private-host
+cases clear the substrate. Those cases retain their private applications.
+The existing GPServer Durable and Aliases filter matches the parent class prefix,
+including the nested class, in selected PR and full trunk runs. No workflow,
+shard filter, required check or aggregate dependency changes; runner delta zero.
+Paired class build-host measurement: 25/25 identical passing cases, 498 to 470
+seconds.
+
+### Geocoding batch response fixture
+
+`GeocodingEndpointTests` shares an Enterprise-licensed batch application across
+11 response-only cases with identical provider capabilities. Provider results
+are derived from the current request; these cases never inspect request capture.
+The existing Community application remains separate. Each case owns its client
+and response. Cases that inspect captured requests, override capabilities or
+batch limits, exercise failover, or vary licensing retain private applications.
+The class fixture disposes both shared applications after the class completes.
+
+All existing case data, endpoint attributes, requests and assertions remain.
+The class stays in its existing PR-selected and full-trunk partition; this
+changes host lifetime without adding runners, jobs or required check names.
+
+### Catalog service typing host lifetime
+
+`GeoservicesCatalogServiceTypingTests.DefaultTypingFixture` initializes one
+application with the default typing graph and raster store for the four read-only
+service-directory cases. The lifecycle loop and duplicate-publication case retain
+their private applications and custom graphs. All service-name selection and
+response assertions remain in place; the class stays in its database collection.
+
+The existing Catalog and ImageServer Support partition retains these cases on
+selected PR runs and full trunk runs. No workflow, shard filter, required check,
+aggregate dependency or runner count changes. Paired class and existing-partition
+measurements are collected separately; test-body time excludes class-fixture
+startup and disposal, and does not establish complete CI job-wall savings.

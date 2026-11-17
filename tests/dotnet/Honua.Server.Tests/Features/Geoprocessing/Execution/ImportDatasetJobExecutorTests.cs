@@ -276,7 +276,7 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
             }
         });
 
-        // BH3-027: files must be placed under the configured staging root.
+        // files must be placed under the configured staging root.
         Directory.CreateDirectory(StagingDirectory);
         // Path.Combine args are a staging root plus a generated relative file name; no rooted-segment risk.
         var path = Path.Join(StagingDirectory, $"import_dataset_{Guid.NewGuid():N}.geojson");

@@ -379,7 +379,7 @@ public sealed partial class GeoprocessingJobServiceTests
     public void ValidatePlan_MultiStepPlan_ReportsNotExecutable()
     {
         // A job runs a single process, so the submit path rejects multi-step plans. Validate
-        // must surface the same limitation instead of optimistically returning executable (#2806).
+        // must surface the same limitation instead of optimistically returning executable.
         var plan = new AnalysisPlan
         {
             PlanId = "plan-multi",
@@ -478,7 +478,7 @@ public sealed partial class GeoprocessingJobServiceTests
     public void ValidatePlan_UnavailableProcess_StaysFailClosed()
     {
         // The built-in catalog has no Unavailable entries — the entry-point ruling admits
-        // no advertised-but-unexecutable state (#4409) — but the submit path must still
+        // no advertised-but-unexecutable state — but the submit path must still
         // refuse one from a custom catalog rather than admitting an unclassified job.
         var definition = new ProcessDefinition
         {
@@ -759,7 +759,7 @@ public sealed partial class GeoprocessingJobServiceTests
         var result = _sut.DryRunPlan(CreateValidPlan(), CreatePrincipal());
 
         // The 0 is no longer presented as a fact: the availability flag is false and the
-        // side-effects list discloses why (#2806).
+        // side-effects list discloses why.
         result.DurationEstimateAvailable.Should().BeFalse();
         result.SideEffects.Should().Contain(s => s.Contains("No duration estimate", StringComparison.Ordinal));
         // geometry.buffer produces a feature layer — derived from the catalog when the plan
@@ -1458,7 +1458,7 @@ public sealed partial class GeoprocessingJobServiceTests
             .WhoseValue.Should().Be("geometry.buffer");
 
         // Step-level inputs are projected under a stable prefix so worker-side
-        // executors can read parameters without re-fetching the plan (#1031).
+        // executors can read parameters without re-fetching the plan.
         job.Spec.Parameters.Should().ContainKey($"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.wkb")
             .WhoseValue.Should().Be("AAAA");
         job.Spec.Parameters.Should().ContainKey($"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.srid")
@@ -1525,7 +1525,7 @@ public sealed partial class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_NativeGdalPlan_ChargesCostWeightAboveStepCount()
     {
-        // #4629: a static costWeight=stepCount treated a 1-step native/raster op the same
+        // A static costWeight=stepCount treated a 1-step native/raster op the same
         // as a 1-step managed op — neither reflects real resource cost. gdal.gdalwarp's
         // catalog-declared Raster output routes it to the raster GpResourceProfile tier
         // (4 vCPU), which must now raise the single-step plan's charged cost weight above
@@ -1754,7 +1754,7 @@ public sealed partial class GeoprocessingJobServiceTests
     public async Task SubmitWorkflowJob_SinkProcessRequiresApproval_ThrowsApprovalException()
     {
         // A sink/write process must pass the same approval gate as a destructive
-        // mutation (#2262). The evaluator requires approval only when the request
+        // mutation. The evaluator requires approval only when the request
         // is flagged destructive, so this asserts the submit path raises that flag
         // for a sink plan that materializes data into a caller-owned destination.
         _approvalEvaluator
@@ -1769,7 +1769,7 @@ public sealed partial class GeoprocessingJobServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // Approval lane: gated plan -> persisted proposal -> resume (ADR-0064, #2814)
+    // Approval lane: gated plan -> persisted proposal -> resume (ADR-0064)
     // -----------------------------------------------------------------------
 
     [UnitTest]
@@ -1780,7 +1780,7 @@ public sealed partial class GeoprocessingJobServiceTests
         // When a gated plan meets the approval gate AND the durable proposal surface
         // is available, the submission persists an AwaitingApproval proposal reusing
         // the shared control-plane gateway and surfaces its id for the honua://
-        // proposals/{id} resume path — instead of dead-ending (ADR-0064, #2814).
+        // proposals/{id} resume path — instead of dead-ending (ADR-0064).
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
             .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
@@ -1854,7 +1854,7 @@ public sealed partial class GeoprocessingJobServiceTests
         // normal pipeline with the approval gate bypassed (it was satisfied at
         // proposal-creation time), attributing the job to the original submitter recorded
         // in the payload. The RESOURCE gates are not bypassed — they re-run against the
-        // restored submitter, who here still holds the authority (honua-server#3046 review).
+        // restored submitter, who here still holds the authority.
         _approvalEvaluator
             .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
             .Returns(ApprovalRequirement.Required("operator.destructive.process", "would-block-if-not-bypassed"));
@@ -1888,8 +1888,7 @@ public sealed partial class GeoprocessingJobServiceTests
     {
         // A proposal can sit pending indefinitely. Treating proposal-time authorization as a
         // durable fact let an approval granted after the submitter's update/delete authority was
-        // withdrawn execute anyway. The resource gates therefore re-run at resume time
-        // (honua-server#3046 review).
+        // withdrawn execute anyway. The resource gates therefore re-run at resume time.
         DenyMutatingProcessPermission();
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
@@ -2320,7 +2319,7 @@ public sealed partial class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCodeSubmissionWithMutatingStep_StillRequiresMutatingTier()
     {
-        // #2798: the custom-code branch skips catalog validation, so the mutating-tier check
+        // The custom-code branch skips catalog validation, so the mutating-tier check
         // must run unconditionally. A custom-code submission that smuggles a mutating catalog
         // Geoprocess step must not slip past ExecuteMutatingProcess just because it carries the
         // custom-code runtime marker (ExecuteCustomCode alone is not sufficient).
@@ -2343,7 +2342,7 @@ public sealed partial class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CallerNotAuthorized_ThrowsAuthorizationException()
     {
-        // The submit path centralizes Process/Execute authorization (#2263) so a
+        // The submit path centralizes Process/Execute authorization so a
         // forbidden caller is rejected before any job record is created, regardless
         // of which adapter (or none) authorized first.
         _authEvaluator
@@ -2919,7 +2918,7 @@ public sealed partial class GeoprocessingJobServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // Job ownership scoping (#1576): a coarse Job-level grant must not expose
+    // Job ownership scoping: a coarse Job-level grant must not expose
     // another principal's job state, results, or cancellation.
     // -----------------------------------------------------------------------
 
@@ -3033,7 +3032,7 @@ public sealed partial class GeoprocessingJobServiceTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task GetJob_WithoutRecordedSubmitter_DeniedToNonAdmin()
     {
-        // #2753: an ownerless job (no recorded submitter) must NOT be readable by an
+        // An ownerless job (no recorded submitter) must NOT be readable by an
         // ordinary Job.Read holder — that was the null-owner read bypass. Surfaced as
         // not-found, matching the cross-principal case.
         var record = CreateJobRecord("job-1", ExecutionJobStatus.Running, owner: null);
@@ -3049,7 +3048,7 @@ public sealed partial class GeoprocessingJobServiceTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task GetJob_WithoutRecordedSubmitter_AdminCanRead()
     {
-        // #2753: admin retains full visibility, including ownerless jobs.
+        // Admin retains full visibility, including ownerless jobs.
         var record = CreateJobRecord("job-1", ExecutionJobStatus.Running, owner: null);
         _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
 
@@ -3066,7 +3065,7 @@ public sealed partial class GeoprocessingJobServiceTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
     public async Task ListJobs_NonAdmin_ReturnsOnlyCallersOwnJobs()
     {
-        // #2753: a Job.Read holder must see only its OWN jobs. The store page mixes the
+        // A Job.Read holder must see only its OWN jobs. The store page mixes the
         // caller's job, another owner's job, and an ownerless job; only the caller's own
         // job survives the ownership filter (ownerless is admin-only).
         _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
@@ -3090,7 +3089,7 @@ public sealed partial class GeoprocessingJobServiceTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
     public async Task ListJobs_Admin_SeesAllJobsIncludingOwnerless()
     {
-        // #2753: admin retains full visibility across all owners and ownerless jobs.
+        // Admin retains full visibility across all owners and ownerless jobs.
         _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
             .Returns(new ExecutionJobPage
             {
@@ -3116,7 +3115,7 @@ public sealed partial class GeoprocessingJobServiceTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs")]
     public async Task ListJobs_NonAdmin_OwnerlessJobExcluded()
     {
-        // #2753: the null-owner read bypass — an ownerless job must not leak into a
+        // The null-owner read bypass — an ownerless job must not leak into a
         // non-admin's listing even when it is the only job.
         _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
             .Returns(new ExecutionJobPage
@@ -4370,7 +4369,7 @@ public sealed partial class GeoprocessingJobServiceTests
             .WithMessage("*could not be confirmed*");
     }
 
-    // Regression: a failed remote job that the reconciler re-queued for retry sits at
+    // A failed remote job that the reconciler re-queued for retry sits at
     // Queued + AttemptCount > 0 + NextRetryAt != null + ProviderOperationId == null. That is
     // semantically pre-submission for the next attempt (the provider object for the failed
     // attempt may already be TTL-cleaned), so cancel must take the local pre-submission
@@ -4922,7 +4921,7 @@ public sealed partial class GeoprocessingJobServiceTests
             _jobStore,
             admissionEvaluator: admission);
 
-        // #3853: the admission partition is the submitter's trusted tenant, pinned on the submitter
+        // The admission partition is the submitter's trusted tenant, pinned on the submitter
         // security snapshot, not a metadata value the caller can choose.
         var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreateTenantPrincipal("tenant-42"));
 
@@ -4939,7 +4938,7 @@ public sealed partial class GeoprocessingJobServiceTests
         // Workflow-package and analysis-content runs forward caller parameters into protocol
         // metadata. Honouring these keys let a caller pick a fresh partition per request — escaping
         // its tenant's concurrency and cost limits — or stamp a near-zero cost weight that every
-        // node's evaluator would later read back when summing active cost (#3853).
+        // node's evaluator would later read back when summing active cost.
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 

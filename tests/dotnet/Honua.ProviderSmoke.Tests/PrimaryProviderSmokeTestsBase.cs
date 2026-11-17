@@ -31,10 +31,9 @@ public abstract class PrimaryProviderSmokeTestsBase
         }
     }
 
-    // Shared since the honua-server#2965 EWKB/plain-WKB converter fix landed: spatial
-    // filter geometries are now translated to each provider's expected WKB flavor, so the
-    // same bbox assertion runs for real against every primary provider (previously MySQL
-    // 500'd here and each subclass declared its own copy, MySql's skipped).
+    // Shared across providers: spatial filter geometries are translated to each
+    // provider's expected WKB flavor, so the same bbox assertion runs for real against
+    // every primary provider.
     [IntegrationTest]
     [Protocol(ProtocolNames.FeatureServer)]
     [Operation(Operations.Query)]
@@ -151,9 +150,9 @@ public abstract class PrimaryProviderSmokeTestsBase
         // provider to reproject 4326 storage geometry into 3857 tile space. WorldCRS84Quad
         // needs no reprojection. Zoom 0 / row 0 / col 0 covers the western hemisphere
         // (-180..0 longitude), so the seeded parcels (~-122 longitude) always fall inside it.
-        // Shared since honua-server#2965 landed: the tile renderer's envelope-intersects
-        // query previously matched zero rows on MySQL (silent empty 204 tile) because of the
-        // same EWKB/plain-WKB converter bug that broke the explicit bbox path.
+        // The tile renderer's envelope-intersects query depends on the same EWKB/plain-WKB
+        // conversion as the explicit bbox path; a wrong WKB flavor matches zero rows on MySQL
+        // (a silent empty 204 tile).
         var response = await Client.GetAsync(
             $"/ogc/tiles/collections/{ProviderSmokeGraph.LayerId}/tiles/WorldCRS84Quad/0/0/0?f=png");
 

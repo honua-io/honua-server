@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "release": "2026.1.0-rc.1",
   "owner": "release-engineering",
-  "frozenAt": "2026-09-13T12:24:00Z",
+  "frozenAt": "2026-11-16T22:50:23Z",
   "baseline": {
     "repository": "honua-io/honua-server",
     "revision": "9f2f16a5b9d19becf052f8b2635cf7c2ce109fdd",
@@ -98,7 +98,7 @@
     },
     "throughputRps": {
       "operator": ">=",
-      "value": 1191.0,
+      "value": 357.0,
       "regressionAllowance": 0.05
     },
     "queueAgeSeconds": {
@@ -113,7 +113,7 @@
     },
     "recoveryTimeSeconds": {
       "operator": "<=",
-      "value": 300.0,
+      "value": 36.0,
       "regressionAllowance": 0.0
     }
   },
@@ -124,6 +124,70 @@
       "excludedDimensions": [
         "activeSubscriptions",
         "alertEvaluationsPerSecond"
+      ]
+    },
+    {
+      "id": "gp-out-of-ga-capacity-envelope-2026-10-27",
+      "date": "2026-10-27",
+      "notes": "Founder ruling: GP is Preview in 2026.1 (gp-preview-floor-2026-10-26) and the operating envelope does not qualify GP workers or queue depth. gpWorkers and gpQueueDepth stay in supportedEnvelope only so the producer configures and exercises them; they are not GA requirements. GPServer requests are excluded from the GA SLO population. Both are reported as Preview evidence (previewEvidence.gp) and never gated.",
+      "excludedDimensions": [
+        "gpWorkers",
+        "gpQueueDepth"
+      ],
+      "previewProtocols": [
+        "GPServer"
+      ],
+      "previewInEnvelope": [
+        "gpWorkers",
+        "gpQueueDepth"
+      ]
+    },
+    {
+      "id": "capacity-steady-state-and-drill-2026-10-27",
+      "date": "2026-10-27",
+      "notes": "Founder ruling: the steady-state SLOs are computed only over the measured window, which excludes the fault-injection period (faultDrill.window starts after the measured window ends). The fault drill must still run and is judged on its own: every worker, database and cache fault recovers within drill.maxRecoverySecondsPerFault, every layer still serves its full count with the maximum payload intact, and no GP job is left stuck."
+    },
+    {
+      "id": "capacity-drill-per-fault-bounds-2026-10-27",
+      "date": "2026-10-27",
+      "notes": "Founder ruling: the fault drill bounds recovery per injected fault: worker 19 s and cache 19 s (the 2026-09-16 soak recovered from a server-process fault in 16.535 s, x 1.10 rounded up), Postgres 36 s (honua-server 53bb94a measured 32.0 s on 2026-10-27, x 1.10 rounded up). Amends capacity-steady-state-and-drill-2026-10-27, whose single 19 s bound did not account for a database container restart."
+    },
+    {
+      "id": "capacity-refreeze-post-sec20-2026-10-28",
+      "date": "2026-10-28",
+      "notes": "Founder ruling: re-freeze the 2026.1 capacity lock for the post-SEC-20 server. The 1191 rps floor came from the 09-13 baseline, when the server answered anonymous GETs from a blanket 60 s output cache (the 09-16 pass hit the database for 32 of 2128 queries, server p50 1.6 ms). SEC-20 (honua-server #5083, 09-21) removed that cache, so each request now reaches the database. Candidate a4bde4b8 measured 376.29 rps (honua-server run 40640175278) and 385.24 rps (run 40695639068) on ubuntu-24.04 with p95 771/754 ms and p99 980/958 ms. Throughput is re-frozen with the existing derivation: the lower observation x 0.95, rounded down = 357 rps. Latency bounds already hold and are unchanged. Low-zoom OGC tiles over the 10k-feature layer are refused by design with 413; those refusals stay in the request and throughput population but are scored as expected refusals, not errors or outages (both runs had no other GA errors). Queue age is the GP queue's oldest job and GP is Preview (gp-out-of-ga-capacity-envelope-2026-10-27), so it is reported, not gated; GP sampling failures likewise do not make the soak incomplete. Database pool utilization is gated on its time-mean over the measured window (observed 0.69 in both runs; peaks 1.0 and 0.94); worker and cache keep their peak bound. Performance and response-caching work is tracked after the RC.",
+      "expectedRefusals": [
+        {
+          "protocol": "OGC-API-Tiles",
+          "httpStatus": 413
+        }
+      ],
+      "previewSignals": [
+        "queueAgeSeconds"
+      ],
+      "previewSamplingFailurePrefixes": [
+        "GP sampling: "
+      ],
+      "databaseSaturation": "time-mean",
+      "observedRuns": [
+        {
+          "workflowRunId": 40640175278,
+          "throughputRps": 376.28684207336363,
+          "p95LatencyMs": 771,
+          "p99LatencyMs": 980,
+          "databaseMeanUtilization": 0.69,
+          "expectedRefusals": 80248,
+          "otherGaErrors": 0
+        },
+        {
+          "workflowRunId": 40695639068,
+          "throughputRps": 385.2380947507808,
+          "p95LatencyMs": 754,
+          "p99LatencyMs": 958,
+          "databaseMeanUtilization": 0.692,
+          "expectedRefusals": 82273,
+          "otherGaErrors": 0
+        }
       ]
     }
   ],
@@ -148,6 +212,14 @@
       "requiredForGa": false
     },
     "alertEvaluationsPerSecond": {
+      "status": "preview",
+      "requiredForGa": false
+    },
+    "gpWorkers": {
+      "status": "preview",
+      "requiredForGa": false
+    },
+    "gpQueueDepth": {
       "status": "preview",
       "requiredForGa": false
     }
@@ -192,8 +264,8 @@
     "saturationRatio": {
       "language": "honua-observation-query",
       "version": "1",
-      "expression": "max(metrics[worker], metrics[database], metrics[redis])",
-      "sha256": "7d78e5d70bb0b90691cb51b0f6b0a66b95c1744980278c79f0a088228ffd0211"
+      "expression": "max(metrics[worker], metrics[database])",
+      "sha256": "70a44e1df216c914a26de8458eacc244f1cd47343a63c4f1364034aef4008f22"
     },
     "recoveryTimeSeconds": {
       "language": "honua-observation-query",
@@ -251,5 +323,28 @@
       "expression": "all(workloads[dimensions.gpQueueDepth] == 100)",
       "sha256": "82d11f84c14f7f88933d306c5744cbcc0f3f9a3a0d9dc4625eec401cff3ccdef"
     }
-  }
+  },
+  "drill": {
+    "ruling": "capacity-drill-per-fault-bounds-2026-10-27",
+    "amends": "capacity-steady-state-and-drill-2026-10-27",
+    "requiredFaultDependencies": [
+      "worker",
+      "database"
+    ],
+    "maxRecoverySecondsByDependency": {
+      "worker": 19.0,
+      "database": 36.0
+    },
+    "requireNoDataLoss": true,
+    "requireNoStuckJobs": true,
+    "derivation": "Worker and cache: capacity soak run 35126254288 (2026-09-16, honua-server 87966c3) recovered from an injected server-process fault in 16.535 s; observed x 1.10, rounded up. Postgres: capacity soak run 40542363841 (2026-10-27, honua-server 53bb94a) recovered its database container stop/start in 32.0 s; observed x 1.10, rounded up.",
+    "source": [
+      "https://raw.githubusercontent.com/honua-io/honua-server/7f912b18/capacity/87966c3f7b6c840ffc4d4da0b451714ab717b18a-35126254288.json",
+      "https://github.com/honua-io/honua-server/actions/runs/40542363841"
+    ]
+  },
+  "capacityComponents": [
+    "worker",
+    "database"
+  ]
 }

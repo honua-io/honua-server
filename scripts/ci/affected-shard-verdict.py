@@ -330,6 +330,31 @@ def _load_timings(directory: Path) -> list[dict[str, Any]]:
     return timings
 
 
+def combine_shard_results(server: str, held: str) -> str:
+    """Fail closed when either shard lane fails; a skipped empty lane stays green.
+
+    The server-producer lane and the main-producer lane are separate jobs. An
+    empty selection skips its job. A failure or cancellation on either lane
+    rejects the aggregate even when the other lane passed.
+    """
+    results = {server, held}
+    if results & {"failure", "cancelled"}:
+        return "failure"
+    if "success" in results:
+        return "success"
+    return "skipped"
+
+
+def shard_job_result() -> str:
+    """Combine the two shard lanes when both are reported; otherwise keep one result."""
+    if "SERVER_SHARDS_RESULT" in os.environ or "HELD_SHARDS_RESULT" in os.environ:
+        return combine_shard_results(
+            os.environ.get("SERVER_SHARDS_RESULT", ""),
+            os.environ.get("HELD_SHARDS_RESULT", ""),
+        )
+    return os.environ.get("SHARDS_RESULT", "")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timings", type=Path, required=True)
@@ -348,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
             shards=[entry["shard_name"] for entry in matrix],
             deferred=_names(os.environ.get("SELECT_DEFERRED") or "[]"),
         ),
-        shards_result=os.environ.get("SHARDS_RESULT", ""),
+        shards_result=shard_job_result(),
         timings=_load_timings(args.timings),
     )
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")

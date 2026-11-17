@@ -281,7 +281,7 @@ public class RedshiftFeatureQueryBuilderTests
     // Esri esriSpatialRelWithin/Contains: filter geometry is within/contains the feature, so the
     // filter geometry must be the FIRST operand (ST_Within(filter, feature)). Disjoint is
     // symmetric. Reversing Within/Contains inverts the relationship and returns the wrong
-    // (empty) set (#2068).
+    // (empty) set.
     [InlineData(SpatialRelationship.Within, "ST_Within(ST_GeomFromWKB(@p0, 4326), \"geom\")")]
     [InlineData(SpatialRelationship.Contains, "ST_Contains(ST_GeomFromWKB(@p0, 4326), \"geom\")")]
     [InlineData(SpatialRelationship.Disjoint, "ST_Disjoint(\"geom\", ST_GeomFromWKB(@p0, 4326))")]

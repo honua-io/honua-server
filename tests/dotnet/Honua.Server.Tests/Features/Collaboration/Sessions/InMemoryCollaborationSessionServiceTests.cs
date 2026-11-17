@@ -573,7 +573,7 @@ public sealed class InMemoryCollaborationSessionServiceTests
         // ApiKeyAuthenticationHandler gives EVERY full-admin API key the literal name "admin"
         // and no NameIdentifier/sub, distinguishing keys only by api_key_id. Resolving identity
         // from the name therefore collapsed all admin collaborators onto one id, and the leave
-        // ownership check then let any admin eject any other (honua-server#2999 review).
+        // ownership check then let any admin eject any other.
         var clock = new FakeCollaborationClock(FixedUtcNow());
         var service = CreateService(clock);
         var victimKey = Guid.NewGuid().ToString("D");

@@ -51,9 +51,6 @@ public sealed class DuckDBSpatialBootstrapTests
     [Fact]
     public async Task StTransform_WithAlwaysXy_TreatsCoordinatesAsLonLat()
     {
-        // Round-trip proof for the always_xy fix (#2731): Honua stores X=lon, Y=lat, so a WGS84
-        // point ST_Point(lon, lat) must reproject to Web Mercator without axis transposition.
-        // Helsinki (24.94 E, 60.17 N) -> EPSG:3857 x ≈ 2,776,000 m, y ≈ 8,437,000 m.
         var bootstrap = new DuckDBSpatialBootstrap(
             extensionPath: null,
             logger: NullLogger<DuckDBSpatialBootstrap>.Instance);

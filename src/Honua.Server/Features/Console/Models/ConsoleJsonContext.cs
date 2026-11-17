@@ -103,10 +103,11 @@ namespace Honua.Server.Features.Console.Models;
 // Per-itemType sidecar shapes, sourced for AOT-safe writes via SerializeToElement.
 [JsonSerializable(typeof(ConsoleServiceTypeMetadata))]
 [JsonSerializable(typeof(ConsoleLayerTypeMetadata))]
-[JsonSerializable(typeof(ConsoleSavedMapTypeMetadata))]
+[JsonSerializable(typeof(ConsoleDatasetTypeMetadata))]
+[JsonSerializable(typeof(ConsoleMapTypeMetadata))]
 [JsonSerializable(typeof(ConsoleDashboardTypeMetadata))]
 [JsonSerializable(typeof(ConsoleReportTypeMetadata))]
-[JsonSerializable(typeof(ConsoleGeneratedAppTypeMetadata))]
+[JsonSerializable(typeof(ConsoleAppTypeMetadata))]
 [JsonSerializable(typeof(ConsoleOpenDataTypeMetadata))]
 internal sealed partial class ConsoleJsonContext : JsonSerializerContext
 {

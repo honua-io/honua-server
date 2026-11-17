@@ -417,7 +417,7 @@ public class LimitsOptionsValidatorTests
     [UnitTest]
     public void Validate_AnalyticsMaxInputBytesBelowRange_ReturnsFail()
     {
-        // MaxInputBytes must be >= 1 per the trim-safe Range attribute on AnalyticsLimits (#4629).
+        // MaxInputBytes must be >= 1 per the trim-safe Range attribute on AnalyticsLimits.
         var options = new LimitsOptions
         {
             Analytics = new AnalyticsLimits

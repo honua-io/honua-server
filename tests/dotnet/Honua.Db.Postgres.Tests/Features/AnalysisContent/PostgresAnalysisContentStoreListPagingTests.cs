@@ -38,8 +38,8 @@ public sealed class PostgresAnalysisContentStoreListPagingTests(PostgresFixture 
             firstPage.Items.Should().HaveCount(seeded);
             firstPage.TotalCount.Should().Be(seeded);
 
-            // Offset past the last matching row: empty page, but TotalCount must still be the
-            // true filtered total (this is the regression — it previously returned 0).
+            // An offset beyond the last matching row returns an empty page while retaining
+            // the true filtered TotalCount.
             var emptyPage = await store.ListItemsAsync(new AnalysisContentItemQuery { Limit = 10, Offset = seeded + 5 });
             emptyPage.Items.Should().BeEmpty();
             emptyPage.TotalCount.Should().Be(seeded,

@@ -183,7 +183,7 @@ internal sealed partial class QueryResultCacheManager : IDisposable
         {
             throw new NotSupportedException(
                 "Tag-based cache invalidation is not supported by QueryResultCacheManager. " +
-                "Provide a pattern, or use the ICacheService (Redis-backed) for tag invalidation.");
+                "Provide a pattern for cache invalidation.");
         }
 
         var invalidatedCount = 0;

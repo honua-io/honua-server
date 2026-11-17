@@ -185,7 +185,7 @@ public sealed partial class LayerPublishingIntegrationTests
             var relation = $"\"{imported.Schema}\".\"{imported.PhysicalTableName}\"";
             if (scenario == "PointCsv")
             {
-                // Point-layer edits have historically accepted multipart points too.
+                // Point-layer edits also accept multipart points.
                 await using var multipart = new Npgsql.NpgsqlCommand(
                     $"INSERT INTO {relation} (geometry) VALUES (ST_GeomFromText('MULTIPOINT ((1 1), (2 2))', {targetSrid}))", connection);
                 (await multipart.ExecuteNonQueryAsync()).Should().Be(1);

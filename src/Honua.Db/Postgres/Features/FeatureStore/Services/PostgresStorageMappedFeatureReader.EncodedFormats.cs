@@ -13,10 +13,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 // FlatGeobuf / Geobuf output for source-backed (provider-routed) PostGIS layers.
 // The canonical PostgresFeatureStoreRefactored reader implements
 // both markers against the shared 'features' table; this storage-mapped reader is the
-// production read path for any layer compiled through the Metadata v2 compat snapshot,
-// and previously threw NotSupportedException for FlatGeobuf and lacked the Geobuf
-// capability entirely, so the FeatureServer emitted a clean 400 even though the
-// underlying PostGIS table fully supports ST_AsFlatGeobuf / ST_AsGeobuf.
+// production read path for any layer compiled through the Metadata v2 compat snapshot.
 //
 // FlatGeobuf uses the canonical feature SELECT and the shared managed writer because
 // the PostGIS aggregate corrupts nullable property indices and temporal values.

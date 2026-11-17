@@ -250,7 +250,7 @@ shared infrastructure.
     - host and scheme when links are emitted;
     - protocol preferences.
   - Exact response caching and generic query-result caching are opt-in and off by default
-    (`Cache:ResponseCachingEnabled=false`). Redis metadata and catalog caching can stay enabled.
+    (`Cache:ResponseCachingEnabled=false`). Metadata and catalog caching can stay enabled.
     Response caching stays off while the cache is process-local (distributed memory or the in-memory fallback) unless
     `Cache:ResponseCachingAllowInMemoryFallback` is set for a single server instance. Stored
     responses are limited by `Cache:ResponseCacheMaxEntryBytes` and `Cache:ResponseCacheMaxBytes`.

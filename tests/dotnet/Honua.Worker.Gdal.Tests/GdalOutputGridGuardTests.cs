@@ -71,7 +71,7 @@ public sealed class GdalOutputGridGuardTests
         error.Should().Contain("positive");
     }
 
-    // --- resolution-derived (-tr) bound (#2793) --------------------------------
+    // --- resolution-derived (-tr) bound --------------------------------
 
     [UnitTest]
     public void TryAdmitResolution_WithinCaps_Admits()

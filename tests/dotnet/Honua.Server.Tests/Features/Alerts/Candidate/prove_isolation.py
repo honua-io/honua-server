@@ -95,7 +95,7 @@ def main():
             "ASPNETCORE_ENVIRONMENT": "Development", "HONUA_DEV_AUTH": "false",
             "HONUA_DEV_AUTH_ALLOW_BYPASS": "false", "HONUA_ADMIN_PASSWORD": password,
             "ConnectionStrings__DefaultConnection": f"Host={postgres};Database=honua;Username=honua;Password={password}",
-            "ConnectionStrings__Redis": redis + ":6379", "Licensing__DevGrantEdition": "Enterprise",
+            "Licensing__DevGrantEdition": "Enterprise",
             "Security__ConnectionEncryption__MasterKey": "alerts-proof-local-master-key-0123456789",
             "Security__ConnectionEncryption__Salt": "aG9udWEtZ3AtcmVsaWFiaWxpdHktc2FsdA==",
             "Kestrel__Endpoints__Http__Url": "http://+:8080",
@@ -133,7 +133,6 @@ def main():
         network_created = True
         postgres = run("postgres", "postgis/postgis:18-3.6", {
             "POSTGRES_USER": "honua", "POSTGRES_DB": "honua", "POSTGRES_PASSWORD": password})
-        redis = run("redis", "redis:7.2-alpine")
         for _ in range(90):
             try:
                 sql("SELECT 1;")

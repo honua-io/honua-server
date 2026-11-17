@@ -7,8 +7,42 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Security;
 
+[Collection("PrivateTempEnvironment")]
 public sealed class PrivateTempFileTests
 {
+    [UnitTest]
+    public void NewPath_WithMissingConfiguredTempDirectory_CreatesUsablePrivateDirectory()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var originalTemp = Environment.GetEnvironmentVariable("TMPDIR");
+        var directory = Path.Join(Path.GetTempPath(), "honua-missing-temp-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Environment.SetEnvironmentVariable("TMPDIR", directory);
+            var path = PrivateTempFile.NewPath("honua-parquet-");
+            using (var stream = PrivateTempFile.Create(path))
+            {
+                stream.WriteByte(1);
+            }
+
+            new FileInfo(path).Length.Should().Be(1);
+            File.GetUnixFileMode(directory).Should().Be(PrivateTempFile.OwnerDirectory);
+            File.GetUnixFileMode(path).Should().Be(PrivateTempFile.OwnerReadWrite);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TMPDIR", originalTemp);
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
     [UnitTest]
     public void NewPath_WithPrefixAndExtension_ReturnsUniquePathDirectlyUnderTempDirectory()
     {
@@ -167,3 +201,6 @@ public sealed class PrivateTempFileTests
         }
     }
 }
+
+[CollectionDefinition("PrivateTempEnvironment", DisableParallelization = true)]
+public sealed class PrivateTempEnvironmentTests;

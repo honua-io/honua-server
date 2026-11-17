@@ -28,7 +28,7 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
         _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .WithTestLicense(Edition)
-            // #2997: pre-seed one OIDC provider so the identity.oidc-multi-provider probe's
+            // Pre-seed one OIDC provider so the identity.oidc-multi-provider probe's
             // create request exercises the "second provider" branch (the Enterprise gate runs
             // before the Pro identity.oidc gate for creates that would grow the store past one
             // provider, so the 402 names the multi-provider key).
@@ -47,7 +47,7 @@ public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
                 builder.UseSetting("Saml:AssertionConsumerServiceUrl", "https://honua.example.com/sp/saml/acs");
                 builder.UseSetting("Scim:BearerToken", EntitlementProbeRegistry.IdentityScimBearerToken);
                 builder.UseSetting("Scim:OidcIssuer", "https://issuer.example.com");
-                // #2958 demoted mTLS back to experimental; #2346/ADR-0058 ships branch
+                // mTLS is experimental; ADR-0058 ships branch
                 // versioning experimental-off by default. Both entitlement checks sit BEHIND
                 // these capability gates, so the sweep must opt in to reach them at all.
                 builder.UseSetting("Capabilities:Experimental:security.mtls:Enabled", "true");

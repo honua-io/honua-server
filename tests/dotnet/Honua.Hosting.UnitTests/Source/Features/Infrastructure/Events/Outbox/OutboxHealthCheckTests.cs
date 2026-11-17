@@ -86,7 +86,7 @@ public sealed class OutboxHealthCheckTests
     [UnitTest]
     public async Task CheckHealthAsync_DispatcherStoppedBeforeFirstPass_ReturnsUnhealthy()
     {
-        // Cold-start liveness guard (#692): a dispatcher that exits before producing
+        // Cold-start liveness guard: a dispatcher that exits before producing
         // its first backlog snapshot leaves LastBacklog=null, so the readiness check
         // must consult IsDispatcherRunning before the cold-start branch. Otherwise
         // a stopped dispatcher silently reports Healthy and pending events accumulate.
@@ -108,7 +108,7 @@ public sealed class OutboxHealthCheckTests
     [UnitTest]
     public async Task CheckHealthAsync_StoragePollFailingWithoutBacklog_ReturnsUnhealthy()
     {
-        // Storage-poll guard (#692): a dispatcher whose claim/recovery/backlog queries
+        // Storage-poll guard: a dispatcher whose claim/recovery/backlog queries
         // throw (missing table, permission issue) reports IsDispatcherRunning=true and
         // LastBacklog=null indefinitely. The previous cold-start Healthy branch hid this
         // from the readiness probe; the dispatcher now sets IsStoragePollFailing on each
@@ -163,7 +163,7 @@ public sealed class OutboxHealthCheckTests
     [UnitTest]
     public async Task CheckHealthAsync_StaleStorageWithDeadLetters_ReturnsUnhealthy()
     {
-        // Precedence guard (#692): a known dead-letter snapshot must keep the probe at
+        // Precedence guard: a known dead-letter snapshot must keep the probe at
         // Unhealthy even when the most recent storage poll failed. Otherwise an
         // intermittent claim/backlog hiccup would demote a row that already requires
         // operator triage from Unhealthy → Degraded, hiding the actionable signal

@@ -690,7 +690,7 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
         // The processes adapter submits through SubmitProtocolJobAsync, a default
         // interface member whose default body forwards to SubmitJobAsync. NSubstitute
         // intercepts default members rather than running that body, so the substitute
-        // returns null unless the adapter-scoped overload is stubbed too (#3584).
+        // returns null unless the adapter-scoped overload is stubbed too.
         jobService.SubmitProtocolJobAsync(
                 Arg.Any<AnalysisPlan>(),
                 Arg.Any<string?>(),

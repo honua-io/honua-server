@@ -158,7 +158,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             throw new ArgumentException("Identifiers must be ASCII letter/digit/underscore only.", nameof(request));
         }
 
-        // Neither side of a feature copy may be the metadata schema or a system schema (SEC-23).
+        // Neither side of a feature copy may be the metadata schema or a system schema.
         if (ImportTargetSchemaPolicy.IsReserved(request.SourceSchema, _metadataSchemas) ||
             ImportTargetSchemaPolicy.IsReserved(request.TargetSchema, _metadataSchemas))
         {

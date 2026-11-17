@@ -351,7 +351,7 @@ public sealed class DatabaseMigrationSafetyTests
     [ArchitectureTest]
     public void MigrationScripts_ReaderCompatibilityAnnotations_AreWellFormed()
     {
-        // #6477: an opt-out must say what an older reader would violate, and a raised floor must parse.
+        // An opt-out must say what an older reader would violate, and a raised floor must parse.
         // A malformed annotation already fails safe at runtime (reader-incompatible); this keeps it
         // from shipping by accident.
         var violations = EnumerateMigrationFiles()
@@ -383,8 +383,8 @@ public sealed class DatabaseMigrationSafetyTests
     [ArchitectureTest]
     public void IssueMigrations126To128_DeclareExpand_SoTheSameEdgeIsRollbackSafeOnceReadersVerify()
     {
-        // The #6477 rollback (93cad86 against schema 128) refused 126-128. Each declares expand under the
-        // shared classifier, so a reader that implements verification would have accepted them.
+        // Migrations 126-128 each declare expand under the shared classifier, so a rollback reader
+        // that implements verification accepts them instead of refusing the edge.
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
         foreach (var name in new[]
         {
@@ -529,7 +529,7 @@ public sealed class DatabaseMigrationSafetyTests
         // A seed that creates these tables with default storage after a first boot has
         // journaled 055/063 as no-ops leaves the database in a state the schema guard
         // rejects on the next boot (JournalClaimsMissingSchema), which stops the raster
-        // provider migrations from running (honua-server#4889).
+        // provider migrations from running.
         var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
         var seedFiles = Directory
             .EnumerateFiles(ArchitectureTestHelpers.CombinePath(projectRoot, "tests", "seed"), "*.*", SearchOption.AllDirectories)

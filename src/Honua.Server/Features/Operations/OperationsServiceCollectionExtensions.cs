@@ -95,15 +95,15 @@ internal static class OperationsServiceCollectionExtensions
                     ? sp.GetRequiredService<PostgresOperationInstanceStore>()
                     : new UnavailableOperationInstanceStore());
             // The durable-runtime validator and proposal reconcilers stay gated on a REAL
-            // proposal store: a Redis-off host composes the fail-closed placeholder only so
-            // the governed admin catalogs advertise (J1/S1), not to claim a durable runtime.
+            // proposal store. The fail-closed placeholder keeps governed admin catalogs
+            // available without advertising a durable runtime.
             if (services.Any(descriptor => descriptor.ServiceType ==
                     typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore) &&
                     descriptor.ImplementationType != typeof(Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore) &&
                     descriptor.ImplementationInstance is not Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore))
             {
                 services.AddHostedService<OperationRuntimeStartupValidator>();
-                // Janitor sweeps open Redis and the database on an interval. The event-handler
+                // Janitor sweeps open the database on an interval. The event-handler
                 // Lambdas are invoked to run one tick, then release their pool.
                 if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
                 {
@@ -157,8 +157,8 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddDeferredOperationExecutor<CoordinatedReleaseRollbackOperationExecutor>(WorkflowRollbackOperations.CoordinatedRelease);
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
 
-        // True on every production topology: Redis-on hosts register the durable store and
-        // Redis-off hosts register UnavailableOperationProposalStore, so the governed admin
+        // True on every production topology: hosts with a database register the durable store and
+        // hosts without one register UnavailableOperationProposalStore, so the governed admin
         // tools advertise everywhere and approval-gated calls refuse at call time with the
         // typed capability-unavailable outcome (the approval bridge finds no gateway).
         var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==
@@ -301,8 +301,8 @@ internal static class OperationsServiceCollectionExtensions
         return services;
     }
 
-    // A Redis-off host may run the listed configure and style operations, and governed paths stay refused.
-    internal static readonly IReadOnlyList<string> RedisOffDirectOperationIds =
+    // Without a durable operation store, only these configure and style operations may run.
+    internal static readonly IReadOnlyList<string> NonDurableDirectOperationIds =
     [
         ServicePublishOperation.OperationId,
         StylePresetOperation.OperationId,
@@ -317,7 +317,7 @@ internal static class OperationsServiceCollectionExtensions
 
     internal static IOperationInstanceStore ComposeDispatcherInstanceStore(IOperationInstanceStore store)
         => store is UnavailableOperationInstanceStore
-            ? new NonDurableDirectOperationInstanceStore(store, RedisOffDirectOperationIds)
+            ? new NonDurableDirectOperationInstanceStore(store, NonDurableDirectOperationIds)
             : store;
 
     private static void AddLegacyAdapter(

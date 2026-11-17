@@ -100,11 +100,6 @@ public sealed class FeatureChangeEventEnrichmentTests
     [UnitTest]
     public void FromFeatureSnapshot_WhenWkbHasNoSridButFallbackProvided_UsesFallbackForGeometryAndCrs()
     {
-        // Regression for review finding "Layer-SRID mutation paths drop stream
-        // geometry": gRPC ApplyEdits and WFS Transaction publish features whose
-        // WKB was written by a default WKBWriter (handleSRID:false) even though
-        // the layer CRS is known. The enrichment must accept a fallback SRID so
-        // those streams still emit geometry/geometryCrs to subscribers.
         var point = new Point(-157.8583, 21.3069);
         var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false).Write(point);
         var feature = Feature.Create(9, geometry: wkb, attributes: ImmutableDictionary<string, object?>.Empty);

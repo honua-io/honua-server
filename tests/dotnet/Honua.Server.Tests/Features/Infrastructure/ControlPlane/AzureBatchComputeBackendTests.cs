@@ -685,7 +685,7 @@ public sealed class AzureBatchComputeBackendTests
     [Fact]
     public async Task CancelAsync_PreservesCurrentStatusWhenCredentialFails()
     {
-        // Regression: a credential failure during cancel must not escape the backend.
+        // A credential failure during cancel must not escape the backend.
         // If it did, the reconciler's generic catch would stamp the durable record as
         // terminal Failed while the Azure Batch job could still be running.
         var stub = new StubAzureBatchClient
@@ -710,7 +710,7 @@ public sealed class AzureBatchComputeBackendTests
     [Fact]
     public async Task ObserveAsync_PreservesCurrentStatusWhenCredentialFails()
     {
-        // Regression: a credential failure during observe must not escape the backend.
+        // A credential failure during observe must not escape the backend.
         // If it did, the reconciler's generic catch would stamp the durable record as
         // terminal Failed while the Azure Batch job could still be running.
         var stub = new StubAzureBatchClient

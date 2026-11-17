@@ -158,7 +158,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/config")]
     public async Task GetConfiguration_FeatureStreamingSection_ContainsAllOptionsKnobs()
     {
-        // Regression: the FeatureStreaming options class exposes safety knobs
+        // The FeatureStreaming options class exposes safety knobs
         // (MaxControlFrameBytes, MaxSubscriptionsPerSession, MaxSubscriptionIdLength,
         // MaxSnapshotBytes)
         // alongside the original interval settings. The admin configuration doc

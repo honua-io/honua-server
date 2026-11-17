@@ -276,7 +276,7 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
                 // The certified image registers the production provider composition
                 // (InfrastructureCompositionRoot). A Test host skips it unless it opts in, and
                 // this host has no WebAppFixture wiring to stand in for it, so opt in explicitly
-                // rather than depend on the factory's environment default (#4640).
+                // rather than depend on the factory's environment default.
                 builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(

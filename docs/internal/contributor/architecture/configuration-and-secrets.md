@@ -115,7 +115,7 @@ Validation enforces `VeryShort ≤ Short ≤ Medium ≤ Long ≤ VeryLong`. In
 ASP.NET Core's `:` → `__` rule applies. Examples:
 
 - `Database:ConnectionString` → `Database__ConnectionString`
-- `Cache:Redis:Password` → `Cache__Redis__Password`
+- `ConnectionStrings:DefaultConnection` → `ConnectionStrings__DefaultConnection`
 
 `[RequiredConfiguration]` error messages include the env-var form, so
 operators see the expected variable name without consulting docs.

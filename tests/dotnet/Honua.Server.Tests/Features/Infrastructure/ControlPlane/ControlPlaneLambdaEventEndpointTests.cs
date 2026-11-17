@@ -125,7 +125,7 @@ public sealed class ControlPlaneLambdaEventEndpointTests
     [InlineData("scheduled-tick", "schema-floor")]
     public async Task DegradedHost_Returns503NotReady_SoTheEventIsRetried(string selector, string? reasonCode)
     {
-        // honua-server#5916: cp-tick and cp-backstop cold-started before migrations were applied and
+        // Cp-tick and cp-backstop cold-started before migrations were applied and
         // exited. A degraded host must answer a typed 503 instead of running the handler.
         var targets = new RecordingTargets();
         var degraded = new DegradedStartupContext();

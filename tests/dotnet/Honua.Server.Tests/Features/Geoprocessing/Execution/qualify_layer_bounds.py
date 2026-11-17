@@ -1,6 +1,6 @@
 """Qualify layer bounds on an exact candidate in a disposable, constrained deployment.
 
-Uses production OGC execution, PostGIS layer reads and Redis jobs. Run with Python 3,
+Uses production OGC execution, PostGIS layer reads and PostgreSQL jobs. Run with Python 3,
 Docker Compose, --image registry/image@sha256:digest and --receipt /path/receipt.json.
 """
 
@@ -136,12 +136,11 @@ def main():
                 "POSTGRES_DB": "honua", "POSTGRES_USER": "honua", "POSTGRES_PASSWORD": "gp-bounds-local"},
                 "volumes": [f"{repo}/docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro"],
                 "healthcheck": {"test": ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U honua -d honua"], "interval": "2s", "retries": 30}},
-            "redis": {"image": "redis:7.2-alpine", "command": ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]},
             "server": {"image": args.image, "mem_limit": "1g", "cpus": 1,
                 "ports": [f"127.0.0.1:{args.port}:8080"], "environment": {
                     "ASPNETCORE_ENVIRONMENT": "Development", "HONUA_ADMIN_PASSWORD": "gp-bounds-local", "Database__Schema": "honua",
                     "ConnectionStrings__DefaultConnection": "Host=postgres;Database=honua;Username=honua;Password=gp-bounds-local",
-                    "ConnectionStrings__Redis": "redis:6379", "Licensing__Mode": "Disabled", "Licensing__DevGrantEdition": "Pro",
+                    "Licensing__Mode": "Disabled", "Licensing__DevGrantEdition": "Pro",
                     "Security__ConnectionEncryption__MasterKey": "gp-bounds-local-master-key-0123456789",
                     "Security__ConnectionEncryption__Salt": "aG9udWEtZ3AtcmVsaWFiaWxpdHktc2FsdA==",
                     "Kestrel__Endpoints__Http__Url": "http://+:8080", "Kestrel__Endpoints__Http__Protocols": "Http1",
@@ -149,7 +148,7 @@ def main():
                     "Geoprocessing__Executors__MaxArtifactBytes": "32768", "Geoprocessing__Executors__MaxLayerExecutionSeconds": "10",
                     "Limits__Analytics__MaxInputFeatures": "100", "Limits__Analytics__MaxInputBytes": "1048576",
                     "Limits__Geometry__MaxVerticesPerGeometry": "100"},
-                "depends_on": {"postgres": {"condition": "service_healthy"}, "redis": {"condition": "service_started"}}}}
+                "depends_on": {"postgres": {"condition": "service_healthy"}}}}
         # The deadline profile admits a join whose unbounded managed work far exceeds the deadline:
         # 6,000 x 6,000 overlapping five-vertex diamonds is 36 million exact predicate calls, and
         # 30,000 x 30,000 vertices stays inside MaxTopologyWork. Only the elapsed-time bound stops it.
@@ -229,8 +228,7 @@ UPDATE honua.services SET service_extent=ST_MakeEnvelope(-1,-1,3,3,4326) WHERE s
             function_end = base_seed.index("\n$$;", function_start) + len("\n$$;")
             metadata_seed = base_seed[function_start:function_end] + "\nSELECT honua.seed_metadata_v2_compat_snapshot();\n"
             compose("exec", "-T", "postgres", "psql", "-U", "honua", "-d", "honua", "-v", "ON_ERROR_STOP=1", input=metadata_seed, text=True)
-            # No jobs exist yet. Drop only this disposable deployment's empty startup cache.
-            compose("exec", "-T", "redis", "redis-cli", "FLUSHDB")
+            # Restart so the server loads the freshly seeded catalog.
             compose("restart", "server")
             readiness()
             _, receipt["candidate"] = verify_candidate()

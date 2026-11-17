@@ -161,8 +161,7 @@ public sealed class RuntimeImageCveTests
         if (image.Contains("nginx", StringComparison.OrdinalIgnoreCase)
             || image.Contains("caddy", StringComparison.OrdinalIgnoreCase)
             || image.Contains("postgis", StringComparison.OrdinalIgnoreCase)
-            || image.Contains("postgres", StringComparison.OrdinalIgnoreCase)
-            || image.Contains("redis", StringComparison.OrdinalIgnoreCase))
+            || image.Contains("postgres", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

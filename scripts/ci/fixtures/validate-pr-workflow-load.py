@@ -14,7 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 HEAVY = (
-    "codeql.yml", "compose-release-lifecycle.yml", "geoarrow-interop-fixture.yml",
+    "codeql.yml", "compose-release-lifecycle.yml", "export-portolan-check.yml", "geoarrow-interop-fixture.yml",
     "geoparquet-interop.yml",
     "serving-image-boundary.yml", "worker-gdal-image.yml",
 )
@@ -208,7 +208,7 @@ class PullRequestLoadTests(unittest.TestCase):
                     self.assertEqual(jobs[key]["if"], DRAFT_GUARD)
                 else:
                     self.assertEqual(jobs[key]["needs"], "runner-select")
-        for key in ("affected-shards-select", "affected-shard", "affected-shards"):
+        for key in ("affected-shards-select", "affected-shard", "affected-shard-held", "affected-shards"):
             self.assertIn("!github.event.pull_request.draft", jobs[key]["if"])
         self.assertEqual(jobs["required"]["if"], "always()")
         self.assertIn("!github.event.pull_request.draft", jobs["runner-select"].get("if", ""))

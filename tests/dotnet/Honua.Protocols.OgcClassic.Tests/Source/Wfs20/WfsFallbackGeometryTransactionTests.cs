@@ -180,7 +180,7 @@ public sealed partial class WfsFallbackGeometryTransactionTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Transaction_InsertPointIntoPolygonFeatureType_IsRejectedWithoutChangingSql()
     {
-        // #6108: WFS-T shares the mutation validator that enforces the declared geometry type.
+        // WFS-T shares the mutation validator that enforces the declared geometry type.
         _fixture.UpdateV2ResourceMetadata(0, spatial: new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,

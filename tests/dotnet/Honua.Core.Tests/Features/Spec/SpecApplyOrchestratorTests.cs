@@ -330,14 +330,9 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_EnumeratorCancellationDuringQuietPeriod_DetachesStreamImmediately()
     {
-        // Regression for the review finding: ReadEventsAsync used to await
-        // WaitToReadAsync without honouring the enumerator token, so a caller
-        // that cancelled during a long quiet period stayed attached until the
-        // next event or the terminal frame fired. The iterator now threads the
-        // [EnumeratorCancellation] token through WaitToReadAsync, so
-        // `WithCancellation(...)` on both REST (RequestAborted) and gRPC
-        // (context.CancellationToken) detaches immediately. The orchestrator
-        // CTS is not touched — the background run must continue.
+        // Enumerator cancellation must detach an event reader during a quiet period.
+        // REST RequestAborted and gRPC context.CancellationToken flow through
+        // WithCancellation to WaitToReadAsync; the background run CTS stays active.
         var fixture = new OrchestratorFixture();
         var started = new TaskCompletionSource();
         var release = new TaskCompletionSource();
@@ -407,10 +402,6 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_CallerCancellation_DoesNotStopRun()
     {
-        // Regression test for the review finding: SSE/gRPC stream disconnects
-        // must not cancel the apply run. The caller-supplied token only scopes
-        // the initial plan phase — once StartAsync returns, the run is owned
-        // by the orchestrator CTS and only TryCancel can trip it.
         var fixture = new OrchestratorFixture();
         var started = new TaskCompletionSource();
         var release = new TaskCompletionSource();
@@ -445,10 +436,6 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_TryCancel_DeferredNodesEmitApplyCancelledNotUpstreamFailed()
     {
-        // Regression: the earlier skip path emitted `upstream-failed` for every
-        // downstream node when the real cause was cooperative cancellation.
-        // Admin tooling keys off the diagnostic code — confusing the two codes
-        // leads operators to hunt for a phantom upstream failure.
         var fixture = new OrchestratorFixture();
         var started = new TaskCompletionSource();
         var release = new TaskCompletionSource();
@@ -493,11 +480,10 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_MutableSourceWithoutPin_StampsTtlOnCachedPayload()
     {
-        // Ticket #789 contract: nodes the planner flags with
-        // `mutable-source-no-pin` must degrade via TTL. The orchestrator stamps
-        // the configured TTL onto the payload before PutAsync when the executor
-        // returned no TTL of its own; without it the entry would live forever
-        // and silently diverge from the mutable upstream.
+        // Nodes the planner flags with `mutable-source-no-pin` must degrade via
+        // TTL. The orchestrator stamps the configured TTL onto the payload before
+        // PutAsync when the executor returned no TTL of its own; without it the
+        // entry would live forever and silently diverge from the mutable upstream.
         var fixture = new OrchestratorFixture();
         var ttl = TimeSpan.FromMinutes(3);
 
@@ -690,10 +676,8 @@ public class SpecApplyOrchestratorTests
     [Fact]
     public async Task Apply_ExecutorFailure_RecordsNodeDurationWithFailedOutcome()
     {
-        // Regression: failed nodes used to bypass NodeDurationMs entirely, so
-        // the histogram only carried successful tails. Dashboards keying off
-        // per-node duration silently under-counted the failure path, which
-        // also made slow-failing executors invisible on alerting.
+        // Record NodeDurationMs for failed nodes so duration dashboards and alerts
+        // include slow failures.
         var fixture = new OrchestratorFixture();
         fixture.Executor.FailFor("a", new InvalidOperationException("boom"));
 

@@ -685,7 +685,6 @@ internal static class ConfigurationValidationService
             ["Security:ConnectionEncryption:MasterKey"] = _connectionSecretPrefixes,
             ["ConnectionStrings:DefaultConnection"] = _connectionSecretPrefixes,
             ["ConnectionStrings:honua"] = _connectionSecretPrefixes,
-            ["ConnectionStrings:redis"] = _envOnlyPrefixes,
             ["Oidc:AzureAd:ClientSecret"] = _envOnlyPrefixes,
             ["Oidc:Google:ClientSecret"] = _envOnlyPrefixes,
             ["Oidc:Generic:ClientSecret"] = _envOnlyPrefixes,

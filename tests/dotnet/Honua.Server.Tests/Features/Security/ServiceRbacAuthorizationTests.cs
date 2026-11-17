@@ -61,7 +61,7 @@ public sealed class FeatureServerServiceRbacTests : IClassFixture<FeatureServerS
         public void Dispose() => Application.Dispose();
     }
 
-    // calculate is POST-only (#6100).
+    // calculate is POST-only.
     private static FormUrlEncodedContent CreateCalculateContent() => new(
     [
         new KeyValuePair<string, string>("calcExpression", CalculateExpression),
@@ -541,7 +541,7 @@ public sealed class FeatureServerServiceAccessPolicyTests
 {
     private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
 
-    // calculate is POST-only (#6100).
+    // calculate is POST-only.
     private static FormUrlEncodedContent CreateCalculateContent() => new(
     [
         new KeyValuePair<string, string>("calcExpression", CalculateExpression),
@@ -717,7 +717,7 @@ public sealed class FeatureServerReplicationAccessPolicyTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithWriteOnlyLayerRole_IsForbiddenBecauseTheResponseCarriesData()
     {
-        // createReplica returns the replica features (#4018), so write access alone must not read a layer
+        // createReplica returns the replica features, so write access alone must not read a layer
         // whose Query access is restricted to another role.
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
