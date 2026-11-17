@@ -127,6 +127,7 @@ services:
       - roster-clients
 
 networks:
+  # One roster project at a time. A second project on the same host overlaps this pool.
   compat:
     ipam:
       config:

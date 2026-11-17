@@ -122,7 +122,8 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
         expect(windowed == [3, 4], f"bbox window returned {windowed}")
         last_bbox = bbox_requests[-1] if bbox_requests else ""
         if crs84:
-            axis_ok = "bbox=-122." in last_bbox
+            axis_ok = ("bbox=-122." in last_bbox
+                       and "bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" not in last_bbox)
         else:
             axis_ok = ("bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" in last_bbox
                        and "bbox=37.7" in last_bbox)
@@ -427,9 +428,9 @@ def features_service() -> None:
 # WFS 2.0
 # ---------------------------------------------------------------------------
 
-# The advertised WFS type is the feature publication of storage layer 0 (#7171, #7653).
+# The advertised WFS type is the feature publication of storage layer 0.
 TEST_LAYER_WFS = "honua:pub-test-service-feature-0"
-AUTH_LAYER_WFS = "pub-cert-auth-vector-feature-2011"
+AUTH_LAYER_WFS = "honua:pub-cert-auth-vector-feature-2011"
 
 
 def _wfs_layer(dataset):
@@ -474,7 +475,8 @@ def _wfs_checks(cell: Cell) -> None:
                 try:
                     dataset = _open_vector("WFS:" + WFS)
                     names = [dataset.GetLayer(i).GetName() for i in range(dataset.GetLayerCount())]
-                    protected = [name for name in names if AUTH_LAYER_WFS in name]
+                    auth_local = AUTH_LAYER_WFS.split(":", 1)[-1]
+                    protected = [name for name in names if auth_local in name]
                     if protected:
                         advertised[label] = len(_features(dataset.GetLayerByName(protected[0])))
                     else:

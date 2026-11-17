@@ -30,7 +30,7 @@ MAPS = url("/ogc/maps")
 STYLES = url("/ogc/styles")
 FEATURESERVER = url("/rest/services/test_service/FeatureServer")
 MAPSERVER = url("/rest/services/browser_compat/MapServer")
-# #7171/#7653: the global WFS advertises one type per storage layer, named by the
+# The global WFS advertises one type per storage layer, named by the
 # feature publication id (lowest layer index, then lowest publication id).
 TEST_LAYER_WFS = "honua:pub-test-service-feature-0"
 AUTH_LAYER_WFS = "honua:pub-cert-auth-vector-feature-2011"
@@ -850,9 +850,10 @@ def mapserver() -> None:
     with cell.check("media-schema", "service JSON and PNG32 exports carry their media types") as c:
         with qgiskit.recording() as recorder:
             qgiskit.render(QgsRasterLayer(source, "ms", "arcgismapserver"), BROWSER_EXTENT_3857, "EPSG:3857")
-        types = sorted({(item.url.split("?")[0].rsplit("/", 1)[-1], item.content_type) for item in recorder.exchanges if item.status == 200})
-        expect(any(name in ("export", "tile") and (ctype or "").startswith("image/png") for name, ctype in types), types)
-        c.detail = f"{types}"
+        images = [(item.url.split("?", 1)[0], item.content_type) for item in recorder.exchanges if item.status == 200]
+        expect(any(("/MapServer/export" in path or "/MapServer/tile/" in path)
+                    and (ctype or "").startswith("image/png") for path, ctype in images), images)
+        c.detail = f"{images}"
     cell.write()
 
 
