@@ -2185,3 +2185,18 @@ methods in selected PR and full trunk runs. No workflow, shard definition,
 required check name, timeout, or aggregate dependency changes. This removes
 repeated initialization rather than adding runners. The authored inventory
 template is updated; its generated inventory projection remains producer-owned.
+
+### Admin operations progress host lifetime
+
+`OperationsProgressEndpointsTests` (including its query partial) shares one
+application with in-memory durable job store and queue doubles across every
+case that uses them. Each case still writes progress and jobs under its own new
+operation id and deletes its progress afterwards; the shared queue is drained
+before each case, so the queue-depth assertion stays exact. Cases that replace
+the job store, queue or remote backend keep their private applications and no
+longer start an unused default application as well.
+
+The class stays in Server Features Admin Operations Endpoints on selected PR
+runs and full trunk runs. No workflow, shard filter, required check, aggregate
+dependency or runner count changes. Build-host class 39/39 identical passing
+cases, 391 to 88-92 seconds; existing partition 122/122, 981 to 628 seconds.
