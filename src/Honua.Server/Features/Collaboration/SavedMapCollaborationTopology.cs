@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Features.Collaboration;
 
-// Multi-replica is an operator declaration, not the presence of Redis, so Redis on a single instance does not fail-close live editing.
+// Multi-replica is an operator declaration, not backing-store presence; a single instance retains live editing.
 internal sealed class SavedMapCollaborationTopology
 {
     public const string MultiReplicaConfigurationKey = "Collaboration:MultiReplica";
