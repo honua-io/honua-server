@@ -519,7 +519,11 @@ def records() -> None:
         keyed = set(walk(_ogcapi(Records, endpoint, headers=api_key_headers()), 50)[0])
         bearer = set(walk(_ogcapi(Records, endpoint, headers=bearer_headers()), 50)[0])
         wrong = set(walk(_ogcapi(Records, endpoint, headers=WRONG_API_KEY), 50)[0])
-        protected = {"service:cert_auth_vector", "service:cert_auth_raster", "layer:2010", "layer:2011"}
+        # Layer records are keyed by publication ID (layer:pub-cert-auth-vector-ogc-2011 and so on).
+        protected = {"service:cert_auth_vector", "service:cert_auth_raster"} | {
+            record for record in keyed | bearer if record.startswith("layer:pub-cert-auth-")}
+        expect(any(record.endswith("-2010") for record in protected) and any(record.endswith("-2011") for record in protected),
+               f"no layer records for 2010 and 2011 in {sorted(protected)}")
         expect(not (protected & anonymous), f"anonymous sees {sorted(protected & anonymous)}")
         expect(protected <= keyed and protected <= bearer, f"api-key sees {sorted(protected & keyed)}, bearer {sorted(protected & bearer)}")
         expect(not (protected & wrong), f"a wrong API key sees {sorted(protected & wrong)}")
