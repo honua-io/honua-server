@@ -70,12 +70,20 @@ public sealed class Cql2JsonParameterValidationTests
         (await InvokeAsync(ItemsPath, "cql2-json", filter)).Should().BeTrue();
     }
 
-    [UnitTheory]
-    [InlineData("""{"op":"\ud800 -- note","args":[{"property":"name"},"value"]}""")]
-    [InlineData("""{"op":"=","args":[{"property":"name"},"\udc00 -- note"]}""")]
-    public async Task Filter_UndecodableEscape_RemainsInspectedAsRawText(string filter)
+    [UnitTest]
+    public async Task Filter_UndecodableEscape_RemainsInspectedAsRawText()
     {
+        const string filter = """{"op":"\ud800 -- note","args":[{"property":"name"},"value"]}""";
         (await InvokeAsync(ItemsPath, "cql2-json", filter)).Should().BeFalse();
+    }
+
+    // Literal content is masked without decoding; the filter parser reports an undecodable
+    // literal as an invalid payload.
+    [UnitTest]
+    public async Task Filter_UndecodableEscapeInsideLiteral_IsMaskedLikeAnyLiteral()
+    {
+        const string filter = """{"op":"=","args":[{"property":"name"},"\udc00 -- note"]}""";
+        (await InvokeAsync(ItemsPath, "cql2-json", filter)).Should().BeTrue();
     }
 
     [UnitTheory]

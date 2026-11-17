@@ -56,6 +56,11 @@ public sealed class Cql2JsonParser
         {
             throw new ArgumentException($"Invalid CQL2-JSON payload: {ex.Message}", nameof(cql2Json), ex);
         }
+        catch (InvalidOperationException ex)
+        {
+            // A lone surrogate escape parses as JSON but cannot be decoded to text.
+            throw new ArgumentException($"Invalid CQL2-JSON payload: {ex.Message}", nameof(cql2Json), ex);
+        }
     }
 
     private FilterExpression ParseExpression(JsonElement element)
