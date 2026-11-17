@@ -32,8 +32,10 @@ public sealed class AdminApiKeyEndpointsTests(AdminApiKeyEndpointsTests.ApiKeyHo
     private readonly WebAppFixture _fixture = host.Fixture;
     private readonly HttpClient _client = host.Client;
 
-    // One host per class: every case creates its own keys and finds them by id, and only revokes
-    // keys it created, so the bootstrap admin key the shared client uses stays valid.
+    // One host per class: every case creates its own keys and finds them by id, and only revokes or
+    // rotates keys it created, so the bootstrap admin key the shared client uses stays valid. Failed
+    // credential checks now share one failure limiter (10 per source address); the class counts
+    // about four.
     public sealed class ApiKeyHost : IAsyncLifetime
     {
         internal WebAppFixture Fixture { get; } = new WebAppFixture()
