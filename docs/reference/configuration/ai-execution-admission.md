@@ -173,6 +173,18 @@ Money values are integer units in the explicit currency scale. Rates are those u
 
 The basis binds the provider, exact final invocation URL/model, standard/default tier, effective/expiry times, conservative input bound, output cap and rates. The input bound is an operator assertion covering complete framing and messages; it is not estimated from bytes. Request byte limits are a separate check. Reporting freezes its final request and applies the stricter of its configured output limit and the financial output cap before send. Model disclosure approval and credentials remain separately required.
 
+### Monthly actor and incident limits
+
+Optional `financial.monthlyActor` applies token and money limits per canonical actor and UTC calendar month. Apply migration 170 before enabling it. Unsettled liability from earlier months remains charged; settled usage stays in its original month. At 80% of either limit, the durable outbox queues a `monthly-actor-spend` warning through the configured operations notification channels.
+
+Optional `financial.incident` applies token and money limits across all actors and periods for one authority scope and episode UUID. Apply migrations 172 and 217 before enabling it. Configure `financial.incidentWorkflows` through the same authorized, stopped and drained policy-update operation. Each binding contains the canonical `workflow` (`job:` followed by the server operation identity), `authorityScope`, `episodeId` and positive `lifecycleVersion`. Bindings are operator-authorized associations in the persisted policy; request labels and model output cannot supply them. At most 64 distinct workflows can be bound.
+
+With an incident cap enabled, every admitted financial invocation needs a matching binding and an active episode at the recorded lifecycle version. The episode observation must be no older than five minutes and no more than thirty seconds in the future. Admission and the durable pre-send claim both validate this authority in PostgreSQL. Missing bindings deny with `financial_incident_required`; stale, closed or version-mismatched episodes deny with `financial_incident_invalid`. A reservation crossing either cap denies with `financial_incident_exceeded` before provider contact. Reporting uses deterministic fallback on denial.
+
+Episode charges include settled and uncertain debt from every period and actor. Refreshing a binding to the same episode UUID preserves its allowance; a different episode UUID has a separate allowance without erasing earlier deployment or actor debt. Incident caps cannot be removed after activation. Changing their limits or bindings requires stopped, drained admission and an advancing control epoch. No automatic job-to-episode producer or additional model-sending path is enabled by configuring this policy.
+
+At 80% of either incident limit, the durable outbox queues an `incident-spend` warning with deployment, authority scope and episode attributes. Retries retain a stable deduplication identity for that episode. A refreshed lifecycle version does not create a new warning. Delivery still requires a configured operations notification channel.
+
 ### Liability, stop and recovery limits
 
 Each admitted financial invocation reserves its upper input/output liability before a durable single-send claim. Ambiguous send authorization does not permit a provider send or automatic retry. Cancellation, timeout, transport failure, missing or unsupported usage and response interruption do not establish zero charge. Uncertain debt remains reserved even after permit disposal, lease expiry, restart or period rollover. Outstanding debt constrains later periods; settled charges remain attributed to the original period.
