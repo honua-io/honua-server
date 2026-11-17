@@ -8,13 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-public interface IQueryExecutionContext : IDisposable
-{
-    void Complete(bool success, long? rowCount = null, IDictionary<string, object>? additionalMetrics = null);
-
-    void RecordException(Exception exception);
-}
-
 public sealed class QueryPerformanceMonitoringOptions
 {
     public double SlowQueryThresholdMs { get; set; } = 1000; // 1 second
@@ -27,6 +20,18 @@ public sealed class QueryPerformanceMonitoringOptions
     public int MaxQueryTextLength { get; set; } = 2048;
 
     public double CriticalSlowQueryThresholdMs { get; set; } = 5000; // 5 seconds
+
+    // Database client ActivitySources whose completed commands are measured.
+    public IList<string> ActivitySourceNames { get; } = new List<string>(DatabaseCommandActivitySources.Defaults);
+}
+
+public static class DatabaseCommandActivitySources
+{
+    public const string Npgsql = "Npgsql";
+
+    public const string MySqlConnector = "MySqlConnector";
+
+    public static readonly IReadOnlyList<string> Defaults = [Npgsql, MySqlConnector];
 }
 
 public sealed record QueryPerformanceStatistics
@@ -101,6 +106,7 @@ public sealed partial class DatabaseQueryPerformanceMonitor : IDisposable
     private double _maxExecutionTimeMs;
     private readonly double[] _executionTimes = new double[10000]; // Circular buffer for percentiles
     private int _executionTimeIndex;
+    private readonly ActivityListener _listener;
     private volatile bool _disposed;
 
     public DatabaseQueryPerformanceMonitor(
@@ -109,13 +115,34 @@ public sealed partial class DatabaseQueryPerformanceMonitor : IDisposable
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        var sources = new HashSet<string>(_options.ActivitySourceNames, StringComparer.Ordinal);
+        _listener = new ActivityListener
+        {
+            ShouldListenTo = source => sources.Contains(source.Name),
+            // AllData creates the command activity without marking it recorded, so this
+            // listener never changes what the trace exporter samples.
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = OnCommandActivityStopped,
+        };
+        ActivitySource.AddActivityListener(_listener);
     }
 
-    public IQueryExecutionContext StartQueryExecution(string queryType, string correlationId)
+    private void OnCommandActivityStopped(Activity activity)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_disposed)
+            return;
 
-        return new QueryExecutionContext(this, queryType, correlationId, _options);
+        // This runs inside the driver's command completion; a monitoring fault must never
+        // fail the caller's database command.
+        try
+        {
+            if (DatabaseCommandActivity.TryRead(activity) is { } data)
+                RecordQueryExecution(data);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            MonitoringLog.RecordingFailed(_logger, ex.GetType().Name);
+        }
     }
 
     public QueryPerformanceStatistics GetStatistics()
@@ -245,6 +272,7 @@ public sealed partial class DatabaseQueryPerformanceMonitor : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _listener.Dispose();
 
         _queryTypeMetrics.Clear();
         while (_slowQueryRecords.TryDequeue(out _)) { }
@@ -307,89 +335,14 @@ public sealed partial class DatabaseQueryPerformanceMonitor : IDisposable
         public Exception? Exception { get; init; }
     }
 
-    private sealed class QueryExecutionContext : IQueryExecutionContext
-    {
-        private readonly DatabaseQueryPerformanceMonitor _monitor;
-        private readonly string _queryType;
-        private readonly string _correlationId;
-        private readonly QueryPerformanceMonitoringOptions _options;
-        private readonly Stopwatch _stopwatch;
-        private readonly DateTime _startTime;
-        private bool _completed;
-        private bool _disposed;
-
-        public QueryExecutionContext(
-            DatabaseQueryPerformanceMonitor monitor,
-            string queryType,
-            string correlationId,
-            QueryPerformanceMonitoringOptions options)
-        {
-            _monitor = monitor;
-            _queryType = queryType;
-            _correlationId = correlationId;
-            _options = options;
-            _stopwatch = Stopwatch.StartNew();
-            _startTime = DateTime.UtcNow;
-        }
-
-        public void Complete(bool success, long? rowCount = null, IDictionary<string, object>? additionalMetrics = null)
-        {
-            if (_completed || _disposed) return;
-
-            _stopwatch.Stop();
-            _completed = true;
-
-            var executionData = new QueryExecutionData
-            {
-                QueryType = _queryType,
-                CorrelationId = _correlationId,
-                ExecutionTimeMs = _stopwatch.Elapsed.TotalMilliseconds,
-                Success = success,
-                RowCount = rowCount,
-                ExecutedAt = _startTime,
-                AdditionalMetrics = additionalMetrics
-            };
-
-            _monitor.RecordQueryExecution(executionData);
-        }
-
-        public void RecordException(Exception exception)
-        {
-            if (_completed || _disposed) return;
-
-            _stopwatch.Stop();
-            _completed = true;
-
-            var executionData = new QueryExecutionData
-            {
-                QueryType = _queryType,
-                CorrelationId = _correlationId,
-                ExecutionTimeMs = _stopwatch.Elapsed.TotalMilliseconds,
-                Success = false,
-                ExecutedAt = _startTime,
-                Exception = exception
-            };
-
-            _monitor.RecordQueryExecution(executionData);
-        }
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-
-            if (!_completed)
-            {
-                // Auto-complete on disposal with failure status
-                Complete(false);
-            }
-
-            _stopwatch?.Stop();
-        }
-    }
-
     private static partial class MonitoringLog
     {
+        [LoggerMessage(
+            EventId = 9005,
+            Level = LogLevel.Warning,
+            Message = "Database command could not be recorded for query performance ({ExceptionType})")]
+        public static partial void RecordingFailed(ILogger logger, string exceptionType);
+
         [LoggerMessage(
             EventId = 9001,
             Level = LogLevel.Warning,
