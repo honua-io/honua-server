@@ -122,7 +122,7 @@ internal sealed class PairedPublicationReader(
         => storage.GetMetadataAsync(target.Store.VersionKey(target.Descriptor.Version, fileName), cancellationToken);
 
     internal static bool IsAllowedFile(PublicationDescriptor descriptor, string fileName)
-        => fileName is "descriptor.json" or "item.json" ||
+        => fileName is "descriptor.json" or "item.json" || ExportCompanionFiles.FileNames.Contains(fileName) ||
            fileName == descriptor.Artifacts.Pmtiles.Href || fileName == descriptor.Artifacts.Geoparquet.Href;
 
     private static bool IsDescriptor(PublicationDescriptor? descriptor, string version)

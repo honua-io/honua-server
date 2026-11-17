@@ -244,7 +244,8 @@ public sealed partial class PairedPublishEndpointTests
     {
         var published = await PublishAsync(IdentityField);
         HideField(IdentityField);
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/item.json", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/item.json", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" }
+                     .Concat(ExportCompanionFiles.FileNames.Select(file => $"{published.Version}/{file}")))
         {
             using var response = await _client.GetAsync($"{PublicationRoute}/{suffix}");
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
