@@ -149,7 +149,7 @@ public sealed class McpAccessAuditTests
         var request = new McpJsonRpcRequest
         {
             JsonRpc = "2.0",
-            Id = JsonDocument.Parse("\"a1\"").RootElement.Clone(),
+            Id = JsonElement.Parse("\"a1\""),
             Method = call.Method,
             Params = document.RootElement.Clone(),
         };
@@ -181,7 +181,7 @@ public sealed class McpAccessAuditTests
         public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
 
         public McpToolDescriptor Describe() =>
-            new() { Name = name, InputSchema = JsonDocument.Parse("""{"type":"object"}""").RootElement.Clone() };
+            new() { Name = name, InputSchema = JsonElement.Parse("""{"type":"object"}""") };
 
         public Task<McpToolsCallResult> InvokeAsync(
             HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
@@ -191,7 +191,7 @@ public sealed class McpAccessAuditTests
                 throw new GeoprocessingAuthorizationException(requiresAuthentication: false, "denied");
             }
 
-            return Task.FromResult(McpToolHelpers.SuccessJsonElement(JsonDocument.Parse("{}").RootElement.Clone()));
+            return Task.FromResult(McpToolHelpers.SuccessJsonElement(JsonElement.Parse("{}")));
         }
     }
 
@@ -207,7 +207,7 @@ public sealed class McpAccessAuditTests
         public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
 
         public McpToolDescriptor Describe() =>
-            new() { Name = Name, InputSchema = JsonDocument.Parse("""{"type":"object"}""").RootElement.Clone() };
+            new() { Name = Name, InputSchema = JsonElement.Parse("""{"type":"object"}""") };
 
         public Task<McpToolsCallResult> InvokeAsync(
             HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken) =>

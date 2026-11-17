@@ -70,8 +70,8 @@ public sealed class PostgresMcpSessionStoreTests(DatabaseFixtureAdapter database
     public async Task SetLogLevelAsync_KeepsTheRecordAndIsReadByAnotherNode()
     {
         await using var harness = await CreateHarnessAsync();
-        var a = new McpSessionManager(idleTimeout: _idleTimeout, store: harness.CreateMcpSessionStore());
-        var b = new McpSessionManager(idleTimeout: _idleTimeout, store: harness.CreateMcpSessionStore());
+        await using var a = new McpSessionManager(idleTimeout: _idleTimeout, store: harness.CreateMcpSessionStore());
+        await using var b = new McpSessionManager(idleTimeout: _idleTimeout, store: harness.CreateMcpSessionStore());
         var id = await a.TryCreateSessionAsync(Alice, elicitationSupported: false, "setup", CancellationToken.None);
 
         (await a.SetLogLevelAsync(id!, "error", CancellationToken.None)).Should().BeTrue();
