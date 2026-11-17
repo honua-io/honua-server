@@ -1,4 +1,4 @@
-# Scale-out testing environment with multiple Honua instances, Redis, and load balancer
+# Scale-out testing environment with multiple Honua instances and a load balancer
 # Usage: docker compose -f docker/scale-test/compose.yml up --scale honua=3
 name: honua-scale-test
 
@@ -34,21 +34,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Redis for job coordination shared by all Honua instances
-  redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    ports:
-      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_SCALE_TEST_REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
   # Honua Server instances (scalable)
   honua:
     build: ../..
@@ -58,8 +43,6 @@ services:
       ASPNETCORE_URLS: "http://+:8080"
       # Database connection (shared)
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_scale_test;Username=honua_user;Password=honua_password"
-      # Redis connection (shared)
-      ConnectionStrings__Redis: "redis:6379"
       # Scale-out specific configuration
       HONUA_INSTANCE_ID: "${HOSTNAME:-scale-test}"
       HONUA_ENABLE_METRICS: "true"
@@ -81,8 +64,6 @@ services:
       Limits__Concurrent__MaxQueriesPerUser: "20"
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/app/honua-healthcheck"]
@@ -115,8 +96,6 @@ services:
       ASPNETCORE_URLS: "http://+:8080"
       # Database connection (shared unless overridden for negative canary rehearsal)
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_scale_test;Username=honua_user;Password=honua_password"
-      # Redis connection (shared)
-      ConnectionStrings__Redis: "redis:6379"
       # Scale-out specific configuration
       HONUA_INSTANCE_ID: "${HOSTNAME:-scale-test-canary}"
       HONUA_ENABLE_METRICS: "true"
@@ -136,8 +115,6 @@ services:
       Limits__Concurrent__MaxQueriesPerUser: "20"
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/app/honua-healthcheck"]
@@ -189,18 +166,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Redis exporter for scale-test monitoring
-  redis-exporter:
-    image: oliver006/redis_exporter:v1.67.0
-    profiles:
-      - monitoring
-    command:
-      - "--redis.addr=redis://redis:6379"
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
   # Nginx exporter for scale-test monitoring
   nginx-exporter:
     image: nginx/nginx-prometheus-exporter:1.4.2
@@ -211,19 +176,6 @@ services:
     depends_on:
       - nginx
     restart: unless-stopped
-
-  # Redis Insight for monitoring Redis
-  redis-insight:
-    image: redislabs/redisinsight:latest
-    ports:
-      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_SCALE_TEST_INSIGHT_PORT:-8001}:8001"
-    environment:
-      RIPORT: 8001
-      RIHOST: "0.0.0.0"
-    depends_on:
-      - redis
-    profiles:
-      - monitoring
 
   # Prometheus for metrics collection
   prometheus:
@@ -274,7 +226,6 @@ services:
 
 volumes:
   postgres_scale_data:
-  redis_data:
   honua_logs:
   honua_cache:
   dotnet_diagnostics:

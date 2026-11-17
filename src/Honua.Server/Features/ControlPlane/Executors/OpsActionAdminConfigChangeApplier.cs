@@ -135,7 +135,7 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
                 throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
         }
         if (request.Service is not null && (request.Target is null || options is null
-            || !new[] { options.ServiceName, options.PostgresService, options.RedisService }.Contains(request.Service, StringComparer.Ordinal)))
+            || !new[] { options.ServiceName, options.PostgresService }.Contains(request.Service, StringComparer.Ordinal)))
             throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
         if (request.HasParameters && (request.ParameterNames.Count != 1 || request.ParameterNames[0] != "service"
             || string.IsNullOrWhiteSpace(request.Service)))

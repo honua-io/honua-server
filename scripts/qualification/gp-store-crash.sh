@@ -50,8 +50,6 @@ run_store_crash_case() {
   local before_inventory after_inventory before_sha content ready
   local package_before package_after outage_evidence='null' write_failure_record='null' outage_started
   local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification
-  local -x HONUA_GP_WORKER_REDIS=terminal-proxy:6379
-  compose --profile crash-boundaries up -d --wait terminal-proxy >/dev/null || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
   if [[ "$target" == terminal-committed-registration-pending && "$disruption" == worker ]]; then
     printf '%s\n' "$native_payload" > "$receipt_root/$scenario-request.json" || return 1
@@ -63,6 +61,7 @@ run_store_crash_case() {
   # Permit the host-side qualification controller to publish release files.
   compose exec -T --user 0 worker chmod 777 "/run/honua/qualification/$job" || return 1
   if [[ "$target" == terminal-committed-registration-pending ]]; then
+    # The worker holds after its terminal UPDATE commits only for an armed job.
     : > "$(barrier_directory "$job")/$target.arm"
   fi
   for barrier in claimed native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending; do
@@ -93,7 +92,7 @@ run_store_crash_case() {
   fi
   if [[ "$target" == terminal-committed-registration-pending ]]; then
     jq -e '.status == 3 or .status == "succeeded"' <<<"$before_record" >/dev/null || {
-      scenario_fail "proxy fence did not follow a durable successful terminal CAS"; return 1; }
+      scenario_fail "terminal fence did not follow a durable successful terminal CAS"; return 1; }
     [[ "$package_before" == 0 ]] || {
       scenario_fail "result package was already registered before the requested crash boundary"; return 1; }
   else
@@ -110,7 +109,7 @@ run_store_crash_case() {
     compose kill -s SIGKILL worker >/dev/null || return 1
   else
     record_disruption store "$target" hide-marker-and-bytes
-    # Hide both the marker and the actual bytes; no synthetic Redis outage.
+    # Hide both the marker and the actual bytes; no synthetic PostgreSQL outage.
     outage_root="$object_root/.qualification-outage-$job"
     mkdir "$outage_root" || return 1
     local outage_failed=0
@@ -138,10 +137,10 @@ run_store_crash_case() {
   for barrier in claimed native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
     release_barrier "$job" "$barrier"
   done
-  # Resume without qualification fences/proxy for natural recovery. These local
-  # exports never alter the caller's original environment.
-  HONUA_GP_QUALIFICATION_BARRIER_ROOT="" HONUA_GP_WORKER_REDIS=redis:6379
-  compose restart server server-peer redis postgres >/dev/null || return 1
+  # Resume without qualification fences for natural recovery. This local
+  # export never alters the caller's original environment.
+  HONUA_GP_QUALIFICATION_BARRIER_ROOT=""
+  compose restart server server-peer postgres >/dev/null || return 1
   wait_ready && wait_peer_ready || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
   record_disruption "$disruption" "$target" recovered

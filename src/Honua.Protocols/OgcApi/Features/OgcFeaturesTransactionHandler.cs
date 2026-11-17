@@ -846,9 +846,12 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     $"Invalid geometry: {geometryValidation.ErrorMessage}");
             }
 
+            var trackingFields = EditorTrackingFields.Names(resource.Editing).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var properties = patchRequest.Properties?.Where(property => !trackingFields.Contains(property.Key))
+                .ToImmutableDictionary(property => property.Key, property => property.Value, StringComparer.OrdinalIgnoreCase);
             var fieldsByName = resource.SchemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
             var removals = ImmutableArray.CreateBuilder<string>();
-            foreach (var (name, value) in (IReadOnlyDictionary<string, object?>?)patchRequest.Properties ?? ImmutableDictionary<string, object?>.Empty)
+            foreach (var (name, value) in (IReadOnlyDictionary<string, object?>?)properties ?? ImmutableDictionary<string, object?>.Empty)
             {
                 if (value is not null)
                 {
@@ -863,7 +866,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
             var submittedAttributes = _mutationValidator.ValidateAttributes(
                 resource,
-                patchRequest.Properties?.Where(property => property.Value is not null)
+                properties?.Where(property => property.Value is not null)
                     .ToImmutableDictionary(property => property.Key, property => property.Value, StringComparer.OrdinalIgnoreCase),
                 ValidationExtensions.AttributeValidationMode.Json,
                 isUpdate: true);

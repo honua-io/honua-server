@@ -3,8 +3,6 @@ services:
   honua-server:
     environment:
       Licensing__DevGrantEdition: Pro
-  redis:
-    command: [redis-server, --appendonly, "yes", --appendfsync, always, --save, "", --maxmemory-policy, noeviction]
   localstack:
     ports:
       - "127.0.0.1:4595:4566"
@@ -13,7 +11,7 @@ services:
     image: ${HONUA_CNG_WORKER_IMAGE:?explicit rehearsal requires an immutable worker image}
     environment:
       DOTNET_ENVIRONMENT: Test
-      ConnectionStrings__Redis: redis:6379
+      ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_cng;User Id=postgres;Password=cng_password;
       GdalWorker__ScratchRoot: /tmp/honua-cng-zarr
       GdalWorker__ToolTimeout: 00:03:00
       FileStorage__Provider: AwsS3
@@ -25,7 +23,7 @@ services:
       FileStorage__AwsS3__SecretAccessKey: test
       FileStorage__AwsS3__EnableServerSideEncryption: "false"
     depends_on:
-      redis:
+      postgres:
         condition: service_healthy
       localstack:
         condition: service_healthy

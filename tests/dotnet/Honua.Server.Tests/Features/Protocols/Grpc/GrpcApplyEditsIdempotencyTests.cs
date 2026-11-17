@@ -229,6 +229,20 @@ public sealed class GrpcApplyEditsIdempotencyTests
     }
 
     [UnitTest]
+    public async Task LocalResults_EmptyResponseReplaysWhileMalformedDurableReceiptStaysUnknown()
+    {
+        using var store = new GrpcApplyEditsReceipts();
+        using (var first = await store.EnterAsync("empty", CancellationToken.None))
+        {
+            first.Complete(new Proto.ApplyEditsResponse());
+        }
+        using var replay = await store.EnterAsync("empty", CancellationToken.None);
+        replay.Response.Should().NotBeNull();
+        replay.OutcomeUnknown.Should().BeFalse();
+        GrpcApplyEditsReceipts.DecodeReceipt(new byte[] { 1 }).OutcomeUnknown.Should().BeTrue();
+    }
+
+    [UnitTest]
     public async Task LocalResults_AreBoundedByTheirSizeBudget()
     {
         const long budgetBytes = 4096;

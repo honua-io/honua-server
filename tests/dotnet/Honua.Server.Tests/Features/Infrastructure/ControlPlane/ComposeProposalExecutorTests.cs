@@ -70,15 +70,6 @@ public sealed partial class ComposeProposalExecutorTests
     }
 
     [UnitTest]
-    public void ValidateForProcess_RedisExplicitlyDisabled_PreservesSupportedTopology()
-    {
-        var root = Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
-        var options = ValidOptions(root, Digest('a'));
-        options.RedisService = string.Empty;
-        Assert.Null(options.ValidateForProcess());
-    }
-
-    [UnitTest]
     public async Task Restart_UnregisteredService_RefusesBeforeDocker()
     {
         var root = Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));

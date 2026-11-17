@@ -60,7 +60,7 @@ proposal gateway or HTTP surface. It never submits jobs to AWS Batch, so the job
 `batch:SubmitJob`. It does need what the server uses to run and report the job: the database
 connection (`ConnectionStrings__DefaultConnection`, the same system database the server uses) and
 network access to that database. Without the database connection it refuses to start, because
-nobody could see the result. It does not need Redis to claim, run or report the job.
+nobody could see the result.
 
 ### Large layer publishes
 
@@ -87,9 +87,8 @@ connection-encryption key material. Advancing only the API image is insufficient
 Use immutable images and a versioned job definition when qualifying the rollout.
 
 A Lambda host without a compatible remote durable runner returns the existing
-typed 503 (`durable-runner-required`) for large publishes, including Redis-off
-deployments. A long-lived host retains the local durable runner or its in-process
-fallback. Tables at or below the threshold retain synchronous publication.
+typed 503 (`durable-runner-required`) for large publishes. A long-lived host
+retains the local durable runner or its in-process fallback. Tables at or below the threshold retain synchronous publication.
 
 ## The activation gate
 

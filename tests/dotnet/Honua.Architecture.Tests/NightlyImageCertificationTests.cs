@@ -196,22 +196,32 @@ public sealed partial class NightlyImageCertificationTests
     }
 
     [ArchitectureTest]
-    public void NightlyBuild_ShouldPublishDefaultTagsFromJit()
+    public void NightlyBuild_ShouldPublishDefaultTagsFromAot()
     {
         var nightly = Read(NightlyPath);
 
-        // JIT owns the default tags; AOT remains an explicit alternative.
+        // The AOT index owns the default tags; JIT keeps its -jit tags and the full-store default.
         var jitManifest = Job(nightly, "manifest-jit");
         foreach (var tag in new[]
                  {
-                     "type=raw,value=nightly${{ matrix.store_suffix }}",
-                     "type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}",
-                     $"type=raw,value=nightly-{CandidateSha7}${{{{ matrix.store_suffix }}}}",
-                     $"type=raw,value=nightly-jit-{CandidateSha7}${{{{ matrix.store_suffix }}}}",
+                     "type=raw,value=nightly${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}",
+                     "type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}",
+                     $"type=raw,value=nightly-{CandidateSha7}${{{{ matrix.store_suffix }}}},enable=${{{{ matrix.store_suffix != '' }}}}",
+                     "type=raw,value=trunk${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}",
+                     $"type=raw,value=nightly-jit-{CandidateSha7}${{{{ matrix.store_suffix }}}}\n",
                  })
         {
             jitManifest.Should().Contain(tag);
         }
+
+        var aotManifest = Job(nightly, "manifest-aot");
+        aotManifest.Should().Contain("nightly-aot|trunk-aot) default_tag=\"${repository}:${tag_name%-aot}\" ;;");
+        aotManifest.Should().Contain("nightly-aot-*) default_tag=\"${repository}:nightly-${tag_name#nightly-aot-}\" ;;");
+        aotManifest.Should().Contain("printf '%s\\n' \"$tag\" \"$default_tag\"", "the alias must be the attested AOT index");
+
+        var executor = Job(nightly, "compose-executor");
+        executor.Should().Contain("needs: [select-candidate, manifest-aot]");
+        executor.Should().NotContain("manifest-jit", "the customer quickstart pins the default AOT image");
     }
 
     [ArchitectureTest]
