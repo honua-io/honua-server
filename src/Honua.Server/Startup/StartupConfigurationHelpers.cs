@@ -429,7 +429,7 @@ internal static class StartupConfigurationHelpers
             new Honua.Core.Features.Tiles.TileMatrixSetOptionsValidator());
         services.AddSingleton<IValidateOptions<CacheOptions>>(new CacheOptionsValidator());
         services.AddSingleton<IValidateOptions<CloudStorageOptions>>(new CloudStorageOptionsValidator());
-        services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());
+        services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>, OidcAuthenticationOptionsValidator>();
         services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
     }
 
