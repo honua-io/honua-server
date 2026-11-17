@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Publishing.Descriptors;
 
@@ -39,7 +40,7 @@ public static class ExportCollectionDocument
             ["id"] = export.PublicationId,
             ["title"] = title,
             ["description"] = metadata.Description ?? $"{title}, exported as PMTiles and GeoParquet files.",
-            ["license"] = metadata.License ?? "other",
+            ["license"] = License(metadata.License),
             ["version"] = export.Version,
             ["updated"] = Timestamp(export.PublishedAt),
             ["extent"] = Extent(export),
@@ -60,6 +61,10 @@ public static class ExportCollectionDocument
         };
         return collection;
     }
+
+    // STAC wants one SPDX identifier; anything else, including free text and "proprietary", is "other".
+    private static string License(string? license)
+        => SpdxLicensePolicy.IsLicenseIdentifier(license) ? license! : "other";
 
     private static void AddHonuaFacts(JsonObject collection, PublicationDescriptor export, List<PublicationField> publicFields)
     {
@@ -104,6 +109,11 @@ public static class ExportCollectionDocument
         var identity = Node(collection, "honua:identity").AsObject();
         var bbox = Node(Node(Node(collection, "extent").AsObject(), "spatial").AsObject(), "bbox").AsArray()[0]?.AsArray()
             ?? throw new FormatException("extent.spatial.bbox is empty.");
+        if (bbox.Count != 4)
+        {
+            throw new FormatException("extent.spatial.bbox is not [west, south, east, north].");
+        }
+
         var title = Node(collection, "title").GetValue<string>();
         var id = Text(collection, "id");
         return new PublicationDescriptor
@@ -156,11 +166,14 @@ public static class ExportCollectionDocument
     }
 
     private static PublicationField ReadColumn(JsonObject column, HashSet<string> publicFields)
-        => new(Text(column, "name"), Text(column, "type"), publicFields.Contains(Text(column, "name")))
+    {
+        var name = Text(column, "name");
+        return new(name, Text(column, "type"), publicFields.Contains(name))
         {
             Title = OptionalText(column, "title"),
             Description = OptionalText(column, "description")
         };
+    }
 
     private static JsonObject Geometry(PublicationGeometry geometry)
     {
@@ -254,7 +267,8 @@ public static class ExportCollectionDocument
     private static string Sha256(JsonObject asset)
     {
         var checksum = Text(asset, "file:checksum");
-        if (!checksum.StartsWith(Sha256Multihash, StringComparison.Ordinal) || checksum.Length != Sha256Multihash.Length + 64)
+        if (!checksum.StartsWith(Sha256Multihash, StringComparison.Ordinal) || checksum.Length != Sha256Multihash.Length + 64
+            || !checksum.All(character => char.IsAsciiDigit(character) || character is >= 'a' and <= 'f'))
         {
             throw new FormatException("file:checksum is not a SHA2-256 multihash.");
         }

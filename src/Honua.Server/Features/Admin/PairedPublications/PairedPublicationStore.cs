@@ -94,7 +94,7 @@ internal sealed class PairedPublicationStore
         => await ReadJsonAsync(PointerKey, PublicationDescriptorJsonContext.Default.PublicationPointer, cancellationToken).ConfigureAwait(false);
 
     public Task<PublicationDescriptor?> ReadCollectionAsync(PublicationPointer pointer, CancellationToken cancellationToken)
-        => ReadCollectionAtAsync($"{_publicationKey}/{pointer.Collection}", cancellationToken);
+        => ReadCollectionAtAsync(VersionKey(pointer.Version, ExportCollectionDocument.FileName), cancellationToken);
 
     public Task<PublicationDescriptor?> ReadVersionAsync(string version, CancellationToken cancellationToken)
         => ReadCollectionAtAsync(VersionKey(version, ExportCollectionDocument.FileName), cancellationToken);

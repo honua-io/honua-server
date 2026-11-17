@@ -19,6 +19,8 @@ public sealed class ExportCollectionSchemaTests
     private static readonly string ExamplesDirectory =
         RepositoryPaths.Resolve("docs", "gis", "schemas", "export-collection.v1");
     private static readonly string InvalidDirectory = Path.Join(ExamplesDirectory, "invalid");
+    private static readonly string PortolanSchemaPath = RepositoryPaths.Resolve(
+        "tests", "dotnet", "Honua.Core.Tests", "Features", "Publishing", "ExportCollection", "portolan-v0.3.0.schema.json");
     private static readonly Lazy<JSchema> Schema = new(() => JSchema.Parse(File.ReadAllText(SchemaPath)));
 
     public static TheoryData<string, string> InvalidExamples()
@@ -85,6 +87,35 @@ public sealed class ExportCollectionSchemaTests
         written["license"]!.GetValue<string>().Should().Be("other");
     }
 
+    [UnitTheory]
+    [InlineData("CC0-1.0", "CC0-1.0")]
+    [InlineData("proprietary", "other")]
+    [InlineData("CC BY 4.0", "other")]
+    [InlineData(null, "other")]
+    public void WrittenCollection_LicenseIsAnSpdxIdentifierOrOther(string? datasetLicense, string expected)
+    {
+        var written = ExportCollectionDocument.Write(Example(), new ExportCollectionMetadata(null, datasetLicense));
+
+        written["license"]!.GetValue<string>().Should().Be(expected);
+    }
+
+    // Companions (providers, README.md and AGENTS.md links) are generated separately; with them the document is Portolan-valid.
+    [UnitTest]
+    public void MauiCountyParcelsExample_PassesThePinnedPortolanProfileOnceCompanionsAreAdded()
+    {
+        var portolan = JSchema.Parse(File.ReadAllText(PortolanSchemaPath));
+        var collection = Load(Path.Join(ExamplesDirectory, "maui-county-parcels.json"));
+        collection.IsValid(portolan).Should().BeFalse("the companions are not written yet");
+
+        ((JArray)collection["links"]!).Add(JObject.Parse("""{"rel":"agents","href":"AGENTS.md","type":"text/markdown"}"""));
+        ((JArray)collection["links"]!).Add(JObject.Parse("""{"rel":"describedby","href":"README.md","type":"text/markdown"}"""));
+        collection["providers"] = JArray.Parse(
+            """[{"name":"County of Maui","roles":["producer"]},{"name":"Honua","roles":["host"],"url":"https://example.org"}]""");
+
+        collection.IsValid(portolan, out IList<ValidationError> errors).Should().BeTrue(Describe(errors));
+        portolan.Id!.GetLeftPart(UriPartial.Path).Should().Be(ExportCollectionDocument.PortolanSchemaUri);
+    }
+
     [UnitTest]
     public void Read_ThirdPartyCollectionWithoutHonuaFacts_IsNotAnExportVersion()
     {
@@ -127,6 +158,9 @@ public sealed class ExportCollectionSchemaTests
         JObject.Parse(File.ReadAllText(Path.Join(InvalidDirectory, "expected.json")))
             .Properties()
             .ToDictionary(property => property.Name, property => property.Value.Value<string>()!, StringComparer.Ordinal);
+
+    private static PublicationDescriptor Example()
+        => ExportCollectionDocument.Read(JsonNode.Parse(File.ReadAllText(Path.Join(ExamplesDirectory, "maui-county-parcels.json")))!.AsObject())!;
 
     private static JObject Load(string path) => JObject.Parse(File.ReadAllText(path));
 
