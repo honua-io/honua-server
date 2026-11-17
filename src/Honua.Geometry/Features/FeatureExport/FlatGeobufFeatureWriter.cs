@@ -72,6 +72,7 @@ internal static class FlatGeobufFeatureWriter
         var canIndex = features.Count > 0;
         var hasZ = false;
         var hasM = false;
+        var geometryTypes = new HashSet<GeometryType>();
         foreach (var feature in features)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -86,6 +87,7 @@ internal static class FlatGeobufFeatureWriter
                     throw new InvalidDataException("FlatGeobuf requires a valid complete WKB geometry.");
                 }
                 geometry = reader.Read(wkb);
+                geometryTypes.Add(GeometryConversionsType(geometry));
                 hasZ |= query.IncludeZ && declaredZ;
                 hasM |= query.IncludeM && declaredM;
             }
@@ -112,7 +114,7 @@ internal static class FlatGeobufFeatureWriter
         var header = new HeaderT
         {
             Name = resource.Metadata.Name,
-            GeometryType = GeometryType.Unknown,
+            GeometryType = geometryTypes.Count == 1 ? geometryTypes.Single() : GeometryType.Unknown,
             HasZ = hasZ,
             HasM = hasM,
             Columns = columns,
