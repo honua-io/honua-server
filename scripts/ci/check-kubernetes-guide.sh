@@ -134,7 +134,6 @@ if provider == "AwsS3":
             fail(f"multi-node {path} is required")
 
 required_guide_fragments = (
-    "ConnectionStrings__redis=",
     "--set-string image.digest=\"$HONUA_IMAGE_DIGEST\"",
     "Local` storage is invalid in",
     "Use `RollingUpdate` only when",

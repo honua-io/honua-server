@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# A disposable, real HTTP/PostGIS/Redis qualification environment. The caller
+# A disposable, real HTTP/PostGIS qualification environment. The caller
 # supplies the release manifest's immutable server image, never a rebuilt binary.
 export HONUA_GP_CANDIDATE_IMAGE="${1:?usage: qualify-wfs-candidate.sh image@sha256:digest receipt.json}"
 receipt="${2:?supply a receipt path outside the temporary stack}"

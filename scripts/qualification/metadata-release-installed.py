@@ -22,6 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 STATUSES = ("Planned", "AwaitingApproval", "Submitted", "Reconciling", "Succeeded", "Failed", "RollbackRequested", "RolledBack", "ManualInterventionRequired")
 STAGES = ("Preflight", "Backup", "ScriptMigration", "MetadataApply", "ServicePublication", "Smoke", "SloWatch", "Promotion", "Complete", "Failed", "RollbackRequested")
+LEASE_PREFIX = "workflow-operation:"
 TERMINAL = {"Succeeded", "Failed", "RolledBack", "ManualInterventionRequired"}
 EXPECTED = {
     "Harbor City": (-122.4194, 37.7749, 1000000),
@@ -31,6 +32,10 @@ EXPECTED = {
     "Dateline Post": (179.5, 0.5, 0),
     "Polar Outpost": (0.0, 86.0, 0),
 }
+
+
+def literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 def run(*args: str, data: str | None = None) -> str:
@@ -64,7 +69,7 @@ class Harness:
         self.candidate = candidate
         self.output = output
         self.prefix = "honua-4619-" + secrets.token_hex(4)
-        self.pg, self.redis, self.server = (self.prefix + suffix for suffix in ("-pg", "-redis", "-server"))
+        self.pg, self.server = (self.prefix + suffix for suffix in ("-pg", "-server"))
         self.password = secrets.token_urlsafe(30)
         self.base = ""
         self.created = []
@@ -111,16 +116,9 @@ class Harness:
             raise AssertionError("installed image digest does not match manifest")
         self.receipt["imageId"] = inspect["Id"]
         run("docker", "network", "create", self.prefix)
-        for name, image, env in [
-            (self.pg, "postgis/postgis:16-3.4", ["POSTGRES_DB=honua", "POSTGRES_PASSWORD=" + self.password]),
-            (self.redis, "redis:7.2-alpine", []),
-        ]:
-            args = ["docker", "run", "-d", "--name", name, "--network", self.prefix]
-            for entry in env:
-                args += ["-e", entry]
-            extra = ["redis-server", "--appendonly", "yes", "--appendfsync", "always"] if name == self.redis else []
-            run(*args, image, *extra)
-            self.created.append(name)
+        run("docker", "run", "-d", "--name", self.pg, "--network", self.prefix, "-e", "POSTGRES_DB=honua",
+            "-e", "POSTGRES_PASSWORD=" + self.password, "postgis/postgis:16-3.4")
+        self.created.append(self.pg)
         for _ in range(60):
             try:
                 if self.sql("SELECT 1") == "1":
@@ -136,7 +134,7 @@ class Harness:
             "Kestrel__Endpoints__Http__Url": "http://+:8080", "PUBLIC_BASE_URL": "http://localhost:8080",
             "HONUA_ADMIN_PASSWORD": self.password, "Licensing__DevGrantEdition": "Enterprise",
             "ConnectionStrings__DefaultConnection": f"Host={self.pg};Database=honua;Username=postgres;Password={self.password}",
-            "ConnectionStrings__Redis": self.redis + ":6379", "HostValidation__Enabled": "false",
+            "HostValidation__Enabled": "false",
             "Cache__Enabled": "false", "Metadata__Environment": "default", "ControlPlane__TriggerMode": "Poll",
             "ControlPlane__BackstopInterval": "1.00:00:00", "ControlPlane__StaleThreshold": "1.00:00:00",
             "ControlPlane__MetadataRelease__FaultInjection__Enabled": "true",
@@ -159,7 +157,7 @@ class Harness:
         return json.loads(self.sql("SELECT json_build_object('revision',c.revision,'etag',c.etag,'graph',s.document) FROM honua.metadata_v2_current c JOIN honua.metadata_v2_snapshots s USING(environment,revision) WHERE c.environment='default';"))
 
     def operation(self, operation_id):
-        op = json.loads(run("docker", "exec", self.redis, "redis-cli", "--raw", "GET", "controlplane:workflow:" + operation_id))
+        op = json.loads(self.sql(f"SELECT record FROM honua.workflow_operations WHERE operation_id = {literal(operation_id)};"))
         if isinstance(op["status"], int):
             op["status"] = STATUSES[op["status"]]
         release = op["metadataRelease"]
@@ -179,24 +177,28 @@ class Harness:
     def hold(self, operation_id):
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline:
-            result = run("docker", "exec", self.redis, "redis-cli", "--raw", "SET",
-                         "controlplane:workflow:lease:" + operation_id, self.prefix, "NX", "PX", "600000")
-            if result == "OK":
+            acquired = self.sql(
+                "WITH acquired AS (INSERT INTO honua.leases AS lease (lease_key, owner_id, expires_at) "
+                f"VALUES ({literal(LEASE_PREFIX + operation_id)}, {literal(self.prefix)}, now() + interval '600 seconds') "
+                "ON CONFLICT (lease_key) DO UPDATE SET owner_id = EXCLUDED.owner_id, expires_at = EXCLUDED.expires_at "
+                "WHERE lease.expires_at <= now() RETURNING 1) SELECT count(*) FROM acquired;")
+            if acquired == "1":
                 return
             time.sleep(0.05)
         raise AssertionError("could not pause worker at durable stage boundary")
 
     def advance(self, operation_id):
         before = self.operation(operation_id)
-        key = "controlplane:workflow:lease:" + operation_id
-        script = "if redis.call('GET',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end"
-        assert run("docker", "exec", self.redis, "redis-cli", "--raw", "EVAL", script, "1", key, self.prefix) == "1"
+        released = self.sql(
+            f"WITH released AS (DELETE FROM honua.leases WHERE lease_key = {literal(LEASE_PREFIX + operation_id)} "
+            f"AND owner_id = {literal(self.prefix)} RETURNING 1) SELECT count(*) FROM released;")
+        assert released == "1"
         deadline = time.monotonic() + 45
         cancelled_etl = False
         while time.monotonic() < deadline:
             if (not cancelled_etl and before["metadataRelease"]["executionPlan"].get("dataPopulateWorkloadId") == "cancelled-workload"):
                 job_id = "metadata-release-etl-" + operation_id
-                exists = run("docker", "exec", self.redis, "redis-cli", "--raw", "EXISTS", "controlplane:job:" + job_id)
+                exists = self.sql(f"SELECT count(*) FROM honua.execution_jobs WHERE operation_id = {literal(job_id)};")
                 if exists == "1":
                     cancellation = self.request("/api/v1/admin/jobs/" + job_id + "/cancel", {}, admin=True)
                     self.receipt["etlCancellation"] = cancellation

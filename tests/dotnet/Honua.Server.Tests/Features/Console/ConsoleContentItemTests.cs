@@ -16,7 +16,7 @@ public class ConsoleContentItemTests
     [UnitTest]
     public void ConsoleContentItem_RoundTripsThroughSourceGenContext()
     {
-        using var typeMetadata = JsonDocument.Parse("""{"resourceId":"res-1","fieldCount":4}""");
+        using var typeMetadata = JsonDocument.Parse("""{"datasetId":"res-1","fieldCount":4}""");
         var item = new ConsoleContentItem
         {
             Id = "item-1",
@@ -48,7 +48,7 @@ public class ConsoleContentItemTests
         Assert.Contains("\"lifecycle\":\"active\"", json);
         Assert.Contains("\"visibility\":\"organization\"", json);
         Assert.Contains("\"actions\":[\"view\",\"edit\"]", json);
-        Assert.Contains("\"resourceId\":\"res-1\"", json);
+        Assert.Contains("\"datasetId\":\"res-1\"", json);
 
         var roundTrip = JsonSerializer.Deserialize(json, ConsoleJsonContext.Default.ConsoleContentItem)!;
         Assert.Equal(item.Id, roundTrip.Id);

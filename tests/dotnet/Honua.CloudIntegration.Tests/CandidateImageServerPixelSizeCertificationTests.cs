@@ -18,7 +18,6 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
     private const string CandidateImageEnvVar = "HONUA_CANDIDATE_IMAGE";
     private const string ReceiptDirectoryEnvVar = "HONUA_CANDIDATE_RECEIPT_DIR";
     private const string PostgresImage = "postgis/postgis:16-3.4";
-    private const string RedisImage = "redis:7-alpine";
     private const string DatabasePassword = "pixelsize_4562_pg";
     private const string AdminPassword = "PixelSize4562!Candidate#Key";
     private const int ReplicaContainerPort = 8080;
@@ -85,7 +84,6 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var network = $"honua-px4562-{suffix}";
         var postgres = $"{network}-pg";
-        var redis = $"{network}-redis";
         var server = $"{network}-server";
         var port = LoopbackTcpPort.GetFree();
         var baseUrl = $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}";
@@ -105,7 +103,6 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
                 postgres,
                 "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; " +
                 "CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;");
-            await Docker.RunCheckedAsync(["run", "-d", "--name", redis, "--network", network, RedisImage]);
 
             await Docker.RunCheckedAsync(
             [
@@ -114,7 +111,6 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
                 "-e", "ASPNETCORE_ENVIRONMENT=Production",
                 "-e", $"PUBLIC_BASE_URL={baseUrl}",
                 "-e", $"ConnectionStrings__DefaultConnection=Host={postgres};Database=honua;Username=postgres;Password={DatabasePassword}",
-                "-e", $"ConnectionStrings__Redis={redis}:6379",
                 "-e", $"HONUA_ADMIN_PASSWORD={AdminPassword}",
                 "-e", "HostValidation__AllowedHosts__0=127.0.0.1",
                 "-e", "HostValidation__AllowedHosts__1=localhost",
@@ -164,7 +160,7 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
                 _output.WriteLine(logs + errors);
             }
 
-            foreach (var container in new[] { server, redis, postgres })
+            foreach (var container in new[] { server, postgres })
             {
                 await Docker.RunAsync(["rm", "-f", container]);
             }

@@ -45,8 +45,8 @@ public sealed record ConsoleLayerTypeMetadata
     [JsonPropertyName("folderPath")]
     public string? FolderPath { get; init; }
 
-    [JsonPropertyName("resourceId")]
-    public required string ResourceId { get; init; }
+    [JsonPropertyName("datasetId")]
+    public required string DatasetId { get; init; }
 
     [JsonPropertyName("geometryType")]
     public string? GeometryType { get; init; }
@@ -58,7 +58,7 @@ public sealed record ConsoleLayerTypeMetadata
     public IReadOnlyList<double>? Extent { get; init; }
 }
 
-public sealed record ConsoleSavedMapTypeMetadata
+public sealed record ConsoleMapTypeMetadata
 {
     [JsonPropertyName("layerCount")]
     public int LayerCount { get; init; }
@@ -88,7 +88,7 @@ public sealed record ConsoleReportTypeMetadata
     public DateTimeOffset? LastRunAt { get; init; }
 }
 
-public sealed record ConsoleGeneratedAppTypeMetadata
+public sealed record ConsoleAppTypeMetadata
 {
     [JsonPropertyName("appType")]
     public required string AppType { get; init; }
@@ -110,4 +110,19 @@ public sealed record ConsoleOpenDataTypeMetadata
 
     [JsonPropertyName("distributionUrls")]
     public IReadOnlyList<string> DistributionUrls { get; init; } = Array.Empty<string>();
+}
+
+public sealed record ConsoleDatasetTypeMetadata
+{
+    [JsonPropertyName("datasetId")]
+    public required string DatasetId { get; init; }
+
+    [JsonPropertyName("kind")]
+    public required string Kind { get; init; }
+
+    [JsonPropertyName("geometryType")]
+    public string? GeometryType { get; init; }
+
+    [JsonPropertyName("fieldCount")]
+    public int FieldCount { get; init; }
 }
