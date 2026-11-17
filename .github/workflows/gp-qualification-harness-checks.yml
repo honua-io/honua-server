@@ -65,8 +65,10 @@ jobs:
         ports:
           - 5000:5000
     env:
-      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
-      HONUA_GP_SOURCE_SHA: fe1636ca0a3cbd3ec3994f5faafa3490672694e7
+      # Nightly builds now run from the certified-candidate tag, so provenance names that ref.
+      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:2eed9a7b392b128b21c4ad80c9e9862e27b119cf0a893dd6b19793279c68f722
+      HONUA_GP_SOURCE_SHA: 532565bc7215d4b9ce9657bc110cbd0366076e31
+      HONUA_GP_SOURCE_REF: refs/tags/nightly-candidate-532565b
       HONUA_GP_LANE: ${{ inputs.native_rehearsal_lane || 'output-store-outage' }}
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-store-rehearsal
       HONUA_GP_SCENARIO_TIMEOUT_SECONDS: '900'
@@ -84,7 +86,7 @@ jobs:
           mkdir -p "$HONUA_GP_RECEIPT_DIR"
           gh attestation verify "oci://$HONUA_SERVER_IMAGE" --repo honua-io/honua-server \
             --signer-workflow honua-io/honua-server/.github/workflows/nightly-container-build.yml \
-            --source-ref refs/heads/trunk --source-digest "$HONUA_GP_SOURCE_SHA" \
+            --source-ref "$HONUA_GP_SOURCE_REF" --source-digest "$HONUA_GP_SOURCE_SHA" \
             --format json > "$HONUA_GP_RECEIPT_DIR/image-attestation.json"
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:

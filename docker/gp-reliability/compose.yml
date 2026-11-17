@@ -25,7 +25,7 @@ services:
       - "127.0.0.1:${HONUA_GP_PORT:-18080}:8080"
     environment: &honua-environment
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=honua;SSL Mode=Disable
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=honua
       Licensing__DevGrantEdition: Pro
       Jobs__Store__RetentionSweepInterval: "00:00:02"
       HONUA_ADMIN_PASSWORD: gp-reliability-admin
@@ -91,7 +91,6 @@ services:
       DOTNET_ENVIRONMENT: Development
       # Since the PostgreSQL job substrate (#7250) a worker claims from the system database's job queue.
       ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=honua
-      Jobs__Store__RetentionSweepInterval: 00:00:01
       GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
       Geoprocessing__OutputStaging__Enabled: "true"
       Geoprocessing__OutputStaging__Provider: local
