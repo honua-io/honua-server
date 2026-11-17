@@ -31,44 +31,21 @@ namespace Honua.Server.Tests.Features.Studio;
 [Collection("Database")]
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]
-public sealed class StudioPackageEndpointsTests : IAsyncLifetime
+public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPackageEndpointsTests.StudioHost>
 {
-    private readonly CapturingAuditLog _auditLog = new();
+    private readonly CapturingAuditLog _auditLog;
     private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly HttpClient _client;
 
-    public StudioPackageEndpointsTests()
+    public StudioPackageEndpointsTests(StudioHost host)
     {
-        _fixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            })
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IStudioPackageStore>();
-                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-                // The content-items list endpoint joins publication-registry lifecycle badges
-                // (REQ-004); use the in-memory store here (like ContentPublicationEndpointsTests)
-                // so the HTTP + join path is exercised without a migrated Postgres schema. The
-                // Postgres store's join query has dedicated integration coverage in
-                // PostgresContentPublicationStoreTests.
-                services.RemoveAll<IContentPublicationStore>();
-                services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
-                services.RemoveAll<IAuditLog>();
-                services.AddSingleton<IAuditLog>(_auditLog);
-            });
-    }
+        _fixture = host.Fixture;
+        _client = host.Client;
+        _auditLog = host.AuditLog;
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
+        // The host is shared; each case asserts on the audit events of its own requests.
+        _auditLog.Events.Clear();
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/content-versions")]
@@ -2205,7 +2182,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         };
     }
 
-    private sealed class CapturingAuditLog : IAuditLog
+    internal sealed class CapturingAuditLog : IAuditLog
     {
         public List<AuditEvent> Events { get; } = [];
 
