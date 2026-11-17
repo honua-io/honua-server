@@ -10,8 +10,8 @@ namespace Honua.Geoprocessing.UnitTests.Features.Geoprocessing.Release;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GpProcessReleaseLockTests
 {
-    // Verbatim copy of honua-release trunk release/gp-process-locks/buffer-features/75154d7a4ebd.json
-    // (honua-release#618). Its canonical digest, computed by the Python tool, is the file name.
+    // Verbatim copy of honua-release trunk release/gp-process-locks/buffer-features/75154d7a4ebd.json.
+    // Its canonical digest, computed by the Python tool, is the file name.
     private const string CommittedLock = """
         {
           "artifacts": [

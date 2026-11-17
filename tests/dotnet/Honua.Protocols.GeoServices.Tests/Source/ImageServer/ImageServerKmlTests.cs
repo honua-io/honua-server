@@ -86,7 +86,7 @@ public sealed class ImageServerKmlTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/kml/image.kmz");
 
-            // GeoServices convention (PA-070/PA-117): the transport is HTTP 200; the not-found
+            // GeoServices convention: the transport is HTTP 200; the not-found
             // code lives in the Esri error envelope. The unknown layer must NOT fabricate a KMZ.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Content.Headers.ContentType?.MediaType

@@ -171,7 +171,7 @@ public sealed class GeoServerImportServiceStyleApplyTests
         var converter = new StubSldConverter(layersJson: "[{\"id\":\"x\"}]");
 
         // Scope to a workspace that does not contain the fixture's styles
-        // (#1098 / PR #1100 cross-workspace guard).
+        // (cross-workspace guard).
         var request = NonDryRunRequest(fixture) with
         {
             WorkspaceNames = new[] { "unrelated-workspace" }

@@ -115,7 +115,7 @@ internal sealed partial class NetworkDatasetRegistry : INetworkDatasetResolver
             {
                 // A transient DB failure for a non-default dataset must not silently appear as
                 // 'dataset not found'. Rethrow so the caller can surface a retriable error
-                // instead of a permanent 404 (BH2-021).
+                // instead of a permanent 404.
                 Log.TransientRegistryFailure(_logger, datasetId, ex);
                 throw;
             }

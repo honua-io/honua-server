@@ -84,8 +84,8 @@ public sealed class PdalPointCloudRealCliTests
             decoded.MinY.Should().BeApproximately(SourcePoints.Min(p => p.Y), 1e-6);
             decoded.MaxY.Should().BeApproximately(SourcePoints.Max(p => p.Y), 1e-6);
 
-            // honua-server#4401 regression guard. Before the executor forwarded the source's
-            // scale, `pdal translate` fell back to its default 0.01 — 0.01 DEGREES here, roughly
+            // The executor must forward the source's
+            // scale so `pdal translate` does not fall back to its default 0.01 — 0.01 DEGREES here, roughly
             // 1.1 km of horizontal quantisation on a conversion whose entire contract is
             // "decompress verbatim". The coordinate assertions above are what catch it; this
             // pins the mechanism so the cause is obvious when they fail.

@@ -10,17 +10,18 @@ namespace Honua.Server.Features.Streaming;
 
 // Streams read changes from the change log, which the edit transaction wrote, on every task. After
 // a commit this wakes the local tail, so this task's subscribers do not wait for a notification,
-// and hands the change to the Kafka and NATS sinks.
+// and hands the change to the Kafka and NATS sinks. A host without the PostgreSQL system database
+// has neither a tail nor a change log, so it passes neither and the sinks receive the request.
 internal sealed partial class FeatureStreamPublisher(
-    IRealtimeWakeSignal wake,
-    PostgresFeatureChangeLog log,
+    IRealtimeWakeSignal? wake,
+    PostgresFeatureChangeLog? log,
     ILogger<FeatureStreamPublisher> logger,
     FeatureChangeEventSinkBroadcaster? sinkBroadcaster = null) : IFeatureChangeEventPublisher
 {
     public async Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        wake.Wake();
+        wake?.Wake();
         try
         {
             await DispatchToSinksAsync(request, cancellationToken).ConfigureAwait(false);
@@ -37,7 +38,7 @@ internal sealed partial class FeatureStreamPublisher(
     public async Task PublishStrictAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        wake.Wake();
+        wake?.Wake();
         await DispatchToSinksAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
@@ -51,7 +52,7 @@ internal sealed partial class FeatureStreamPublisher(
             return;
         }
 
-        var logged = string.IsNullOrWhiteSpace(request.EventId)
+        var logged = log is null || string.IsNullOrWhiteSpace(request.EventId)
             ? null
             : await log.ReadByEventIdAsync(request.EventId, cancellationToken).ConfigureAwait(false);
         sinkBroadcaster.Dispatch(logged ?? FromRequest(request), CancellationToken.None);

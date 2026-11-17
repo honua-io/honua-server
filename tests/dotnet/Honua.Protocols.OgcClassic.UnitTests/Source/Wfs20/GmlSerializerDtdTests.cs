@@ -13,7 +13,7 @@ public sealed class GmlSerializerDtdTests
     [UnitTest]
     public void SerializeGeometry_DtdDeclaration_ThrowsXmlException()
     {
-        // PA-107: a GML fragment with an embedded DTD declaration must not be processed —
+        // a GML fragment with an embedded DTD declaration must not be processed —
         // the explicit DtdProcessing.Prohibit setting should throw before parsing the body.
         var gmlWithDtd = """
             <!DOCTYPE geometry [<!ENTITY xxe "test">]>

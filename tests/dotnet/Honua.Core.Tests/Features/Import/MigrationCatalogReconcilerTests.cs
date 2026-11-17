@@ -9,7 +9,7 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
-public sealed class MigrationCatalogReconcilerTests
+public sealed partial class MigrationCatalogReconcilerTests
 {
     [Trait("Tier", "Fast")]
     [Theory]

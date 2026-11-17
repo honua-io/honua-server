@@ -406,7 +406,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         decision.Message.Should().Contain("error rate");
     }
 
-    // ---- health-gate boundary + anti-flap (#2161) ------------------------
+    // ---- health-gate boundary + anti-flap ------------------------
 
     [Fact]
     public void Evaluate_AtExactThreshold_DoesNotRollback()
@@ -584,7 +584,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     {
         // GP substrate deploys (telemetry.policy = gp-batch) are burstier, so with NO explicit
         // consecutive-breach param the gate defaults to the burst-tolerant streak (3) rather than
-        // the single-scrape default — one breaching scrape must NOT roll back (honua-server#2165).
+        // the single-scrape default — one breaching scrape must NOT roll back.
         var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
         {
             SampleCount = 50,
@@ -647,7 +647,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         decision!.RollbackRecommended.Should().BeTrue("an explicit threshold of 1 overrides the GP burst-tolerant default");
     }
 
-    // ---- synthetic /healthz/ready gate (#1849) ---------------------------
+    // ---- synthetic /healthz/ready gate ---------------------------
 
     [Fact]
     public async Task EvaluateAsync_HealthProbeUnhealthy_RecommendsRollback_WithoutQueryingMetrics()
@@ -798,7 +798,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
             NullLogger<DeployTelemetrySignalEvaluator>.Instance,
             probe);
 
-    // ---- invalid-policy bounded wait (#2161) -----------------------------
+    // ---- invalid-policy bounded wait -----------------------------
 
     [Fact]
     public async Task EvaluateAsync_InvalidPolicy_WithinGraceWindow_Waits()
@@ -853,7 +853,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         capturedQueries.Should().BeEmpty();
     }
 
-    // ---- missing/invalid evidence never satisfies a health requirement (#4617) --------------------
+    // ---- missing/invalid evidence never satisfies a health requirement --------------------
 
     [Fact]
     public void Evaluate_AbsentErrorRate_WithNoSampleFloorConfigured_WaitsRatherThanPassing()
@@ -910,7 +910,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         decision.Message.Should().Contain("error rate");
     }
 
-    // ---- bounded evidence-missing grace (#4617) ---------------------------
+    // ---- bounded evidence-missing grace ---------------------------
 
     [Fact]
     public async Task EvaluateAsync_MissingConnection_WithinEvidenceGrace_Waits()
@@ -937,7 +937,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     [Fact]
     public async Task EvaluateAsync_MissingConnection_PastEvidenceGrace_EscalatesToRollback()
     {
-        // Provider outages/misconfiguration must not park a deploy in Reconciling forever (#4617):
+        // Provider outages/misconfiguration must not park a deploy in Reconciling forever:
         // past warmup + the configured evidence grace window this escalates to rollback.
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(capturedQueries);
@@ -985,7 +985,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         decision.WaitForMoreTelemetry.Should().BeFalse();
     }
 
-    // ---- traffic-exposure anchored warmup (#4617) -------------------------
+    // ---- traffic-exposure anchored warmup -------------------------
 
     [Fact]
     public async Task EvaluateAsync_WarmupAnchorsOnTrafficExposedAt_NotOperationCreation()
@@ -1125,7 +1125,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
             healthProbe);
     }
 
-    // ---- Prometheus data-validity negatives (#4617) ------------------------
+    // ---- Prometheus data-validity negatives ------------------------
 
     [Fact]
     public async Task EvaluateAsync_PrometheusReturnsNaN_TreatsSignalAsAbsent_NotHealthy()
@@ -1230,7 +1230,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     [Fact]
     public async Task EvaluateAsync_PrometheusReturnsStaleSample_WithoutStalenessParameter_DefaultBoundTreatsAsAbsent()
     {
-        // Freshness is enforced by default (#4617): the provider's observation timestamp (2024-03-09)
+        // Freshness is enforced by default: the provider's observation timestamp
         // is far outside the 5-minute default bound, so the healthy-looking values are not evidence.
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(
@@ -1263,7 +1263,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     [InlineData("null")]
     public async Task EvaluateAsync_PrometheusSampleWithoutUsableTimestamp_TreatsAsAbsent(string timestampJson)
     {
-        // Missing freshness information is not assumed fresh (#4617).
+        // Missing freshness information is not assumed fresh.
         var capturedQueries = new ConcurrentQueue<string>();
         var response = $@"{{""status"":""success"",""data"":{{""resultType"":""vector"",""result"":[{{""metric"":{{}},""value"":[{timestampJson},""25""]}}]}}}}";
         var evaluator = CreateEvaluator(capturedQueries, responses: [response]);
@@ -1416,7 +1416,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         escalated.Message.Should().Contain("unavailable");
     }
 
-    // ---- pre-exposure deadline (#4617) -----------------------------------
+    // ---- pre-exposure deadline -----------------------------------
 
     [Fact]
     public async Task EvaluateAsync_SubmittedAndNotYetExposed_HoldsWithoutQuerying()
@@ -1465,7 +1465,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         capturedQueries.Should().BeEmpty();
     }
 
-    // ---- explicit health-only profile (#4617) ------------------------------
+    // ---- explicit health-only profile ------------------------------
 
     [Fact]
     public async Task EvaluateAsync_HealthOnlyProfile_PassesOnHealthyProbesWithoutAnyMetricsConnection()
@@ -1555,7 +1555,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         probe.Invocations.Should().Be(0, "an invalid policy is never evaluated as if it were health-only");
     }
 
-    // ---- staged candidate before cutover (#4617) ----------------------------
+    // ---- staged candidate before cutover ----------------------------
 
     private static Dictionary<string, string> StagedMetricsParameters(params (string Key, string Value)[] extra)
     {
@@ -1815,7 +1815,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
             CreateSuccessResponse(latencyP95)
         ];
 
-    // Samples are stamped "now" by default so the 5-minute freshness bound (#4617) accepts them; pass an
+    // Samples are stamped "now" by default so the 5-minute freshness bound accepts them; pass an
     // explicit observation time to exercise stale/future samples.
     private static string CreateSuccessResponse(string value, long? observedAtUnixSeconds = null)
         => $@"{{""status"":""success"",""data"":{{""resultType"":""vector"",""result"":[{{""metric"":{{}},""value"":[{(observedAtUnixSeconds ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds()).ToString(System.Globalization.CultureInfo.InvariantCulture)},""{value}""]}}]}}}}";

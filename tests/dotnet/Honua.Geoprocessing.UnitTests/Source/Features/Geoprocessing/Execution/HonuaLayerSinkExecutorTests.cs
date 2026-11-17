@@ -209,13 +209,12 @@ public sealed class HonuaLayerSinkExecutorTests
     [UnitTest]
     public async Task HonuaLayerSink_SpilledStreamReferenceInput_IsAcceptedLikeInlineInput()
     {
-        // server#4628: HonuaLayerSinkExecutor previously accepted only the inline
-        // data:application/geo+json;base64 URI, so a workflow's transform-to-sink success
-        // depended on whether the transform's output happened to cross
-        // FeatureStreamPublisher's inline threshold. A honua-feature-stream:v1 reference
-        // (the spilled shape) must load through identically.
-        // The destination is brand new (no catalog layer matches), so server#4651's
-        // write-destination gate requires an admin submitter before any load runs.
+        // A honua-feature-stream:v1 reference (the spilled shape) must load exactly like
+        // the inline data:application/geo+json;base64 URI, so a workflow's
+        // transform-to-sink success does not depend on whether the transform's output
+        // happens to cross FeatureStreamPublisher's inline threshold. The destination is
+        // brand new (no catalog layer matches), so the write-destination gate requires an
+        // admin submitter before any load runs.
         using var securityScope = BeginAdminSubmitterScope();
         var sink = new CapturingLayerSink();
         var executorOptions = Options();
@@ -273,7 +272,7 @@ public sealed class HonuaLayerSinkExecutorTests
     }
 
     // -------------------------------------------------------------------------
-    // #4625: destination authorization. sink.honua-layer accepted arbitrary
+    // Destination authorization. sink.honua-layer accepted arbitrary
     // caller-supplied schema/table text with no target-specific authorization —
     // generic Process.Execute permission says nothing about a specific destination.
     // -------------------------------------------------------------------------
@@ -282,7 +281,7 @@ public sealed class HonuaLayerSinkExecutorTests
     public async Task HonuaLayerSink_NoSubmitterSecurityContext_FailsClosed()
     {
         // No JobSecurityScope.Begin at all: mirrors source.honua-layer's fail-closed
-        // contract (honua-server#3068) — a job that cannot be constrained to a submitter
+        // contract — a job that cannot be constrained to a submitter
         // must be refused rather than writing under an unconstrained identity.
         var sink = new CapturingLayerSink();
         var executor = new HonuaLayerSinkExecutor(
@@ -302,8 +301,8 @@ public sealed class HonuaLayerSinkExecutorTests
     [UnitTest]
     public async Task HonuaLayerSink_NoAuthorizationScopeAvailable_FailsClosed()
     {
-        // No IServiceScopeFactory supplied (the pre-#4625 constructor shape): there is no
-        // way to evaluate anything, so this must deny rather than silently skip the check.
+        // No IServiceScopeFactory supplied: there is no way to evaluate anything, so this
+        // must deny rather than silently skip the check.
         using var securityScope = BeginAdminSubmitterScope();
         var sink = new CapturingLayerSink();
         var executor = new HonuaLayerSinkExecutor(Options(), NullLogger<HonuaLayerSinkExecutor>.Instance, sink);
@@ -324,8 +323,8 @@ public sealed class HonuaLayerSinkExecutorTests
     {
         // 'parcels' does not resolve to any existing catalog layer in the empty snapshot, so
         // this is a request to CREATE a brand-new table. An ordinary (non-admin) submitter
-        // must not be able to conjure a new destination into existence (#4625 AC: "Govern
-        // creation of new destinations separately").
+        // must not be able to conjure a new destination into existence: creation of new
+        // destinations is governed separately.
         using var securityScope = BeginSubmitterScope(role: "editor");
         var sink = new CapturingLayerSink();
         var executor = new HonuaLayerSinkExecutor(

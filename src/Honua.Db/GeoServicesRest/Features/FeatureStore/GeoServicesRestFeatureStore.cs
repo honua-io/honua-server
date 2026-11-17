@@ -98,7 +98,7 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
 
         // One span for the whole federated query, not one per page: the loop below can
         // issue up to MaxPageIterations outbound HTTP calls, and a child span per page
-        // would itself become a cardinality/performance problem (PA-108).
+        // would itself become a cardinality/performance problem.
         using var activity = _activitySource.StartActivity("honua.arcgisrest.query", ActivityKind.Client);
         activity?.SetTag("honua.arcgisrest.service_url", context.ServiceLocation.ServiceUrl);
         activity?.SetTag("honua.arcgisrest.layer_id", context.GeoServicesLayerId);
@@ -224,7 +224,7 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
         // Determine the total matching count first so paging does not depend on comparing
         // each page against the hardcoded DefaultPageSize sentinel — which breaks when the
         // upstream's maxRecordCount < DefaultPageSize and every page looks "short" even
-        // though more records remain (BH4-001).
+        // though more records remain.
         var totalCount = await CountAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         if (totalCount <= 0)
         {

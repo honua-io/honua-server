@@ -197,7 +197,7 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
     [InterfaceOperation(TestProtocols.Wps202, "Execute")]
     public async Task Execute_WithoutDurableJobStore_ProjectsCapabilityUnavailableReceiptIntoExceptionReport()
     {
-        // honua-release#202: the WPS surface must carry the same machine-readable receipt as the
+        // The WPS surface must carry the same machine-readable receipt as the
         // other job surfaces on a Redis-less install. OWS constrains the exceptionCode vocabulary
         // (and CITE checks it), so the code stays ServerBusy and the receipt rides additional
         // ows:ExceptionText lines using the stable "key: value" convention.

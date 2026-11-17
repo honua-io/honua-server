@@ -178,9 +178,8 @@ public static class FeatureCatalog
 
         // Geocoding — Enterprise. geocoding.forward and geocoding.reverse moved to
         // CapabilityKeyCatalog.CommunityKeys — the demo/adoption showcase path is
-        // Community; batch geocoding is the volume/enterprise workload that stays gated. Both
-        // shipped Pro in the catalog but unenforced over HTTP before this change (only the MCP
-        // honua_geocode_address tool checked geocoding.forward); see ADR-0024.
+        // Community; batch geocoding is the volume/enterprise workload that stays gated over
+        // HTTP and MCP; see ADR-0024.
         new(BatchGeocodingKey, "Batch Geocoding", Categories.Geocoding,
             HonuaEdition.Enterprise, "Geocode multiple addresses in a single request."),
 

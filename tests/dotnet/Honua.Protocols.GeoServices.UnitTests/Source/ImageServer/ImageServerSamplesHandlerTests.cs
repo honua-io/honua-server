@@ -76,7 +76,7 @@ public class ImageServerSamplesHandlerTests
         var result = await handler.GetSamplesAsync(context, 1, values, CancellationToken.None);
 
         // No servable Zarr store for the layer: honest NotImplemented (501) rather than sampling the
-        // collapsed raster. GeoServices passes 501 through as body error.code 501 (#2795).
+        // collapsed raster. GeoServices passes 501 through as body error.code 501.
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
         await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(default, default, default, default);
     }

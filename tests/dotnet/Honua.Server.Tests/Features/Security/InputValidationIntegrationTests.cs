@@ -199,10 +199,6 @@ public sealed class InputValidationIntegrationTests : IClassFixture<InputValidat
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithSqlCommentTokensInsideStringLiteral_IsAllowed()
     {
-        // Over-block regression (bug hunt): "--", "/*", "*/" inside a balanced
-        // quoted literal are data (bound as parameters), not SQL comments, and must
-        // not be rejected. Real comment injection OUTSIDE a literal is still blocked
-        // (see Query_WithSqlCommentInjectionOutsideLiteral_ReturnsBadRequest).
         foreach (var where in new[]
         {
             "name = 'audit -- note'",
@@ -315,7 +311,7 @@ public sealed class InputValidationIntegrationTests : IClassFixture<InputValidat
         response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
     }
 
-    // BUG B regression: SQL-injection heuristics must NOT run over feature-edit attribute
+    // SQL-injection heuristics must NOT run over feature-edit attribute
     // DATA values. Values are bound as SQL parameters, so "--", "/* */", ";", and quotes
     // are harmless and must round-trip rather than being rejected as injection attempts.
     [IntegrationTest]
@@ -323,7 +319,7 @@ public sealed class InputValidationIntegrationTests : IClassFixture<InputValidat
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_FormUrlEncoded_AttributeValuesWithSqlMetacharacters_AreNotRejected()
     {
-        // Attribute values that previously tripped the SQL-injection content filter.
+        // Legitimate attribute values must pass SQL-injection content validation.
         const string addsJson =
             "[{\"geometry\":{\"x\":-122.4194,\"y\":37.7749}," +
             "\"attributes\":{\"name\":\"Paris--London\",\"description\":\"open 10--20 units; note /* internal */ ok 'quoted'\"}}]";
@@ -354,7 +350,7 @@ public sealed class InputValidationIntegrationTests : IClassFixture<InputValidat
         addResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
     }
 
-    // BUG B regression (protection intact): a malicious where clause submitted via a
+    // A malicious where clause submitted via a
     // form-urlencoded POST must STILL be rejected. The edit-payload exemption must not
     // weaken where/SQL-context injection protection.
     [IntegrationTest]

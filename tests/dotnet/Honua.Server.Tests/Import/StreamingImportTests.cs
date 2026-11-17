@@ -231,7 +231,7 @@ public partial class StreamingImportTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_EsriJsonFeatureSet_AutoDetectsAndImports()
     {
-        // Regression: honua-server#2352 — Esri JSON must auto-detect and import (not be silently
+        // Esri JSON must auto-detect and import (not be silently
         // parsed as GeoJSON). Mirrors the e2e format-harness sample.esrijson feature set.
         const string esriJson = """
             {"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"features":[
@@ -262,7 +262,7 @@ public partial class StreamingImportTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_WkbPayload_AutoDetectsAndImports()
     {
-        // Regression: honua-server#2353 — a WKB payload (concatenated WKB points) must auto-detect
+        // A WKB payload (concatenated WKB points) must auto-detect
         // and import rather than failing with "Multipart import request is invalid."
         using var buffer = new MemoryStream();
         WriteWkbPoint(buffer, -156.30, 20.80);
@@ -293,7 +293,7 @@ public partial class StreamingImportTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_GpxWithGdalExtensions_ImportsWaypoints()
     {
-        // Regression: honua-server#2354 — GPX waypoints whose attributes live under <extensions>
+        // GPX waypoints whose attributes live under <extensions>
         // (GDAL GPX_USE_EXTENSIONS output) must import instead of yielding zero features.
         const string gpx = """
             <?xml version="1.0"?>
@@ -363,7 +363,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
 
-        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // The decisive content of each delimiter fixture is a QUOTED cell that contains the
         // delimiter. Asserting only the feature count let a reader that split that cell — and then
         // produced three rows anyway — pass. Read the attribute back instead.
         var rows = await ReadImportedRowsAsync("csv_import_table");
@@ -391,7 +391,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
 
-        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // The decisive content of each delimiter fixture is a QUOTED cell that contains the
         // delimiter. Asserting only the feature count let a reader that split that cell — and then
         // produced three rows anyway — pass. Read the attribute back instead.
         var rows = await ReadImportedRowsAsync("csv_semicolon_import_table");
@@ -419,7 +419,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
 
-        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // The decisive content of each delimiter fixture is a QUOTED cell that contains the
         // delimiter. Asserting only the feature count let a reader that split that cell — and then
         // produced three rows anyway — pass. Read the attribute back instead.
         var rows = await ReadImportedRowsAsync("csv_tab_import_table");
@@ -447,7 +447,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
 
-        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // The decisive content of each delimiter fixture is a QUOTED cell that contains the
         // delimiter. Asserting only the feature count let a reader that split that cell — and then
         // produced three rows anyway — pass. Read the attribute back instead.
         var rows = await ReadImportedRowsAsync("csv_pipe_import_table");
@@ -504,7 +504,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("kml_import_table");
         responseContent.Should().Contain("Kml");
 
-        // #4419: without this read-back an importer that dropped the second placemark, or that
+        // Without this read-back an importer that dropped the second placemark, or that
         // read KML's lon,lat pair as lat,lon, passed this test. Assert the envelope too, so a
         // failed or empty import names its own reason instead of surfacing as an empty table.
         var result = DeserializeImportResult(responseContent);
@@ -1059,7 +1059,7 @@ public partial class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("flatgeobuf_import_test");
         responseContent.Should().Contain("\"success\":true");
 
-        // #4419: the sibling GeoJSON test already reads its table back; this one echoed only.
+        // The sibling GeoJSON test already reads its table back; this one echoed only.
         var rows = await ReadImportedRowsAsync("flatgeobuf_import_test");
         rows.Should().ContainSingle();
         rows[0].Name.Should().Be("FGB Import Test");

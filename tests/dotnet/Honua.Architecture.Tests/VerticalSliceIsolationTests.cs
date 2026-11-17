@@ -21,15 +21,15 @@ public sealed class VerticalSliceIsolationTests
         "CloudDemo",
         "Collaboration",
         "Console",
-        "DataEnrichment", // Data-enrichment API slice (honua-server#374): curated catalog facade over the shared spatial-join pipeline.
+        "DataEnrichment", // Data-enrichment API slice: curated catalog facade over the shared spatial-join pipeline.
         "Forms",
         "Geocoding",
         "Geoprocessing",
         "Grounding",
-        "Identity", // Enterprise identity slice (honua-server#508/#510): SCIM 2.0 provisioning + SAML 2.0 SP SSO bridge over the shared user/role model.
+        "Identity", // Enterprise identity slice: SCIM 2.0 provisioning + SAML 2.0 SP SSO bridge over the shared user/role model.
         "Orchestration",
         "PackageReview",
-        "Plugins", // Plugin/extension SDK host slice (honua-server#1562): maps plugin-contributed ICustomEndpoint routes.
+        "Plugins", // Plugin/extension SDK host slice: maps plugin-contributed ICustomEndpoint routes.
         "Portal", // Persistent Portal sharing and request-scoped audience hydration.
         "Protocols",
         "Mobile", // Parent container for mobile sub-feature slices (e.g. FieldCollection sync)
@@ -40,7 +40,7 @@ public sealed class VerticalSliceIsolationTests
         "Migration",    // Import-split: ArcGIS/legacy migration slice.
         "RasterImport", // Import-split: raster ingest slice.
         "ControlPlane", // Relocated out of the Infrastructure grab-bag (audit-A1).
-        "Provisioner",  // Per-area geocoder/router build-job slice (honua-server#1752): service/job-only,
+        "Provisioner",  // Per-area geocoder/router build-job slice: service/job-only,
                         // no HTTP surface — rides the GP-on-Batch dispatch path. Satisfies the vertical-slice
                         // rule via its in-folder ProvisionerServiceCollectionExtensions.cs (mirrors ControlPlane).
         "FileStorage",
@@ -58,8 +58,8 @@ public sealed class VerticalSliceIsolationTests
         "Styling", // Relocated out of the Infrastructure grab-bag into its own top-level slice.
         "WorkflowPackages",
         "Operations", // Honua Operations Toolset slice: descriptor/executor split + policy-gated dispatcher over composable operations.
-        "Temporal", // Temporal data history slice (honua-server#1166): capability discovery + as-of read.
-        "FieldWorkflows", // Back-office field workflow slice (honua-server#1158/#1159/#1160): review/QA + exports over form submissions.
+        "Temporal", // Temporal data history slice: capability discovery + as-of read.
+        "FieldWorkflows", // Back-office field workflow slice: review/QA + exports over form submissions.
         "AgentWorkspace" // Owner-scoped native local process workspaces: identity store + sandbox gateway.
     };
 
@@ -104,7 +104,7 @@ public sealed class VerticalSliceIsolationTests
             "Caching",          // Lives in Honua.Hosting under the preserved namespace.
             "Collaboration",    // Hosting-resident FeatureEditLockEnforcement: the single seam
                                 // every feature-write surface consults before mutating a feature
-                                // so a collaborative-editing lease is binding (#4402). Shared by
+                                // so a collaborative-editing lease is binding. Shared by
                                 // three protocol assemblies (GeoServices FeatureServer, OGC API
                                 // Features, OData), so it cannot live in any one of them; the
                                 // /feature-locks endpoints stay in

@@ -335,7 +335,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 var nextLink = ReadLinks(root)
                     .FirstOrDefault(static link => IsRel(link, "next"));
 
-                nextUri = nextLink != null ? ResolveUri(nextLink.Href, nextUri) : null;
+                nextUri = nextLink != null ? MigrationSourceUrls.ResolveUri(nextLink.Href, nextUri) : null;
             }
 
             var featureCountParity = BuildFeatureCountParity(
@@ -718,7 +718,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
 
     private async Task<Uri> ResolveItemsUriAsync(Uri serviceUri, string collectionId, CancellationToken cancellationToken)
     {
-        var collectionUri = AppendPath(serviceUri, $"collections/{Uri.EscapeDataString(collectionId)}");
+        var collectionUri = MigrationSourceUrls.AppendPath(serviceUri, $"collections/{Uri.EscapeDataString(collectionId)}");
 
         try
         {
@@ -726,7 +726,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             var links = ReadLinks(document.RootElement);
             var itemsUri = links
                 .Where(static link => IsRel(link, "items") || LinkLooksLikeItems(link))
-                .Select(link => ResolveUri(link.Href, collectionUri))
+                .Select(link => MigrationSourceUrls.ResolveUri(link.Href, collectionUri))
                 .FirstOrDefault(static uri => uri != null);
 
             if (itemsUri != null)
@@ -743,7 +743,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             // Swallowed after logging.
         }
 
-        return AppendPath(serviceUri, $"collections/{Uri.EscapeDataString(collectionId)}/items");
+        return MigrationSourceUrls.AppendPath(serviceUri, $"collections/{Uri.EscapeDataString(collectionId)}/items");
     }
 
     private bool LogCollectionMetadataUnavailable(string collectionId, Uri collectionUri, Exception exception)
@@ -906,26 +906,6 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             ? value.GetString()
             : null;
 
-    private static Uri? ResolveUri(string href, Uri baseUri)
-    {
-        if (string.IsNullOrWhiteSpace(href))
-        {
-            return null;
-        }
-
-        return Uri.TryCreate(href, UriKind.Absolute, out var absolute)
-            ? absolute
-            : Uri.TryCreate(MigrationSourceUrls.EnsureDirectoryBase(baseUri), href, out var relative)
-                ? relative
-                : null;
-    }
-
-    private static Uri AppendPath(Uri baseUri, string relativePath)
-    {
-        var root = MigrationSourceUrls.EnsureDirectoryBase(baseUri);
-        return new Uri(root, relativePath.TrimStart('/'));
-    }
-
     private static Uri AddOrReplaceQueryParameter(Uri uri, string name, string value)
     {
         var parameters = uri.Query.TrimStart('?')
@@ -947,7 +927,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         string collectionId,
         CancellationToken cancellationToken)
     {
-        var schemaUri = AppendPath(serviceUri, $"collections/{Uri.EscapeDataString(collectionId)}/schemas/feature");
+        var schemaUri = MigrationSourceUrls.AppendPath(serviceUri, $"collections/{Uri.EscapeDataString(collectionId)}/schemas/feature");
 
         try
         {

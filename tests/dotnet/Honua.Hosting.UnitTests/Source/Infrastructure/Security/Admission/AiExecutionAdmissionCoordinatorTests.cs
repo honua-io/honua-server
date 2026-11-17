@@ -6,8 +6,10 @@ using Honua.Core.Features.Security.Admission;
 using Honua.Infrastructure.Security.Admission;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Security.Admission;
 
@@ -114,11 +116,65 @@ public sealed class AiExecutionAdmissionCoordinatorTests
         store.Acquires.Should().Be(1, "releasing capacity never refunds or reacquires an attempt");
     }
 
+    [UnitTest]
+    public async Task AcquireAsync_MonthlyActorDenial_LogsBudgetCodeActorDigestAndUtcMonth()
+    {
+        var store = new Store { Code = "financial_monthly_actor_exceeded", IncludeReservation = false };
+        using var services = Services(store);
+        var logger = EnabledLogger();
+        var admission = Coordinator(services, logger, new FixedClock(new DateTimeOffset(2026, 11, 30, 23, 59, 0, TimeSpan.Zero)));
+
+        await FluentActions.Awaiting(() => admission.AcquireAsync(Context, default)).Should().ThrowAsync<AiAdmissionException>();
+
+        var entry = Entries(logger).Should().ContainSingle().Subject;
+        entry.EventId.Should().Be(9542);
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.Values.Should().Contain(new KeyValuePair<string, object?>("AdmissionCode", "financial_monthly_actor_exceeded"))
+            .And.Contain(new KeyValuePair<string, object?>("ActorKey", Context.ActorKey))
+            .And.Contain(new KeyValuePair<string, object?>("UtcMonth", "2026-11"));
+        entry.Values.Select(value => value.Value?.ToString()).Should().NotContain("apikey:api-key:actor", "only the actor digest is logged");
+    }
+
+    [UnitTest]
+    public async Task AcquireAsync_NonBudgetDenial_IsNotLoggedAsBudget()
+    {
+        var store = new Store { Code = "concurrency_exceeded", IncludeReservation = false };
+        using var services = Services(store);
+        var logger = EnabledLogger();
+
+        await FluentActions.Awaiting(() => Coordinator(services, logger, TimeProvider.System).AcquireAsync(Context, default))
+            .Should().ThrowAsync<AiAdmissionException>();
+
+        Entries(logger).Should().BeEmpty();
+    }
+
     private static ServiceProvider Services(Store store) => new ServiceCollection()
         .AddScoped<IAiExecutionAdmissionStore>(_ => store).BuildServiceProvider();
-    private static AiExecutionAdmissionCoordinator Coordinator(IServiceProvider services) => new(
+    private static AiExecutionAdmissionCoordinator Coordinator(IServiceProvider services)
+        => Coordinator(services, NullLogger<AiExecutionAdmissionCoordinator>.Instance, TimeProvider.System);
+    private static AiExecutionAdmissionCoordinator Coordinator(
+        IServiceProvider services, ILogger<AiExecutionAdmissionCoordinator> logger, TimeProvider clock) => new(
         services.GetRequiredService<IServiceScopeFactory>(), Options.Create(new AiExecutionAdmissionOptions { DeploymentId = "deployment" }),
-        TimeProvider.System, NullLogger<AiExecutionAdmissionCoordinator>.Instance);
+        clock, logger);
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private static ILogger<AiExecutionAdmissionCoordinator> EnabledLogger()
+    {
+        var logger = Substitute.For<ILogger<AiExecutionAdmissionCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        return logger;
+    }
+
+    private static IReadOnlyList<LogEntry> Entries(ILogger logger) => [.. logger.ReceivedCalls()
+        .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+        .Select(call => call.GetArguments())
+        .Select(args => new LogEntry((LogLevel)args[0]!, ((EventId)args[1]!).Id, (IReadOnlyList<KeyValuePair<string, object?>>)args[2]!))];
+
+    private sealed record LogEntry(LogLevel Level, int EventId, IReadOnlyList<KeyValuePair<string, object?>> Values);
 
     private sealed class Store : IAiExecutionAdmissionStore
     {

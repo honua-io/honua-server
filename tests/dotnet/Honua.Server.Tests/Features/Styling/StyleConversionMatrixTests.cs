@@ -180,13 +180,8 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_PointWithStrokeOpacity_AppliesAlphaToOutlineColor()
     {
-        // Regression: SLD import emits circle-stroke-opacity for point Marks as a
-        // separate paint property. ResolveOutline previously read circle-stroke-color
-        // and circle-stroke-width but ignored circle-stroke-opacity, producing an
-        // opaque outline in regenerated GeoServices drawingInfo even though the
-        // stored MapLibre style preserved the alpha. The polygon outline branch
-        // already folded line-opacity into the color; the point branch must do the
-        // same for circle-stroke-opacity.
+        // Preserve SLD point Stroke alpha through circle-stroke-opacity. GeoServices
+        // drawingInfo outline conversion must fold it into color, as for polygon line-opacity.
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string mapLibreJson = """
         {
@@ -456,7 +451,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_CustomGuardedCaseWrappedStep_FallsBackToSimpleRenderer()
     {
-        // Regression: arbitrary case predicates must not be unwrapped into classBreaks,
+        // Arbitrary case predicates must not be unwrapped into classBreaks,
         // or the converted renderer would silently drop the outer condition.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
@@ -516,7 +511,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeometryCollection_SuggestionGeneratedDefaultSymbol_EmitsFillSymbol()
     {
-        // Regression: GeometryCollection must produce esriSFS (fill) symbols,
+        // GeometryCollection must produce esriSFS (fill) symbols,
         // not fall through to the esriSLS (line) default branch.
         var layer = new StyleLayerDescriptor(1, "mixed", MetadataV2GeometryType.GeometryCollection);
 
@@ -576,7 +571,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeometryCollection_UniqueValueSuggestion_SurvivesStyleUpdateRoundTrip()
     {
-        // Regression: GeometryCollection suggestions must not be short-circuited to
+        // GeometryCollection suggestions must not be short-circuited to
         // defaults when applied through the PUT style → converter pipeline.
         var layer = new StyleLayerDescriptor(1, "mixed", MetadataV2GeometryType.GeometryCollection);
 
@@ -642,7 +637,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeometryCollection_ClassBreaksSuggestion_SurvivesStyleUpdateRoundTrip()
     {
-        // Regression: GeometryCollection class-break suggestions must round-trip
+        // GeometryCollection class-break suggestions must round-trip
         // through the style update converters without being lost.
         var layer = new StyleLayerDescriptor(1, "mixed", MetadataV2GeometryType.GeometryCollection);
 
@@ -1029,10 +1024,8 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_PictureMarkerClassBreaks_AppliesNumericGuardAndToNumberCoercion()
     {
-        // Regression: picture-marker classBreaks used to emit
-        // ["step", ["get", field], baseId, ...] directly, skipping the numeric
-        // guard and to-number coercion that the color classBreaks path uses.
-        // Now both paths share the same documented contract.
+        // Picture-marker classBreaks share the numeric guard and to-number coercion
+        // contract of color classBreaks.
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
@@ -1213,7 +1206,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GenerateMapLibreStyle_ClassBreaks_GuardsNullsWithCaseHas()
     {
-        // Regression: to-number(null) → 0 silently routes features with a
+        // To-number(null) → 0 silently routes features with a
         // missing/null classification field into the first color bucket.
         // The step expression must be wrapped in ["case", ["has", field], step, fallback].
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
@@ -1287,7 +1280,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeometryOnlySuggestion_LineLayer_MapLibreAndDrawingInfoAreConsistent()
     {
-        // Regression: geometry-only suggestion for line layers must return
+        // Geometry-only suggestion for line layers must return
         // equivalent MapLibre and drawingInfo payloads — no zoom-dependent
         // line-width in MapLibre when GeoServices can only express a static width.
         var layer = new StyleLayerDescriptor(1, "roads", MetadataV2GeometryType.LineString);
@@ -1321,7 +1314,7 @@ public class StyleConversionMatrixTests
     [InlineData(MetadataV2GeometryType.Polygon)]
     public void UniqueValueSuggestion_FallbackColor_MatchesBetweenFormats(MetadataV2GeometryType geometryType)
     {
-        // Regression: the MapLibre match expression fallback (#CCCCCC) must match
+        // The MapLibre match expression fallback (#CCCCCC) must match
         // the GeoServices defaultSymbol color so unmatched features render identically.
         var layer = new StyleLayerDescriptor(1, "test", geometryType);
 
@@ -1407,7 +1400,7 @@ public class StyleConversionMatrixTests
     [InlineData("unknown")]
     public void ServerEvaluator_ClassBreaks_NonCastableText_RendersFallbackColor(string dirtyValue)
     {
-        // Regression: features whose numeric-classified field contains non-castable
+        // Features whose numeric-classified field contains non-castable
         // text (e.g. "N/A", "") must render with the fallback color, NOT the first
         // class color.  The typeof guard prevents to-number from coercing to 0.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
@@ -1472,10 +1465,8 @@ public class StyleConversionMatrixTests
     [Fact]
     public void ServerEvaluator_ClassBreaks_NullValue_RendersFallbackColor()
     {
-        // Regression: a feature whose classified field key exists but has a null value
-        // must render with the fallback color.  typeof(null) → "null" ≠ "number", so
-        // the guard rejects it.  Before the fix, the guard used ["!=", typeof, "string"]
-        // which let null through because "null" ≠ "string" was true.
+        // A null classified field renders with the fallback color: typeof(null) is null,
+        // so the number-only guard must reject it.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
@@ -1603,7 +1594,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_CaseWrappedStepWithFallback_EmitsDefaultSymbol()
     {
-        // Regression: when the MapLibre style has a ["case", guard, step, "#CCCCCC"]
+        // When the MapLibre style has a ["case", guard, step, "#CCCCCC"]
         // expression, the GeoServices classBreaks renderer must include a defaultSymbol
         // whose color matches the case fallback.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
@@ -1640,7 +1631,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_ClassBreaksWithDefaultSymbol_UsesFallbackColor()
     {
-        // Regression: when a classBreaks renderer includes defaultSymbol, the
+        // When a classBreaks renderer includes defaultSymbol, the
         // MapLibre case fallback must use its color, not the first class color.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
@@ -1799,7 +1790,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void ServerEvaluator_UniqueValue_NullValue_RendersFallbackColor()
     {
-        // Regression: a feature whose classified field key exists but has a null value
+        // A feature whose classified field key exists but has a null value
         // must render with the fallback color, not match an empty-string category.
         // to-string(null) → "" would match a "" stop without the non-null guard.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
@@ -1871,7 +1862,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_UniqueValue_EmitsCaseNullGuard()
     {
-        // Regression: converted unique-value renderers must wrap the match expression
+        // Converted unique-value renderers must wrap the match expression
         // in a case/non-null guard, matching the class-breaks pattern.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
@@ -1906,7 +1897,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_CaseWrappedMatchWithFallback_EmitsDefaultSymbol()
     {
-        // Regression: when the MapLibre style has a ["case", guard, match, fallback]
+        // When the MapLibre style has a ["case", guard, match, fallback]
         // expression, the GeoServices uniqueValue renderer must include a defaultSymbol
         // whose color matches the case fallback.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
@@ -1943,7 +1934,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_CustomGuardedCaseWrappedMatch_FallsBackToSimpleRenderer()
     {
-        // Regression: arbitrary case predicates must not be unwrapped into uniqueValue,
+        // Arbitrary case predicates must not be unwrapped into uniqueValue,
         // or the converted renderer would silently drop the outer condition.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
@@ -2011,13 +2002,6 @@ public class StyleConversionMatrixTests
     [InlineData("1.5", "#CCCCCC")]   // string "1.5" → typeof "string" → guard rejects → fallback
     public void ServerEvaluator_ClassBreaks_StringTypedNumericValue_RendersFallbackColor(string stringValue, string expectedColor)
     {
-        // Regression for review finding: JSONB fields that store numeric values as
-        // strings (e.g. {"pop": "42"} not {"pop": 42}) have typeof == "string" on
-        // the tile.  The numeric guard (typeof == "number") must reject them so they
-        // render with the fallback color.  Profiling must likewise only classify
-        // native JSONB numbers, not numeric-looking strings — so this scenario
-        // should never arise for correctly-typed data.  This test documents the
-        // server evaluator's behavior for the edge case of mistyped JSONB data.
         var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion

@@ -197,7 +197,7 @@ public sealed partial class LayerPublishingIntegrationTests
         });
         _layerId = published.StorageLayerId;
         // Source publications advertise Query and Extract. Attachment writes require the
-        // declared Create/Update/Delete capabilities (#6135).
+        // declared Create/Update/Delete capabilities.
         _fixture.EnableV2ServiceEditingCapabilities(
             _serviceName,
             ["Query", "Extract", "Create", "Update", "Delete"]);
