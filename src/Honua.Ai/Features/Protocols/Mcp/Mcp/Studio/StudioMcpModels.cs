@@ -498,6 +498,9 @@ internal sealed class McpStudioProposePublicationArgument
 
     [JsonPropertyName("note")]
     public string? Note { get; set; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; set; }
 }
 
 internal sealed class McpStudioProposePublicationOutput

@@ -6,6 +6,7 @@ namespace Honua.Server.Features.Identity.Scim;
 public sealed class ScimProvisioningOptions
 {
     public const string SectionName = "Scim";
+    internal const int MinimumBearerTokenLength = 32;
 
     // An empty token rejects every request, so provisioning has no anonymous access.
     public string? BearerToken { get; set; }

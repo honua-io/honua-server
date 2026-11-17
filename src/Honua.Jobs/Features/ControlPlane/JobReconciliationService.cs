@@ -229,7 +229,7 @@ internal sealed partial class JobReconciliationService(
 
         if (ExecutionJobCancellationHelper.RequiresCommitRecovery(current!))
         {
-            return await RequeueImportRecoveryAsync(current!, freshNow, cancellationToken).ConfigureAwait(false);
+            return await RequeueLostImportRecoveryAsync(current!, freshNow, cancellationToken).ConfigureAwait(false);
         }
 
         // If cancellation was durably requested before the heartbeat expired,
@@ -297,11 +297,19 @@ internal sealed partial class JobReconciliationService(
             // the stale-claim reconciler will repair the queue state.
             cancellationTokens.Revoke(preRetry.OperationId, snapshot.ClaimedBy!);
 
-            await jobQueue.RequeueAsync(
-                preRetry.OperationId,
-                preRetry.Priority,
-                delay > TimeSpan.Zero ? delay : null,
-                cancellationToken).ConfigureAwait(false);
+            // The store transition committed, so the lost attempt is recorded even if the queue write fails.
+            try
+            {
+                await jobQueue.RequeueAsync(
+                    preRetry.OperationId,
+                    preRetry.Priority,
+                    delay > TimeSpan.Zero ? delay : null,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                await RecordLostAttemptAsync(preRetry, now, retryPolicy.MaxAttempts).ConfigureAwait(false);
+            }
         }
         else
         {
@@ -357,6 +365,8 @@ internal sealed partial class JobReconciliationService(
             {
                 Log.QueueRemovalFailed(logger, preFail.OperationId, ex);
             }
+
+            await RecordLostAttemptAsync(preFail, now, retryPolicy.MaxAttempts).ConfigureAwait(false);
 
             if (logStore != null)
             {
@@ -511,6 +521,9 @@ internal sealed partial class JobReconciliationService(
             Log.QueueRemovalFailed(logger, job.OperationId, ex);
         }
 
+        // Only a heartbeat expiry reaches this path: the running attempt was lost with its worker.
+        await RecordLostAttemptAsync(job, now, (job.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts).ConfigureAwait(false);
+
         if (logStore != null)
         {
             try
@@ -576,5 +589,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9074, LogLevel.Warning, "Log retention set failed for terminal job {OperationId}; execution logs may expire early")]
         public static partial void LogRetentionFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9079, LogLevel.Warning, "Lost-attempt event could not be written for job {OperationId}; the attempt history omits it")]
+        public static partial void LostAttemptLogFailed(ILogger logger, string operationId, Exception exception);
     }
 }

@@ -214,6 +214,7 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         var projectedFields = new List<string>(requestedOutFields.Length);
+        var presencePreservingFields = new List<string>(requestedOutFields.Length);
         var seenFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var fieldName in requestedOutFields)
@@ -237,7 +238,9 @@ internal sealed partial class FeatureQueryBuilder
             var isDistinctObjectId = query.Distinct &&
                 (fieldName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase)
                  || fieldName.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase));
-            if ((!DatabaseSchema.CanUseJsonPath(fieldName) && !isDistinctObjectId) || !seenFields.Add(fieldName))
+            // A stored id attribute is independent of the physical objectid column.
+            var isStoredId = fieldName.Equals(DatabaseSchema.IdColumn, StringComparison.OrdinalIgnoreCase);
+            if ((!DatabaseSchema.CanUseJsonPath(fieldName) && !isDistinctObjectId && !isStoredId) || !seenFields.Add(fieldName))
             {
                 continue;
             }
@@ -254,15 +257,37 @@ internal sealed partial class FeatureQueryBuilder
             var valueExpression = isDistinctObjectId
                 ? DatabaseSchema.ObjectIdColumn
                 : $"{DatabaseSchema.AttributesColumn} -> ${fieldParamIndex}::text";
-            projectedFields.Add($"${fieldParamIndex}::text, {valueExpression}");
+            if (!query.Distinct || isStoredId)
+            {
+                // An absent key must remain absent so serializers can fall back to the
+                // physical identifier; an explicitly stored JSON null still wins.
+                presencePreservingFields.Add($"CASE WHEN {DatabaseSchema.AttributesColumn} ? ${fieldParamIndex}::text " +
+                    $"THEN jsonb_build_object(${fieldParamIndex}::text, {valueExpression}) ELSE '{{}}'::jsonb END");
+            }
+            else
+            {
+                projectedFields.Add($"${fieldParamIndex}::text, {valueExpression}");
+            }
         }
 
-        if (projectedFields.Count == 0)
+        if (projectedFields.Count == 0 && presencePreservingFields.Count == 0)
         {
             return "NULL";
         }
 
-        return $"jsonb_build_object({string.Join(", ", projectedFields)})::text";
+        if (projectedFields.Count > 0)
+        {
+            // DISTINCT retains its existing missing/null grouping semantics.
+            var distinctProjection = $"jsonb_build_object({string.Join(", ", projectedFields)})";
+            if (presencePreservingFields.Count == 0)
+            {
+                return $"{distinctProjection}::text";
+            }
+
+            presencePreservingFields.Insert(0, distinctProjection);
+        }
+
+        return $"({string.Join(" || ", presencePreservingFields)})::text";
     }
 
     private static HashSet<string> ResolveMaskedFields(FeatureQuery query)

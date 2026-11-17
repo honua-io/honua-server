@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
@@ -31,6 +32,7 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
 
     private readonly TransitionClock _clock = new();
     private readonly IAdminApiKeyStore _store = Substitute.For<IAdminApiKeyStore>();
+    private readonly IConnectionSecretResolver _secretResolver = Substitute.For<IConnectionSecretResolver>();
     private readonly AuthenticationAttemptGate _gate;
 
     public ApiKeyAuthenticationFailureLimitTests()
@@ -82,6 +84,37 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
         var results = await Task.WhenAll(inFlight);
 
         results.Should().AllSatisfy(result => result.Result.Succeeded.Should().BeTrue());
+    }
+
+    [UnitTest]
+    public async Task AuthenticateAsync_ConcurrentDistinctWrongKeys_AdmitsOnlyTheThresholdToPasswordComparison()
+    {
+        var release = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _secretResolver.CanResolveSecretAsync(AdminPassword, Arg.Any<CancellationToken>()).Returns(true);
+        _secretResolver.ResolveConnectionStringAsync(AdminPassword, Arg.Any<CancellationToken>()).Returns(_ => release.Task);
+
+        var inFlight = Enumerable.Range(0, Threshold + 8).Select(index => AuthenticateAsync("wrong-key-" + index)).ToArray();
+        try
+        {
+            _secretResolver.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IConnectionSecretResolver.ResolveConnectionStringAsync))
+                .Should().Be(Threshold);
+        }
+        finally
+        {
+            release.SetResult(AdminPassword);
+        }
+
+        var results = await Task.WhenAll(inFlight);
+        results.Should().AllSatisfy(result => result.Result.Succeeded.Should().BeFalse());
+        foreach (var result in results)
+        {
+            await result.Handler.ChallengeAsync(new AuthenticationProperties());
+        }
+
+        results.Count(result => result.Context.Response.StatusCode == StatusCodes.Status429TooManyRequests).Should().Be(8);
+        _store.ClearReceivedCalls();
+        (await AuthenticateAsync(AdminPassword)).Result.Succeeded.Should().BeFalse();
+        _store.ReceivedCalls().Should().BeEmpty();
     }
 
     [UnitTest]
@@ -200,6 +233,7 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
             EnvironmentName = "Test",
             EnableBasicAuthCompatibility = true,
         }),
+        secretResolver: _secretResolver,
         adminApiKeyStore: _store)
     { AttemptGate = _gate };
 

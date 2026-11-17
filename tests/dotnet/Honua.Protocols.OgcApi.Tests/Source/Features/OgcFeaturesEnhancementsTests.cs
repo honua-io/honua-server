@@ -12,23 +12,23 @@ using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.Core.Features.Licensing.Domain;
-using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]
-public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
+public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime, IClassFixture<OgcFeaturesEnhancementsFixture>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _sharedFixture;
+    private WebAppFixture? _privateFixture;
+    private WebAppFixture _fixture => _privateFixture ?? _sharedFixture;
     private const string TestCollectionId = "0";
 
     // Independently computed from the seeded geometries in tests/seed/server.yaml
     // (layer 0): 1 (-122.5, 37.5), 2 (-122.7, 37.7), 4 (-121.9, 37.3),
-    // 5 (-122.3, 37.8); objectid 3 has a null geometry. This class takes a fresh
-    // fixture (and therefore a fresh schema) per test, so these sets are exact.
+    // 5 (-122.3, 37.8); objectid 3 has a null geometry. Read-only cases share the
+    // seed; cases that mutate features or metadata use private fixtures.
     private static readonly long[] AllGeometryBearingIds = [1, 2, 4, 5];
 
     // -122.6,37.4,-122.0,37.9 keeps 1 and 5 and drops 2 (x < -122.6) and
@@ -53,34 +53,20 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         return JsonDocument.Parse(body);
     }
 
-    public async Task InitializeAsync()
+    public OgcFeaturesEnhancementsTests(OgcFeaturesEnhancementsFixture fixture)
     {
-        await _fixture.InitializeAsync();
-
-        // V2 query processor rejects bbox / datetime filters on resources whose Spatial /
-        // Temporal slots are unset. The default test V2 graph (WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph)
-        // does not seed those slots; mirror the v1 Postgres seed: layer 0 is a WGS84 point
-        // layer with TimeInfo {start: timestamp, end: event_date}.
-        _fixture.UpdateV2ResourceMetadata(
-            WebAppFixture.TestLayerId,
-            spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectSpatial
-            {
-                GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point,
-                SpatialReference = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference
-                {
-                    Srid = 4326,
-                    Crs = "EPSG:4326",
-                    IsGeographic = true,
-                },
-            },
-            temporal: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectTemporal
-            {
-                StartTimeField = "timestamp",
-                EndTimeField = "event_date",
-            });
+        _sharedFixture = fixture.Application;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync() => _privateFixture?.DisposeAsync() ?? Task.CompletedTask;
+
+    private async Task InitializePrivateFixtureAsync()
+    {
+        _privateFixture = OgcFeaturesEnhancementsFixture.CreateApplication();
+        await OgcFeaturesEnhancementsFixture.InitializeApplicationAsync(_privateFixture);
+    }
 
     #region Single Item Endpoint Tests (Issue #157)
 
@@ -213,6 +199,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithContentCrsAlias_ReturnsCreated()
     {
+        await InitializePrivateFixtureAsync();
+
         var feature = new GeoJsonFeature
         {
             Type = "Feature",
@@ -616,6 +604,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithBbox_ExcludesNullGeometryFeatures()
     {
+        await InitializePrivateFixtureAsync();
+
         // Arrange - insert a feature without geometry and query with a bbox filter
         // OGC API Features Part 1, Section 7.15.4: when bbox is provided, only features
         // with a spatial geometry that intersects the bounding box shall be in the result set.
@@ -1264,6 +1254,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithCql2TextTemporalInstantOnAttributeField_Returns200()
     {
+        await InitializePrivateFixtureAsync();
+
         // Regression: a CQL2-text T_AFTER against an attribute-backed timestamp
         // field literally named "created_at" previously triggered a special-case
         // in the SQL filter translator that emitted a bare column reference. In

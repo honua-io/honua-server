@@ -53,6 +53,17 @@ public static class PrivateTempFile
             Options = fileOptions,
         }));
 
+    // A read-write scratch file directly under the temp path, created exclusively and owner-only,
+    // and deleted when the stream closes.
+    public static FileStream CreateScratch(string prefix, string? extension, int bufferSize)
+        => new(NewPath(prefix, extension), ApplyPrivateCreateNew(new FileStreamOptions
+        {
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None,
+            BufferSize = bufferSize,
+            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose,
+        }));
+
     // A newly created leaf directory is owner-only on Unix; missing parents get the default mode
     // and an existing directory keeps its mode.
     public static DirectoryInfo CreateDirectory(string path)

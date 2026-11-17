@@ -110,16 +110,12 @@ enrichment-local job lifecycle:
   enrichment dataset at a different layer while a job is queued causes that job
   to fail at execution rather than read a layer that was never authorized;
   resubmit so the new layer is authorized.
-- **Known limitation — row-level security and field masking are NOT applied to
-  the job's layer reads.** Both are request-scoped concerns and a job executes on
-  a background worker with no request context, so a caller who may read a layer
-  but is restricted to particular rows or fields receives unrestricted rows and
-  unmasked attributes in the job artifact. This affects every layer-sourced
-  geoprocessing process, not only enrichment, and is tracked as
-  [#3068](https://github.com/honua-io/honua-server/issues/3068). Until it lands,
-  do not rely on RLS or field-mask policies to constrain what a
-  `Process.Execute` holder can obtain through a job artifact — restrict the layer
-  itself.
+- **Managed background jobs retain the submitter's security context.** Catalog
+  layer reads through the PostgreSQL provider apply the submitter's row-level
+  security and field-mask policies, including reads of the source and dataset
+  layers during enrichment. Jobs without a captured submitter security context
+  refuse catalog-layer reads; resubmit older jobs so that context is captured.
+  See [access control](../secure/access-control.md) for policy configuration.
 
 ## Registering enrichment datasets
 

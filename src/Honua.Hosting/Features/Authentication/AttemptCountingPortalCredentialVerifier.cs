@@ -5,29 +5,18 @@ using Honua.Core.Features.Authorization.Abstractions;
 
 namespace Honua.Infrastructure.Authentication;
 
-// The admin verifier compares the administrator password and managed keys, so an unverified exchange counts and a refused source is never compared.
+// A refused source is checked before the store; only the fallback password comparison reserves an in-flight slot.
 internal sealed class AttemptCountingPortalCredentialVerifier(
-    IPortalCredentialVerifier inner,
+    AdminPortalCredentialVerifier inner,
     AuthenticationAttemptGate gate,
     IHttpContextAccessor httpContextAccessor) : IPortalCredentialVerifier
 {
-    public async Task<PortalCredentialPrincipal?> VerifyAsync(
+    public Task<PortalCredentialPrincipal?> VerifyAsync(
         string username,
         string password,
         CancellationToken cancellationToken)
-    {
-        using var attempt = gate.Begin(httpContextAccessor.HttpContext?.Connection.RemoteIpAddress, password);
-        if (attempt.RetryAfter is not null)
-        {
-            return null;
-        }
-
-        var principal = await inner.VerifyAsync(username, password, cancellationToken).ConfigureAwait(false);
-        if (principal is null)
-        {
-            attempt.CountFailure();
-        }
-
-        return principal;
-    }
+        => inner.VerifyAsync(
+            new PortalCredentialAttempt(username, password, httpContextAccessor.HttpContext?.Connection.RemoteIpAddress),
+            gate,
+            cancellationToken);
 }

@@ -49,7 +49,7 @@ run_store_crash_case() {
   local target="$1" disruption="$2" barrier terminal before_record after_record
   local before_inventory after_inventory before_sha content ready
   local package_before package_after outage_evidence='null' write_failure_record='null' outage_started
-  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification
   local -x HONUA_GP_WORKER_REDIS=terminal-proxy:6379
   compose --profile crash-boundaries up -d --wait terminal-proxy >/dev/null || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
@@ -61,7 +61,7 @@ run_store_crash_case() {
   wait_barrier "$job" claimed || { scenario_fail "worker did not reach claimed fence"; return 1; }
   # The production worker creates this directory as its unprivileged UID.
   # Permit the host-side qualification controller to publish release files.
-  compose exec -T --user 0 worker chmod 777 "/var/run/honua/qualification/$job" || return 1
+  compose exec -T --user 0 worker chmod 777 "/run/honua/qualification/$job" || return 1
   if [[ "$target" == terminal-committed-registration-pending ]]; then
     : > "$(barrier_directory "$job")/$target.arm"
   fi
@@ -77,8 +77,8 @@ run_store_crash_case() {
   done
   ready="$(barrier_record "$job" "$target")"
   [[ "$ready" != null ]] || { scenario_fail "requested crash fence was never observed"; return 1; }
-  before_record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
-  package_before="$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:gp-result:$job")"
+  before_record="$(job_record "$job")"
+  package_before="$(result_package_exists "$job")"
   before_inventory=""; before_sha=""
   if [[ "$target" == native-process-started ]]; then
     [[ "$(object_file_count "$job")" == 0 ]] || {
@@ -158,7 +158,7 @@ run_store_crash_case() {
   else
     [[ "$before_sha" == "$after_sha" ]] || { scenario_fail "recovered bytes differ from durable pre-crash bytes"; return 1; }
   fi
-  after_record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
+  after_record="$(job_record "$job")"
   [[ "$(jq '.artifactReferences | length' <<<"$after_record")" == 1 ]] || {
     scenario_fail "recovery did not converge to exactly one externally visible artifact"; return 1; }
   if [[ "$target" == native-process-started ]]; then
@@ -167,7 +167,7 @@ run_store_crash_case() {
   fi
   after_inventory="$(find "$object_root/gp/outputs/$job" -type f -exec sha256sum {} \; | LC_ALL=C sort)"
   auth_curl "$peer_url/ogc/processes/jobs/$job/results" > "$receipt_root/.$scenario.descriptor.json" || return 1
-  package_after="$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:gp-result:$job")"
+  package_after="$(result_package_exists "$job")"
   [[ "$package_after" == 1 ]] || { scenario_fail "normal read did not recover result-package registration"; return 1; }
   jq -n --argjson fence "$ready" --argjson before "$before_record" --argjson after "$after_record" \
     --arg before_inventory "$before_inventory" --arg after_inventory "$after_inventory" \
@@ -198,7 +198,7 @@ observe_store_write_retry() {
   local deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-180})) record
   local failure_log="$receipt_root/$scenario-write-failure.log"
   while (( SECONDS < deadline )); do
-    record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")" || return 1
+    record="$(job_record "$job")" || return 1
     if jq -e --argjson before "$before_record" '
       (.status == 0 or .status == "queued") and .attemptCount >= $before.attemptCount
       and .nextRetryAt != null and (.artifactReferences | length) == 0

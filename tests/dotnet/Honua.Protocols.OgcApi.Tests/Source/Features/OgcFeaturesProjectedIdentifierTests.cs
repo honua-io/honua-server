@@ -37,6 +37,9 @@ public sealed class OgcFeaturesProjectedIdentifierFixture : IAsyncLifetime
         command.CommandText = """
             UPDATE features SET attributes = attributes || jsonb_build_object('public_id', 'public-' || objectid)
             WHERE layer_id = 0;
+            INSERT INTO features (objectid, layer_id, attributes) VALUES
+                (901, 0, '{"name":"missing identifier"}'),
+                (902, 0, '{"name":"null identifier","public_id":null}');
             """;
         await command.ExecuteNonQueryAsync();
     }
@@ -75,6 +78,26 @@ public sealed class OgcFeaturesProjectedIdentifierTests : IClassFixture<OgcFeatu
         var names = feature.GetProperty("properties").EnumerateObject().Select(property => property.Name).ToArray();
         names.Should().HaveCount(includeIdentifier ? 2 : 1).And.Contain("name");
         names.Contains("public_id").Should().Be(includeIdentifier);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task Csv_ProjectedCustomIdentifier_DistinguishesMissingFromNull()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            "/ogc/features/collections/0/items?filter=objectid%3E900&sortby=objectid&properties=public_id&f=csv");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var reader = new StringReader(await response.Content.ReadAsStringAsync());
+        var header = reader.ReadLine()!.Split(',');
+        var identifierColumn = Array.IndexOf(header, "public_id");
+        Assert.True(identifierColumn > 0);
+        var missing = reader.ReadLine()!.Split(',');
+        Assert.Equal("901", missing[0]);
+        Assert.Equal("901", missing[identifierColumn]);
+        var explicitNull = reader.ReadLine()!.Split(',');
+        Assert.Equal("902", explicitNull[0]);
+        Assert.Equal(string.Empty, explicitNull[identifierColumn]);
+        Assert.Null(reader.ReadLine());
     }
 
     [IntegrationTest]
