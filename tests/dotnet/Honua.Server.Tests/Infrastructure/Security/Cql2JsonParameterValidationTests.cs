@@ -44,6 +44,7 @@ public sealed class Cql2JsonParameterValidationTests
     [InlineData("""{"op":"=","args":[{"property":"name"},{"value":"audit -- note"}]}""")]
     [InlineData("""{"op":"=","args":[{"property":"count"},0]}""")]
     [InlineData("""{"op":"isNull","args":[{"property":"name"},null]}""")]
+    [InlineData("""{"op":"=","args":[{"property":"a\\u002d\\u002db"},"value"]}""")]
     public async Task Filter_NestedAndNonStringLiterals_IsAdmitted(string filter)
     {
         (await InvokeAsync(ItemsPath, "cql2-json", filter)).Should().BeTrue();
