@@ -34,16 +34,18 @@ Also available in Honua Console — UI guide coming soon.
 
 Upload an `.xlsx` workbook as the `file` part of a `multipart/form-data` request to the import route. Supply the target service and layer in the query string. A successful import returns `201` with the draft package version. Import does not publish: use the existing validate and publish routes after checking the resulting draft.
 
-The workbook uses `survey`, `choices`, and `settings` sheets. Unsupported question types, expressions, or structures produce `400` with cell diagnostics identifying the sheet, row, column, and reason. Correct the workbook and import again; an unsuccessful import creates no draft. Empty or malformed archives also return `400`.
+The workbook uses `survey`, `choices`, and `settings` sheets and may be at most 8 MiB (`413` above that). Each question binds to the target layer attribute of the same name: `text`, `barcode`, `select_one`, `date` and `dateTime` questions keep their meaning, and `integer` or `decimal` questions become `integer` or `number` fields by the attribute's type. `settings.form_id` becomes the package `formId`, so importing a workbook again adds the next draft of the same package.
 
-Export returns the current published package as an `.xlsx` download. Drafts must be published before export. Unsupported package behavior produces diagnostics rather than a workbook that silently omits behavior.
+Unsupported question types (for example `select_multiple`, `geopoint`, media, or a `calculate` without a matching attribute), repeat groups, and invalid cells produce `400` with a problem body whose `diagnostics` array names each blocking cell as `sheet`, `row`, `column` and `message`. Correct the workbook and import again; an unsuccessful import creates no draft. Empty or malformed archives also return `400`. `relevant`, `constraint` and `calculation` expressions are kept on the draft under `expressionLanguage: "xlsform"`, but validate and publish reject them until an evaluation policy is available.
+
+Export returns the current published package as an `.xlsx` download; it returns `404` when the package has no published version, so publish drafts first. Fields whose behavior XLSForm cannot carry (such as `boolean` fields, private or default values, validation or visibility rules, a `targetField` that differs from the field id, or repeatable sections) return `422` with the same `diagnostics` body, pointing at the survey row each field would occupy, rather than a workbook that silently omits behavior. Submit, attachment, privacy and offline policies are server configuration and are not part of the workbook.
 
 Contract notes:
 
 - The package document schema version is `honua.form-package.v1`; `formId` is server-generated when omitted on create.
 - Draft saves do not run publish validation, and draft updates clear the stored validation result — run `validate` again before `publish`.
 - Published versions are immutable at the persistence layer; `reopen` creates a new draft with `reopenedFromVersion` set.
-- Failures: `400` invalid package JSON or failed publish validation, `404` unknown package/version, `409` stale `ETag` or non-draft target, `428` missing `If-Match` on `PUT`.
+- Failures: `400` invalid package JSON, failed publish validation, or XLSForm import diagnostics, `404` unknown package/version, `409` stale `ETag` or non-draft target, `413` workbook over 8 MiB, `422` XLSForm export diagnostics, `428` missing `If-Match` on `PUT`.
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/forms/packages/{formId}/versions/1/publish`, substituting `inspection-form`.
 

@@ -24,11 +24,7 @@ public sealed partial class FormPackageEndpointsTests
     public async Task XlsFormImport_PublishSubmitAndExport_PreservesSupportedSurvey()
     {
         using var file = XlsFormUpload("text");
-        using var content = new MultipartFormDataContent();
-        content.Add(file, "file", "survey.xlsx");
-        using var imported = await _fixture.Client.PostAsync(XlsFormImportUrl(), content);
-        imported.StatusCode.Should().Be(HttpStatusCode.Created);
-        var draft = await ReadJsonAsync(imported, FormPackageJsonContext.Default.FormPackageVersion);
+        var draft = await ImportXlsFormAsync(file, "survey.xlsx");
         draft.Status.Should().Be(FormPackageStatus.Draft);
         draft.Package.Target!.ServiceId.Should().Be(WebAppFixture.TestServiceId);
         draft.Package.Target.LayerId.Should().Be(WebAppFixture.TestLayerId);
@@ -41,27 +37,18 @@ public sealed partial class FormPackageEndpointsTests
             FormPackageJsonContext.Default.FormPackageVersion);
         published.Status.Should().Be(FormPackageStatus.Published);
 
+        using var submissionContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "Imported field feature"));
         using var submitted = await _fixture.Client.PostAsync(
             $"/api/v1/forms/packages/{draft.FormId}/submissions",
-            JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "Imported field feature")));
+            submissionContent);
         submitted.StatusCode.Should().Be(HttpStatusCode.OK);
         var submission = await ReadJsonAsync(submitted, FormPackageJsonContext.Default.FormSubmissionResponse);
         submission.Status.Should().Be("accepted");
         submission.EditOutcome!.Created.Should().Be(1);
         submission.TargetFeatureId.Should().NotBeNull();
 
-        using var exported = await _fixture.Client.GetAsync($"/api/v1/admin/forms/packages/{draft.FormId}/export");
-        exported.StatusCode.Should().Be(HttpStatusCode.OK);
-        exported.Content.Headers.ContentType!.MediaType.Should().Be("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        using var archive = new ZipArchive(new MemoryStream(await exported.Content.ReadAsByteArrayAsync()));
-        archive.GetEntry("xl/workbook.xml").Should().NotBeNull();
-
-        using var reimportContent = new MultipartFormDataContent();
-        using var reimportFile = new ByteArrayContent(await exported.Content.ReadAsByteArrayAsync());
-        reimportContent.Add(reimportFile, "file", "exported.xlsx");
-        using var reimported = await _fixture.Client.PostAsync(XlsFormImportUrl(), reimportContent);
-        reimported.StatusCode.Should().Be(HttpStatusCode.Created);
-        var roundTrip = await ReadJsonAsync(reimported, FormPackageJsonContext.Default.FormPackageVersion);
+        using var reimportFile = new ByteArrayContent(await ExportXlsFormAsync(draft.FormId));
+        var roundTrip = await ImportXlsFormAsync(reimportFile, "exported.xlsx");
         roundTrip.FormId.Should().Be(draft.FormId);
         roundTrip.Package.Title.Should().Be(draft.Package.Title);
         roundTrip.Package.Target.Should().BeEquivalentTo(draft.Package.Target);
@@ -97,6 +84,26 @@ public sealed partial class FormPackageEndpointsTests
     }
 
     private readonly string _xlsFormId = $"survey_{Guid.NewGuid():N}";
+
+    private async Task<FormPackageVersion> ImportXlsFormAsync(HttpContent file, string fileName)
+    {
+        using var content = new MultipartFormDataContent();
+        content.Add(file, "file", fileName);
+        using var imported = await _fixture.Client.PostAsync(XlsFormImportUrl(), content);
+        imported.StatusCode.Should().Be(HttpStatusCode.Created);
+        return await ReadJsonAsync(imported, FormPackageJsonContext.Default.FormPackageVersion);
+    }
+
+    private async Task<byte[]> ExportXlsFormAsync(string formId)
+    {
+        using var exported = await _fixture.Client.GetAsync($"/api/v1/admin/forms/packages/{formId}/export");
+        exported.StatusCode.Should().Be(HttpStatusCode.OK);
+        exported.Content.Headers.ContentType!.MediaType.Should().Be("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        var workbook = await exported.Content.ReadAsByteArrayAsync();
+        using var archive = new ZipArchive(new MemoryStream(workbook));
+        archive.GetEntry("xl/workbook.xml").Should().NotBeNull();
+        return workbook;
+    }
 
     private static string XlsFormImportUrl()
         => $"/api/v1/admin/forms/packages/import?serviceId={Uri.EscapeDataString(WebAppFixture.TestServiceId)}&layerId={WebAppFixture.TestLayerId}";
