@@ -30,6 +30,7 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ValidateTablePublishRequest))]
 [JsonSerializable(typeof(LayerEnabledRequest))]
 [JsonSerializable(typeof(PublishedLayerSummary))]
+[JsonSerializable(typeof(PublishedLayerExtent))]
 [JsonSerializable(typeof(LayerExtentRefreshResult))]
 [JsonSerializable(typeof(LayerExtentRefreshLayerResult))]
 [JsonSerializable(typeof(LayerExtentRefreshLayerResult[]))]

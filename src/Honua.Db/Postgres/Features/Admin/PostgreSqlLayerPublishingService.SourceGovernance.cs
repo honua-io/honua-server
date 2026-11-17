@@ -109,6 +109,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             FieldCount = layer.FieldCount,
             Enabled = layer.Enabled,
             ServiceName = layer.ServiceName,
+            Extent = layer.Extent,
             License = metadata.License,
             Attribution = metadata.Attribution,
             Publisher = metadata.Publisher,

@@ -22,6 +22,9 @@ internal static class LayerNamePattern
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
+    // Follows the 14 PublishedLayerSelect columns read by ReadPublishedLayer.
+    private const int PublishedLayerTotalOrdinal = 14;
+
     private const string PublishedLayerPageSql = $"""
         WITH matched AS (
             SELECT DISTINCT l.layer_id
@@ -111,7 +114,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             if (!sawTotal)
             {
-                total = reader.GetInt32(10);
+                total = reader.GetInt32(PublishedLayerTotalOrdinal);
                 sawTotal = true;
             }
 

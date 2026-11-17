@@ -34,6 +34,28 @@ public sealed class LayerPublishWireContractTests
         Assert.False(document.RootElement.TryGetProperty("layerId", out _));
     }
 
+    [UnitTest]
+    public void PublishedLayer_SourceGeneratedJson_EmitsWgs84Extent()
+    {
+        var layer = new PublishedLayerSummary
+        {
+            StorageLayerId = 742,
+            LayerName = "Parcels",
+            Schema = "public",
+            Table = "parcels",
+            GeometryType = "Polygon",
+            ServiceName = "parcels",
+            Extent = new PublishedLayerExtent { MinX = -74.017, MinY = 40.703, MaxX = -73.943, MaxY = 40.812 },
+        };
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(layer, LayerPublishingJsonContext.Default.PublishedLayerSummary));
+
+        var extent = document.RootElement.GetProperty("extent");
+        Assert.Equal(-74.017, extent.GetProperty("minX").GetDouble());
+        Assert.Equal(40.703, extent.GetProperty("minY").GetDouble());
+        Assert.Equal(-73.943, extent.GetProperty("maxX").GetDouble());
+        Assert.Equal(40.812, extent.GetProperty("maxY").GetDouble());
+    }
+
     [UnitTheory]
     [InlineData("", true)]
     [InlineData(",\"enabled\":true", true)]

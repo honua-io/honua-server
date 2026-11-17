@@ -232,6 +232,21 @@ public sealed class PublishedLayerSummary
     public string? StorageMode { get; init; }
 
     public IReadOnlyList<string>? Capabilities { get; init; }
+
+    // Stored layer extent in EPSG:4326, or null when the layer has none.
+    public PublishedLayerExtent? Extent { get; init; }
+}
+
+// Axis-aligned bounding box in EPSG:4326 longitude/latitude.
+public sealed class PublishedLayerExtent
+{
+    public required double MinX { get; init; }
+
+    public required double MinY { get; init; }
+
+    public required double MaxX { get; init; }
+
+    public required double MaxY { get; init; }
 }
 
 public sealed class LayerExtentRefreshResult

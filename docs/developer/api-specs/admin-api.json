@@ -26788,6 +26788,35 @@
             },
             "nullable": true,
             "description": "Capability tokens declared on the layer's feature publication. Set on publish responses; null on listings."
+          },
+          "extent": {
+            "type": "object",
+            "nullable": true,
+            "required": [
+              "minX",
+              "minY",
+              "maxX",
+              "maxY"
+            ],
+            "properties": {
+              "minX": {
+                "type": "number",
+                "format": "double"
+              },
+              "minY": {
+                "type": "number",
+                "format": "double"
+              },
+              "maxX": {
+                "type": "number",
+                "format": "double"
+              },
+              "maxY": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "description": "Stored layer extent in EPSG:4326 longitude/latitude; null when the layer has no geometry extent."
           }
         }
       },

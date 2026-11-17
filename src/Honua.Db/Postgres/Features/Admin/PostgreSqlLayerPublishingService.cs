@@ -168,7 +168,15 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         l.enabled
         """;
 
-    private const string PublishedLayerSelect = PublishedLayerColumns + ",\n        COUNT(f.field_name)::int AS field_count";
+    // honua.layers.extent is GEOMETRY(POLYGON, 4326); layer_id is the key, so the extent needs no GROUP BY entry.
+    private const string PublishedLayerSelect = PublishedLayerColumns + """
+        ,
+        COUNT(f.field_name)::int AS field_count,
+        ST_XMin(l.extent) AS extent_min_x,
+        ST_YMin(l.extent) AS extent_min_y,
+        ST_XMax(l.extent) AS extent_max_x,
+        ST_YMax(l.extent) AS extent_max_y
+        """;
 
     private static async Task<List<PublishedLayerSummary>> ReadPublishedLayersAsync(
         NpgsqlConnection connection,
@@ -217,7 +225,19 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Enabled = reader.GetBoolean(8),
             FieldCount = reader.GetInt32(9),
             ServiceName = serviceName,
+            Extent = ReadPublishedLayerExtent(reader),
         };
+
+    private static PublishedLayerExtent? ReadPublishedLayerExtent(NpgsqlDataReader reader)
+        => reader.IsDBNull(10)
+            ? null
+            : new PublishedLayerExtent
+            {
+                MinX = reader.GetDouble(10),
+                MinY = reader.GetDouble(11),
+                MaxX = reader.GetDouble(12),
+                MaxY = reader.GetDouble(13),
+            };
 
     public async Task<PublishedLayerSummary> PublishLayerAsync(
         string connectionString,

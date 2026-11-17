@@ -824,18 +824,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string serviceName,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        const string sql = $"""
             SELECT
-                l.layer_id,
-                l.layer_name,
-                l.description,
-                l.table_schema,
-                l.table_name,
-                l.primary_key_column,
-                l.geometry_type,
-                l.srid,
-                l.enabled,
-                COUNT(f.field_name)::int AS field_count
+                {PublishedLayerSelect}
             FROM honua.layers l
             INNER JOIN honua.service_layers sl
                 ON sl.layer_id = l.layer_id
@@ -844,15 +835,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             WHERE sl.service_name = @serviceName
                 AND l.layer_id = @layerId
             GROUP BY
-                l.layer_id,
-                l.layer_name,
-                l.description,
-                l.table_schema,
-                l.table_name,
-                l.primary_key_column,
-                l.geometry_type,
-                l.srid,
-                l.enabled;
+                {PublishedLayerColumns};
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -874,32 +857,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         int layerId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        const string sql = $"""
             SELECT
-                l.layer_id,
-                l.layer_name,
-                l.description,
-                l.table_schema,
-                l.table_name,
-                l.primary_key_column,
-                l.geometry_type,
-                l.srid,
-                l.enabled,
-                COUNT(f.field_name)::int AS field_count
+                {PublishedLayerSelect}
             FROM honua.layers l
             LEFT JOIN honua.layer_fields f
                 ON f.layer_id = l.layer_id
             WHERE l.layer_id = @layerId
             GROUP BY
-                l.layer_id,
-                l.layer_name,
-                l.description,
-                l.table_schema,
-                l.table_name,
-                l.primary_key_column,
-                l.geometry_type,
-                l.srid,
-                l.enabled;
+                {PublishedLayerColumns};
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -948,6 +914,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             FieldCount = layer.FieldCount,
             Enabled = enabled,
             ServiceName = layer.ServiceName,
+            Extent = layer.Extent,
             License = layer.License,
             Attribution = layer.Attribution,
             Publisher = layer.Publisher,
