@@ -415,7 +415,12 @@ does not establish an approver-only policy for all authentication schemes.
 
 Provider blocks exist for `Generic`, `AzureAd`, `Google`, `Okta`, and `Auth0`; OIDC providers can also be managed at runtime via `/api/v1/admin/oidc/providers`. When OIDC is enabled, `Authorization: Bearer` tokens are evaluated before API keys. Map your IdP's admin group to a role in `Oidc__AdminRoles` (default `admin`, `administrator`) — without it, signed-in users hold no admin rights.
 
-An explicitly configured static JWT issuer may set
+Production deployments require issuer, audience, lifetime and signing-key validation
+to remain enabled. Static shared signing keys are refused at startup in Production;
+use provider metadata and JWKS discovery. These safeguards also apply when OIDC
+is disabled, so an unsafe configuration cannot be activated later.
+
+For development and testing, an explicitly configured static JWT issuer may set
 `Oidc__TokenValidation__SymmetricSigningKey` to an `env:NAME` or
 `aws:secretsmanager:<secret-id>` reference. The server resolves it before binding
 bearer validation options and refuses startup if the reference cannot resolve or
