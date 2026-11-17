@@ -76,7 +76,7 @@ public static partial class FeatureAttributeValidator
                 return;
             }
             var normalizedValue = NormalizeAttributeValue(rawValue);
-            if (_options.CoerceExactValues)
+            if (_options.Coercion == ExactValueCoercion.CanonicalText)
             {
                 normalizedValue = CoerceExactNumber(field, rawValue, normalizedValue);
             }

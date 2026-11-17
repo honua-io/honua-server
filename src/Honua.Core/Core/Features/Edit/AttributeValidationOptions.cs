@@ -15,7 +15,14 @@ public enum AttributeMutationOperation
     Update
 }
 
+// Clients without an exact wire type send numbers. CanonicalText stores those as exact text.
+public enum ExactValueCoercion
+{
+    None,
+    CanonicalText
+}
+
 public readonly record struct AttributeValidationOptions(
     AttributeValidationProfile Profile = AttributeValidationProfile.Strict,
     AttributeMutationOperation Operation = AttributeMutationOperation.Insert,
-    bool CoerceExactValues = false);
+    ExactValueCoercion Coercion = ExactValueCoercion.None);

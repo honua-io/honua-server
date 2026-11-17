@@ -369,7 +369,9 @@ internal static class MetadataV2AttributeValidation
                 ? AttributeValidationProfile.GeoServices : AttributeValidationProfile.Strict,
             isUpdate ? AttributeMutationOperation.Update : AttributeMutationOperation.Insert,
             // JSON and GeoServices clients have no exact wire type. gRPC stays strict.
-            CoerceExactValues: mode != ValidationExtensions.AttributeValidationMode.Strict);
+            mode == ValidationExtensions.AttributeValidationMode.Strict
+                ? ExactValueCoercion.None
+                : ExactValueCoercion.CanonicalText);
         return FeatureAttributeValidator.Validate(resource, attributes, options);
     }
 }

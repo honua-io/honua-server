@@ -104,25 +104,7 @@ internal sealed class PostgresFeatureLayerCopyService(
             {
                 var attributes = feature.Attributes.ToDictionary(kv => kv.Key,
                     kv => kv.Value is byte[] binary ? (object)("\\x" + Convert.ToHexString(binary)) : kv.Value);
-                if (exactCopy)
-                {
-                    // timestamp without time zone drops an offset using the session TimeZone.
-                    // Store the UTC wall clock so a DateTime field keeps its instant.
-                    foreach (var field in fields)
-                    {
-                        if (field.Type != MetadataV2FieldType.DateTime)
-                        {
-                            continue;
-                        }
-
-                        var key = attributes.Keys.FirstOrDefault(name =>
-                            name.Equals(field.Name, StringComparison.OrdinalIgnoreCase));
-                        if (key is not null && attributes[key] is { } temporal)
-                        {
-                            attributes[key] = ZoneLessUtcDateTime(temporal);
-                        }
-                    }
-                }
+                if (exactCopy) StoreUtcWallClockDateTimes(attributes, fields);
 
                 attributes.TryAdd(primary, feature.Id);
                 var json = JsonSerializer.Serialize(attributes, FeatureAttributesJsonContext.Default.DictionaryStringObject);
@@ -234,6 +216,28 @@ internal sealed class PostgresFeatureLayerCopyService(
             await drop.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // timestamp without time zone drops an offset using the session TimeZone.
+    // Store the UTC wall clock so a DateTime field keeps its instant.
+    private static void StoreUtcWallClockDateTimes(
+        Dictionary<string, object?> attributes,
+        MetadataV2Field[] fields)
+    {
+        foreach (var field in fields)
+        {
+            if (field.Type != MetadataV2FieldType.DateTime)
+            {
+                continue;
+            }
+
+            var key = attributes.Keys.FirstOrDefault(name =>
+                name.Equals(field.Name, StringComparison.OrdinalIgnoreCase));
+            if (key is not null && attributes[key] is { } temporal)
+            {
+                attributes[key] = ZoneLessUtcDateTime(temporal);
+            }
+        }
     }
 
     // A zoned instant becomes UTC wall-clock text. Text with no offset is already a civil time.
