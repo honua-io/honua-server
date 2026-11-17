@@ -1108,7 +1108,7 @@ jobs:
           for tag in $TAGS; do
             repository="${tag%:*}"
             tag_name="${tag##*:}"
-            # The AOT index is the default image (#7853): each AOT tag and its bare alias come
+            # The AOT index is the default image: each AOT tag and its bare alias come
             # from one create, so the attested nightly-aot-<sha7> digest is nightly-<sha7> too.
             case "$tag_name" in
               nightly-aot|trunk-aot) default_tag="${repository}:${tag_name%-aot}" ;;

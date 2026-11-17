@@ -200,7 +200,7 @@ public sealed partial class NightlyImageCertificationTests
     {
         var nightly = Read(NightlyPath);
 
-        // The AOT index owns the default tags (#7853); JIT keeps its -jit tags and the full-store default.
+        // The AOT index owns the default tags; JIT keeps its -jit tags and the full-store default.
         var jitManifest = Job(nightly, "manifest-jit");
         foreach (var tag in new[]
                  {

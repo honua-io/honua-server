@@ -80,7 +80,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # The customer package pins the default native-AOT image (#7853), so the journey installs it.
+      # The customer package pins the default native-AOT image, so the journey installs it.
       # Reuses the restore and base layers of the nightly AOT build.
       - name: Build production candidate image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
