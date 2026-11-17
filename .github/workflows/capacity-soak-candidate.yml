@@ -326,7 +326,7 @@ jobs:
           url="$root/$LOCK_PATH"
           curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$url" -o lock.json
           mkdir -p "$RUNNER_TEMP/release-tools"
-          for file in check_capacity_soak.py capacity_observations.py extract_capacity_evidence.py release_runner_policy.py; do
+          for file in check_capacity_soak.py capacity_observations.py digests.py extract_capacity_evidence.py release_runner_policy.py; do
             curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 "$root/tools/$file" -o "$RUNNER_TEMP/release-tools/$file"
           done
           mkdir -p "$RUNNER_TEMP/certification"

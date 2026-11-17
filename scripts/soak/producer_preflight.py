@@ -34,7 +34,8 @@ def main(argv=None) -> int:
                     "workflowRef": args.expected_workflow_ref}
         failures = ["receipt producer differs from this running invocation"] if any(
             str(producer.get(key)) != value for key, value in expected.items()) else []
-        failures.extend(evaluate(lock, receipt, hashlib.sha256(args.lock.read_bytes()).hexdigest(), args.expected_revision,
+        lock_sha256 = hashlib.sha256(args.lock.read_bytes()).hexdigest()
+        failures.extend(evaluate(lock, receipt, lock_sha256, args.expected_revision,
                                  args.artifact_root, args.expected_image_digest))
         failures.extend(bind_attestation_content(json.loads(args.attestation.read_bytes()),
                         hashlib.sha256(args.bundle.read_bytes()).hexdigest(), receipt, args.expected_revision))
