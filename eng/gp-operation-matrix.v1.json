@@ -1494,7 +1494,7 @@
           "test": "Postgis_RegisteredExternalDatabase_PublishesOnlyPredicateWatermarkAndBboxMatches",
           "fixturePath": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/PostgisSourceExecutionProofTests.cs",
           "assertion": "Required second real PostGIS database via encrypted registry and real resolver: production executor output exactly matches independent predicate/watermark/bbox rows, attributes, XYZ and SRID; no credential disclosure; oracle rejects valid output from a broadened predicate.",
-          "bodyDigest": "sha256:3e2b13ad88e3a5be6d92a08282bec9225b87edaecea6c3bf98b3f56461e9fdf5"
+          "bodyDigest": "sha256:609c86795b42afdff55971d212ca702839488c9f59faacdbd8dc5f0195fe30c8"
         }
       ]
     },

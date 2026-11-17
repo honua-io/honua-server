@@ -12,6 +12,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 public sealed partial class PostgisSourceExecutionProofTests
 {
     [IntegrationTest]
+    [Operation(Operations.SecurityTesting)]
     public async Task ReadAsync_FilterOnMaterializedView_SelectsMatchingRows()
     {
         var dataSource = fixture.GetService<NpgsqlDataSource>();
@@ -37,6 +38,7 @@ public sealed partial class PostgisSourceExecutionProofTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.SecurityTesting)]
     public async Task ReadAsync_FilterOnCaseAmbiguousColumn_IsRefused()
     {
         var dataSource = fixture.GetService<NpgsqlDataSource>();

@@ -9,9 +9,11 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
+[Protocol(TestProtocols.Infrastructure)]
 public sealed partial class PostgisSourceExecutionProofTests
 {
     [IntegrationTheory]
+    [Operation(Operations.SecurityTesting)]
     [InlineData("LEFT(name, 1) = 'f'")]
     [InlineData("RIGHT(name, 1) = 'o'")]
     [InlineData("LEN(name) = 3 AND key = 1")]
