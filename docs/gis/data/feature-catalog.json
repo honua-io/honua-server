@@ -701,8 +701,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "delete-api-v1-console-access-environmentid-roles-roleid",
-      "route": "/api/v1/console/access/{environmentId}/roles/{roleId}",
+      "id": "delete-api-v1-console-access-workspaceid-roles-roleid",
+      "route": "/api/v1/console/access/{workspaceId}/roles/{roleId}",
       "method": "DELETE",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -710,7 +710,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_DeleteAssignedRole_TombstonesNameAndRemovesPermissions",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossEnvironmentBoundary"
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossWorkspaceBoundary"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -4210,8 +4210,7 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_NonexistentId_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_PublishingType_ReturnsWorkflowFields",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_WhenExists_ReturnsProgress",
-        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem",
-        "Honua.Server.Tests.Import.GeoServerImportUniversalCancelTests.QueuedImport_CancelledBeforeClaim_ReadsCancelled"
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -5497,31 +5496,29 @@
       "capability": "discovery.capability-manifest"
     },
     {
-      "id": "get-api-v1-console-access-environmentid-members",
-      "route": "/api/v1/console/access/{environmentId}/members",
+      "id": "get-api-v1-console-access-workspaceid-members",
+      "route": "/api/v1/console/access/{workspaceId}/members",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_EnvironmentContract_UsesCanonicalIdentityAndScopes",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_Members_OnlyIncludeRolesAssignedInRequestedEnvironment"
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_Members_OnlyIncludeRolesAssignedInRequestedWorkspace"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-access-environmentid-roles",
-      "route": "/api/v1/console/access/{environmentId}/roles",
+      "id": "get-api-v1-console-access-workspaceid-roles",
+      "route": "/api/v1/console/access/{workspaceId}/roles",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_EnvironmentContract_UsesCanonicalIdentityAndScopes",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_WithoutAdminAuthentication_ReturnsUnauthorized"
       ],
       "proof_ledger_surface": "console-content-rbac",
@@ -5529,15 +5526,15 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-access-environmentid-roles-audit",
-      "route": "/api/v1/console/access/{environmentId}/roles/audit",
+      "id": "get-api-v1-console-access-workspaceid-roles-audit",
+      "route": "/api/v1/console/access/{workspaceId}/roles/audit",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_LongEnvironmentId_RetainsMutationAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_LongWorkspaceId_RetainsMutationAudit",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleAudit_MalformedCursorReturnsBadRequest"
       ],
       "proof_ledger_surface": "console-content-rbac",
@@ -17173,8 +17170,6 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
-        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
-        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_WithInvalidSalt_RejectsOtherwiseValidLegacyKey",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpiredKey_IsRejected_AndPermissionsDefaultToAdminWildcard",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation",
@@ -17219,7 +17214,6 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_ReturnsNewPlaintextAndInvalidatesOldKey",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
-        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation"
       ],
@@ -19521,8 +19515,7 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedNeverSubmitted_CasFailure_Returns409",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedRetryAwaitingResubmission_CancelsLocallyWithoutCallingBackend",
         "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem",
-        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting",
-        "Honua.Server.Tests.Import.GeoServerImportUniversalCancelTests.QueuedImport_CancelledBeforeClaim_ReadsCancelled"
+        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -20365,8 +20358,8 @@
       "capability": "demo.showcase"
     },
     {
-      "id": "post-api-v1-console-access-environmentid-roles",
-      "route": "/api/v1/console/access/{environmentId}/roles",
+      "id": "post-api-v1-console-access-workspaceid-roles",
+      "route": "/api/v1/console/access/{workspaceId}/roles",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -27056,7 +27049,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.EnableLayerAndRoleGrants_AgentKey_RequireHumanApproval",
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.SetPermissions_ValidRequest_ReturnsUpdatedPermissions",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminPermissionReplacement_PreservesConsoleEnvironmentOwnership"
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminPermissionReplacement_PreservesConsoleWorkspaceOwnership"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -27308,15 +27301,15 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-console-access-environmentid-roles-roleid",
-      "route": "/api/v1/console/access/{environmentId}/roles/{roleId}",
+      "id": "put-api-v1-console-access-workspaceid-roles-roleid",
+      "route": "/api/v1/console/access/{workspaceId}/roles/{roleId}",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossEnvironmentBoundary",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossWorkspaceBoundary",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleRename_WithExistingAssignment_ReturnsBadRequestWithoutOrphaningMember"
       ],
