@@ -68,7 +68,11 @@ root is `/tmp/honua`; mount it as a writable volume owned by that user, or as
 `--tmpfs /tmp/honua:rw,noexec,nosuid,size=512m,uid=1001,gid=1001,mode=750`.
 The image pre-creates its writable directories. A mounted empty root must permit
 UID 1001 to create child directories. Capacity depends on concurrent import and
-geoprocessing workloads; 512 MiB is the smoke-test allocation.
+geoprocessing workloads; 512 MiB is the smoke-test allocation and what the
+packaged Compose files give the server. It holds one maximum upload (100 MB by
+default) plus several concurrent GeoParquet responses, which are spooled there
+before sending. If the scratch volume fills anyway, GeoParquet queries answer
+`503` with `Retry-After` instead of a query error; retry once readers finish.
 
 | Writes | Image default | Configuration |
 | --- | --- | --- |

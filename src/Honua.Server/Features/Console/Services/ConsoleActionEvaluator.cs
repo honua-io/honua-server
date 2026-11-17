@@ -178,11 +178,11 @@ internal sealed class ConsoleActionEvaluator(
         return item.ItemType switch
         {
             ConsoleContentItemType.Service or ConsoleContentItemType.Layer
-                or ConsoleContentItemType.SavedMap or ConsoleContentItemType.Dashboard
+                or ConsoleContentItemType.Map or ConsoleContentItemType.Dashboard
                 or ConsoleContentItemType.OpenData
                 => HasCapability(profile, "features.query") || HasCapability(profile, "raster.render"),
             ConsoleContentItemType.Report => HasCapability(profile, "reports.run") || HasCapability(profile, "metadata.read"),
-            ConsoleContentItemType.GeneratedApp => true,
+            ConsoleContentItemType.App => true,
             _ => false,
         };
     }

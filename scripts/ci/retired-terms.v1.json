@@ -105,7 +105,7 @@
     },
     {
       "literal": "workspace",
-      "replacement": "Folder when grouping Services or data",
+      "replacement": "Environment for a server connection; Folder when grouping Services",
       "exceptions": "Actual agent collaboration workspaces and filesystem/build workspaces"
     },
     {
