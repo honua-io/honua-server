@@ -77,7 +77,7 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
     [InlineData(6318)] // NAD83(2011)     -> WGS84, EPSG 9774 (null)
     public async Task TransformPoint_Wgs84RealizationNullPair_SeededPipelineApplies(int fromSrid)
     {
-        // The deferred Helmert/WGS84-realization pairs seeded under #1501 are EPSG null
+        // The deferred Helmert/WGS84-realization pairs in the seed are EPSG null
         // transformations (+proj=noop). This proves the seeded pipeline actually applies
         // through PostGIS' 3-argument ST_Transform on the runtime (not hand-authored) and
         // produces the exact-identity result the null transform mandates.
@@ -177,7 +177,7 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
         // +proj=pipeline string cannot be forced through PostGIS' 3-argument ST_Transform text
         // overload, so when a pipeline selection is passed the service either returns null (the
         // documented explicit-failure contract) or PROJ resolves the pair via its default path.
-        // When the canonical grid is provisioned (docker/proj-grids image, #1501) the result is
+        // When the canonical grid is provisioned (docker/proj-grids image) the result is
         // a high-accuracy NADCON shift; see DatumGridProvisioningTests for the gated assertion.
         _catalog.TryGetByWkid(1241, 4267, 4269, out var selection).Should().BeTrue();
         selection!.RequiredGrids.Should().Contain("us_noaa_conus.tif");

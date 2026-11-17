@@ -569,7 +569,7 @@ public sealed class GdalUntrustedInputHardeningTests
     [UnitTest]
     public async Task StatisticsExecutor_AcceptsGeoTiff_AndInvokesGdal()
     {
-        // Regression: a normal (binary) GeoTIFF passes the guard and reaches gdalinfo,
+        // A normal (binary) GeoTIFF passes the guard and reaches gdalinfo,
         // which the fake runner answers with a minimal stats document.
         const string gdalinfoJson =
             "{\"bands\":[{\"band\":1,\"type\":\"Byte\",\"minimum\":0,\"maximum\":255,\"mean\":128,\"stdDev\":10,\"validCount\":256}]}";
@@ -600,7 +600,7 @@ public sealed class GdalUntrustedInputHardeningTests
         }
     }
 
-    // ---- Private-decoder chokepoints: mosaic + vector-reproject (#2776 review) --
+    // ---- Private-decoder chokepoints: mosaic + vector-reproject --
 
     [UnitTest]
     public async Task MosaicExecutor_RefusesBase64Vrt_WithoutInvokingGdal()
@@ -671,7 +671,7 @@ public sealed class GdalUntrustedInputHardeningTests
     [UnitTest]
     public async Task VectorReprojectExecutor_AcceptsGeoJson_AndInvokesGdal()
     {
-        // Regression: a genuine GeoJSON data URI passes the guard and reaches ogr2ogr.
+        // A genuine GeoJSON data URI passes the guard and reaches ogr2ogr.
         // ogr2ogr arg order is `… <outputPath> <inputPath>`, so the output is the
         // second-to-last argument (index 1 from the end).
         var geojson = "{\"type\":\"FeatureCollection\",\"features\":[]}";
@@ -702,7 +702,7 @@ public sealed class GdalUntrustedInputHardeningTests
         }
     }
 
-    // ---- GDALG: caught by GDAL_SKIP, not by the content sniff (#2776 review) ----
+    // ---- GDALG: caught by GDAL_SKIP, not by the content sniff ----
 
     [UnitTest]
     public void GdalgBlob_IsNotCaughtBySniff_ButDriverIsSkipped()
@@ -721,14 +721,14 @@ public sealed class GdalUntrustedInputHardeningTests
         env["GDAL_SKIP"].Should().Contain("MRF");
     }
 
-    // ---- Positive raster-format allowlist (#2784) ------------------------------
+    // ---- Positive raster-format allowlist ------------------------------
 
     [UnitTest]
     public void BuildEnvironment_NonAllowlistedRasterBombDrivers_AddedToGdalSkip()
     {
         // The JPEG2000 / GIF / BMP / HFA / NITF / ENVI / RMF drivers are outside the
         // dimension-guarded TIFF/PNG/JPEG allowlist and must be denied via GDAL_SKIP so
-        // even a misidentified payload cannot open as one (#2784).
+        // even a misidentified payload cannot open as one.
         var env = GdalRuntimeHardening.BuildEnvironment(new GdalHardeningOptions(), inputReferencesRemoteVsi: false);
 
         env["GDAL_SKIP"].Should().Contain("JP2OpenJPEG");
@@ -743,7 +743,7 @@ public sealed class GdalUntrustedInputHardeningTests
     public async Task StatisticsExecutor_RefusesNonAllowlistedJp2_WithoutInvokingGdal()
     {
         // A JP2 codestream (FF 4F FF 51) declares dimensions the input guard cannot
-        // parse; the positive allowlist must refuse it before gdalinfo opens it (#2784).
+        // parse; the positive allowlist must refuse it before gdalinfo opens it.
         var runner = new FakeGdalCommandRunner((_, _, _) =>
             throw new InvalidOperationException("gdalinfo must not run for a refused JP2 input"));
         var scratch = GdalCli.NewScratch(ScratchSuite);
@@ -771,7 +771,7 @@ public sealed class GdalUntrustedInputHardeningTests
         }
     }
 
-    // ---- KML/GML external-href limitation is documented + pinned (#2776 review) -
+    // ---- KML/GML external-href limitation is documented + pinned -
 
     [UnitTest]
     public void Guard_AdmitsKmlWithPlainHttpHref_DocumentedNetworkPostureBoundary()

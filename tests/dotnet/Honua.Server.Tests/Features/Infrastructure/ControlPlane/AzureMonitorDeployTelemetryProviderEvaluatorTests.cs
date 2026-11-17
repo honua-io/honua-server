@@ -167,7 +167,7 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
     [InlineData(-0.5)]
     public async Task EvaluateAsync_InvalidErrorRateReading_IsTreatedAsAbsentNotHealthy(double invalidReading)
     {
-        // #4617: the provider-neutral gate rejects non-finite/negative readings from any provider.
+        // The provider-neutral gate rejects non-finite/negative readings from any provider.
         var client = new FakeAzureMonitorMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleQuery] = 50,
@@ -228,7 +228,7 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
     [UnitTest]
     public async Task EvaluateAsync_ErrorCountNoRowsWithSampleFloorMet_PromotesWithZeroErrors()
     {
-        // honua-server#6474 parity: a binned error count over an error-free window has no rows.
+        // Provider parity: a binned error count over an error-free window has no rows.
         var client = new FakeAzureMonitorMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleQuery] = 80,

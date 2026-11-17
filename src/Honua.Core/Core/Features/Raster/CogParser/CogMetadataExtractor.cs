@@ -210,7 +210,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                 compression = ifdCompression;
                 predictor = ifdPredictor;
 
-                // Classify pixel type now that both BitsPerSample and SampleFormat are collected.
+                // Classify pixel type after both BitsPerSample and SampleFormat are collected.
                 pixelType = ClassifyPixelType(bitsPerSample, sampleFormat);
 
                 // Compute extent from the affine GeoTIFF transform. The direct tile path is
@@ -242,7 +242,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                 }
 
                 // Compute extent from tiepoint + scale.
-                // Both tags are now fully collected regardless of IFD entry order
+                // Both tags are fully collected regardless of IFD entry order
                 // (tag 33550 PixelScale sorts before 33922 Tiepoint in TIFF spec).
                 if (hasPixelScale && width > 0 && height > 0)
                 {

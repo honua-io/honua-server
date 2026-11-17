@@ -41,7 +41,7 @@ public sealed class MapServerSublayerRelationshipMetadataTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}")]
     public async Task MapServerSublayerMetadata_SurfacesRelationshipsAndHasAttachments()
     {
-        // The core of #1923: the MapServer sublayer previously emitted relationships:[] and
+        // The MapServer sublayer must expose relationship metadata and
         // hasAttachments:false even though the same layer's FeatureServer metadata advertised
         // both. Assert the MapServer sublayer now mirrors the underlying layer.
         using var document = await GetLayerMetadataAsync("MapServer");

@@ -47,7 +47,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         _fixture.WithTestLicense(HonuaEdition.Enterprise);
         _fixture.ConfigureWebHost(builder =>
         {
-            // Displace the F1 development-authentication bypass: without this every request is an
+            // Displace the development-authentication bypass: without this every request is an
             // admin and the ownership branch under test is unreachable.
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -173,7 +173,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using var info = await GetAsync(_nonOwnerToken, $"{ServiceBase}/versions/{guid}?f=json");
         var infoBody = await info.Content.ReadAsStringAsync();
 
-        // BH3-002 deliberately answers 404, not 403, so a non-owner cannot confirm the version
+        // The endpoint deliberately answers 404, not 403, so a non-owner cannot confirm the version
         // exists. Either way the record itself must not be in the body.
         await info.AssertGeoServicesErrorAsync((int)HttpStatusCode.NotFound);
         infoBody.Should().NotContain("alice.private_visibility");

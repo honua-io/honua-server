@@ -120,8 +120,8 @@ public sealed class CoordinatedReleaseReconcilerTests
     [Fact]
     public async Task Reconcile_FaultInMetadataStep_UnwindsMetadataThenContainerInReverse()
     {
-        // Demo C fault-injection / rollback proof: a fault at the DB-schema + metadata step (the
-        // #1753 safe-rollback path) must trigger ONE coordinated rollback that unwinds BOTH completed
+        // Fault-injection / rollback proof: a fault at the DB-schema + metadata step (the
+        // safe-rollback path) must trigger ONE coordinated rollback that unwinds BOTH completed
         // reversible steps in reverse order — metadata/schema first (reactivate prior revision + inverse
         // script), then the already-promoted container rollout (deploy rollback).
         var store = new InMemoryWorkflowOperationStore();
@@ -152,7 +152,7 @@ public sealed class CoordinatedReleaseReconcilerTests
     [Fact]
     public async Task Reconcile_MidUnwind_ContainerRollbackThrowsAfterMetadataReverted_SplitBrainEscalatesToManualIntervention()
     {
-        // Failure-of-failure (#2161): the unwind order is metadata-first, container-second. If the
+        // Failure-of-failure: the unwind order is metadata-first, container-second. If the
         // METADATA unwind succeeds (prior revision + inverse script applied) but the subsequent
         // CONTAINER rollback THROWS, the coordinated release is split-brained — metadata is reverted
         // but the new container image is still live. The conductor must escalate to

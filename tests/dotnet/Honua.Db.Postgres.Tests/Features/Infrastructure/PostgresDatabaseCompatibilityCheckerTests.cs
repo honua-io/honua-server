@@ -36,7 +36,7 @@ public class PostgresDatabaseCompatibilityCheckerTests
     [Fact]
     public async Task CheckCompatibilityAsync_OnFreshDatabaseWithoutPostGis_CreatesTheExtensionAndIsCompatible()
     {
-        // honua-server#6488: the customer-install database ships the PostGIS packages but has not run
+        // The customer-install database ships the PostGIS packages but has not run
         // CREATE EXTENSION, and the preflight runs before the migrations that would create it.
         var databaseName = "fresh_preflight_" + Guid.NewGuid().ToString("N");
         await using (var admin = new NpgsqlConnection(_fixture.ConnectionString))
@@ -72,7 +72,7 @@ public class PostgresDatabaseCompatibilityCheckerTests
     [Fact]
     public async Task CheckCompatibilityAsync_WithPasswordBeginningWithEquals_ReportsMalformedWithoutEchoingIt()
     {
-        // honua-server#6495: Terraform renders a generated password that starts with '=' as
+        // Terraform renders a generated password that starts with '=' as
         // "Password==...", which the driver cannot parse. That is a configuration fault: it must
         // be named as such, not reported as an incompatible database, and must not leak the secret.
         var result = await _checker.CheckCompatibilityAsync(
@@ -133,7 +133,7 @@ public class PostgresDatabaseCompatibilityCheckerTests
     {
         // honua-release run 38192851328 logged "Database compatibility check failed" 36 times while
         // SQLSTATE 53300 stayed at 0: the preflight could not borrow a connection. Hold the only
-        // pooled connection so the probe waits out its borrow timeout (honua-server#5916).
+        // pooled connection so the probe waits out its borrow timeout.
         var builder = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
         {
             MaxPoolSize = 1,

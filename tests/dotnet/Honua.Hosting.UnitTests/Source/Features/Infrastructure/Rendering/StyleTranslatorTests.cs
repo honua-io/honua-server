@@ -285,7 +285,7 @@ public class StyleTranslatorTests
     }
 
     // ---------------------------------------------------------------------------------------
-    // Zoom-dependent paint resolution (honua-server#2873).
+    // Zoom-dependent paint resolution.
     // ---------------------------------------------------------------------------------------
 
     [Theory]

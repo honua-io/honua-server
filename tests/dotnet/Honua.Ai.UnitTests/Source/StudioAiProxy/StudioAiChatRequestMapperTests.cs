@@ -192,7 +192,7 @@ public sealed class StudioAiChatRequestMapperTests
     [UnitTest]
     public void ToDomain_JsonNullMessagesArray_ReturnsValidationErrorInsteadOfThrowing()
     {
-        // honua-server#3010 review: System.Text.Json assigns a JSON `null` straight through to
+        // System.Text.Json assigns a JSON `null` straight through to
         // Messages despite its non-nullable C# declaration -- the compiler's null-state analysis is
         // a build-time convention, not something STJ enforces at deserialize time. Round-trip
         // through the real deserializer (rather than forcing a null via `!`) so this test proves
@@ -245,7 +245,7 @@ public sealed class StudioAiChatRequestMapperTests
     [UnitTest]
     public void ToDomain_ToolWithMissingInputSchema_IsRejected()
     {
-        // honua-server#3010 review: a JSON body that omits `inputSchema` entirely deserializes it
+        // A JSON body that omits `inputSchema` entirely deserializes it
         // to a default (Undefined) JsonElement, not an object -- the mapper must catch this rather
         // than forwarding an undefined schema to a provider.
         var http = JsonSerializer.Deserialize(

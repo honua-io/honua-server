@@ -2239,3 +2239,48 @@ The attestation now re-reads the pull request before any red status and sheds
 it when it is no longer open. Open pull requests keep every blocking reason, and
 the success and dispatch paths are unchanged. A failed re-read keeps the red status. No trigger, job, runner, required
 check or aggregate dependency changes.
+
+### Durable GP SOAP authentication host lifetime
+
+`GPServerDurableRuntimeTests.AuthenticationTests` shares one authenticated
+PostgreSQL job host across the anonymous, invalid API key and invalid bearer
+cases. Each case still creates its own owner job and clients, checks all seven
+SOAP operations for an unauthorized fault without job details, and verifies
+that job count, successful status and the independently computed area survive.
+
+The nested class keeps the existing serialized job-substrate collection and
+ends the shared worker lifetime before restart, migration and private-host
+cases clear the substrate. Those cases retain their private applications.
+The existing GPServer Durable and Aliases filter matches the parent class prefix,
+including the nested class, in selected PR and full trunk runs. No workflow,
+shard filter, required check or aggregate dependency changes; runner delta zero.
+Paired class build-host measurement: 25/25 identical passing cases, 498 to 470
+seconds.
+
+### Geocoding batch response fixture
+
+`GeocodingEndpointTests` shares an Enterprise-licensed batch application across
+11 response-only cases with identical provider capabilities. Provider results
+are derived from the current request; these cases never inspect request capture.
+The existing Community application remains separate. Each case owns its client
+and response. Cases that inspect captured requests, override capabilities or
+batch limits, exercise failover, or vary licensing retain private applications.
+The class fixture disposes both shared applications after the class completes.
+
+All existing case data, endpoint attributes, requests and assertions remain.
+The class stays in its existing PR-selected and full-trunk partition; this
+changes host lifetime without adding runners, jobs or required check names.
+
+### Catalog service typing host lifetime
+
+`GeoservicesCatalogServiceTypingTests.DefaultTypingFixture` initializes one
+application with the default typing graph and raster store for the four read-only
+service-directory cases. The lifecycle loop and duplicate-publication case retain
+their private applications and custom graphs. All service-name selection and
+response assertions remain in place; the class stays in its database collection.
+
+The existing Catalog and ImageServer Support partition retains these cases on
+selected PR runs and full trunk runs. No workflow, shard filter, required check,
+aggregate dependency or runner count changes. Paired class and existing-partition
+measurements are collected separately; test-body time excludes class-fixture
+startup and disposal, and does not establish complete CI job-wall savings.

@@ -384,7 +384,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
         }
     }
 
-    // honua-server#5449: the envelope column is jsonb, which reorders object keys, so the version
+    // The envelope column is jsonb, which reorders object keys, so the version
     // read must return the persisted bytes that were hashed rather than a re-serialization; a
     // legacy row with no persisted input is rebuilt only when the rebuild still hashes to the
     // stored digest, and enumerations leave the input out.
@@ -519,7 +519,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
         }
     }
 
-    // honua-server#4907: the published-route resolver reads this lookup, so the SQL must follow
+    // The published-route resolver reads this lookup, so the SQL must follow
     // each item's governing (newest accepted) request -- pending requests never govern, a route
     // the item republished away from retires, and another item cannot take the route.
     [IntegrationTest]
@@ -668,7 +668,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
         }
     }
 
-    // honua-server#3980: the published-pointer move must carry the approval's expected
+    // The published-pointer move must carry the approval's expected
     // current_version_id as a SQL predicate inside the request-insert transaction, so a version
     // saved after validation makes the UPDATE match zero rows and rolls the whole request back.
     [IntegrationTest]
@@ -909,7 +909,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
     [IntegrationTest]
     public async Task ContentItemOwner_SetOnceAtCreate_ImmutableAcrossUpdatesAndVersions()
     {
-        // honua-server#3001: studio_content_items.owner_id is populated once, from the owning
+        // Studio_content_items.owner_id is populated once, from the owning
         // draft, and never overwritten by a later draft update or version create for the same
         // item -- even when a later UpdateDraftAsync call carries a different OwnerId.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
@@ -1030,10 +1030,9 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
     [IntegrationTest]
     public async Task Migration090_BackfillsDraftOwnerBeforeCreatorFallback()
     {
-        // PR #3018 review, round 6, item 2: an admin could create an item while explicitly
-        // assigning its existing draft to an end user before content-item owner_id existed.
-        // The migration must preserve that designated draft owner; created_by is only the
-        // fallback for an item without an owned draft.
+        // Rows written before content-item owner_id existed can have a draft that an admin
+        // explicitly assigned to an end user. The migration must preserve that designated
+        // draft owner; created_by is only the fallback for an item without an owned draft.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
         try
         {
@@ -1108,9 +1107,9 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
     [IntegrationTest]
     public async Task DeleteDraft_WithNoSavedVersion_RemovesOrphanFromContentItemList()
     {
-        // Regression for honua-server#3003 PR review: a draft-only item, deleted before any
-        // version is ever saved, must not linger as an unopenable orphan in
-        // GET /content-items (no draft, no version, nothing to show or open).
+        // A draft-only item, deleted before any version is ever saved, must not linger as
+        // an unopenable orphan in GET /content-items (no draft, no version, nothing to show
+        // or open).
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
         try
         {
@@ -1262,7 +1261,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
             var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
 
             // A writer with no resolved request tenant (a background checkpoint, or any write
-            // predating honua-server#4905) records no tenant at all. Such rows belong to the
+            // predating tenant recording) records no tenant at all. Such rows belong to the
             // deployment's default tenant, which the caller's scope reports as IncludeUnassigned.
             var unassigned = await store.CreateDraftAsync(BuildDraft("1=1", packageKey: "legacy"));
 
@@ -1371,7 +1370,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
         var root = FindRepoRoot();
         // All segments after `root` are fixed literals and can never be rooted, so Path.Combine
         // cannot drop earlier segments here (cs/path-combine false positive). Migration 090 adds
-        // studio_content_items.owner_id (honua-server#3001); migration 089 adds the enumeration
+        // studio_content_items.owner_id; migration 089 adds the enumeration
         // indexes it's applied alongside for parity with the real deployment sequence, including
         // an index on content_publication_versions -- so migration 036 (which creates that
         // table) must run first, or 089 fails with "relation ... does not exist".
@@ -1387,10 +1386,10 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
                      "094_CreateSavedMapCheckpointVersionRecovery.sql",
                      "095_DeleteSavedMapOperationLogWithStudioDraft.sql",
                      // Migration 120 adds the tenant_id column every Studio lifecycle write and
-                     // read now carries (honua-server#4905).
+                     // read now carries.
                      "120_AddStudioTenantOwnership.sql",
                      // Migration 126 adds the persisted canonical content-hash input the version
-                     // insert and single-version read carry (honua-server#5449).
+                     // insert and single-version read carry.
                      "126_AddStudioContentHashInput.sql",
                      "134_VersionCanonicalDeployments.sql",
                      "162_CreateStudioDraftRevisions.sql",

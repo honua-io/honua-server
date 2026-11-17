@@ -52,9 +52,8 @@ public static class ProviderSmokeGraph
                 // sort field instead of resolving the resource's actual primary-id field
                 // (resource.FindPrimaryIdField()?.Name), so any resource whose PK field is
                 // named anything else fails every paged query with a SQL binder error.
-                // Tracked as honua-server#2964; every existing seed/schema in this repo
-                // happens to already name its PK field "objectid", which is why this has
-                // never surfaced before.
+                // Every existing seed/schema in this repo
+                // names its PK field "objectid", so these fixtures do not cover other PK names.
                 Name = "objectid",
                 Type = MetadataV2FieldType.BigInteger,
                 Nullable = false,
@@ -113,7 +112,7 @@ public static class ProviderSmokeGraph
         // are never resolved by name-based lookup). Splitting the smoke service across
         // several same-named MetadataV2Service records here would make every protocol but
         // the one on the first-indexed record 404 with "<protocol> is not enabled for this
-        // service" — found the hard way while building this fixture (honua-server#2947).
+        // service" — found the hard way while building this fixture.
         builder
             .AddResource(
                 ResourceId,
@@ -157,7 +156,7 @@ public static class ProviderSmokeGraph
                 publicationType: MetadataV2LayerType.EsriFeatureLayer)
             // OData. Query dispatch for /odata/Layers({layerId})/Features and
             // /odata/Features({layerId}) resolves the reader per layer through
-            // FeatureProviderQueryRouter (honua-server#2962), so this publication also
+            // FeatureProviderQueryRouter, so this publication also
             // drives real routed reads, not just $metadata/schema generation.
             .AddPublication(
                 "pub-smoke-odata",

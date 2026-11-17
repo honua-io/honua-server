@@ -32,7 +32,6 @@ public sealed class ExpressionEngineTests
     {
         var context = new MapContext { ["name"] = "  Acme  ", ["year"] = 2026d };
 
-        // The headline example from the ticket.
         ExpressionEngine.Evaluate("upper(trim(name)) + \"-\" + cast(year, string)", context)
             .Should().Be("ACME-2026");
 

@@ -268,7 +268,7 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
         var distanceInMeters = geometryProcessor.ConvertDistanceToMeters(5, DistanceUnit.Miles);
 
         // The WithinDistance predicate emits an && envelope pre-filter alongside the exact
-        // ST_DWithin geography check (#2740), so the filter geometry is bound twice — once for
+        // ST_DWithin geography check, so the filter geometry is bound twice — once for
         // the stored-CRS geometry and once for the geography operand the envelope is derived from.
         result.WhereParameters.OfType<byte[]>()
             .Where(value => value.SequenceEqual(geometry)).Should().HaveCount(2);
@@ -280,9 +280,9 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
     [Fact]
     public void BuildSelectQuery_WithinDistanceGeographicStorage_EmitsEnvelopePrefilterAndExactGeography()
     {
-        // #2740: the geodesic ST_DWithin(...::geography) predicate is not GiST-index-usable and
+        // The geodesic ST_DWithin(...::geography) predicate is not GiST-index-usable and
         // forces a full scan. It must be paired with an && envelope pre-filter in the stored CRS.
-        // #5461: for WGS 84 storage the envelope is the geodesic neighbourhood box, widened by
+        // For WGS 84 storage the envelope is the geodesic neighbourhood box, widened by
         // cos(reach latitude) east/west and probed again across the antimeridian. Membership is
         // proven in FeatureQueryBuilderDistancePrefilterIntegrationTests.
         var poolProvider = new DefaultObjectPoolProvider();
@@ -314,7 +314,7 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
     [Fact]
     public void BuildSelectQuery_WithinDistanceProjectedStorage_TransformsTheGeodesicBoxAndReprojectsExactCheck()
     {
-        // #5461: a metre expansion in projected units under-covers wherever the projection scales
+        // A metre expansion in projected units under-covers wherever the projection scales
         // distance (Web Mercator doubles it at latitude 60). Projected storage instead probes the
         // geodesic neighbourhood box transformed into the stored CRS, falling back to an
         // admit-everything envelope where the box cannot be transformed safely, while the exact
@@ -431,7 +431,7 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
     [Fact]
     public void BuildMvtTileQuery_WithCustomGridset_UsesGridsetSridEnvelopeAndTransform()
     {
-        // #1839: a custom gridset (here British National Grid, SRID 27700) must rasterize the tile
+        // A custom gridset (here British National Grid, SRID 27700) must rasterize the tile
         // in the gridset CRS — ST_MakeEnvelope(..., 27700) and ST_Transform(geom, 27700) — rather
         // than the WebMercator (3857) / WorldCRS84Quad (4326) built-in paths.
         var poolProvider = new DefaultObjectPoolProvider();

@@ -45,6 +45,33 @@ internal static class MigrationSourceUrls
         return builder.Uri.AbsoluteUri;
     }
 
+    internal static Uri? ResolveUri(string href, Uri baseUri)
+    {
+        if (string.IsNullOrWhiteSpace(href))
+        {
+            return null;
+        }
+
+        return !IsSourceRelativeHref(href) && Uri.TryCreate(href, UriKind.Absolute, out var absolute)
+            ? absolute
+            : Uri.TryCreate(EnsureDirectoryBase(baseUri), href, out var relative)
+                ? relative
+                : null;
+    }
+
+    // On Unix, Uri.TryCreate accepts "/collections/x" as an absolute file:// URI. A link href that
+    // starts with '/' is root- or protocol-relative and must resolve against the source instead.
+    internal static bool IsSourceRelativeHref(string href)
+    {
+        return href.TrimStart().StartsWith('/');
+    }
+
+    internal static Uri AppendPath(Uri baseUri, string relativePath)
+    {
+        var root = EnsureDirectoryBase(baseUri);
+        return new Uri(root, relativePath.TrimStart('/'));
+    }
+
     internal static Uri EnsureDirectoryBase(Uri uri)
     {
         var builder = new UriBuilder(uri)

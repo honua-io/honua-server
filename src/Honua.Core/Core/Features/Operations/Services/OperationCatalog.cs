@@ -10,9 +10,7 @@ namespace Honua.Core.Features.Operations.Services;
 
 public sealed class OperationCatalog : IOperationCatalog, IDisposable
 {
-    // Every operation dispatch calls GetDescriptorAsync, which previously rebuilt the
-    // whole catalog (querying every provider, re-sorting, re-hashing a version string)
-    // on every single call. Providers are typically static in-memory descriptor lists, so
+    // Providers are typically static in-memory descriptor lists, so
     // a short absolute-expiry cache avoids redundant rebuilds under dispatch bursts while
     // still picking up provider changes (e.g. a future dynamic provider) within a bounded
     // staleness window — capability/grounding metadata tolerates a few seconds of staleness

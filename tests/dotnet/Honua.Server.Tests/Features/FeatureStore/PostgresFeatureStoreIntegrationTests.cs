@@ -47,7 +47,7 @@ public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // honua-server#1568 residual: serialize the raw CREATE SCHEMA on the shared schema-mutation
+        // Serialize the raw CREATE SCHEMA on the shared schema-mutation
         // advisory lock so this per-test namespace DDL does not race a concurrent collection's locked
         // DROP SCHEMA ... CASCADE on the shared catalog and deadlock (40P01).
         await _fixture.CreateSchemaUnderLockAsync(_testSchema);
@@ -71,7 +71,7 @@ public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        // #2020: serialize the CASCADE drop on the shared advisory lock (catalog churn).
+        // Serialize the CASCADE drop on the shared advisory lock (catalog churn).
         await _fixture.DropSchemaAsync(_testSchema);
     }
 
@@ -124,7 +124,7 @@ public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
                 ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;
             """;
 
-        // honua-server#1568 (signature 2): createCatalogSql creates/ALTERs the literal,
+        // The createCatalogSql script creates/ALTERs the literal,
         // process-global honua.layers table (search_path isolation does not scope it), so apply it
         // under the shared seed advisory lock to keep parallel [Collection("Database")] tests off
         // the 40P01 deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global object.
@@ -151,7 +151,7 @@ public partial class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
                 srid = EXCLUDED.srid;
             """;
 
-        // #2020: the catalog INSERT mutates the global honua.layers table; route it through the
+        // The catalog INSERT mutates the global honua.layers table; route it through the
         // shared schema-mutation advisory lock (like the DDL above) so it serializes with parallel
         // seeders instead of racing the catalog (40P01).
         await _fixture.ApplyGlobalSeedSqlAsync(insertSql);

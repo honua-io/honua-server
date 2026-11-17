@@ -241,8 +241,7 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
         var descriptor = await PublishAsync();
         var url = descriptor.GetProperty("url").GetString()!;
 
-        // GDAL /vsicurl sizes the file from HEAD before every open; the length must be
-        // stable across probes (the output cache used to replay a zero on the second one).
+        // GDAL /vsicurl probes HEAD before each open; output length must remain stable.
         for (var attempt = 1; attempt <= 3; attempt++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Head, url);

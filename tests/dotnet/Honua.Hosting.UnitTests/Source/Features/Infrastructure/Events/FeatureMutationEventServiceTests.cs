@@ -25,11 +25,6 @@ public sealed class FeatureMutationEventServiceTests
     [UnitTest]
     public async Task PublishAsync_WhenWkbHasNoSridButLayerSridProvided_PublishesGeometryAndCrs()
     {
-        // Regression for review finding "Layer-SRID mutation paths drop stream
-        // geometry": gRPC ApplyEdits and WFS Transaction publish features whose
-        // WKB carries no SRID (default WKBWriter handleSRID:false). The
-        // PublishAsync layerSrid fallback must restore the paired
-        // geometry/geometryCrs envelope contract for streaming subscribers.
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
         FeatureChangeEventRequest? captured = null;
         publisher
@@ -109,7 +104,7 @@ public sealed class FeatureMutationEventServiceTests
     [UnitTest]
     public async Task PublishAsync_WhenDeleteEventHasLayerSridButNoMutationFeature_OmitsGeometryAndCrsTogether()
     {
-        // Regression: delete events on the gRPC ApplyEdits path do not pass a
+        // Delete events on the gRPC ApplyEdits path do not pass a
         // mutationFeature (no before-image) but do pass layerSrid for the
         // paired-contract fallback. Without a bidirectional guard the else-if
         // would set geometrySrid from layerSrid while leaving geometryJson

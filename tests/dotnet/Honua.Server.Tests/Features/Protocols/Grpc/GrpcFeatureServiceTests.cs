@@ -90,7 +90,7 @@ public sealed partial class GrpcFeatureServiceTests
             .Returns(ResourceValidationResult.Success(_testTriple));
 
         // Default: every edit/delete target is visible to the caller through the RLS-enforced
-        // reader, so ApplyEdits' pre-read guard (#2071) passes. Tests that exercise an
+        // reader, so ApplyEdits' pre-read guard passes. Tests that exercise an
         // RLS-hidden row override GetAsync to return null for that objectid.
         _featureReader
             .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
@@ -272,7 +272,7 @@ public sealed partial class GrpcFeatureServiceTests
         _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
-    // SEC-5: the publication's declared edit capabilities bound gRPC ApplyEdits the same way
+    // the publication's declared edit capabilities bound gRPC ApplyEdits the same way
     // they bound FeatureServer applyEdits and OGC API Features, even for a caller whose
     // per-operation write grant would otherwise allow the edit.
     [UnitTheory]
@@ -813,7 +813,7 @@ public sealed partial class GrpcFeatureServiceTests
         // (layer_id, objectid) with no row-level predicate. A row RLS hides from the caller
         // resolves to null through the RLS-enforced reader, so the delete must fail closed and
         // never reach the writer — otherwise a low-privilege caller could delete a hidden row by
-        // supplying its objectid (#2071).
+        // supplying its objectid.
         _featureReader
             .GetAsync(0, 999, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(null));
@@ -839,7 +839,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WhenUpdateTargetHiddenByRls_ThrowsNotFoundAndDoesNotWrite()
     {
-        // Same RLS bypass via the update path (#2071): an update keyed by an RLS-hidden objectid
+        // Same RLS bypass via the update path: an update keyed by an RLS-hidden objectid
         // must fail closed.
         _featureReader
             .GetAsync(0, 999, Arg.Any<CancellationToken>())
@@ -871,7 +871,7 @@ public sealed partial class GrpcFeatureServiceTests
     public async Task ApplyEdits_AddsOnly_DoesNotPreReadAndWrites()
     {
         // Adds carry no objectid and are not subject to the visibility pre-read; an add-only
-        // batch must still reach the writer even when GetAsync would return null (#2071).
+        // batch must still reach the writer even when GetAsync would return null.
         _featureReader
             .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(null));
@@ -1201,7 +1201,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_DoesNotRepeatTheObjectIdAsAnAttribute()
     {
-        // honua-server#5330: the id travels in Feature.id; the storage primary-key
+        // The id travels in Feature.id; the storage primary-key
         // attribute is not repeated in the attribute map, in any casing.
         var features = ImmutableArray.Create(
             Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
@@ -1275,7 +1275,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ReturnsSpatialReferenceGeometryTypeAndFieldsFromMetadata()
     {
-        // REST-parity contract (#2252): a standard feature query response carries the
+        // REST-parity contract: a standard feature query response carries the
         // layer's spatial reference, geometry type, object-id field name, and field
         // definitions so gRPC clients do not have to fall back to a separate metadata
         // lookup. The fixture layer is WGS84 / Point with objectid + name fields.
@@ -1677,7 +1677,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithOutStatistics_IsRefusedWithoutReadingFeatures()
     {
-        // #5465: the geospatial.v1 response carries layer fields and feature rows only, so
+        // The geospatial.v1 response carries layer fields and feature rows only, so
         // an aggregate request must be refused rather than answered with ordinary features.
         var request = new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" };
         request.OutStatistics.Add(new Proto.StatisticDefinition
@@ -1716,7 +1716,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_OrderBy_CarriesSchemaFieldTypes()
     {
-        // #5466: managed JSONB attributes only sort numerically when the clause carries the
+        // Managed JSONB attributes only sort numerically when the clause carries the
         // declared field type; untyped, population 20 sorts before 3.
         UseOrderingLayer();
         FeatureQuery? captured = null;
@@ -2079,7 +2079,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Operation(Operations.Query)]
     public async Task QueryFeatures_PerOperationQueryGrant_DoesNotSkipRoleList()
     {
-        // Coarse policy requires a role the user lacks. A query grant must not skip it (#6358).
+        // Coarse policy requires a role the user lacks. A query grant must not skip it.
         var protectedService = CreateService(
             "protected",
             accessPolicy: new AccessPolicy { AllowedRoles = ["coarse-only"] });
@@ -2307,7 +2307,7 @@ public sealed partial class GrpcFeatureServiceTests
             opts.DataEditorRoles = ["data-editor"];
         });
 
-        // gRPC binds where clauses to the shared filter parser and translator (SEC-11);
+        // gRPC binds where clauses to the shared filter parser and translator;
         // the provider-specific SQL is not under test here.
         var sqlFilterTranslator = Substitute.For<ISqlFilterTranslator>();
         sqlFilterTranslator
@@ -2316,7 +2316,7 @@ public sealed partial class GrpcFeatureServiceTests
         services.AddSingleton<IFilterExpressionService>(
             new FilterExpressionService(new FilterExpressionTranslator(sqlFilterTranslator)));
 
-        // Register the per-operation resolver (#1376) so the gRPC read/write seams
+        // Register the per-operation resolver so the gRPC read/write seams
         // consult grants first; when no grant matches they fall back to the coarse
         // AccessPolicy exactly as before. Omitting grants exercises that fallback.
         if (resolverGrants is { Length: > 0 })

@@ -156,7 +156,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
     public async Task Wcs_GetCoverage_ZarrSliceWithRangeSubset_ReturnsOperationNotSupported()
     {
-        // Documented divergence (#2796): the Zarr slice path renders a single-band
+        // Documented divergence: the Zarr slice path renders a single-band
         // grayscale PNG and does not compose RANGESUBSET-selected bands, so it rejects
         // the selection explicitly rather than silently returning the primary render.
         var response = await _fixture.Client.GetAsync(
