@@ -531,7 +531,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests
             with
         { Status = OperationProposalStatus.Submitted }));
         Assert.True(await workflows.TryCreateAsync(RefusedLocalDeploy(workflowId, payload.DesiredRevision, now)));
-        Assert.True(await workflows.TryCreateAsync(AwaitingLocalRestore(id, workflowId, payload, proposalId, now)));
+        Assert.True(await workflows.TryCreateAsync(AwaitingLocalRestore(id, payload, proposalId)));
         return id;
     }
 
@@ -555,18 +555,18 @@ public sealed class DurableRestoreLifecycleIntegrationTests
     };
 
     private static WorkflowOperationRecord AwaitingLocalRestore(
-        string id, string workflowId, DeployExecutionPayload payload, string proposalId, DateTimeOffset now) => new()
+        string id, DeployExecutionPayload payload, string proposalId) => new()
     {
         OperationId = id,
         Kind = WorkflowOperationKind.PreMigrationRestore,
         Status = WorkflowOperationStatus.Reconciling,
-        CreatedAt = now,
-        UpdatedAt = now,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
         Audit = new OperationAuditInfo { RequestedBy = "proposer", ProposalId = proposalId },
         PreMigrationRestore = new PreMigrationRestoreContext
         {
             Phase = "awaiting-local-deploy",
-            DeployOperationId = workflowId,
+            DeployOperationId = DeployWorkflowService.CreateOperationId(id),
             ApprovedBy = "approver",
             Payload = payload.Serialize()
         }
