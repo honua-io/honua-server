@@ -218,8 +218,8 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
         instance!.Status.Should().Be(OperationHandleStatus.Failed);
         instance.Result.Should().NotBeNull();
         instance.Result!.Details["statusCode"].Should().Be("400", "the connection handler answered the approved replay");
-        instance.Result.Details["response"].Should().NotContain(AgentRouteAdmissionMiddleware.PolicyRef,
-            "a gateway dispatch carries a verified operation lineage");
+        instance.Result.Details["response"].Should().Contain("Must specify either Password or SecretReference",
+            "the replay reached the connection handler's credential validation");
         await AssertReplayedWithServerMintedCredentialAsync(proposalId);
     }
 
