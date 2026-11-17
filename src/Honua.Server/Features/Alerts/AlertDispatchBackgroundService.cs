@@ -47,7 +47,10 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
     public bool IsDispatcherRunning => _isRunning;
 
-    public bool IsDispatcherEnabled => _options.Enabled;
+    // Ops notifications (deploy and job terminal events, AI notices) are the deployment's own
+    // notices to its operator. They are delivered whenever Alerts:Ops is on, even while the
+    // Preview geofence pipeline (Alerts:Enabled) is off; then only ops-source rows are claimed.
+    public bool IsDispatcherEnabled => _options.Enabled || _options.Ops.Enabled;
 
     public DateTimeOffset? LastPollAt
     {
@@ -75,7 +78,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_options.Enabled)
+        if (!IsDispatcherEnabled)
         {
             LogDisabled(_logger);
             return;
@@ -108,9 +111,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     // check in AlertPipeline.GetDeliverableChannels cannot see that.
                     var editionPolicy = scope.ServiceProvider.GetService<IAlertEditionPolicy>();
 
-                    var batch = await dispatchStore
-                        .ClaimPendingAsync(_options.Dispatch.ClaimBatchSize, now, stoppingToken)
-                        .ConfigureAwait(false);
+                    var batch = await ClaimBatchAsync(dispatchStore, now, stoppingToken).ConfigureAwait(false);
 
                     foreach (var item in batch)
                     {
@@ -196,6 +197,15 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         {
             LogDeliveredPurged(_logger, deleted);
         }
+    }
+
+    private Task<IReadOnlyList<AlertDispatchItem>> ClaimBatchAsync(
+        IAlertDispatchStore dispatchStore, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var batchSize = _options.Dispatch.ClaimBatchSize;
+        return _options.Enabled
+            ? dispatchStore.ClaimPendingAsync(batchSize, now, cancellationToken)
+            : dispatchStore.ClaimPendingOpsAsync(batchSize, now, cancellationToken);
     }
 
     private async Task ProcessItemAsync(

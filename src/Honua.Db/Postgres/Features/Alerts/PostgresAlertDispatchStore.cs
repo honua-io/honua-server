@@ -50,7 +50,15 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        return await ClaimPendingByChannelAsync(maxCount, now, AlertChannelType.Digest, excludeChannel: true, cancellationToken).ConfigureAwait(false);
+        return await ClaimPendingAsync(maxCount, now, DispatchClaimScope.AllExceptDigest, cancellationToken).ConfigureAwait(false);
+    }
+
+    async Task<IReadOnlyList<AlertDispatchItem>> IAlertDispatchStore.ClaimPendingOpsAsync(
+        int maxCount,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        return await ClaimPendingAsync(maxCount, now, DispatchClaimScope.OpsExceptDigest, cancellationToken).ConfigureAwait(false);
     }
 
     async Task<IReadOnlyList<AlertDispatchItem>> IAlertDispatchStore.ClaimPendingDigestAsync(
@@ -58,14 +66,13 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        return await ClaimPendingByChannelAsync(maxCount, now, AlertChannelType.Digest, excludeChannel: false, cancellationToken).ConfigureAwait(false);
+        return await ClaimPendingAsync(maxCount, now, DispatchClaimScope.DigestOnly, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingByChannelAsync(
+    private async Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingAsync(
         int maxCount,
         DateTimeOffset now,
-        AlertChannelType? channelType,
-        bool excludeChannel,
+        DispatchClaimScope scope,
         CancellationToken cancellationToken)
     {
         // status IN (0, 3) claims Pending/Failed rows that are due. The extra
@@ -88,13 +95,9 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                     SELECT 1
                     FROM honua.alert_events e
                     WHERE e.event_id = alert_dispatch.event_id
-                      AND (e.source = 'ops' OR e.rule_id IS NOT NULL)
+                      AND (e.source = 'ops' OR (@ops_only = false AND e.rule_id IS NOT NULL))
                   )
-                  AND (
-                    @channel_type IS NULL
-                    OR (@exclude_channel = true AND channel_type <> @channel_type)
-                    OR (@exclude_channel = false AND channel_type = @channel_type)
-                  )
+                  AND (channel_type = @digest_channel) = @digest_only
                   -- Channel pause: never claim rows for a paused channel. Paused rows
                   -- stay enqueued and become claimable again once the channel resumes.
                   AND channel_type NOT IN (
@@ -120,11 +123,9 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
 
         command.Parameters.AddWithValue("now", NpgsqlDbType.TimestampTz, now);
         command.Parameters.AddWithValue("max_count", NpgsqlDbType.Integer, maxCount);
-        command.Parameters.AddWithValue(
-            "channel_type",
-            NpgsqlDbType.Smallint,
-            channelType is null ? DBNull.Value : channelType.Value.ToDbValue());
-        command.Parameters.AddWithValue("exclude_channel", NpgsqlDbType.Boolean, excludeChannel);
+        command.Parameters.AddWithValue("digest_channel", NpgsqlDbType.Smallint, AlertChannelType.Digest.ToDbValue());
+        command.Parameters.AddWithValue("digest_only", NpgsqlDbType.Boolean, scope == DispatchClaimScope.DigestOnly);
+        command.Parameters.AddWithValue("ops_only", NpgsqlDbType.Boolean, scope == DispatchClaimScope.OpsExceptDigest);
 
         var rows = new List<AlertDispatchItem>(Math.Max(1, maxCount));
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
@@ -435,5 +436,14 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         }
 
         return states;
+    }
+
+    // OpsExceptDigest drops rule-sourced (geofence) events so an ops-only dispatcher never
+    // delivers Preview alert traffic; the digest sink claims its own channel separately.
+    private enum DispatchClaimScope
+    {
+        AllExceptDigest,
+        OpsExceptDigest,
+        DigestOnly,
     }
 }

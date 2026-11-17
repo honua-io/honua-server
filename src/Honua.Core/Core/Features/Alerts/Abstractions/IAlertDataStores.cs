@@ -97,6 +97,13 @@ public interface IAlertDispatchStore
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 
+    // Claims only dispatches of ops-source events (AlertEventSources.Ops): the deployment's own
+    // notices to its operator, delivered even when the Preview geofence evaluator is off.
+    Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingOpsAsync(
+        int maxCount,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingDigestAsync(
         int maxCount,
         DateTimeOffset now,

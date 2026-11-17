@@ -46,6 +46,9 @@ option when appropriate to the failure and schema compatibility.
 > delivery channels, and their Console Operate views require an explicit
 > `alerts.geofence` capability opt-in. The qualification lanes and operational
 > evidence described here prove the implementation; they are not a GA claim.
+> Operator notifications are separate. These are deploy and job terminal events
+> and AI notices, configured under `Alerts:Ops`. They are delivered whenever
+> `Alerts:Ops:Enabled` is true, without that opt-in.
 
 ## The loop
 
