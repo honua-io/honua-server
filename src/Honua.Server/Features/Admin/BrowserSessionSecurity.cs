@@ -90,6 +90,14 @@ internal static class BrowserSessionSecurity
             return;
         }
 
+        if (ProtocolRequestClassifier.IsWmsAlias(context.Request.Path))
+        {
+            // WMS errors are otherwise HTTP 200 service exception reports; this refusal stays HTTP 400.
+            await Results.Text(RefusalReason, "text/plain", statusCode: StatusCodes.Status400BadRequest)
+                .ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
+
         await StandardErrorResponseFormatter.FormatError(
                 context,
                 StandardErrorResponse.BadRequest(RefusalReason),

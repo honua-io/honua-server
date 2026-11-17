@@ -318,9 +318,13 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
         // An administrator of another tenant can neither add a member nor grant the group.
         using (var refused = await PostAsync(client, $"/sharing/rest/community/groups/{group}/addUsers?token={foreignAdmin}", ("users", "mallory")))
         {
-            await refused.AssertGeoServicesErrorAsync(403, 404);
+            await refused.AssertGeoServicesErrorAsync(404);
         }
-        (await PostAsync(client, $"/sharing/rest/content/items/{ItemId}/share?token={foreignAdmin}", ("groups", group))).Dispose();
+        using (var foreignShare = await PostAsync(client, $"/sharing/rest/content/items/{ItemId}/share?token={foreignAdmin}", ("groups", group)))
+        {
+            (await DocumentAsync(foreignShare)).GetProperty("notSharedWith").EnumerateArray()
+                .Select(value => value.GetString()).Should().Contain(group);
+        }
         await AssertQueryDeniedAsync(client, member);
 
         // Once the owner shares, the member reads; the same username in another tenant and a

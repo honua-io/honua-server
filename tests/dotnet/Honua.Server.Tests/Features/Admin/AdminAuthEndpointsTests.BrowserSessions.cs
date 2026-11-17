@@ -131,6 +131,8 @@ public sealed partial class AdminAuthEndpointsTests
         rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var rejectedGeoServices = await client.PostAsync("/rest/services/any/FeatureServer/0/applyEdits", null);
         rejectedGeoServices.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var rejectedWms = await client.PostAsync("/rest/services/any/MapServer/wms", null);
+        rejectedWms.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await BrowserCsrf.SetHeaderAsync(client);
         var logout = await client.PostAsync("/api/v1/admin/auth/logout", null);
         logout.StatusCode.Should().Be(HttpStatusCode.OK);
