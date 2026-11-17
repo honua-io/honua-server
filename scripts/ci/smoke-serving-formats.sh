@@ -138,9 +138,8 @@ docker image inspect "$IMAGE" \
   --format 'image={{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}{{"\n"}}revision={{index .Config.Labels "org.opencontainers.image.revision"}}{{"\n"}}architecture={{.Architecture}}' \
   > "$OUT/image.txt"
 
-compose up -d --no-build postgres redis
+compose up -d --no-build postgres
 wait_healthy postgres 180
-wait_healthy redis 60
 compose up -d --no-build honua-server
 wait_healthy honua-server 300
 compose exec -T honua-server /app/honua-healthcheck --security

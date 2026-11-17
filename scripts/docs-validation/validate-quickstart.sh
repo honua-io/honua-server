@@ -10,7 +10,6 @@ artifacts="${HONUA_DOCS_ARTIFACTS:-${repo_root}/artifacts/docs-validation/quicks
 http_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_HTTP_PORT --ci-default 18080)"
 grpc_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_GRPC_PORT --ci-default 18081)"
 postgres_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_POSTGRES_PORT --ci-default 15432)"
-redis_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_REDIS_PORT --ci-default 16379)"
 preserve_stack="${HONUA_DOCS_PRESERVE_STACK:-0}"
 base_url="http://127.0.0.1:${http_port}"
 run_dir=$(mktemp -d "${repo_root}/.docs-validation-quickstart.XXXXXX")
@@ -18,7 +17,6 @@ extracted="${run_dir}/quickstart.sh"
 export HONUA_HTTP_PORT="${http_port}"
 export HONUA_GRPC_PORT="${grpc_port}"
 export POSTGRES_PORT="${postgres_port}"
-export REDIS_PORT="${redis_port}"
 export HONUA_STORAGE_VOLUME_NAME="${project_name}_storage"
 compose=(docker compose --project-name "${project_name}" --project-directory "${repo_root}")
 

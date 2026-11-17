@@ -15,7 +15,7 @@ Honua Server and Honua Collect are licensed under the Fair Core License, Version
 
 The first release uses the supported `Licensing__Mode=Disabled` setting, including in
 Production. No license file, signing key or license minting is required. All catalog
-entitlements are active, including GeoServices editing, Redis caching, geocoding and
+entitlements are active, including GeoServices editing, output caching, geocoding and
 OIDC. License sources are not loaded or validated; expiry notifications and
 license-driven operation cancellation are off. Uploads are rejected while this mode
 is active.
@@ -24,8 +24,7 @@ is active.
 Licensing__Mode=Disabled
 ```
 
-Set the same mode on standalone GDAL workers; their job coordination still requires
-Redis, while licensing remains off. Restart each host after
+Set the same mode on standalone GDAL workers; their job coordination requires the shared system PostgreSQL database, while licensing remains off. Restart each host after
 changing the mode. This explicit choice belongs in the
 deployment configuration: the server default remains `Licensing__Mode=Enabled`
 with Community when no edition or license source is configured. Honua's 2026.1
@@ -73,7 +72,7 @@ With licensing enabled, the server operates in one of three editions:
 | Edition | How it activates | Scope |
 |---|---|---|
 | Community | Default — no license file configured | Baseline platform: documented Community protocol surfaces, publishing, one-shot file import, portal token issuance; I3S remains Enterprise |
-| Pro | Signed license file with Pro entitlements | Adds features such as GeoServices FeatureServer editing, spatial analytics and data enrichment, real-time streams, Redis caching, geocoding, single-provider OIDC SSO with a choice of role claims, core branch versioning (Preview) |
+| Pro | Signed license file with Pro entitlements | Adds features such as GeoServices FeatureServer editing, spatial analytics and data enrichment, real-time streams, output caching, geocoding, single-provider OIDC SSO with a choice of role claims, core branch versioning (Preview) |
 | Enterprise | Signed license file with Enterprise entitlements | Adds features such as multi-provider OIDC governance, custom claim mappings and tenant mapping, batch geocoding, organisational approval/policy controls, specialised scene ingest and I3S (Experimental), service imports, the plugin SDK |
 
 Community requires no license and is unaffected by license expiry. Pro and Enterprise use the strict failure-mode contract: a missing, invalid or expired license refuses startup with a non-zero exit; no Community fallback is permitted. Declare `Licensing__Edition=Pro` or `Enterprise` so a missing source is identified as a paid deployment. Explicit `Community` ignores license sources; with no declared edition and no source the default remains Community.
