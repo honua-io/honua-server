@@ -1,0 +1,82 @@
+name: Export Portolan Check
+
+# Advisory (#8268): publishes an Export in the integration test, then runs the
+# Portolan validator pinned in scripts/ci/portolan-pin.v1.json over the
+# published files. Findings go to the job summary, warnings and the report
+# artifact and never fail the job; it fails only when the check itself breaks
+# (test failure, missing snapshot, validator crash or a different
+# specification than the pin). Not a required check.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    branches: [trunk]
+    paths:
+      - '.github/workflows/export-portolan-check.yml'
+      - 'scripts/ci/check-export-portolan.py'
+      - 'scripts/ci/portolan-pin.v1.json'
+      - 'src/**/PairedPublication*/**'
+      - 'src/**/*PairedPublish*'
+      - 'src/**/Exports/**'
+      - 'src/Honua.Core/Core/Features/Publishing/Descriptors/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Admin/PairedPublish*'
+      - 'tests/dotnet/**/Exports/**'
+      - 'docs/gis/schemas/publication-descriptor*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: export-portolan-check-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_TEST_CONFIGURATION: Release
+  HONUA_MSBUILD_NODE_CAP: 4
+  HONUA_EXPORT_SNAPSHOT_DIR: ${{ github.workspace }}/artifacts/export-snapshot
+
+jobs:
+  check:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    name: Export Portolan check (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-dotnet-ci
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Publish an Export and copy its files
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release \
+            --filter 'FullyQualifiedName~PairedPublishEndpointTests.PairedPublish_Version_CopiesAsSelfContainedFileTree' \
+            --logger 'trx;LogFileName=export-snapshot.trx' --results-directory artifacts/test-results
+
+      - name: Install the pinned validator
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("scripts/ci/portolan-pin.v1.json"))["validator_version"])')"
+          python3 -m pip install "rashid==${version}"
+
+      - name: Check the Export against the Portolan specification
+        run: python3 scripts/ci/check-export-portolan.py "${HONUA_EXPORT_SNAPSHOT_DIR}" artifacts/test-results/export-portolan-report.json
+
+      - name: Retain the snapshot and report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: export-portolan-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/export-snapshot/
+            artifacts/test-results/export-*
+          if-no-files-found: warn
+          retention-days: 14

@@ -1167,6 +1167,17 @@ dispatch never cancels it. Their
 Measured on the 120 PRs merged since 9 Nov: GeoArrow 30 to 6 PR runs (4.4 runner
 minutes each), GeoParquet 34 to 15 (10.2 minutes each), about 300 runner minutes.
 
+Export Portolan Check (#8268) is advisory and not required. It runs on ready
+pull requests that touch Exports (paired publication sources and tests, the
+publication descriptor model and schema, `Exports/` folders) or the check itself,
+on one hosted runner. The paired-publish integration test publishes an Export and
+copies its version files to `HONUA_EXPORT_SNAPSHOT_DIR`; the validator pinned in
+`scripts/ci/portolan-pin.v1.json`, the one place the specification version lives,
+checks that copy. Specification findings are reported and never fail the job. A
+failing test, an empty snapshot, a validator crash or a validator that applies a
+different specification than the pin fails it, so a broken check never reads as a
+clean Export. The same test also runs in the PR Gate affected shards.
+
 Docs Link Gate retains its complete PR suite for documentation pages, skills,
 checker and manifest edits, and for every docs file its checkers read
 (capability keys and matrix, install artifacts, the OKF graph, llms.txt, the
