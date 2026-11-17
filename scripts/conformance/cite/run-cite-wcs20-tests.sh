@@ -186,7 +186,7 @@ export CITE_PROFILE="$PROFILE"
 export HOST_UID="$(id -u)"
 export HOST_GID="$(id -g)"
 
-$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d postgres redis
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d postgres
 
 echo -e "${YELLOW}Waiting for Postgres to be ready...${NC}"
 if ! wait_for_service_health postgres "$POSTGRES_HEALTHCHECK_TIMEOUT" "Postgres"; then

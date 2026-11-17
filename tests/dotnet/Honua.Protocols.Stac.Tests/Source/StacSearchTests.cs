@@ -735,7 +735,7 @@ public sealed class StacSearchTests : IAsyncLifetime
             }
             else if (fields == "-properties,+properties.name")
             {
-                // BH2-009: include mode auto-seeds required fields, so geometry IS present even
+                // include mode auto-seeds required fields, so geometry IS present even
                 // though the caller only explicitly included properties.name.
                 item.TryGetProperty("geometry", out _).Should().BeTrue("geometry is a required STAC field and must be present in include mode");
                 item.TryGetProperty("id", out _).Should().BeTrue("id is a required STAC field and must be present in include mode");
@@ -744,7 +744,7 @@ public sealed class StacSearchTests : IAsyncLifetime
             }
             else
             {
-                // BH2-009: include mode with +geometry,-geometry — required fields (all 8) must
+                // include mode with +geometry,-geometry — required fields (all 8) must
                 // always be present; the prior ContainSingle() assertion was testing the bug.
                 item.TryGetProperty("geometry", out _).Should().BeTrue("geometry is required");
                 item.TryGetProperty("id", out _).Should().BeTrue("id is required");
@@ -778,7 +778,7 @@ public sealed class StacSearchTests : IAsyncLifetime
 
         using var json = JsonDocument.Parse(content);
         var item = json.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Subject;
-        // BH2-009: top-level 'id' is a required STAC field and must always be returned in
+        // top-level 'id' is a required STAC field and must always be returned in
         // include mode; the prior BeFalse() assertion was validating the bug.
         item.TryGetProperty("id", out _).Should().BeTrue("id is a required STAC item field and must be present in include mode");
         var properties = item.GetProperty("properties");
@@ -1009,7 +1009,7 @@ public sealed class StacSearchTests : IAsyncLifetime
             .Should().Contain(link => link.GetProperty("rel").GetString() == "next")
             .Subject;
 
-        // BH2-010: the next-link URL should contain `collections=N` with a literal comma
+        // the next-link URL should contain `collections=N` with a literal comma
         // as the ID separator (not %2C). The href must be followable as a GET request.
         var href = nextLink.GetProperty("href").GetString();
         href.Should().NotBeNull();

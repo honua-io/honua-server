@@ -98,7 +98,7 @@ public sealed class OgcProcessesJobOwnershipTests : IClassFixture<OgcProcessesJo
     [Endpoint("DELETE /ogc/processes/jobs/{jobId}")]
     public async Task DismissJob_CrossOwnerJob_ReturnsNotFound_AndDoesNotCancel()
     {
-        // #2753: DismissJob is a destructive write; a non-owner must not be able to cancel
+        // DismissJob is a destructive write; a non-owner must not be able to cancel
         // another owner's job. The ownership check must reject BEFORE any mutation.
         using var response = await _client.DeleteAsync("/ogc/processes/jobs/other-job");
 

@@ -443,14 +443,14 @@ def test_live_repository_is_green() -> None:
 def test_live_runbook_annotations_all_resolve() -> None:
     """Every shipped `runbook_url` must be a manifest entry that resolves.
 
-    The 19 annotations in `docs/guides/deploy/examples/prometheus-alerts.yml`
+    The 16 annotations in `docs/guides/deploy/examples/prometheus-alerts.yml`
     pointed at `/operations/runbook#...` for as long as they existed; that page
     has never been in this repository. This pins the retarget so the next docs
     restructure cannot quietly recreate the same hole.
     """
     alerts = (REPO_ROOT / "docs/guides/deploy/examples/prometheus-alerts.yml").read_text(encoding="utf-8")
     urls = [line.split('"')[1] for line in alerts.splitlines() if "runbook_url:" in line]
-    assert_that(len(urls) == 19, f"expected 19 runbook_url annotations, found {len(urls)}")
+    assert_that(len(urls) == 16, f"expected 16 runbook_url annotations, found {len(urls)}")
     assert_that(
         not any("docs.honua.io" in url or "/operations/runbook" in url for url in urls),
         "the dark docs host and /operations/runbook are not runtime runbook targets",

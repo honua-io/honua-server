@@ -286,7 +286,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [UnitTest]
     public void IsConfigured_EndpointAndModelPresent_ButNoApiKeyAndNoEnvFallback_ReturnsFalse()
     {
-        // honua-server#3010 review: a provider declared without ApiKey and without the per-provider
+        // A provider declared without ApiKey and without the per-provider
         // env var fallback can never actually be called, so it must not report configured — otherwise
         // GET /capabilities lies and POST /chat commits a 200 SSE stream before erroring.
         var adapter = new AnthropicStudioAiProxyAdapter(
@@ -349,7 +349,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [UnitTest]
     public async Task StreamAsync_SystemRoleMessage_IsFoldedIntoAnthropicSystemParamNotDropped()
     {
-        // honua-server#3010 review: the mapper accepts a messages[] entry with role=system (the
+        // The mapper accepts a messages[] entry with role=system (the
         // OpenAI adapter forwards it as an OpenAI "system"-role message), but Anthropic's Messages
         // API has no such role -- it must be folded into the top-level `system` string instead of
         // silently disappearing.

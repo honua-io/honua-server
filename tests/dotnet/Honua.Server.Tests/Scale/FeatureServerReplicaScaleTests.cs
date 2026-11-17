@@ -177,7 +177,7 @@ public sealed class FeatureServerReplicaScaleTests
 
                 var extract = await ExtractChangesAsync(client, serviceId, apiKey, replicaId);
                 // extractChanges for a replica that does not exist on this instance is a
-                // GeoServices error: post-#2418 signalled with HTTP 200 + {"error":{"code":404}}
+                // GeoServices error: signalled with HTTP 200 + {"error":{"code":404}}
                 // (or a legacy 404). extract is a ScaleResponse wrapper, not an
                 // HttpResponseMessage, so assert the contract on its captured status + body.
                 GeoServicesErrorAssertions.AssertGeoServicesError((int)extract.StatusCode, extract.Content, 404);

@@ -46,7 +46,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         var seedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-v1.sql");
         var seedSql = await File.ReadAllTextAsync(seedPath);
 
-        // honua-server#1568 (signature 2): the seed runs ALTER/INSERT DDL against the literal,
+        // The seed runs ALTER/INSERT DDL against the literal,
         // process-global honua schema, which the per-test search_path isolation does not scope.
         // Apply it under the shared seed advisory lock so parallel [Collection("Database")] tests
         // do not deadlock (40P01) racing ACCESS EXCLUSIVE locks on the same global honua.* objects.
@@ -230,16 +230,15 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         {
             ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
             // Shared 'features' table => declare the layer discriminator so the reader
-            // constrains reads to this binding's StorageLayerId (cross-layer isolation,
-            // honua-server#1238 follow-up).
+            // constrains reads to this binding's StorageLayerId (cross-layer isolation).
             ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
         };
 
-        // When omitted (includeAttributesAccessor: false) the binding reproduces the
-        // honua-server#1238 drift: the seed left storage_options empty so the reader
-        // projects bare columns ('globalid', ...) against the shared features table,
-        // which has no such columns => Postgres 42703. The seed/bridge fix supplies
-        // this accessor so declared fields resolve as attributes->>'field'.
+        // When omitted (includeAttributesAccessor: false) the binding has empty
+        // storage_options, so the reader projects bare columns ('globalid', ...)
+        // against the shared features table, which has no such columns => Postgres
+        // 42703. The seed/bridge supplies this accessor so declared fields resolve
+        // as attributes->>'field'.
         if (includeAttributesAccessor)
         {
             options["attributesColumn"] = JsonSerializer.SerializeToElement("attributes");
@@ -416,12 +415,12 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             "queryTopFeatures is served unconditionally for advanced-query layers");
     }
 
-    // Regression for honua-server#1238: the JSONB-attribute layer must be queryable
-    // ONLY because the binding declares attributesColumn=attributes. This test republishes
-    // the graph WITHOUT that accessor to prove the bug reproduces (bare columns =>
-    // Postgres 42703 => GeoServices 400 "Invalid query syntax."), then republishes WITH
-    // the accessor (what the seed/bridge fix now supplies) to prove 200 with features.
-    // This guards against the TestKit attributesColumn shortcut silently masking the drift.
+    // The JSONB-attribute layer must be queryable ONLY because the binding declares
+    // attributesColumn=attributes. This test republishes the graph WITHOUT that accessor to
+    // prove the failure reproduces (bare columns => Postgres 42703 => GeoServices 400
+    // "Invalid query syntax."), then republishes WITH the accessor (what the seed/bridge
+    // supplies) to prove 200 with features. This guards against the TestKit
+    // attributesColumn shortcut silently masking the drift.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/mobile_offline_demo/FeatureServer/68910/query")]
@@ -442,7 +441,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
                 + "rejects the query with 42703 (the honua-server#1238 failure)");
         }
 
-        // The fix: with the accessor, declared fields resolve as attributes->>'field'.
+        // Declared fields resolve through the accessor as attributes->>field.
         await PublishMobileOfflineMetadataV2Async(includeAttributesAccessor: true);
 
         var fixedResponse = await _fixture.Client.GetAsync(requestUri);
@@ -455,13 +454,11 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         root.GetProperty("features").GetArrayLength().Should().BeGreaterThanOrEqualTo(3);
     }
 
-    // Regression guard for honua-server#1768. The mobile DisconnectedFieldWorkflow
-    // Cloud Acceptance harness reads features back from the seeded mobile_offline_demo
-    // JSONB-attribute layer (68910) with the harness "run tag" field
-    // 'honua_acceptance_run' in both the WHERE clause and outFields, plus an objectIds
-    // readback. #1768 reported that path returning HTTP 500 "Query execution failed"
-    // against a deployed (pinned) honua-server. These assertions pin the corrected
-    // trunk contract (post-#1238 JSONB-attribute resolution):
+    // The mobile DisconnectedFieldWorkflow Cloud Acceptance harness reads features
+    // back from the seeded mobile_offline_demo JSONB-attribute layer (68910) with the
+    // harness "run tag" field 'honua_acceptance_run' in both the WHERE clause and
+    // outFields, plus an objectIds readback. That path must not return HTTP 500 "Query
+    // execution failed". These assertions pin the JSONB-attribute resolution contract:
     //   * an UNDECLARED run-tag field is rejected cleanly with 400 ("Unknown field …
     //     in filter expression"), never a 500; and
     //   * once the run-tag field is DECLARED on the layer (as the cloud acceptance

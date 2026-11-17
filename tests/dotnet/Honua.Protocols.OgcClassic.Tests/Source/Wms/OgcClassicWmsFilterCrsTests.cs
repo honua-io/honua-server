@@ -80,7 +80,7 @@ public sealed class OgcClassicWmsFilterCrsTests : IAsyncLifetime
         _filteredQuery.Should().NotBeNull();
         // FeatureQuery is a struct, so FeatureQuery? does not lift SqlFilter.
         // WMS FILTER stores the translated predicate on SqlFilter; its SRID
-        // parameters are the #6184 layer-CRS assertion.
+        // parameters are the layer-CRS assertion.
         FilterUsesLayerSrid(_filteredQuery.Value.SqlFilter!).Should().BeTrue(content);
     }
 

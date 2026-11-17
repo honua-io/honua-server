@@ -105,13 +105,6 @@
       "DefaultTTL": "00:10:00",
       "EnableLogging": false,
       "EnableMetrics": true
-    },
-    "Redis": {
-      "ConnectionString": "localhost:6379",
-      "InstanceName": "Honua-Staging",
-      "DefaultDatabase": 1,
-      "ConnectTimeout": 5000,
-      "SyncTimeout": 5000
     }
   },
 
@@ -199,16 +192,6 @@
         "user:session": "00:20:00"
       }
     },
-    "Redis": {
-      "ConnectionString": "${REDIS_CONNECTION_STRING}",
-      "InstanceName": "Honua-Production",
-      "DefaultDatabase": 0,
-      "ConnectTimeout": 10000,
-      "SyncTimeout": 10000,
-      "CommandFlags": "PreferMaster",
-      "ConnectRetry": 3,
-      "AbortOnConnectFail": false
-    },
     "DistributedCache": {
       "SlidingExpiration": "02:00:00",
       "AbsoluteExpirationRelativeToNow": "04:00:00"
@@ -238,34 +221,7 @@
         "MaxSize": 10000,
         "Types": ["layer:definition", "service:definition", "spatial:reference"]
       },
-      "L2Cache": {
-        "DefaultTTL": "00:30:00",
-        "Provider": "Redis",
-        "Types": ["layer:metadata", "service:metadata", "user:session"]
-      },
       "EnableInvalidationBus": true
-    },
-    "Redis": {
-      "ConnectionString": "${REDIS_CONNECTION_STRING}",
-      "InstanceName": "Honua-Production-Cluster",
-      "DefaultDatabase": 0,
-      "ConnectTimeout": 15000,
-      "SyncTimeout": 15000,
-      "CommandFlags": "PreferMaster",
-      "ConnectRetry": 5,
-      "AbortOnConnectFail": false,
-      "ChannelPrefix": "honua:cache:",
-      "PublishSubscribe": {
-        "InvalidationChannel": "cache:invalidate",
-        "HealthChannel": "cache:health"
-      }
-    },
-    "CacheInvalidation": {
-      "Strategy": "MessageBus",
-      "Provider": "Redis",
-      "EnableBroadcast": true,
-      "RetryAttempts": 3,
-      "RetryDelay": "00:00:01"
     }
   },
 
@@ -342,20 +298,6 @@
       "CompactionPercentage": 0.15,
       "ExpirationScanFrequency": "00:03:00",
       "TrackStatistics": true
-    },
-    "Redis": {
-      "Cluster": {
-        "Endpoints": [
-          "${REDIS_NODE_1}:6379",
-          "${REDIS_NODE_2}:6379",
-          "${REDIS_NODE_3}:6379"
-        ],
-        "ConnectTimeout": 20000,
-        "SyncTimeout": 20000,
-        "ConfigurationChannel": "__keyspace@0__:config",
-        "TieBreaker": "${REDIS_NODE_1}:6379",
-        "DefaultDatabase": null
-      }
     },
     "HealthChecks": {
       "CacheHealth": {

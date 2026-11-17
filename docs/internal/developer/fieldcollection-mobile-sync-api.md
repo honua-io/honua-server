@@ -1,17 +1,24 @@
 # FieldCollection Mobile Sync API
 
-This document describes the FieldCollection mobile sync endpoints (`#894`)
-consumed by the `honua-mobile` FieldCollection offline sync clients. The
-API is the server-side contract that backs the mobile interfaces
-`IFieldCollectionChangePuller` and `IFieldCollectionChangeUploader`. All
-endpoints are versioned under `/api/v1/fieldcollection/`, require
-`X-API-Key` authentication, and emit `Cache-Control: no-store`.
+This document describes the existing FieldCollection REST sync endpoints
+(`#894`) under `/api/v1/fieldcollection/` and their relationship to
+`IFieldCollectionChangePuller` and `IFieldCollectionChangeUploader`.
+Successful responses emit `Cache-Control: no-store`.
+
+The migration decision in [ADR-0088](../contributor/adr/0088-one-first-party-field-sync-contract.md)
+is proposed; this API is not yet a field-user-ready mobile transport.
+The ADR requires the adopted exchange to use the native gRPC contract before
+Collect or SDK migration.
 
 ## Authentication
 
-All endpoints require API-key authentication consistent with existing
-mobile/SDK conventions. Send the API key on every request via the
-`X-API-Key` request header. Unauthenticated traffic receives `401
+All endpoints currently require administrator authorization and the offline-sync
+entitlement; the `POST` endpoints also need write-level administrator
+access. An API key alone does not establish those permissions. Send the
+authorized API key on every request via the `X-API-Key` request header.
+Do not distribute administrator credentials to field devices; the scoped
+device-authorization migration described in ADR-0088 remains a prerequisite.
+Unauthenticated traffic receives `401
 Unauthorized` with a problem-details body.
 
 ```http
@@ -20,8 +27,8 @@ X-API-Key: <api-key>
 
 ## Client identity
 
-Multiple field devices commonly share a single API key, so the API-key
-principal alone is not a stable per-device identity. Mobile clients should
+Several clients can call with the same API key, so the API-key principal
+alone is not a stable per-client identity. Mobile clients should
 send `X-Honua-Client-Id` on every sync call (`sync-cursor`, pull, push) so
 that each device gets an independent cursor:
 
@@ -109,6 +116,9 @@ are safe.
   greater than the current committed `serverGeneration` (a future or
   poisoned cursor cannot be persisted).
 - `401 Unauthorized` when the `X-API-Key` header is missing or invalid.
+- `403 Forbidden` when the caller is not an administrator or holds
+  read-only administrator access.
+- `402 Payment Required` when the license lacks the offline-sync entitlement.
 
 ### `GET /api/v1/fieldcollection/changes`
 
@@ -168,6 +178,8 @@ after local persistence completes.
 - `400 Bad Request` with problem-details when `sinceGeneration < 0` or
   `limit` is outside `[1, 1000]`.
 - `401 Unauthorized` when the `X-API-Key` header is missing or invalid.
+- `403 Forbidden` when the caller is not an administrator.
+- `402 Payment Required` when the license lacks the offline-sync entitlement.
 
 ### `POST /api/v1/fieldcollection/changes`
 
@@ -256,6 +268,9 @@ correcting the request.
   required fields, has an unsupported operation, or sets `feature` to a
   non-null value while `operation` is `delete`.
 - `401 Unauthorized` when the `X-API-Key` header is missing or invalid.
+- `403 Forbidden` when the caller is not an administrator or holds
+  read-only administrator access.
+- `402 Payment Required` when the license lacks the offline-sync entitlement.
 - `5xx` outcomes are retryable. Mobile clients should leave the local
   change in pending state and retry on the next sync cycle.
 
@@ -268,7 +283,7 @@ The server records a row in `honua.fieldcollection_pushed_changes` keyed by
 re-applying. Mobile clients should always reuse the same `changeId` when
 retrying after network or server failure. The idempotency key is scoped by
 the resolved client id (the `X-Honua-Client-Id` header, falling back to the
-authenticated principal name) so that two field devices sharing one API key
+authenticated principal name) so that two clients sharing one API key
 can mint a colliding `changeId` without the second device's edit being
 silently dropped as a duplicate of the first.
 

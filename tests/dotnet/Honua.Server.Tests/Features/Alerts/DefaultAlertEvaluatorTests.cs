@@ -141,7 +141,7 @@ public sealed class DefaultAlertEvaluatorTests
 
     // ---- Threshold trigger: fires only on the below->above (Started) and
     // above->below (Ended/"threshold_resolved") transition edges; re-evaluating
-    // while already breached must NOT re-fire (honua-server#2945).
+    // while already breached must NOT re-fire.
 
     [UnitTest]
     public async Task EvaluateAsync_ThresholdRule_BelowToAboveTransition_EmitsStartedEvent()

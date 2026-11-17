@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit.Receipts;
 using FluentAssertions;
 using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
@@ -13,7 +14,6 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ApplyEditsIdempotencyStoreTests
 {
-    // ─── BH5-001 regression ──────────────────────────────────────────────────────
 
     [Fact]
     public async Task TryReserveAsync_ConcurrentSameScope_ExactlyOneWins()

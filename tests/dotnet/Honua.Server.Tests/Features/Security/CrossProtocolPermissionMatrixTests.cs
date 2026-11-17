@@ -307,7 +307,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         return "update";
     }
 
-    // ---- FeatureServer query (already wired in #1385; kept for matrix completeness) ----
+    // ---- FeatureServer query (kept for matrix completeness) ----
 
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
@@ -348,7 +348,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         // An Update RBAC grant must override the coarse data-editor role deny and
         // allow Update operations for a principal that lacks the data-editor role.
         // The payload is an updates-only request so the per-type Update check
-        // (BH3-001 fix) also exercises the correct grant path.
+        // also exercises the correct grant path.
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -454,12 +454,10 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task ODataCreate_InsertGrant_OverridesCoarseDeny()
     {
-        // An OData POST authorizes as Insert (BH3-001/BH3-014), so a matching Insert grant must
-        // override the coarse data-editor deny. The in-memory fixture cannot complete the create
-        // (the layer requires an objectid the payload does not carry), so the assertion is that
-        // authorization is cleared — not Forbidden / not Unauthorized — rather than a 201.
-        // (An Update grant is separately proven NOT to authorize a create via the per-operation
-        // gate; before the fix the coarse any-write gate let any write grant through.)
+        // OData POST requires Insert permission. A matching Insert grant overrides the
+        // coarse data-editor denial. The fixture omits required objectid, so assert that
+        // authorization succeeds rather than requiring creation to return 201. An Update
+        // grant alone cannot authorize Insert.
         using var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -479,8 +477,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task ODataCreate_UpdateOnlyGrant_DeniesCreate()
     {
-        // BH3-001/BH3-014: an Update-only grantee must be denied an OData create (POST=Insert).
-        // Before the fix the coarse any-write gate accepted any write grant for any mutation.
+        // An Update-only grantee must be denied an OData create (POST requires Insert).
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -507,7 +504,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
 
-    // ---- OData CRUD per-operation authorization (BH3-001 / BH3-014 regression) ----
+    // ---- OData CRUD per-operation authorization ----
 
     [IntegrationTest]
     [Protocol(TestProtocols.ODataV4)]
@@ -515,8 +512,8 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("PATCH /odata/Layers({layerId})/Features({objectId})")]
     public async Task ODataUpdate_InsertOnlyGrant_DeniesUpdate()
     {
-        // BH3-001 / BH3-014: an OData PATCH authorizes as Update. A principal holding only an
-        // Insert grant must be denied — before the fix the coarse any-write gate allowed it.
+        // an OData PATCH authorizes as Update. A principal holding only an
+        // Insert grant must be denied.
         using var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -539,7 +536,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("DELETE /odata/Layers({layerId})/Features({objectId})")]
     public async Task ODataDelete_InsertOnlyGrant_DeniesDelete()
     {
-        // BH3-014: an OData DELETE authorizes as Delete. An Insert-only grantee must be denied.
+        // an OData DELETE authorizes as Delete. An Insert-only grantee must be denied.
         using var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -557,7 +554,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("PATCH /odata/Layers({layerId})/Features({objectId})")]
     public async Task ODataUpdate_UpdateGrant_AllowsUpdate()
     {
-        // BH3-001 / BH3-014: an Update grantee must not be over-blocked on a PATCH. The request
+        // an Update grantee must not be over-blocked on a PATCH. The request
         // may still 404 (no such feature in the in-memory fixture) but must clear authorization,
         // so it must not be Forbidden or Unauthorized.
         using var factory = CreateWriteFactory(Grant("update"));
@@ -681,7 +678,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task OgcFeaturesCreate_InsertGrant_OverridesCoarseDeny()
     {
-        // An OGC API Features POST authorizes as Insert (BH3-001/BH3-014), so a matching Insert
+        // An OGC API Features POST authorizes as Insert, so a matching Insert
         // grant must override the coarse data-editor deny. The in-memory fixture cannot complete
         // the create, so the assertion is that authorization is cleared (not Forbidden / not
         // Unauthorized) rather than a 201.
@@ -704,7 +701,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task OgcFeaturesCreate_UpdateOnlyGrant_DeniesCreate()
     {
-        // BH3-001/BH3-014: an Update-only grantee must be denied an OGC create (POST=Insert).
+        // an Update-only grantee must be denied an OGC create (POST=Insert).
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -721,7 +718,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task OgcFeaturesUpdate_InsertOnlyGrant_DeniesUpdate()
     {
-        // BH3-001/BH3-014 primary regression for the OGC API Features write surface: an OGC PUT
+        // an OGC PUT
         // authorizes as Update, so an Insert-only grantee must be denied. Authorization runs before
         // feature resolution, so the denial is a clean 403.
         using var factory = CreateWriteFactory(Grant("insert"));
@@ -782,7 +779,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
 
-    // ---- FeatureServer deleteFeatures (BH-001 regression) ----
+    // ---- FeatureServer deleteFeatures ----
 
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
@@ -790,7 +787,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
     public async Task DeleteFeatures_DeleteGrantOverridesCoarseDenyForObjectIdsPath()
     {
-        // BH-001: the deleteFeatures pre-body gate must gate on AuthorizationOperation.Delete,
+        // the deleteFeatures pre-body gate must gate on AuthorizationOperation.Delete,
         // not Update. A principal with only a "delete" grant must pass the gate.
         using var factory = CreateWriteFactory(Grant("delete"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
@@ -809,7 +806,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Forbidden);
     }
 
-    // ---- FeatureServer applyEdits delete payload (BH-002 regression) ----
+    // ---- FeatureServer applyEdits delete payload ----
 
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
@@ -817,7 +814,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_DeletePayload_DeleteGrantAllowsDeletesWhenUpdateGrantDoesNot()
     {
-        // BH-002: the applyEdits handler must check AuthorizationOperation.Delete for a
+        // the applyEdits handler must check AuthorizationOperation.Delete for a
         // deletes-only payload. A principal with only a "delete" grant (no "update") must
         // pass; if Update were the only check this would incorrectly deny.
         using var factory = CreateWriteFactory(Grant("delete"));
@@ -835,7 +832,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.Forbidden);
     }
 
-    // ---- FeatureServer applyEdits – Update payload (BH3-001 / BH3-014 regression) ----
+    // ---- FeatureServer applyEdits – Update payload ----
 
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
@@ -843,11 +840,8 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_UpdatePayload_InsertOnlyGrantDeniesUpdate()
     {
-        // BH3-001 / BH3-014: applyEdits must check AuthorizationOperation.Update for an
-        // updates-only payload. Before the fix, an insert-only principal passed the pre-body
-        // coarse gate (any write op) and then sailed through the per-type block because there
-        // was no Update check — only Insert and Delete were gated. After the fix the
-        // per-type Update check must return 403 for insert-only principals.
+        // applyEdits must check AuthorizationOperation.Update for an updates-only payload
+        // and return 403 for insert-only principals.
         using var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -868,7 +862,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_UpdatePayload_UpdateGrantAllowsUpdate()
     {
-        // BH3-001 / BH3-014: a principal with only an Update grant must be permitted to submit
+        // a principal with only an Update grant must be permitted to submit
         // an updates-only payload. Validates the positive case so the regression check does not
         // over-block.
         using var factory = CreateWriteFactory(Grant("update"));
@@ -894,7 +888,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_UpdatePayload_DeleteOnlyGrantDeniesUpdate()
     {
-        // BH3-014: a delete-only principal must also be denied an updates-only payload.
+        // a delete-only principal must also be denied an updates-only payload.
         using var factory = CreateWriteFactory(Grant("delete"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
@@ -976,7 +970,7 @@ public sealed class WfsReadVisibilitySeamTests
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
     public async Task WfsReadSeam_QueryGrant_DoesNotSkipRoleList()
     {
-        // Coarse policy requires a role the principal lacks. A query grant must not skip it (#6358).
+        // Coarse policy requires a role the principal lacks. A query grant must not skip it.
         var context = CreateContext(
             roles: [GrantedRole],
             grant: new PermissionGrant { Service = ServiceName, Layer = "*", Operation = "query" });

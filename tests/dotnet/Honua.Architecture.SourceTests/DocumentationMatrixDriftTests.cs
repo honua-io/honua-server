@@ -156,8 +156,8 @@ public sealed class DocumentationMatrixDriftTests
         tiers.GetProperty("release").GetProperty("missingEvidence").GetString().Should().Be("fail");
 
         var fixturePolicy = document.GetProperty("fixturePolicy");
-        // #3393 froze the bounded 2026.1 fixture/config/auth contract, so the policy is no
-        // longer "migration-required". The manifest it points at is content-addressed and
+        // The bounded 2026.1 fixture/config/auth contract is frozen, so the policy is not
+        // "migration-required". The manifest it points at is content-addressed and
         // CanonicalFixtureManifestTests proves every digest recomputes from the real files.
         fixturePolicy.GetProperty("status").GetString().Should().Be("frozen-2026.1");
         fixturePolicy.GetProperty("manifest").GetString().Should().Be("docs/gis/data/client-certification-fixture.v1.json");

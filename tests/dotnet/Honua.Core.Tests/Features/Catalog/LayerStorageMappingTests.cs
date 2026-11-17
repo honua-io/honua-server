@@ -11,6 +11,26 @@ namespace Honua.Core.Tests.Features.Catalog;
 public sealed class LayerStorageMappingTests
 {
     [UnitTest]
+    public void ToFeatureStorageMapping_ProviderMapping_PreservesAllCatalogFields()
+    {
+        var source = new LayerStorageMapping(
+            TableName: "parcels", SchemaName: "public", CatalogName: "catalog", DatabaseName: "database",
+            PrimaryKeyColumn: "parcel_id", GeometryColumn: "shape", StorageSrid: 3857,
+            TemporalColumn: "observed_at", ProviderOptions: new Dictionary<string, string>
+            {
+                [LayerStorageMapping.SourceBackedOption] = "true"
+            });
+
+        var mapping = source.ToFeatureStorageMapping();
+
+        mapping.Should().BeEquivalentTo(source, options => options.ExcludingMissingMembers());
+        mapping.ProviderOptions.Should().BeSameAs(source.ProviderOptions);
+        mapping.AttributesColumn.Should().BeNull();
+        mapping.LayerDiscriminatorColumn.Should().BeNull();
+        mapping.LayerDiscriminatorValue.Should().BeNull();
+    }
+
+    [UnitTest]
     public void Default_PrimaryKey_AndGeometryColumn_AreApplied()
     {
         var mapping = new LayerStorageMapping(TableName: "features");

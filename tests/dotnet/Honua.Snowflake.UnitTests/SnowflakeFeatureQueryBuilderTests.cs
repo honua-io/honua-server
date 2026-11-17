@@ -301,7 +301,7 @@ public class SnowflakeFeatureQueryBuilderTests
     [Theory]
     // Esri esriSpatialRelWithin/Contains: filter geometry is within/contains the feature. The
     // filter geometry must be the FIRST operand (ST_WITHIN(filter, feature)); leading with the
-    // feature column inverts the relationship and returns the wrong (empty) set (#2068).
+    // feature column inverts the relationship and returns the wrong (empty) set.
     [InlineData(SpatialRelationship.Within, "ST_WITHIN")]
     [InlineData(SpatialRelationship.Contains, "ST_CONTAINS")]
     public void BuildSelectQuery_WithinContainsFilters_LeadWithFilterGeometry(SpatialRelationship relationship, string expectedFunction)
@@ -441,7 +441,7 @@ public class SnowflakeFeatureQueryBuilderTests
     [Fact]
     public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
     {
-        // Temporal analytics went GA (#2429); providers that cannot translate a temporal
+        // Temporal analytics went GA; providers that cannot translate a temporal
         // predicate must fail loud rather than silently return rows outside the requested
         // window. The Snowflake provider has no temporal translation in this slice.
         var query = new FeatureQuery

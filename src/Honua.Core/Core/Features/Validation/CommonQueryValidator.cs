@@ -189,7 +189,7 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         // dangerous-pattern scan. Literal content is bound as a parameter, so "--",
         // "/* */", ";" or UNION inside a quoted literal (e.g. name='note -- x' or a
         // LIKE pattern '%/*%') is harmless data and must not be rejected. Real
-        // injection breaks out of the quoting and survives masking (bug hunt).
+        // injection breaks out of the quoting and survives masking.
         var inspectable = System.Text.RegularExpressions.Regex.Replace(
             whereClause, @"'(?:[^']|'')*'", "''");
 

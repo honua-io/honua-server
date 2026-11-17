@@ -15,7 +15,7 @@ namespace Honua.Server.Features.Admin;
 internal static partial class RoleEndpoints
 {
     private const string ConsoleAccessService = "console-access";
-    private const string WorkspaceMembershipOperation = "workspace-membership";
+    private const string EnvironmentMembershipOperation = "environment-membership";
     internal sealed class RoleEndpointsLog;
 
     internal static partial class RoleLog
@@ -336,12 +336,12 @@ internal static partial class RoleEndpoints
                 Operation = p.Operation,
             }).ToList();
 
-            // Console-created roles encode their workspace ownership as a reserved
+            // Console-created roles encode their Environment ownership as a reserved
             // grant. The generic permission editor replaces authorizing grants, but
             // must not strip this stable ownership metadata.
             grants.AddRange(role.Permissions.Where(static grant =>
                 string.Equals(grant.Service, ConsoleAccessService, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(grant.Operation, WorkspaceMembershipOperation, StringComparison.Ordinal)));
+                && string.Equals(grant.Operation, EnvironmentMembershipOperation, StringComparison.Ordinal)));
 
             var result = await store.SetPermissionsAsync(id, grants, context.RequestAborted);
 

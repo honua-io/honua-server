@@ -57,7 +57,7 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
             using var resultsDoc = await GetResultsAsync(client, jobId);
             var collection = DecodeOutputFeatureCollection(resultsDoc);
 
-            // Catalog provenance travels with the artifact (#2283): dataset id and the
+            // Catalog provenance travels with the artifact: dataset id and the
             // effective method are foreign members on the FeatureCollection envelope.
             collection.GetProperty("datasetId").GetString().Should().Be(DatasetKey);
             collection.GetProperty("method").GetString().Should().Be("intersects");
@@ -175,15 +175,9 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
         }
     }
 
-    // Parameter honesty at submission (#3043 review). Two ways an enrichment submission
-    // could previously be accepted and then behave differently than the caller asked:
-    //   * 'where'/'bbox' supplied with a staged 'input' source — documented in the catalog
-    //     as layer-source-only, never applied to the inline collection, so the job
-    //     "succeeded" over EVERY staged feature;
-    //   * a malformed 'bbox' on the layer-backed source — cleared the generic text-type
-    //     check, queued a job, and only failed deep inside the provider read.
-    // Both must now be refused at the submit surface with an actionable parameter error and
-    // without queueing a job.
+    // Reject where or bbox with a staged input source: the catalog defines these
+    // parameters for layer sources only. Reject malformed layer-source bbox values at
+    // submission with an actionable parameter error, before queueing a job.
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -273,7 +267,7 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
         }
     }
 
-    // Layer read authorization (#2283 review). Process.Execute authorizes RUNNING a
+    // Layer read authorization. Process.Execute authorizes RUNNING a
     // process; it does not authorize the specific catalog layers that process reads. The
     // synchronous POST /api/enrich handler calls ValidateLayerWithAccessV2Async at
     // AccessScope.Read for BOTH the caller-selected source layer and the dataset's
@@ -284,7 +278,7 @@ public sealed class DataEnrichmentJobIntegrationTests(DatabaseFixtureAdapter dat
     // default InMemoryRoleStore seeds `admin` with a wildcard `*:*:*` grant. That grant
     // still allows a layer with no role list, so the store is replaced with one that
     // grants only `process:*:execute`. An explicit role list is not skipped by the
-    // wildcard (#6358); the replacement keeps the accepted control on the coarse policy.
+    // wildcard; the replacement keeps the accepted control on the coarse policy.
     //
     // Each test submits the SAME request twice against the same fixture — once with the
     // seed policy (accepted) and once with the layer restricted to a role the caller does

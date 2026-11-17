@@ -21,7 +21,7 @@ public sealed class CorsConfigurationTests
     [Fact]
     public async Task DevelopmentPolicy_ExposesPMTilesRangeProxyResponseHeaders()
     {
-        // The PMTiles RangeProxy strategy (#845) requires browser clients to read
+        // The PMTiles RangeProxy strategy requires browser clients to read
         // Accept-Ranges, Content-Range, Content-Length, ETag, and Last-Modified
         // off the proxy response. AllowAnyHeader on the development policy only
         // covers request headers, so exposed response headers must still be
@@ -94,7 +94,7 @@ public sealed class CorsConfigurationTests
     {
         // If-Match (and other conditional headers) must be allowed cross-origin so
         // browser/Office clients can send ETag preconditions on PATCH/PUT/DELETE,
-        // enabling optimistic concurrency from the browser (#1629).
+        // enabling optimistic concurrency from the browser.
         var policy = await ResolvePolicyAsync(
             CorsConfiguration.ProductionPolicy,
             isDevelopment: false,

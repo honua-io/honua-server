@@ -21,7 +21,7 @@ public sealed partial class AdaptiveSampler : IDisposable
     private double _currentSamplingRate;
     private volatile bool _disposed;
 
-    // WEEK 5 FIX: ML-based intelligence data structures
+    // ML-based intelligence data structures
     private readonly HistoricalPatternTracker _patternTracker;
     private readonly TemporalPatternAnalyzer _temporalAnalyzer;
     private readonly PredictiveLoadForecaster _loadForecaster;
@@ -43,7 +43,7 @@ public sealed partial class AdaptiveSampler : IDisposable
 
         Volatile.Write(ref _currentSamplingRate, _options.BaseSamplingRate);
 
-        // WEEK 5 FIX: Initialize ML-based intelligence components
+        // Initialize ML-based intelligence components
         _patternTracker = new HistoricalPatternTracker();
         _temporalAnalyzer = new TemporalPatternAnalyzer();
         _loadForecaster = new PredictiveLoadForecaster();
@@ -84,7 +84,7 @@ public sealed partial class AdaptiveSampler : IDisposable
 
         var importance = ClassifyOperation(operationName);
 
-        // WEEK 5 FIX: Use ML-enhanced sampling decision
+        // Use ML-enhanced sampling decision
         var samplingDecision = _mlEngine.MakeSamplingDecision(new MLSamplingContext
         {
             OperationName = operationName,
@@ -124,7 +124,7 @@ public sealed partial class AdaptiveSampler : IDisposable
 
             if (smartDecision.ShouldSample.HasValue)
             {
-                // WEEK 5 FIX: Record smart decision for ML learning
+                // Record smart decision for ML learning
                 RecordSmartDecisionForLearning(context, smartDecision);
 
                 if (_logger.IsEnabled(LogLevel.Debug))
@@ -161,15 +161,15 @@ public sealed partial class AdaptiveSampler : IDisposable
             var metrics = _metricsCollector.GetCurrentMetrics();
             var errorRate = _metricsCollector.GetCurrentErrorRate();
 
-            // WEEK 5 FIX: Traditional adaptive rate calculation
+            // Traditional adaptive rate calculation
             var traditionalRate = CalculateAdaptiveSamplingRate(metrics, errorRate);
 
-            // WEEK 5 FIX: ML-enhanced rate calculation
+            // ML-enhanced rate calculation
             var mlEnhancedRate = CalculateMLEnhancedSamplingRate(metrics, errorRate, traditionalRate);
 
             var currentRate = Volatile.Read(ref _currentSamplingRate);
 
-            // WEEK 5 FIX: Update ML components with new data
+            // Update ML components with new data
             UpdateMLComponents(metrics, errorRate, currentRate);
 
             if (Math.Abs(mlEnhancedRate - currentRate) > 0.01) // Only log significant changes
@@ -393,7 +393,7 @@ public sealed partial class AdaptiveSampler : IDisposable
         _disposed = true;
         _evaluationTimer?.Dispose();
 
-        // WEEK 5 FIX: Dispose ML components
+        // Dispose ML components
         _patternTracker?.Dispose();
         _temporalAnalyzer?.Dispose();
         _loadForecaster?.Dispose();
@@ -455,7 +455,7 @@ public sealed partial class AdaptiveSampler : IDisposable
             string reason,
             double confidenceScore);
 
-        // WEEK 5 FIX: ML-enhanced logging
+        // ML-enhanced logging
         [LoggerMessage(
             EventId = 8,
             Level = LogLevel.Debug,
@@ -496,7 +496,7 @@ public sealed partial class AdaptiveSampler : IDisposable
     }
 }
 
-// WEEK 5 FIX: ML-based intelligence component classes
+// ML-based intelligence component classes
 
 internal sealed class HistoricalPatternTracker : IDisposable
 {
@@ -954,7 +954,7 @@ internal sealed class LinearRegression
     }
 }
 
-// WEEK 5 FIX: Data structures for ML intelligence
+// Data structures for ML intelligence
 
 internal sealed class HistoricalDataPoint
 {

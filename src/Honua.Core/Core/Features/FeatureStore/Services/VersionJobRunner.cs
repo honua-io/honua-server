@@ -83,7 +83,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
 
     private async Task ExecuteAsync(VersionJob job)
     {
-        // PA-021: Task.Run flows the ambient ExecutionContext by default, so Activity.Current
+        // Task.Run flows the ambient ExecutionContext by default, so Activity.Current
         // here would still be the HTTP request's activity — which ends when the response
         // returns, long before this detached background job finishes. Capture it as a link
         // instead of letting StartActivity implicitly parent to it. Passing default(ActivityContext)
