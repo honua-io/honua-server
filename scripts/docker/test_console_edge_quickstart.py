@@ -49,6 +49,30 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
                 if name not in ('console', 'honua'):
                     self.assertNotIn('console-edge', service.get('networks', {}), name)
 
+    def test_console_advertises_the_https_edge_for_generated_map_urls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, rendered, _ = self.packaged_console_install(Path(directory))
+            self.assertEqual('https://localhost:18083',
+                             rendered['services']['honua']['environment']['PUBLIC_BASE_URL'])
+            env_file = path / '.env'
+            env_file.write_text(env_file.read_text().replace('HONUA_CONSOLE_PORT=18083', 'HONUA_CONSOLE_PORT=28443'))
+            custom = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, custom.returncode, custom.stderr)
+            self.assertEqual('https://localhost:28443',
+                             json.loads(custom.stdout)['services']['honua']['environment']['PUBLIC_BASE_URL'])
+
+    def test_customer_public_origin_overrides_the_console_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, _, _ = self.packaged_console_install(Path(directory))
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n'
+                                                '      PUBLIC_BASE_URL: https://maps.example.com\n')
+            rendered = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                      cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, rendered.returncode, rendered.stderr)
+            self.assertEqual('https://maps.example.com',
+                             json.loads(rendered.stdout)['services']['honua']['environment']['PUBLIC_BASE_URL'])
+
     def test_console_profile_preserves_customer_and_executor_files(self):
         with tempfile.TemporaryDirectory() as directory:
             path, rendered, _ = self.packaged_console_install(Path(directory))

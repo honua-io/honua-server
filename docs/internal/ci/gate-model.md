@@ -644,7 +644,7 @@ These workflows run on schedule and can be dispatched manually:
 | `cross-server-consume-nightly.yml` | Daily 7:00am UTC | Honua-as-client WMS/WFS/WMTS reads against GeoServer and MapServer reference containers |
 | `client-compat-smoke-nightly.yml` | Daily 7:15am UTC | Full CERT-\* matrix certification (18 test cases × 4 protocol lanes) with `.cert.json` envelopes + reusable evidence pack |
 | `pyqgis-client-compat-nightly.yml` | Daily 7:30am UTC | PyQGIS desktop client compatibility (OGC Features + WFS) with per-protocol `.cert.json` envelopes |
-| `sdk-server-compatibility.yml` | Monday 8:35am UTC | Manifest-driven last-3 server refs x last-3 SDK sets compatibility matrix through `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`; manual dispatch can pin `server_current_ref` for release-candidate evidence; copies checked-out SDK refs to `$RUNNER_TEMP/sdk-compat` before smoke execution so server repo build policy does not affect SDK source builds; records SDK versions, server commit/image field, seed profile, exercised surfaces, migration automation surface status, and diagnostics; publishes the `sdk-compatibility-matrix-<run-id>` table artifact and fails on supported-cell regressions |
+| `sdk-server-compatibility.yml` | Monday 8:35am UTC | Manifest-driven last-3 server refs x last-3 SDK sets compatibility matrix through `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`; manual dispatch can pin `server_current_ref` for release-candidate evidence; uses Node 22.23.3 (SDK engine minimum 22.12) with a 4 GiB V8 heap for source compilation; copies checked-out SDK refs to `$RUNNER_TEMP/sdk-compat` before smoke execution so server repo build policy does not affect SDK source builds; records SDK versions, server commit/image field, seed profile, exercised surfaces, migration automation surface status, and diagnostics; publishes the `sdk-compatibility-matrix-<run-id>` table artifact and fails on supported-cell regressions |
 | `client-interop-nightly.yml` | Daily 7:00am UTC | Real-client interop matrix via Docker harnesses (`gdal`, `pyqgis`, `openlayers`, `cesium`, `geoservices-rest-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` plus `expected-pairs.json`, refreshes `artifacts/client-interop/gap-report.md`, and fails strict mode on baseline pass regressions, missing current envelopes, missing committed baselines, or new unbaselined failures. Non-blocking until 30 consecutive nightly passes (#806) |
 | `gdal-driver-e2e.yml` | Daily 7:45am UTC | GDAL `ogrinfo` + `ogr2ogr` round-trip against honua-server (ADR-0034 stand-in until `honua-gdal` plugin ships) |
 | `load-soak-nightly.yml` | Scheduled | Load and soak testing |
@@ -2140,6 +2140,20 @@ host-free geometry class. Both runs use one process; no runners are added.
 The 81-second execution saving is 1.35 runner-minutes for this focused suite;
 full CI shard wall-time savings remain unmeasured. These measurements use the
 initial fixture change before the equivalent strict-signature parameter adapters.
+
+### OGC Features enhancements host lifetime
+
+`OgcFeaturesEnhancementsTests` shares one Pro-licensed application and its seeded
+WGS84 spatial and temporal metadata through a class fixture for read-only requests.
+The feature creation, null-geometry insertion and schema-field addition cases each
+initialize and dispose a private application with the same seed and metadata.
+The exact geometry identifier assertions therefore retain an unchanged database.
+Every test input, request and assertion is preserved.
+
+The complete class remains in OGC API Features 1 for selected PR runs and the
+existing full trunk runs. No workflow, shard filter, runner count, required check
+name or aggregate dependency changes. Paired build-host timings will distinguish
+test execution from build time; full CI job savings remain unmeasured.
 
 ### PrintingTools GPServer service application lifetime
 
