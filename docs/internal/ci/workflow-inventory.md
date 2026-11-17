@@ -747,7 +747,10 @@ Trailing `selective_base` dispatches use their verified base for the managed
 producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
-run at most two at once for every `selective_base` dispatch. Optional affected
+run at most two at once for every `selective_base` dispatch. A selective
+dispatch whose router reason is `no_path_match` does not schedule those default
+smoke shards. Honua.Core package compatibility runs on that dispatch only when a
+changed file is outside docs, workflows, `scripts/ci/` and tests. Optional affected
 runs above 40 total jobs defer to scheduled full CI; manual full-coverage overrides
 retain every shard. Scheduled and non-selective full runs run at most 16 concurrent shards. Expensive AOT, Docker,
 Postgres compatibility, browser, Python, MCP and quickstart lanes use

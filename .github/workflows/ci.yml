@@ -339,6 +339,7 @@ jobs:
       integration_changes: ${{ steps.filter.outputs.integration_changes }}
       integration_reason: ${{ steps.filter.outputs.integration_reason }}
       full_ci: ${{ steps.filter.outputs.full_ci }}
+      core_package: ${{ steps.filter.outputs.core_package }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
       specialized_lanes: ${{ steps.specialized.outputs.lanes }}
       selective_base: ${{ steps.diff.outputs.base }}
@@ -433,6 +434,7 @@ jobs:
               echo "integration_reason=diff_range_unavailable"
               echo "full_ci=${UNAVAILABLE_FULL_CI}"
               echo "postgres_matrix=${UNAVAILABLE_POSTGRES}"
+              echo "core_package=true"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -481,6 +483,7 @@ jobs:
             echo "integration_changes=true" >> "$GITHUB_OUTPUT"
             echo "integration_reason=scheduled_or_manual_full_ci" >> "$GITHUB_OUTPUT"
             echo "full_ci=true" >> "$GITHUB_OUTPUT"
+            echo "core_package=true" >> "$GITHUB_OUTPUT"
             echo "postgres_matrix=${POSTGRES_FULL}" >> "$GITHUB_OUTPUT"
             INTEGRATION_FILES="<full integration event>"
             BUILD_FILES="<full integration event>"
@@ -534,6 +537,15 @@ jobs:
               echo "postgres_matrix=${POSTGRES_BASELINE}" >> "$GITHUB_OUTPUT"
             fi
             echo "full_ci=${FULL_CI}" >> "$GITHUB_OUTPUT"
+            # The Core package proof packs src and checks it against the server.
+            # Docs, workflows, CI scripts and tests cannot change that package.
+            # Unknown paths still run the job. Full runs always run it.
+            if [ "${FULL_CI}" = "true" ]; then
+              CORE_PACKAGE=true
+            else
+              CORE_PACKAGE=$(printf '%s\n' "$CHANGED_FILES" | python3 scripts/ci/trailing_selection.py --core-package)
+            fi
+            echo "core_package=${CORE_PACKAGE}" >> "$GITHUB_OUTPUT"
           fi
 
           echo "Changed files:"
@@ -581,6 +593,7 @@ jobs:
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
       matrix_artifact: ${{ steps.compute.outputs.matrix_artifact }}
       affected_max_parallel: ${{ steps.compute.outputs.affected_max_parallel }}
+      schedule_shards: ${{ steps.compute.outputs.schedule_shards }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -670,6 +683,17 @@ jobs:
           echo "descriptor=${descriptor}" >> "$GITHUB_OUTPUT"
           echo "matrix_include=$(printf '%s' "${matrix_include}" | jq -c 'map(del(.filter))')" >> "$GITHUB_OUTPUT"
           echo "affected_max_parallel=$(printf '%s' "${matrix_include}" | python3 scripts/ci/trailing_selection.py)" >> "$GITHUB_OUTPUT"
+          # no_path_match substitutes default smoke shards that do not own the
+          # diff. Selective affected runs leave those shards to the scheduled
+          # full run. Pull requests and full runs still schedule them.
+          router_reason=$(printf '%s' "${descriptor}" | jq -r '.reason')
+          selective_affected=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
+             [[ "${TRAILING_SELECTIVE_BASE:-}" =~ ^[0-9a-f]{40}$ ]] &&
+             [ "${{ inputs.full_ci }}" != "true" ]; then
+            selective_affected=true
+          fi
+          echo "schedule_shards=$(python3 scripts/ci/trailing_selection.py --schedule-shards --reason "${router_reason}" --selective "${selective_affected}")" >> "$GITHUB_OUTPUT"
           echo "matrix_artifact=selected-server-test-matrix-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Upload selected shard matrix
@@ -1234,7 +1258,7 @@ jobs:
     # protocol-split projects (not just Honua.Server.Tests), so this
     # exclusion is safe for every shard's csproj, not only the legacy
     # Honua.Server.Tests.csproj default.
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.targeted-shards.outputs.schedule_shards != 'false' }}
     # Keep one matrix on one pool: hosted jobs waiting for capacity also occupy
     # max-parallel slots and can prevent idle heavy runners from receiving work.
     # Fork code stays on the existing fallback.
@@ -2868,7 +2892,7 @@ jobs:
 
   core-package-compatibility:
     name: Honua.Core Package Compatibility
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.core_package == 'true' }}
     runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
     # Packing both frameworks and cold-building the full server exceeded 10 minutes.

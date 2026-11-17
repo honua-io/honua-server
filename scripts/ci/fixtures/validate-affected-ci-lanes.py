@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location('affected_ci_lanes', ROOT / 'scripts/ci/affected-ci-lanes.py')
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+TRAILING_SPEC = importlib.util.spec_from_file_location(
+    'trailing_selection', ROOT / 'scripts/ci/trailing_selection.py')
+TRAILING = importlib.util.module_from_spec(TRAILING_SPEC)
+TRAILING_SPEC.loader.exec_module(TRAILING)
 
 
 class AffectedLaneTests(unittest.TestCase):
@@ -129,6 +133,19 @@ class AffectedLaneTests(unittest.TestCase):
                          'Full coverage must not expand an affected run beyond its runner budget')
         compute = next(step for step in jobs['targeted-shards']['steps'] if step.get('id') == 'compute')
         self.assertIn('python3 scripts/ci/trailing_selection.py)" >> "$GITHUB_OUTPUT"', compute['run'])
+        self.assertIn('--schedule-shards', compute['run'])
+        self.assertEqual(
+            "${{ steps.compute.outputs.schedule_shards }}",
+            jobs['targeted-shards']['outputs']['schedule_shards'])
+        self.assertIn(
+            "needs.targeted-shards.outputs.schedule_shards != 'false'",
+            jobs['server-tests']['if'])
+        self.assertEqual(
+            "${{ steps.filter.outputs.core_package }}",
+            jobs['changes']['outputs']['core_package'])
+        self.assertIn(
+            "needs.changes.outputs.core_package == 'true'",
+            jobs['core-package-compatibility']['if'])
         step = next(step for step in jobs['changes']['steps'] if step.get('id') == 'specialized')
         self.assertIn("trailing_selective == 'true'", step['env']['SELECTIVE'])
         self.assertIn("full_ci != 'true'", step['env']['SELECTIVE'])
@@ -153,6 +170,27 @@ class ShardWidthTests(unittest.TestCase):
     def test_broad_affected_runs_double_width_without_reaching_full(self):
         self.assertEqual(2, self.affected_width(31))
         self.assertEqual(2, self.affected_width(134))
+
+    def test_selective_no_path_match_skips_default_smoke_shards(self):
+        self.assertFalse(TRAILING.schedule_server_shards("no_path_match", True))
+        self.assertTrue(TRAILING.schedule_server_shards("no_path_match", False))
+        self.assertTrue(TRAILING.schedule_server_shards("targeted", True))
+        self.assertTrue(TRAILING.schedule_server_shards("unmapped_source_change", True))
+
+    def test_core_package_skips_only_docs_workflow_ci_and_tests(self):
+        measured = [
+            ".github/workflows/compose-release-lifecycle.yml",
+            ".github/workflows/nightly-container-build.yml",
+            "docs/guides/deploy/choose-serving-image.md",
+            "docs/guides/deploy/cloud-deployments.md",
+            "scripts/ci/test-store-profile-workflows.py",
+            "scripts/ci/test_immutable_container_tags.py",
+            "tests/dotnet/Honua.Architecture.Tests/NightlyImageCertificationTests.cs",
+        ]
+        self.assertFalse(TRAILING.core_package_required(measured))
+        self.assertTrue(TRAILING.core_package_required(measured + ["src/Honua.Core/Core/Honua.Core.csproj"]))
+        self.assertTrue(TRAILING.core_package_required(["Directory.Build.props"]))
+        self.assertTrue(TRAILING.core_package_required([".github/ci-shards.json"]))
 
 
 if __name__ == '__main__':
