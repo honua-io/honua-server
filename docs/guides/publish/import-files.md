@@ -153,7 +153,7 @@ and the published layer's primary identifier can be different fields.
 | GeoJSON | `.geojson`, `.json` | Assumed WGS 84 per the GeoJSON spec. |
 | Esri JSON | `.esrijson` | An ArcGIS feature set (attributes and Esri geometry). CRS read from `spatialReference` (`latestWkid`, then `wkid`); without it, `sourceSrid` is required. |
 | Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf`/`.shx`/`.prj`; a raw `.shp` upload is rejected. CRS read from `.prj`, including ESRI-style projected definitions with no EPSG code (State Plane, national grids, Transverse Mercator, Lambert and Albers projections), which are matched to the EPSG CRS with the same projection parameters, unit and datum. A definition whose datum is not recognised is not matched; supply `sourceSrid`. |
-| GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. A GeoPackage with several feature layers needs `sourceLayer` set to one layer's table name; without it the import fails with a message listing the layers. |
+| GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. Metadata and feature layers must be ordinary SQLite tables. A GeoPackage with several feature layers needs `sourceLayer` set to one layer's table name; without it the import fails with a message listing the layers. |
 | GPX | `.gpx` | WGS 84 by definition. |
 | KML / KMZ | `.kml`, `.kmz` | WGS 84 by definition. |
 | GML | `.gml` | Supply `sourceSrid` when the import reports `import.source_srid_required`. |
