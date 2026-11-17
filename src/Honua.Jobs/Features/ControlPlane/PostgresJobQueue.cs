@@ -106,27 +106,59 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
         IReadOnlySet<string>? acceptedRuntimeProfiles = null,
         CancellationToken cancellationToken = default)
     {
-        if (HasUnconfirmedClaim(workerId))
+        if (HasUnconfirmedClaim(workerId)
+            && await RecoverClaimWithLostReplyAsync(workerId, cancellationToken).ConfigureAwait(false) is { } recovered)
         {
-            var recovered = await FindClaimWithLostReplyAsync(workerId, cancellationToken).ConfigureAwait(false);
-            ClearUnconfirmedClaim(workerId);
-            if (recovered?.Job is { } job)
-            {
-                Log.ClaimRecoveredAfterLostReply(_logger, job.OperationId, workerId);
-                return job.OperationId;
-            }
-
-            if (recovered?.UnreadableOperationId is { } unreadable)
-            {
-                await FailUnreadableClaimAsync(unreadable, workerId, cancellationToken).ConfigureAwait(false);
-            }
+            return recovered;
         }
 
+        var row = await ClaimNextAsync(workerId, acceptedKinds, acceptedRuntimeProfiles, cancellationToken).ConfigureAwait(false);
+        if (row?.UnreadableOperationId is { } unreadableClaim)
+        {
+            // Nothing can execute it, and left claimed it would be reclaimed and fail again forever.
+            await FailUnreadableClaimAsync(unreadableClaim, workerId, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        if (row?.Job is not { } claimed)
+        {
+            return null;
+        }
+
+        ControlPlaneTelemetry.RecordExecutionTransition(claimed with { Status = ExecutionJobStatus.Queued }, claimed);
+        Log.JobClaimed(_logger, claimed.OperationId, workerId);
+        _jobChanged?.Wake();
+        return claimed.OperationId;
+    }
+
+    private async Task<string?> RecoverClaimWithLostReplyAsync(string workerId, CancellationToken cancellationToken)
+    {
+        var recovered = await FindClaimWithLostReplyAsync(workerId, cancellationToken).ConfigureAwait(false);
+        ClearUnconfirmedClaim(workerId);
+        if (recovered?.Job is { } job)
+        {
+            Log.ClaimRecoveredAfterLostReply(_logger, job.OperationId, workerId);
+            return job.OperationId;
+        }
+
+        if (recovered?.UnreadableOperationId is { } unreadable)
+        {
+            await FailUnreadableClaimAsync(unreadable, workerId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return null;
+    }
+
+    private async Task<ClaimedRow?> ClaimNextAsync(
+        string workerId,
+        IReadOnlySet<ExecutionJobKind>? acceptedKinds,
+        IReadOnlySet<string>? acceptedRuntimeProfiles,
+        CancellationToken cancellationToken)
+    {
         var runtimeProfiles = (acceptedRuntimeProfiles ?? RuntimeProfiles.DefaultAccepted).ToArray();
-        ClaimedRow? row;
         try
         {
-            row = await _database.ExecuteAsync(
+            return await _database.ExecuteAsync(
                 async (connection, _, token) =>
                 {
                     await using var command = new NpgsqlCommand(
@@ -151,23 +183,6 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             MarkUnconfirmedClaim(workerId);
             throw;
         }
-
-        if (row?.UnreadableOperationId is { } unreadableClaim)
-        {
-            // Nothing can execute it, and left claimed it would be reclaimed and fail again forever.
-            await FailUnreadableClaimAsync(unreadableClaim, workerId, cancellationToken).ConfigureAwait(false);
-            return null;
-        }
-
-        if (row?.Job is not { } claimed)
-        {
-            return null;
-        }
-
-        ControlPlaneTelemetry.RecordExecutionTransition(claimed with { Status = ExecutionJobStatus.Queued }, claimed);
-        Log.JobClaimed(_logger, claimed.OperationId, workerId);
-        _jobChanged?.Wake();
-        return claimed.OperationId;
     }
 
     public async Task RequeueAsync(
