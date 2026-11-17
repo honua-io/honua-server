@@ -2224,3 +2224,18 @@ heads or moved trunk preserve the proposal. The workflow concurrency group
 serializes publishers; the retained branch supplies diagnostic evidence.
 Required checks, aggregate dependencies and PR-time work are unchanged: before
 and after this cleanup there are zero additional workflows, jobs or runners.
+
+## Review Gate attestation after merge
+
+Live trunk branch protection on 17 November lists four required contexts:
+`PR Gate`, `PR Gate / Affected shards`, `clean-code / Clean code` and
+`repo-hygiene / Repository hygiene`; `Review Gate` is not among them. The attestation already sheds pull requests
+that are closed before it starts. A pull request that merges or closes while the
+attestation runs used to receive a red status anyway, from the initial snapshot
+(`pull request is not open`) or the final double snapshot (state changed between
+reads). Six of 40 server PRs updated between 16 Nov 17:00Z and 17 Nov 17:10Z
+carried that red status, each posted 1 to 8 seconds after the merge or close.
+The attestation now re-reads the pull request before any red status and sheds
+it when it is no longer open. Open pull requests keep every blocking reason, and
+the success and dispatch paths are unchanged. A failed re-read keeps the red status. No trigger, job, runner, required
+check or aggregate dependency changes.
