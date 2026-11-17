@@ -99,8 +99,11 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         var result = await ExecuteProtectedPatchAsync(
             $"{{\"properties\":{{\"name\":\"after\",\"CREATED\":{value},\"updated\":{value}}}}}", existing, tracking: new MetadataV2ObjectEditing
             {
-                GlobalIdField = "globalid", CreatorField = "creator", CreatedAtField = "created",
-                EditorField = "editor", UpdatedAtField = "updated",
+                GlobalIdField = "globalid",
+                CreatorField = "creator",
+                CreatedAtField = "created",
+                EditorField = "editor",
+                UpdatedAtField = "updated",
             });
 
         result.Status.Should().Be(StatusCodes.Status200OK);

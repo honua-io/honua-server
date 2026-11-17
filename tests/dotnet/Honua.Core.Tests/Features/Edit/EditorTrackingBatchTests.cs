@@ -21,7 +21,8 @@ public sealed class EditorTrackingBatchTests
     {
         var resource = new MetadataV2Object
         {
-            Metadata = new() { Id = "items", Name = "items" }, Type = MetadataV2ObjectType.FeatureDataset,
+            Metadata = new() { Id = "items", Name = "items" },
+            Type = MetadataV2ObjectType.FeatureDataset,
             Editing = new() { CreatorField = "creator", CreatedAtField = "created", EditorField = "editor", UpdatedAtField = "updated" },
         };
         var feature = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty

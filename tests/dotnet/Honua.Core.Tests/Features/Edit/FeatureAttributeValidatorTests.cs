@@ -16,7 +16,8 @@ public sealed class FeatureAttributeValidatorTests
     {
         var result = FeatureAttributeValidator.Validate(Resource(MetadataV2FieldType.Boolean), new Dictionary<string, object?>
         {
-            ["unknown"] = 4, ["value"] = 1,
+            ["unknown"] = 4,
+            ["value"] = 1,
         });
         result.IsValid.Should().BeFalse();
         result.ErrorMessage.Should().Be("Multiple attribute validation errors: Unknown field 'unknown'.; Field 'value' must be a boolean.");
@@ -28,7 +29,8 @@ public sealed class FeatureAttributeValidatorTests
     {
         var result = FeatureAttributeValidator.Validate(Resource(MetadataV2FieldType.Boolean), new Dictionary<string, object?>
         {
-            ["unknown"] = 4, ["VALUE"] = JsonSerializer.SerializeToElement(1),
+            ["unknown"] = 4,
+            ["VALUE"] = JsonSerializer.SerializeToElement(1),
         }, new(AttributeValidationProfile.GeoServices));
         result.IsValid.Should().BeTrue(result.ErrorMessage);
         result.Value!.Should().HaveCount(1).And.Contain("value", true);

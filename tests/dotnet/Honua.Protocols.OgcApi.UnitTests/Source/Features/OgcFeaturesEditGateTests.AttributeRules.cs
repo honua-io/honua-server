@@ -27,7 +27,8 @@ public sealed partial class OgcFeaturesEditGateTests
         var hooks = new RecordingHooks();
         var request = new OgcFeaturesEditRequest
         {
-            Operation = OgcFeaturesEditOperation.Patch, ObjectId = 42,
+            Operation = OgcFeaturesEditOperation.Patch,
+            ObjectId = 42,
             Feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty),
         };
 
@@ -103,7 +104,8 @@ public sealed partial class OgcFeaturesEditGateTests
         var hooks = new RecordingHooks();
         var request = new OgcFeaturesEditRequest
         {
-            Operation = OgcFeaturesEditOperation.Batch, RollbackOnFailure = true,
+            Operation = OgcFeaturesEditOperation.Batch,
+            RollbackOnFailure = true,
             BatchOperations = [PartialUpdate(42, "blue"), new OgcFeaturesBatchEditOperation
             {
                 Operation = OgcFeaturesEditOperation.Delete, ObjectId = 42,

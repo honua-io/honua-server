@@ -31,7 +31,8 @@ public sealed partial class FeatureEditGateTests
         var hooks = new RejectingHooks("none");
         var rejections = await FeatureEditGate.CheckAsync(hooks, check with
         {
-            Batch = prepared.Batch, Rejections = prepared.Rejections,
+            Batch = prepared.Batch,
+            Rejections = prepared.Rejections,
         }, CancellationToken.None);
 
         rejections.Should().BeEmpty();
@@ -48,15 +49,19 @@ public sealed partial class FeatureEditGateTests
         [Row("rule", "S"), Row("contingent", "L"), Row("blocked", "S"), Row("ok", "S")]);
         var check = new FeatureEditCheck(Rules(new MetadataV2AttributeRule
         {
-            Name = "allowed-name", Type = MetadataV2AttributeRuleType.Constraint,
-            ScriptExpression = "$feature.name != 'rule'", ErrorMessage = "rule rejected", IsEnabled = true,
+            Name = "allowed-name",
+            Type = MetadataV2AttributeRuleType.Constraint,
+            ScriptExpression = "$feature.name != 'rule'",
+            ErrorMessage = "rule rejected",
+            IsEnabled = true,
         }), Scope, batch);
         var prepared = FeatureEditGate.ApplyAttributeRules(check);
         var hooks = new RejectingHooks("blocked");
 
         var rejected = await FeatureEditGate.CheckAsync(hooks, check with
         {
-            Batch = prepared.Batch, Rejections = prepared.Rejections,
+            Batch = prepared.Batch,
+            Rejections = prepared.Rejections,
         }, CancellationToken.None);
 
         rejected.Select(static row => row.Index).Should().Equal(0, 1, 2);
@@ -69,9 +74,13 @@ public sealed partial class FeatureEditGateTests
         var batch = FeatureEditBatch.Create(deletes: [7], rollbackOnFailure: true);
         var check = new FeatureEditCheck(Rules(new MetadataV2AttributeRule
         {
-            Name = "keep-red", Type = MetadataV2AttributeRuleType.Constraint,
-            ScriptExpression = "$feature.color != 'red'", TriggeringEvents = ["delete"], IsEnabled = true,
-        }), Scope, batch) { EffectiveAttributes = static _ => Row("stored", "S").Attributes };
+            Name = "keep-red",
+            Type = MetadataV2AttributeRuleType.Constraint,
+            ScriptExpression = "$feature.color != 'red'",
+            TriggeringEvents = ["delete"],
+            IsEnabled = true,
+        }), Scope, batch)
+        { EffectiveAttributes = static _ => Row("stored", "S").Attributes };
         var prepared = FeatureEditGate.ApplyAttributeRules(check);
         var hooks = new RejectingHooks("none");
 
@@ -172,9 +181,32 @@ public sealed partial class FeatureEditGateTests
     [InlineData("length")]
     public async Task AttributeRules_InvalidCalculatedValue_RejectsItsRowBeforeHooks(string invalid)
     {
+        var resource = InvalidCalculatedValueRules(invalid);
+        var batch = FeatureEditBatch.Create(creates:
+        [Row("bad", "S") with { Attributes = Row("bad", "S").Attributes.Add("n", 6) }]);
+        var check = new FeatureEditCheck(resource, Scope, batch);
+        var prepared = FeatureEditGate.ApplyAttributeRules(check);
+        var hooks = new RejectingHooks("none");
+
+        var rejected = await FeatureEditGate.CheckAsync(hooks, check with
+        {
+            Batch = prepared.Batch,
+            Rejections = prepared.Rejections,
+        }, CancellationToken.None);
+
+        rejected.Should().ContainSingle().Which.Index.Should().Be(0);
+        prepared.Batch.Creates[0].Attributes["size"].Should().Be("S");
+        hooks.Seen.Should().BeEmpty();
+    }
+
+    private static MetadataV2Object InvalidCalculatedValueRules(string invalid)
+    {
         var field = new MetadataV2Field
         {
-            Name = "size", Type = MetadataV2FieldType.String, Nullable = false, Length = 1,
+            Name = "size",
+            Type = MetadataV2FieldType.String,
+            Nullable = false,
+            Length = 1,
         };
         var expression = invalid switch
         {
@@ -191,24 +223,11 @@ public sealed partial class FeatureEditGateTests
                 Domain = new() { Type = "range", Range = [JsonSerializer.SerializeToElement(0), JsonSerializer.SerializeToElement(10)] },
             };
         }
-        var resource = Rules(CalculateSize() with { ScriptExpression = expression }) with
+        return Rules(CalculateSize() with { ScriptExpression = expression }) with
         {
-            SchemaFields = [field], ContingentValueGroups = [],
+            SchemaFields = [field],
+            ContingentValueGroups = [],
         };
-        var batch = FeatureEditBatch.Create(creates:
-        [Row("bad", "S") with { Attributes = Row("bad", "S").Attributes.Add("n", 6) }]);
-        var check = new FeatureEditCheck(resource, Scope, batch);
-        var prepared = FeatureEditGate.ApplyAttributeRules(check);
-        var hooks = new RejectingHooks("none");
-
-        var rejected = await FeatureEditGate.CheckAsync(hooks, check with
-        {
-            Batch = prepared.Batch, Rejections = prepared.Rejections,
-        }, CancellationToken.None);
-
-        rejected.Should().ContainSingle().Which.Index.Should().Be(0);
-        prepared.Batch.Creates[0].Attributes["size"].Should().Be("S");
-        hooks.Seen.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -226,7 +245,8 @@ public sealed partial class FeatureEditGateTests
 
         var rejected = await FeatureEditGate.CheckAsync(hooks, check with
         {
-            Batch = prepared.Batch, Rejections = prepared.Rejections,
+            Batch = prepared.Batch,
+            Rejections = prepared.Rejections,
         }, CancellationToken.None);
 
         rejected.Should().ContainSingle().Which.Index.Should().Be(0);
@@ -241,7 +261,8 @@ public sealed partial class FeatureEditGateTests
         const string identity = "fe83cc1f-58cd-40cc-a935-d4acdd105336";
         var resource = Rules(CalculateSize() with
         {
-            FieldName = "GLOBALID", ScriptExpression = "return 'f27137b9-ea20-40c1-a76f-cd474bd43387';",
+            FieldName = "GLOBALID",
+            ScriptExpression = "return 'f27137b9-ea20-40c1-a76f-cd474bd43387';",
         }) with
         {
             Editing = new() { GlobalIdField = "globalid" },
@@ -260,8 +281,11 @@ public sealed partial class FeatureEditGateTests
 
     private static MetadataV2AttributeRule CalculateSize() => new()
     {
-        Name = "size", Type = MetadataV2AttributeRuleType.Calculation, FieldName = "size",
-        ScriptExpression = "return 'S';", IsEnabled = true,
+        Name = "size",
+        Type = MetadataV2AttributeRuleType.Calculation,
+        FieldName = "size",
+        ScriptExpression = "return 'S';",
+        IsEnabled = true,
     };
 
     private static MetadataV2Object Rules(params MetadataV2AttributeRule[] rules)

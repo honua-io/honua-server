@@ -79,7 +79,8 @@ internal static partial class OgcFeatureEditGate
                 field => TrackingTimeValue(field, now)));
         var rejections = await FeatureEditGate.CheckAsync(ResolveHooks(target.Context), check with
         {
-            Batch = checkedBatch, Rejections = rules.Rejections,
+            Batch = checkedBatch,
+            Rejections = rules.Rejections,
         }, cancellationToken).ConfigureAwait(false);
         return (checkedBatch, rejections.Count == 0 ? null : FeatureEditGate.RejectedResult(checkedBatch, Safe(rejections)));
     }

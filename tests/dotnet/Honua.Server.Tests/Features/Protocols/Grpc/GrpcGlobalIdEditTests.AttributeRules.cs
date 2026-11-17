@@ -129,11 +129,14 @@ public sealed partial class GrpcGlobalIdEditTests
         ReturnWriteResult(FeatureEditResult.Success(0, 0, 0));
         var request = new Proto.ApplyEditsRequest
         {
-            ServiceId = "test", LayerId = 0, RollbackOnFailure = failurePolicy == FeatureEditFailurePolicy.Rollback,
+            ServiceId = "test",
+            LayerId = 0,
+            RollbackOnFailure = failurePolicy == FeatureEditFailurePolicy.Rollback,
         };
         request.Updates.Add(new Proto.Feature
         {
-            Id = 7, Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "blocked" } },
+            Id = 7,
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "blocked" } },
         });
         request.Deletes.Add(7);
         if (failurePolicy == FeatureEditFailurePolicy.Rollback)

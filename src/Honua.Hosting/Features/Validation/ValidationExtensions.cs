@@ -18,9 +18,6 @@ public static class ValidationExtensions
         GeoServices
     }
 
-    internal static bool IsReservedMutationAttribute(string attributeName)
-        => Honua.Core.Features.Edit.FeatureMutationAttributes.IsReserved(attributeName);
-
     public static ValidationResult<string> ValidateSpatialRelationship(string? spatialRel)
     {
         if (string.IsNullOrWhiteSpace(spatialRel))

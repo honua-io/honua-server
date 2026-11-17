@@ -17,39 +17,40 @@ public sealed partial class OgcFeaturesEditGateTests
     {
         var resource = TrackingResource();
         foreach (var transaction in new[] { false, true })
-        foreach (var insert in new[] { false, true })
-        {
-            var writer = new CountingWriter();
-            var context = Context(new RecordingHooks());
-            context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test"));
-            var row = Row(insert ? 0 : 42, "red", "S");
-            row = row with { Attributes = row.Attributes.Add("creator", "forged").Add("editor", "forged") };
-            var request = new OgcFeaturesEditRequest
+            foreach (var insert in new[] { false, true })
             {
-                Operation = insert ? OgcFeaturesEditOperation.Create : OgcFeaturesEditOperation.Replace,
-                ObjectId = insert ? null : 42, Feature = row,
-            };
-            var handlers = CreateHandlers(writer);
-            var result = transaction
-                ? await handlers.Transaction.ExecuteEditAsync(context, 7, resource, request, CancellationToken.None)
-                : await handlers.Crud.ExecuteEditAsync(context, 7, resource, request, CancellationToken.None);
+                var writer = new CountingWriter();
+                var context = Context(new RecordingHooks());
+                context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "alice")], "test"));
+                var row = Row(insert ? 0 : 42, "red", "S");
+                row = row with { Attributes = row.Attributes.Add("creator", "forged").Add("editor", "forged") };
+                var request = new OgcFeaturesEditRequest
+                {
+                    Operation = insert ? OgcFeaturesEditOperation.Create : OgcFeaturesEditOperation.Replace,
+                    ObjectId = insert ? null : 42,
+                    Feature = row,
+                };
+                var handlers = CreateHandlers(writer);
+                var result = transaction
+                    ? await handlers.Transaction.ExecuteEditAsync(context, 7, resource, request, CancellationToken.None)
+                    : await handlers.Crud.ExecuteEditAsync(context, 7, resource, request, CancellationToken.None);
 
-            result.IsSuccess.Should().BeTrue();
-            var batch = writer.LastBatch!.Value;
-            var written = insert ? batch.Creates.Single() : batch.Updates.Single();
-            written.Attributes.Should().Contain("editor", "alice");
-            written.Attributes["updated"].Should().BeOfType<DateTime>();
-            if (insert)
-            {
-                written.Attributes.Should().Contain("creator", "alice");
-                written.Attributes["created"].Should().Be(written.Attributes["updated"]);
+                result.IsSuccess.Should().BeTrue();
+                var batch = writer.LastBatch!.Value;
+                var written = insert ? batch.Creates.Single() : batch.Updates.Single();
+                written.Attributes.Should().Contain("editor", "alice");
+                written.Attributes["updated"].Should().BeOfType<DateTime>();
+                if (insert)
+                {
+                    written.Attributes.Should().Contain("creator", "alice");
+                    written.Attributes["created"].Should().Be(written.Attributes["updated"]);
+                }
+                else
+                {
+                    written.Attributes.Should().NotContainKey("creator").And.NotContainKey("created");
+                    written.PreservedAttributeNames.Should().Contain(["creator", "created"]);
+                }
             }
-            else
-            {
-                written.Attributes.Should().NotContainKey("creator").And.NotContainKey("created");
-                written.PreservedAttributeNames.Should().Contain(["creator", "created"]);
-            }
-        }
     }
 
     private static MetadataV2Object TrackingResource() => Resource() with

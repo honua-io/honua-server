@@ -72,8 +72,11 @@ public sealed class GrpcAttributeRulesIntegrationTests : IAsyncLifetime
         added.Success.Should().BeTrue();
         var query = new Proto.QueryFeaturesRequest
         {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-            ObjectIds = { added.ObjectId }, OutFields = { "name" }, ReturnGeometry = false,
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            ObjectIds = { added.ObjectId },
+            OutFields = { "name" },
+            ReturnGeometry = false,
         };
         var stored = (await client.QueryFeaturesAsync(query, headers)).Features.Should().ContainSingle().Subject;
         stored.Attributes["name"].StringValue.Should().Be("calculated");
