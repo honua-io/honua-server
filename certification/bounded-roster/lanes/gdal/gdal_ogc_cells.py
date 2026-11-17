@@ -427,12 +427,19 @@ def features_service() -> None:
 # WFS 2.0
 # ---------------------------------------------------------------------------
 
+# The advertised WFS type is the feature publication of storage layer 0 (#7171, #7653).
+TEST_LAYER_WFS = "honua:pub-test-service-feature-0"
+AUTH_LAYER_WFS = "pub-cert-auth-vector-feature-2011"
+
+
 def _wfs_layer(dataset):
     for index in range(dataset.GetLayerCount()):
         layer = dataset.GetLayer(index)
-        if layer.GetName().endswith(":test_layer"):
+        name = layer.GetName()
+        local = TEST_LAYER_WFS.split(":", 1)[-1]
+        if name == TEST_LAYER_WFS or name.endswith(":" + local) or name == local:
             return layer
-    raise AssertionError("test_layer not advertised")
+    raise AssertionError(f"{TEST_LAYER_WFS} not advertised")
 
 
 def _wfs_checks(cell: Cell) -> None:
@@ -467,7 +474,7 @@ def _wfs_checks(cell: Cell) -> None:
                 try:
                     dataset = _open_vector("WFS:" + WFS)
                     names = [dataset.GetLayer(i).GetName() for i in range(dataset.GetLayerCount())]
-                    protected = [name for name in names if "authenticated_test_layer" in name]
+                    protected = [name for name in names if AUTH_LAYER_WFS in name]
                     if protected:
                         advertised[label] = len(_features(dataset.GetLayerByName(protected[0])))
                     else:

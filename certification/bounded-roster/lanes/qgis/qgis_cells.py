@@ -30,6 +30,13 @@ MAPS = url("/ogc/maps")
 STYLES = url("/ogc/styles")
 FEATURESERVER = url("/rest/services/test_service/FeatureServer")
 MAPSERVER = url("/rest/services/browser_compat/MapServer")
+# #7171/#7653: the global WFS advertises one type per storage layer, named by the
+# feature publication id (lowest layer index, then lowest publication id).
+TEST_LAYER_WFS = "honua:pub-test-service-feature-0"
+AUTH_LAYER_WFS = "honua:pub-cert-auth-vector-feature-2011"
+# WMS Name is the publication service-local id, which the compat seed sets to the layer id.
+BROWSER_POINTS_WMS = "2000"
+AUTH_BROWSER_POINTS_WMS = "2010"
 
 NAMES = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "lambda"]
 LOCATIONS = {"alpha": (-122.49, 37.71), "gamma": (-122.46, 37.73), "iota": (-122.37, 37.79)}
@@ -347,7 +354,7 @@ def _wfs(typename: str, label: str = "anonymous", extra: str = "") -> QgsVectorL
 def _wfs_positive(cell: Cell) -> None:
     with cell.check("positive", "GetCapabilities, DescribeFeatureType and GetFeature through the WFS provider") as c:
         with qgiskit.recording() as recorder:
-            names = _names(_wfs("honua:test_layer"))
+            names = _names(_wfs(TEST_LAYER_WFS))
         requests = sorted({item.url.split("REQUEST=")[1].split("&")[0] for item in recorder.exchanges if "REQUEST=" in item.url})
         expect(names == sorted(NAMES), names)
         expect({"GetCapabilities", "DescribeFeatureType", "GetFeature"} <= set(requests), requests)
@@ -356,14 +363,14 @@ def _wfs_positive(cell: Cell) -> None:
 
 def _wfs_metadata_media(cell: Cell) -> None:
     with cell.check("metadata", "capabilities title and extent become layer metadata") as c:
-        layer = _wfs("honua:test_layer")
+        layer = _wfs(TEST_LAYER_WFS)
         extent = layer.extent()
         expect(layer.crs().authid() == "EPSG:4326", layer.crs().authid())
         expect(round(extent.xMinimum(), 2) <= -122.49 and round(extent.yMaximum(), 2) >= 37.79, extent.toString())
         c.detail = f"crs {layer.crs().authid()}; extent {extent.toString(3)}; title {layer.dataProvider().layerMetadata().title()!r}"
     with cell.check("media-schema", "GML GetFeature responses decode against DescribeFeatureType types") as c:
         with qgiskit.recording() as recorder:
-            layer = _wfs("honua:test_layer")
+            layer = _wfs(TEST_LAYER_WFS)
             fields = {field.name(): field.typeName() for field in layer.fields()}
             list(layer.getFeatures())
         responses = [(item.url.split("REQUEST=")[1].split("&")[0], item.content_type) for item in recorder.exchanges
@@ -375,7 +382,7 @@ def _wfs_metadata_media(cell: Cell) -> None:
 
 def wfs_operation() -> None:
     cell = _cell("client-cert/qgis/ogc/OGC-OP-WFS-2-0", "2.0.0", "WFS 2.0 simple")
-    cell.primary_request_url = WFS + "?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=honua:test_layer"
+    cell.primary_request_url = WFS + "?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=" + TEST_LAYER_WFS
     _wfs_positive(cell)
     with cell.check("negative", "an unknown feature type yields an invalid layer") as c:
         layer = _wfs("honua:no_such_type")
@@ -389,7 +396,7 @@ def wfs_operation() -> None:
         c.detail = f"(features, statuses) {outcomes}"
     with cell.check("crs-axis", "EPSG:4326 WFS 2.0 axis order decodes to lon/lat geometry") as c:
         with qgiskit.recording() as recorder:
-            layer = _wfs("honua:test_layer")
+            layer = _wfs(TEST_LAYER_WFS)
             located = _xy(layer)
             window = _names(layer, QgsFeatureRequest().setFilterRect(QgsRectangle(-122.47, 37.715, -122.44, 37.745)))
         expect(all(located[name] == LOCATIONS[name] for name in LOCATIONS), located)
@@ -401,7 +408,7 @@ def wfs_operation() -> None:
 
 def wfs_auth_probe(label: str) -> object:
     with qgiskit.recording() as recorder:
-        layer = _wfs("honua:authenticated_test_layer", label)
+        layer = _wfs(AUTH_LAYER_WFS, label)
         result = layer.featureCount() if layer.isValid() else "invalid"
     return [result, sorted({item.status for item in recorder.exchanges if item.status})]
 
@@ -409,7 +416,7 @@ def wfs_auth_probe(label: str) -> object:
 def _wfs_metadata_media_only_media(cell: Cell) -> None:
     with cell.check("media-schema", "GML GetFeature responses decode against DescribeFeatureType types") as c:
         with qgiskit.recording() as recorder:
-            layer = _wfs("honua:test_layer")
+            layer = _wfs(TEST_LAYER_WFS)
             fields = {field.name(): field.typeName() for field in layer.fields()}
             list(layer.getFeatures())
         responses = [(item.url.split("REQUEST=")[1].split("&")[0], item.content_type) for item in recorder.exchanges
@@ -431,7 +438,7 @@ def wfs_service() -> None:
 # WMS 1.3.0 and WMTS 1.0.0
 # ---------------------------------------------------------------------------
 
-def _wms(label: str = "anonymous", layers: str = "Browser Points", base: str = WMS, crs: str = "EPSG:4326") -> QgsRasterLayer:
+def _wms(label: str = "anonymous", layers: str = BROWSER_POINTS_WMS, base: str = WMS, crs: str = "EPSG:4326") -> QgsRasterLayer:
     auth = "" if label == "anonymous" else f"authcfg={qgiskit.AUTHCFG[label]}&"
     return QgsRasterLayer(f"{auth}crs={crs}&format=image/png&layers={layers}&styles=&url={base}", f"wms-{label}", "wms")
 
@@ -499,7 +506,7 @@ def wms_operation() -> None:
         outcomes = {}
         for label in DENIED + ADMITTED:
             with qgiskit.recording() as recorder:
-                layer = _wms(label, layers="Authenticated Browser Points", base=WMS_PROTECTED)
+                layer = _wms(label, layers=AUTH_BROWSER_POINTS_WMS, base=WMS_PROTECTED)
                 painted = qgiskit.render(layer, BROWSER_EXTENT_4326, "EPSG:4326")[0] if layer.isValid() else "invalid"
             outcomes[label] = (painted, sorted({item.status for item in recorder.exchanges}))
         expect(all(outcomes[label][0] in ("invalid", 0) for label in DENIED), outcomes)

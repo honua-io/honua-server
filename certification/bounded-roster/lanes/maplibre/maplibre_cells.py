@@ -143,7 +143,12 @@ def _media_check(cell: Cell, session, style, fragment: str, expected: str) -> No
 # WMS / WMTS
 # ---------------------------------------------------------------------------
 
-def _wms_tiles(service: str = "browser_compat", layers: str = "Browser Points") -> str:
+# WMS Name is the publication service-local id (compat seed layer id), not the title.
+BROWSER_POINTS_WMS = "2000"
+AUTH_BROWSER_POINTS_WMS = "2010"
+
+
+def _wms_tiles(service: str = "browser_compat", layers: str = BROWSER_POINTS_WMS) -> str:
     return (WMS_BASE.format(service=service) + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
             f"&LAYERS={layers.replace(' ', '%20')}&STYLES=&CRS=EPSG:3857&BBOX={BBOX_3857}"
             "&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=TRUE")
@@ -156,7 +161,7 @@ def _wms_checks(cell: Cell, session, feature_info: bool) -> None:
             capabilities = session.fetch(BASE_URL + WMS_BASE.format(service="browser_compat") + "?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0")
             root = ElementTree.fromstring(capabilities["body"])
             names = [element.text for element in root.iter() if element.tag.endswith("}Name") and element.text]
-            expect(capabilities["status"] == 200 and "Browser Points" in names, (capabilities["status"], names[:6]))
+            expect(capabilities["status"] == 200 and BROWSER_POINTS_WMS in names, (capabilities["status"], names[:6]))
             detail.append(f"capabilities layers {names[1:5]}")
         outcome = session.render(_raster_style(_wms_tiles()), center=CENTER, zoom=ZOOM, probes=_probes(pixel=True))
         alpha = outcome["probes"]["alpha"]
@@ -166,14 +171,14 @@ def _wms_checks(cell: Cell, session, feature_info: bool) -> None:
             # CRS:84 is lon/lat in WMS 1.3.0; pt-alpha sits at the centre pixel of this window.
             info = session.fetch(
                 BASE_URL + WMS_BASE.format(service="browser_compat") + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo"
-                "&LAYERS=Browser%20Points&QUERY_LAYERS=Browser%20Points&STYLES=&CRS=CRS:84"
+                f"&LAYERS={BROWSER_POINTS_WMS}&QUERY_LAYERS={BROWSER_POINTS_WMS}&STYLES=&CRS=CRS:84"
                 "&BBOX=-122.4204,37.7739,-122.4184,37.7759&WIDTH=256&HEIGHT=256&INFO_FORMAT=application/json&I=128&J=128")
             expect(info["status"] == 200 and "pt-alpha" in info["body"], (info["status"], info["body"][:200]))
             detail.append("GetFeatureInfo at pt-alpha returned pt-alpha")
         c.detail = "; ".join(detail)
     _negative_check(cell, session, _raster_style(_wms_tiles(layers="No Such Layer")), "REQUEST=GetMap",
                     "an unknown WMS layer surfaces as a MapLibre tile error")
-    _auth_check(cell, session, lambda: _raster_style(_wms_tiles("cert_auth_raster", "Authenticated Browser Points")),
+    _auth_check(cell, session, lambda: _raster_style(_wms_tiles("cert_auth_raster", AUTH_BROWSER_POINTS_WMS)),
                 "REQUEST=GetMap", raster=True)
     _crs_raster_check(cell, session, _raster_style(_wms_tiles()))
     _media_check(cell, session, _raster_style(_wms_tiles()), "REQUEST=GetMap", "image/png")
