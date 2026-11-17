@@ -34,6 +34,19 @@ def create_fake_pull_api(base):
         '  echo "https://example.invalid/pull/42"\n'
         '  exit 0\n'
         'fi\n'
+        'if [[ "$1 $2" == "api repos/honua-io/honua-server/pulls/42" ]]; then\n'
+        '  if [[ -n "${FAKE_PR_HEAD:-}" ]]; then echo "$FAKE_PR_HEAD"; else\n'
+        '    git ls-remote origin refs/heads/automation/regenerate-generated-files | cut -f1\n'
+        '  fi\n'
+        '  if [[ -n "${FAKE_ADVANCE_REF:-}" ]]; then\n'
+        '    git --git-dir "$FAKE_REMOTE" update-ref "$FAKE_ADVANCE_REF" "$FAKE_ADVANCE_SHA"\n'
+        '  fi\n'
+        '  exit 0\n'
+        'fi\n'
+        'if [[ "$1 $2 $3 $4" == "api --method PATCH repos/honua-io/honua-server/pulls/42" && "$5 $6" == "-f state=closed" ]]; then\n'
+        f'  rm {gh_state}\n'
+        '  exit 0\n'
+        'fi\n'
         'echo "unexpected gh invocation: $*" >&2\n'
         'exit 1\n'
     )
@@ -453,6 +466,50 @@ class GeneratedFilesContracts(unittest.TestCase):
                 run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
                 trunk_before,
             )
+
+            # Fresh, clean validation closes only the matching obsolete PR;
+            # it neither pushes nor records a publication proof. A different
+            # REST head must be preserved even if the Git branch is unchanged.
+            run('git', 'reset', '--hard', trunk_before)
+            clean_branch = run('git', '--git-dir', str(remote), 'rev-parse',
+                               'refs/heads/automation/regenerate-generated-files').stdout.strip()
+            env['GITHUB_OUTPUT'] = str(base / 'publication-output')
+            env['FAKE_PR_HEAD'] = '0' * 40
+            gh_calls.unlink()
+            changed_head = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertIn('preserving generated-files PR', changed_head.stdout)
+            self.assertNotIn('--method PATCH', gh_calls.read_text())
+            env.pop('FAKE_PR_HEAD')
+            # Move real remote refs after REST has read the matching PR head.
+            # Both a new trunk and a new publication must prevent closing it.
+            env['FAKE_REMOTE'] = str(remote)
+            for ref, advanced, restore in (
+                    ('refs/heads/trunk', clean_branch, trunk_before),
+                    ('refs/heads/automation/regenerate-generated-files', trunk_before, clean_branch)):
+                env['FAKE_ADVANCE_REF'] = ref
+                env['FAKE_ADVANCE_SHA'] = advanced
+                gh_calls.unlink()
+                raced_clean = run('bash', 'scripts/ci/publish-generated-files.sh')
+                self.assertIn('preserving generated-files PR', raced_clean.stdout)
+                self.assertNotIn('--method PATCH', gh_calls.read_text())
+                run('git', '--git-dir', str(remote), 'update-ref', ref, restore)
+            for key in ('FAKE_REMOTE', 'FAKE_ADVANCE_REF', 'FAKE_ADVANCE_SHA'):
+                env.pop(key)
+            gh_calls.unlink()
+            clean = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertIn('Closed obsolete generated-files PR #42', clean.stdout)
+            self.assertIn('--method PATCH repos/honua-io/honua-server/pulls/42 -f state=closed',
+                          gh_calls.read_text())
+            self.assertFalse((base / 'publication-output').exists())
+            self.assertEqual(run('git', '--git-dir', str(remote), 'rev-parse',
+                                 'refs/heads/automation/regenerate-generated-files').stdout.strip(),
+                             clean_branch)
+            gh_calls.unlink()
+            no_pr = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertIn('up to date', no_pr.stdout)
+            self.assertNotIn('--method PATCH', gh_calls.read_text())
+            # Restore the fake open PR for the stale-run scenarios below.
+            (base / 'gh-pr-number').write_text('42\n')
 
             # Advance trunk independently, then replay the old triggering SHA as
             # a rerun. Its fresh validation may pass, but publication must
