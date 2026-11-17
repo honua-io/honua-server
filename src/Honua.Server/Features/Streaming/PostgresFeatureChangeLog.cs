@@ -181,7 +181,7 @@ internal sealed class PostgresFeatureChangeLog(
             JsonSerializer.SerializeToElement(change, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent),
             change.Timestamp);
 
-    private string SelectChanges(FeatureChangeLogQuery query)
+    private static string SelectChanges(FeatureChangeLogQuery query)
     {
         return $"""
             SELECT changes.generation, changes.layer_id, COALESCE(changes.public_objectid, changes.objectid), changes.operation, changes.changed_at,
@@ -202,7 +202,7 @@ internal sealed class PostgresFeatureChangeLog(
             """;
     }
 
-    private string BuildFilters(FeatureChangeLogQuery query)
+    private static string BuildFilters(FeatureChangeLogQuery query)
     {
         var filters = new List<string> { "changes.generation > @after", "changes.version_id IS NULL" };
         if (query.EventId is null)
