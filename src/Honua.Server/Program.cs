@@ -1262,7 +1262,16 @@ if (configurationErrors.Count > 0)
 {
     var errorDetails = string.Join(Environment.NewLine, configurationErrors);
     ConfigurationLog.ConfigurationValidationFailed(app.Logger, configurationErrors.Count, errorDetails);
-    throw new InvalidOperationException("Configuration validation failed. See logs for details.");
+    const string configurationRefusal = "Configuration validation failed. See logs for details.";
+    if (Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+    {
+        throw new InvalidOperationException(configurationRefusal);
+    }
+
+    // Thrown from here, the refusal leaves Main unhandled and the AOT image aborts with exit 139.
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(
+        app, configurationRefusal + Environment.NewLine + errorDetails);
+    return;
 }
 
 ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
