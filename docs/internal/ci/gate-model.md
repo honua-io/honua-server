@@ -2140,3 +2140,16 @@ host-free geometry class. Both runs use one process; no runners are added.
 The 81-second execution saving is 1.35 runner-minutes for this focused suite;
 full CI shard wall-time savings remain unmeasured. These measurements use the
 initial fixture change before the equivalent strict-signature parameter adapters.
+
+### PrintingTools GPServer service application lifetime
+
+`PrintingToolsGpServerService5546Tests` shares one `WebAppFixture` per class
+instead of creating and seeding one per case. Every case owns and disposes its
+own admin client. REST and SOAP metadata requests are read-only; render and job
+requests use their own generated job IDs. Database collection serialization and
+all test bodies, endpoint attributes and assertions remain unchanged.
+
+The class stays in Server Features Spec Printing and Static Maps 1 on selected
+PR runs and twice-daily full trunk runs. No tests move to a later gate. This
+changes no runner count, required check name, aggregate dependency, workflow or
+shard definition.
