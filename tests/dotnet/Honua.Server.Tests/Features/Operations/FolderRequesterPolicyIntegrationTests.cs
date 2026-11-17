@@ -347,17 +347,24 @@ public sealed partial class FolderOperationIntegrationTests
         public AuthenticateResult? AuthenticateResult { get; set; }
     }
 
-    private sealed class FolderRequesterLicense : ILicenseEntitlementService
+    internal sealed class FolderRequesterLicense : ILicenseEntitlementService
     {
         public TestLicenseEntitlementService Current { get; set; } = new(HonuaEdition.Pro);
+        public void Reset() => Current = new(HonuaEdition.Pro);
         public LicenseSnapshot GetSnapshot() => Current.GetSnapshot();
         public LicenseEntitlementDecision CheckEntitlement(string entitlementKey) => Current.CheckEntitlement(entitlementKey);
     }
 
-    private sealed class FolderRequesterMembership : IPrincipalMembershipSource
+    internal sealed class FolderRequesterMembership : IPrincipalMembershipSource
     {
         public PrincipalMembership? Current { get; set; } = new(true, ["admin", "original-membership"]);
         public int? ReadsBeforeOutage { get; set; }
+
+        public void Reset()
+        {
+            Current = new(true, ["admin", "original-membership"]);
+            ReadsBeforeOutage = null;
+        }
 
         public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
         {
