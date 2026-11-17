@@ -81,7 +81,7 @@ internal static class EntitlementProbeRegistry
 
             // Field ops — HandleGetCompatibility gates before resolving formId.
             new(FeatureCatalog.FieldOpsOfflineSyncKey, HttpMethod.Get,
-                "/api/v1/forms/packages/does-not-matter/compatibility"),
+                "/api/v1/forms/does-not-matter/compatibility"),
 
             // Geocoding — the Enterprise endpoint filter runs before request parsing or
             // provider resolution. GeoServices errors are HTTP 200 with error.code=402,

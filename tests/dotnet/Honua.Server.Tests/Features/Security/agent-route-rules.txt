@@ -21,7 +21,7 @@ POST /api/v{version:apiVersion}/admin/connections/{id}/tables/validate | Changes
 POST /api/v{version:apiVersion}/admin/embed/keys/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/embed/keys/{id:guid}/rotate | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/field-mask-policies/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
-POST /api/v{version:apiVersion}/admin/forms/packages/{formId}/versions/{packageVersion:int}/publish | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/forms/{formId}/versions/{formVersion:int}/publish | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/gp/process-releases/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/gp/process-releases/bindings/{process}/activate | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/import/geoserver/discover | Reads a source service and changes nothing.
