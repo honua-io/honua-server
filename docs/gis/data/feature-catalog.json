@@ -4210,7 +4210,8 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_NonexistentId_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_PublishingType_ReturnsWorkflowFields",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_WhenExists_ReturnsProgress",
-        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem"
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem",
+        "Honua.Server.Tests.Import.GeoServerImportUniversalCancelTests.QueuedImport_CancelledBeforeClaim_ReadsCancelled"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -5542,16 +5543,16 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-catalog-endpoints-workspaceid",
-      "route": "/api/v1/console/catalog-endpoints/{workspaceId}",
+      "id": "get-api-v1-console-catalog-endpoints-environmentid",
+      "route": "/api/v1/console/catalog-endpoints/{environmentId}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.AnonymousRequests_AreRejectedWithoutAdminAuthorization",
-        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForEmptyWorkspace_ReturnsEmptyEndpointList",
-        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForUnknownWorkspace_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForEmptyEnvironment_ReturnsEmptyEndpointList",
+        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForUnknownEnvironment_ReturnsNotFound",
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ReturnsEndpointsWithAutoDefaultAndOptInAggregates",
         "Honua.Server.Tests.Features.Console.ProjectedCatalogDiscoveryEndpointsTests.HostedProjection_RespectsMappingAdminAuthorizationAndCanonicalDirectory"
       ],
@@ -5560,8 +5561,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-catalog-endpoints-workspaceid-endpointkey",
-      "route": "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}",
+      "id": "get-api-v1-console-catalog-endpoints-environmentid-endpointkey",
+      "route": "/api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -5577,8 +5578,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-catalog-endpoints-workspaceid-endpointkey-items-itemid",
-      "route": "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}",
+      "id": "get-api-v1-console-catalog-endpoints-environmentid-endpointkey-items-itemid",
+      "route": "/api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}/items/{itemId}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -17170,6 +17171,8 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_WithInvalidSalt_RejectsOtherwiseValidLegacyKey",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpiredKey_IsRejected_AndPermissionsDefaultToAdminWildcard",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation",
@@ -17214,6 +17217,7 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_ReturnsNewPlaintextAndInvalidatesOldKey",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
+        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation"
       ],
@@ -19515,7 +19519,8 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedNeverSubmitted_CasFailure_Returns409",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedRetryAwaitingResubmission_CancelsLocallyWithoutCallingBackend",
         "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem",
-        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting"
+        "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting",
+        "Honua.Server.Tests.Import.GeoServerImportUniversalCancelTests.QueuedImport_CancelledBeforeClaim_ReadsCancelled"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
