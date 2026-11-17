@@ -46,7 +46,7 @@ public sealed class GeoParquetScratchFullTests
         var spool = new FullAfterStream(capacityBytes: 1024 * 1024);
         var schema = new Schema.Builder().Field(field => field.Name("payload").DataType(StringType.Default)).Build();
 
-        var act = () => GeoParquetFeatureWriter.WriteArrowParquet(schema, writer: null,
+        var act = () => GeoParquetFeatureWriter.WriteArrowParquet(schema, writeBatches: null,
             new GeoParquetFeatureWriter.BoundedParquetStream(maxBytes: 8, spool));
 
         act.Should().Throw<GeoParquetLimitExceededException>();
