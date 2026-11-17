@@ -910,7 +910,7 @@ public sealed class McpPromotionResourceTests
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
         body.GetProperty("count").GetInt32().Should().Be(1);
-        body.GetProperty("items")[0].GetProperty("packageId").GetString().Should().Be("map-live");
+        body.GetProperty("items")[0].GetProperty("mapId").GetString().Should().Be("map-live");
     }
 
     [UnitTest]

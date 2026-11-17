@@ -168,7 +168,7 @@ internal static class McpToolSchemas
         }
         """;
 
-    // The geospatial-mcp create_map_package / create_app_package schemas mark NO
+    // The geospatial-mcp create_map / create_app schemas mark NO
     // field required and set additionalProperties:true, so a standard-conformant
     // client composes a map/app from any subset of the composition selectors. The
     // live schemas mirror that exactly. Under ADR-0076 they do not
@@ -270,7 +270,7 @@ internal static class McpToolSchemas
             },
             "packageFamily": {
               "type": "string",
-              "description": "Supported values are query, analysis_plan, map_package, dashboard_report, form, app_package, workflow, gp, and etl. Missing or unknown values are returned as canonical missing_package_family or unsupported_package_family findings rather than rejected by the schema."
+              "description": "Supported values are query, analysis_plan, map, dashboard_report, form, app, workflow, gp, and etl. Missing or unknown values are returned as canonical missing_package_family or unsupported_package_family findings rather than rejected by the schema."
             },
             "packageId": { "type": "string" },
             "requestedAction": { "type": "string" },

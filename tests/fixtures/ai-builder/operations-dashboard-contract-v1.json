@@ -14,7 +14,7 @@
         "savedMapId": "saved-map:city-ops",
         "label": "City Operations Incidents",
         "serviceId": "published-service:city-ops-incidents",
-        "mapPackageId": "map-pkg-ops-dashboard",
+        "mapId": "map-pkg-ops-dashboard",
         "crs": "EPSG:4326",
         "extent": [
           -157.95,
@@ -216,11 +216,11 @@
         },
         {
           "category": "packages",
-          "uri": "honua://map-packages/map-pkg-ops-dashboard"
+          "uri": "honua://maps/map-pkg-ops-dashboard"
         },
         {
           "category": "packages",
-          "uri": "honua://app-packages/app-pkg-ops-dashboard"
+          "uri": "honua://apps/app-pkg-ops-dashboard"
         },
         {
           "category": "artifacts",
@@ -260,7 +260,7 @@
               "id": "map",
               "kind": "map",
               "sourceId": "catalog:layer:incident_events",
-              "mapPackageId": "map-pkg-ops-dashboard"
+              "mapId": "map-pkg-ops-dashboard"
             },
             {
               "id": "incident-list",
@@ -406,21 +406,21 @@
             "type": "object",
             "required": [
               "honuaBaseUrl",
-              "mapPackageUri",
-              "appPackageUri"
+              "mapUri",
+              "appUri"
             ],
             "properties": {
               "honuaBaseUrl": {
                 "type": "string",
                 "format": "uri"
               },
-              "mapPackageUri": {
+              "mapUri": {
                 "type": "string",
-                "const": "honua://map-packages/map-pkg-ops-dashboard"
+                "const": "honua://maps/map-pkg-ops-dashboard"
               },
-              "appPackageUri": {
+              "appUri": {
                 "type": "string",
-                "const": "honua://app-packages/app-pkg-ops-dashboard"
+                "const": "honua://apps/app-pkg-ops-dashboard"
               }
             }
           }
@@ -545,15 +545,15 @@
           {
             "artifactId": "map-pkg-ops-dashboard",
             "kind": "MapPackage",
-            "format": "honua_map_package.v1",
-            "resourceUri": "honua://map-packages/map-pkg-ops-dashboard",
+            "format": "honua_map.v1",
+            "resourceUri": "honua://maps/map-pkg-ops-dashboard",
             "packageable": true
           },
           {
             "artifactId": "app-pkg-ops-dashboard",
             "kind": "AppPackage",
-            "format": "honua_app_package.v1",
-            "resourceUri": "honua://app-packages/app-pkg-ops-dashboard",
+            "format": "honua_app.v1",
+            "resourceUri": "honua://apps/app-pkg-ops-dashboard",
             "packageable": true
           },
           {
@@ -574,12 +574,12 @@
           }
         ],
         "packages": {
-          "mapPackage": {
-            "mapPackageId": "map-pkg-ops-dashboard",
-            "format": "honua_map_package.v1",
+          "map": {
+            "mapId": "map-pkg-ops-dashboard",
+            "format": "honua_map.v1",
             "status": "Ready",
             "templateId": "saved-map-dashboard",
-            "resourceUri": "honua://map-packages/map-pkg-ops-dashboard",
+            "resourceUri": "honua://maps/map-pkg-ops-dashboard",
             "sourceBindings": [
               {
                 "sourceId": "catalog:layer:incident_events",
@@ -595,13 +595,13 @@
               "map-pkg-ops-dashboard"
             ]
           },
-          "appPackage": {
-            "appPackageId": "app-pkg-ops-dashboard",
+          "app": {
+            "appId": "app-pkg-ops-dashboard",
             "targetSdk": "honua-sdk-js",
-            "format": "honua_app_package.v1",
+            "format": "honua_app.v1",
             "status": "Ready",
             "templateId": "operations-dashboard",
-            "resourceUri": "honua://app-packages/app-pkg-ops-dashboard",
+            "resourceUri": "honua://apps/app-pkg-ops-dashboard",
             "entryPoint": "src/main.tsx",
             "generatedFiles": [
               "package.json",
@@ -631,12 +631,12 @@
                 "contentType": "application/vnd.honua.app-manifest+json"
               }
             ],
-            "mapPackageId": "map-pkg-ops-dashboard",
+            "mapId": "map-pkg-ops-dashboard",
             "manifestPreview": {
               "schemaVersion": "honua.app_manifest.v1",
               "targetSdk": "honua-sdk-js",
-              "appPackageId": "app-pkg-ops-dashboard",
-              "mapPackageUri": "honua://map-packages/map-pkg-ops-dashboard",
+              "appId": "app-pkg-ops-dashboard",
+              "mapUri": "honua://maps/map-pkg-ops-dashboard",
               "widgets": [
                 "map",
                 "incident-list",
@@ -656,8 +656,8 @@
               "type": "object",
               "required": [
                 "honuaBaseUrl",
-                "mapPackageUri",
-                "appPackageUri"
+                "mapUri",
+                "appUri"
               ]
             },
             "deliveryHints": {
@@ -824,15 +824,15 @@
           {
             "artifactId": "map-pkg-ops-dashboard",
             "kind": "MapPackage",
-            "format": "honua_map_package.v1",
-            "resourceUri": "honua://map-packages/map-pkg-ops-dashboard",
+            "format": "honua_map.v1",
+            "resourceUri": "honua://maps/map-pkg-ops-dashboard",
             "packageable": true
           },
           {
             "artifactId": "app-pkg-ops-dashboard",
             "kind": "AppPackage",
-            "format": "honua_app_package.v1",
-            "resourceUri": "honua://app-packages/app-pkg-ops-dashboard",
+            "format": "honua_app.v1",
+            "resourceUri": "honua://apps/app-pkg-ops-dashboard",
             "packageable": true
           },
           {

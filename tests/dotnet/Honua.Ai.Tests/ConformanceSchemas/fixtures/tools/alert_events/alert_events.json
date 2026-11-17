@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "alert_events.gis_open_critical",
   "schemaRef": "tools/alert_events.schema.json",
   "validates": "inputs",

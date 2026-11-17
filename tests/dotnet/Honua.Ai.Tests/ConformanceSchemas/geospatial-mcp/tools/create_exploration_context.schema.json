@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/create_exploration_context.schema.json",
+  "title": "create_exploration_context inputSchema",
+  "description": "Argument shape for create_exploration_context (interactivity profile, ADR-0032). Adds or replaces (by context id) one exploration context in a Map or App document's `explorationContexts` collection. An exploration context is a named unit of shared interaction state that components join by id; changing a context's preset is expressed as replacing it by id, so there is no separate preset tool. The standard-level target is a Map or App document (mapId or appId); the reference implementation's optimistic-concurrency draft spelling (draftId + generation) is admitted as x-honua-reference-shape, consistent with ADR-0030's bind_interaction and ADR-0031's add_control. Validation gate: context.id must be unique within the document, every context.sourceIds entry must resolve to a source declared in the target document, and context.preset must be a member of the closed preset vocabulary. See docs/adr/0032-shared-exploration-contexts.md and common/exploration.schema.json.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["explorationContext"],
+  "properties": {
+    "mapId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target Map document. Exactly one of mapId / appId / draftId identifies the target."
+    },
+    "appId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target App document. Exactly one of mapId / appId / draftId identifies the target."
+    },
+    "draftId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "x-honua-reference-shape: reference-implementation draft-lifecycle target. Requires generation."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "x-honua-reference-shape: optimistic-concurrency generation of the draft being mutated; the call fails on generation conflict."
+    },
+    "explorationContext": {
+      "$ref": "../common/exploration.schema.json#/$defs/explorationContext",
+      "description": "The exploration context to add or replace. Replacement matches on explorationContext.id and preserves existing component bindings to that id, so re-authoring a context's preset does not unbind its components."
+    }
+  }
+}

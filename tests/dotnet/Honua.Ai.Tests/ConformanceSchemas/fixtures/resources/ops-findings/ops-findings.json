@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "ops-findings.list",
   "schemaRef": "resources/ops-findings.schema.json",
   "validates": "inputs",

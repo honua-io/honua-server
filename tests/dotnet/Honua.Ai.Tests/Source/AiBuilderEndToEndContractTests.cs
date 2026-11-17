@@ -123,7 +123,7 @@ public sealed class AiBuilderEndToEndContractTests
         ]);
 
         // App preview → widgets and data bindings ready for the SDK
-        var app = body.GetProperty("appPackage");
+        var app = body.GetProperty("app");
         app.GetProperty("appId").GetString().Should().Be("app-pkg-ops-dashboard");
         app.GetProperty("widgets").EnumerateArray()
             .Select(w => w.GetString())

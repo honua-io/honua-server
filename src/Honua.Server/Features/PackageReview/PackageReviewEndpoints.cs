@@ -48,12 +48,18 @@ internal static partial class PackageReviewEndpoints
             .ProducesProblem(StatusCodes.Status500InternalServerError)
             .WithRouteAgentRule("Changes nothing.");
 
-        group.MapPost("/", HandlePublishMapPackage)
-            .WithDisplayName("Publish Map Package")
-            .WithSummary("Persist a map package as an immutable Studio version and propose its publication for separate-principal approval.")
+        var maps = endpoints.MapGroup("/api/v{version:apiVersion}/admin/maps")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
+            .WithTags("Admin", "Maps")
+            .RequireAdminAuthorization();
+
+        maps.MapPost("/", HandlePublishMap)
+            .WithDisplayName("Publish Map")
+            .WithSummary("Persist a Map as an immutable Studio version and propose its publication for separate-principal approval.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Accepts<MapPublishRequest>("application/json")
-            .Produces<MapPackagePublishResponse>(StatusCodes.Status202Accepted)
+            .Produces<MapPublishResponse>(StatusCodes.Status202Accepted)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict);
     }
@@ -113,20 +119,20 @@ internal static partial class PackageReviewEndpoints
         }
     }
 
-    private static async Task<IResult> HandlePublishMapPackage(
+    private static async Task<IResult> HandlePublishMap(
         HttpContext context,
         [FromServices] IStudioDraftMutationRuntime mutationRuntime)
     {
         // The body is read here rather than bound by the framework. Framework
-        // binding refused every package the installed CLI sends with an empty 400: the
+        // binding refused every Map the installed CLI sends with an empty 400: the
         // honua_map.v1 document makes status/createdAt optional where Map marks
         // them required, and the combined HTTP resolver reads PackageStatus without the
         // package contexts' string-enum converter.
         var read = await MapPublishRequestReader.ReadAsync(context.Request, context.RequestAborted).ConfigureAwait(false);
-        if (read.MissingPackage)
+        if (read.MissingMap)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
-                context, StatusCodes.Status400BadRequest, "Map package is required", "package.mapId is required.");
+                context, StatusCodes.Status400BadRequest, "Map is required", "map.mapId is required.");
         }
 
         if (read.Request is not { } request)
@@ -136,17 +142,17 @@ internal static partial class PackageReviewEndpoints
 
         var actor = ConsolePrincipal.ResolveActorId(context.User);
         var mutation = BuildMutationContext(context, actor);
-        var packageJson = JsonSerializer.SerializeToElement(request.Package, PackagingJsonContext.Default.Map);
+        var packageJson = JsonSerializer.SerializeToElement(request.Map, PackagingJsonContext.Default.Map);
         var draftReceipt = await mutationRuntime.CreateAsync(new CreateStudioPackageDraftCommand
         {
-            PackageKey = request.Package.MapId,
+            PackageKey = request.Map.MapId,
             WorkspaceId = request.WorkspaceId,
             OwnerId = actor,
             Envelope = new StudioPackageEnvelope
             {
                 Family = StudioPackageFamily.Map,
                 SchemaVersion = "studio_map.v1",
-                Format = request.Package.Format,
+                Format = request.Map.Format,
                 Body = packageJson,
                 PublicationIntent = request.Intent
             },
@@ -155,7 +161,7 @@ internal static partial class PackageReviewEndpoints
         SetOperationHeaders(context, draftReceipt.Operation);
         if (draftReceipt.Operation.Status != OperationHandleStatus.Completed || draftReceipt.Value is not { } draft)
         {
-            return MutationRefused(context, draftReceipt.Operation, "Map package draft could not be created");
+            return MutationRefused(context, draftReceipt.Operation, "Map draft could not be created");
         }
 
         var versionReceipt = await mutationRuntime.SaveVersionAsync(
@@ -164,7 +170,7 @@ internal static partial class PackageReviewEndpoints
         SetOperationHeaders(context, versionReceipt.Operation);
         if (versionReceipt.Operation.Status != OperationHandleStatus.Completed || versionReceipt.Value is not { } version)
         {
-            return MutationRefused(context, versionReceipt.Operation, "Map package could not be versioned");
+            return MutationRefused(context, versionReceipt.Operation, "Map could not be versioned");
         }
 
         // Publication is proposed, never executed, on this route. An admin MCP propose publishes
@@ -182,22 +188,22 @@ internal static partial class PackageReviewEndpoints
         SetOperationHeaders(context, operation);
         if (operation.Status != OperationHandleStatus.RequiresApproval || string.IsNullOrWhiteSpace(operation.ProposalId))
         {
-            return MutationRefused(context, operation, "Map package publication was not proposed");
+            return MutationRefused(context, operation, "Map publication was not proposed");
         }
 
-        return Results.Json(new MapPackagePublishResponse
+        return Results.Json(new MapPublishResponse
         {
-            PackageId = request.Package.MapId,
+            MapId = request.Map.MapId,
             ItemId = version.ItemId,
             VersionId = version.VersionId,
             ContentHash = version.ContentHash,
-            Package = request.Package with { Status = PackageStatus.Ready, UpdatedAt = version.CreatedAt },
+            Map = request.Map with { Status = PackageStatus.Ready, UpdatedAt = version.CreatedAt },
             PublicationStatus = "AwaitingApproval",
             ProposalId = operation.ProposalId,
             OperationInstanceId = operation.OperationInstanceId,
             AuditId = operation.AuditId,
             CorrelationId = operation.CorrelationId
-        }, PackageReviewJsonContext.Default.MapPackagePublishResponse, statusCode: StatusCodes.Status202Accepted);
+        }, PackageReviewJsonContext.Default.MapPublishResponse, statusCode: StatusCodes.Status202Accepted);
     }
 
     private static StudioDraftMutationContext BuildMutationContext(HttpContext context, string? actorId) => new()
@@ -253,7 +259,7 @@ internal static partial class PackageReviewEndpoints
 
     internal sealed record MapPublishRequest
     {
-        public required Map Package { get; init; }
+        public required Map Map { get; init; }
         public string? MapId { get; init; }
         public string? WorkspaceId { get; init; }
         public string? Message { get; init; }
@@ -261,13 +267,13 @@ internal static partial class PackageReviewEndpoints
         public StudioPublicationIntent? Intent { get; init; }
     }
 
-    internal sealed record MapPackagePublishResponse
+    internal sealed record MapPublishResponse
     {
-        public required string PackageId { get; init; }
+        public required string MapId { get; init; }
         public required Guid ItemId { get; init; }
         public required Guid VersionId { get; init; }
         public required string ContentHash { get; init; }
-        public required Map Package { get; init; }
+        public required Map Map { get; init; }
         public required string PublicationStatus { get; init; }
         public required string ProposalId { get; init; }
         public required string OperationInstanceId { get; init; }

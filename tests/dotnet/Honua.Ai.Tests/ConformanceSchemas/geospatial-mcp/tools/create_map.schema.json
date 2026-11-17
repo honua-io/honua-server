@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/create_map_package.schema.json",
-  "title": "create_map_package inputSchema",
-  "description": "Argument shape for create_map_package (Analyze, Build App map-composition family; returns a MapPackage). Responsibility-level: the concrete MapPackage authoring field set is finalizing upstream (honua-server#731), so this schema pins the stable composition inputs (source bindings, style/theme selection, template, initial view) and permits additional properties. See taxonomy.md §Map composition and resources.md §honua://map-packages/{map_package_id}.",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/create_map.schema.json",
+  "title": "create_map inputSchema",
+  "description": "Argument shape for create_map (Analyze, Build App map-composition family; returns a Map). Responsibility-level: the concrete Map authoring field set is finalizing upstream (honua-server#731), so this schema pins the stable composition inputs (source bindings, style/theme selection, template, initial view) and permits additional properties. See taxonomy.md §Map composition and resources.md §honua://maps/{mapId}.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
     "templateId": {
       "type": "string",
-      "description": "Registry-defined MapTemplate identifier seeding the composition (e.g. analysis_default)."
+      "description": "Registry-defined MapTemplate identifier seeding the draft Map (e.g. analysis_default)."
     },
     "sourceBindings": {
       "type": "array",
@@ -17,11 +17,11 @@
     },
     "styleId": {
       "type": "string",
-      "description": "StyleRef selection (style_… ) applied to the composition."
+      "description": "StyleRef selection (style_… ) applied to the draft Map."
     },
     "themeId": {
       "type": "string",
-      "description": "ThemeSpec selection (theme_… ) applied to the composition."
+      "description": "ThemeSpec selection (theme_… ) applied to the draft Map."
     },
     "initialView": {
       "type": "object",

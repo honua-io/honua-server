@@ -1,0 +1,15 @@
+{
+  "id": "create_app.dashboard",
+  "schemaRef": "tools/create_app.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "templateId": "analysis_dashboard",
+    "targetSdk": "honua-sdk-js",
+    "mapId": "map_5a90",
+    "boundArtifactIds": ["artifact_summary_report"],
+    "runtimeConfig": { "title": "Flood Exposure Dashboard" }
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["BuilderIntent", "App", "Map", "ArtifactRef"],
+  "notes": "The reference implementation ships create_app as a discrete tool (advertised honua_create_app; see conformance/manifests/honua.manifest.json) and creates the draft App deterministically from these inputs, so this fixture is not deferred. Responsibility-level input shape per spec/schemas/tools/create_app.schema.json."
+}

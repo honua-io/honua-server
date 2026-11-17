@@ -1149,6 +1149,8 @@ public sealed partial class CapabilityManifestEndpointTests
             var legacyFamilies = legacyDocument.RootElement
                 .GetProperty("packages").GetProperty("families").GetRawText();
             derivedFamilies.Should().Be(legacyFamilies);
+            derivedFamilies.Should().Contain("\"id\":\"map\"").And.Contain("\"id\":\"app\"");
+            derivedFamilies.Should().NotContain("map-package").And.NotContain("app-package");
         }
         finally
         {

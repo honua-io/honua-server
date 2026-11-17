@@ -5,6 +5,7 @@
   "description": "Argument shape for get_style (Analyze, Publish Data, Build App). Read-only style inspection: with styleId, resolves a single canonical StyleRef (style_id/title/encodings) from the server OGC API – Styles surface; with serviceId+serviceLayerIndex (a reference-implementation convenience) resolves the primary/default StyleRef bound to that published layer; with none of these, lists the available styles (honua://styles). Like every MCP tool it is read-only and never mutates server-side styles. See taxonomy.md §Style inspection and resources.md §honua://styles.",
   "type": "object",
   "not": { "required": ["layerId"] },
+  "dependentRequired": { "serviceId": ["serviceLayerIndex"], "serviceLayerIndex": ["serviceId"] },
   "properties": {
     "styleId": {
       "type": "string",

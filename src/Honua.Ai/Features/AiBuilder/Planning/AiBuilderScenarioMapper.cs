@@ -202,7 +202,7 @@ internal static class AiBuilderScenarioMapper
             return null;
         }
 
-        var app = TryGet(packages.Value, "appPackage");
+        var app = TryGet(packages.Value, "app");
         if (!app.HasValue || app.Value.ValueKind != JsonValueKind.Object)
         {
             return null;

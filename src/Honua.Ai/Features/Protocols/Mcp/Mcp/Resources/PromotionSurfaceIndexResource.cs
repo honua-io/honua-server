@@ -266,9 +266,9 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         // deployments. Narrow to PublicationState == Published so the list-root
         // contract ("active deployments") matches the set of deployments that
         // are currently routable, consistent with the package visibility filter
-        // in PackageViewFactory.
+        // in MapAppViewFactory.
         var records = await RequireDeploymentStore().ListActiveAsync(cancellationToken).ConfigureAwait(false);
-        var published = PackageViewFactory.FilterPublished(records);
+        var published = MapAppViewFactory.FilterPublished(records);
         var visible = new List<Deployment>();
         foreach (var deployment in published)
         {
@@ -338,7 +338,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         var grouped = deployments
             .Where(deployment =>
                 deployment.Source.Kind == packageKind
-                && PackageViewFactory.IsPublished(deployment))
+                && MapAppViewFactory.IsPublished(deployment))
             .GroupBy(deployment => deployment.Source.SourceId, StringComparer.Ordinal)
             // Impose a deterministic order before truncating so `truncated=true`
             // responses return the same prefix across calls regardless of the
@@ -349,9 +349,10 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         var truncated = grouped.Count > _pageSize;
         var items = grouped
             .Take(_pageSize)
-            .Select(group => new McpPackageSummary
+            .Select(group => new McpMapAppSummary
             {
-                PackageId = group.Key,
+                MapId = packageKind == DeploymentSourceKind.Map ? group.Key : null,
+                AppId = packageKind == DeploymentSourceKind.App ? group.Key : null,
                 ResourceUri = packageUriFactory(group.Key),
                 DeploymentCount = group.Count()
             })
@@ -359,14 +360,14 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
 
         McpLog.PromotionListRead(_logger, listFamily, items.Count, truncated);
 
-        var view = new McpPackageListView
+        var view = new McpMapAppListView
         {
             ResourceUri = uri,
-            PackageKind = packageKindTag,
+            Kind = packageKindTag,
             Count = items.Count,
             Truncated = truncated,
             Items = items
         };
-        return McpResourceHelpers.SingleJsonContent(uri, view, McpJsonContext.Default.McpPackageListView);
+        return McpResourceHelpers.SingleJsonContent(uri, view, McpJsonContext.Default.McpMapAppListView);
     }
 }

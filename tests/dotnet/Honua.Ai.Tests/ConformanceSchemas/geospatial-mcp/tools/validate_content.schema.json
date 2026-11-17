@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/validate_package.schema.json",
-  "title": "validate_package inputSchema",
-  "description": "Argument shape for the read-only composition-review tool (advertised name honua_validate_package). Inspects a map/app package's requirement coverage (data bindings, permissions, schema, CRS, capabilities, dependencies, approvals) and returns canonical findings without mutating server state. x-honua-reference-shape: tracks the reference implementation; the bare taxonomy models package review as a CapabilityCatalog + resource read.",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/validate_content.schema.json",
+  "title": "validate_content inputSchema",
+  "description": "Argument shape for the read-only Map and App review tool (advertised name honua_validate_package). Inspects the requirement coverage of a Map or App (data bindings, permissions, schema, CRS, capabilities, dependencies, approvals) and returns canonical findings without mutating server state. x-honua-reference-shape: tracks the reference implementation; the bare taxonomy models package review as a CapabilityCatalog + resource read.",
   "x-honua-reference-shape": true,
   "type": "object",
   "properties": {
     "contractVersion": {
       "type": "string",
-      "description": "Package-review contract version. Current value is honua.package_review.v1."
+      "description": "Review contract version. Current value is honua.package_review.v1."
     },
     "packageFamily": {
       "type": "string",
@@ -19,7 +19,7 @@
     "format": { "type": "string" },
     "packagePayload": {
       "type": ["object", "array", "string", "number", "boolean", "null"],
-      "description": "Opaque package payload inspected only by the matching package-family adapter."
+      "description": "Opaque Map, App or other content payload, inspected only by the adapter that matches packageFamily."
     },
     "requirements": {
       "type": ["object", "null"],

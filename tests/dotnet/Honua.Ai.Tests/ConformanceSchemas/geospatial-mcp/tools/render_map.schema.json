@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/render_map.schema.json",
   "title": "render_map inputSchema",
-  "description": "Argument shape for the map-render tool (advertised name honua_render_map). Renders an image of ordered layers over an extent. This is the reference implementation's read-only map preview surface, distinct from the semantic map-composition family (create_map_package, etc.). x-honua-reference-shape: this shape tracks the reference implementation.",
+  "description": "Argument shape for the map-render tool (advertised name honua_render_map). Renders an image of ordered layers over an extent. This is the reference implementation's read-only map preview surface, distinct from the semantic map-composition family (create_map, etc.). x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
   "required": ["layers", "bbox"],

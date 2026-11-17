@@ -43,7 +43,7 @@ internal sealed class MapResource : IMcpResource
         {
             UriTemplate = Template,
             Name = "Map",
-            Description = "Map surface: a created draft held by the draft store, or a package derived from the deployments that reference it. Exposes lifecycle status and deployment provenance edges only.",
+            Description = "Map surface: a created draft held by the draft store, or a published Map referenced by deployments. Exposes lifecycle status and deployment provenance edges only.",
             MimeType = McpResourceHelpers.JsonMimeType
         }
     };
@@ -76,7 +76,7 @@ internal sealed class MapResource : IMcpResource
         var deployments = await _deployments
             .ListBySourceAsync(DeploymentSourceKind.Map, mapId, cancellationToken)
             .ConfigureAwait(false);
-        deployments = PackageViewFactory.FilterPublished(deployments);
+        deployments = MapAppViewFactory.FilterPublished(deployments);
 
         if (deployments.Count == 0)
         {
@@ -95,20 +95,18 @@ internal sealed class MapResource : IMcpResource
 
             McpLog.PackageRead(_logger, PackageKind, mapId, 0);
 
-            var draftView = PackageViewFactory.BuildDraft(
+            var draftView = MapAppViewFactory.BuildDraft(
                 PackageKind,
-                mapId,
-                McpResourceUris.MapUri(mapId));
-            return McpResourceHelpers.SingleJsonContent(uri, draftView, McpJsonContext.Default.McpPackageView);
+                mapId);
+            return McpResourceHelpers.SingleJsonContent(uri, draftView, McpJsonContext.Default.McpMapAppView);
         }
 
         McpLog.PackageRead(_logger, PackageKind, mapId, deployments.Count);
 
-        var view = PackageViewFactory.Build(
+        var view = MapAppViewFactory.Build(
             PackageKind,
             mapId,
-            McpResourceUris.MapUri(mapId),
             deployments);
-        return McpResourceHelpers.SingleJsonContent(uri, view, McpJsonContext.Default.McpPackageView);
+        return McpResourceHelpers.SingleJsonContent(uri, view, McpJsonContext.Default.McpMapAppView);
     }
 }

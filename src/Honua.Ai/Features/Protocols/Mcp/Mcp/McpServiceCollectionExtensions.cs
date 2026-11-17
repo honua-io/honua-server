@@ -160,7 +160,7 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishResultTool>());
 
         // Authoring tools (re-founded by ADR-0076):
-        // create_map_package / create_app_package create draft packages
+        // create_map / create_app create Map and App drafts
         // deterministically from structured input through the shared
         // MapDraftFactory / AppDraftFactory in Honua.Core. They
         // make no model call and take no prompt.

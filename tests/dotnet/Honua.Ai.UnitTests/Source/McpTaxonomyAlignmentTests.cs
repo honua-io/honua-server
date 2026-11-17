@@ -133,9 +133,9 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua://deployments",
         "honua://deployments/{deploymentId}",
         "honua://maps",
-        "honua://maps/{packageId}",
+        "honua://maps/{mapId}",
         "honua://apps",
-        "honua://apps/{packageId}"
+        "honua://apps/{appId}"
     };
 
     [UnitTest]

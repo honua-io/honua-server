@@ -1,0 +1,13 @@
+{
+  "id": "bind_component_context.area_chart_joins_parcels_workspace",
+  "schemaRef": "tools/bind_component_context.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "mapId": "map_maui_parcels",
+    "ref": "widget:area-chart",
+    "explorationContextId": "parcels-workspace",
+    "role": "chart"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

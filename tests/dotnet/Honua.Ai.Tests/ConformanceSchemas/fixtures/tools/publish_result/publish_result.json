@@ -12,5 +12,5 @@
   },
   "expected": "tool_result",
   "canonicalRefs": ["PublishedService"],
-  "notes": "Reference implementation honua_publish_result (honua-server#2482) promotes a completed analysis job's materialized FeatureLayer artifact into a PublishedService target (Analyze / Publish Data). sourceId is the completed job id; the returned serviceId + layerId chain into query_features / render_map."
+  "notes": "Reference implementation honua_publish_result (honua-server#2482) promotes a completed analysis job's materialized FeatureLayer artifact into a PublishedService target (Analyze / Publish Data). sourceId is the completed job id; discover the serviceLayerIndex through list_layers or resolve_entity before calling query_features or render_map."
 }

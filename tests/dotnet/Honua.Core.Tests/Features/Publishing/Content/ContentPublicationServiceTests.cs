@@ -242,7 +242,7 @@ public sealed class ContentPublicationServiceTests
         var (service, _) = CreateService();
         var published = await service.PublishAsync(new PublishContentRequest
         {
-            Kind = ContentPublicationKind.GeneratedApp,
+            Kind = ContentPublicationKind.App,
             RouteSlug = "app",
             AppManifestId = "manifest-v1",
             AppBundleArtifactId = "bundle-v1",
@@ -411,7 +411,7 @@ public sealed class ContentPublicationServiceTests
         {
             Kind = ContentPublicationKind.Map,
             RouteSlug = "map",
-            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.Resource, RefId = "res.unknown" }],
+            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.Dataset, RefId = "res.unknown" }],
         };
 
         var act = () => service.PublishAsync(request, Actor, null);
@@ -445,7 +445,7 @@ public sealed class ContentPublicationServiceTests
         {
             Kind = ContentPublicationKind.Map,
             RouteSlug = "map",
-            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.Resource, RefId = "res.known" }],
+            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.Dataset, RefId = "res.known" }],
         };
 
         var detail = await service.PublishAsync(request, Actor, null);
@@ -570,12 +570,12 @@ public sealed class ContentPublicationServiceTests
             PublicationId = Guid.NewGuid().ToString("D"),
             VersionId = Guid.NewGuid().ToString("D"),
             Revision = 3,
-            Kind = ContentPublicationKind.GeneratedApp,
+            Kind = ContentPublicationKind.App,
             RouteSlug = "apps/demo",
             RoutePath = "/api/v1/published/apps/demo",
             Policy = new ContentPublicationPolicy { Visibility = ContentPublicationVisibility.Organization },
             DefaultViewBbox = new ContentPublicationBbox { Crs = "EPSG:4326", MinX = -1, MinY = -1, MaxX = 1, MaxY = 1 },
-            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.MapPackage, RefId = "pkg-1" }],
+            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.Map, RefId = "pkg-1" }],
             CreatedBy = Actor,
             CreatedAt = DateTimeOffset.UtcNow,
         };
@@ -585,7 +585,7 @@ public sealed class ContentPublicationServiceTests
 
         round.Should().NotBeNull();
         round!.Revision.Should().Be(3);
-        round.Kind.Should().Be(ContentPublicationKind.GeneratedApp);
+        round.Kind.Should().Be(ContentPublicationKind.App);
         round.RouteSlug.Should().Be("apps/demo");
         round.Policy.Visibility.Should().Be(ContentPublicationVisibility.Organization);
         round.DefaultViewBbox!.Crs.Should().Be("EPSG:4326");
@@ -627,7 +627,7 @@ public sealed class ContentPublicationServiceTests
             RouteSlug = "slug",
             RoutePath = "/api/v1/published/slug",
             Policy = route.Policy,
-            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.Resource, RefId = "res" }],
+            Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.Dataset, RefId = "res" }],
             CreatedBy = "u",
             CreatedAt = DateTimeOffset.UtcNow,
         };

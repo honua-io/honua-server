@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/preview_package.schema.json",
-  "title": "preview_package inputSchema",
-  "description": "Argument shape for the read-only composition-review tool (advertised name honua_preview_package). Computes a read-only preview plan for a map/app package before publishing, in addition to the requirement-coverage review; it never mutates server state. x-honua-reference-shape: tracks the reference implementation; the bare taxonomy models package preview as a CapabilityCatalog + resource read.",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/preview_content.schema.json",
+  "title": "preview_content inputSchema",
+  "description": "Argument shape for the read-only Map and App review tool (advertised name honua_preview_package). Computes a read-only preview plan for a Map or App before publishing, in addition to the requirement-coverage review; it never mutates server state. x-honua-reference-shape: tracks the reference implementation; the bare taxonomy models package preview as a CapabilityCatalog + resource read.",
   "x-honua-reference-shape": true,
   "type": "object",
   "properties": {
     "contractVersion": {
       "type": "string",
-      "description": "Package-review contract version. Current value is honua.package_review.v1."
+      "description": "Review contract version. Current value is honua.package_review.v1."
     },
     "packageFamily": {
       "type": "string",
@@ -19,7 +19,7 @@
     "format": { "type": "string" },
     "packagePayload": {
       "type": ["object", "array", "string", "number", "boolean", "null"],
-      "description": "Opaque package payload inspected only by the matching package-family adapter."
+      "description": "Opaque Map, App or other content payload, inspected only by the adapter that matches packageFamily."
     },
     "requirements": {
       "type": ["object", "null"],
@@ -27,7 +27,7 @@
     },
     "estimate": {
       "type": "object",
-      "description": "Optional upstream estimate echoed in the shared package-review response."
+      "description": "Optional upstream estimate echoed in the shared review response."
     },
     "includePreviewPlan": { "type": "boolean" },
     "includePassFindings": { "type": "boolean" },

@@ -57,7 +57,7 @@ internal sealed class McpPlanAnalysisOutput
     [JsonPropertyName("nextSteps")]
     public string? NextSteps { get; set; }
 
-    [JsonPropertyName("appPackage")]
+    [JsonPropertyName("app")]
     public McpPlanAnalysisApp? App { get; set; }
 
     [JsonPropertyName("context")]

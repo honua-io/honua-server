@@ -10,13 +10,13 @@ namespace Honua.PackageReview;
 
 internal static class MapPublishRequestReader
 {
-    private const string PackageMember = "package";
+    private const string MapMember = "map";
 
     internal sealed record Result
     {
         public PackageReviewEndpoints.MapPublishRequest? Request { get; init; }
 
-        public bool MissingPackage { get; init; }
+        public bool MissingMap { get; init; }
 
         public IReadOnlyList<FieldValidationError> Errors { get; init; } = [];
     }
@@ -38,24 +38,24 @@ internal static class MapPublishRequestReader
             return Refused("$", "invalid_type", "The request body must be a JSON object.");
         }
 
-        if (!body.TryGetPropertyValue(PackageMember, out var packageNode) || packageNode is null)
+        if (!body.TryGetPropertyValue(MapMember, out var packageNode) || packageNode is null)
         {
-            return new Result { MissingPackage = true };
+            return new Result { MissingMap = true };
         }
 
         if (packageNode is not JsonObject package)
         {
-            return Refused("$.package", "invalid_type", "'package' must be a honua_map.v1 object.");
+            return Refused("$.map", "invalid_type", "'map' must be a honua_map.v1 object.");
         }
 
         if (package["mapId"] is not JsonValue mapId
             || !mapId.TryGetValue<string>(out var mapIdText)
             || string.IsNullOrWhiteSpace(mapIdText))
         {
-            return new Result { MissingPackage = true };
+            return new Result { MissingMap = true };
         }
 
-        // honua_map.v1 leaves the lifecycle members to the server: an unsaved package is
+        // honua_map.v1 leaves the lifecycle members to the server: an unsaved Map is
         // a draft created now.
         if (package["status"] is null)
         {
@@ -78,7 +78,7 @@ internal static class MapPublishRequestReader
         }
         catch (JsonException ex)
         {
-            return Refused(ex.Path ?? "$.package", "invalid_member", DescribeFailure(ex));
+            return Refused(ex.Path ?? "$.map", "invalid_member", DescribeFailure(ex));
         }
     }
 

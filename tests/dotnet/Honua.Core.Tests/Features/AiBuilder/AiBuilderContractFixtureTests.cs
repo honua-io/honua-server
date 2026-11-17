@@ -92,7 +92,7 @@ public sealed class AiBuilderContractFixtureTests
         mcp.GetProperty("tools").EnumerateArray().Select(tool => tool.GetString())
             .Should().Contain(["honua_ground_candidates", "honua_clarify_intent", "honua_execute_plan"]);
         mcp.GetProperty("resources").EnumerateArray().Select(resource => resource.GetString())
-            .Should().Contain(["honua://jobs/{jobId}/results", "honua://map-packages/{packageId}", "honua://app-packages/{packageId}"]);
+            .Should().Contain(["honua://jobs/{jobId}/results", "honua://maps/{packageId}", "honua://apps/{packageId}"]);
     }
 
     [Trait("Tier", "Fast")]
@@ -185,7 +185,7 @@ public sealed class AiBuilderContractFixtureTests
         appDraft.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
         appDraft.GetProperty("runtimeConfigSchema").GetProperty("required").EnumerateArray()
             .Select(item => item.GetString())
-            .Should().Contain(["honuaBaseUrl", "mapPackageUri", "appPackageUri"]);
+            .Should().Contain(["honuaBaseUrl", "mapUri", "appUri"]);
 
         var plan = success.GetProperty("plan");
         plan.GetProperty("dag").EnumerateArray()
@@ -293,8 +293,8 @@ public sealed class AiBuilderContractFixtureTests
         resources.Select(resource => resource.GetProperty("uri").GetString()).Should().Contain([
             "honua://published-services/city-ops-incidents",
             "honua://catalog/processes",
-            "honua://map-packages/map-pkg-ops-dashboard",
-            "honua://app-packages/app-pkg-ops-dashboard",
+            "honua://maps/map-pkg-ops-dashboard",
+            "honua://apps/app-pkg-ops-dashboard",
             "honua://jobs/job-ops-dashboard-success",
             "honua://jobs/job-ops-dashboard-success/results",
             "honua://deployments/deploy-ops-dashboard"]);
@@ -361,19 +361,19 @@ public sealed class AiBuilderContractFixtureTests
         artifacts.Should().Contain(artifact =>
             artifact.GetProperty("kind").GetString() == "Map"
             && artifact.GetProperty("format").GetString() == "honua_map.v1"
-            && artifact.GetProperty("resourceUri").GetString()!.StartsWith("honua://map-packages/", StringComparison.Ordinal)
+            && artifact.GetProperty("resourceUri").GetString()!.StartsWith("honua://maps/", StringComparison.Ordinal)
             && artifact.GetProperty("packageable").GetBoolean());
 
         artifacts.Should().Contain(artifact =>
             artifact.GetProperty("kind").GetString() == "App"
             && artifact.GetProperty("format").GetString() == "honua_app.v1"
-            && artifact.GetProperty("resourceUri").GetString()!.StartsWith("honua://app-packages/", StringComparison.Ordinal)
+            && artifact.GetProperty("resourceUri").GetString()!.StartsWith("honua://apps/", StringComparison.Ordinal)
             && artifact.GetProperty("packageable").GetBoolean());
     }
 
     private static void AssertOperationsDashboardAppPackage(JsonElement apply)
     {
-        var app = apply.GetProperty("packages").GetProperty("appPackage");
+        var app = apply.GetProperty("packages").GetProperty("app");
         app.GetProperty("appId").GetString().Should().Be("app-pkg-ops-dashboard");
         app.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
         app.GetProperty("mapId").GetString().Should().Be("map-pkg-ops-dashboard");

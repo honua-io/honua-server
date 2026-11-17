@@ -126,35 +126,35 @@
       {
         "templateId": "map-only",
         "outputs": [
-          "mapPackage"
+          "map"
         ]
       },
       {
         "templateId": "map-plus-table",
         "outputs": [
-          "mapPackage",
+          "map",
           "table"
         ]
       },
       {
         "templateId": "map-plus-chart",
         "outputs": [
-          "mapPackage",
+          "map",
           "chart"
         ]
       },
       {
         "templateId": "filtered-map",
         "outputs": [
-          "mapPackage",
+          "map",
           "filterPanel"
         ]
       },
       {
         "templateId": "linked-dashboard",
         "outputs": [
-          "appPackage",
-          "mapPackage",
+          "app",
+          "map",
           "table",
           "chart",
           "details"
@@ -173,8 +173,8 @@
         "honua://catalog/processes",
         "honua://jobs/{jobId}",
         "honua://jobs/{jobId}/results",
-        "honua://map-packages/{packageId}",
-        "honua://app-packages/{packageId}",
+        "honua://maps/{packageId}",
+        "honua://apps/{packageId}",
         "honua://published-services/{serviceId}",
         "honua://deployments/{deploymentId}"
       ]
@@ -325,15 +325,15 @@
           {
             "artifactId": "map-pkg-success",
             "kind": "MapPackage",
-            "format": "honua_map_package.v1",
-            "resourceUri": "honua://map-packages/map-pkg-success",
+            "format": "honua_map.v1",
+            "resourceUri": "honua://maps/map-pkg-success",
             "packageable": true
           },
           {
             "artifactId": "app-pkg-success",
             "kind": "AppPackage",
-            "format": "honua_app_package.v1",
-            "resourceUri": "honua://app-packages/app-pkg-success",
+            "format": "honua_app.v1",
+            "resourceUri": "honua://apps/app-pkg-success",
             "packageable": true
           }
         ]
@@ -451,15 +451,15 @@
           {
             "artifactId": "map-pkg-success",
             "kind": "MapPackage",
-            "format": "honua_map_package.v1",
-            "resourceUri": "honua://map-packages/map-pkg-success",
+            "format": "honua_map.v1",
+            "resourceUri": "honua://maps/map-pkg-success",
             "packageable": true
           },
           {
             "artifactId": "app-pkg-success",
             "kind": "AppPackage",
-            "format": "honua_app_package.v1",
-            "resourceUri": "honua://app-packages/app-pkg-success",
+            "format": "honua_app.v1",
+            "resourceUri": "honua://apps/app-pkg-success",
             "packageable": true
           }
         ]
