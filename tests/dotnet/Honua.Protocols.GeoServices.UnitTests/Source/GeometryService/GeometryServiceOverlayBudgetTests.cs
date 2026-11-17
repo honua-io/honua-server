@@ -111,15 +111,21 @@ public sealed class GeometryServiceOverlayBudgetTests
 
     [UnitTest]
     [Operation(Operations.Union)]
-    public void ClusteredBuffersUnioned_FitTheNotSignedInBudget()
+    public void BuffersUnioned_FitTheNotSignedInBudget()
     {
-        // 100 points a few metres apart, each buffered by 10 metres and unioned in one request.
-        var buffers = Enumerable.Range(0, 100)
-            .Select(i => _factory.CreatePoint(new Coordinate(i % 10 * 0.5, i / 10 * 0.5)).Buffer(10))
-            .ToArray();
-
-        OverlayCandidatePairs.Count(buffers, long.MaxValue)
+        // 100 points 10 metres apart on a grid, each buffered by 10 metres and unioned.
+        OverlayCandidatePairs.Count(Buffers(spacing: 10), long.MaxValue)
             .Should().BeLessThan(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Union)]
+    public void ClusteredBuffersUnioned_FitTheSignedInBudget()
+    {
+        // 100 points half a metre apart, each buffered by 10 metres: every circle overlaps every
+        // other. A signed-in caller may dissolve them; the lower budget for callers that are not
+        // signed in may refuse it.
+        OverlayCandidatePairs.Count(Buffers(spacing: 0.5), long.MaxValue).Should().BeLessThan(_signedInDefault);
     }
 
     [UnitTest]
@@ -216,6 +222,10 @@ public sealed class GeometryServiceOverlayBudgetTests
         points.Add(new Coordinate(0, -10));
         return _factory.CreatePolygon([.. points]);
     }
+
+    private static Geometry[] Buffers(double spacing)
+        => [.. Enumerable.Range(0, 100)
+            .Select(i => _factory.CreatePoint(new Coordinate((i % 10) * spacing, (i / 10) * spacing)).Buffer(10))];
 
     private static LineString Staircase(double offset)
         => _factory.CreateLineString([.. Enumerable.Range(0, OverlayCandidatePairs.MaxChainSegments + 1)

@@ -81,10 +81,11 @@ internal sealed class GeometryServiceOverlayBudget
         {
             return builder.Buffer(geometry, distance);
         }
-        catch (TopologyException)
+        catch (Exception ex) when (ex is not GeometryServiceLimitException and not OutOfMemoryException)
         {
-            // The full buffer retries with snapped coordinates when floating-point noding fails.
-            // It nodes the same curves, which have just been counted within the budget.
+            // The full buffer retries with snapped coordinates when floating-point noding fails, as
+            // it would have without the budget. Its first pass nodes the curves just counted; the
+            // snapped retries are not counted.
             return BufferOp.Buffer(geometry, distance, bufferParameters);
         }
     }

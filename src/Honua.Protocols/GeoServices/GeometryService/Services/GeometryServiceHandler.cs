@@ -3442,10 +3442,11 @@ internal sealed class GeometryServiceHandler(
         return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
     }
 
-    // The simplifier repairs a polygon it made invalid with a zero-width buffer, which nodes it.
+    // The simplifier repairs a polygon it made invalid with a zero-width buffer, which nodes it;
+    // lines are simplified without a repair.
     private static Geometry Generalize(Geometry geometry, GeneralizeParameters parameters)
     {
-        parameters.OverlayBudget.Check(geometry);
+        parameters.OverlayBudget.Check([.. NetTopologySuite.Geometries.Utilities.PolygonExtracter.GetPolygons(geometry)]);
         return NetTopologySuite.Simplify.DouglasPeuckerSimplifier.Simplify(geometry, parameters.MaxDeviation);
     }
 

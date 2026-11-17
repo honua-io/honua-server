@@ -4,6 +4,7 @@
 using Honua.Protocols.GeoServices.GeometryService.Models;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Operation.Buffer;
+using NtsBufferParameters = NetTopologySuite.Operation.Buffer.BufferParameters;
 
 namespace Honua.Protocols.GeoServices.GeometryService.Services;
 
@@ -19,17 +20,20 @@ internal static class GeometryServiceOffset
         var distance = parameters.OffsetDistance;
         if (geometry is IPolygonal)
         {
-            return parameters.OverlayBudget.Buffer(geometry, distance, new BufferParameters());
+            return parameters.OverlayBudget.Buffer(geometry, distance, new NtsBufferParameters());
         }
 
         // OffsetCurve buffers the line by the distance and keeps the side of the outline it needs;
         // the same buffer is built under the budget first.
-        var quadrantSegments = BufferParameters.DefaultQuadrantSegments;
-        var mitreLimit = Math.Max(parameters.BevelRatio, BufferParameters.DefaultMitreLimit);
-        parameters.OverlayBudget.Buffer(
-            geometry,
-            Math.Abs(distance),
-            new BufferParameters(quadrantSegments, EndCapStyle.Round, joinStyle, mitreLimit));
+        var quadrantSegments = NtsBufferParameters.DefaultQuadrantSegments;
+        var mitreLimit = Math.Max(parameters.BevelRatio, NtsBufferParameters.DefaultMitreLimit);
+        var probe = new NtsBufferParameters(quadrantSegments, EndCapStyle.Round, joinStyle, mitreLimit);
+        for (var part = 0; part < geometry.NumGeometries; part++)
+        {
+            // OffsetCurve buffers each part of a polyline on its own.
+            parameters.OverlayBudget.Buffer(geometry.GetGeometryN(part), Math.Abs(distance), probe);
+        }
+
         return OffsetCurve.GetCurve(geometry, -distance, quadrantSegments, joinStyle, mitreLimit);
     }
 }
