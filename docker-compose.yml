@@ -157,8 +157,9 @@ services:
     security_opt:
       - no-new-privileges:true
     # Writable volumes for runtime data
+    # Uploads (up to 100 MB), import staging and GeoParquet responses spool here; RAM-backed only while in use.
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - honua_storage:/var/lib/honua/storage
       - honua_logs:/tmp/honua-logs

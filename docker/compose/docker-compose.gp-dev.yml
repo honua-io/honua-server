@@ -153,8 +153,9 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    # Uploads (up to 100 MB), import staging and GeoParquet responses spool here; RAM-backed only while in use.
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - gp_honua_logs:/tmp/honua-logs
       - gp_honua_cache:/tmp/honua-cache
@@ -192,8 +193,9 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    # Uploads (up to 100 MB), import staging and GeoParquet responses spool here; RAM-backed only while in use.
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - gp_managed_worker_logs:/tmp/honua-logs
       - gp_managed_worker_cache:/tmp/honua-cache

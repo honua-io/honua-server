@@ -112,6 +112,27 @@ public static class PrivateTempFile
         return (File.GetUnixFileMode(path) & SharedWrite) != 0;
     }
 
+    // True when an exception, or one it wraps, reports that the scratch file system or the
+    // user's quota is full (Unix ENOSPC/EDQUOT carried as the IOException HResult, Windows
+    // ERROR_DISK_FULL/ERROR_HANDLE_DISK_FULL). Scratch space frees as other requests finish,
+    // so callers answer with a retryable status instead of a server error.
+    public static bool IsStorageFull(Exception? exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is IOException io && StorageFullCodes.Contains(io.HResult))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static readonly HashSet<int> StorageFullCodes = OperatingSystem.IsWindows()
+        ? [unchecked((int)0x80070070), unchecked((int)0x80070027)]
+        : [28, OperatingSystem.IsLinux() ? 122 : 69];
+
     private static bool ContainsSeparator(string value)
         => value.Contains('/', StringComparison.Ordinal) || value.Contains('\\', StringComparison.Ordinal);
 }

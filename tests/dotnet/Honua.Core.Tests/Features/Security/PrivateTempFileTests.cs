@@ -200,6 +200,40 @@ public sealed class PrivateTempFileTests
             File.Delete(target);
         }
     }
+
+    [UnitTest]
+    public void IsStorageFull_WithWriteToFullDevice_RecognizesTheFailureAndAWrapper()
+    {
+        if (!OperatingSystem.IsLinux() || !File.Exists("/dev/full"))
+        {
+            return;
+        }
+
+        IOException? failure = null;
+        try
+        {
+            using var device = new FileStream("/dev/full", FileMode.Open, FileAccess.Write, FileShare.ReadWrite, 1);
+            device.Write(new byte[16]);
+            device.Flush();
+        }
+        catch (IOException ex)
+        {
+            failure = ex;
+        }
+
+        failure.Should().NotBeNull("writing to /dev/full reports ENOSPC");
+        PrivateTempFile.IsStorageFull(failure).Should().BeTrue();
+        PrivateTempFile.IsStorageFull(new InvalidOperationException("wrapped", failure)).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void IsStorageFull_WithOtherFailures_ReturnsFalse()
+    {
+        PrivateTempFile.IsStorageFull(null).Should().BeFalse();
+        PrivateTempFile.IsStorageFull(new IOException("generic")).Should().BeFalse();
+        PrivateTempFile.IsStorageFull(new FileNotFoundException("missing")).Should().BeFalse();
+        PrivateTempFile.IsStorageFull(new InvalidOperationException("other")).Should().BeFalse();
+    }
 }
 
 [CollectionDefinition("PrivateTempEnvironment", DisableParallelization = true)]

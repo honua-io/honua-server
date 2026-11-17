@@ -129,8 +129,9 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # Uploads (up to 100 MB), import staging and GeoParquet responses spool here; RAM-backed only while in use.
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - storage:/var/lib/honua/storage
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro

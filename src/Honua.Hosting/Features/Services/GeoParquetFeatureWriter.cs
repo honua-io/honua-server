@@ -9,10 +9,12 @@ using System.Text.Json;
 using Apache.Arrow;
 using Apache.Arrow.Types;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite;
@@ -44,6 +46,11 @@ public static partial class GeoParquetFeatureWriter
     private const string GeoMetadataKey = "geo";
 
     public const string ContentType = "application/vnd.apache.parquet";
+
+    public const string ScratchStorageFullMessage =
+        "Temporary storage for GeoParquet responses is full. Retry the request shortly.";
+
+    public const int ScratchStorageFullRetryAfterSeconds = 5;
 
     [ThreadStatic]
     private static WKBReader? _dimensionPreservingWkbReader;
@@ -212,22 +219,50 @@ public static partial class GeoParquetFeatureWriter
             stream.Position = 0;
             return stream;
         }
-        catch (Exception) when (stream.LimitExceeded)
+        catch (Exception ex) when (MapWriteFailure(ex, stream) is { } mapped)
         {
-            // The native callback can wrap a managed Stream exception. Keep the shared
-            // budget contract even when the refusal occurs while writing the footer.
-            stream.Dispose();
-            throw new GeoParquetLimitExceededException();
-        }
-        catch (Exception ex) when (ParquetRuntimeUnavailableException.IsNativeLoadFailure(ex))
-        {
-            stream.Dispose();
-            throw new ParquetRuntimeUnavailableException(ex);
+            DisposeAfterFailedWrite(stream);
+            throw mapped;
         }
         catch
         {
-            stream.Dispose();
+            DisposeAfterFailedWrite(stream);
             throw;
+        }
+    }
+
+    // The native callback can wrap a managed Stream exception, so the stream's own flags keep
+    // the budget refusal and a full scratch file system distinguishable even while the footer
+    // is written. Concurrent responses share scratch space and free it as they finish.
+    internal static Exception? MapWriteFailure(Exception exception, BoundedParquetStream stream)
+    {
+        if (stream.LimitExceeded)
+        {
+            return new GeoParquetLimitExceededException();
+        }
+
+        if (stream.StorageFull || PrivateTempFile.IsStorageFull(exception))
+        {
+            return new ServiceUnavailableException(ScratchStorageFullMessage, ScratchStorageFullRetryAfterSeconds);
+        }
+
+        return ParquetRuntimeUnavailableException.IsNativeLoadFailure(exception)
+            ? new ParquetRuntimeUnavailableException(exception)
+            : null;
+    }
+
+    // After a failed write the stream still holds unwritten buffered bytes, and Dispose tries
+    // to write them again. On a full scratch file system that repeats the failure and would
+    // replace the mapped 503; the handle is still closed and the file deleted.
+    internal static void DisposeAfterFailedWrite(Stream stream)
+    {
+        try
+        {
+            stream.Dispose();
+        }
+        catch (IOException ex) when (PrivateTempFile.IsStorageFull(ex))
+        {
+            // Already reported through the original failure.
         }
     }
 

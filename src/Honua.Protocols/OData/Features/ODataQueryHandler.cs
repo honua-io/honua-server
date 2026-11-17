@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -875,6 +876,11 @@ internal sealed partial class ODataQueryHandler(
         catch (GeoParquetLimitExceededException)
         {
             return StandardErrorHelpers.CreatePayloadTooLarge(context, GeoParquetLimitExceededException.ClientMessage);
+        }
+        catch (ServiceUnavailableException ex)
+        {
+            // Full scratch storage: retryable, unlike the unsupported-geometry 400 below.
+            return StandardErrorHelpers.CreateFromException(context, ex);
         }
         catch (ParquetRuntimeUnavailableException)
         {

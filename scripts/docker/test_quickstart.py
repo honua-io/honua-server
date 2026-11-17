@@ -3,6 +3,7 @@ import base64
 import hmac
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -308,3 +309,46 @@ class QuickstartTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+SERVING_SCRATCH_FILES = (
+    'docker/compose/docker-compose.production.yml',
+    'docs/get-started/linux-packages.md',
+    'docs/get-started/windows-packages.md',
+)
+
+
+def serving_scratch_mebibytes(text):
+    """Size of the /tmp tmpfs declared by the top-level honua service."""
+    block = text.split('\n  honua:\n', 1)[1]
+    block = re.split(r'\n  [A-Za-z0-9_-]+:\n', block, maxsplit=1)[0]
+    return int(re.search(r'- /tmp:[^\n]*size=(\d+)m', block).group(1))
+
+
+class ServingScratchCapacityTests(unittest.TestCase):
+    def test_serving_scratch_holds_an_upload_and_concurrent_binary_responses(self):
+        limits = (ROOT / 'src/Honua.Core/Core/Configuration/LimitsOptions.cs').read_text()
+        factors = re.search(r'MaxUploadSizeBytes \{ get; set; \} = ([\d *]+);', limits).group(1).split('*')
+        upload_mebibytes = 1
+        for factor in factors:
+            upload_mebibytes *= int(factor)
+        upload_mebibytes /= 1024 * 1024
+        quickstart = (ROOT / 'docs/get-started/quickstart.md').read_text()
+        compose = re.search(r'<!-- docs-validation:install.compose mode=run -->\s*```yaml\n(.*?)\n```',
+                            quickstart, re.S).group(1)
+        sources = {'quickstart install.compose': compose}
+        sources.update({name: (ROOT / name).read_text() for name in SERVING_SCRATCH_FILES})
+        for name, text in sources.items():
+            with self.subTest(name):
+                size = serving_scratch_mebibytes(text)
+                # The deploy guide's smoke-test allocation; one maximum upload alone filled 100m.
+                self.assertGreaterEqual(size, 512)
+                self.assertGreater(size, 4 * upload_mebibytes)
+
+    def test_console_index_is_compressible_when_identity_is_refused(self):
+        config = (ROOT / 'docs/get-started/console.nginx.conf').read_text()
+        index = config.split('location = /console/index.html {', 1)[1].split('}', 1)[0]
+        self.assertRegex(index, r'\n\s*gzip on;')
+        self.assertIn('Cache-Control no-store', index)
+        spa = config.split('location /console/ {', 1)[1].split('}', 1)[0]
+        self.assertIn('try_files $uri /console/index.html;', spa)

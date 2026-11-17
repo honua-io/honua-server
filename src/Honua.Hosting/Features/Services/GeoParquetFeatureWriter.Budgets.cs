@@ -69,7 +69,7 @@ public static partial class GeoParquetFeatureWriter
         return batches;
     }
 
-    private sealed class BoundedParquetStream(int maxBytes) : FileStream(
+    internal sealed class BoundedParquetStream(int maxBytes) : FileStream(
         PrivateTempFile.NewPath("honua-parquet-"), CreateOptions())
     {
         private const int WriteBufferBytes = 64 * 1024;
@@ -85,6 +85,10 @@ public static partial class GeoParquetFeatureWriter
 
         public bool LimitExceeded { get; private set; }
 
+        // The native encoder can wrap a managed write failure, losing the IOException, so the
+        // stream records a full scratch file system itself.
+        public bool StorageFull { get; private set; }
+
         private void Reserve(long end)
         {
             if (end > maxBytes)
@@ -97,19 +101,56 @@ public static partial class GeoParquetFeatureWriter
         public override void Write(byte[] buffer, int offset, int count)
         {
             Reserve(Position + count);
-            base.Write(buffer, offset, count);
+            try
+            {
+                base.Write(buffer, offset, count);
+            }
+            catch (IOException ex) when (PrivateTempFile.IsStorageFull(ex))
+            {
+                StorageFull = true;
+                throw;
+            }
         }
 
         public override void Write(ReadOnlySpan<byte> buffer)
         {
             Reserve(Position + buffer.Length);
-            base.Write(buffer);
+            try
+            {
+                base.Write(buffer);
+            }
+            catch (IOException ex) when (PrivateTempFile.IsStorageFull(ex))
+            {
+                StorageFull = true;
+                throw;
+            }
         }
 
         public override void WriteByte(byte value)
         {
             Reserve(Position + 1);
-            base.WriteByte(value);
+            try
+            {
+                base.WriteByte(value);
+            }
+            catch (IOException ex) when (PrivateTempFile.IsStorageFull(ex))
+            {
+                StorageFull = true;
+                throw;
+            }
+        }
+
+        public override void Flush()
+        {
+            try
+            {
+                base.Flush();
+            }
+            catch (IOException ex) when (PrivateTempFile.IsStorageFull(ex))
+            {
+                StorageFull = true;
+                throw;
+            }
         }
 
         public override void SetLength(long value)
