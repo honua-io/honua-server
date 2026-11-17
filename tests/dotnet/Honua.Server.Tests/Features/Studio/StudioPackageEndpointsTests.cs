@@ -211,7 +211,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{secondVersion.VersionId:D}/publish-requests",
             new CreateStudioPublicationRequest { WarningAcknowledgement = "reviewed" },
             StudioApiJsonContext.Default.CreateStudioPublicationRequest);
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, await publishResponse.Content.ReadAsStringAsync());
         var publication = await ReadAsync<StudioPublicationRequest>(
             publishResponse,
             StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
@@ -2177,7 +2177,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
                     Rel = "generated-by",
                 },
             ],
-            PublicationIntent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
+            PublicationIntent = new StudioPublicationIntent { Route = $"/studio/parcels-{Guid.NewGuid():N}", Visibility = "organization" },
             Body = body.RootElement.Clone(),
         };
     }
