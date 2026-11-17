@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -150,7 +149,7 @@ internal sealed partial class TileOperationExecutionCore
         CancellationToken cancellationToken)
     {
         var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
-        var active = pointer is null ? null : await store.ReadDescriptorAsync(pointer, cancellationToken).ConfigureAwait(false);
+        var active = pointer is null ? null : await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false);
         if (active is null
             || active.SourceLayer.Service != source.Published.Service.Metadata.Id
             || active.SourceLayer.Layer != source.Resource.Metadata.Id)
@@ -288,21 +287,16 @@ internal sealed partial class TileOperationExecutionCore
     {
         var run = context.Run;
         var descriptor = validated with { PublishedAt = DateTimeOffset.UtcNow };
-        var descriptorKey = context.Store.VersionKey(run.Version, PairedPublicationDescriptorFactory.DescriptorFileName);
-        await context.Store.PutJsonOnceAsync(descriptorKey, descriptor,
-            PublicationDescriptorJsonContext.Default.PublicationDescriptor, cancellationToken).ConfigureAwait(false);
-        using (var item = new MemoryStream(Encoding.UTF8.GetBytes(PairedPublicationDescriptorFactory.StacItem(descriptor).ToJsonString())))
-        {
-            await context.Store.PutOnceAsync(context.Store.VersionKey(run.Version, PairedPublicationDescriptorFactory.StacItemFileName),
-                item, "application/geo+json", ImmutableDictionary<string, string>.Empty, cancellationToken).ConfigureAwait(false);
-        }
+        var collectionKey = context.Store.VersionKey(run.Version, ExportCollectionDocument.FileName);
+        await context.Store.PutJsonOnceAsync(collectionKey, PairedPublicationDescriptorFactory.Collection(descriptor, context.Source),
+            PublicationDescriptorJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
 
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
         TileOperationLog.PairedPublishActivated(_logger, current.JobId, run.PublicationId, run.Version);
         return current with
         {
             ArchiveSizeBytes = build.ArchiveSize,
-            PublishedPublication = new PublishedPublication(run.PublicationId, run.Version, run.CaptureId, descriptorKey, context.Store.PointerKey),
+            PublishedPublication = new PublishedPublication(run.PublicationId, run.Version, run.CaptureId, collectionKey, context.Store.PointerKey),
             Status = OperationStatus.Completed,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = null,
@@ -343,8 +337,7 @@ internal sealed partial class TileOperationExecutionCore
                  {
                      PairedPublicationDescriptorFactory.PmtilesFileName(run),
                      PairedPublicationDescriptorFactory.GeoparquetFileName(run),
-                     PairedPublicationDescriptorFactory.DescriptorFileName,
-                     PairedPublicationDescriptorFactory.StacItemFileName
+                     ExportCollectionDocument.FileName
                  })
         {
             await TryDeletePublishArtifactAsync(storage, context.Store.VersionKey(run.Version, file), jobId, CancellationToken.None).ConfigureAwait(false);

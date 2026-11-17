@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.IO;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Publishing.Descriptors;
 using Honua.TestKit;
@@ -10,15 +9,15 @@ using Honua.TestKit.Attributes;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Schema;
 
-namespace Honua.Core.Tests.Features.Publishing.PublicationDescriptor;
+namespace Honua.Core.Tests.Features.Publishing.ExportCollection;
 
-public sealed class PublicationDescriptorSchemaTests
+public sealed class ExportCollectionSchemaTests
 {
     private const string SchemaFailure = "schema";
     private static readonly string SchemaPath =
-        RepositoryPaths.Resolve("docs", "gis", "schemas", "publication-descriptor.v1.schema.json");
+        RepositoryPaths.Resolve("docs", "gis", "schemas", "stac-honua.v1.0.0.schema.json");
     private static readonly string ExamplesDirectory =
-        RepositoryPaths.Resolve("docs", "gis", "schemas", "publication-descriptor.v1");
+        RepositoryPaths.Resolve("docs", "gis", "schemas", "export-collection.v1");
     private static readonly string InvalidDirectory = Path.Join(ExamplesDirectory, "invalid");
     private static readonly Lazy<JSchema> Schema = new(() => JSchema.Parse(File.ReadAllText(SchemaPath)));
 
@@ -36,18 +35,18 @@ public sealed class PublicationDescriptorSchemaTests
     [UnitTest]
     public void MauiCountyParcelsExample_PassesSchemaAndRules()
     {
-        var descriptor = Load(Path.Join(ExamplesDirectory, "maui-county-parcels.json"));
+        var collection = Load(Path.Join(ExamplesDirectory, "maui-county-parcels.json"));
 
-        descriptor.IsValid(Schema.Value, out IList<ValidationError> errors).Should().BeTrue(Describe(errors));
-        PublicationDescriptorRules.Violations(Nodes(descriptor)).Should().BeEmpty();
+        collection.IsValid(Schema.Value, out IList<ValidationError> errors).Should().BeTrue(Describe(errors));
+        PublicationDescriptorRules.Violations(Read(collection)).Should().BeEmpty();
     }
 
     [UnitTheory]
     [MemberData(nameof(InvalidExamples))]
     public void InvalidExample_FailsTheCheckItIsNamedFor(string file, string expectedFailure)
     {
-        var descriptor = Load(Path.Join(InvalidDirectory, file));
-        var schemaValid = descriptor.IsValid(Schema.Value, out IList<ValidationError> errors);
+        var collection = Load(Path.Join(InvalidDirectory, file));
+        var schemaValid = collection.IsValid(Schema.Value, out IList<ValidationError> errors);
 
         if (expectedFailure == SchemaFailure)
         {
@@ -56,19 +55,46 @@ public sealed class PublicationDescriptorSchemaTests
         }
 
         schemaValid.Should().BeTrue($"{file} must pass the schema so only rule {expectedFailure} rejects it: {Describe(errors)}");
-        PublicationDescriptorRules.Violations(Nodes(descriptor)).Should().Equal(expectedFailure);
+        PublicationDescriptorRules.Violations(Read(collection)).Should().Equal(expectedFailure);
     }
 
     [UnitTest]
-    public void TypedDescriptor_RoundTripsTheMauiExample_StillPassesSchemaAndRules()
+    public void WrittenCollection_RoundTripsTheMauiExample()
     {
         var text = File.ReadAllText(Path.Join(ExamplesDirectory, "maui-county-parcels.json"));
-        var typed = JsonSerializer.Deserialize(text, PublicationDescriptorJsonContext.Default.PublicationDescriptor)!;
+        var example = JsonNode.Parse(text)!.AsObject();
+        var export = ExportCollectionDocument.Read(example)!;
 
-        var written = JObject.Parse(JsonSerializer.Serialize(typed, PublicationDescriptorJsonContext.Default.PublicationDescriptor));
+        var written = ExportCollectionDocument.Write(export, new ExportCollectionMetadata(
+            example["description"]!.GetValue<string>(), example["license"]!.GetValue<string>()));
 
-        written.IsValid(Schema.Value, out IList<ValidationError> errors).Should().BeTrue(Describe(errors));
-        PublicationDescriptorRules.Violations(typed).Should().BeEmpty();
+        JsonNode.DeepEquals(written, example).Should().BeTrue(written.ToJsonString());
+        JObject.Parse(written.ToJsonString()).IsValid(Schema.Value, out IList<ValidationError> errors).Should().BeTrue(Describe(errors));
+    }
+
+    [UnitTest]
+    public void WrittenCollection_LeavesNonPublicFieldsOut()
+    {
+        var export = ExportCollectionDocument.Read(JsonNode.Parse(
+            File.ReadAllText(Path.Join(ExamplesDirectory, "maui-county-parcels.json")))!.AsObject())!;
+        var withHidden = export with { Fields = [.. export.Fields, new PublicationField("landvalue", "integer", Public: false)] };
+
+        var written = ExportCollectionDocument.Write(withHidden, ExportCollectionMetadata.None);
+
+        written.ToJsonString().Should().NotContain("landvalue");
+        written["license"]!.GetValue<string>().Should().Be("other");
+    }
+
+    [UnitTest]
+    public void Read_ThirdPartyCollectionWithoutHonuaFacts_IsNotAnExportVersion()
+    {
+        var collection = JsonNode.Parse(File.ReadAllText(Path.Join(ExamplesDirectory, "maui-county-parcels.json")))!.AsObject();
+        foreach (var property in collection.Select(pair => pair.Key).Where(key => key.StartsWith("honua:", StringComparison.Ordinal)).ToList())
+        {
+            collection.Remove(property);
+        }
+
+        ExportCollectionDocument.Read(collection).Should().BeNull();
     }
 
     [UnitTest]
@@ -91,6 +117,12 @@ public sealed class PublicationDescriptorSchemaTests
         PublicationDescriptorRules.All.Should().OnlyContain(rule => description.Contains($") {rule}:", StringComparison.Ordinal));
     }
 
+    [UnitTest]
+    public void SchemaId_IsTheExtensionUriTheWriterDeclares()
+    {
+        JObject.Parse(File.ReadAllText(SchemaPath)).Value<string>("$id").Should().Be(ExportCollectionDocument.HonuaSchemaUri);
+    }
+
     private static Dictionary<string, string> ExpectedFailures() =>
         JObject.Parse(File.ReadAllText(Path.Join(InvalidDirectory, "expected.json")))
             .Properties()
@@ -98,7 +130,9 @@ public sealed class PublicationDescriptorSchemaTests
 
     private static JObject Load(string path) => JObject.Parse(File.ReadAllText(path));
 
-    private static JsonObject Nodes(JObject descriptor) => JsonNode.Parse(descriptor.ToString())!.AsObject();
+    private static PublicationDescriptor Read(JObject collection)
+        => ExportCollectionDocument.Read(JsonNode.Parse(collection.ToString())!.AsObject())
+           ?? throw new InvalidOperationException("The example is not a readable Export version.");
 
     private static string Describe(IEnumerable<ValidationError> errors) =>
         string.Join("; ", errors.Select(error => $"{error.Path}: {error.Message}"));

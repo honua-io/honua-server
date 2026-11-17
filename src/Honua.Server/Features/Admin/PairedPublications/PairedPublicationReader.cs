@@ -32,7 +32,7 @@ internal sealed class PairedPublicationReader(
         {
             var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
             if (pointer is null || pointer.PublicationId != publicationId || !IsVersion(pointer.Version) ||
-                pointer.Descriptor != $"{pointer.Version}/descriptor.json")
+                pointer.Collection != $"{pointer.Version}/{ExportCollectionDocument.FileName}")
             {
                 return null;
             }
@@ -122,7 +122,7 @@ internal sealed class PairedPublicationReader(
         => storage.GetMetadataAsync(target.Store.VersionKey(target.Descriptor.Version, fileName), cancellationToken);
 
     internal static bool IsAllowedFile(PublicationDescriptor descriptor, string fileName)
-        => fileName is "descriptor.json" or "item.json" ||
+        => fileName == ExportCollectionDocument.FileName ||
            fileName == descriptor.Artifacts.Pmtiles.Href || fileName == descriptor.Artifacts.Geoparquet.Href;
 
     private static bool IsDescriptor(PublicationDescriptor? descriptor, string version)
