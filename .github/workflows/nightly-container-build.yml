@@ -1108,7 +1108,14 @@ jobs:
           for tag in $TAGS; do
             repository="${tag%:*}"
             tag_name="${tag##*:}"
-            destinations="$(printf '%s\n' "$tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
+            # The AOT index is the default image (#7853): each AOT tag and its bare alias come
+            # from one create, so the attested nightly-aot-<sha7> digest is nightly-<sha7> too.
+            case "$tag_name" in
+              nightly-aot|trunk-aot) default_tag="${repository}:${tag_name%-aot}" ;;
+              nightly-aot-*) default_tag="${repository}:nightly-${tag_name#nightly-aot-}" ;;
+              *) echo "Unexpected AOT manifest tag: $tag" >&2; exit 1 ;;
+            esac
+            destinations="$(printf '%s\n' "$tag" "$default_tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
             [ -n "$destinations" ] || continue
             tag_args=()
             while IFS= read -r destination; do tag_args+=(-t "$destination"); done <<< "$destinations"
@@ -1138,7 +1145,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: publish-images
     timeout-minutes: 30
-    needs: [select-candidate, manifest-jit]
+    needs: [select-candidate, manifest-aot]
     if: needs.select-candidate.outputs.publish == 'true'
     permissions:
       contents: read
@@ -1160,7 +1167,7 @@ jobs:
           persist-credentials: false
       - name: Verify source and serving image binding
         env:
-          SERVER_IMAGE: ${{ needs.manifest-jit.outputs.image }}
+          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
         run: |
           [[ "$SERVER_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]]
       # Log in to Docker Hub before anything pulls from it: the QEMU and Buildx setup (binfmt and
@@ -1181,7 +1188,7 @@ jobs:
       - name: Verify serving index revision matches the candidate source
         env:
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-          SERVER_IMAGE: ${{ needs.manifest-jit.outputs.image }}
+          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
         run: |
           docker buildx imagetools inspect "$SERVER_IMAGE" --format '{{json .Manifest}}' \
             | jq -e --arg sha "$CANDIDATE_SHA" '.annotations["org.opencontainers.image.revision"] == $sha'
@@ -1201,7 +1208,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.compose-executor
-          build-args: HONUA_SERVER_IMAGE=${{ needs.manifest-jit.outputs.image }}
+          build-args: HONUA_SERVER_IMAGE=${{ needs.manifest-aot.outputs.image }}
           platforms: linux/amd64,linux/arm64
           outputs: type=image,name=ghcr.io/honua-io/honua-server,push-by-digest=true,name-canonical=true,push=true
           labels: |
@@ -1277,7 +1284,7 @@ jobs:
         run: python3 scripts/docker/fetch_quickstart_console.py --output artifacts/console.zip
       - name: Package immutable customer quickstart
         env:
-          SERVER_IMAGE: ${{ needs.manifest-jit.outputs.image }}
+          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
           EXECUTOR_IMAGE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}
           CANDIDATE_SHA7: ${{ needs.select-candidate.outputs.sha7 }}
         run: |
@@ -1361,10 +1368,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly${{ matrix.store_suffix }}
-            type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}
-            type=raw,value=nightly-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }}
-            type=raw,value=trunk${{ matrix.store_suffix }}
+            type=raw,value=nightly${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}
+            type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}
+            type=raw,value=nightly-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}
+            type=raw,value=trunk${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}
             type=raw,value=nightly-jit${{ matrix.store_suffix }}
             type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}
             type=raw,value=nightly-jit-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }}
@@ -1399,7 +1406,7 @@ jobs:
           done
           if [ -z "${{ matrix.store_suffix }}" ]; then
             subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
-            subject_ref="${subject_name}:nightly-${{ needs.select-candidate.outputs.sha7 }}"
+            subject_ref="${subject_name}:nightly-jit-${{ needs.select-candidate.outputs.sha7 }}"
             subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
             echo "image=${subject_name}@${subject_digest}" >> "$GITHUB_OUTPUT"
             echo "subject_name=$subject_name" >> "$GITHUB_OUTPUT"

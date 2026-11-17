@@ -5,10 +5,10 @@ description: "Choose the image that includes your database stores while retainin
 ---
 # How to choose the default or full serving image
 
-The rc.2 default is the **chiseled JIT image with PostGIS as its only database
-store**. Native AOT remains an explicit `-aot` variant; promotion requires full
-suite and live-journey parity evidence by the 18 November evidence review. Choose the JIT **full** image when you need additional
-database stores. File-format support is a separate concern: the default keeps
+The rc.2 default is the **native-AOT image with PostGIS as its only database
+store**, on the plain chiseled runtime without ICU. The chiseled JIT image
+remains available as the explicit `-jit` variant. Choose the JIT **full** image
+when you need additional database stores. File-format support is a separate concern: the default keeps
 the import/export readers, including GeoPackage, Shapefile, GeoTIFF and Parquet.
 Importing a GeoPackage does not require a SQLite database-store provider.
 
