@@ -42,6 +42,15 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.212_CreateConfigurationDocumentRevisions.sql"
     ];
 
+    // These tables stay in the honua schema in production; the test installs them in its own schema.
+    private static readonly string[] _sceneAndPolicyMigrationResourceNames =
+    [
+        "Honua.Server.Migrations.023_CreateSceneDatasetRegistry.sql",
+        "Honua.Server.Migrations.065_CreateRlsPolicies.sql",
+        "Honua.Server.Migrations.068_CreateFieldMaskPolicies.sql",
+        "Honua.Server.Migrations.216_AdvanceConfigurationGenerationOnSceneAndPolicyChanges.sql"
+    ];
+
     private readonly PostgresJobSubstrateHarness _jobs;
 
     private ControlPlaneStateHarness(PostgresJobSubstrateHarness jobs)
@@ -79,6 +88,17 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     public Task ReplayRevisionMigrationAsync()
         => ExecuteAsync(ReadMigration("Honua.Server.Migrations.212_CreateConfigurationDocumentRevisions.sql")
             .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
+
+    public async Task InstallSceneAndPolicyTablesAsync()
+    {
+        foreach (var migration in _sceneAndPolicyMigrationResourceNames)
+        {
+            await ExecuteAsync(ReadMigration(migration)
+                .Replace("CREATE SCHEMA IF NOT EXISTS honua;", string.Empty, StringComparison.Ordinal)
+                .Replace("honua.", $"\"{_jobs.Schema}\".", StringComparison.Ordinal)
+                .Replace("$HonuaSchema$", $"\"{_jobs.Schema}\"", StringComparison.Ordinal));
+        }
+    }
 
     public string Table(string tableName) => _jobs.Database.Table(tableName);
 

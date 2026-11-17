@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Caching;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -89,6 +90,12 @@ internal static class SharedCacheResponse
     // Handlers that write the body themselves call this before the first write; the endpoint filter covers the rest.
     internal static void Apply(HttpContext context)
     {
+        // The output cache captures its entry lifetime on the first body write, after the handler selects the subject.
+        if (!context.Response.HasStarted && context.Features.Get<IOutputCacheFeature>() is { } outputCache)
+        {
+            CapOutputCacheLifetimeAtCdnLifetimePolicy.Apply(outputCache.Context);
+        }
+
         if (context.Response.HasStarted
             || DeclaredClass(context) is not { } cacheClass
             || !SharedCacheGuard.RequestMayBeShared(context)
