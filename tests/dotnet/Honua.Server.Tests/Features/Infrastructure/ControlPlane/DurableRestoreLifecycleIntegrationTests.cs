@@ -495,54 +495,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests
             var (service, _, monitor) = CreateLocalDeployFixture(workflows, proposals);
             using var worker = new DurableRestoreWorker(workflows, proposals, null!, new DeployOperationExecutor(service), null!, null!,
                 NullLogger<DurableRestoreWorker>.Instance, monitor, Substitute.For<IComposeExecutorClient>());
-            var now = DateTimeOffset.UtcNow;
-            var id = "restore-local-" + Guid.NewGuid().ToString("N");
-            var workflowId = DeployWorkflowService.CreateOperationId(id);
-            var payload = new DeployExecutionPayload { TargetId = "local", DesiredRevision = "sha256:" + new string('a', 64), CurrentRevision = "sha256:" + new string('b', 64) };
-            var request = new OperationGatewayRequest
-            {
-                Kind = OperationClass.Deploy,
-                RequestedBy = "proposer",
-                ApprovedBy = "approver",
-                ApprovedProposalId = proposalId,
-            };
-            Assert.True(await proposals.TryCreateAsync(CreateClaimedLegacyApproval(request, payload.Serialize(), id)
-                with
-            { Status = OperationProposalStatus.Submitted }));
-            Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
-            {
-                OperationId = workflowId,
-                Kind = WorkflowOperationKind.Deploy,
-                Status = WorkflowOperationStatus.Failed,
-                CurrentPhase = ComposeExecutorCodes.ContractApprovalRequired,
-                Deploy = new DeployOperationSpec
-                {
-                    TargetId = "local",
-                    TargetKind = DeployTargetKind.LocalCompose,
-                    Backend = "test",
-                    Environment = "test",
-                    TargetName = "test",
-                    DesiredRevision = payload.DesiredRevision
-                },
-                CreatedAt = now,
-                UpdatedAt = now
-            }));
-            Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
-            {
-                OperationId = id,
-                Kind = WorkflowOperationKind.PreMigrationRestore,
-                Status = WorkflowOperationStatus.Reconciling,
-                CreatedAt = now,
-                UpdatedAt = now,
-                Audit = new OperationAuditInfo { RequestedBy = request.RequestedBy, ProposalId = proposalId },
-                PreMigrationRestore = new PreMigrationRestoreContext
-                {
-                    Phase = "awaiting-local-deploy",
-                    DeployOperationId = workflowId,
-                    ApprovedBy = "approver",
-                    Payload = payload.Serialize()
-                }
-            }));
+            var id = await SeedLocalDeployRefusedAtContractGateAsync(workflows, proposals, proposalId);
 
             await worker.ReconcileAsync(id, CancellationToken.None);
 
@@ -558,6 +511,66 @@ public sealed class DurableRestoreLifecycleIntegrationTests
             await ReleaseCellOwnershipAsync(state);
         }
     }
+
+    // An approved local restore whose nested deploy the executor refused at the contract gate.
+    private static async Task<string> SeedLocalDeployRefusedAtContractGateAsync(
+        PostgresWorkflowOperationStore workflows, PostgresOperationProposalStore proposals, string proposalId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var id = "restore-local-" + Guid.NewGuid().ToString("N");
+        var workflowId = DeployWorkflowService.CreateOperationId(id);
+        var payload = new DeployExecutionPayload { TargetId = "local", DesiredRevision = "sha256:" + new string('a', 64), CurrentRevision = "sha256:" + new string('b', 64) };
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "proposer",
+            ApprovedBy = "approver",
+            ApprovedProposalId = proposalId,
+        };
+        Assert.True(await proposals.TryCreateAsync(CreateClaimedLegacyApproval(request, payload.Serialize(), id)
+            with
+        { Status = OperationProposalStatus.Submitted }));
+        Assert.True(await workflows.TryCreateAsync(RefusedLocalDeploy(workflowId, payload.DesiredRevision, now)));
+        Assert.True(await workflows.TryCreateAsync(AwaitingLocalRestore(id, workflowId, payload, proposalId, now)));
+        return id;
+    }
+
+    private static WorkflowOperationRecord RefusedLocalDeploy(string workflowId, string desired, DateTimeOffset now) => new()
+    {
+        OperationId = workflowId,
+        Kind = WorkflowOperationKind.Deploy,
+        Status = WorkflowOperationStatus.Failed,
+        CurrentPhase = ComposeExecutorCodes.ContractApprovalRequired,
+        Deploy = new DeployOperationSpec
+        {
+            TargetId = "local",
+            TargetKind = DeployTargetKind.LocalCompose,
+            Backend = "test",
+            Environment = "test",
+            TargetName = "test",
+            DesiredRevision = desired
+        },
+        CreatedAt = now,
+        UpdatedAt = now
+    };
+
+    private static WorkflowOperationRecord AwaitingLocalRestore(
+        string id, string workflowId, DeployExecutionPayload payload, string proposalId, DateTimeOffset now) => new()
+    {
+        OperationId = id,
+        Kind = WorkflowOperationKind.PreMigrationRestore,
+        Status = WorkflowOperationStatus.Reconciling,
+        CreatedAt = now,
+        UpdatedAt = now,
+        Audit = new OperationAuditInfo { RequestedBy = "proposer", ProposalId = proposalId },
+        PreMigrationRestore = new PreMigrationRestoreContext
+        {
+            Phase = "awaiting-local-deploy",
+            DeployOperationId = workflowId,
+            ApprovedBy = "approver",
+            Payload = payload.Serialize()
+        }
+    };
 
     // The cell owner is one well-known operation, so each test starts and ends without it.
     private static Task ReleaseCellOwnershipAsync(ControlPlaneStateHarness state)
