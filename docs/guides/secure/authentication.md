@@ -381,6 +381,16 @@ path. The pending login cookie uses `SameSite=Lax` for the provider redirect; th
 authenticated session cookie uses `SameSite=Strict`. On landing, Console refreshes
 its session identity and CSRF token before sending authenticated mutations.
 
+When the identity provider returns an error instead of a code (for example
+`error=invalid_scope` or `access_denied`), the callback answers `400` with a
+short "Sign-in failed" page. The page names the provider's error code and links
+back to `/console/auth/signin`. It never shows the provider's free-text
+`error_description`; the server logs it with the provider key and error code as
+a warning. An error carrying the attempt's own `state` ends that attempt, so
+**Try again** starts a fresh one. An error with any other `state` leaves the
+pending attempt alone. A callback that arrives after the 15-minute attempt
+expired, or in a different browser, shows the same page without a provider code.
+
 For Amazon Cognito, configure the user-pool issuer as `Authority` and the hosted
 login domain separately for logout:
 
@@ -606,6 +616,9 @@ A wrong or missing key returns `401` with a `WWW-Authenticate: ApiKey` challenge
 | `generateToken` refuses to issue | Issuance is HTTPS-only by default — front the server with TLS (see [TLS and mTLS](tls-and-mtls.md)). |
 | Token works from one host but not another | Portal tokens are bound to `client=referer` or `client=ip`; re-issue with the binding the caller actually presents. |
 | `admin:write` or `admin:manage` key gets `403` creating, rotating or revoking API keys, changing user roles, deprovisioning users or managing OAuth clients | Expected: these routes need full-administrator authority. Use a key granted `admin`, `*` or `admin:*`, the bootstrap credential, an administrator session, or submit the change as a proposal for approval. See [Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management). |
+| "Sign-in failed" page with `invalid_scope` | The provider client does not allow every scope Honua requests (`Oidc__Generic__Scopes`, default `openid profile email`). Allow the missing scope on the client, or remove it from the setting. |
+| "Sign-in failed" page with `access_denied`, or another provider code | The provider refused the user or the client. The server log warning names the provider and holds the provider's description. |
+| "Sign-in failed" page without a provider code | The attempt expired or the callback opened in a different browser. Choose **Try again**. |
 | OIDC user signed in but gets `403` on admin routes | The IdP token lacks a role matching `Oidc__AdminRoles`; fix the claims mapping in your IdP. |
 
 More general failures: [Troubleshooting](../deploy/troubleshooting.md).
