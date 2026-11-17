@@ -45,12 +45,15 @@ public sealed partial class PairedPublishEndpointTests
     private async Task<IReadOnlyList<string>> CopyTreeAsync(string prefix, string target)
     {
         var copied = new List<string>();
-        foreach (var file in await Storage.ListFilesAsync(prefix))
+        // FileId is the logical key; StoragePath may name a physical generation of it.
+        var keys = (await Storage.ListFilesAsync(prefix)).Select(file => file.FileId)
+            .Where(key => key.StartsWith(prefix, StringComparison.Ordinal));
+        foreach (var key in keys)
         {
-            var relative = file.StoragePath[prefix.Length..];
+            var relative = key[prefix.Length..];
             var path = Path.Join(target, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllBytesAsync(path, await ReadBytesAsync(file.StoragePath));
+            await File.WriteAllBytesAsync(path, await ReadBytesAsync(key));
             copied.Add(relative);
         }
 
