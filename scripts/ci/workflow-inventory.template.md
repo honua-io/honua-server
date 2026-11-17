@@ -707,7 +707,7 @@ The server matrix combines 33 small unit/component assemblies into four jobs:
 Provider and AI Units, Runtime Units, Protocol Units, and Protocol and Host
 Components. Each `csprojs` list is an explicit assembly union. Routing, build
 selection, resource classification, and the source coverage guard inspect every
-member. Catalogued Docker, Postgres, and Redis dependencies remain supported;
+member. Catalogued Docker and Postgres dependencies remain supported;
 resourceful members retain service provisioning. Unknown resources fail closed.
 The existing required check names and tier policies remain unchanged.
 
@@ -783,7 +783,7 @@ and aggregate dependencies are unchanged.
 
 The authorization matrix selects the live `AdminAuthorizationTests` class.
 The remaining authorization shard owns every other method in the original parent
-filter. Retired Redis endpoint selectors are removed; the coverage guard still
+filter. Retired cache endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
 
@@ -1044,7 +1044,7 @@ skipping or missing results fail the shell check. The required name and both
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
-The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+Operator Eval capacity children keep the parent's PostGIS 17 preparation; the other split children prepare no images, as their parents did. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 
 ### Lightweight workflow runner admission
 

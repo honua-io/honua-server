@@ -71,7 +71,7 @@ node scripts/qualification/mcp/job-results-journey.mjs http://127.0.0.1:8080
 
 The **GP Lifecycle Qualification** workflow runs the installed-client journey
 on relevant pull requests against a real Kestrel server, disposable PostGIS and
-Redis, and the production geometry-buffer executor. Its submitter is the
+the production geometry-buffer executor. Its submitter is the
 bootstrap administrator; it creates the other caller's `admin:read` key through
 the actual admin API. This fixture does not qualify non-administrator-owned
 job polling. To run that same

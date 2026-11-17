@@ -16,7 +16,7 @@ SHA = re.compile(r"^[a-f0-9]{40}$")
 DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
 
 # The 2026.1 Preview floor. Operational-graduation scenarios (ordering,
-# duplicates, HA, proxy/Redis failover, broker outage, saturation/backpressure,
+# duplicates, HA, proxy failover, broker outage, saturation/backpressure,
 # and soak) intentionally do not appear in this denominator.
 PREVIEW_ROWS = tuple(
     ("feature-stream", transport, scenario)
