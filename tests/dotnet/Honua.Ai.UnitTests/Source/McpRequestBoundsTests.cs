@@ -108,6 +108,8 @@ public sealed class McpRequestBoundsTests
         capabilities.GetProperty("tools").GetProperty("listChanged").GetBoolean().Should().Be(streamEnabled);
         capabilities.GetProperty("resources").GetProperty("listChanged").GetBoolean().Should().Be(streamEnabled);
         capabilities.GetProperty("prompts").GetProperty("listChanged").GetBoolean().Should().BeFalse();
+        capabilities.TryGetProperty("logging", out _).Should().Be(streamEnabled,
+            "job status travels as notifications/message on the same stream");
     }
 
     [UnitTest]

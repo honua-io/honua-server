@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,7 +51,7 @@ internal sealed class McpJobProgressBridge
         }
 
         // Missing options match the product default: the stream is off, so there
-        // is nowhere for notifications/progress to go.
+        // is nowhere for notifications/message to go.
         if (_options?.Value.ServerInitiatedStreamEnabled != true)
         {
             return;
@@ -121,7 +122,8 @@ internal sealed class McpJobProgressBridge
 
             if (first || progress != lastProgress || !string.Equals(phase, lastPhase, StringComparison.Ordinal))
             {
-                await _publisher.PublishProgress(sessionId, jobId, progress, ProgressTotal, phase).ConfigureAwait(false);
+                await PublishStatusAsync(sessionId, jobId, record.Status.ToString(), phase, progress, cancellationToken)
+                    .ConfigureAwait(false);
                 lastProgress = progress;
                 lastPhase = phase;
                 first = false;
@@ -138,5 +140,39 @@ internal sealed class McpJobProgressBridge
                 await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    // Job status goes out as notifications/message: the job outlives the tools/call that
+    // started it, so there is no client progressToken a stock client would accept.
+    private async Task PublishStatusAsync(
+        string sessionId,
+        string jobId,
+        string status,
+        string phase,
+        double progress,
+        CancellationToken cancellationToken)
+    {
+        var level = await _sessions.GetLogLevelAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (!McpLogging.IsEnabled(level, McpLogging.Info))
+        {
+            return;
+        }
+
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jobId", jobId);
+            writer.WriteString("uri", McpResourceUris.JobsPrefix + jobId);
+            writer.WriteString("status", status);
+            writer.WriteString("phase", phase);
+            writer.WriteNumber("progress", progress);
+            writer.WriteNumber("total", ProgressTotal);
+            writer.WriteEndObject();
+        }
+
+        using var data = JsonDocument.Parse(buffer.ToArray());
+        await _publisher.PublishMessage(sessionId, McpLogging.Info, McpLogging.JobsLogger, data.RootElement.Clone())
+            .ConfigureAwait(false);
     }
 }

@@ -66,6 +66,23 @@ public sealed class PostgresMcpSessionStoreTests(DatabaseFixtureAdapter database
         (await b.ValidateAccessAsync(id!, "sub:mallory", CancellationToken.None)).Should().Be(McpSessionValidation.PrincipalMismatch);
     }
 
+    [IntegrationTest]
+    public async Task SetLogLevelAsync_KeepsTheRecordAndIsReadByAnotherNode()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var a = new McpSessionManager(idleTimeout: _idleTimeout, store: harness.CreateMcpSessionStore());
+        var b = new McpSessionManager(idleTimeout: _idleTimeout, store: harness.CreateMcpSessionStore());
+        var id = await a.TryCreateSessionAsync(Alice, elicitationSupported: false, "setup", CancellationToken.None);
+
+        (await a.SetLogLevelAsync(id!, "error", CancellationToken.None)).Should().BeTrue();
+
+        (await b.GetLogLevelAsync(id!, CancellationToken.None)).Should().Be("error");
+        (await b.ValidateAccessAsync(id!, Alice, CancellationToken.None)).Should().Be(McpSessionValidation.Valid);
+        b.GetWorkflowView(id!).Should().Be("setup", "the level update merges into the stored record");
+        (await harness.CreateMcpSessionStore().SetLogLevelAsync("no-such-session", "error", CancellationToken.None))
+            .Should().BeFalse();
+    }
+
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresMcpSessionStoreTests));
 

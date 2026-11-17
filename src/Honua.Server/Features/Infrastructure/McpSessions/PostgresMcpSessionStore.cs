@@ -84,6 +84,23 @@ internal sealed partial class PostgresMcpSessionStore(JobStoreDatabase database)
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
+    public Task<bool> SetLogLevelAsync(string sessionId, string level, CancellationToken cancellationToken)
+        => database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    UPDATE {_sessions} SET record = (record::jsonb || jsonb_build_object('logLevel', @level::text))::json
+                    WHERE session_id = @session_id AND expires_at > now()
+                    """,
+                    connection);
+                AddSessionId(command, sessionId);
+                command.Parameters.Add(new NpgsqlParameter("level", NpgsqlDbType.Text) { Value = level });
+                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) > 0;
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken);
+
     public Task<bool> ExistsAsync(string sessionId, CancellationToken cancellationToken)
         => database.ExecuteAsync(
             async (connection, _, token) =>

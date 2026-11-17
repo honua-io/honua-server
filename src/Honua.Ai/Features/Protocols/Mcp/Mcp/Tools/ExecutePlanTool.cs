@@ -133,7 +133,7 @@ internal sealed class ExecutePlanTool : IMcpTool
         sessions.AssociateJob(sessionId, jobId);
 
         // The job-to-session index is recorded above. The background job-store
-        // poll only starts when GET /mcp can deliver notifications/progress.
+        // poll only starts when GET /mcp can deliver notifications/message job status.
         var streamEnabled = httpContext.RequestServices.GetService<IOptions<McpOptions>>()
             ?.Value.ServerInitiatedStreamEnabled == true;
         if (streamEnabled)

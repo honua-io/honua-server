@@ -134,6 +134,7 @@ internal sealed partial class McpDataAccessSurface
                     ErrorResponse(request.Id, McpErrorMapper.MethodNotFound("initialize is a legacy method.")),
                 "initialize" => HandleInitialize(httpContext, request),
                 "ping" => Ping(request),
+                "logging/setLevel" => await SetLogLevelAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "tools/list" => await ListToolsAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "tools/call" => await CallToolAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "resources/list" => ListResources(request),
@@ -221,19 +222,20 @@ internal sealed partial class McpDataAccessSurface
         // list_changed is delivered only on the optional GET /mcp stream. Advertising
         // it while that stream is off (the default) tells clients a notification
         // channel exists that this transport can never send.
-        var listChanged = httpContext.RequestServices?.GetService<IOptions<McpOptions>>()
-            ?.Value.ServerInitiatedStreamEnabled == true;
+        var listChanged = LoggingAvailable(httpContext);
         var result = new McpInitializeResult
         {
             ProtocolVersion = negotiatedVersion,
             // When the stream is enabled the server emits
-            // notifications/tools/list_changed and notifications/resources/list_changed.
+            // notifications/tools/list_changed, notifications/resources/list_changed
+            // and notifications/message (job status, logging/setLevel).
             // The prompt catalog stays static, so prompts.listChanged remains false.
             Capabilities = new McpServerCapabilities
             {
                 Tools = new McpCapabilityFlag { ListChanged = listChanged },
                 Resources = new McpCapabilityFlag { ListChanged = listChanged },
-                Prompts = new McpCapabilityFlag { ListChanged = false }
+                Prompts = new McpCapabilityFlag { ListChanged = false },
+                Logging = listChanged ? new McpEmptyCapability() : null
             },
 
             // State how the issued session is kept so a client or harness can record
