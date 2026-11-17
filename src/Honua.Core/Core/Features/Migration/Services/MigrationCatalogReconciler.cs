@@ -318,7 +318,7 @@ public static class MigrationCatalogReconciler
             return;
         }
 
-        var normalizedSourceBbox = NormalizeBbox(sourceBbox);
+        var normalizedSourceBbox = MigrationBoundingBoxes.Normalize(sourceBbox);
         if (normalizedSourceBbox is not null && plannedTargetSrid is not null && sourceSrid != plannedTargetSrid)
         {
             // Do not compare meter-valued inventory bounds with degree-valued catalog bounds.
@@ -337,7 +337,7 @@ public static class MigrationCatalogReconciler
                 return;
             }
 
-            normalizedSourceBbox = NormalizeBbox([observed.MinX, observed.MinY, observed.MaxX, observed.MaxY]);
+            normalizedSourceBbox = MigrationBoundingBoxes.Normalize([observed.MinX, observed.MinY, observed.MaxX, observed.MaxY]);
         }
         if (normalizedSourceBbox is not null)
         {
@@ -349,22 +349,22 @@ public static class MigrationCatalogReconciler
                     Code = MigrationCatalogReconciliationCodes.ExtentMissing,
                     Severity = MigrationCatalogReconciliationSeverities.Warn,
                     Subject = "spatial",
-                    Expected = FormatBbox(normalizedSourceBbox),
+                    Expected = MigrationBoundingBoxes.Format(normalizedSourceBbox),
                     Summary = "Source declared an extent but the published catalog entry advertises none."
                 });
             }
             else
             {
-                var publishedAsArray = NormalizeBbox(new[] { publishedBbox.West, publishedBbox.South, publishedBbox.East, publishedBbox.North })!;
-                if (!BboxesOverlap(normalizedSourceBbox, publishedAsArray))
+                var publishedAsArray = MigrationBoundingBoxes.Normalize(new[] { publishedBbox.West, publishedBbox.South, publishedBbox.East, publishedBbox.North })!;
+                if (!MigrationBoundingBoxes.Overlap(normalizedSourceBbox, publishedAsArray))
                 {
                     findings.Add(new MigrationCatalogReconciliationFinding
                     {
                         Code = MigrationCatalogReconciliationCodes.ExtentMismatch,
                         Severity = MigrationCatalogReconciliationSeverities.Warn,
                         Subject = "spatial",
-                        Expected = FormatBbox(normalizedSourceBbox),
-                        Actual = FormatBbox(publishedAsArray),
+                        Expected = MigrationBoundingBoxes.Format(normalizedSourceBbox),
+                        Actual = MigrationBoundingBoxes.Format(publishedAsArray),
                         Summary = "Published extent is disjoint from the comparison extent in the same CRS."
                     });
                 }
@@ -895,27 +895,6 @@ public static class MigrationCatalogReconciler
 
         return references.FirstOrDefault(static reference => reference.Srid.HasValue)?.Srid;
     }
-
-    private static double[]? NormalizeBbox(double[]? bbox)
-    {
-        if (bbox is null || bbox.Length != 4)
-        {
-            return null;
-        }
-
-        var minX = Math.Min(bbox[0], bbox[2]);
-        var minY = Math.Min(bbox[1], bbox[3]);
-        var maxX = Math.Max(bbox[0], bbox[2]);
-        var maxY = Math.Max(bbox[1], bbox[3]);
-        return [minX, minY, maxX, maxY];
-    }
-
-    private static bool BboxesOverlap(double[] a, double[] b)
-        => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
-
-    private static string FormatBbox(double[] bbox)
-        => string.Create(CultureInfo.InvariantCulture,
-            $"[{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}]");
 
     private static string? CodeToString(JsonElement element)
     {

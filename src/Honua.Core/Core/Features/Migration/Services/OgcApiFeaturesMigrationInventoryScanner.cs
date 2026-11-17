@@ -982,7 +982,7 @@ public static class OgcApiFeaturesMigrationInventoryScanner
             return null;
         }
 
-        return Uri.TryCreate(href, UriKind.Absolute, out var absolute)
+        return !MigrationSourceUrls.IsSourceRelativeHref(href) && Uri.TryCreate(href, UriKind.Absolute, out var absolute)
             ? absolute
             : Uri.TryCreate(baseUri, href, out var relative)
                 ? relative
