@@ -16,7 +16,6 @@ public partial class OidcAuthenticationOptionsValidatorTests
     [InlineData("audience")]
     [InlineData("lifetime")]
     [InlineData("signing")]
-    [InlineData("shared-key")]
     public void Validate_ProductionUnsafeTokenSettings_RejectsConfiguration(string setting)
     {
         var options = new OidcAuthenticationOptions();
@@ -41,6 +40,24 @@ public partial class OidcAuthenticationOptionsValidatorTests
         SetUnsafeTokenSetting(options.TokenValidation, setting);
 
         Assert.True(_validator.Validate(null, options).Succeeded);
+    }
+
+    [UnitTest]
+    public void Validate_ProductionStaticIssuerKey_IsAccepted()
+    {
+        var options = new OidcAuthenticationOptions();
+        options.TokenValidation.SymmetricSigningKey = TestSigningKey;
+
+        Assert.True(CreateValidator(Environments.Production).Validate(null, options).Succeeded);
+    }
+
+    [UnitTest]
+    public void Validate_ProductionShortStaticIssuerKey_RejectsConfiguration()
+    {
+        var options = new OidcAuthenticationOptions();
+        options.TokenValidation.SymmetricSigningKey = "too-short-key";
+
+        Assert.True(CreateValidator(Environments.Production).Validate(null, options).Failed);
     }
 
     [UnitTest]

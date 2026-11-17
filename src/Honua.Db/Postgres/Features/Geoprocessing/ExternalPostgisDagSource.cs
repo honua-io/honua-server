@@ -172,10 +172,20 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
     {
         var sourceTable = GetSourceTable(request);
         var srid = request.OutputSrid ?? 4326;
+        // pg_attribute covers tables, views, materialized views, foreign and partitioned tables.
+        // Names that differ only by case are left out so a filter cannot bind the wrong one.
         await using var command = new NpgsqlCommand("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_schema = @schema AND table_name = @table
-            ORDER BY ordinal_position
+            SELECT a.attname FROM pg_catalog.pg_attribute a
+            JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = @schema AND c.relname = @table
+              AND c.relkind IN ('r', 'v', 'm', 'f', 'p')
+              AND a.attnum > 0 AND NOT a.attisdropped
+              AND NOT EXISTS (
+                  SELECT 1 FROM pg_catalog.pg_attribute other
+                  WHERE other.attrelid = a.attrelid AND other.attnum > 0 AND NOT other.attisdropped
+                    AND other.attnum <> a.attnum AND lower(other.attname) = lower(a.attname))
+            ORDER BY a.attnum
             """, transaction.Connection, transaction);
         command.Parameters.AddWithValue("schema", sourceTable.Schema);
         command.Parameters.AddWithValue("table", sourceTable.Table);

@@ -18,7 +18,6 @@ public sealed class OidcProductionConfigurationTests
     [InlineData("ValidateAudience", "false")]
     [InlineData("ValidateLifetime", "false")]
     [InlineData("ValidateIssuerSigningKey", "false")]
-    [InlineData("SymmetricSigningKey", "development-only-test-signing-key-32-bytes")]
     public void StartupOptions_UnsafeProductionConfiguration_FailsValidation(string setting, string value)
     {
         using var provider = CreateProvider(Environments.Production, setting, value);
@@ -35,11 +34,13 @@ public sealed class OidcProductionConfigurationTests
         Assert.True(provider.GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value.TokenValidation.ValidateIssuer);
     }
 
-    [UnitTest]
-    public void StartupOptions_DevelopmentSharedKey_RemainsSupported()
+    [UnitTheory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public void StartupOptions_StaticIssuerKey_RemainsSupported(string environmentName)
     {
-        using var provider = CreateProvider(Environments.Development, "SymmetricSigningKey",
-            "development-only-test-signing-key-32-bytes");
+        using var provider = CreateProvider(environmentName, "SymmetricSigningKey",
+            "static-issuer-test-signing-key-of-32-bytes");
 
         Assert.NotNull(provider.GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value.TokenValidation.SymmetricSigningKey);
     }

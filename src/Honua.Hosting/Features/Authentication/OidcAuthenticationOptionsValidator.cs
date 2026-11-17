@@ -51,10 +51,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         {
             errors.Add("TokenValidation.ValidateIssuerSigningKey must be enabled in Production");
         }
-        if (!string.IsNullOrWhiteSpace(options.SymmetricSigningKey))
-        {
-            errors.Add("TokenValidation.SymmetricSigningKey is not supported in Production; use provider metadata and JWKS discovery");
-        }
     }
 
     private static void ValidateGeneralSettings(OidcAuthenticationOptions options, List<string> errors)
