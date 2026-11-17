@@ -91,7 +91,7 @@ public sealed class ZarrMetadataExtractor
         var (srid, extent, primary, xDim, yDim, tDim, temporal, axes) =
             ResolveStoreGeoreferencing(attrsDoc?.RootElement, arrays);
 
-        return new ZarrStoreMetadata(
+        var metadata = new ZarrStoreMetadata(
             ZarrFormat: arrays[0].ZarrFormat,
             Srid: srid,
             Extent: extent,
@@ -102,6 +102,15 @@ public sealed class ZarrMetadataExtractor
             TemporalDimension: tDim,
             Temporal: temporal,
             Axes: axes);
+
+        // Without Honua's root georeferencing attributes, read the store's own CF conventions.
+        return srid > 0
+            ? metadata
+            : await ZarrCfGeoreferencing.ApplyAsync(
+                    new ZarrCfScan(reader, bucket, normalizedRoot) { Consolidated = consolidatedDoc },
+                    metadata,
+                    cancellationToken)
+                .ConfigureAwait(false);
     }
 
     private static string NormalizeRootPath(string rootPath)
