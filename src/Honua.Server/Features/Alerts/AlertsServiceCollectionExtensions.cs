@@ -26,12 +26,14 @@ internal static class AlertsServiceCollectionExtensions
             .Bind(configuration.GetSection(AlertOptions.SectionName))
             // These workers use instance-wide persistence, outside the HTTP tenant
             // middleware. Admin route denial cannot isolate evaluation or delivery.
-            .Validate(options => !options.Enabled ||
-                (!configuration.GetValue("MultiTenancy:Enabled", new TenantContextOptions().Enabled) &&
-                 !configuration.GetValue<bool>("MultiTenancy:SchemaRouting:Enabled")),
+            .Validate(options => !options.Enabled || IsSingleTenant(configuration),
                 "Alert processing cannot run with tenant resolution or schema routing enabled: " +
                 "alert evaluation and delivery stores are instance-wide. Set Alerts:Enabled=false " +
                 "on multi-tenant instances; use a separate single-tenant instance for Preview alerts.")
+            // Ops notices share the same instance-wide outbox and dispatcher, which now runs for them.
+            .Validate(options => !options.Ops.Enabled || IsSingleTenant(configuration),
+                "Ops notification delivery cannot run with tenant resolution or schema routing enabled: " +
+                "the alert outbox and dispatcher are instance-wide. Set Alerts:Ops:Enabled=false on multi-tenant instances.")
             .ValidateOnStart();
 
         services.AddSingleton<IValidateOptions<AlertOptions>, AlertOptionsValidator>();
@@ -44,6 +46,7 @@ internal static class AlertsServiceCollectionExtensions
         // alerts.geofence is Preview and must be an explicit opt-in. Keep both workers
         // dormant when the capability flag is absent so the manifest cannot claim the
         // feature is disabled while it still evaluates rules or delivers notifications.
+        // Alerts:Ops is separate: the dispatcher still delivers ops-source notices to the operator.
         var experimentalFlags = new CapabilityFlagOptions();
         CapabilityFlagOptions.Bind(
             experimentalFlags,
@@ -114,4 +117,8 @@ internal static class AlertsServiceCollectionExtensions
 
         return services;
     }
+
+    private static bool IsSingleTenant(IConfiguration configuration)
+        => !configuration.GetValue("MultiTenancy:Enabled", new TenantContextOptions().Enabled)
+            && !configuration.GetValue<bool>("MultiTenancy:SchemaRouting:Enabled");
 }
