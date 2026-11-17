@@ -32,7 +32,7 @@ public sealed partial class ComposeProposalExecutorTests
         Assert.False(refusal.Ok);
         Assert.Equal(ComposeExecutorCodes.ContractApprovalRequired, refusal.Code);
         Assert.Contains(ContractScript, refusal.Message, StringComparison.Ordinal);
-        Assert.Contains("HONUA_APPROVE_CONTRACT_MIGRATIONS=" + ApprovalNonce, refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("HONUA_APPROVE_CONTRACT_MIGRATIONS) is " + ApprovalNonce, refusal.Message, StringComparison.Ordinal);
         Assert.Equal(priorOverride, await File.ReadAllTextAsync(overridePath));
         Assert.Equal(["run", "rm", "start"], docker.Subcommands);
     }
@@ -98,6 +98,28 @@ public sealed partial class ComposeProposalExecutorTests
     }
 
     [UnitTest]
+    public async Task PrepareCandidate_CancelledMigrateOnlyRun_RemovesTheNamedContainer()
+    {
+        var options = ValidOptions(Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N")), Digest('a'));
+        var docker = new MigrateOnlyDocker(0, string.Empty) { RunFailure = new OperationCanceledException() };
+        using var controller = new ComposeProjectController(options, docker);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => controller.PrepareCandidateAsync(Digest('a'), CancellationToken.None));
+
+        Assert.Equal(["run", "rm"], docker.Subcommands);
+        var name = docker.Argv[0][Array.IndexOf(docker.Argv[0], "--name") + 1];
+        Assert.Equal(name, docker.Argv[1][^1]);
+    }
+
+    [UnitTheory]
+    [InlineData("""{"format":"honua.migrate-only/v1","code":5,"pendingScripts":[]}""")]
+    [InlineData("""{"format":"honua.migrate-only/v1","code":"contract-approval-required","pendingScripts":["183"]}""")]
+    [InlineData("""{"format":7,"code":"contract-approval-required"}""")]
+    public void ContractGateRefusalFrom_MalformedSummary_IsNotARefusal(string summary)
+        => Assert.Null(ComposeProjectController.ContractGateRefusalFrom(summary));
+
+    [UnitTest]
     public async Task ContractGateRefusalWithBackup_FailsWithoutRecovery()
     {
         var release = Digest('a');
@@ -138,12 +160,19 @@ public sealed partial class ComposeProposalExecutorTests
 
         public List<string> Subcommands { get; } = [];
 
+        public Exception? RunFailure { get; init; }
+
         public Task<DockerProcessResult> RunAsync(IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken)
         {
             var args = arguments.ToArray();
             Argv.Add(args);
             var subcommand = args.FirstOrDefault(argument => argument is "run" or "start" or "up" or "rm") ?? "other";
             Subcommands.Add(subcommand);
+            if (subcommand == "run" && RunFailure != null)
+            {
+                return Task.FromException<DockerProcessResult>(RunFailure);
+            }
+
             return Task.FromResult(subcommand switch
             {
                 "run" => new DockerProcessResult(runExitCode, runStdout, string.Empty),

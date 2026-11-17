@@ -18,14 +18,24 @@ internal sealed partial class ComposeProjectController
 
     // Converge migrates the candidate in migrate-only mode before starting it. The contract gate
     // refuses before any script is applied, so the stopped prior restarts unchanged and the
-    // operator gets the gate's own code instead of an unhealthy candidate start. An approval the
-    // operator already set for the install (HONUA_APPROVE_CONTRACT_MIGRATIONS) still applies.
+    // operator gets the gate's own code instead of an unhealthy candidate start. The run adds only
+    // the migrate-only switch, so an approval the install's Compose files forward still applies.
     internal async Task<ComposeExecutorResponse?> PrepareCandidateAsync(string image, CancellationToken cancellationToken)
     {
         var overridePath = OverridePath();
-        var priorOverride = File.Exists(overridePath)
-            ? await File.ReadAllTextAsync(overridePath, cancellationToken).ConfigureAwait(false)
-            : null;
+        string? priorOverride;
+        try
+        {
+            priorOverride = File.Exists(overridePath)
+                ? await File.ReadAllTextAsync(overridePath, cancellationToken).ConfigureAwait(false)
+                : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Returned, not thrown: converge attaches the backup to this response, which keeps recovery.
+            return Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "The prior image override could not be read.");
+        }
+
         var written = await WriteImageOverrideAsync(image, cancellationToken).ConfigureAwait(false);
         if (written != null)
         {
@@ -44,21 +54,28 @@ internal sealed partial class ComposeProjectController
             : await RefuseAtContractGateAsync(overridePath, priorOverride, refusal).ConfigureAwait(false);
     }
 
-    // A named one-shot container, removed on any failure, so a timed-out run cannot keep migrating
-    // after recovery restores the backup.
+    // A named one-shot container, removed unless the run succeeded, so a timed-out or cancelled
+    // run cannot keep migrating after recovery restores the backup.
     private async Task<DockerProcessResult> RunMigrateOnlyAsync(CancellationToken cancellationToken)
     {
         var name = _options.ProjectName + "-migrate-" + Guid.NewGuid().ToString("N")[..12];
-        var result = await ComposeAsync(
-            TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60),
-            ["run", "--rm", "--no-deps", "-T", "--name", name, "-e", "HONUA_MIGRATE_ONLY=true", "--", _options.ServiceName],
-            cancellationToken).ConfigureAwait(false);
-        if (result.ExitCode != 0)
+        var succeeded = false;
+        try
         {
-            await DockerAsync(CommandTimeout, ["rm", "-f", "--", name], CancellationToken.None).ConfigureAwait(false);
+            var result = await ComposeAsync(
+                TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60),
+                ["run", "--rm", "--no-deps", "-T", "--name", name, "-e", "HONUA_MIGRATE_ONLY=true", "--", _options.ServiceName],
+                cancellationToken).ConfigureAwait(false);
+            succeeded = result.ExitCode == 0;
+            return result;
         }
-
-        return result;
+        finally
+        {
+            if (!succeeded)
+            {
+                await DockerAsync(CommandTimeout, ["rm", "-f", "--", name], CancellationToken.None).ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task<ComposeExecutorResponse> RefuseAtContractGateAsync(
@@ -78,14 +95,15 @@ internal sealed partial class ComposeProjectController
 
         var approval = refusal.Nonce == null
             ? string.Empty
-            : " To approve exactly these scripts, set " + MigrationSafetyOptions.ApproveContractMigrationsKey + "="
-                + refusal.Nonce + " in the install's .env and propose the convergence again.";
+            : " The approval nonce for exactly these scripts (" + MigrationSafetyOptions.ApproveContractMigrationsKey
+                + ") is " + refusal.Nonce + ".";
         return Refuse(
             null,
             ComposeExecutorCodes.ContractApprovalRequired,
             "The release has contract migrations that need operator approval before they are applied: "
             + string.Join(", ", refusal.Scripts)
-            + ". Nothing was migrated and the prior revision was restarted." + approval);
+            + ". Nothing was migrated and the prior revision was restarted. Review the scripts and upgrade with the"
+            + " manual migrate-only step in the upgrade and rollback guide." + approval);
     }
 
     private string OverridePath()
@@ -131,7 +149,7 @@ internal sealed partial class ComposeProjectController
                     return summary.Refusal;
                 }
             }
-            catch (JsonException)
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
             {
                 // A log line that merely starts with a brace is not the summary.
             }
@@ -143,31 +161,35 @@ internal sealed partial class ComposeProjectController
     private static MigrateOnlySummary? ReadSummary(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object
-            || !root.TryGetProperty("format", out var format) || format.GetString() != MigrateOnlyFormat)
+            || !root.TryGetProperty("format", out var format) || Text(format) != MigrateOnlyFormat)
         {
             return null;
         }
 
-        if (!root.TryGetProperty("code", out var code) || code.GetString() != ComposeExecutorCodes.ContractApprovalRequired
+        if (!root.TryGetProperty("code", out var code) || Text(code) != ComposeExecutorCodes.ContractApprovalRequired
             || !root.TryGetProperty("pendingScripts", out var pending) || pending.ValueKind != JsonValueKind.Array)
         {
             return new MigrateOnlySummary(null);
         }
 
         var scripts = pending.EnumerateArray()
-            .Where(script => script.TryGetProperty("classification", out var kind) && kind.GetString() != "expand")
-            .Select(script => script.TryGetProperty("script", out var name) ? name.GetString() : null)
+            .Where(script => script.ValueKind == JsonValueKind.Object
+                && script.TryGetProperty("classification", out var kind) && Text(kind) != "expand")
+            .Select(script => script.TryGetProperty("script", out var name) ? Text(name) : null)
             .OfType<string>()
             .Where(name => ComposeExecutorRules.ScriptName().IsMatch(name))
             .ToArray();
         return new MigrateOnlySummary(scripts.Length == 0 ? null : new ContractGateRefusal(scripts, ApprovalNonce(root)));
     }
 
+    private static string? Text(JsonElement value)
+        => value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
     private static string? ApprovalNonce(JsonElement root)
         => root.TryGetProperty("contractApproval", out var approval)
             && approval.ValueKind == JsonValueKind.Object
             && approval.TryGetProperty("nonce", out var value)
-            && value.GetString() is { Length: > 0 and <= MaxNonceLength } nonce
+            && Text(value) is { Length: > 0 and <= MaxNonceLength } nonce
             && nonce.All(char.IsAsciiLetterOrDigit)
                 ? nonce : null;
 }
