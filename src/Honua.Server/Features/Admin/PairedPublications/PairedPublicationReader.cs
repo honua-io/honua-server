@@ -149,7 +149,7 @@ internal sealed class PairedPublicationReader(
     private static bool HasStampValue(CloudFile file, string name)
         => file.Metadata.Any(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(pair.Value));
 
-    private static bool IsVersion(string? value)
+    internal static bool IsVersion(string? value)
         => value is { Length: > 0 and <= 96 } && char.IsAsciiLetterOrDigit(value[0]) &&
            value.All(character => char.IsAsciiLetterOrDigit(character) || character == '-');
 }
