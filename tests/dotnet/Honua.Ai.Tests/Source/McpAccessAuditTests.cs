@@ -68,6 +68,22 @@ public sealed class McpAccessAuditTests
     }
 
     [UnitTest]
+    public async Task GovernedProposalRefusedBeforeItRuns_IsStillRecorded()
+    {
+        var auditLog = new RecordingAuditLog();
+        var surface = new McpDataAccessSurface(
+            [new StubProposalTool()], [], NullLogger<McpDataAccessSurface>.Instance);
+
+        var response = await DispatchAsync(
+            surface, Context(auditLog), ("tools/call", """{"name":"honua_propose_stub","arguments":{}}"""));
+
+        response.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var record = auditLog.Events.Should().ContainSingle().Which;
+        (record.Action, record.ResourceId).Should().Be((McpAccessAudit.ToolCallAction, "honua_propose_stub"));
+        record.Outcome.Should().NotBe(AuditOutcome.Success);
+    }
+
+    [UnitTest]
     public async Task AnonymousRead_WritesNoAccessRecord()
     {
         var auditLog = new RecordingAuditLog();
@@ -177,6 +193,25 @@ public sealed class McpAccessAuditTests
 
             return Task.FromResult(McpToolHelpers.SuccessJsonElement(JsonDocument.Parse("{}").RootElement.Clone()));
         }
+    }
+
+    // Without a proposal-evidence verifier the surface refuses this tool before invoking it.
+    private sealed class StubProposalTool : IMcpTool, IEvidenceBoundProposalTool
+    {
+        public string Name => "honua_propose_stub";
+
+        public string OperationId => "stub.propose";
+
+        public string TargetProperty => "targetId";
+
+        public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
+
+        public McpToolDescriptor Describe() =>
+            new() { Name = Name, InputSchema = JsonDocument.Parse("""{"type":"object"}""").RootElement.Clone() };
+
+        public Task<McpToolsCallResult> InvokeAsync(
+            HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("a refused governed call must not run");
     }
 
     private sealed class StubResource : IMcpResource

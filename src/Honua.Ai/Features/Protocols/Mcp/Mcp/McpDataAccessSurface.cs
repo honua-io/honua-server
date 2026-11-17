@@ -681,12 +681,10 @@ internal sealed partial class McpDataAccessSurface
             McpRequestContinuation.Detach(httpContext);
         }
 
-        if (invocationStarted)
-        {
-            result = McpInputGuidance.Enrich(tool, parameters.Arguments, result);
-            var errorCode = result.IsError ? ExtractErrorCode(result) : null;
-            await AuditAsync(httpContext, McpAccessAudit.ToolCall(tool.Name, parameters.Arguments, errorCode)).ConfigureAwait(false);
-        }
+        if (invocationStarted) result = McpInputGuidance.Enrich(tool, parameters.Arguments, result);
+        // Audited even when the governed-proposal evidence check refused the call before the tool ran.
+        var errorCode = result.IsError ? ExtractErrorCode(result) : null;
+        await AuditAsync(httpContext, McpAccessAudit.ToolCall(tool.Name, parameters.Arguments, errorCode)).ConfigureAwait(false);
 
         return result.InputRequired is { } inputRequired
             ? new McpJsonRpcResponse { Id = request.Id, Result = McpModernResults.InputRequired(inputRequired) }

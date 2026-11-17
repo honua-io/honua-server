@@ -8,10 +8,12 @@ internal static class McpLogging
 {
     public const string Info = "info";
 
+    public const string Error = "error";
+
     public const string JobsLogger = "honua.jobs";
 
     private static readonly string[] Levels =
-        ["debug", Info, "notice", "warning", "error", "critical", "alert", "emergency"];
+        ["debug", Info, "notice", "warning", Error, "critical", "alert", "emergency"];
 
     public static bool IsKnownLevel(string? level) =>
         level is not null && Array.IndexOf(Levels, level) >= 0;

@@ -148,14 +148,16 @@ internal sealed class McpJobProgressBridge
         (string JobId, ExecutionJobRecord Record) job,
         CancellationToken cancellationToken)
     {
+        // A failed job is an error, so a session that lowered its level to errors still learns of it.
+        var messageLevel = job.Record.Status == ExecutionJobStatus.Failed ? McpLogging.Error : McpLogging.Info;
         var level = await _sessions.GetLogLevelAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        if (!McpLogging.IsEnabled(level, McpLogging.Info))
+        if (!McpLogging.IsEnabled(level, messageLevel))
         {
             return;
         }
 
         using var data = StatusData(job.JobId, job.Record);
-        await _publisher.PublishMessage(sessionId, McpLogging.Info, McpLogging.JobsLogger, data.RootElement.Clone())
+        await _publisher.PublishMessage(sessionId, messageLevel, McpLogging.JobsLogger, data.RootElement.Clone())
             .ConfigureAwait(false);
     }
 

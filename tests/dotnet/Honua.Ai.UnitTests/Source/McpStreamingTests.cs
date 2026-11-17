@@ -186,6 +186,26 @@ public sealed class McpStreamingTests
     }
 
     [UnitTest]
+    public async Task ProgressBridge_FailedJob_ReachesASessionThatAskedForErrorsOnly()
+    {
+        await using var sessions = new McpSessionManager();
+        var id = sessions.CreateSession();
+        (await sessions.SetLogLevelAsync(id, "error", CancellationToken.None)).Should().BeTrue();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobAsync("job-1", Principal, Arg.Any<CancellationToken>())
+            .Returns(JobRecord(ExecutionJobStatus.Failed, 40, "Executing"));
+        var publisher = CreatePublisher(sessions, out var drafts);
+        var bridge = new McpJobProgressBridge(
+            publisher, sessions, Substitute.For<IServiceScopeFactory>(), NullLogger<McpJobProgressBridge>.Instance);
+
+        await bridge.PumpAsync(id, "job-1", Principal, jobService, TimeSpan.Zero, CancellationToken.None);
+
+        var parameters = drafts.Should().ContainSingle().Subject.Payload.GetProperty("params");
+        parameters.GetProperty("level").GetString().Should().Be("error");
+        parameters.GetProperty("data").GetProperty("status").GetString().Should().Be(nameof(ExecutionJobStatus.Failed));
+    }
+
+    [UnitTest]
     public async Task GetStream_WithoutProvider_DeliversLocalNotificationAndPreservesSession()
     {
         await using var sessions = new McpSessionManager();
