@@ -63,6 +63,21 @@ public sealed class Cql2JsonParameterValidationTests
         (await InvokeAsync(ItemsPath, "cql2-json", filter)).Should().BeFalse();
     }
 
+    [UnitTest]
+    public async Task Filter_UndecodableEscapeWithoutSuspiciousText_IsAdmitted()
+    {
+        const string filter = """{"op":"=","args":[{"property":"\ud800"},"value"]}""";
+        (await InvokeAsync(ItemsPath, "cql2-json", filter)).Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData("""{"op":"\ud800 -- note","args":[{"property":"name"},"value"]}""")]
+    [InlineData("""{"op":"=","args":[{"property":"name"},"\udc00 -- note"]}""")]
+    public async Task Filter_UndecodableEscape_RemainsInspectedAsRawText(string filter)
+    {
+        (await InvokeAsync(ItemsPath, "cql2-json", filter)).Should().BeFalse();
+    }
+
     [UnitTheory]
     [InlineData("/api/v1/admin/services")]
     [InlineData("/ogc/features-extra/collections/0/items")]

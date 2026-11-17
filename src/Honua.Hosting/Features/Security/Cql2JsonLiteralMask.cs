@@ -51,6 +51,11 @@ internal static class Cql2JsonLiteralMask
         {
             return value;
         }
+        catch (InvalidOperationException)
+        {
+            // A lone surrogate escape parses but cannot be decoded; inspect the raw text.
+            return value;
+        }
     }
 
     private static bool IsExplicitJsonLanguage(HttpRequest request)

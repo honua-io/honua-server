@@ -545,6 +545,11 @@ internal sealed class InputValidationMiddleware
             return _odataSystemOptionPattern.Replace(value, string.Empty);
         }
 
+        if (Cql2JsonLiteralMask.AppliesTo(request, paramType, name))
+        {
+            return Cql2JsonLiteralMask.Mask(value);
+        }
+
         // For SQL/CQL filter-expression parameters (where/having/$filter/filter),
         // mask the CONTENT of balanced single-quoted string literals before SQL-
         // injection inspection. Literal content is bound as a parameter by the
@@ -553,11 +558,6 @@ internal sealed class InputValidationMiddleware
         // LIKE pattern '%/*%') are harmless and must not be rejected. Real injection
         // breaks OUT of the quoting (unbalanced quotes / structure outside literals)
         // and remains visible to the pattern after masking (bug hunt).
-        if (Cql2JsonLiteralMask.AppliesTo(request, paramType, name))
-        {
-            return Cql2JsonLiteralMask.Mask(value);
-        }
-
         if (IsSqlFilterExpressionParameter(paramType, name))
         {
             return _quotedStringLiteralPattern.Replace(value, "''");
