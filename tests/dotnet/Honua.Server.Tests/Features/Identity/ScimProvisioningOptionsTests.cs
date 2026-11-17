@@ -40,7 +40,7 @@ public sealed class ScimProvisioningOptionsTests
             .Value.OidcIssuer.Should().Be("https://issuer.example.com/tenant");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("short")]
     [InlineData("                               ")]
     public void EnabledProvisioning_WithShortToken_FailsValidation(string token)
