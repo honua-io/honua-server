@@ -56,8 +56,12 @@ with the requested `route` and `visibility` to `honua_studio_propose_publication
 Every caller receives a proposal and no share URL; the route is served once the
 proposal is approved in Console (see
 [Approve agent changes](../guides/secure/approve-agent-changes.md)). Calling again
-reports the proposal's status (`AwaitingApproval`, `Published`, `Rejected`); send a
-new `idempotencyKey` to propose again after a rejection.
+with the same arguments (or the same optional `idempotencyKey`) reports the original
+proposal's status instead of filing another: `AwaitingApproval`, `Published`,
+`Rejected` or `Denied`. Send a new `idempotencyKey` to propose again after a
+rejection. Without a key, a proposal that failed, was cancelled or expired is
+replaced by a fresh one; with your own key the call says to send a new key. Reusing
+a key for different arguments is refused.
 
 ## Layer identity and observed rendering
 
@@ -89,7 +93,7 @@ every design turn. Respect the actual operation outcome and report the mismatch.
 Do not change deployment policy as an implicit part of a creative edit.
 
 Publication always waits for a person. Every MCP caller is an agent,
-administrators included, so the tool returns `AwaitingApproval`,
+administrators included, so a new proposal returns `AwaitingApproval`,
 `humanConfirmationRequired: true`, and the proposal identity with no share URL.
 A person approves or rejects the proposal in Console; an agent credential cannot
 decide it. The publication does not change the requested audience implicitly.

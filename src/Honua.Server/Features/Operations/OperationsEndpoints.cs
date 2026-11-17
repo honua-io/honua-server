@@ -412,16 +412,16 @@ internal static class OperationsEndpoints
     // The operation catalog lists connectionId and serviceName as ordinary inputs, so a caller that
     // follows the descriptor sends them inside "parameters". Accept either placement for the
     // top-level value; parameters stay as sent because some operations read serviceName from there.
-    private static string? TopLevelValue(string? topLevel, Dictionary<string, string?> parameters, string name)
+    private static string? TopLevelValue(string? topLevel, IReadOnlyDictionary<string, string?> parameters, string name)
     {
-        if (!parameters.TryGetValue(name, out var nested) || string.IsNullOrWhiteSpace(nested))
+        if (!parameters.TryGetValue(name, out var nested) || nested is null)
         {
             return topLevel;
         }
 
         if (string.IsNullOrWhiteSpace(topLevel))
         {
-            return nested;
+            return string.IsNullOrWhiteSpace(nested) ? topLevel : nested;
         }
 
         return string.Equals(topLevel, nested, StringComparison.Ordinal)

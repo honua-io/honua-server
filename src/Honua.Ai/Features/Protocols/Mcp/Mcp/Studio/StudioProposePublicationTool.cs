@@ -6,6 +6,8 @@ using System.Text;
 using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -110,37 +112,45 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         // MCP clients cannot set a per-call header, so the argument comes first. Without either,
         // the call's own arguments are the key: an identical retry returns the original proposal
         // instead of filing a duplicate, which is what the idempotent annotation promises.
-        var idempotencyKey = NonBlank(argument.IdempotencyKey)
-            ?? NonBlank(httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault())
-            ?? DerivedIdempotencyKey([itemId.ToString("D"), versionId.ToString("D"), contentHash, route, visibility, argument.Note ?? string.Empty]);
-        var receipt = await RequireMutationRuntime(httpContext).CreatePublicationRequestAsync(
-            itemId,
-            versionId,
-            contentHash,
-            intent,
-            argument.Note,
-            actorId,
-            new StudioDraftMutationContext
-            {
-                PrincipalId = actorId,
-                TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
-                SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
-                CorrelationId = httpContext.TraceIdentifier,
-                IdempotencyKey = idempotencyKey,
-                AuthorizationOutcome = "authorized",
-                Roles = AgentPrincipal.EffectiveRoles(principal),
-                ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
-                RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
-                    .OrderBy(static scope => scope, StringComparer.Ordinal).ToArray(),
-                // Every MCP caller is an agent, administrators included, so the publication
-                // always waits for a person. Without this floor a direct-execute edition published
-                // first and reported failure after the published pointer had already moved.
-                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
-            },
-            cancellationToken).ConfigureAwait(false);
+        var requestHash = RequestHash([itemId.ToString("D"), versionId.ToString("D"), contentHash, route, visibility, argument.Note ?? string.Empty]);
+        var explicitKey = NonBlank(argument.IdempotencyKey)
+            ?? NonBlank(httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault());
+        if (explicitKey is { Length: > MaxIdempotencyKeyLength })
+        {
+            throw new GeoprocessingValidationException($"'idempotencyKey' must be at most {MaxIdempotencyKeyLength} characters.");
+        }
+
+        var mutationContext = new StudioDraftMutationContext
+        {
+            PrincipalId = actorId,
+            TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+            SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+            CorrelationId = httpContext.TraceIdentifier,
+            IdempotencyRequestHash = requestHash,
+            AuthorizationOutcome = "authorized",
+            Roles = AgentPrincipal.EffectiveRoles(principal),
+            ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
+            RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
+                .OrderBy(static scope => scope, StringComparer.Ordinal).ToArray(),
+            // Every MCP caller is an agent, administrators included, so the publication
+            // always waits for a person. Without this floor a direct-execute edition published
+            // first and reported failure after the published pointer had already moved.
+            ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
+        };
+        var runtime = RequireMutationRuntime(httpContext);
+        var submission = new ProposalSubmission(
+            httpContext,
+            async key => (await runtime.CreatePublicationRequestAsync(
+                    itemId, versionId, contentHash, intent, argument.Note, actorId,
+                    mutationContext with { IdempotencyKey = key },
+                    cancellationToken).ConfigureAwait(false)).Operation,
+            cancellationToken);
+        var (operation, idempotencyKey) = explicitKey is null
+            ? await submission.SubmitDerivedAsync(DerivedKeyPrefix + requestHash).ConfigureAwait(false)
+            : await submission.SubmitAsync(explicitKey).ConfigureAwait(false);
 
         return McpToolHelpers.SuccessResult(
-            ProposalOutput(receipt.Operation, idempotencyKey),
+            ProposalOutput(operation, idempotencyKey),
             StudioMcpJsonContext.Default.McpStudioProposePublicationOutput);
     }
 
@@ -165,7 +175,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         if (!argument.Route.StartsWith('/'))
         {
             throw new GeoprocessingValidationException(
-                $"'route' is a public path and must start with '/', for example '/{argument.Route.Trim()}'.");
+                $"'route' is a public path and must start with '/', for example '/{argument.Route.Trim().TrimStart('/')}'.");
         }
 
         return (itemId, versionId, argument.ContentHash, argument.Route, argument.Visibility);
@@ -173,13 +183,100 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
 
     private static string? NonBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    private static string DerivedIdempotencyKey(string[] parts)
+    private const string DerivedKeyPrefix = "mcp-propose-publication:";
+    private const int MaxIdempotencyKeyLength = 200;
+    private const int MaxDerivedChain = 8;
+
+    // Length-prefixed fields so no two argument sets share an encoding. The runtime scopes
+    // keys to the caller's tenant and principal and binds each key to this hash.
+    private static string RequestHash(string[] parts)
     {
-        // Length-prefixed fields so no two argument sets share an encoding. The runtime scopes
-        // the key to the caller's tenant and principal.
         var material = string.Join('|', parts.Select(static part => $"{part.Length}:{part}"));
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
-        return $"mcp-propose-publication:{Convert.ToHexString(hash).ToLowerInvariant()}";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material))).ToLowerInvariant();
+    }
+
+    // Submits one publication proposal under an idempotency key and decides what a replay means.
+    private sealed class ProposalSubmission(
+        HttpContext httpContext,
+        Func<string, Task<OperationHandle>> submit,
+        CancellationToken cancellationToken)
+    {
+        private readonly DateTimeOffset _startedAt =
+            (httpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+
+        // A caller-chosen key is honoured as given; a replayed proposal that ended without
+        // publishing is refused with the advice to choose a new key.
+        public async Task<(OperationHandle Operation, string Key)> SubmitAsync(string key)
+        {
+            var operation = await SubmitOnceAsync(key).ConfigureAwait(false);
+            return await IsSpentReplayAsync(operation).ConfigureAwait(false)
+                ? throw Spent(operation)
+                : (operation, key);
+        }
+
+        // A derived key must not pin the caller to a proposal that cannot lead anywhere: when
+        // the replayed proposal predates this call and failed, was cancelled or expired, the
+        // next key in a chain seeded by that operation files a fresh proposal.
+        public async Task<(OperationHandle Operation, string Key)> SubmitDerivedAsync(string seed)
+        {
+            var key = seed;
+            for (var hop = 1; ; hop++)
+            {
+                var operation = await SubmitOnceAsync(key).ConfigureAwait(false);
+                if (!await IsSpentReplayAsync(operation).ConfigureAwait(false))
+                {
+                    return (operation, key);
+                }
+
+                if (hop >= MaxDerivedChain)
+                {
+                    throw Spent(operation);
+                }
+
+                key = $"{seed}:{operation.OperationInstanceId}";
+            }
+        }
+
+        private async Task<OperationHandle> SubmitOnceAsync(string key)
+        {
+            var operation = await submit(key).ConfigureAwait(false);
+            return IsRetryConflict(operation)
+                ? throw new GeoprocessingPreconditionFailedException(
+                    $"{operation.Reason} Send a new idempotencyKey for a different publication request.")
+                : operation;
+        }
+
+        private async Task<bool> IsSpentReplayAsync(OperationHandle operation)
+        {
+            if (operation.CreatedAt >= _startedAt.AddMilliseconds(-1))
+            {
+                return false;
+            }
+
+            if (operation.Status is OperationHandleStatus.Failed or OperationHandleStatus.Cancelled)
+            {
+                return true;
+            }
+
+            if (operation.Status != OperationHandleStatus.RequiresApproval || string.IsNullOrWhiteSpace(operation.ProposalId)
+                || httpContext.RequestServices.GetService<IOperationProposalStore>() is not { } proposals)
+            {
+                return false;
+            }
+
+            var proposal = await proposals.GetAsync(operation.ProposalId, cancellationToken).ConfigureAwait(false);
+            return proposal is { Status: OperationProposalStatus.AwaitingApproval }
+                && OperationProposalApprovalWindow.IsElapsed(proposal, _startedAt);
+        }
+
+        private static GeoprocessingPreconditionFailedException Spent(OperationHandle operation) => new(
+            $"The publication proposal for this idempotencyKey ended as {operation.Status} without publishing. "
+            + "Send a new idempotencyKey to propose again.");
+
+        private static bool IsRetryConflict(OperationHandle operation)
+            => operation.Status == OperationHandleStatus.Failed
+                && operation.Result?.Details.TryGetValue("errorKind", out var kind) == true
+                && string.Equals(kind, "conflict", StringComparison.Ordinal);
     }
 
     // A first call always enters approval. A retry with the same key returns that proposal in

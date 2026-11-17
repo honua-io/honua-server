@@ -220,6 +220,25 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    public async Task ProposePublication_KeyReusedForDifferentRoute_IsRefused()
+    {
+        using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
+        var version = await SaveVersionAsync(admin);
+        var key = $$""","idempotencyKey":"reuse-{{Guid.NewGuid():N}}"}""";
+        var first = await CallToolAsync(admin, "honua_studio_propose_publication",
+            ProposeArguments(version, $"/maps/first-{Guid.NewGuid():N}")[..^1] + key);
+
+        var response = await ApprovedStudioDraftCall.RpcAsync(
+            admin,
+            $$$"""{"jsonrpc":"2.0","id":"reuse","method":"tools/call","params":{"name":"honua_studio_propose_publication","arguments":{{{ProposeArguments(version, $"/maps/second-{Guid.NewGuid():N}")[..^1] + key}}}}}""");
+
+        string.Join('\n', DecodedStrings(response)).Should().Contain("Send a new idempotencyKey");
+        response.GetRawText().Should().NotContain(first.GetProperty("proposalId").GetString()!);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
     public async Task ProposePublication_RouteWithoutLeadingSlash_IsRefusedWithThePathForm()
     {
         using var admin = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
@@ -227,13 +246,44 @@ public sealed class StudioAdminMcpPublicationTests : IAsyncLifetime
 
         var response = await ApprovedStudioDraftCall.RpcAsync(
             admin,
-            $$"""{"jsonrpc":"2.0","id":"route","method":"tools/call","params":{"name":"honua_studio_propose_publication","arguments":{{ProposeArguments(version, "parks-map")}}}}""");
+            $$$"""{"jsonrpc":"2.0","id":"route","method":"tools/call","params":{"name":"honua_studio_propose_publication","arguments":{{{ProposeArguments(version, "parks-map")}}}}}""");
 
-        var text = response.GetRawText();
+        // The serializer escapes apostrophes and the message may be nested JSON text, so assert
+        // on decoded string values rather than the raw response.
+        var text = string.Join('\n', DecodedStrings(response));
         text.Should().Contain("must start with '/'").And.Contain("'/parks-map'");
-        text.Should().NotContain("proposalId");
+        response.GetRawText().Should().NotContain("proposalId");
         var lifecycle = _fixture.Services.GetRequiredService<IStudioPackageLifecycleService>();
         (await lifecycle.GetPointersAsync(version.GetProperty("itemId").GetGuid()))!.PublishedVersionId.Should().BeNull();
+    }
+
+    private static IEnumerable<string> DecodedStrings(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                return element.EnumerateObject().SelectMany(property => DecodedStrings(property.Value));
+            case JsonValueKind.Array:
+                return element.EnumerateArray().SelectMany(DecodedStrings);
+            case JsonValueKind.String:
+                var value = element.GetString()!;
+                return value.TrimStart().StartsWith('{') ? [value, .. DecodedJson(value)] : [value];
+            default:
+                return [];
+        }
+    }
+
+    private static IEnumerable<string> DecodedJson(string value)
+    {
+        try
+        {
+            using var nested = JsonDocument.Parse(value);
+            return DecodedStrings(nested.RootElement.Clone()).ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     private static string ProposeArguments(JsonElement version, string route) =>

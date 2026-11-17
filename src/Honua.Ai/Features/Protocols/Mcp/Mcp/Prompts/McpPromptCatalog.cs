@@ -176,8 +176,8 @@ internal static class McpPromptCatalog
             Template:
                 "You are setting up this Honua server and publishing {source} as the service {serviceName}, "
                 + "delivered as a {deliverable}.\n"
-                + "Select tools/list view \"configure\". You are an admin and finish configuration, publication, "
-                + "and the Studio share URL in this session.\n"
+                + "Select tools/list view \"configure\". You are an admin and finish configuration and publication in this "
+                + "session; the Studio publication itself is an approval proposal.\n"
                 + "Work only through MCP tool calls; the Console and browser Studio are not required.\n\n"
                 + "Drive the workflow with the honua MCP tools on that view:\n"
                 + "1. Either call honua_ingest_dataset with inline CSV or GeoJSON content (up to 4 MB), its format "

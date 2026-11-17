@@ -843,6 +843,7 @@ internal sealed class StudioDraftMutationRuntime(
             SchemaName = context.SchemaName,
             CorrelationId = context.CorrelationId,
             IdempotencyKey = ScopeIdempotencyKey(context),
+            IdempotencyRequestHash = context.IdempotencyRequestHash,
             AuthorizationOutcome = context.AuthorizationOutcome,
             Roles = context.Roles,
             ScopeGoverned = context.ScopeGoverned,
@@ -861,6 +862,13 @@ internal sealed class StudioDraftMutationRuntime(
                 AuditId: null,
                 ProposalId: null,
             })
+        {
+            return new StudioDraftMutationReceipt<TResult> { Operation = handle };
+        }
+
+        // A bound retry that conflicts (same key, different content, or still in flight) is
+        // reported as such; reading the stored instance would hand back the other request.
+        if (IsRetryConflict(handle))
         {
             return new StudioDraftMutationReceipt<TResult> { Operation = handle };
         }
@@ -908,6 +916,11 @@ internal sealed class StudioDraftMutationRuntime(
         };
         return (TPayload)bound;
     }
+
+    private static bool IsRetryConflict(OperationHandle handle)
+        => handle.Status == OperationHandleStatus.Failed
+            && handle.Result?.Details.TryGetValue("errorKind", out var kind) == true
+            && string.Equals(kind, "conflict", StringComparison.Ordinal);
 
     private static Guid PublicationRequestId(StudioDraftMutationContext context)
     {

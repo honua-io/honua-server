@@ -94,16 +94,18 @@ public sealed class OperationsEndpointsEnvelopeTests
     [IntegrationTest]
     [Operation(Operations.Configuration)]
     [Endpoint("POST /api/v1/operations/{id}/validate")]
-    public async Task Validate_BlankNestedValue_KeepsTopLevel()
+    public async Task Validate_BlankNestedValueBesideTopLevel_IsRefused()
     {
+        // The body or query of some operations reads serviceName from parameters, so a blank
+        // nested value would travel alongside a different top-level value.
         var (status, captured) = await ValidateAsync(new
         {
             serviceName = "parcels",
             parameters = new Dictionary<string, string> { ["serviceName"] = " " },
         });
 
-        status.Should().Be(HttpStatusCode.OK);
-        captured!.ServiceName.Should().Be("parcels");
+        status.Should().Be(HttpStatusCode.BadRequest);
+        captured.Should().BeNull();
     }
 
     private static async Task<(HttpStatusCode Status, OperationRequest? Captured)> ValidateAsync(object body)
