@@ -172,7 +172,7 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
         });
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.First(candidate =>
-            snapshot.IsRoutable(candidate) && snapshot.ResolveStorageLayerId(candidate).HasValue);
+            snapshot.IsRoutable(candidate) && snapshot.ResolveStorageLayerId(candidate) > 0);
         var storageLayerId = snapshot.ResolveStorageLayerId(publication)!.Value;
 
         var byStorageHandle = await _client.PostAsJsonAsync(Route, RegistrationFor(storageLayerId));

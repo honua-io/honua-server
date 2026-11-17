@@ -349,7 +349,9 @@ internal static class MultidimensionalCoverageEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         // Registrations are keyed by storage handle, which is what the ImageServer, WCS and Zarr
         // readers look them up by; a publication's LayerIndex is Service-local and names another layer.
-        return snapshot.PublicationsForStorageLayer(layerId).Any();
+        return snapshot.Graph.Publications.Any(publication =>
+            snapshot.IsRoutable(publication)
+            && snapshot.ResolveStorageLayerId(publication, resource: null) == layerId);
     }
 
     private static MultidimensionalCoverageRegistrationResponse ToResponse(MultidimensionalCoverageRegistration reg)
