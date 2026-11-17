@@ -1,7 +1,8 @@
 name: Trunk affected run
 
-# Stage 3 verifies new merges since the latest completed CI run. The last
-# green range remains visible separately for investigation while trunk is red.
+# Stage 3 verifies new merges since the latest completed CI run, or since the
+# newest push whose range was deferred to scheduled full CI. The last green
+# range remains visible separately for investigation while trunk is red.
 
 on:
   push:
@@ -72,6 +73,15 @@ jobs:
           COMPLETED_BASE: ${{ steps.base.outputs.completed_base }}
           HEAD_SHA: ${{ steps.base.outputs.head }}
         run: python3 scripts/ci/affected_admission.py "${COMPLETED_BASE}" "${HEAD_SHA}"
+
+      # The next push reads this step from the run history (completed_ci_base.py):
+      # a range already handed to scheduled full CI must not hold back the
+      # selective verification of later merges.
+      - name: Record coverage deferred to scheduled full CI
+        if: steps.base.outputs.superseded == 'false' && steps.admission.outputs.admitted == 'false'
+        env:
+          HEAD_SHA: ${{ steps.base.outputs.head }}
+        run: echo "Merges up to ${HEAD_SHA} are covered by the next scheduled full CI run." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Dispatch CI over the new merges
         if: steps.base.outputs.superseded == 'false' && steps.admission.outputs.admitted == 'true'
