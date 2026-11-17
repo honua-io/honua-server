@@ -237,6 +237,5 @@ public sealed class PostgresWorkflowDefinitionStoreTests
     };
 
     private static WebAppFixture CreateHost() => new WebAppFixture()
-        .WithProductionJobSubstrate()
-        .ConfigureWebHost(builder => builder.UseSetting("ConnectionStrings:redis", string.Empty));
+        .WithProductionJobSubstrate();
 }

@@ -36,8 +36,8 @@ public sealed record EvalReportEnvironment
     [JsonPropertyName("corpusSource")]
     public string CorpusSource { get; init; } = "local-seed";
 
-    [JsonPropertyName("redisAvailable")]
-    public bool RedisAvailable { get; init; }
+    [JsonPropertyName("jobStoreAvailable")]
+    public bool JobStoreAvailable { get; init; }
 
     [JsonPropertyName("corpusPath")]
     public string? CorpusPath { get; init; }

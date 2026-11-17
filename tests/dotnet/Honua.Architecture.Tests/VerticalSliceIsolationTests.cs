@@ -131,7 +131,6 @@ public sealed class VerticalSliceIsolationTests
             "Progress",
             "Raster",
             "RateLimiting",
-            "Redis",
             "Rendering",
             "Resilience",
             "Scene",
