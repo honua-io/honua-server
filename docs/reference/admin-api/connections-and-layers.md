@@ -175,7 +175,10 @@ This operation changes canonical metadata, preserving stored rows, attachment
 parent IDs, storage bindings, filters and access policies. The response includes
 the persisted `editing` object. The update uses the current graph revision and
 revalidates the service/layer binding on concurrency retries. Invalid repairs
-return `400` without persisting other fields in the same patch.
+return `400` without persisting other fields in the same patch. Declaring a
+GlobalID over stored values that repeat a UUID or are not UUIDs returns `409`
+and changes nothing; repair those values and retry. Publishing a managed layer
+with `globalIdField` applies the same check to the source rows and returns `400`.
 
 To change edit policy explicitly, include nullable `create`, `update` and `delete`
 booleans in `editing`. These affect only the selected service's FeatureServer

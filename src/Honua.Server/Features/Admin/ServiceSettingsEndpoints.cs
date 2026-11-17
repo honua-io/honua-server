@@ -462,6 +462,13 @@ internal static partial class ServiceSettingsEndpoints
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
         }
+        catch (MetadataV2GlobalIdIntegrityException ex)
+        {
+            return TypedResults.Problem(
+                title: "Global-ID field conflicts with stored values",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ServiceSettingsLog.UpdateLayerMetadataFailed(logger, serviceName, serviceLayerIndex, ex);
