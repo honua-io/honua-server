@@ -17,7 +17,7 @@ public sealed class ExactMutationCoercionTests
     public void ValidateAttributes_JsonNumberForDecimal_StoresItsOwnDigits(ValidationExtensions.AttributeValidationMode mode)
     {
         var result = Resource(MetadataV2FieldType.Decimal).ValidateAttributesV2(
-            new Dictionary<string, object?> { ["value"] = JsonDocument.Parse("1234.50").RootElement }, mode);
+            new Dictionary<string, object?> { ["value"] = JsonElement.Parse("1234.50") }, mode);
 
         result.IsValid.Should().BeTrue(result.ErrorMessage);
         result.Value!["value"].Should().Be("1234.50");
@@ -54,7 +54,7 @@ public sealed class ExactMutationCoercionTests
     public void ValidateAttributes_JsonExponentBelowDecimalRange_IsRejected()
     {
         var result = Resource(MetadataV2FieldType.Decimal).ValidateAttributesV2(
-            new Dictionary<string, object?> { ["value"] = JsonDocument.Parse("1.5e-30").RootElement },
+            new Dictionary<string, object?> { ["value"] = JsonElement.Parse("1.5e-30") },
             ValidationExtensions.AttributeValidationMode.Json);
 
         result.IsValid.Should().BeFalse();
