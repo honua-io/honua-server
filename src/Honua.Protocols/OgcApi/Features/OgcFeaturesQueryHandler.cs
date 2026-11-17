@@ -562,7 +562,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
                 var fieldNames = ResolveCsvFieldNames(resource, projectedProperties);
-                var csv = OgcResponseFormatter.BuildCsvResponse(features, fieldNames);
+                var csv = OgcResponseFormatter.BuildCsvResponse(features, fieldNames, resource.FindPrimaryIdField()?.Name);
                 return Results.Text(csv, MediaTypes.Csv);
             }
 
@@ -894,7 +894,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
                 var fieldNames = ResolveCsvFieldNames(resource, null);
-                var csv = OgcResponseFormatter.BuildCsvResponse([ogcFeature], fieldNames);
+                var csv = OgcResponseFormatter.BuildCsvResponse([ogcFeature], fieldNames, resource.FindPrimaryIdField()?.Name);
                 return Results.Text(csv, MediaTypes.Csv);
             }
 

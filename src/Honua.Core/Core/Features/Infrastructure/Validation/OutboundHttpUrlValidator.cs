@@ -292,6 +292,14 @@ public static class OutboundHttpUrlValidator
                 return true;
             }
 
+            // IPv4-compatible and IPv4-translated forms carry the endpoint in their low 32 bits.
+            if (bytes.AsSpan(0, 8).IndexOfAnyExcept((byte)0) < 0 &&
+                ((bytes[8] == 0 && bytes[9] == 0 && bytes[10] == 0 && bytes[11] == 0) ||
+                 (bytes[8] == 0xff && bytes[9] == 0xff && bytes[10] == 0 && bytes[11] == 0)))
+            {
+                return IsPrivateOrReservedAddress(new IPAddress(bytes.AsSpan(12, 4)));
+            }
+
             // Teredo (2001::/32) tunnels an obfuscated IPv4 endpoint that cannot be vetted
             // reliably; treat it as reserved for outbound destinations.
             if (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x00)

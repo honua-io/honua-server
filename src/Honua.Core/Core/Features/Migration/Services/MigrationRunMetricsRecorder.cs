@@ -30,12 +30,8 @@ public sealed class MigrationRunMetricsRecorder
     private long _bytesWritten;
     private long _resourceCount;
     private long _featureCount;
-    private long _coverageCount;
     private long _manualReviewCount;
     private long _candidateItemCount;
-    private long _databaseGrowthBytes;
-    private long _databaseGrowthRows;
-    private long _artifactBytes;
     private long _cpuMilliseconds;
     private long _peakMemoryBytes;
     private long _idempotentReplayCount;
@@ -173,16 +169,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    public void RecordCoverageCount(long count)
-    {
-        if (count <= 0) return;
-        lock (_gate)
-        {
-            _coverageCount += count;
-            CurrentPhase()?.AddCoverageCount(count);
-        }
-    }
-
     public void RecordManualReview(long manualReview, long candidateItems)
     {
         if (manualReview <= 0 && candidateItems <= 0) return;
@@ -199,27 +185,6 @@ public sealed class MigrationRunMetricsRecorder
                 _candidateItemCount += candidateItems;
                 CurrentPhase()?.AddCandidateItem(candidateItems);
             }
-        }
-    }
-
-    public void RecordDatabaseGrowth(long rows, long bytes)
-    {
-        if (rows <= 0 && bytes <= 0) return;
-        lock (_gate)
-        {
-            _databaseGrowthRows += Math.Max(0, rows);
-            _databaseGrowthBytes += Math.Max(0, bytes);
-            CurrentPhase()?.AddDatabaseGrowth(rows, bytes);
-        }
-    }
-
-    public void RecordArtifactBytes(long bytes)
-    {
-        if (bytes <= 0) return;
-        lock (_gate)
-        {
-            _artifactBytes += bytes;
-            CurrentPhase()?.AddArtifactBytes(bytes);
         }
     }
 
@@ -336,15 +301,10 @@ public sealed class MigrationRunMetricsRecorder
             CancellationCount = _cancellationCount > 0 ? (int?)_cancellationCount : null,
             CpuMilliseconds = _cpuMilliseconds > 0 ? _cpuMilliseconds : null,
             PeakMemoryBytes = _peakMemoryBytes > 0 ? _peakMemoryBytes : null,
-            DatabaseGrowthBytes = _databaseGrowthBytes > 0 ? _databaseGrowthBytes : null,
-            DatabaseGrowthRows = _databaseGrowthRows > 0 ? _databaseGrowthRows : null,
-            ArtifactBytes = _artifactBytes > 0 ? _artifactBytes : null,
             ResourceCount = _resourceCount > 0 ? _resourceCount : null,
             FeatureCount = _featureCount > 0 ? _featureCount : null,
-            CoverageCount = _coverageCount > 0 ? _coverageCount : null,
             ResourceThroughputPerSecond = ComputeThroughput(_resourceCount, duration),
             FeatureThroughputPerSecond = ComputeThroughput(_featureCount, duration),
-            CoverageThroughputPerSecond = ComputeThroughput(_coverageCount, duration),
             ManualReviewCount = _manualReviewCount > 0 ? (int?)_manualReviewCount : null,
             CandidateItemCount = _candidateItemCount > 0 ? (int?)_candidateItemCount : null,
             ManualReviewRatio = ComputeRatio(_manualReviewCount, _candidateItemCount)
@@ -465,16 +425,8 @@ public sealed class MigrationRunMetricsRecorder
         public void AddResume(long count) => ResumeCount += count;
         public void AddResourceCount(long count) => ResourceCount += count;
         public void AddFeatureCount(long count) => FeatureCount += count;
-        public void AddCoverageCount(long count) => CoverageCount += count;
         public void AddManualReview(long count) => ManualReviewCount += count;
         public void AddCandidateItem(long count) => CandidateItemCount += count;
-        public void AddArtifactBytes(long bytes) => ArtifactBytes += bytes;
-
-        public void AddDatabaseGrowth(long rows, long bytes)
-        {
-            if (rows > 0) DatabaseGrowthRows += rows;
-            if (bytes > 0) DatabaseGrowthBytes += bytes;
-        }
 
         public void Close(DateTimeOffset completedAt)
         {

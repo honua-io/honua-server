@@ -92,6 +92,9 @@ services:
       LayerPublishing__MaterializationTimeoutSeconds: ${LayerPublishing__MaterializationTimeoutSeconds:-300}
       Mcp__WorkflowViews__DefaultView: ${HONUA_MCP_DEFAULT_VIEW:-default}
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=${POSTGRES_PASSWORD:?Initialize quickstart credentials first}"
+      # Match the stock PostgreSQL service's max_connections. This enables the
+      # deployment sizing policy instead of the generic 200-connection default.
+      Database__MaxConnections: "100"
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
       # These values make the documented local reverse-proxy/Console hostnames valid
       # inputs to the production host-validation middleware when this file is reused.
@@ -119,6 +122,7 @@ services:
       AuditLog__ChainVerification__Key: "${AuditLog__ChainVerification__Key:-}"
       FileStorage__Provider: "${HONUA_STORAGE_PROVIDER:-Local}"
       FileStorage__LocalStorage__BasePath: "/var/lib/honua/storage"
+      SceneGeneration__OutputRoot: /var/lib/honua/storage/scenes-generated
       FileStorage__AwsS3__BucketName: "${HONUA_S3_BUCKET:-}"
       FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
       FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"

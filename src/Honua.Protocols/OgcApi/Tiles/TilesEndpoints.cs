@@ -193,7 +193,7 @@ internal static partial class TilesEndpoints
 
         // The per-dataset tileset-metadata document is built for any registered gridset: the two
         // built-in pyramids keep the byte-identical static-descriptor path, while a custom
-        // (operator-defined) gridset is advertised from its registered entry + geometry (#1916).
+        // (operator-defined) gridset is advertised from its registered entry + geometry.
         if (!tileMatrixSetRegistry.TryGet(tileMatrixSetId, out var tileMatrixSetEntry))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
@@ -249,7 +249,7 @@ internal static partial class TilesEndpoints
 
     // Resolves the custom-gridset entry + geometry to advertise in a per-dataset/per-collection
     // tileset document. Returns (null, null) for the two built-in gridsets so BuildTileset keeps
-    // the byte-identical static-descriptor path that the CITE snapshots depend on (#1916).
+    // the byte-identical static-descriptor path that the CITE snapshots depend on.
     private static (TileMatrixSetEntry? Entry, GridGeometry? Geometry) ResolveCustomTilesetGrid(
         TileMatrixSetEntry entry,
         ITileMatrixSetRegistry registry,
@@ -387,7 +387,7 @@ internal static partial class TilesEndpoints
 
         // The per-collection tileset-metadata document is built for any registered gridset: the two
         // built-in pyramids keep the byte-identical static-descriptor path, while a custom
-        // (operator-defined) gridset is advertised from its registered entry + geometry (#1916).
+        // (operator-defined) gridset is advertised from its registered entry + geometry.
         if (!tileMatrixSetRegistry.TryGet(tileMatrixSetId, out var tileMatrixSetEntry))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
@@ -501,8 +501,8 @@ internal static partial class TilesEndpoints
         ITileMatrixSetRegistry tileMatrixSetRegistry,
         bool defaultToRaster = false)
     {
-        // Resolved from the request container rather than taken as a formal parameter
-        // (honua-server#2962): this method and its callers are already at the
+        // Resolved from the request container rather than taken as a formal parameter:
+        // this method and its callers are already at the
         // architecture-enforced endpoint injected-parameter ceiling (DependencyInjectionLimitsTests),
         // and FeatureProviderQueryRouter is optional (null in hosts/tests that never register a
         // secondary/additional provider), matching the DI-optional pattern already used for
@@ -644,15 +644,14 @@ internal static partial class TilesEndpoints
 
             var layer = layers[0];
 
-            // DOCUMENTED DIVERGENCE (#1792 Shape A): the vertical (elevation) selection
-            // parsed from `subset=Z(...)` is RECORDED here (threaded into the raster/vector
-            // handlers, telemetry-tagged) but does NOT change the rendered/queried output —
-            // there is no Z-aware vector or raster source yet. This is an intentional, honest
-            // divergence per AGENTS.md ("intentionally diverges" rule): the previous behavior
-            // blanket-rejected every `subset`; we now accept + record the vertical axis while
-            // still rejecting unknown axes (CITE guard). Applying the Z-slice to a Zarr
-            // datacube render is the deferred Shape B follow-up (after #1790). Direct endpoint
-            // tests cover this record-but-don't-render behavior.
+            // DOCUMENTED DIVERGENCE: the vertical (elevation) selection parsed from
+            // `subset=Z(...)` is RECORDED here (threaded into the raster/vector handlers,
+            // telemetry-tagged) but does NOT change the rendered/queried output — there is no
+            // Z-aware vector or raster source yet. This is an intentional, honest divergence
+            // per AGENTS.md ("intentionally diverges" rule): the vertical axis is accepted and
+            // recorded while unknown axes are still rejected (CITE guard). Applying the
+            // Z-slice to a Zarr datacube render is deferred. Direct endpoint tests cover this
+            // record-but-don't-render behavior.
 
             // Tile envelope in the gridset CRS. For the two built-ins this is byte-identical to
             // the legacy TileMath.GetTileBounds / GetTileBoundsGeographic output (the registry
@@ -697,7 +696,7 @@ internal static partial class TilesEndpoints
 
             // Vector tile path. Built-in gridsets render against the standard WebMercatorQuad /
             // WorldCRS84Quad pyramids (gridGeometry stays null so the byte-identical built-in MVT
-            // path is used). Operator-defined custom gridsets (#1839) now also serve vector tiles:
+            // path is used). Operator-defined custom gridsets now also serve vector tiles:
             // the resolved gridGeometry is threaded into the MVT provider, which derives the tile
             // envelope and target SRID from the gridset and reprojects the stored geometry into the
             // gridset CRS (ST_Transform).
@@ -786,8 +785,7 @@ internal static partial class TilesEndpoints
 
         // Record-but-don't-render the vertical selection (see the documented divergence at
         // the raster/vector dispatch). The feature query below is unchanged — there is no
-        // Z-aware raster source yet (the Zarr datacube Z-slice render is the deferred
-        // Shape B follow-up after #1790).
+        // Z-aware raster source yet (the Zarr datacube Z-slice render is deferred).
         if (verticalSelection is { } selection)
         {
             activity?.SetTag("honua.tile.vertical_selection", selection.RawValue);
@@ -880,7 +878,7 @@ internal static partial class TilesEndpoints
                 break;
             }
 
-            // Routed per layer (#2962): a multi-collection dataset raster tile request can mix
+            // Routed per layer: a multi-collection dataset raster tile request can mix
             // primary- and secondary-provider-backed collections, so each layer's reader must be
             // resolved independently rather than sharing one DI-registered primary reader.
             var usesRoutedReader = TileFeatureProviderResolver.RequiresRouting(layer.Snapshot, layer.Publication);
@@ -957,7 +955,7 @@ internal static partial class TilesEndpoints
             temporalFilter: temporalFilter) with
         {
             // For built-in pyramids the MVT provider keys off OutputSrid (4326 → geographic path,
-            // else WebMercator). For custom gridsets (#1839) the provider derives the target SRID
+            // else WebMercator). For custom gridsets the provider derives the target SRID
             // from the gridGeometry instead, but we still advertise the gridset SRID here so the
             // filter-transform branch sees the correct storage→gridset reprojection.
             OutputSrid = gridGeometry is not null
@@ -1083,7 +1081,7 @@ internal static partial class TilesEndpoints
                 advertiseVectorTiles);
         }
 
-        // Append any operator-defined custom gridsets after the two built-ins (#1916). Default
+        // Append any operator-defined custom gridsets after the two built-ins. Default
         // deployments configure none, so the CITE snapshot list output stays byte-identical.
         foreach (var (entry, geometry) in EnumerateCustomGrids(registry, tileLimits))
         {
@@ -1123,7 +1121,7 @@ internal static partial class TilesEndpoints
                 advertiseVectorTiles);
         }
 
-        // Append any operator-defined custom gridsets after the two built-ins (#1916). Default
+        // Append any operator-defined custom gridsets after the two built-ins. Default
         // deployments configure none, so the CITE snapshot list output stays byte-identical.
         foreach (var (entry, geometry) in EnumerateCustomGrids(registry, tileLimits))
         {
@@ -1285,7 +1283,7 @@ internal static partial class TilesEndpoints
         // formula-driven limit path so the per-dataset/per-collection tileset documents stay
         // byte-identical for the CITE snapshots. A custom (operator-defined) gridset is advertised
         // from its registered TileMatrixSetEntry (CRS/URI) and its own grid geometry (full-coverage
-        // per-level limits) — #1916.
+        // per-level limits).
         string crs;
         string uri;
         ImmutableArray<TileMatrixSetLimit> matrixLimits;
@@ -1427,7 +1425,7 @@ internal static partial class TilesEndpoints
                 }
 
                 // Tiles are a read surface: consult the per-operation resolver for
-                // the query grant first (#1376), matching ResolveCollectionLayer so
+                // the query grant first, matching ResolveCollectionLayer so
                 // both tile routes enforce the same authorization.
                 var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
                     context,
@@ -1566,7 +1564,7 @@ internal static partial class TilesEndpoints
         }
 
         // Tiles are a read surface: consult the per-operation resolver for the
-        // query grant first (#1376), falling back to the coarse AccessPolicy.
+        // query grant first, falling back to the coarse AccessPolicy.
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
             context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError is not null)
@@ -1927,9 +1925,9 @@ internal static partial class TilesEndpoints
             parsedTemporalFilters[layer.StorageLayerId] = temporalFilter;
 
             // Record the requested vertical selection for every layer in the request,
-            // parallel to the temporal filter. Shape A (#1792): recorded only — no
-            // per-layer elevation validation against advertised values exists yet (the
-            // datacube vertical extent is the deferred Shape B follow-up after #1790).
+            // parallel to the temporal filter. Recorded only — no per-layer elevation
+            // validation against advertised values exists yet (the datacube vertical
+            // extent is deferred).
             parsedVerticalSelections[layer.StorageLayerId] = requestedVerticalSelection;
         }
 
@@ -1988,7 +1986,7 @@ internal static partial class TilesEndpoints
             return string.Equals(normalized, OgcTilesUtilities.WebMercatorCrs, StringComparison.OrdinalIgnoreCase);
         }
 
-        // Custom gridset (#1839): tiles are delivered in the gridset CRS, so accept the gridset's
+        // Custom gridset: tiles are delivered in the gridset CRS, so accept the gridset's
         // own CRS URI or the equivalent EPSG code form.
         if (string.Equals(normalized, tileMatrixSetEntry.Crs, StringComparison.OrdinalIgnoreCase))
         {

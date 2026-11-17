@@ -17,7 +17,8 @@ internal readonly record struct GeoJsonFeatureBuildOptions(
     bool IncludeObjectIdAlias = false,
     bool IncludeAdditionalAttributes = false,
     bool ResolveIdFromProperties = false,
-    GeoJsonFeatureBaseBuilder.PreparedSchema? Schema = null);
+    GeoJsonFeatureBaseBuilder.PreparedSchema? Schema = null,
+    IReadOnlySet<string>? ExcludedAdditionalProperties = null);
 
 internal static partial class GeoJsonFeatureBaseBuilder
 {
@@ -130,7 +131,8 @@ internal static partial class GeoJsonFeatureBaseBuilder
                     continue;
                 }
 
-                if (ContainsKeyIgnoreCase(properties, fieldName))
+                if (ContainsKeyIgnoreCase(properties, fieldName) ||
+                    options.ExcludedAdditionalProperties?.Contains(fieldName) == true)
                 {
                     continue;
                 }

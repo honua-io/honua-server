@@ -20,7 +20,7 @@ internal static class DeployPromotionPolicy
 {
     internal const string PromotionGateParameterKey = "deployment.promotion_gate";
 
-    // An explicit gate wins; otherwise self-hosted rolling and local Compose default to health-only, and every other target stays on the telemetry gate.
+    // An explicit gate wins; otherwise local Compose defaults to health-only, and every other target stays on the telemetry gate.
     public static DeployPromotionGateMode Resolve(DeployOperationSpec? spec)
     {
         if (spec == null)
@@ -41,13 +41,13 @@ internal static class DeployPromotionPolicy
                 case "manual":
                     return DeployPromotionGateMode.Manual;
                 default:
-                    // Plan-time Validate rejects an unrecognized value (#4617); this fallback only
+                    // Plan-time Validate rejects an unrecognized value; this fallback only
                     // applies to operations persisted before that validation existed.
                     break;
             }
         }
 
-        return spec.TargetKind is DeployTargetKind.SelfHostedRolling or DeployTargetKind.LocalCompose
+        return spec.TargetKind is DeployTargetKind.LocalCompose
             ? DeployPromotionGateMode.Health
             : DeployPromotionGateMode.Telemetry;
     }

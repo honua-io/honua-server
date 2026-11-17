@@ -46,14 +46,13 @@ internal static class OperationsServiceCollectionExtensions
         }
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
         // The real verifier's constructor requires the durable proposal store, and the
-        // dispatcher requires a verifier, so hosts composed without the store failed
-        // ValidateOnBuild at boot (trunk red 2026-08-29, run 33241561197 — third of
-        // the family after #3614/#3617). Selection happens at RESOLUTION time, not
+        // dispatcher requires a verifier, so hosts composed without the store would
+        // fail ValidateOnBuild at boot. Selection happens at RESOLUTION time, not
         // registration time: test fixtures legitimately add the store after this
         // method runs (post-Program ConfigureServices), and a registration-time
         // snapshot would lock them onto the refusing verifier forever. Hosts whose
         // final composition lacks the store get the fail-closed verifier: replay can
-        // never verify without the durable authority (ruling 4).
+        // never verify without the durable authority.
         services.TryAddScoped<IOperationApprovalReplayVerifier>(sp =>
             sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is { } proposalStore &&
             Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(proposalStore)
@@ -105,7 +104,7 @@ internal static class OperationsServiceCollectionExtensions
             {
                 services.AddHostedService<OperationRuntimeStartupValidator>();
                 // Janitor sweeps open Redis and the database on an interval. The event-handler
-                // Lambdas are invoked to run one tick, then release their pool (honua-server#6515).
+                // Lambdas are invoked to run one tick, then release their pool.
                 if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
                 {
                     services.AddHostedService<PlannedProposalReconciler>();
@@ -227,14 +226,14 @@ internal static class OperationsServiceCollectionExtensions
         }
 
         // Legacy adapters register UNCONDITIONALLY and resolve their control-plane
-        // actuator at USE time. The former registration-time services.Any gate was
-        // an ordering snapshot: hosts that register control-plane executors after
-        // AddOperationsToolset (post-Program ConfigureServices) got no adapters, so
-        // the dispatcher had no compatibility actuator and converge returned
-        // NotSupported with null operation ids (trunk red 2026-08-29, run
-        // 33249627814 — same ordering class the #3621 review caught for the replay
-        // verifier). The marker keeps repeated AddOperationsToolset calls
-        // idempotent; degraded hosts get a typed use-time refusal from the adapter.
+        // actuator at USE time. A registration-time services.Any gate would be an
+        // ordering snapshot: hosts that register control-plane executors after
+        // AddOperationsToolset (post-Program ConfigureServices) would get no
+        // adapters, so the dispatcher would have no compatibility actuator and
+        // converge would return NotSupported with null operation ids (the same
+        // ordering hazard as the replay verifier above). The marker keeps repeated
+        // AddOperationsToolset calls idempotent; degraded hosts get a typed
+        // use-time refusal from the adapter.
         if (!services.Any(descriptor => descriptor.ServiceType == typeof(LegacyAdapterRegistrationMarker)))
         {
             services.AddSingleton<LegacyAdapterRegistrationMarker>();

@@ -60,7 +60,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 
         // Fall back to the stable external subject (SCIM externalId / OIDC sub) so a
         // deferred security snapshot keyed by the OIDC subject resolves the managed record
-        // even when the SCIM userName differs from the subject (honua-server#3141).
+        // even when the SCIM userName differs from the subject.
         var matches = _users.Values
             .Where(user => ExternalIdEquals(user, userId, issuer: null, requireIssuerMatch: false))
             .Take(2)
@@ -128,7 +128,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         return Task.FromResult(true);
     }
 
-    // ---- IScimUserStore (#510) -------------------------------------------------------
+    // ---- IScimUserStore -------------------------------------------------------
 
     public Task<ManagedUser?> CreateUserAsync(ScimUserProvisioning provisioning, CancellationToken cancellationToken = default)
     {
@@ -219,7 +219,7 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
                 UserId = existing.UserId,
                 // external_id is only overwritten when the IdP supplies one: losing the stable
                 // subject on a PUT that omits it would orphan in-flight deferred snapshots
-                // keyed by that subject (honua-server#3141).
+                // keyed by that subject.
                 ExternalId = externalId,
                 ExternalIssuer = externalIssuer,
                 DisplayName = string.IsNullOrWhiteSpace(provisioning.DisplayName) ? provisioning.UserName : provisioning.DisplayName,

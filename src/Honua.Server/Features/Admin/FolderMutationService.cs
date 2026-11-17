@@ -49,9 +49,14 @@ internal static class FolderMutationService
         }
         catch (Exception exception) when (FolderMutationFailure.Handles(exception))
         {
-            return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.From(exception)));
+            var refusal = FolderMutationFailure.From(exception);
+            return new(null, null, new FolderExecutionFailure.Mutation(
+                refusal == FolderMutationFailure.SnapshotChanged ? SnapshotChanged(replay) : refusal));
         }
     }
+
+    private static FolderMutationFailure SnapshotChanged(FolderReplayAuthority? replay)
+        => replay is null ? FolderMutationFailure.SnapshotChanged : FolderMutationFailure.ApprovalSnapshotChanged;
 
     private static async Task<FolderExecutionFailure?> AuthorizeOperatorAsync(
         ClaimsPrincipal principal, IServiceProvider services, CancellationToken cancellationToken)
@@ -79,13 +84,13 @@ internal static class FolderMutationService
         var requester = execution.Principal;
         if (replay is not null)
         {
-            var currentRequester = await FolderApprovalAuthorization.ResolveCurrentRequesterAsync(replay.Proposal, services, cancellationToken).ConfigureAwait(false);
-            if (currentRequester is null) return new(null, null, new FolderExecutionFailure.Replay());
-            requester = currentRequester;
+            var current = await FolderApprovalAuthorization.ResolveCurrentRequesterAsync(replay.Proposal, services, cancellationToken).ConfigureAwait(false);
+            if (current.Failure is not null) return new(null, null, new FolderExecutionFailure.Mutation(current.Failure));
+            requester = current.Requester!;
         }
         var snapshot = await store.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot.Etag != execution.ExpectedEtag)
-            return new(null, null, new FolderExecutionFailure.Mutation(FolderMutationFailure.SnapshotChanged));
+            return new(null, null, new FolderExecutionFailure.Mutation(SnapshotChanged(replay)));
         var mutation = execution.Command.Apply(snapshot.Graph, folderTenant);
         var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
         {

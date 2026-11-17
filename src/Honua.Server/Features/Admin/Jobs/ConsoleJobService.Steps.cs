@@ -14,7 +14,7 @@ internal sealed partial class ConsoleJobService
 {
     // Metadata keys an executor / the GP devkit may persist onto an execution-log
     // entry to carry the per-step command line. Surfaced (sanitized) as the step's
-    // Command so the console renders it once the devkit (#2128) begins recording it.
+    // Command so the console renders it once the devkit begins recording it.
     private static readonly string[] CommandMetadataKeys =
     [
         "gdal.command",

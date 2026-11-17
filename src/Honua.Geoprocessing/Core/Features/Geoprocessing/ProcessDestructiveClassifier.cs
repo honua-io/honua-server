@@ -37,7 +37,7 @@ internal static class ProcessDestructiveClassifier
     // Canonical ids that terminate a plan by WRITING the input FeatureCollection
     // out to an external or caller-owned destination. These produce durable
     // side-effects (rows in an external/catalog database, files on disk) and so
-    // must pass the same approval gate as destructive mutations (#2262).
+    // must pass the same approval gate as destructive mutations.
     // sink.quarantine is deliberately excluded: it is the internal dead-letter
     // half of the row-level-error contract (it only persists rows the pipeline
     // already rejected) in its own immutable job/attempt output namespace.

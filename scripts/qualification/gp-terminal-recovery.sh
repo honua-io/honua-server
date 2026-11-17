@@ -61,11 +61,11 @@ terminal_assert_public_result() {
 }
 
 terminal_job_record() {
-  compose exec -T redis redis-cli --raw GET "controlplane:job:$job"
+  job_record "$job"
 }
 
 terminal_package_record() {
-  compose exec -T redis redis-cli --raw GET "controlplane:job:gp-result:$job"
+  result_package_record "$job"
 }
 
 run_terminal_result_recovery() {
@@ -106,7 +106,7 @@ run_terminal_result_recovery() {
     and all((.[0], $original[0][0]); .Config.Image == $image
       and .Config.Labels["org.opencontainers.image.revision"] == $sha)' "$replacement" >/dev/null || return 1
   record_disruption worker terminal-committed-registration-pending recovered
-  package_before_read="$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:gp-result:$job")" || return 1
+  package_before_read="$(result_package_exists "$job")" || return 1
   jq -n --argjson before "$package_before" --argjson before_read "$package_before_read" \
     '{at_crash:$before,after_worker_replacement_before_read:$before_read}' \
     > "$receipt_root/$scenario-package-absence.json" || return 1

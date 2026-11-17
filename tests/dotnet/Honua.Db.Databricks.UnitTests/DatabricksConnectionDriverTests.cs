@@ -59,6 +59,23 @@ public class DatabricksConnectionDriverTests
     }
 
     [Fact]
+    public async Task TestConnectionAsync_LoopbackDestination_ReturnsUnhealthyWithoutConnecting()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var endpoint = (IPEndPoint)listener.LocalEndpoint;
+        var driver = CreateDriver();
+        var connectionString = driver.BuildConnectionString(new ConnectionTarget(
+            "127.0.0.1", endpoint.Port, "warehouse", "token", "secret", SslMode.Require));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+
+        var status = await driver.TestConnectionAsync(connectionString, cancellation.Token);
+
+        Assert.Equal(ConnectionHealthStatus.Unhealthy, status);
+        Assert.False(listener.Pending());
+    }
+
+    [Fact]
     public async Task TestConnectionAsync_StubSelectOne_ReturnsHealthy()
     {
         const string json = """

@@ -23,7 +23,7 @@ internal static class SpatialAnalyticsServiceCollectionExtensions
 
         // The canonical analytics selection translation, shared with the source.honua-layer
         // geoprocessing connector so layer-sourced jobs honor geometry/time selectors exactly
-        // as the synchronous analytics endpoints do (#4624).
+        // as the synchronous analytics endpoints do.
 #if !HONUA_EXCLUDE_GEOSERVICES
         services.TryAddScoped<SpatialReferenceResolver>();
         services.TryAddScoped<ILayerSelectionFilterTranslator, AnalyticsLayerSelectionFilterTranslator>();

@@ -97,7 +97,7 @@ internal sealed class ImageServerMeasureHandler
 
             var normalizedOperation = operation.ToLowerInvariant();
 
-            // DEM-backed height mensuration (#1879): heightFromBaseAndTop differences the ground
+            // DEM-backed height mensuration: heightFromBaseAndTop differences the ground
             // elevation at the base point and the top point against the raster's associated DEM
             // (raster_sensor_metadata.dem_source). Shadow-based height and pure-3D operations still
             // require sensor exterior orientation / shadow geometry that is not modeled, so they
@@ -109,7 +109,7 @@ internal sealed class ImageServerMeasureHandler
                     ImageServerRequestValues.GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
             }
 
-            // Shadow-based height mensuration (#2667/ADR-0065): the object height is derived from the
+            // Shadow-based height mensuration (ADR-0065): the object height is derived from the
             // measured ground shadow length and the sun elevation modeled on the raster. Both the
             // base-and-top-shadow and top-and-top-shadow variants use height = shadowLength ·
             // tan(sunElevation); they return an honest 501 when no sun geometry is modeled.
@@ -586,7 +586,7 @@ internal sealed class ImageServerMeasureHandler
         // in the input coordinate space (the signed-area / shoelace centroid, not a vertex mean).
         // Geographic inputs unwrap longitudes so antimeridian-crossing rings do not skew the result.
         // The geographic determination is resolved by the caller through the registry-backed
-        // IGeographicSridClassifier (#2794), falling back to the static heuristic when unavailable.
+        // IGeographicSridClassifier, falling back to the static heuristic when unavailable.
         var unwrapLongitudes = geometry.Srid is not null && sridIsGeographic;
         var (centroidX, centroidY) = ImageServerMensurationMath.SignedAreaCentroid(ring, unwrapLongitudes);
         return new MeasurePoint(centroidX, centroidY, null, geometry.Srid);

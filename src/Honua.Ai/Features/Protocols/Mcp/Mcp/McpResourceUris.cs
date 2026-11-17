@@ -33,8 +33,6 @@ internal static class McpResourceUris
 
     public static string ResultPackageUri(string resultPackageId) => $"{ResultsPrefix}{resultPackageId}";
 
-    public static string JobReportUri(string jobId) => $"{JobsPrefix}{jobId}{JobReportSuffix}";
-
     public static string ProposalUri(string proposalId) => $"{ProposalsPrefix}{proposalId}";
 
     public static string WorkspaceUri(string workspaceId) => $"{WorkspacesPrefix}{workspaceId}";

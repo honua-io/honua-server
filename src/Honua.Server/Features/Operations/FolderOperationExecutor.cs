@@ -66,7 +66,7 @@ internal sealed class FolderOperationExecutor(
             CreatedAt = now,
             UpdatedAt = now,
             Status = success ? OperationHandleStatus.Completed : OperationHandleStatus.Failed,
-            Reason = success ? null : $"Admin API returned {response.Status} ({Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(response.Status)}).",
+            Reason = success ? null : FailureReason(response, context),
             Result = new OperationResultSummary
             {
                 Summary = $"{definition.Title} {(success ? "completed" : "failed")}.",
@@ -74,6 +74,11 @@ internal sealed class FolderOperationExecutor(
             }
         };
     }
+
+    private static string FailureReason(FolderOperationResponse response, OperationPolicyContext context)
+        => !string.IsNullOrWhiteSpace(context.ApprovedProposalId) && response.ApprovalRefusal is { } refusal
+            ? refusal
+            : $"Admin API returned {response.Status} ({Microsoft.AspNetCore.WebUtilities.ReasonPhrases.GetReasonPhrase(response.Status)}).";
 
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
         => Task.FromResult(OperationStatusProjection.FromHandle(handle));

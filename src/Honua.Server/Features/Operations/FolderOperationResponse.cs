@@ -16,6 +16,9 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
 {
     internal string? Location { get; init; }
 
+    /// <summary>Classified approval-freshness refusal detail an approved replay may surface as its failure reason.</summary>
+    internal string? ApprovalRefusal { get; init; }
+
     internal Dictionary<string, string> Details()
     {
         var details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = Payload };
@@ -44,7 +47,10 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
     {
         FolderExecutionFailure.Replay => HttpProblem(403, FolderApprovalAuthorization.FreshProposalRequired),
         FolderExecutionFailure.Mutation mutation => mutation.Refusal.Status == 404
-            ? new(404, string.Empty) : HttpProblem(mutation.Refusal.Status, mutation.Refusal.Detail),
+            ? new(404, string.Empty) : HttpProblem(mutation.Refusal.Status, mutation.Refusal.Detail) with
+            {
+                ApprovalRefusal = IsApprovalRefusal(mutation.Refusal) ? mutation.Refusal.Detail : null
+            },
         FolderExecutionFailure.Authorization authorization => Authorization(authorization.Decision),
         FolderExecutionFailure.Approval approval => new(403, JsonSerializer.Serialize(new ApprovalDeniedProblemDetails
         {
@@ -60,6 +66,9 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
         FolderExecutionFailure.AffectedServices affected => AffectedServices(affected.Result),
         _ => throw new InvalidOperationException("Unknown folder execution failure.")
     };
+
+    private static bool IsApprovalRefusal(FolderMutationFailure refusal)
+        => refusal == FolderMutationFailure.ApprovalSnapshotChanged || refusal == FolderMutationFailure.RequesterAuthorizationChanged;
 
     private static FolderOperationResponse AffectedServices(FolderAuthorizationResult result)
     {

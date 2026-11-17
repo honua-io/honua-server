@@ -40,8 +40,8 @@ internal sealed class OgcStylesConformanceHandler
                 // Style validation (Prefer: handling=strict / ?validate)
                 ConformanceBase + "style-validation",
 
-                // Manage styles - PARTIAL in Phase 1 (PUT only; POST/DELETE arrive with
-                // the Phase 2 independent style catalog, issue #1389).
+                // Manage styles - PARTIAL (PUT only; POST/DELETE need an independent
+                // style catalog).
                 ConformanceBase + "manage-styles"
             ]
         };

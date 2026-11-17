@@ -81,7 +81,7 @@ internal sealed class CreateAppPackageTool : IMcpTool
 
         // Persist before returning, for the same reason CreateMapPackageTool does:
         // the honua://app-packages/{id} URI in this response is only honourable if
-        // AppPackageResource can find the draft without a deployment (honua-server#3262).
+        // AppPackageResource can find the draft without a deployment.
         await _draftStore.SaveAppDraftAsync(result.Package, ownerId, cancellationToken).ConfigureAwait(false);
 
         var output = new McpPackageDraftOutput

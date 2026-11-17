@@ -58,7 +58,7 @@ internal static partial class AccessPolicyHelpers
 
     // Portal tokens travel as an Authorization or X-Esri-Authorization bearer, the `token` query
     // parameter, or a form field the portal-token handler has already parsed. A caller that tried
-    // any of them is told to present a bearer again, not an admin API key (honua-server#4778).
+    // any of them is told to present a bearer again, not an admin API key.
     private static bool AttemptedBearerCredential(HttpRequest request)
     {
         static bool IsBearer(StringValues values) => values.Any(value => value is not null
@@ -204,7 +204,7 @@ internal static partial class AccessPolicyHelpers
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        // Tenant scope gates before grant evaluation (#1580): a per-operation grant
+        // Tenant scope gates before grant evaluation: a per-operation grant
         // must never authorize access to another tenant's resource.
         if (applyTenantScope &&
             !(MetadataV2TenantVisibility.IsVisibleToTenant(resource, tenantId)
@@ -237,7 +237,7 @@ internal static partial class AccessPolicyHelpers
                 cancellationToken,
                 requestCache).ConfigureAwait(false);
 
-            // A built-in wildcard grant does not skip an explicit role list (#6358).
+            // A built-in wildcard grant does not skip an explicit role list.
             // A grant that names this service and layer is an explicit allow and stands.
             if (grantDecision.IsAllowed)
             {
@@ -499,21 +499,6 @@ internal static partial class AccessPolicyHelpers
 
         var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
         return evaluator.Evaluate(AnonymousPrincipal, resource.AccessPolicy, service?.AccessPolicy, scope).IsAllowed;
-    }
-
-    public static bool AllowsAnonymousServiceAccess(
-        HttpContext context,
-        MetadataV2Service service,
-        AccessScope scope = AccessScope.Read)
-    {
-        ArgumentNullException.ThrowIfNull(service);
-        if (!TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
-        {
-            return false;
-        }
-
-        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
-        return evaluator.Evaluate(AnonymousPrincipal, null, service.AccessPolicy, scope).IsAllowed;
     }
 
     public static async Task<IResult?> RequireAnyMutatingOperationAccessAsync(

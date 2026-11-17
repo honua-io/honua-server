@@ -11,8 +11,9 @@ namespace Honua.Infrastructure.SharedCaching;
 // item "#tag" forgets every object carrying that tag. The CDN compares tags without regard to case, so one tag reaches every
 // spelling of an address under which a response was stored, which a path prefix cannot, and a tag is not a wildcard path.
 //
-// Two kinds of tag: what a response is about (service, layer, style), and the address scope an edit used to invalidate by
-// path. Edits invalidate by scope, so a response drawn from several layers, or with no single subject, is still reached.
+// Two kinds of tag: what a response is about (service, layer, style), and the address scope (the path prefix an edit would
+// otherwise invalidate). Edits invalidate by scope, so a response drawn from several layers, or with no single subject, is
+// still reached.
 internal static class CdnCacheTags
 {
     // The CDN accepts visible ASCII without commas, up to this many characters, and up to 50 tags per object; a response carries at most four.

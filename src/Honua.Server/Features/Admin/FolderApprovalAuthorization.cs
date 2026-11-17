@@ -146,34 +146,36 @@ internal static class FolderApprovalAuthorization
         return expiry;
     }
 
-    internal static async Task<bool> IsCurrentAsync(OperationProposal proposal, IServiceProvider services, CancellationToken cancellationToken)
-        => await ResolveCurrentRequesterAsync(proposal, services, cancellationToken).ConfigureAwait(false) is not null;
+    internal static async Task<FolderMutationFailure?> ValidateCurrentAsync(OperationProposal proposal, IServiceProvider services, CancellationToken cancellationToken)
+        => (await ResolveCurrentRequesterAsync(proposal, services, cancellationToken).ConfigureAwait(false)).Failure;
 
-    internal static async Task<ClaimsPrincipal?> ResolveCurrentRequesterAsync(
+    internal static async Task<FolderRequesterCheck> ResolveCurrentRequesterAsync(
         OperationProposal proposal, IServiceProvider services, CancellationToken cancellationToken)
     {
+        var changed = new FolderRequesterCheck(null, FolderMutationFailure.RequesterAuthorizationChanged);
         var authorization = proposal.Plan.FolderAuthorization;
         if (authorization is null || authorization.OperationId != proposal.OperationId || authorization.RequesterId != proposal.RequestedBy ||
-            authorization.ExpiresAt <= services.GetRequiredService<TimeProvider>().GetUtcNow()) return null;
+            authorization.ExpiresAt <= services.GetRequiredService<TimeProvider>().GetUtcNow()) return changed;
         try
         {
-            if (proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan)) return null;
+            if (proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan)) return changed;
             var replay = FolderReplayRequest.ReadSealedRequest(proposal.Plan, proposal.OperationId, proposal.TenantId);
-            if (replay.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) return null;
+            if (replay.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) return changed;
+            var policy = await PolicyRevisionAsync(new(services, authorization, null), cancellationToken).ConfigureAwait(false);
+            if (authorization.PolicyRevision != policy.Revision) return changed;
             var snapshot = await services.GetRequiredService<IMetadataV2GraphStore>()
                 .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             if (snapshot.Etag != authorization.SnapshotEtag ||
-                replay.Request.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag) return null;
-            var policy = await PolicyRevisionAsync(new(services, authorization, null), cancellationToken).ConfigureAwait(false);
-            if (authorization.PolicyRevision != policy.Revision) return null;
+                replay.Request.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag)
+                return new(null, FolderMutationFailure.ApprovalSnapshotChanged);
             var affected = BuildMutation(snapshot.Graph, replay.Request, proposal.TenantId)
                 .AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal);
-            return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal) ? policy.Requester : null;
+            return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal) ? new(policy.Requester, null) : changed;
         }
         catch (Exception exception) when (exception is FolderProposalRefusal or JsonException or ArgumentException or KeyNotFoundException ||
             (exception is InvalidOperationException && exception is not ServiceUnavailableException))
         {
-            return null;
+            return changed;
         }
     }
 
@@ -348,3 +350,6 @@ internal sealed class FolderProposalRefusal(string message, OperationGatewayOutc
 {
     internal OperationGatewayOutcome Outcome { get; } = outcome;
 }
+
+/// <summary>Current requester for an approved folder replay, or the classified refusal that stops it.</summary>
+internal sealed record FolderRequesterCheck(ClaimsPrincipal? Requester, FolderMutationFailure? Failure);

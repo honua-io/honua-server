@@ -46,7 +46,7 @@ internal static partial class AttachmentHandler
         try
         {
             // Store calls keep the storage layer id. URLs use the route layer id, which is
-            // what download routes resolve (#6136). Omitting it preserves callers that pass
+            // what download routes resolve. Omitting it preserves callers that pass
             // one id for both.
             var urlLayerId = publicLayerId ?? layerId;
             var uniqueFeatureIds = featureIds

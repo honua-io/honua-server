@@ -347,28 +347,44 @@ public sealed partial class FolderOperationIntegrationTests
         public AuthenticateResult? AuthenticateResult { get; set; }
     }
 
-    private sealed class FolderRequesterLicense : ILicenseEntitlementService
+    internal sealed class FolderRequesterLicense : ILicenseEntitlementService
     {
         public TestLicenseEntitlementService Current { get; set; } = new(HonuaEdition.Pro);
+        public void Reset() => Current = new(HonuaEdition.Pro);
         public LicenseSnapshot GetSnapshot() => Current.GetSnapshot();
         public LicenseEntitlementDecision CheckEntitlement(string entitlementKey) => Current.CheckEntitlement(entitlementKey);
     }
 
-    private sealed class FolderRequesterMembership : IPrincipalMembershipSource
+    internal sealed class FolderRequesterMembership : IPrincipalMembershipSource
     {
         public PrincipalMembership? Current { get; set; } = new(true, ["admin", "original-membership"]);
         public int? ReadsBeforeOutage { get; set; }
+        public int ReadsBeforeCatalogChange { get; set; }
+        public Func<Task>? ChangeCatalog { get; set; }
 
-        public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
+        public void Reset()
+        {
+            Current = new(true, ["admin", "original-membership"]);
+            ReadsBeforeOutage = null;
+            ReadsBeforeCatalogChange = 0;
+            ChangeCatalog = null;
+        }
+
+        public async Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
         {
             if (principalId != "folder-requester")
-                return Task.FromResult<PrincipalMembership?>(null);
+                return null;
             if (ReadsBeforeOutage is { } remaining)
             {
-                if (remaining == 0) return Task.FromException<PrincipalMembership?>(new ServiceUnavailableException("Membership service unavailable."));
+                if (remaining == 0) throw new ServiceUnavailableException("Membership service unavailable.");
                 ReadsBeforeOutage = remaining - 1;
             }
-            return Task.FromResult(Current);
+            if (ChangeCatalog is { } change && ReadsBeforeCatalogChange-- == 0)
+            {
+                ChangeCatalog = null;
+                await change();
+            }
+            return Current;
         }
     }
 

@@ -5,12 +5,12 @@ namespace Honua.Infrastructure.Authentication;
 
 internal static class AdminPasswordValidation
 {
-    public static void ValidateProductionPassword(string adminPassword)
+    private static void ValidatePasswordComplexity(string adminPassword)
     {
         if (adminPassword.Length < 16)
         {
             throw new InvalidOperationException(
-                "Admin password must be at least 16 characters in production environment");
+                "Admin password must be at least 16 characters outside Development and Test environments");
         }
 
         var hasUpper = adminPassword.Any(char.IsUpper);
@@ -21,19 +21,20 @@ internal static class AdminPasswordValidation
         if (!(hasUpper && hasLower && hasDigit && hasSpecial))
         {
             throw new InvalidOperationException(
-                "Admin password must contain uppercase, lowercase, digit, and special characters in production environment");
+                "Admin password must contain uppercase, lowercase, digit, and special characters outside Development and Test environments");
         }
     }
 
     public static bool IsAwsSecretsManagerReference(string? value) =>
         value?.StartsWith("aws:secretsmanager:", StringComparison.OrdinalIgnoreCase) == true;
 
-    public static void ValidateRefreshedPassword(string? adminPassword, string? environmentName)
+    public static void ValidateForEnvironment(string? adminPassword, string? environmentName)
     {
         if (!string.IsNullOrEmpty(adminPassword) &&
-            string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(environmentName, "Development", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(environmentName, "Test", StringComparison.OrdinalIgnoreCase))
         {
-            ValidateProductionPassword(adminPassword);
+            ValidatePasswordComplexity(adminPassword);
         }
     }
 }

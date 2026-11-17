@@ -121,13 +121,13 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Fail loudly, do not silently park (honua-server#2811). This base backend only hands the desired
+        // Fail loudly, do not silently park. This base backend only hands the desired
         // revision to an EXTERNAL GitOps controller; it cannot itself revert the running workload. Earlier
         // it returned RollbackRequested, which the reconciler treats as "rollback took" — reporting a
         // rollback that never happened and only surfacing the truth later as ManualInterventionRequired via
         // ObserveAsync. Returning ManualInterventionRequired here makes the reconciler escalate immediately
         // with a loud error so an operator is paged to perform the out-of-band GitOps revert. Backends that
-        // CAN perform a real in-process revert (Argo, YARP) override this.
+        // CAN perform a real in-process revert (Argo) override this.
         Log.RollbackRequiresManualIntervention(logger, operation.OperationId, operation.Deploy?.TargetId ?? operation.OperationId);
         return Task.FromResult(new DeployObservation
         {

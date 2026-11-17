@@ -138,7 +138,7 @@ internal static class ExceptionMapper
             ),
 
             // Shared progress state is transiently unreachable (the type's contract): the
-            // caller must retry, so answer 503 rather than a server-bug 500 (honua-server#6753).
+            // caller must retry, so answer 503 rather than a server-bug 500.
             Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException => (
                 StatusCodes.Status503ServiceUnavailable,
                 "Service Unavailable",

@@ -59,7 +59,7 @@ internal sealed partial class OpsFindingsAutonomyEvaluationService(
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();
-            var findingsService = scope.ServiceProvider.GetRequiredService<IOpsFindingsService>();
+            var findingsService = scope.ServiceProvider.GetRequiredService<OpsFindingsService>();
             var evaluator = scope.ServiceProvider.GetRequiredService<IOpsAutonomyEvaluator>();
             var findings = await findingsService.EvaluateAsync(cancellationToken).ConfigureAwait(false);
 
@@ -73,7 +73,7 @@ internal sealed partial class OpsFindingsAutonomyEvaluationService(
                     continue;
                 }
 
-                await findingsService.ProposeAsync(finding.Id, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await findingsService.RemediateAsync(finding.Id, cancellationToken).ConfigureAwait(false);
             }
         }
         finally

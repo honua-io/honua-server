@@ -12,12 +12,7 @@ internal static class AdminOperationRequestValidator
         ArgumentNullException.ThrowIfNull(request);
         var descriptor = AdminApiOperationCatalog.Descriptors.Single(item => item.OperationId == definition.OperationId);
         var routeNames = RouteNames(definition.Path);
-        var missing = routeNames.Where(name => string.IsNullOrWhiteSpace(name switch
-        {
-            "connectionId" => request.ConnectionId,
-            "serviceName" => request.ServiceName,
-            _ => request.Parameters.GetValueOrDefault(name)
-        })).Select(name => $"Required route parameter '{name}' is missing.").ToList();
+        var missing = routeNames.Select(name => RouteError(name, RouteValue(request, name))).OfType<string>().ToList();
         foreach (var parameter in descriptor.InputSchema.Where(static parameter => parameter.Required))
         {
             var present = parameter.Name switch
@@ -31,6 +26,20 @@ internal static class AdminOperationRequestValidator
         }
         return new OperationValidation { IsValid = missing.Count == 0, Status = missing.Count == 0 ? "valid" : "invalid", Messages = missing.ToArray() };
     }
+
+    internal static string? RouteValue(OperationRequest request, string name) => name switch
+    {
+        "connectionId" => request.ConnectionId,
+        "serviceName" => request.ServiceName,
+        _ => request.Parameters.GetValueOrDefault(name)
+    };
+
+    internal static string? RouteError(string name, string? value) => value switch
+    {
+        _ when string.IsNullOrWhiteSpace(value) => $"Required route parameter '{name}' is missing.",
+        "." or ".." => $"Route parameter '{name}' must not be a dot segment.",
+        _ => null
+    };
 
     private static HashSet<string> RouteNames(string path) => path.Split('/').Where(static segment => segment.StartsWith('{') && segment.EndsWith('}')).Select(static segment => segment[1..^1]).ToHashSet(StringComparer.Ordinal);
 }

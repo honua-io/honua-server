@@ -141,7 +141,7 @@ public static class OperationRegistry
         new(Grpc, "geospatial.v1.ElevationService/GetElevation"),
         new(Grpc, "geospatial.v1.ElevationService/GetElevationProfile"),
 
-        // GeoServices VersionManagementServer operations (branch versioning; #1272, ADR-0051)
+        // GeoServices VersionManagementServer operations (branch versioning, ADR-0051)
         new(VersionManagementServer, "serviceInfo"),
         new(VersionManagementServer, "versions"),
         new(VersionManagementServer, "versionInfo"),
@@ -159,7 +159,7 @@ public static class OperationRegistry
         new(VersionManagementServer, "post"),
         new(VersionManagementServer, "jobStatus"),
 
-        // OGC SensorThings API (STA v1.1) Phase 2 ingest operations (#1747). These are
+        // OGC SensorThings API (STA v1.1) Phase 2 ingest operations. These are
         // surfaced on the unified operations toolset so the console + AI reach observation
         // ingest and datastream creation identically (dotted operation identifiers).
         new(SensorThings11, "datastream.create"),

@@ -49,7 +49,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
 
         long currentGeneration;
         await using (var generationCommand = new NpgsqlCommand(
-            "SELECT COALESCE(MAX(generation), 0) FROM honua.feature_changes", connection, transaction))
+            "SELECT honua.feature_change_read_horizon()", connection, transaction))
         {
             currentGeneration = (long)(await generationCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
         }

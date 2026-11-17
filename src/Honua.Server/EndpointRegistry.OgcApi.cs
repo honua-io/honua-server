@@ -49,7 +49,7 @@ public static partial class EndpointRegistry
         new("GET", "/ogc/coverages/collections/{collectionId}/schema"),
         new("GET", "/ogc/coverages/collections/{collectionId}/coverage"),
 
-        // OGC API - Environmental Data Retrieval (EDR) (#1757)
+        // OGC API - Environmental Data Retrieval (EDR)
         new("GET", "/edr"),
         new("GET", "/edr/conformance"),
         new("GET", "/edr/collections"),

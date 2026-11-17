@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Migration.Abstractions;
 using Honua.Migration;
 
 namespace Honua.Infrastructure.Progress;
@@ -39,15 +40,27 @@ internal sealed class ExecutionJobProgressReader(IUniversalProgressStore progres
 
     public async Task<IOperationProgress> RepairAsync(IOperationProgress progress, CancellationToken cancellationToken)
     {
-        if (jobStore is null || progress is not (ExportProgress or TileOperationProgress))
+        if (jobStore is null || !(progress is ExportProgress or TileOperationProgress || IsOpenImport(progress)))
         {
             return progress;
         }
 
         var job = await jobStore.GetAsync(progress.OperationId, cancellationToken).ConfigureAwait(false);
         // Derive the response without writing a stale terminal snapshot over an operator retry.
-        return job is null ? progress : Project(progress, job);
+        return job is null ? progress
+            : progress is ExportProgress or TileOperationProgress ? Project(progress, job)
+            : ProjectCancelledImport((ICancellableOperationProgress)progress, job);
     }
+
+    private static bool IsOpenImport(IOperationProgress progress)
+        => progress is GeoServerImportProgress or GeoservicesImportProgress
+            && progress.Status is not (OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled);
+
+    // An import whose job was cancelled before its executor ran has no writer left to end the snapshot.
+    private static IOperationProgress ProjectCancelledImport(ICancellableOperationProgress progress, ExecutionJobRecord job)
+        => job.Status == ExecutionJobStatus.Cancelled
+            ? progress.WithCancellation(job.CompletedAt ?? job.UpdatedAt, "Cancelled")
+            : progress;
 
     public static IOperationProgress Project(IOperationProgress progress, ExecutionJobRecord job)
     {

@@ -31,44 +31,21 @@ namespace Honua.Server.Tests.Features.Studio;
 [Collection("Database")]
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]
-public sealed class StudioPackageEndpointsTests : IAsyncLifetime
+public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPackageEndpointsTests.StudioHost>
 {
-    private readonly CapturingAuditLog _auditLog = new();
+    private readonly CapturingAuditLog _auditLog;
     private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly HttpClient _client;
 
-    public StudioPackageEndpointsTests()
+    public StudioPackageEndpointsTests(StudioHost host)
     {
-        _fixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            })
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IStudioPackageStore>();
-                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-                // The content-items list endpoint joins publication-registry lifecycle badges
-                // (REQ-004); use the in-memory store here (like ContentPublicationEndpointsTests)
-                // so the HTTP + join path is exercised without a migrated Postgres schema. The
-                // Postgres store's join query has dedicated integration coverage in
-                // PostgresContentPublicationStoreTests.
-                services.RemoveAll<IContentPublicationStore>();
-                services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
-                services.RemoveAll<IAuditLog>();
-                services.AddSingleton<IAuditLog>(_auditLog);
-            });
-    }
+        _fixture = host.Fixture;
+        _client = host.Client;
+        _auditLog = host.AuditLog;
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
+        // The host is shared; each case asserts on the audit events of its own requests.
+        _auditLog.Events.Clear();
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/content-versions")]
@@ -78,7 +55,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "bodyless-version-save",
+                PackageKey = $"bodyless-version-save-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -118,6 +95,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
     public async Task StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback()
     {
+        var route = $"/studio/parcels-{Guid.NewGuid():N}";
         var familiesResponse = await _client.GetAsync("/api/v1/studio/package-families");
         familiesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var families = await ReadAsync<StudioPackageFamilyCapabilities>(
@@ -130,9 +108,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "parcels-query",
+                PackageKey = $"parcels-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
-                Envelope = BuildEnvelope("1=1"),
+                Envelope = BuildEnvelope("1=1", route),
             },
             StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -197,7 +175,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 PackageKey = reopened.PackageKey,
                 WorkspaceId = reopened.WorkspaceId,
                 OwnerId = reopened.OwnerId,
-                Envelope = BuildEnvelope("POPULATION > 1000"),
+                Envelope = BuildEnvelope("POPULATION > 1000", route),
                 Generation = reopened.Generation,
             },
             StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest);
@@ -234,7 +212,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{secondVersion.VersionId:D}/publish-requests",
             new CreateStudioPublicationRequest { WarningAcknowledgement = "reviewed" },
             StudioApiJsonContext.Default.CreateStudioPublicationRequest);
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, await publishResponse.Content.ReadAsStringAsync());
         var publication = await ReadAsync<StudioPublicationRequest>(
             publishResponse,
             StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
@@ -276,7 +254,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     {
         var body = new CreateStudioPackageDraftRequest
         {
-            PackageKey = "idempotent-draft",
+            PackageKey = $"idempotent-draft-{Guid.NewGuid():N}",
             Envelope = BuildEnvelope("1=1"),
         };
 
@@ -317,7 +295,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "list-draft-only",
+                PackageKey = $"list-draft-only-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 OwnerId = "bob",
                 Envelope = BuildEnvelope("1=1"),
@@ -333,7 +311,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "list-published",
+                PackageKey = $"list-published-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 OwnerId = "alice",
                 Envelope = BuildEnvelope("1=1"),
@@ -485,7 +463,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "enduser-owner-query",
+                    PackageKey = $"enduser-owner-query-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     OwnerId = "someone-else",
                     Envelope = BuildEnvelope("1=1"),
@@ -498,7 +476,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "enduser-owner-query",
+                    PackageKey = $"enduser-owner-query-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     Envelope = BuildEnvelope("1=1"),
                 },
@@ -776,7 +754,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "admin-read-only-query",
+                    PackageKey = $"admin-read-only-query-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     Envelope = BuildEnvelope("1=1"),
                 },
@@ -969,7 +947,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "unpublished-export-map",
+                    PackageKey = $"unpublished-export-map-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     OwnerId = ownerId,
                     Envelope = BuildDeliverableEnvelope(StudioPackageFamily.Map, "honua_map_package.v1"),
@@ -1432,7 +1410,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "stale-generation-query",
+                PackageKey = $"stale-generation-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -1486,7 +1464,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "invalid-publication-intent-query",
+                PackageKey = $"invalid-publication-intent-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -1779,7 +1757,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = $"{family.ToString().ToLowerInvariant()}-export",
+                PackageKey = $"{family.ToString().ToLowerInvariant()}-export-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildDeliverableEnvelope(family, format),
             },
@@ -2162,7 +2140,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return envelope.Data!;
     }
 
+    // Accepted publications claim their route, so each envelope gets its own unless a case
+    // passes one route for all of its versions.
     private static StudioPackageEnvelope BuildEnvelope(string where)
+        => BuildEnvelope(where, $"/studio/parcels-{Guid.NewGuid():N}");
+
+    private static StudioPackageEnvelope BuildEnvelope(string where, string route)
     {
         using var body = JsonDocument.Parse($$"""{"where":"{{where}}"}""");
         return new StudioPackageEnvelope
@@ -2200,12 +2183,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                     Rel = "generated-by",
                 },
             ],
-            PublicationIntent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
+            PublicationIntent = new StudioPublicationIntent { Route = route, Visibility = "organization" },
             Body = body.RootElement.Clone(),
         };
     }
 
-    private sealed class CapturingAuditLog : IAuditLog
+    internal sealed class CapturingAuditLog : IAuditLog
     {
         public List<AuditEvent> Events { get; } = [];
 

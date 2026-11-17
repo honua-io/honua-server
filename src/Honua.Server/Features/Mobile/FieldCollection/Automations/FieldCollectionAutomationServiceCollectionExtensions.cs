@@ -39,7 +39,7 @@ internal static class FieldCollectionAutomationServiceCollectionExtensions
         // Same outbound posture as the alert and feature-change webhooks: no
         // redirects, DNS pinned at connect time, and a bounded client timeout.
         // An unregistered name would otherwise use SocketsHttpHandler defaults
-        // (follow redirects, no connect callback, 100s timeout) (#6126).
+        // (follow redirects, no connect callback, 100s timeout).
         services.AddResilientHttpClient(
             WebhookFieldCollectionActionHandler.HttpClientName,
             WebhookFieldCollectionActionHandler.HttpClientName,

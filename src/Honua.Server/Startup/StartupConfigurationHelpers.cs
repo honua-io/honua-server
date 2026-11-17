@@ -110,7 +110,7 @@ internal static class StartupConfigurationHelpers
     // A secret reference must never become literal key material.
     public static async Task ResolveSecuritySecretReferencesAsync(
         ConfigurationManager configuration,
-        bool isProduction,
+        string environmentName,
         CancellationToken cancellationToken = default)
     {
         const string awsSecretsManagerPrefix = "aws:secretsmanager:";
@@ -133,7 +133,7 @@ internal static class StartupConfigurationHelpers
         using var lease = BootstrapSecretResolver.Create();
         var resolver = lease.Resolver;
 
-        await ResolveSecuritySecretReferencesAsync(configuration, resolver, keys, isProduction, cancellationToken)
+        await ResolveSecuritySecretReferencesAsync(configuration, resolver, keys, environmentName, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -141,7 +141,7 @@ internal static class StartupConfigurationHelpers
         ConfigurationManager configuration,
         Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver resolver,
         IEnumerable<string> keys,
-        bool isProduction,
+        string environmentName,
         CancellationToken cancellationToken = default)
     {
         const string awsSecretsManagerPrefix = "aws:secretsmanager:";
@@ -190,17 +190,14 @@ internal static class StartupConfigurationHelpers
 
             // Authentication handlers deliberately keep the reference and resolve it on each
             // request so a warm process observes secret rotation. Resolve once here only to fail
-            // startup on an inaccessible or weak production credential. The connection-encryption
+            // startup on an inaccessible or weak deployment credential. The connection-encryption
             // master key is different: changing it while a process is live would make existing
             // ciphertext unreadable, so that key remains a process-lifetime snapshot. The audit-chain
             // key is a snapshot for the same reason: a mid-process change breaks chain verification.
             // OIDC static keys are captured by bearer options at startup and require a restart to rotate.
             if (string.Equals(key, "HONUA_ADMIN_PASSWORD", StringComparison.OrdinalIgnoreCase))
             {
-                if (isProduction)
-                {
-                    AdminPasswordValidation.ValidateProductionPassword(resolved);
-                }
+                AdminPasswordValidation.ValidateForEnvironment(resolved, environmentName);
 
                 continue;
             }
@@ -432,7 +429,7 @@ internal static class StartupConfigurationHelpers
             new Honua.Core.Features.Tiles.TileMatrixSetOptionsValidator());
         services.AddSingleton<IValidateOptions<CacheOptions>>(new CacheOptionsValidator());
         services.AddSingleton<IValidateOptions<CloudStorageOptions>>(new CloudStorageOptionsValidator());
-        services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());
+        services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>, OidcAuthenticationOptionsValidator>();
         services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
     }
 

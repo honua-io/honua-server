@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -28,12 +29,19 @@ internal sealed class AdminPortalCredentialVerifier(
     private readonly ITenantContext? _tenantContext = tenantContext;
     private readonly ILogger<AdminPortalCredentialVerifier>? _logger = logger;
 
-    public async Task<PortalCredentialPrincipal?> VerifyAsync(
+    public Task<PortalCredentialPrincipal?> VerifyAsync(
         string username,
         string password,
         CancellationToken cancellationToken)
+        => VerifyAsync(new PortalCredentialAttempt(username, password, null), null, cancellationToken);
+
+    internal async Task<PortalCredentialPrincipal?> VerifyAsync(
+        PortalCredentialAttempt request,
+        AuthenticationAttemptGate? gate,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
+        var (username, password, client) = request;
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password) || gate?.RefusalFor(client) is not null)
         {
             return null;
         }
@@ -44,20 +52,31 @@ internal sealed class AdminPortalCredentialVerifier(
             return CreateManagedKeyPrincipal(storedKey.Record);
         }
 
-        if (!string.Equals(username, AdminUsername, StringComparison.OrdinalIgnoreCase))
-        {
-            // Allow operators to authenticate with an admin API key while supplying
-            // the API key as the password under any username so existing clients can
-            // pass through without code changes. A store outage returns no principal
-            // rather than throwing; only the admin username has a break-glass password.
-            return null;
-        }
-
-        if (!PermitsAdminPasswordFromClient())
+        // Reserved only after the managed-key lookup, so valid keys never contend for a slot.
+        using var attempt = gate?.Begin(client, password) ?? AuthenticationAttempt.Untracked();
+        if (attempt.RetryAfter is not null)
         {
             return null;
         }
 
+        // A managed key is accepted under any username so existing clients pass through unchanged, and a
+        // store outage returns no principal; only the admin username has a break-glass password. Both
+        // refusals count like a wrong password, so they reveal nothing about it.
+        if (!string.Equals(username, AdminUsername, StringComparison.OrdinalIgnoreCase) || !PermitsAdminPasswordFromClient())
+        {
+            attempt.CountFailure();
+            return null;
+        }
+
+        return await VerifyAdminPasswordAsync(password, attempt, cancellationToken).ConfigureAwait(false);
+    }
+
+    // Like the API-key handler, an unresolvable or unset password is not counted: the caller cannot fix it by guessing.
+    private async Task<PortalCredentialPrincipal?> VerifyAdminPasswordAsync(
+        string password,
+        AuthenticationAttempt attempt,
+        CancellationToken cancellationToken)
+    {
         string? configuredPassword;
         try
         {
@@ -82,6 +101,7 @@ internal sealed class AdminPortalCredentialVerifier(
 
         if (!ConstantTimeEquals(password, configuredPassword))
         {
+            attempt.CountFailure();
             return null;
         }
 
@@ -118,7 +138,7 @@ internal sealed class AdminPortalCredentialVerifier(
     {
         // This bridge mints token roles, not API-key permission, layer-write, or
         // approved-operation claims. Refuse credentials whose authority it cannot
-        // preserve rather than widening scoped keys (#4577).
+        // preserve rather than widening scoped keys.
         var roles = ManagedKeyExchangeAuthority.ResolveTokenRoles(record);
         if (roles is null)
         {
@@ -212,3 +232,5 @@ internal sealed class AdminPortalCredentialVerifier(
         }
     }
 }
+
+internal readonly record struct PortalCredentialAttempt(string Username, string Password, IPAddress? Client);

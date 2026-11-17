@@ -96,12 +96,32 @@ internal sealed class ImportExecutionJobQueue<TRequest, TProgress>
         var created = await _jobStore.TryCreateAsync(CreateRecord(submission), cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        if (!created)
+        if (created)
+        {
+            await SeedProgressAsync(jobId, initialProgress).ConfigureAwait(false);
+        }
+        else
         {
             ImportExecutionJobQueueLog.JobAlreadyExists(_logger, jobId);
         }
 
         await EnqueueAsync(_jobQueue, jobId, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    // Operation-level reads and cancellation look in the progress store, so a queued import must be
+    // there before a worker claims it. The write only fills an absent snapshot; if it fails, the
+    // import reader still recovers the initial progress from the record.
+    private async Task SeedProgressAsync(string jobId, TProgress initialProgress)
+    {
+        try
+        {
+            await _universalProgressStore.TryReplaceProgressAsync(
+                new OperationProgressWrite(jobId, initialProgress, Retention), null, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            ImportExecutionJobQueueLog.ProgressSeedDeferred(_logger, jobId, ex);
+        }
     }
 
     public TRequest? ReadRequest(ExecutionJobRecord job)
@@ -336,4 +356,7 @@ internal static partial class ImportExecutionJobQueueLog
 
     [LoggerMessage(7602, LogLevel.Warning, "Cancellation of import job {JobId} was not recorded after repeated conflicts")]
     public static partial void CancellationNotRecorded(ILogger logger, string jobId);
+
+    [LoggerMessage(7603, LogLevel.Warning, "Import job {JobId} was accepted but its progress was not seeded; the first import read will seed it")]
+    public static partial void ProgressSeedDeferred(ILogger logger, string jobId, Exception exception);
 }
