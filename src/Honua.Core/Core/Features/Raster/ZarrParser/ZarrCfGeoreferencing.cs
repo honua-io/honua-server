@@ -61,7 +61,7 @@ internal static class ZarrCfGeoreferencing
     // spatial_ref and 2-D bounds arrays never displace the gridded variable.
     internal static string? ResolveDefaultPrimary(IReadOnlyList<ZarrArrayMetadata> arrays)
         => arrays.Where(array => !IsCoordinateVariable(array)).OrderByDescending(array => array.Shape.Length).FirstOrDefault()?.Name
-           ?? arrays.FirstOrDefault()?.Name;
+           ?? (arrays.Count > 0 ? arrays[0].Name : null);
 
     internal static void Collect(Dictionary<string, ZarrCfArrayHints> hints, string name, JsonElement? attrs)
     {
@@ -112,7 +112,7 @@ internal static class ZarrCfGeoreferencing
     }
 
     private static int ResolveSrid(
-        IReadOnlyDictionary<string, ZarrCfArrayHints> hints,
+        Dictionary<string, ZarrCfArrayHints> hints,
         ZarrArrayMetadata primary,
         (ZarrArrayMetadata X, ZarrArrayMetadata Y) coordinates)
     {
