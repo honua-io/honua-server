@@ -2912,7 +2912,16 @@ jobs:
           package_version="0.0.0-ci.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
           for framework in net10.0 net11.0; do
           consumer_dir="$(mktemp -d)"
-          dotnet new console --framework "${framework}" --output "${consumer_dir}" --no-restore
+          cat > "${consumer_dir}/PackageConsumer.csproj" <<EOF
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>${framework}</TargetFramework>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+            </PropertyGroup>
+          </Project>
+          EOF
           PACKAGE_SOURCE="$(realpath packages)"
           pushd "${consumer_dir}" >/dev/null
 
