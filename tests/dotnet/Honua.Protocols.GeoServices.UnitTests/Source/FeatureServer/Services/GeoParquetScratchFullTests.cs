@@ -19,7 +19,7 @@ public sealed class GeoParquetScratchFullTests
     [UnitTest]
     public void WriteArrowParquet_ScratchVolumeFills_ThrowsRetryableServiceUnavailableAndReleasesSpool()
     {
-        var spool = new FullAfterStream(capacityBytes: 4 * 1024);
+        using var spool = new FullAfterStream(capacityBytes: 4 * 1024);
         var schema = new Schema.Builder().Field(field => field.Name("payload").DataType(StringType.Default)).Build();
 
         var act = () => GeoParquetFeatureWriter.WriteArrowParquet(schema, writer =>
@@ -43,7 +43,7 @@ public sealed class GeoParquetScratchFullTests
     [UnitTest]
     public void WriteArrowParquet_ResponseBudgetExceededBeforeScratchFills_StillRefusesAsPayloadTooLarge()
     {
-        var spool = new FullAfterStream(capacityBytes: 1024 * 1024);
+        using var spool = new FullAfterStream(capacityBytes: 1024 * 1024);
         var schema = new Schema.Builder().Field(field => field.Name("payload").DataType(StringType.Default)).Build();
 
         var act = () => GeoParquetFeatureWriter.WriteArrowParquet(schema, writeBatches: null,
@@ -64,7 +64,7 @@ public sealed class GeoParquetScratchFullTests
             .Should().BeTrue("the native encoder can wrap the managed write failure");
 
         GeoParquetFeatureWriter.IsStorageFull(new IOException("Input/output error", 5)).Should().BeFalse();
-        GeoParquetFeatureWriter.IsStorageFull(new InvalidOperationException("other", new Exception("x"))).Should().BeFalse();
+        GeoParquetFeatureWriter.IsStorageFull(new InvalidOperationException("other", new InvalidDataException("x"))).Should().BeFalse();
         GeoParquetFeatureWriter.IsStorageFull(null).Should().BeFalse();
     }
 
@@ -103,11 +103,13 @@ public sealed class GeoParquetScratchFullTests
             }
         }
 
+        // Only the first close fails, as the runtime's buffered retry does.
         public override void Close()
         {
+            var failClose = refused && !Disposed;
             Disposed = true;
             base.Close();
-            if (refused)
+            if (failClose)
             {
                 throw new IOException("No space left on device : '/tmp/honua/honua-parquet-test'", NoSpaceLeftOnDevice);
             }
