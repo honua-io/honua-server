@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Antiforgery;
 
 namespace Honua.Server.Features.Admin;
@@ -46,7 +47,7 @@ internal static class BrowserSessionSecurity
             {
                 if (!request.IsHttps || !IsSameOrigin(request))
                 {
-                    RejectCsrf(context);
+                    await RejectCsrfAsync(context).ConfigureAwait(false);
                     return;
                 }
 
@@ -57,7 +58,7 @@ internal static class BrowserSessionSecurity
                 }
                 catch (AntiforgeryValidationException)
                 {
-                    RejectCsrf(context);
+                    await RejectCsrfAsync(context).ConfigureAwait(false);
                     return;
                 }
             }
@@ -73,19 +74,27 @@ internal static class BrowserSessionSecurity
         && (context.Request.Headers.ContainsKey("X-API-Key")
             || context.Request.Headers.ContainsKey("Authorization"));
 
-    private static void RejectCsrf(HttpContext context)
+    private const string RefusalReason =
+        $"Browser session requests require same-origin HTTPS, the session's antiforgery cookie and a fresh {HeaderName} token.";
+
+    // The refusal names its reason so a Console, or a proxy that drops the antiforgery cookie, is diagnosable.
+    // It stays HTTP 400 on every path, including GeoServices routes whose errors are otherwise HTTP 200.
+    private static async Task RejectCsrfAsync(HttpContext context)
     {
         if (context.Request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) == true)
         {
             context.Response.StatusCode = StatusCodes.Status200OK;
             context.Response.ContentType = "application/grpc";
             context.Response.Headers["grpc-status"] = "7";
-            context.Response.Headers["grpc-message"] = Uri.EscapeDataString(
-                $"Browser session requests require same-origin HTTPS and a fresh {HeaderName} token.");
+            context.Response.Headers["grpc-message"] = Uri.EscapeDataString(RefusalReason);
             return;
         }
 
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await StandardErrorResponseFormatter.FormatError(
+                context,
+                StandardErrorResponse.BadRequest(RefusalReason),
+                new ErrorResponseFormatterOptions { GeoServicesUseHttpStatus = true })
+            .ExecuteAsync(context).ConfigureAwait(false);
     }
 
     private static bool IsSameOrigin(HttpRequest request)
