@@ -332,6 +332,8 @@ const runReviewStatus = async (review, statusError) => {
   const sandbox = {
     evaluateCurrentReview: async () => review,
     prNumber: 42,
+    // These cases model an open pull request; closed ones are covered separately.
+    shedIfClosed: async () => false,
     context: { repo: { owner: 'honua-io', repo: 'honua-server' }, serverUrl: 'https://github.com' },
     core: { notice() {}, summary, setFailed(message) { result.failure = message; } },
     github: { rest: { repos: { async createCommitStatus(status) {
