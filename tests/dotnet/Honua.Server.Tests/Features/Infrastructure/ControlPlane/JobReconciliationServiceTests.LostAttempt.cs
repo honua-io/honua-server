@@ -20,7 +20,7 @@ public sealed partial class JobReconciliationServiceTests
     public async Task HeartbeatExpiry_Retry_RecordsLostAttemptEvent()
     {
         var snapshot = CreateExpiredJob(attemptCount: 1, maxAttempts: 3);
-        var (written, logged) = await SweepExpiredJobAsync(snapshot, Substitute.For<IExecutionLogStore>());
+        var (written, logged, _) = await SweepExpiredJobAsync(snapshot, Substitute.For<IExecutionLogStore>());
 
         written.Status.Should().Be(ExecutionJobStatus.Queued);
         logged.Should().NotBeNull();
@@ -37,7 +37,7 @@ public sealed partial class JobReconciliationServiceTests
     [UnitTest]
     public async Task HeartbeatExpiry_FinalFailure_RecordsLastLostAttemptEvent()
     {
-        var (written, logged) = await SweepExpiredJobAsync(CreateExpiredJob(attemptCount: 3, maxAttempts: 3), Substitute.For<IExecutionLogStore>());
+        var (written, logged, _) = await SweepExpiredJobAsync(CreateExpiredJob(attemptCount: 3, maxAttempts: 3), Substitute.For<IExecutionLogStore>());
 
         written.Status.Should().Be(ExecutionJobStatus.Failed);
         logged.Should().NotBeNull();
@@ -52,7 +52,7 @@ public sealed partial class JobReconciliationServiceTests
         logStore.AppendAsync(Arg.Any<string>(), Arg.Any<ExecutionLogEntry>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("log store down"));
 
-        var (written, _) = await SweepExpiredJobAsync(CreateExpiredJob(attemptCount: 1, maxAttempts: 3), logStore);
+        var (written, _, _) = await SweepExpiredJobAsync(CreateExpiredJob(attemptCount: 1, maxAttempts: 3), logStore);
 
         written.Status.Should().Be(ExecutionJobStatus.Queued);
     }
@@ -70,24 +70,54 @@ public sealed partial class JobReconciliationServiceTests
             heartbeatPolicy: new JobHeartbeatPolicy { Interval = TimeSpan.FromSeconds(1), Timeout = TimeSpan.FromSeconds(1) },
             timeoutPolicy: new JobTimeoutPolicy { MaxDuration = TimeSpan.FromHours(24) });
 
-    private static async Task<(ExecutionJobRecord Written, ExecutionLogEntry? Logged)> SweepExpiredJobAsync(
+    [UnitTest]
+    public async Task HeartbeatExpiry_Retry_RecordsLostAttemptEvent_WhenRequeueThrows()
+    {
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.RequeueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("queue down"));
+
+        var (written, logged, sweepError) = await SweepExpiredJobAsync(CreateExpiredJob(attemptCount: 1, maxAttempts: 3), Substitute.For<IExecutionLogStore>(), jobQueue);
+
+        sweepError.Should().BeOfType<InvalidOperationException>("the sweep still surfaces the queue failure");
+        written.Status.Should().Be(ExecutionJobStatus.Queued);
+        logged.Should().NotBeNull("the store transition committed before the queue write failed");
+        logged!.Metadata.Should().Contain("attempt", "1");
+    }
+
+    [UnitTest]
+    public async Task HeartbeatExpiry_ImportCommitRecovery_RecordsLostAttemptEvent()
+    {
+        var job = CreateExpiredJob(attemptCount: 1, maxAttempts: 3);
+        var snapshot = job with { Spec = job.Spec with { Kind = ExecutionJobKind.GeoservicesImport } };
+
+        var (written, logged, _) = await SweepExpiredJobAsync(snapshot, Substitute.For<IExecutionLogStore>());
+
+        written.CurrentPhase.Should().Be("Recovering committed import outcome");
+        logged.Should().NotBeNull();
+        logged!.Phase.Should().Be("worker-lost");
+        logged.Metadata.Should().Contain("attempt", "1").And.Contain("worker.id", "worker-1");
+    }
+
+    private static async Task<(ExecutionJobRecord Written, ExecutionLogEntry? Logged, Exception? SweepError)> SweepExpiredJobAsync(
         ExecutionJobRecord snapshot,
-        IExecutionLogStore logStore)
+        IExecutionLogStore logStore,
+        IJobQueue? jobQueue = null)
     {
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.ListActiveAsync(kind: null, cancellationToken: Arg.Any<CancellationToken>()).Returns([snapshot]);
         jobStore.GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>()).Returns(snapshot);
 
         using var service = new JobReconciliationService(
-            jobStore, Substitute.For<IJobQueue>(), Substitute.For<IQueueClaimReconciler>(), new ExecutionJobCancellationTokens(),
+            jobStore, jobQueue ?? Substitute.For<IJobQueue>(), Substitute.For<IQueueClaimReconciler>(), new ExecutionJobCancellationTokens(),
             Array.Empty<IJobTerminalCallback>(), logStore, NullLogger<JobReconciliationService>.Instance);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await RunSingleSweepAsync(service, cts.Token);
+        var sweepError = await Record.ExceptionAsync(() => RunSingleSweepAsync(service, cts.Token));
 
         var written = ArgumentsOf(jobStore, nameof(IExecutionJobStore.TrySetAsync)).OfType<ExecutionJobRecord>().LastOrDefault();
         var logged = ArgumentsOf(logStore, nameof(IExecutionLogStore.AppendAsync)).OfType<ExecutionLogEntry>().SingleOrDefault();
         written.Should().NotBeNull("the expired heartbeat must transition the job");
-        return (written!, logged);
+        return (written!, logged, sweepError);
     }
 
     private static IEnumerable<object?> ArgumentsOf(object substitute, string methodName)
