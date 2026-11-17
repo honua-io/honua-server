@@ -70,7 +70,8 @@ internal sealed class GeometryServiceOverlayBudget
 
     // A buffer nodes the offset curves it draws around its input, not the input, and those curves
     // can cross each other far more often than the input does. The same curves the buffer engine
-    // nodes are drawn and counted first, and the buffer is refused past the budget.
+    // nodes are drawn and counted first, and the buffer is refused past the budget. The engine's
+    // reduced-precision retries after a noding failure are not counted separately.
     public Geometry Buffer(Geometry geometry, double distance, BufferParameters bufferParameters)
     {
         ArgumentNullException.ThrowIfNull(geometry);
