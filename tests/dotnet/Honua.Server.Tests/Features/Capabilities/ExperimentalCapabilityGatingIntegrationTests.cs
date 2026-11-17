@@ -248,7 +248,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
     public async Task VmsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
     {
-        // The VMS REST surface (versioning.branch) is gated Preview. With experimental OFF the capability-gate filter must short-circuit with
+        // The VMS REST surface (versioning.branch) is gated Preview. With experimental
+        // OFF the capability-gate filter must short-circuit with
         // 404 honua:capability-experimental-disabled before any handler runs — proving the GA
         // surface no longer exposes the VMS endpoints by default.
         var fixture = disabledPosture.Share();
@@ -363,7 +364,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task AdminAuthConfigEndpoint_WhenExperimentalDisabled_Returns200()
     {
-        // Regression guard: HandleGetAuthConfig resolves IClientCertificateTrustStore via
+        // HandleGetAuthConfig resolves IClientCertificateTrustStore via
         // [FromServices] to report trust-profile bootstrap hints. That store must stay
         // registered even while security.mtls is gated off, or this anonymous admin auth
         // bootstrap endpoint fails DI activation (500) instead of serving a clean 200 for

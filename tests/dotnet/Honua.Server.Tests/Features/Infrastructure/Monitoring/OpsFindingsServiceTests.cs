@@ -1067,7 +1067,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public void AllRecommendedActions_AdminConfigChangeActionNamesAreRegistered()
     {
-        // RC-2556: every recommendedAction's embedded ops-action name (for AdminConfigChange-kind
+        // Every recommendedAction's embedded ops-action name (for AdminConfigChange-kind
         // actions) must exist in the actuator registry — enumerate both sides and assert subset.
         var registeredActions = new[]
         {
