@@ -22,15 +22,15 @@ contracts = json.loads((ROOT / "scripts/ci/fixtures/full-run-capacity-contracts.
 # Images the unsplit parent selected before its capacity split. Every child must keep them, and
 # every split parent must be listed, so a renamed child cannot silently lose its preparation.
 PARENT_IMAGES = {
-    "GeoServices GPServer and NAServer": ["ryuk", "redis"],
-    "MCP and Sessions": ["ryuk", "redis"],
-    "Migration": ["ryuk", "redis"],
+    "GeoServices GPServer and NAServer": [],
+    "MCP and Sessions": [],
+    "Migration": [],
     "OData Advanced and Filters": [],
     "OGC API Features": [],
-    "Operator Eval Harness": ["ryuk", "redis", "postgis17"],
+    "Operator Eval Harness": ["ryuk", "postgis17"],
     "STAC Protocol": [],
     "Scene I3S Resources": [],
-    "Server Features Admin Authorization": ["ryuk", "redis"],
+    "Server Features Admin Authorization": [],
     "Server Features Admin Layer Management": [],
     "Server Features Admin Release Control": [],
     "Server Features Collaboration Mobile and Identity": [],
@@ -39,7 +39,7 @@ PARENT_IMAGES = {
     "Raster Serving Scene Geometry and Terrain": [],
     "STAC and API Governance": [],
     "OGC API Maps Rendering and Records": [],
-    "OGC API Tiles Coverages and Processes": ['ryuk', 'redis'],
+    "OGC API Tiles Coverages and Processes": [],
     "GeoServices ImageServer": [],
     "GeoServices Geometry VectorTile and Versioning": [],
     "GeoServices Versioning": [],
@@ -53,14 +53,14 @@ PARENT_IMAGES = {
     "Elevation and Terrain Analysis": [],
     "OGC Classic WMTS": [],
     "Server Features Admin Catalog and Configuration": [],
-    "Server Features Admin Network and Jobs": ["ryuk", "redis"],
+    "Server Features Admin Network and Jobs": [],
     "Server Features Admin Platform and Connections": [],
     "OData Mutations and Batch": [],
-    "Server Features Miscellaneous 1": ["ryuk", "redis"],
-    "Server Features Miscellaneous 2": ["ryuk", "redis"],
+    "Server Features Miscellaneous 1": [],
+    "Server Features Miscellaneous 2": [],
     "Cloud and Streaming Import": [],
     "SensorThings": [],
-    "gRPC Protocol and Scene": ["ryuk", "redis"],
+    "gRPC Protocol and Scene": [],
 }
 assert {contract["originalShard"]["name"] for contract in contracts} == set(PARENT_IMAGES), "Unlisted split parent."
 cases = {child: PARENT_IMAGES[contract["originalShard"]["name"]]

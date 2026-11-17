@@ -44,11 +44,11 @@ jobs:
             tests/python/unit/test_capacity_soak_envelope_config.py -q
       - name: Check the emitted ZIP with the independent frozen release verifier
         env:
-          RELEASE_REF: 8213a142cc03c118061dacad5e6384f9d23d66df
+          RELEASE_REF: 33fbb04e43f3d8168ff23e91ec2b8b9d945cd822
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/release-tools"
-          for file in check_capacity_soak.py capacity_observations.py extract_capacity_evidence.py release_runner_policy.py; do
+          for file in check_capacity_soak.py capacity_observations.py digests.py extract_capacity_evidence.py release_runner_policy.py; do
             curl --retry 5 --retry-all-errors --retry-max-time 300 --fail --silent --show-error --proto '=https' --tlsv1.2 \
               "https://raw.githubusercontent.com/honua-io/honua-release/$RELEASE_REF/tools/$file" \
               -o "$RUNNER_TEMP/release-tools/$file"

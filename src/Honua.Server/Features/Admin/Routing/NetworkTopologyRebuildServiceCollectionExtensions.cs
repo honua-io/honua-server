@@ -33,7 +33,7 @@ internal static class NetworkTopologyRebuildServiceCollectionExtensions
         // NetworkTopologyRebuildSubmissionService depends on IServiceProvider (always
         // resolvable) rather than IExecutionJobStore directly, resolving the job store lazily
         // per-call and failing with a clean 503 when it is absent. It is always safe to
-        // register: on a Redis-less profile the route stays mapped but returns 503 instead of
+        // register: without a durable job store the route stays mapped but returns 503 instead of
         // an app-wide ValidateOnBuild failure at startup (secondary-provider-dormant-startup).
         services.TryAddScoped<NetworkTopologyRebuildSubmissionService>();
 
@@ -43,7 +43,7 @@ internal static class NetworkTopologyRebuildServiceCollectionExtensions
             // durable job store to distinguish an orphaned attempt, owning job already
             // terminal, from one merely awaiting worker takeover), so it is only registered
             // once AddJobOrchestration has already provided that dependency — otherwise
-            // ValidateOnBuild would fail every Redis-less startup for a service nothing calls.
+            // ValidateOnBuild would fail startup without a durable job store for a service nothing calls.
             services.TryAddScoped<NetworkTopologyRebuildReconciler>();
             if (configuration is null || ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
             {

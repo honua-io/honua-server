@@ -334,7 +334,7 @@ The `form` and `analysis` families are **bridged, not migrated**: the lifecycle
 endpoints above are the single client-visible contract, but persistence
 delegates to each family's native store, which remains the source of truth.
 Content authored through the native console APIs
-(`/api/v1/admin/forms/packages`, `/api/v1/analysis/content`) is immediately
+(`/api/v1/admin/forms`, `/api/v1/analysis/content`) is immediately
 enumerable/openable through the lifecycle, and lifecycle-authored
 drafts/versions are immediately visible through the native APIs — no flag-day,
 no data migration, no sync window.

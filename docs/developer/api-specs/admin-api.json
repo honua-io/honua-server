@@ -160,7 +160,7 @@
     },
     {
       "name": "Forms",
-      "description": "Server-owned form package authoring lifecycle: draft, validate, publish, reopen, and AI-assisted generation."
+      "description": "Form authoring lifecycle: Draft, validate, go live with a Released Version, reopen, and AI-assisted generation."
     },
     {
       "name": "Field Workflows",
@@ -16183,17 +16183,17 @@
         }
       }
     },
-    "/forms/packages": {
+    "/forms": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "List Form Packages",
-        "description": "Lists every server-owned form package family with its current draft and current published version numbers. Responses are marked `no-store`.",
-        "operationId": "listFormPackages",
+        "summary": "List Forms",
+        "description": "Lists every server-owned Form with its current Draft and Released version numbers. Responses are marked `no-store`.",
+        "operationId": "listForms",
         "responses": {
           "200": {
-            "description": "Form package summaries.",
+            "description": "Form summaries.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16220,9 +16220,9 @@
         "tags": [
           "Forms"
         ],
-        "summary": "Create Form Package Draft",
-        "description": "Creates a new draft form package version from the supplied package document. The server assigns `formId` when the document omits it and returns the persisted version with an `ETag` for subsequent optimistic-concurrency updates. The action is audited as `forms.package.save_draft`.",
-        "operationId": "createFormPackageDraft",
+        "summary": "Create Form Draft",
+        "description": "Creates a new Form Draft from the supplied Form document. The server assigns `formId` when the document omits it and returns the persisted version with an `ETag` for subsequent optimistic-concurrency updates. The action is audited as `forms.package.save_draft`.",
+        "operationId": "createFormDraft",
         "requestBody": {
           "required": true,
           "content": {
@@ -16235,7 +16235,7 @@
         },
         "responses": {
           "201": {
-            "description": "Draft package version created.",
+            "description": "Form Draft created.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the created draft version.",
@@ -16267,20 +16267,20 @@
         }
       }
     },
-    "/forms/packages/{formId}": {
+    "/forms/{formId}": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "Get Current Form Package",
-        "description": "Returns the current draft version of a form package, falling back to the current published version when no draft exists. Returns `404` when neither exists.",
-        "operationId": "getCurrentFormPackage",
+        "summary": "Get Current Form",
+        "description": "Returns the current Form Draft, falling back to the Released version when no Draft exists. Returns `404` when neither exists.",
+        "operationId": "getCurrentForm",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16288,7 +16288,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The current draft or published package version.",
+            "description": "The current Form Draft or Released version.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the returned version.",
@@ -16320,20 +16320,20 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions": {
+    "/forms/{formId}/versions": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "List Form Package Versions",
-        "description": "Lists every persisted version of a form package family. Returns an empty array for an unknown `formId`.",
-        "operationId": "listFormPackageVersions",
+        "summary": "List Form Versions",
+        "description": "Lists every persisted Form Version. Returns an empty array for an unknown `formId`.",
+        "operationId": "listFormVersions",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16341,7 +16341,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Package versions.",
+            "description": "Form Versions.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16365,29 +16365,29 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}": {
+    "/forms/{formId}/versions/{formVersion}": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "Get Form Package Version",
-        "description": "Returns a single form package version (draft, published, or archived) by version number.",
-        "operationId": "getFormPackageVersion",
+        "summary": "Get Form Version",
+        "description": "Returns a single Form Version (Draft, Released, or archived) by version number.",
+        "operationId": "getFormVersion",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Monotonic package version number.",
+            "description": "Monotonic Form Version number.",
             "schema": {
               "type": "integer"
             }
@@ -16395,7 +16395,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The requested package version.",
+            "description": "The requested Form Version.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the returned version.",
@@ -16430,21 +16430,21 @@
         "tags": [
           "Forms"
         ],
-        "summary": "Update Form Package Draft",
-        "description": "Replaces the package document of an existing draft version. An `If-Match` header carrying the draft's current ETag is required; omitting it returns `428 Precondition Required`. A missing draft, a non-editable version, or a stale ETag all return `409 Conflict`. The action is audited as `forms.package.update_draft`.",
-        "operationId": "updateFormPackageDraft",
+        "summary": "Update Form Draft",
+        "description": "Replaces the Form document of an existing Draft. An `If-Match` header carrying the draft's current ETag is required; omitting it returns `428 Precondition Required`. A missing draft, a non-editable version, or a stale ETag all return `409 Conflict`. The action is audited as `forms.package.update_draft`.",
+        "operationId": "updateFormDraft",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
             "description": "Draft version number to update.",
@@ -16519,29 +16519,29 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}/validate": {
+    "/forms/{formId}/versions/{formVersion}/validate": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Validate Form Package Version",
-        "description": "Validates a package version against the target layer schema and package policy, returning the validation result. When the version is a draft, the result is also stored on the draft. This route always returns `200` with the validation result, even when the package is invalid.",
-        "operationId": "validateFormPackageVersion",
+        "summary": "Validate Form Draft",
+        "description": "Validates a Form Version against the target Layer schema and Form policy, returning the validation result. When the version is a draft, the result is also stored on the draft. This route always returns `200` with the validation result, even when the Form is invalid.",
+        "operationId": "validateFormDraft",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Package version number to validate.",
+            "description": "Form Version number to validate.",
             "schema": {
               "type": "integer"
             }
@@ -16549,7 +16549,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Validation result for the package version.",
+            "description": "Validation result for the Form Version.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16573,26 +16573,26 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}/publish": {
+    "/forms/{formId}/versions/{formVersion}/publish": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Publish Form Package Version",
-        "description": "Validates and publishes a draft package version as an immutable published version. When validation fails, the stored validation result is returned with `400` and the failure is audited. Publishing a version that is not a draft returns `409 Conflict`. The action is audited as `forms.package.publish`.",
-        "operationId": "publishFormPackageVersion",
+        "summary": "Publish Form Draft",
+        "description": "Validates a Form Draft and makes it the immutable Released version. When validation fails, the stored validation result is returned with `400` and the failure is audited. Publishing a version that is not a draft returns `409 Conflict`. The action is audited as `forms.package.publish`.",
+        "operationId": "goLiveFormDraft",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
             "description": "Draft version number to publish.",
@@ -16603,7 +16603,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The published package version.",
+            "description": "The Released Form Version.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the published version.",
@@ -16621,7 +16621,7 @@
             }
           },
           "400": {
-            "description": "The package failed publish validation. The body is the validation result that blocked publishing.",
+            "description": "The Form failed publish validation. The body is the validation result that blocked publishing.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16648,29 +16648,29 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}/reopen": {
+    "/forms/{formId}/versions/{formVersion}/reopen": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Reopen Form Package Version",
-        "description": "Creates a new editable draft version from an existing published package version. The new draft records the version it was reopened from. Returns `404` when the published version does not exist. The action is audited as `forms.package.reopen`.",
-        "operationId": "reopenFormPackageVersion",
+        "summary": "Reopen Form Version",
+        "description": "Creates a new editable Form Draft from an existing Released version. The new draft records the version it was reopened from. Returns `404` when the Released version does not exist. The action is audited as `forms.package.reopen`.",
+        "operationId": "reopenFormVersion",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Published version number to reopen.",
+            "description": "Released Version number to reopen.",
             "schema": {
               "type": "integer"
             }

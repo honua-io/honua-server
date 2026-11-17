@@ -541,9 +541,7 @@
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
         "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
       ],
-      "resources": [
-        "redis"
-      ],
+      "resources": [],
       "isolated": false,
       "coverageRequired": true,
       "shardRouted": true
@@ -625,8 +623,7 @@
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [
-        "docker",
-        "redis"
+        "docker"
       ],
       "isolated": false,
       "coverageRequired": true
@@ -1620,17 +1617,6 @@
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
-    },
-    "tests/dotnet/Honua.TestKit.Redis/Honua.TestKit.Redis.csproj": {
-      "role": "support",
-      "shardRouted": false,
-      "runtimeOwners": [],
-      "resources": [
-        "docker",
-        "redis"
-      ],
-      "isolated": false,
-      "coverageRequired": false
     },
     "tests/dotnet/Honua.TestKit/Honua.TestKit.csproj": {
       "role": "support",
