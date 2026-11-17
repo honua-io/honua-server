@@ -553,6 +553,11 @@ internal sealed class InputValidationMiddleware
         // LIKE pattern '%/*%') are harmless and must not be rejected. Real injection
         // breaks OUT of the quoting (unbalanced quotes / structure outside literals)
         // and remains visible to the pattern after masking (bug hunt).
+        if (Cql2JsonLiteralMask.AppliesTo(request, paramType, name))
+        {
+            return Cql2JsonLiteralMask.Mask(value);
+        }
+
         if (IsSqlFilterExpressionParameter(paramType, name))
         {
             return _quotedStringLiteralPattern.Replace(value, "''");
