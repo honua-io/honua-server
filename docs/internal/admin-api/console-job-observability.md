@@ -303,7 +303,8 @@ event row for every job state transition.
 ## Retention and storage notes
 
 Execution jobs and structured logs live in PostgreSQL with a default 7-day
-retention (`JobRetention`, `LogRetention`). List filters match normalized
+retention (`Jobs:Store:JobRetention`, `Jobs:Store:LogRetention`); logs of
+terminal jobs are kept a fixed 7 days. List filters match normalized
 lookup keys stored on each job row. Log and artifact paging use
 bounded cursor reads so Console views do not load every entry or artifact into
 memory.

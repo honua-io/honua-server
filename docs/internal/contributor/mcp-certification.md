@@ -35,8 +35,10 @@ job; `honua_cancel_job` and observed worker cessation remain separate proof.
 while an independent PostGIS transaction blocks its production feature read.
 It observes database blocking, sends a second cancellation POST, and requires
 a cancelled response, released provider locks and unchanged row readback while
-the blocking transaction remains owned by the test. Unit and `PostgresMcpSessionStoreTests` controls
-cover binding, generation reuse, quotas and missed broadcasts. These tests are
+the blocking transaction remains owned by the test. Unit controls (`McpRequestCancellationTests`, `McpSessionSharedStoreTests`)
+cover binding, generation reuse, quotas and missed broadcasts;
+`PostgresMcpSessionStoreTests` covers cross-node session acceptance and idle
+expiry. These tests are
 server implementation evidence; candidate-bound canonical-client cancellation
 qualification remains tracked by [server #6299](https://github.com/honua-io/honua-server/issues/6299).
 
