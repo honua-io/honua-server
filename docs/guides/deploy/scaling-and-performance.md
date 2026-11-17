@@ -56,33 +56,27 @@ kubectl -n honua scale deployment/honua-server --replicas=4
 | In-memory | Service/layer metadata, output cache, per replica | Automatic; entries retain their configured TTL; bounded by `Cache__MaxEntries` |
 | Npgsql prepared statements | Query plans | Internal; inspect via `GET /api/v1/admin/performance/database/query-cache/statistics` |
 
-Each replica's in-memory cache drops entries at their TTL and evicts entries once it holds `Cache__MaxEntries`. An invalidation clears the cache of the replica that made the change; other replicas serve their copy until it expires.
+Each replica's in-memory cache drops entries at their TTL and evicts entries once it holds `Cache__MaxEntries`. Catalog revision checks refresh metadata across replicas, and output-cache keys include the catalog revision. Other cached values retain their configured TTL.
 
-## What needs Redis when multi-node
+## Shared state across replicas
 
-- **Required**: durable job orchestration (geoprocessing, ETL, tile-cache jobs), queued imports, and workflow runs — the queue, execution logs, and run state are Redis-backed; those endpoints return `503` without it. Enable Redis AOF persistence so queued jobs survive restarts.
-- **Strongly recommended**: shared temporary-file quotas when `FileStorage` is S3/Azure Blob.
-- **Catalog consistency**: each replica caches the metadata catalog in-process for `Cache__MetadataGraphTtlSeconds` (default 10). With Redis configured, a catalog write (publishing a service or layer, changing an access policy) is broadcast on the `<Cache__KeyPrefix>metadata:v2:graph:invalidations` pub/sub channel (`honua:metadata:v2:graph:invalidations` by default) so every replica drops its copy immediately. On AWS Lambda without Redis, each request instead checks the active catalog revision with a one-row database read and reloads the catalog when another instance published, so a new service is visible on the next request. Elsewhere without Redis, other replicas can serve the previous catalog until the TTL expires; set `Cache__MetadataGraphRevalidateOnRead=true` to turn the per-request check on (or `false` to turn it off on Lambda).
-- **Not needed**: caching. Each replica caches metadata and output in its own memory, and the CDN is the shared cache.
+- **Durable execution**: PostgreSQL holds shared job queues, execution logs, workflow state, and coordination records. Every participating replica and compatible worker needs access to the shared system database.
+- **Output artifacts**: use retained storage accessible to the workers and clients that need the output; a worker's temporary file is insufficient.
+- **Catalog consistency**: each replica caches metadata in-process for `Cache__MetadataGraphTtlSeconds` (default 10). Read requests revalidate the active revision with `Cache__MetadataGraphRevalidationSeconds` (default 2, range 0–60). Administrative and mutation requests require the current revision.
+- **Caching**: each replica caches metadata and output in memory; the CDN provides the shared edge cache.
 
 A read-replica database connection is not currently supported; all queries use `ConnectionStrings__DefaultConnection`.
 
-## Redis capacity and latency
+## Durable-state capacity and latency
 
-Size Redis from observed peak memory, not its empty-instance footprint. Include durable job state and logs, queued imports, workflow state, persistence overhead, replication buffers, and failover headroom. Alert before the configured maximum leaves too little room for a traffic spike or persistence operation; the example `RedisMemoryHigh` threshold is 90%.
+Include job state, execution logs, queued imports, workflow state, and coordination traffic in PostgreSQL capacity planning. Monitor database storage, CPU, active connections, lock waits, and query latency alongside queue depth and worker progress. Keep connection-pool headroom as described in step 1.
 
-Use `maxmemory-policy noeviction` wherever Redis stores durable jobs or workflow state. An eviction policy such as `allkeys-lru` can make cache pressure silently delete durable state. If cache and durable workloads compete for memory, use separate Redis instances so the cache can use an eviction policy without weakening the durable-job contract. Enable AOF persistence for durable workloads.
+When a backlog grows:
 
-When memory is high:
-
-1. Confirm `used_memory`, `maxmemory`, `maxmemory_policy`, fragmentation, key count, and the largest key groups with your managed Redis metrics or `redis-cli INFO memory` and `redis-cli --bigkeys` from an approved operations host.
-2. Check whether growth tracks cache churn, queued jobs, import logs, stuck workflows, or a recent TTL/configuration change. Do not run broad key deletion or `FLUSH*` commands; those can destroy active job state.
-3. Add memory or move cache traffic to a separate instance before the limit is reached. For cache-only instances, tune TTLs or the eviction policy deliberately. For durable instances, retain `noeviction` and address the producer, backlog, or capacity constraint.
-4. After mitigation, verify that durable jobs and imports still progress and that Redis memory returns below the alert threshold.
-
-Treat the example `RedisLatencyHigh` threshold—p99 above 10 ms for five minutes—as a starting budget, then tune it to the managed service, region, and workload. Rising latency slows durable jobs, queued imports, and workflows, which then accumulate and may time out. Plain reads do not use Redis.
-
-For high latency, compare server latency with network round-trip time, CPU, memory pressure, command rate, connection count, persistence/failover events, and large or blocking commands. Keep Honua and Redis in the same low-latency network, remove noisy or blocking clients, scale the Redis tier when CPU or bandwidth is saturated, and investigate memory pressure before increasing application timeouts. Confirm recovery with p50/p95/p99 latency plus job-queue depth and cache hit rate.
+1. Identify whether producers, worker failures, polling, database contention, or output storage are limiting progress. Inspect server and worker logs and existing job status before retrying requests.
+2. Check database storage and connection headroom, slow queries, and lock waits. Review log and output retention without deleting active job or coordination records.
+3. Correct the identified bottleneck through the deployment's managed configuration and infrastructure process. Include shared system state and output artifacts in backup and recovery procedures.
+4. Verify that existing jobs resume or reach a terminal outcome and that retained outputs remain retrievable. Confirm recovery with queue depth, worker progress, and database latency.
 
 ## Outbound HTTP resilience
 

@@ -606,7 +606,7 @@ git clone --depth 1 https://github.com/honua-io/honua-server.git honua-server-de
 ```
 
 The development stack is a separate Compose project with its own database. It
-publishes `127.0.0.1` ports `8080`, `8081`, `5432`, `6379` and `5174`, so those must
+publishes `127.0.0.1` ports `8080`, `8081`, `5432` and `5174`, so those must
 be free; the quickstart above keeps `18080` and `18081`. Its admin password is the
 public development default, which is why every port binds to loopback only.
 
