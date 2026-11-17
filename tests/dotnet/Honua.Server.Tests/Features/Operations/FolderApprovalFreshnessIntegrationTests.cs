@@ -81,7 +81,7 @@ public sealed partial class FolderOperationIntegrationTests
         var accepted = await CallMcpToolAsync(tool, arguments);
         accepted.GetProperty("status").GetString().Should().Be("RequiresApproval");
         var proposalId = accepted.GetProperty("proposalId").GetString()!;
-        (await SnapshotAsync()).Should().BeEquivalentTo(before);
+        await AssertCatalogUnchangedAsync(before);
 
         await ApproveAsync(proposalId);
 
