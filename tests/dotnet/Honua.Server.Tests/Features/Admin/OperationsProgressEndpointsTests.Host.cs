@@ -16,9 +16,9 @@ public sealed partial class OperationsProgressEndpointsTests
     // application.
     public sealed class OperationsHost : IAsyncLifetime
     {
-        // Isolate durable operation state from other test classes.
         private readonly InMemoryJobQueue _queue = new();
 
+        // Isolate durable operation state (job store and queue) from other test classes.
         public OperationsHost()
         {
             Fixture = new WebAppFixture()
