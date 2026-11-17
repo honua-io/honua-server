@@ -40,10 +40,34 @@ public sealed partial class PublishedOperationToolTests
         Honua.Infrastructure.Authentication.AgentPrincipal.IsAgent(principal).Should().BeTrue();
     }
 
-    [UnitTest]
-    public void ConfigureJourneyOperations_StillExecuteDirectly()
+    [UnitTheory]
+    [InlineData("admin.connections.create")]
+    [InlineData("admin.connections.update")]
+    [InlineData("admin.connections.delete")]
+    public void ConnectionChanges_ByAnAgent_FileAProposal(string operationId)
     {
-        OperatorJourneyApproval.ForMutation("admin.connections.create", mutating: true)
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
+
+        OperatorJourneyApproval.IsDirectExecute(operationId).Should().BeFalse();
+        descriptor.ApprovalModel.Should().Be(OperationApprovalModel.OperatorGate);
+        new PublishedOperationTool(descriptor, "cat-agent", NullLogger.Instance).Describe().Description.Should().Contain("proposal only");
+    }
+
+    [UnitTheory]
+    [InlineData("admin.connections.object-storage.setup")]
+    [InlineData("admin.connections.objects.list")]
+    public void ObjectStorageReads_AreReadOnlyOperations(string operationId)
+    {
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
+
+        descriptor.ApprovalModel.Should().Be(OperationApprovalModel.None);
+        descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
+    }
+
+    [UnitTest]
+    public void ImportJourneyOperations_StillExecuteDirectly()
+    {
+        OperatorJourneyApproval.ForMutation("admin.import.upload-object", mutating: true)
             .Should().Be(OperationApprovalModel.None);
     }
 

@@ -664,6 +664,8 @@ if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingL
 builder.Services.AddCloudFileStorage(builder.Configuration);
 builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions>(
     builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
+Honua.Core.Features.ObjectStorage.ObjectStorageServiceCollectionExtensions.AddObjectStorageConnections(
+    builder.Services, builder.Configuration);
 #if !HONUA_EXCLUDE_AWS
 builder.Services.AddAwsImportObjectStore();
 Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
@@ -1853,6 +1855,7 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+app.MapObjectStorageConnectionEndpoints();
 // Experimental gate (PA-001): only map federation endpoints when the feature is enabled.
 if (app.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", false))
 {

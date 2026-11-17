@@ -194,11 +194,10 @@ With a system database, MCP session records are shared through the `mcp_sessions
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `Import__ObjectStore__AllowedBuckets__N` | — (empty denies every bucket) | Bucket names the host may import with `s3://`. An entry ending in `*` matches that prefix. Matching is case-insensitive. |
-| `Import__ObjectStore__AssumeRoles__N__RoleArn` | — | IAM role ARN the request may ask the host to assume. |
-| `Import__ObjectStore__AssumeRoles__N__ExternalId` | — | External id for that role's trust policy. Never accepted from the import request, logged, or written to the audit record. |
-| `Import__ObjectStore__Region` | SDK default | Optional region for the customer-bucket client. |
-| `Import__ObjectStore__ServiceUrl` | — | Optional endpoint override for a VPC endpoint or a development emulator. Production imports leave this unset. |
+| `Connections__ObjectStorage__QuickCreateTemplateUrl` | — | HTTPS CloudFormation template that creates the `honua-connection-*` role. The object storage setup endpoint returns a quick-create link only when this is set. |
+| `Connections__ObjectStorage__TrustedPrincipalArn` | — | Principal the role template trusts, passed to the template as `TrustedPrincipalArn`. |
+| `Import__ObjectStore__Region` | SDK default | Optional region for the emulator S3 and STS clients. |
+| `Import__ObjectStore__ServiceUrl` | — | Endpoint override for a development emulator. Refused when the environment is Production. |
 | `Import__ObjectStore__ForcePathStyle` | `false` (on when `ServiceUrl` is set) | Path-style addressing for the customer-bucket client. |
 | `Import__Limits__MaxObjectStoreImportBytes` | 50 GiB | Largest `s3://` object the import will accept. Published as `maxObjectStoreImportBytes` on `GET /api/v1/admin/import/limits`. An object above this size is refused before any byte is read. |
 | `Limits__Imports__MaxPreviewSize` | `10485760` (10 MiB) | Max file size for import preview. |

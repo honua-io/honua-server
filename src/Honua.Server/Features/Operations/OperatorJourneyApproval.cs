@@ -7,8 +7,8 @@ namespace Honua.Server.Features.Operations;
 
 internal static class OperatorJourneyApproval
 {
+    // Connection create, update and delete always file a proposal for operator approval.
     public static bool IsDirectExecute(string operationId) => operationId is
-        "admin.connections.create" or
         "admin.import.upload-url" or
         "admin.import.upload-object";
 

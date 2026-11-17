@@ -263,9 +263,9 @@ public sealed class McpRegistryCompositionTests
     {
         // The explicit full-catalog opt-in keeps its pre-#3363 meaning: every eligible
         // descriptor publishes except the audited exclusions and hand-authored duplicates.
-        const int ExpectedCatalogAdminOperations = 125;
+        const int ExpectedCatalogAdminOperations = 127;
         const int ExpectedExclusionsInCatalog = 11;
-        const int ExpectedPublishedAdminTools = 114;
+        const int ExpectedPublishedAdminTools = 116;
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {

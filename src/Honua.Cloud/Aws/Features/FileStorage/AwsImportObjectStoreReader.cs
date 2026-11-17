@@ -5,77 +5,21 @@ using System.Net;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
-using Amazon.SecurityToken;
-using Amazon.SecurityToken.Model;
-using Honua.Cloud.Aws.Features;
 using Honua.Core.Features.Import.ObjectStore;
+using Honua.Core.Features.ObjectStorage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;
 
-internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreReader, IDisposable
+internal sealed partial class AwsImportObjectStoreReader(
+    AwsObjectStoreClientFactory clients,
+    ILogger<AwsImportObjectStoreReader>? logger = null) : IImportObjectStoreReader
 {
-    internal const string RoleSessionName = "honua-import";
-
-    private readonly IOptionsMonitor<ImportObjectStoreOptions> _options;
-    private readonly ILogger<AwsImportObjectStoreReader>? _logger;
-    private readonly bool _ownsClients;
-    private readonly Lock _gate = new();
-    private IAmazonS3? _client;
-    private IAmazonSecurityTokenService? _sts;
-    private AmazonS3Config? _baseConfig;
-    private bool _disposed;
-
-    public AwsImportObjectStoreReader(
-        IOptionsMonitor<ImportObjectStoreOptions> options,
-        ILogger<AwsImportObjectStoreReader> logger)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(logger);
-        _options = options;
-        _logger = logger;
-        _ownsClients = true;
-    }
-
-    internal AwsImportObjectStoreReader(
-        IAmazonS3 client,
-        IAmazonSecurityTokenService? sts,
-        IOptionsMonitor<ImportObjectStoreOptions> options,
-        ILogger<AwsImportObjectStoreReader>? logger = null)
-    {
-        ArgumentNullException.ThrowIfNull(client);
-        ArgumentNullException.ThrowIfNull(options);
-        _client = client;
-        _sts = sts;
-        _options = options;
-        _logger = logger;
-        _ownsClients = false;
-        _baseConfig = client is AmazonS3Client s3 ? (AmazonS3Config)s3.Config : new AmazonS3Config();
-    }
-
-    internal static AssumeRoleRequest BuildAssumeRoleRequest(string roleArn, string? externalId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(roleArn);
-        var request = new AssumeRoleRequest
-        {
-            RoleArn = roleArn,
-            RoleSessionName = RoleSessionName,
-            DurationSeconds = 900,
-        };
-        if (!string.IsNullOrWhiteSpace(externalId))
-        {
-            request.ExternalId = externalId;
-        }
-
-        return request;
-    }
-
     public async Task<ImportObjectHead> HeadAsync(ImportObjectLocation location, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(location);
-        var lease = await LeaseAsync(location, cancellationToken).ConfigureAwait(false);
+        using var lease = await clients.LeaseAsync(location.Connection, cancellationToken).ConfigureAwait(false);
         try
         {
             var response = await lease.Client.GetObjectMetadataAsync(location.Bucket, location.Key, cancellationToken)
@@ -98,16 +42,12 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
         }
         catch (AmazonClientException)
         {
-            if (_logger is not null)
+            if (logger is not null)
             {
-                Log.HostIdentityUnavailable(_logger, location.Bucket);
+                Log.HostIdentityUnavailable(logger, location.Bucket);
             }
 
             throw ImportObjectStoreException.Forbidden("The host identity cannot read the object.");
-        }
-        finally
-        {
-            lease.Dispose();
         }
     }
 
@@ -118,7 +58,7 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
     {
         ArgumentNullException.ThrowIfNull(location);
         ArgumentException.ThrowIfNullOrWhiteSpace(etag);
-        var lease = await LeaseAsync(location, cancellationToken).ConfigureAwait(false);
+        using var lease = await clients.LeaseAsync(location.Connection, cancellationToken).ConfigureAwait(false);
         try
         {
             var response = await lease.Client.GetObjectAsync(new GetObjectRequest
@@ -131,201 +71,19 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
         }
         catch (AmazonS3Exception ex)
         {
-            lease.Dispose();
             throw MapS3(ex, location);
-        }
-        catch
-        {
-            lease.Dispose();
-            throw;
-        }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed || !_ownsClients)
-        {
-            _disposed = true;
-            return;
-        }
-
-        _disposed = true;
-        _client?.Dispose();
-        _sts?.Dispose();
-    }
-
-    private async Task<ClientLease> LeaseAsync(ImportObjectLocation location, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(location.AssumeRoleArn))
-        {
-            return new ClientLease(Client, dispose: false);
-        }
-
-        var role = FindRole(location.AssumeRoleArn);
-        if (role is null)
-        {
-            throw ImportObjectStoreException.Forbidden("assumeRoleArn is not allow-listed.");
-        }
-
-        AssumeRoleResponse response;
-        try
-        {
-            response = await Sts.AssumeRoleAsync(BuildAssumeRoleRequest(role.RoleArn.Trim(), role.ExternalId), cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (AmazonSecurityTokenServiceException ex)
-        {
-            if (_logger is not null)
-            {
-                Log.AssumeRoleFailed(_logger, role.RoleArn, ex.ErrorCode);
-            }
-
-            throw ImportObjectStoreException.Forbidden("The host identity cannot assume the requested role.");
         }
         catch (AmazonClientException)
         {
-            if (_logger is not null)
-            {
-                Log.HostIdentityUnavailable(_logger, location.Bucket);
-            }
-
-            throw ImportObjectStoreException.Forbidden("The host identity cannot read the object.");
+            throw ImportObjectStoreException.Forbidden("Object storage could not be reached. Try again later.");
         }
-
-        var credentials = response.Credentials
-            ?? throw ImportObjectStoreException.Forbidden("The host identity cannot assume the requested role.");
-        var session = new SessionAWSCredentials(
-            credentials.AccessKeyId,
-            credentials.SecretAccessKey,
-            credentials.SessionToken);
-        var client = new AmazonS3Client(session, CloneConfig(BaseConfig));
-        return new ClientLease(client, dispose: true);
-    }
-
-    private ImportObjectStoreRoleOptions? FindRole(string roleArn)
-        => _options.CurrentValue.AssumeRoles.FirstOrDefault(role =>
-            string.Equals(role.RoleArn?.Trim(), roleArn, StringComparison.Ordinal));
-
-    private IAmazonS3 Client
-    {
-        get
-        {
-            if (_client is not null)
-            {
-                return _client;
-            }
-
-            lock (_gate)
-            {
-                return _client ??= CreateS3Client();
-            }
-        }
-    }
-
-    private IAmazonSecurityTokenService Sts
-    {
-        get
-        {
-            if (_sts is not null)
-            {
-                return _sts;
-            }
-
-            lock (_gate)
-            {
-                if (_sts is not null)
-                {
-                    return _sts;
-                }
-
-                if (!_ownsClients)
-                {
-                    throw ImportObjectStoreException.Forbidden("The host identity cannot assume the requested role.");
-                }
-
-                return _sts = CreateStsClient();
-            }
-        }
-    }
-
-    private AmazonS3Config BaseConfig
-    {
-        get
-        {
-            if (_baseConfig is not null)
-            {
-                return _baseConfig;
-            }
-
-            _ = Client;
-            return _baseConfig ?? new AmazonS3Config();
-        }
-    }
-
-    private AmazonS3Client CreateS3Client()
-    {
-        var config = CreateS3Config();
-        _baseConfig = config;
-        return new AmazonS3Client(config);
-    }
-
-    private AmazonSecurityTokenServiceClient CreateStsClient()
-    {
-        var s3 = CreateS3Config();
-        var config = new AmazonSecurityTokenServiceConfig();
-        if (s3.RegionEndpoint is not null)
-        {
-            config.RegionEndpoint = s3.RegionEndpoint;
-        }
-
-        if (!string.IsNullOrWhiteSpace(s3.ServiceURL))
-        {
-            config.ServiceURL = s3.ServiceURL;
-            config.AuthenticationRegion = s3.AuthenticationRegion;
-        }
-
-        return new AmazonSecurityTokenServiceClient(config);
-    }
-
-    private AmazonS3Config CreateS3Config()
-    {
-        var options = _options.CurrentValue;
-        var region = options.Region;
-        if (string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(options.ServiceUrl))
-        {
-            region = "us-east-1";
-        }
-
-        var config = new AmazonS3Config
-        {
-            ForcePathStyle = options.ForcePathStyle || !string.IsNullOrWhiteSpace(options.ServiceUrl),
-        };
-        AwsClientEndpoint.Apply(config, region, options.ServiceUrl);
-        return config;
-    }
-
-    private static AmazonS3Config CloneConfig(AmazonS3Config source)
-    {
-        var config = new AmazonS3Config { ForcePathStyle = source.ForcePathStyle };
-        if (source.RegionEndpoint is not null)
-        {
-            config.RegionEndpoint = source.RegionEndpoint;
-        }
-
-        if (!string.IsNullOrWhiteSpace(source.ServiceURL))
-        {
-            config.ServiceURL = source.ServiceURL;
-            config.AuthenticationRegion = source.AuthenticationRegion;
-        }
-
-        return config;
     }
 
     private ImportObjectStoreException MapS3(AmazonS3Exception exception, ImportObjectLocation location)
     {
-        if (_logger is not null)
+        if (logger is not null)
         {
-            Log.ReadFailed(_logger, location.Bucket, exception.ErrorCode, (int)exception.StatusCode);
+            Log.ReadFailed(logger, location.Bucket, exception.ErrorCode, (int)exception.StatusCode);
         }
         if (exception.StatusCode == HttpStatusCode.PreconditionFailed
             || string.Equals(exception.ErrorCode, "PreconditionFailed", StringComparison.OrdinalIgnoreCase))
@@ -333,33 +91,14 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
             return ImportObjectStoreException.Changed("The object changed after the preflight ETag was recorded.");
         }
 
-        if (IsNotFound(exception))
+        if (AwsObjectStoreErrors.IsNotFound(exception))
         {
             return ImportObjectStoreException.NotFound("The object was not found.");
         }
 
-        return ImportObjectStoreException.Forbidden("The host identity cannot read the object.");
-    }
-
-    private static bool IsNotFound(AmazonS3Exception exception)
-        => exception.StatusCode == HttpStatusCode.NotFound
-           || string.Equals(exception.ErrorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase)
-           || string.Equals(exception.ErrorCode, "NoSuchBucket", StringComparison.OrdinalIgnoreCase)
-           || string.Equals(exception.ErrorCode, "NotFound", StringComparison.OrdinalIgnoreCase);
-
-    private readonly struct ClientLease(IAmazonS3 client, bool dispose)
-    {
-        public IAmazonS3 Client { get; } = client;
-
-        public void Dispose()
-        {
-            if (dispose)
-            {
-                Client.Dispose();
-            }
-        }
-
-        public IAmazonS3? Detach() => dispose ? Client : null;
+        return AwsObjectStoreErrors.IsRequesterPaysSignal(exception)
+            ? ImportObjectStoreException.RequesterPays()
+            : ImportObjectStoreException.Forbidden("The connection cannot read the object.");
     }
 
     private sealed class ResponseBody : Stream
@@ -448,9 +187,6 @@ internal sealed partial class AwsImportObjectStoreReader : IImportObjectStoreRea
         [LoggerMessage(EventId = 4810, Level = LogLevel.Warning, Message = "Object store read failed for bucket {Bucket} with {ErrorCode} status {StatusCode}")]
         public static partial void ReadFailed(ILogger logger, string bucket, string? errorCode, int statusCode);
 
-        [LoggerMessage(EventId = 4811, Level = LogLevel.Warning, Message = "AssumeRole failed for {RoleArn} with {ErrorCode}")]
-        public static partial void AssumeRoleFailed(ILogger logger, string roleArn, string? errorCode);
-
         [LoggerMessage(EventId = 4812, Level = LogLevel.Warning, Message = "Object store host identity is unavailable for bucket {Bucket}")]
         public static partial void HostIdentityUnavailable(ILogger logger, string bucket);
     }
@@ -461,7 +197,9 @@ internal static class AwsImportObjectStoreServiceCollectionExtensions
     public static IServiceCollection AddAwsImportObjectStore(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+        services.AddSingleton<AwsObjectStoreClientFactory>();
         services.AddSingleton<IImportObjectStoreReader, AwsImportObjectStoreReader>();
+        services.AddSingleton<IObjectStoreConnector, AwsObjectStoreConnector>();
         return services;
     }
 }

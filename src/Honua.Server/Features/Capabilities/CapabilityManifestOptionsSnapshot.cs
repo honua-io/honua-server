@@ -44,12 +44,12 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IExecutionJobStore? executionJobStore = null,
         IJobQueue? jobQueue = null,
         Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null,
-        IOptions<ImportObjectStoreOptions>? objectStoreOptions = null,
+        IImportObjectStoreReader? objectStoreReader = null,
         IOperationProposalStore? proposalStore = null)
     {
         BackgroundImportRunner = backgroundImportRunner;
-        ObjectStoreConfigured = objectStoreOptions?.Value.AllowedBuckets?
-            .Any(static bucket => !string.IsNullOrWhiteSpace(bucket)) == true;
+        // Object storage import is reachable through connections whenever this host can read S3.
+        ObjectStoreConfigured = objectStoreReader is not null;
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
         ArgumentNullException.ThrowIfNull(realtimeLimits);

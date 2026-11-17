@@ -47,6 +47,14 @@ internal static class CoreMigrationTestFixture
             schema,
             "src", "Honua.Server", "Migrations", "055_SetRasterDataExternalStorage.sql");
 
+    // 156 adds the generation trigger to metadata_v2_current, so the metadata tables come first.
+    public static async Task ApplyObjectStorageConnectionsAsync(PostgresFixture fixture, string schema)
+    {
+        await ApplyPreVocabularyMetadataV2Async(fixture, schema);
+        await ApplyAsync(fixture, schema, "src", "Honua.Server", "Migrations", "156_CreateConfigurationDocuments.sql");
+        await ApplyAsync(fixture, schema, "src", "Honua.Server", "Migrations", "220_CreateObjectStorageConnections.sql");
+    }
+
     private static async Task ApplyAsync(
         PostgresFixture fixture,
         string schema,

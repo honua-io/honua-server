@@ -27,6 +27,8 @@ public sealed class OperationScopeMappingTests
     [InlineData("admin.layer.spatial.set", OperatorOperation.Update)]
     [InlineData("admin.connections.features.refresh", OperatorOperation.Update)]
     [InlineData("admin.connections.delete", OperatorOperation.Delete)]
+    [InlineData("admin.connections.object-storage.setup", OperatorOperation.Read)]
+    [InlineData("admin.connections.objects.list", OperatorOperation.Read)]
     [InlineData("admin.import.jobs.cancel", OperatorOperation.Delete)]
     public void TryResolve_AdminApprovalReplay_UsesSemanticOperation(
         string operationId,

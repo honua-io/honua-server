@@ -51,7 +51,7 @@ public sealed record ImportRequest
 
     public string? ObjectStoreETag { get; init; }
 
-    public string? ObjectStoreRoleArn { get; init; }
+    public string? ObjectStoreConnectionId { get; init; }
 
     public string? ObjectStoreContentType { get; init; }
 

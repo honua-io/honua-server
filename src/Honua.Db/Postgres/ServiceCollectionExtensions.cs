@@ -481,6 +481,11 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 configuration["Database:Schema"]));
 
+        services.AddSingleton<Honua.Core.Features.ObjectStorage.IObjectStorageConnectionStore>(serviceProvider =>
+            new Features.Security.PostgresObjectStorageConnectionStore(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                configuration["Database:Schema"]));
+
         // Register Postgres-backed RBAC role/permission store. Durable
         // storage wins over the in-memory default registered in Program.cs, so
         // roles, per-operation grants, and memberships survive restart and are
