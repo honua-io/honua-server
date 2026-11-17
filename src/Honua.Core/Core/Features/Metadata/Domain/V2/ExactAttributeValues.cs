@@ -177,9 +177,96 @@ public static partial class ExactAttributeValues
             return text;
         }
 
-        return decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
-            ? number.ToString(CultureInfo.InvariantCulture)
-            : null;
+        if (!decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+        {
+            return null;
+        }
+
+        // decimal.TryParse flushes an underflow to zero and rounds a long significand.
+        // An exponent form that does not reconstruct is not an exact value.
+        if ((text.Contains('e') || text.Contains('E')) && !ExponentTextFitsDecimal(text, number))
+        {
+            return null;
+        }
+
+        return number.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static bool ExponentTextFitsDecimal(string text, decimal parsed)
+    {
+        var span = text.AsSpan().Trim();
+        var marker = span.LastIndexOfAny('e', 'E');
+        if (marker <= 0 || marker == span.Length - 1)
+        {
+            return false;
+        }
+
+        var mantissaText = span[..marker];
+        if (SignificantDigits(mantissaText) > 28)
+        {
+            return false;
+        }
+
+        if (!int.TryParse(span[(marker + 1)..], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var exponent)
+            || !decimal.TryParse(mantissaText, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var mantissa))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (exponent >= 0)
+            {
+                return mantissa * Pow10(exponent) == parsed;
+            }
+
+            var divisor = Pow10(-exponent);
+            var scaled = mantissa / divisor;
+            return scaled == parsed && scaled * divisor == mantissa;
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+    }
+
+    private static int SignificantDigits(ReadOnlySpan<char> mantissa)
+    {
+        var digits = 0;
+        var seen = false;
+        foreach (var character in mantissa)
+        {
+            if (character is '+' or '-' or '.')
+            {
+                continue;
+            }
+
+            if (!char.IsDigit(character))
+            {
+                return int.MaxValue;
+            }
+
+            if (character == '0' && !seen)
+            {
+                continue;
+            }
+
+            seen = true;
+            digits++;
+        }
+
+        return digits;
+    }
+
+    private static decimal Pow10(int exponent)
+    {
+        var value = 1m;
+        for (var i = 0; i < exponent; i++)
+        {
+            value = checked(value * 10m);
+        }
+
+        return value;
     }
 
     private static string? FormatUtcInstant(long epochMilliseconds)

@@ -64,6 +64,19 @@ public sealed class ExactAttributeValuesConversionTests
     }
 
     [UnitTest]
+    public void FormatDecimalNumber_ExponentThatFits_BecomesPlainText()
+    {
+        ExactAttributeValues.FormatDecimalNumber(1e-7d).Should().Be("0.0000001");
+        ExactAttributeValues.FormatDecimalNumber(JsonDocument.Parse("1E-07").RootElement).Should().Be("0.0000001");
+    }
+
+    [UnitTest]
+    public void FormatDecimalNumber_ExponentThatDecimalCannotHold_ReturnsNull()
+    {
+        ExactAttributeValues.FormatDecimalNumber(JsonDocument.Parse("1.5e-30").RootElement).Should().BeNull();
+    }
+
+    [UnitTest]
     public void ToFiniteDouble_OutOfRangeJsonNumber_ReturnsNull()
     {
         using var document = JsonDocument.Parse("1e400");

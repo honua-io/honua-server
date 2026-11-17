@@ -104,6 +104,26 @@ internal sealed class PostgresFeatureLayerCopyService(
             {
                 var attributes = feature.Attributes.ToDictionary(kv => kv.Key,
                     kv => kv.Value is byte[] binary ? (object)("\\x" + Convert.ToHexString(binary)) : kv.Value);
+                if (exactCopy)
+                {
+                    // timestamp without time zone drops an offset using the session TimeZone.
+                    // Store the UTC wall clock so a DateTime field keeps its instant.
+                    foreach (var field in fields)
+                    {
+                        if (field.Type != MetadataV2FieldType.DateTime)
+                        {
+                            continue;
+                        }
+
+                        var key = attributes.Keys.FirstOrDefault(name =>
+                            name.Equals(field.Name, StringComparison.OrdinalIgnoreCase));
+                        if (key is not null && attributes[key] is { } temporal)
+                        {
+                            attributes[key] = ZoneLessUtcDateTime(temporal);
+                        }
+                    }
+                }
+
                 attributes.TryAdd(primary, feature.Id);
                 var json = JsonSerializer.Serialize(attributes, FeatureAttributesJsonContext.Default.DictionaryStringObject);
                 bytes += Encoding.UTF8.GetByteCount(json) + (feature.Geometry?.Length ?? 0);
@@ -215,6 +235,29 @@ internal sealed class PostgresFeatureLayerCopyService(
         }
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    // A zoned instant becomes UTC wall-clock text. Text with no offset is already a civil time.
+    internal static object ZoneLessUtcDateTime(object value)
+    {
+        const string format = "yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fffffff";
+        switch (value)
+        {
+            case DateTimeOffset offset:
+                return offset.UtcDateTime.ToString(format, CultureInfo.InvariantCulture);
+            case DateTime dateTime:
+                var utc = dateTime.Kind == DateTimeKind.Local ? dateTime.ToUniversalTime() : dateTime;
+                return utc.ToString(format, CultureInfo.InvariantCulture);
+            case string text when HasExplicitOffset(text)
+                && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed):
+                return parsed.UtcDateTime.ToString(format, CultureInfo.InvariantCulture);
+            default:
+                return value;
+        }
+    }
+
+    private static bool HasExplicitOffset(string text)
+        => text.EndsWith('Z') || text.EndsWith('z')
+            || (text.Length >= 6 && text[^6] is '+' or '-' && text[^3] == ':');
 
     private static string SqlType(MetadataV2Field field) => field.Type switch
     {

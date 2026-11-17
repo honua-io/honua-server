@@ -51,6 +51,16 @@ public sealed class ExactMutationCoercionTests
     }
 
     [UnitTest]
+    public void ValidateAttributes_JsonExponentBelowDecimalRange_IsRejected()
+    {
+        var result = Resource(MetadataV2FieldType.Decimal).ValidateAttributesV2(
+            new Dictionary<string, object?> { ["value"] = JsonDocument.Parse("1.5e-30").RootElement },
+            ValidationExtensions.AttributeValidationMode.Json);
+
+        result.IsValid.Should().BeFalse();
+    }
+
+    [UnitTest]
     public void ValidateAttributes_StrictMode_StillRejectsNumbersForExactFields()
     {
         var resource = Resource(MetadataV2FieldType.Decimal);
