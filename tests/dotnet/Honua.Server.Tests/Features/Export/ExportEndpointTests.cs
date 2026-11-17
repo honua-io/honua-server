@@ -30,21 +30,10 @@ namespace Honua.Server.Tests.Features.Export;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class ExportEndpointTests : IAsyncLifetime
+public sealed class ExportEndpointTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+    // One default host per class: its cases only read. Cases that replace services build their own.
+    private readonly HttpClient _client = fixture.Client;
 
     [IntegrationTheory]
     [InlineData("geojson")]
