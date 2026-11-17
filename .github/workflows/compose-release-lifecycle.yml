@@ -80,19 +80,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # Reuses the restore and base layers of the nightly and serving-image JIT builds.
+      # The customer package pins the default native-AOT image, so the journey installs it.
+      # Reuses the restore and base layers of the nightly AOT build.
       - name: Build production candidate image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           builder: ${{ steps.buildx.outputs.name }}
           context: .
-          file: Dockerfile
+          file: docker/Dockerfile.aot
           load: true
           tags: honua-lifecycle:candidate
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-amd64
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-amd64
           provenance: false
           sbom: false
       - name: Build private schema-140 prior fixture (never published)

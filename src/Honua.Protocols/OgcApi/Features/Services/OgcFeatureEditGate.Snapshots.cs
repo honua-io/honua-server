@@ -10,38 +10,66 @@ namespace Honua.Protocols.Ogc.Api.Features.Services;
 
 internal static partial class OgcFeatureEditGate
 {
-    private static async Task<(FeatureEditBatch Batch, Dictionary<long, IReadOnlyDictionary<string, object?>> Rows)?> ReadEffectiveUpdatesAsync(
+    private readonly record struct EffectiveEdits(
+        FeatureEditBatch Batch,
+        Dictionary<(FeatureEditOperationKind Kind, long Id), IReadOnlyDictionary<string, object?>> Rows);
+
+    private static async Task<EffectiveEdits?> ReadEffectiveUpdatesAsync(
         Target target,
         FeatureEditBatch batch,
         CancellationToken cancellationToken)
     {
-        var updates = FeatureEditRows.Enumerate(batch)
+        var rows = FeatureEditRows.Enumerate(batch);
+        var updates = rows
             .Where(static row => row.Kind == FeatureEditOperationKind.Update && row.Feature is { } feature &&
                 (feature.PreserveOmittedMaskedAttributes || !feature.PreservedAttributeNames.IsDefaultOrEmpty))
             .Select(static row => row.Feature!.Value)
             .ToArray();
-        var effective = new Dictionary<long, IReadOnlyDictionary<string, object?>>();
-        if (updates.Length == 0)
+        var effective = new Dictionary<(FeatureEditOperationKind Kind, long Id), IReadOnlyDictionary<string, object?>>();
+        var deletes = target.Resource.AttributeRules.Count == 0 ? [] : rows
+            .Where(static row => row.Kind == FeatureEditOperationKind.Delete)
+            .Select(static row => row.ObjectId!.Value).ToArray();
+        var ids = updates.Select(static row => row.Id).Concat(deletes).Distinct().ToImmutableArray();
+        if (ids.IsEmpty)
         {
-            return (batch, effective);
+            return new(batch, effective);
         }
 
-        var ids = updates.Select(static row => row.Id).Distinct().ToImmutableArray();
         var page = await ReadSnapshotsAsync(target, (batch.VersionContext, ids), cancellationToken).ConfigureAwait(false);
         var stored = page.Items.IsDefaultOrEmpty ? new Dictionary<long, Feature>() : page.Items.ToDictionary(static row => row.Id);
+        return BindEffectiveSnapshots(batch, updates, (deletes, stored));
+    }
+
+    private static EffectiveEdits? BindEffectiveSnapshots(
+        FeatureEditBatch batch,
+        Feature[] updates,
+        (long[] Deletes, Dictionary<long, Feature> Stored) snapshots)
+    {
+        var effective = new Dictionary<(FeatureEditOperationKind Kind, long Id), IReadOnlyDictionary<string, object?>>();
         var preconditions = batch.Preconditions.IsDefault ? [] : batch.Preconditions.ToList();
         foreach (var update in updates)
         {
-            if (!stored.TryGetValue(update.Id, out var snapshot))
+            if (!snapshots.Stored.TryGetValue(update.Id, out var snapshot))
             {
                 return null;
             }
 
-            effective[update.Id] = MergeEffectiveAttributes(update, snapshot);
+            effective[(FeatureEditOperationKind.Update, update.Id)] = MergeEffectiveAttributes(update, snapshot);
             BindSnapshot(preconditions, update, snapshot);
         }
 
-        return (batch with { Preconditions = [.. preconditions] }, effective);
+        foreach (var id in snapshots.Deletes)
+        {
+            if (!snapshots.Stored.TryGetValue(id, out var snapshot))
+            {
+                return null;
+            }
+
+            effective[(FeatureEditOperationKind.Delete, id)] = snapshot.Attributes;
+            BindSnapshot(preconditions, Feature.Create(id, null), snapshot);
+        }
+
+        return new(batch with { Preconditions = [.. preconditions] }, effective);
     }
 
     private static Task<QueryResult<Feature>> ReadSnapshotsAsync(

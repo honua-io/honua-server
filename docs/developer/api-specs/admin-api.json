@@ -5767,6 +5767,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable."
           }
         }
       },
@@ -5909,6 +5912,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable."
           }
         }
       }
@@ -5967,6 +5973,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable."
           }
         }
       }
@@ -6011,6 +6020,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -6025,6 +6037,12 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "502": {
+            "description": "The rollback operation failed in the deployment backend."
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable or the rollback outcome is indeterminate."
           }
         }
       }
@@ -10557,6 +10575,15 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "502": {
+            "description": "The rollback operation failed in the deployment backend."
+          },
+          "503": {
+            "description": "The rollback outcome is indeterminate."
           }
         }
       }
@@ -11306,6 +11333,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Durable proposal storage or the required control plane is unavailable (problem type `capability-unavailable`, code `dependency-unavailable`)."
           }
         }
       }
@@ -11345,6 +11375,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Durable proposal storage or the required control plane is unavailable (problem type `capability-unavailable`, code `dependency-unavailable`)."
           }
         }
       }
@@ -11454,6 +11487,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Durable proposal storage or the required control plane is unavailable (problem type `capability-unavailable`, code `dependency-unavailable`)."
           }
         }
       }

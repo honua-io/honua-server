@@ -24,14 +24,11 @@ This repository does not certify ArcGIS clients. Lane id `desktop-arcgis`.
 
 ## Runtime contract
 
-The compose stack starts `postgres` and `redis`, then `honua`, then the
+The compose stack starts `postgres`, then `honua`, then the
 one-shot `seed` service, and finally the requested client lane. Honua completes
 its production migrations and readiness checks before fixture data is seeded. The Honua container binds HTTP/1 on
 port `5000` for browser and CLI base URLs and h2c gRPC on port `5001` so the
-container uses the same split-transport shape as production images. Redis is
-part of the stack because server workflows that require a cache or durable
-coordination backend must fail in the interop lane the same way they would fail
-in a real deployment.
+container uses the same split-transport shape as production images.
 
 PostGIS enables GDAL raster drivers. Honua migrations create the raster and
 Metadata v2 tables before `client-compat-v1.sql` populates fixture records. The browser
@@ -127,7 +124,7 @@ Every client depends on both `honua: service_healthy` and
 The `multidim-fixture` profile proves the production multidimensional path,
 not a metadata-only catalog projection. It creates a two-time-slice CF NetCDF
 artifact, uploads it to the pinned LocalStack S3 emulator, registers it through
-the admin API, dispatches `coverage.multidim.metadata` through Redis to the
+the admin API, dispatches `coverage.multidim.metadata` through PostgreSQL to the
 native GDAL worker, and verifies the derived Zarr store plus an ImageServer PNG
 render for both time slices. An independent formula checks all 32 Zarr values,
 coordinate arrays, dimensions, units, fill value and nodata locations. A fixed

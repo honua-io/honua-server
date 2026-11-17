@@ -1,19 +1,18 @@
 ---
 type: guide
 title: "Back up and restore"
-description: "Inventory the deployment's durable state, take a PostGIS backup, and plan a restore that accounts for Redis and referenced file/object bytes as well."
+description: "Inventory the deployment's durable state, take a PostGIS backup, and plan a restore that accounts for referenced file/object bytes as well."
 resource: "honua://capability/dr.backup-automation"
 ---
 # Back up and restore
 
 Inventory the deployment's durable state, take a PostGIS backup, and plan a
-restore that accounts for Redis and referenced file/object bytes as well.
+restore that accounts for referenced file/object bytes as well.
 
-> **2026.1 boundary:** Full-platform recovery for a topology with durable Redis
-> workflows or proposals is **not a qualified procedure in 2026.1**. The PostgreSQL and
-> file-storage commands on this page are component procedures, not proof of
-> complete platform recovery, and a same-container restart test does not
-> establish recovery after primary Redis storage is destroyed.
+> **2026.1 boundary:** Full-platform recovery is **not a qualified procedure in
+> 2026.1**. The PostgreSQL and file-storage commands on this page are component
+> procedures, not proof of complete platform recovery, and a same-container
+> restart test does not establish recovery after primary storage is destroyed.
 
 **Prerequisites:** `pg_dump`/`pg_restore` matching your server's PostgreSQL major version, and credentials for the Honua database.
 
@@ -23,43 +22,23 @@ restore that accounts for Redis and referenced file/object bytes as well.
 
 | Store | Contents | Backup need |
 |---|---|---|
-| PostGIS database | Features, layers, service metadata, connections, roles, database-backed audit data, migration journal, enabled transactional outbox rows, and background jobs with their queue, logs and geoprocessing result packages | Dump/PITR plus the matching restore point for every other enabled store; PostgreSQL is not the only durable substrate |
-| File storage (`FileStorage__Provider`) and other configured output stores | Uploaded files, attachments and job/workflow output bytes referenced by database or Redis records; local volumes or object storage | Preserve the actual referenced bytes and object versions, including outputs outside the default file-storage volume; replication alone is not a historical recovery point |
-| Redis durable state | Version reconcile/post job status, workflow definitions/runs/watermarks, proposals and operation state | Include every configured Redis database/namespace in the recovery inventory. Persist and back up durable state; do not omit it or flush a mixed cache/job instance |
-| Redis disposable cache | Reconstructible cache entries only, where the deployment inventory proves they share no required durable state | May be rebuilt after restore; exclude only the explicitly identified disposable state, never Redis as a whole |
+| PostGIS database | Features, layers, service metadata, connections, roles, database-backed audit data, migration journal, enabled transactional outbox rows, background jobs with their queue, logs and geoprocessing result packages, version reconcile/post job status, workflow definitions/runs/watermarks, proposals and operation state | Dump/PITR plus the matching restore point for every other enabled store; PostgreSQL is not the only durable substrate |
+| File storage (`FileStorage__Provider`) and other configured output stores | Uploaded files, attachments and job/workflow output bytes referenced by database records; local volumes or object storage | Preserve the actual referenced bytes and object versions, including outputs outside the default file-storage volume; replication alone is not a historical recovery point |
 | Deployment configuration and recovery keys | Store locations, namespaces, image/config versions and access to encryption/signing keys and secrets needed to read restored state | Retain versioned configuration and a tested secret-manager recovery/access procedure; do not put plaintext credentials in the backup manifest |
 
 Application replicas are replaceable only when their durable bytes live on the
 declared persistent stores. Inventory container-local uploads/outputs before
 replacement; the older Compose migration below covers a known exception.
 
-## Version job status during Redis outages
-
-Version reconcile/post status saved during a Redis outage stays in memory on
-that process. On recovery, polling that process can advance an existing Redis
-record from pending or running to its locally retained terminal result. An
-existing distributed terminal result always wins. Polling does not recreate
-missing Redis records; a job admitted during an outage becomes shared only if
-a later status save succeeds.
-
-Until Redis acknowledges a transition, another replica or replacement process
-can report an older status or no job. Process loss discards unacknowledged
-local transitions. Once a transition is acknowledged, the local pending copy
-is removed; another Redis outage can leave that process unable to report the
-job. Recovery of status does not replay the underlying feature mutation.
-Redis job records expire seven days after their last successful status write.
-
 ## Consistent recovery set
 
-For Local Docker, inventory named volumes and any external buckets/Redis
-instances. For AWS ECS-small or another managed placement, inventory the
-database, Redis service, object stores and infrastructure/secret configuration
-actually used. A managed database backup does not cover its Redis or bucket
-neighbors. Enabled Preview features still count when they store durable state.
+For Local Docker, inventory named volumes and any external buckets. For AWS
+ECS-small or another managed placement, inventory the database, object stores
+and infrastructure/secret configuration actually used. A managed database
+backup does not cover its bucket neighbors. Enabled Preview features still count when they store durable state.
 
-1. Record the release lock and server/worker image digests, PostgreSQL/Redis
-   versions, database/schema and Redis database/namespace identities, output
-   locations, retention/TTL policies, and all enabled durable features. Identify
+1. Record the release lock and server/worker image digests, PostgreSQL
+   version, database/schema identities, output locations, retention/TTL policies, and all enabled durable features. Identify
    the recovery owner and backup mechanism for each store.
 2. Fence new submissions and writes, pause scheduled producers, and drain
    accepted jobs and outbox deliveries where possible. Record unresolved queued,
@@ -67,19 +46,12 @@ neighbors. Enabled Preview features still count when they store durable state.
    workflow scheduler, outbox dispatcher and external writer before snapshots;
    blocking HTTP traffic alone does not stop background mutations.
 3. While writers remain stopped, capture PostgreSQL and file/object recovery
-   points as described below. Capture Redis with the deployment's version-specific
-   persistence/backup procedure: for self-managed Redis, preserve a completed
-   restorable RDB snapshot or the complete AOF set and manifest required by that
-   Redis version on storage independent of the primary volume; for managed Redis,
-   retain its supported snapshot/export and restore instructions. Do not copy a
-   live, changing AOF file and call it a backup. AOF on the lost primary disk is
-   not an independent recovery copy; persistence and no-eviction settings alone
-   are not DR qualification.
+   points as described below.
 4. Bind the recovery set to one backup ID with per-store capture times, artifact
    checksums or provider snapshot/object-version IDs, completion status, and the
-   queued/running/outbox/output inventory. Redis expiration continues to matter:
-   record TTLs and restore delay, and treat expired records as unavailable rather
-   than extending retention by editing keys. If writers could not be quiesced or
+   queued/running/outbox/output inventory. Record retention policies and restore
+   delay, and treat expired records as unavailable rather than extending
+   retention by editing rows. If writers could not be quiesced or
    store points cannot be reconciled, record that inconsistency; do not label the
    set a complete platform backup.
 5. Verify independent backup access, then rehearse restoration into isolated
@@ -88,16 +60,15 @@ neighbors. Enabled Preview features still count when they store durable state.
    insufficient; record the destructive-restore and application-value assertions
    with the backup evidence.
 
-This is the required consistency plan, not a certified Redis restore recipe for
+This is the required consistency plan, not a certified restore recipe for
 every provider. If the selected provider has no supported recoverable backup,
-or any enabled durable substrate is omitted, that topology's full-platform
-recovery remains **not qualified in 2026.1**. Do not replace it with an empty
-Redis instance and describe a PostgreSQL-only restore as complete.
+or any enabled durable store is omitted, that topology's full-platform
+recovery remains **not qualified in 2026.1**.
 
 ## Steps
 
 These component commands assume the writers above are stopped and the backup
-ID already identifies the matching Redis and output recovery points.
+ID already identifies the matching output recovery points.
 
 1. Dump the database. A compressed custom-format dump restores selectively and in parallel.
 
@@ -159,7 +130,7 @@ docker run --rm -v "$STORAGE_VOLUME":/data -v "$PWD":/backup:ro alpine \
   restore "$ARCHIVE"
 ```
 
-4. Restore every enabled durable Redis database/namespace from the matching recovery set using the recorded Redis-version/provider procedure. Start Redis without application clients and verify the persistence load completed, the expected job/queue/workflow/proposal/result records are present, and expiration has not removed required records. Restore output bytes held outside the file-storage snapshot too. Keep workers fenced if records, queue membership or output references disagree; use the loss expectations below to reconcile instead of guessing key values or blindly resubmitting work.
+4. Restore output bytes held outside the file-storage snapshot too. Keep workers fenced if job records, queue membership or output references disagree; use the loss expectations below to reconcile instead of guessing values or blindly resubmitting work.
 5. Point the recorded application/worker configuration and recovery keys at the replacement stores. Start the matching Honua version only in the isolated recovery environment with external side effects fenced: startup can resume background work. Migrations run automatically at startup and roll the restored schema forward to match the running version; set `HONUA_SKIP_MIGRATIONS=true` only if you intend to run them out-of-band, and check state via `GET /api/v1/admin/observability/migrations`. Startup also compares the journaled core-schema floor with its required physical tables and storage policy. For a non-default `Database:Schema`, the numbered adoption migration moves complete legacy guarded families forward and rejects partial or duplicate source/target state. This move is contract-gated on an existing database: keep restored traffic fenced, drain older nodes, review `GET /api/v1/admin/deploy/preflight`, and supply the reported one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce before apply. A partial restore or hand-created core object fails readiness/startup; Honua never repairs that mismatch from an ordinary store read or write. Reconcile the restore through the numbered migrations before readmitting traffic.
 6. Complete the value and work-state verification below, record all losses and replay decisions, then separately authorize production cutover and re-enable submissions, workers and external delivery. Readiness alone does not authorize replay of uncertain work.
 
@@ -184,11 +155,11 @@ records. Verify restored output references resolve to the intended bytes.
 
 | Work at the recovery boundary | Operator expectation and required disposition |
 |---|---|
-| Queued jobs | Only records and queue entries retained at the recovery point and still within retention can be recovered. Submissions after that point, or lost/expired Redis records, may be absent. PostgreSQL cannot reconstruct them; reconcile against the submission inventory before deliberate resubmission. |
+| Queued jobs | Only records and queue entries retained at the recovery point and still within retention can be recovered. Submissions after that point, or lost/expired records, may be absent. PostgreSQL cannot reconstruct them; reconcile against the submission inventory before deliberate resubmission. |
 | In-flight jobs/workflows | A recovered running record may have an obsolete worker lease/heartbeat and may be retried or failed by reconciliation. Effects completed after the snapshot can already exist elsewhere. Do not assume exactly-once replay or automatic recovery of missing records; inspect committed effects and use the operation's supported idempotency/retry contract, or record manual intervention. |
 | Terminal jobs and output references | Restored metadata does not restore output bytes, and restored bytes do not recreate lost result packages. Missing/expired references, partial outputs and unreferenced output objects require reconciliation against the manifest; do not report such jobs as verified successful or publish partial output as complete. |
 | Transactional outbox work | PostgreSQL restores rows/statuses at its selected point. A delivery completed after that point can be pending again; work committed after the point may be lost. External consumers are not rolled back with the database. Reconcile destination acknowledgements and stable event IDs before enabling dispatch; expect possible duplicate delivery and apply consumer deduplication. Do not mark rows delivered merely to clear a backlog. |
-| Proposals and operation evidence | Restore their enabled Redis state with its policy/approval/audit context. A missing or expired proposal/operation is not approval to execute; obtain a newly reviewed action where needed after reconciling prior effects. |
+| Proposals and operation evidence | They return with the restored database, including their policy/approval/audit context. A missing or expired proposal/operation is not approval to execute; obtain a newly reviewed action where needed after reconciling prior effects. |
 
 The transient-restart contract below applies only while the original durable
 records survive. It does not promise no lost jobs, exactly-once side effects,
@@ -233,7 +204,7 @@ recovered; restore the matching file-storage backup instead.
 ## Disaster recovery ownership (IaC / managed database, by design)
 
 Honua Server is a replaceable application tier when all durable state is on
-the declared PostgreSQL, Redis and file/object stores. Recreating replicas does
+the declared PostgreSQL and file/object stores. Recreating replicas does
 not reconstruct lost backing-store data. **Disaster recovery
 (backup automation, failover, and RTO/RPO reporting) is owned by the deployment's
 infrastructure/managed-database layer, not implemented inside this server**:
@@ -242,11 +213,11 @@ infrastructure/managed-database layer, not implemented inside this server**:
 |---|---|
 | `dr.backup-automation` | No server-side background job or route. Managed-database backups (for example RDS automated backups/snapshots and multi-AZ) are parameterized by `honua-iac`. |
 | `dr.failover` | No server-side evaluator or orchestrator. Failover (promoting a standby, cutover) is owned by the managed-database layer and documented as a drill procedure in `honua-iac`. |
-| `dr.cache-backup` | No cache-state backup/restore feature exists in this server. Redis persistence (RDB/AOF) is an infrastructure-layer setting the deployment owns. |
+| `dr.cache-backup` | No cache-state backup/restore feature exists in this server. Its caches live in process memory and are rebuilt after a restart. |
 | `dr.rto-rpo-reporting` | No server-computed RTO/RPO posture. Recovery-point/recovery-time evidence comes from the infrastructure layer's backup/restore and failover drills, captured against `honua-iac`'s `dr-evidence-template.json` schema. |
 
 A **bring-your-own-database** deployment retains responsibility for recovery of
-every enabled store, including Redis and file/object storage. Its managed
+every enabled store, including file/object storage. Its managed
 database covers only the database portion; infrastructure ownership does not
 waive the full-platform consistency and qualification requirements in any edition.
 
@@ -264,20 +235,19 @@ The server ships a shared default of 1 hour RTO / 5 minute RPO for whoever compu
 numbers — today that is the infrastructure layer's backup drills, not a Honua Server endpoint.
 Those defaults are not published recovery guarantees for any deployment.
 
-## Redis durable-job loss contract
+## Durable-job loss contract
 
-Redis is required for durable jobs/workflows (queue, execution logs, run state) — it is not a
-pure cache. The contract for what happens to an in-flight job when Redis becomes unavailable
+The PostgreSQL system database holds durable jobs/workflows (queue, execution logs, run state).
+The contract for what happens to an in-flight job when the database becomes unavailable
 mid-execution **and its durable state survives**:
 
 - `JobExecutionService`'s heartbeat pump writes are wrapped so a failed write is logged and
   retried on the next heartbeat interval — it never crashes the worker.
 - The worker's outer claim loop (and the separate `JobReconciliationService` sweep) both catch
-  broadly around every Redis call for the same reason: one failed Redis operation must not take
-  down the worker process.
-- The server's Redis connection is configured with `AbortOnConnectFail = false` and an
-  exponential reconnect policy, so a transient Redis restart is
-  followed by automatic reconnection rather than a permanent failure.
+  broadly around every store call for the same reason: one failed database operation must not
+  take down the worker process.
+- Database connections come from a pool that opens a new connection on the next use, so a
+  transient database restart is followed by automatic reconnection rather than a permanent failure.
 - If a job's heartbeat goes stale (the owning worker never recovers in time), the reconciliation
   sweep detects the expired heartbeat and — depending on the job's retry policy — either
   requeues it to `Queued` (`ClaimedBy`/`LastHeartbeatAt` cleared, immediately re-claimable by any

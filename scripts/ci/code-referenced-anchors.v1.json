@@ -140,16 +140,6 @@
       ]
     },
     {
-      "url": "https://honua.io/docs/guides/deploy/scaling-and-performance/#what-needs-redis-when-multi-node",
-      "sources": [
-        "docs/guides/deploy/examples/prometheus-alerts.yml"
-      ],
-      "why": "runbook_url for RedisDown. The section states exactly what stops working without Redis (durable jobs, queued imports, workflow runs return 503) and what falls back safely. Retargeted from /operations/runbook#cache-performance-problems (#3592).",
-      "alerts": [
-        "RedisDown"
-      ]
-    },
-    {
       "url": "https://honua.io/docs/guides/deploy/scaling-and-performance/#outbound-http-resilience",
       "sources": [
         "docs/guides/deploy/examples/prometheus-alerts.yml"
@@ -157,17 +147,6 @@
       "why": "runbook_url for HonuaCircuitBreakerOpen. The section documents the per-service circuit breakers, their HttpResilience__ knobs, and the circuit-breaker-open troubleshooting entry. Retargeted from /operations/runbook#circuit-breaker-incidents (#3592).",
       "alerts": [
         "HonuaCircuitBreakerOpen"
-      ]
-    },
-    {
-      "url": "https://honua.io/docs/guides/deploy/scaling-and-performance/#redis-capacity-and-latency",
-      "sources": [
-        "docs/guides/deploy/examples/prometheus-alerts.yml"
-      ],
-      "why": "runbook_url for the Redis memory and latency alerts. Covers sizing, durable-job noeviction policy, pressure response, latency budgets, and degradation order (#3592).",
-      "alerts": [
-        "RedisMemoryHigh",
-        "RedisLatencyHigh"
       ]
     }
   ],

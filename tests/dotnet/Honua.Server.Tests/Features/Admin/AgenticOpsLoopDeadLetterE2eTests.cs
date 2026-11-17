@@ -71,6 +71,9 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(DatabaseFixtureAdapter data
                         Enabled = true,
                         Channels = ["webhook"],
                     },
+                    // Ops-only installs now run the dispatcher; keep it from draining the
+                    // seeded backlog between the redrive and the backlog assertion.
+                    Dispatch = new AlertDispatchOptions { IdleDelay = TimeSpan.FromMinutes(1) },
                 }));
                 services.RemoveAll<IAlertDispatchHealth>();
                 services.AddSingleton(_dispatchHealth);

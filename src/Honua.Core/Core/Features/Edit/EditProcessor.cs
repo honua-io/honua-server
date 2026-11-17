@@ -765,9 +765,10 @@ public sealed class EditProcessor : IEditProcessor
         // V2 fields carry Nullable but no DefaultValue — match the v1 contract by
         // treating any non-nullable, non-geometry, non-system field as required.
         var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
+        var trackingFields = EditorTrackingFields.Names(resource.Editing).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var field in resource.SchemaFields)
         {
-            if (field.Nullable)
+            if (field.Nullable || trackingFields.Contains(field.Name))
             {
                 continue;
             }
@@ -791,10 +792,11 @@ public sealed class EditProcessor : IEditProcessor
     {
         var missing = new List<string>();
         var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
+        var trackingFields = EditorTrackingFields.Names(resource.Editing).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var field in resource.SchemaFields)
         {
-            if (field.Nullable)
+            if (field.Nullable || trackingFields.Contains(field.Name))
             {
                 continue;
             }
