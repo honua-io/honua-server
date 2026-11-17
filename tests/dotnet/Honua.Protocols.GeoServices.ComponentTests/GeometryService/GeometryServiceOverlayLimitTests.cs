@@ -154,8 +154,9 @@ public sealed class GeometryServiceOverlayLimitTests(GeometryServiceComponentFix
             var text = await response.Content.ReadAsStringAsync();
             await response.AssertGeoServicesErrorAsync(400);
             using var document = JsonDocument.Parse(text);
-            document.RootElement.GetProperty("error").GetProperty("message").GetString()
-                .Should().StartWith(RefusalStart);
+            // GeoServices errors carry the status title as the message and the reason in details.
+            document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                .Select(static detail => detail.GetString()).Should().Contain(detail => detail!.StartsWith(RefusalStart, StringComparison.Ordinal));
         }
     }
 

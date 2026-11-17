@@ -75,7 +75,9 @@ internal sealed class GeometryServiceOverlayBudget
     public Geometry Buffer(Geometry geometry, double distance, BufferParameters bufferParameters)
     {
         ArgumentNullException.ThrowIfNull(geometry);
-        var curves = new BufferCurveSetBuilder(geometry, distance, geometry.PrecisionModel, bufferParameters).GetCurves();
+        // The curve builder dereferences its elevation model; a default one leaves X and Y unchanged.
+        var curves = new BufferCurveSetBuilder(
+            geometry, distance, geometry.PrecisionModel, new NetTopologySuite.Algorithm.ElevationModel(), bufferParameters).GetCurves();
         if (OverlayCandidatePairs.CountLines(curves.Select(static curve => curve.Coordinates), PerOperation) > PerOperation)
         {
             throw new GeometryServiceLimitException(RefusalMessage);
