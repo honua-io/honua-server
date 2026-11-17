@@ -40,6 +40,7 @@ Use the same words in the Console, Studio, SDKs, guides, error messages, APIs, d
 | [Metadata](metadata.md) | Descriptive and structural facts about data or content, including schema, provenance, and attribution. Metadata does not grant authority. |
 | [Permissions](permissions.md) | What an authenticated actor may do to a particular object, determined by grants and effective object policies. |
 | [Sharing](sharing.md) | The intended audience and its effective access to a Map or App and its dependencies. A URL grants nothing by itself. |
+| [Export](export.md) | A Dataset written as cloud-native files (GeoParquet and PMTiles, or COG) in immutable Versions described by one STAC collection document, with one current Version. Access follows the Layer; a public Layer's Export is also served from the public data path. |
 | [Artifact](artifact.md) | A retained output with identity, format, location, and retention rules that a workflow can reference. |
 | [Capability](capability.md) | An action supported and currently available for the selected object, subject to provider, deployment, and permission checks. |
 | [Deployment](deployment.md) | The running artifact, configuration, and infrastructure behind an Environment. |
@@ -71,7 +72,7 @@ The canonical names are Dataset, Layer, Map, App, and each other named Studio ki
 
 Review new UI labels, model types, database names, API fields, MCP schemas, public SDK names, guides, and error messages against this table. Block additions that use:
 
-- resource for Dataset, publication for Layer, or content item for a named Studio kind;
+- resource for Dataset, publication for Layer or Export, or content item for a named Studio kind;
 - workspace for grouping or tenancy; use Folder or Environment for the corresponding concept;
 - slot, serving target, or projection as object names; use Layer or Service;
 - vendor type names, hosted layer, portal item, or web map for Honua objects;
