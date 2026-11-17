@@ -10,7 +10,7 @@ entries from the canonical GeoServices directory. Configure each environment exp
 
 Use the supported [namespaced layer publication API](../publish/namespaced-layer-publication.md)
 to publish retained PostGIS tables into the mapped tenant and namespace. The server
-derives tenant ownership from the trusted request context; a environment mapping does
+derives tenant ownership from the trusted request context; an environment mapping does
 not authorize publication or create metadata on its own.
 
 ```json
