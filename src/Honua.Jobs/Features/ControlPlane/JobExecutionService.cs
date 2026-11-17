@@ -876,7 +876,7 @@ internal sealed partial class JobExecutionService(
 
         try
         {
-            // Redis LockExtend is an atomic owner comparison and renewal. Performing it after the
+            // RenewLeaseAsync is an atomic owner comparison and renewal. Performing it after the
             // executor returns closes the interval before terminal finalization in which a paused
             // worker's lease can expire before the background renewal observes the loss.
             return await jobStore.RenewLeaseAsync(
