@@ -32,7 +32,9 @@ restart the server:
 `Capabilities__Experimental__Enabled=true` turns on every experimental
 capability at once, including ones outside 3D. Enabling a switch maps the
 routes; it does not grant an edition. The Enterprise routes still return `402`
-without their entitlement. Elevation (REST elevation, sun-shadow and slice
+without their entitlement. The scene switches need a build that includes the scene
+module (the default `all` protocol profile); a restricted protocol-profile
+build refuses to start when one of them, or the global switch, is set. Elevation (REST elevation, sun-shadow and slice
 routes, gRPC `ElevationService`) and Terrain-RGB tiles have no switch and are
 always on. The resolve responses return tileset URLs, so enable
 `serve.3d-tiles-scene` together with `scene.catalog` for a scene that clients

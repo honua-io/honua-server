@@ -51,7 +51,7 @@ An empty catalog for one protocol while another protocol lists the layer usually
 | WMS, WFS 2.0, WMTS, WCS | the matching classic serve keys | Capabilities documents built from the same routable publications. |
 | OData | `serve.odata` | One entity set per primary OData publication that has a layer id and a storage layer. |
 | MCP | `ai.mcp-discovery` | `honua_list_layers` over the same routable publications. |
-| Scene discovery | `scene.catalog` | Active registered scenes, not metadata-graph layers. |
+| Scene discovery | `scene.catalog` | Active registered scenes, not metadata-graph layers. Experimental opt-in; off by default. |
 | Capability manifest | `discovery.capability-manifest` | Deployment capabilities for this caller. Not a layer list. |
 
 Wire shapes, query parameters, and conformance classes stay on the protocol pages linked below. This page is only the path from a publish to a hit.
@@ -109,7 +109,7 @@ gRPC feature calls do not have their own catalog. They resolve the same publishe
 
 SceneServer rows in the GeoServices directory are a narrower, Enterprise-only projection of active registry records. They are not a substitute for the scene catalog on other editions.
 
-`scene.catalog` is deferred in the 2026.1 capability record even though these discovery routes stay registered. Treat scene discovery as evaluation, the same boundary as [Publish 3D scenes](../publish/publish-3d-scenes.md).
+`scene.catalog` is deferred in the 2026.1 capability record and is off by default: HTTP scene discovery and gRPC `ListScenes` are not mapped until `Capabilities__Experimental__scene.catalog__Enabled=true` is set (see [enable the 3D surfaces](../../reference/protocols/3d-tiles-and-scenes.md#enable-the-3d-surfaces)). Treat scene discovery as evaluation, the same boundary as [Publish 3D scenes](../publish/publish-3d-scenes.md).
 
 ### Capability manifest
 
