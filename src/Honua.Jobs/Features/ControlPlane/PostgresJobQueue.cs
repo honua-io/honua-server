@@ -58,7 +58,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
     private string ClaimStatement(string runtimeProfilePredicate)
         => $"""
             WITH next_job AS (
-                SELECT operation_id FROM {_jobs}
+                SELECT operation_id AS claimable_id FROM {_jobs}
                 WHERE status = '{nameof(ExecutionJobStatus.Queued)}' AND queue_visible_at <= now()
                   AND {runtimeProfilePredicate}
                   AND (@kinds::text[] IS NULL OR kind = ANY (@kinds))
@@ -76,7 +76,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
                 current_phase = '{ClaimedPhase}',
                 updated_at = now()
             FROM next_job
-            WHERE job.operation_id = next_job.operation_id
+            WHERE job.operation_id = next_job.claimable_id
             RETURNING {ExecutionJobRow.SelectColumns}
             """;
 
