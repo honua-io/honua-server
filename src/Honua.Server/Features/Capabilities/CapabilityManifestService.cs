@@ -538,6 +538,13 @@ internal sealed class CapabilityManifestService(
                     ? null
                     : CapabilityReasonCodes.DependencyUnavailable,
                 requiresAuthentication: true),
+            // Console catalog, share and open-data state survives a restart only in the system database.
+            // Anonymous: public share pages read it before anyone signs in.
+            Capability("console.content.persistent", "console", context,
+                configured: runtimeInventory.HasDurableConsoleContent,
+                unavailableReasonOverride: runtimeInventory.HasDurableConsoleContent
+                    ? null
+                    : CapabilityReasonCodes.DependencyUnavailable),
             Capability("edit.geoservices-version-tokens", "edit", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
@@ -724,6 +731,11 @@ internal sealed class CapabilityManifestService(
                 Configured = runtimeInventory.HasSharedFeatureLockStore && runtimeInventory.FeatureLockAuthorizerConfigured,
                 UnavailableReason = runtimeInventory.HasSharedFeatureLockStore ? null : CapabilityReasonCodes.DependencyUnavailable,
                 RequiresAuthentication = true,
+            },
+            ["console.content.persistent"] = new()
+            {
+                Configured = runtimeInventory.HasDurableConsoleContent,
+                UnavailableReason = runtimeInventory.HasDurableConsoleContent ? null : CapabilityReasonCodes.DependencyUnavailable,
             },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },

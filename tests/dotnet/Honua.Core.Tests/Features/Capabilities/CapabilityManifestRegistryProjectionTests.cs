@@ -64,6 +64,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "edit.features",
         "collaboration.feature-locks",
         "collaboration.feature-locks.cross-node",
+        "console.content.persistent",
         "edit.geoservices-version-tokens",
         "versioning.branch",
         "operate.status",
