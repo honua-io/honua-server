@@ -8,7 +8,6 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
-using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Formats;
 using Honua.TestKit.Attributes;
@@ -21,21 +20,27 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
-public sealed class PMTilesArchiveEndpointTests(DatabaseFixtureAdapter database) : IAsyncLifetime
+public sealed class PMTilesArchiveEndpointTests(PMTilesArchiveEndpointTests.TileHost host) : IClassFixture<PMTilesArchiveEndpointTests.TileHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Client;
 
-    public async Task InitializeAsync()
+    // One host per class: every case starts its own jobs and reads them back by id, and the job
+    // lists are only checked for the case's own jobs, so cases share the host and its job substrate.
+    public sealed class TileHost : IAsyncLifetime
     {
-        await database.DataSource.ClearJobSubstrateAsync();
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
+        internal WebAppFixture Fixture { get; } = new WebAppFixture().WithProductionJobSubstrate();
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
+        internal HttpClient Client { get; private set; } = null!;
+
+        public async Task InitializeAsync()
+        {
+            await Fixture.InitializeAsync();
+            await Fixture.Postgres.DataSource.ClearJobSubstrateAsync();
+            Client = Fixture.Client;
+        }
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
     [IntegrationTest]
