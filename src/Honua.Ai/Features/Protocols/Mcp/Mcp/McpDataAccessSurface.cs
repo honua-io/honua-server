@@ -684,12 +684,8 @@ internal sealed partial class McpDataAccessSurface
         if (invocationStarted)
         {
             result = McpInputGuidance.Enrich(tool, parameters.Arguments, result);
-            await McpAccessAudit.RecordToolCallAsync(
-                httpContext,
-                tool.Name,
-                parameters.Arguments,
-                result.IsError ? ExtractErrorCode(result) : null,
-                _logger).ConfigureAwait(false);
+            var errorCode = result.IsError ? ExtractErrorCode(result) : null;
+            await AuditAsync(httpContext, McpAccessAudit.ToolCall(tool.Name, parameters.Arguments, errorCode)).ConfigureAwait(false);
         }
 
         return result.InputRequired is { } inputRequired
@@ -892,11 +888,8 @@ internal sealed partial class McpDataAccessSurface
                         1,
                         new KeyValuePair<string, object?>("resource_family", resourceFamily),
                         new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
-                    await McpAccessAudit.RecordResourceReadAsync(
-                        httpContext,
-                        parameters.Uri,
-                        McpErrorMapper.Codes.InvalidArgument,
-                        _logger).ConfigureAwait(false);
+                    var invalid = McpAccessAudit.ResourceRead(parameters.Uri, McpErrorMapper.Codes.InvalidArgument);
+                    await AuditAsync(httpContext, invalid).ConfigureAwait(false);
                     return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
                 }
             }
@@ -906,8 +899,7 @@ internal sealed partial class McpDataAccessSurface
                 1,
                 new KeyValuePair<string, object?>("resource_family", resourceFamily),
                 new KeyValuePair<string, object?>("status", completionStatus));
-            await McpAccessAudit.RecordResourceReadAsync(httpContext, parameters.Uri, errorCode: null, _logger)
-                .ConfigureAwait(false);
+            await AuditAsync(httpContext, McpAccessAudit.ResourceRead(parameters.Uri, errorCode: null)).ConfigureAwait(false);
             return SuccessResponse(request.Id, result, McpJsonContext.Default.McpResourcesReadResult);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -923,11 +915,8 @@ internal sealed partial class McpDataAccessSurface
                 McpLog.ResourceReadFailed(_logger, resourceFamily, parameters.Uri, ex);
             }
 
-            await McpAccessAudit.RecordResourceReadAsync(
-                httpContext,
-                parameters.Uri,
-                error.Data?.Code ?? McpErrorMapper.Codes.Internal,
-                _logger).ConfigureAwait(false);
+            var failed = McpAccessAudit.ResourceRead(parameters.Uri, error.Data?.Code ?? McpErrorMapper.Codes.Internal);
+            await AuditAsync(httpContext, failed).ConfigureAwait(false);
             return ErrorResponse(request.Id, error);
         }
     }

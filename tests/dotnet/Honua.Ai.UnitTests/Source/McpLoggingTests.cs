@@ -15,20 +15,73 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 public sealed class McpLoggingTests
 {
-    [UnitTheory]
-    [InlineData(true, "warning", true, "warning")]
-    [InlineData(true, "verbose", true, null)]
-    [InlineData(true, "warning", false, null)]
-    [InlineData(false, "warning", true, null)]
-    public async Task SetLevel_StoresAKnownLevel_OnlyForALiveSessionWithTheStreamOn(
-        bool streamEnabled, string level, bool sessionKnown, string? storedLevel)
+    private static readonly McpOptions StreamOn = new() { ServerInitiatedStreamEnabled = true };
+
+    [UnitTest]
+    public async Task SetLevel_KnownLevelOnALiveSession_IsStoredForTheSession()
     {
         await using var sessions = new McpSessionManager();
         var sessionId = sessions.CreateSession();
-        var context = CreateContext(sessions, streamEnabled, sessionKnown ? sessionId : "unknown-session");
-        var surface = new McpDataAccessSurface([], [], NullLogger<McpDataAccessSurface>.Instance);
-        using var parameters = JsonDocument.Parse($$"""{"level":"{{level}}"}""");
 
+        var response = await SetLevelAsync(CreateContext(sessions, StreamOn, sessionId), "warning");
+
+        response.Error.Should().BeNull();
+        (await sessions.GetLogLevelAsync(sessionId, CancellationToken.None)).Should().Be("warning");
+    }
+
+    [UnitTheory]
+    [InlineData("verbose")]
+    [InlineData("INFO")]
+    public async Task SetLevel_UnknownLevel_IsRefusedAndNothingIsStored(string level)
+    {
+        await using var sessions = new McpSessionManager();
+        var sessionId = sessions.CreateSession();
+
+        var response = await SetLevelAsync(CreateContext(sessions, StreamOn, sessionId), level);
+
+        response.Error.Should().NotBeNull();
+        (await sessions.GetLogLevelAsync(sessionId, CancellationToken.None)).Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task SetLevel_ForASessionThisServerDoesNotKnow_IsRefused()
+    {
+        await using var sessions = new McpSessionManager();
+
+        var response = await SetLevelAsync(CreateContext(sessions, StreamOn, "unknown-session"), "warning");
+
+        response.Error!.Message.Should().Contain("active MCP session");
+    }
+
+    [UnitTest]
+    public async Task SetLevel_WhileTheServerStreamIsOff_IsNotOffered()
+    {
+        await using var sessions = new McpSessionManager();
+        var sessionId = sessions.CreateSession();
+
+        var response = await SetLevelAsync(CreateContext(sessions, new McpOptions(), sessionId), "warning");
+
+        response.Error!.Message.Should().Contain("does not advertise the logging capability");
+        (await sessions.GetLogLevelAsync(sessionId, CancellationToken.None)).Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData("debug")]
+    [InlineData("info")]
+    public void Info_IsDeliveredAtOrBelowTheSessionLevel(string? sessionLevel) =>
+        McpLogging.IsEnabled(sessionLevel, McpLogging.Info).Should().BeTrue();
+
+    [UnitTheory]
+    [InlineData("notice")]
+    [InlineData("emergency")]
+    public void Info_IsSuppressedAboveTheSessionLevel(string sessionLevel) =>
+        McpLogging.IsEnabled(sessionLevel, McpLogging.Info).Should().BeFalse();
+
+    private static async Task<McpJsonRpcResponse> SetLevelAsync(HttpContext context, string level)
+    {
+        using var parameters = JsonDocument.Parse($$"""{"level":"{{level}}"}""");
+        var surface = new McpDataAccessSurface([], [], NullLogger<McpDataAccessSurface>.Instance);
         var response = await surface.DispatchAsync(context, new McpJsonRpcRequest
         {
             JsonRpc = "2.0",
@@ -36,26 +89,15 @@ public sealed class McpLoggingTests
             Method = "logging/setLevel",
             Params = parameters.RootElement.Clone()
         }, CancellationToken.None);
-
-        (response!.Error is null).Should().Be(storedLevel is not null, response.Error?.Message);
-        (await sessions.GetLogLevelAsync(sessionId, CancellationToken.None)).Should().Be(storedLevel);
+        return response!;
     }
 
-    [UnitTheory]
-    [InlineData(null, true)]
-    [InlineData("debug", true)]
-    [InlineData("info", true)]
-    [InlineData("notice", false)]
-    [InlineData("emergency", false)]
-    public void Info_IsDeliveredUnlessTheSessionAskedForAHigherLevel(string? sessionLevel, bool delivered) =>
-        McpLogging.IsEnabled(sessionLevel, McpLogging.Info).Should().Be(delivered);
-
-    private static DefaultHttpContext CreateContext(McpSessionManager sessions, bool streamEnabled, string sessionId)
+    private static DefaultHttpContext CreateContext(McpSessionManager sessions, McpOptions options, string sessionId)
     {
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = new ServiceCollection()
             .AddSingleton(sessions)
-            .AddSingleton(Options.Create(new McpOptions { ServerInitiatedStreamEnabled = streamEnabled }))
+            .AddSingleton(Options.Create(options))
             .BuildServiceProvider();
         context.Request.Headers[McpSessionManager.SessionHeaderName] = sessionId;
         return context;

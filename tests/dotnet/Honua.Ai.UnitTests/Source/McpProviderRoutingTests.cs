@@ -113,9 +113,10 @@ public sealed class McpProviderRoutingTests
             [], NullLogger<McpDataAccessSurface>.Instance);
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services;
-        using var parameters = JsonDocument.Parse($$$"""
-            {"name":"{{{toolName}}}","arguments":{{{RoutingArguments(toolName, countOnly)}}}}
-            """);
+        var arguments = toolName == QueryFeaturesTool.ToolName
+            ? $$$"""{"serviceId":"svc-remote","serviceLayerIndex":0,"returnCountOnly":{{{(countOnly ? "true" : "false")}}}}"""
+            : RoutingArguments(toolName);
+        using var parameters = JsonDocument.Parse($$$"""{"name":"{{{toolName}}}","arguments":{{{arguments}}}}""");
         var response = await surface.DispatchAsync(context, new McpJsonRpcRequest
         {
             JsonRpc = "2.0",
@@ -203,10 +204,6 @@ public sealed class McpProviderRoutingTests
     }
 
     // Closed input schemas refuse undeclared arguments, so each tool gets only its own.
-    private static string RoutingArguments(string toolName, bool countOnly) => toolName switch
-    {
-        ListLayersTool.ToolName => "{}",
-        DescribeLayerTool.ToolName => """{"serviceId":"svc-remote","serviceLayerIndex":0}""",
-        _ => $$$"""{"serviceId":"svc-remote","serviceLayerIndex":0,"returnCountOnly":{{{(countOnly ? "true" : "false")}}}}""",
-    };
+    private static string RoutingArguments(string toolName) =>
+        toolName == ListLayersTool.ToolName ? "{}" : """{"serviceId":"svc-remote","serviceLayerIndex":0}""";
 }

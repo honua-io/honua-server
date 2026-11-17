@@ -31,13 +31,13 @@ public sealed class McpAccessAuditTests
         var surface = Surface();
         var context = Context(auditLog);
 
-        await DispatchAsync(surface, context, "tools/call", """{"name":"honua_list_layers","arguments":{}}""");
+        await DispatchAsync(surface, context, ("tools/call", """{"name":"honua_list_layers","arguments":{}}"""));
         await DispatchAsync(
             surface,
             context,
-            "tools/call",
-            """{"name":"honua_query_features","arguments":{"serviceId":"svc-a","serviceLayerIndex":0,"where":"owner = 'secret'"}}""");
-        await DispatchAsync(surface, context, "resources/read", $$"""{"uri":"{{LayerAResource}}?q=secret"}""");
+            ("tools/call",
+            """{"name":"honua_query_features","arguments":{"serviceId":"svc-a","serviceLayerIndex":0,"where":"owner = 'secret'"}}"""));
+        await DispatchAsync(surface, context, ("resources/read", $$"""{"uri":"{{LayerAResource}}?q=secret"}"""));
 
         auditLog.Events.Select(e => (e.Action, e.ResourceId, e.Outcome)).Should().Equal(
             (McpAccessAudit.ToolCallAction, "honua_list_layers", AuditOutcome.Success),
@@ -59,8 +59,8 @@ public sealed class McpAccessAuditTests
         await DispatchAsync(
             Surface(),
             Context(auditLog),
-            "tools/call",
-            """{"name":"honua_query_features","arguments":{"serviceId":"svc-a","fail":"denied"}}""");
+            ("tools/call",
+            """{"name":"honua_query_features","arguments":{"serviceId":"svc-a","fail":"denied"}}"""));
 
         var record = auditLog.Events.Should().ContainSingle().Which;
         record.Outcome.Should().Be(AuditOutcome.Denied);
@@ -74,7 +74,7 @@ public sealed class McpAccessAuditTests
         var context = McpTestFactory.AnonymousHttpContext();
         context.RequestServices = Services(auditLog);
 
-        await DispatchAsync(Surface(), context, "resources/read", $$"""{"uri":"{{LayerAResource}}"}""");
+        await DispatchAsync(Surface(), context, ("resources/read", $$"""{"uri":"{{LayerAResource}}"}"""));
 
         auditLog.Events.Should().BeEmpty();
     }
@@ -87,8 +87,8 @@ public sealed class McpAccessAuditTests
         var response = await DispatchAsync(
             Surface(),
             context,
-            "tools/call",
-            """{"name":"honua_list_layers","arguments":{}}""");
+            ("tools/call",
+            """{"name":"honua_list_layers","arguments":{}}"""));
 
         response.Result!.Value.GetProperty("isError").GetBoolean().Should().BeFalse();
     }
@@ -127,15 +127,14 @@ public sealed class McpAccessAuditTests
     private static async Task<McpJsonRpcResponse> DispatchAsync(
         McpDataAccessSurface surface,
         HttpContext context,
-        string method,
-        string parameters)
+        (string Method, string Parameters) call)
     {
-        using var document = JsonDocument.Parse(parameters);
+        using var document = JsonDocument.Parse(call.Parameters);
         var request = new McpJsonRpcRequest
         {
             JsonRpc = "2.0",
             Id = JsonDocument.Parse("\"a1\"").RootElement.Clone(),
-            Method = method,
+            Method = call.Method,
             Params = document.RootElement.Clone(),
         };
 

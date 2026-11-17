@@ -117,13 +117,12 @@ internal sealed class McpJobProgressBridge
             }
 
             var terminal = record.Status.IsTerminal();
-            var phase = record.CurrentPhase ?? record.Status.ToString();
-            var progress = record.PercentComplete ?? (terminal ? ProgressTotal : 0d);
+            var phase = Phase(record);
+            var progress = Progress(record);
 
             if (first || progress != lastProgress || !string.Equals(phase, lastPhase, StringComparison.Ordinal))
             {
-                await PublishStatusAsync(sessionId, jobId, record.Status.ToString(), phase, progress, cancellationToken)
-                    .ConfigureAwait(false);
+                await PublishStatusAsync(sessionId, (jobId, record), cancellationToken).ConfigureAwait(false);
                 lastProgress = progress;
                 lastPhase = phase;
                 first = false;
@@ -146,10 +145,7 @@ internal sealed class McpJobProgressBridge
     // started it, so there is no client progressToken a stock client would accept.
     private async Task PublishStatusAsync(
         string sessionId,
-        string jobId,
-        string status,
-        string phase,
-        double progress,
+        (string JobId, ExecutionJobRecord Record) job,
         CancellationToken cancellationToken)
     {
         var level = await _sessions.GetLogLevelAsync(sessionId, cancellationToken).ConfigureAwait(false);
@@ -158,21 +154,31 @@ internal sealed class McpJobProgressBridge
             return;
         }
 
+        using var data = StatusData(job.JobId, job.Record);
+        await _publisher.PublishMessage(sessionId, McpLogging.Info, McpLogging.JobsLogger, data.RootElement.Clone())
+            .ConfigureAwait(false);
+    }
+
+    private static JsonDocument StatusData(string jobId, ExecutionJobRecord record)
+    {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             writer.WriteString("jobId", jobId);
             writer.WriteString("uri", McpResourceUris.JobsPrefix + jobId);
-            writer.WriteString("status", status);
-            writer.WriteString("phase", phase);
-            writer.WriteNumber("progress", progress);
+            writer.WriteString("status", record.Status.ToString());
+            writer.WriteString("phase", Phase(record));
+            writer.WriteNumber("progress", Progress(record));
             writer.WriteNumber("total", ProgressTotal);
             writer.WriteEndObject();
         }
 
-        using var data = JsonDocument.Parse(buffer.ToArray());
-        await _publisher.PublishMessage(sessionId, McpLogging.Info, McpLogging.JobsLogger, data.RootElement.Clone())
-            .ConfigureAwait(false);
+        return JsonDocument.Parse(buffer.ToArray());
     }
+
+    private static string Phase(ExecutionJobRecord record) => record.CurrentPhase ?? record.Status.ToString();
+
+    private static double Progress(ExecutionJobRecord record) =>
+        record.PercentComplete ?? (record.Status.IsTerminal() ? ProgressTotal : 0d);
 }

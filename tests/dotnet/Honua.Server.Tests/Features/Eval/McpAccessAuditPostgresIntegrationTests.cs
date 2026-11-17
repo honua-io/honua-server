@@ -81,13 +81,13 @@ public sealed class McpAccessAuditPostgresIntegrationTests(DatabaseFixtureAdapte
             [new PromotionSurfaceIndexResource(null, null, jobService, NullLogger<PromotionSurfaceIndexResource>.Instance)],
             NullLogger<McpDataAccessSurface>.Instance);
 
-        await DispatchAsync(surface, context, "tools/call", """{"name":"honua_list_layers","arguments":{}}""");
+        await DispatchAsync(surface, context, ("tools/call", """{"name":"honua_list_layers","arguments":{}}"""));
         await DispatchAsync(
             surface,
             context,
-            "tools/call",
-            """{"name":"honua_query_features","arguments":{"serviceId":"svc-audit","serviceLayerIndex":0,"outFields":["*"],"returnGeometry":false}}""");
-        await DispatchAsync(surface, context, "resources/read", """{"uri":"honua://published-services"}""");
+            ("tools/call",
+            """{"name":"honua_query_features","arguments":{"serviceId":"svc-audit","serviceLayerIndex":0,"outFields":["*"],"returnGeometry":false}}"""));
+        await DispatchAsync(surface, context, ("resources/read", """{"uri":"honua://published-services"}"""));
 
         var page = await new PostgresAuditLogReader(connectionProvider, _schema).ListAsync(
             new AuditLogFilter { ResourceType = McpAccessAudit.ResourceType, PageSize = 10 });
@@ -100,9 +100,8 @@ public sealed class McpAccessAuditPostgresIntegrationTests(DatabaseFixtureAdapte
         string.Concat(records.Select(r => r.Details)).Should().NotContain("serviceLayerIndex\":1").And.NotContain("Lot 1");
     }
 
-    private ServiceProvider Services(IAdoNetDatabaseConnectionProvider connectionProvider)
-    {
-        var graph = new TestMetadataV2GraphBuilder()
+    private MetadataV2Graph AuditGraph() =>
+        new TestMetadataV2GraphBuilder()
             .AddResource("res-a", "Layer A", fields:
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
@@ -118,6 +117,10 @@ public sealed class McpAccessAuditPostgresIntegrationTests(DatabaseFixtureAdapte
             .AddPublication("pub-a", "svc-audit", "res-a", layerIndex: 0, storageBindingId: "bind-a")
             .AddPublication("pub-b", "svc-audit", "res-b", layerIndex: 1, storageBindingId: "bind-b")
             .Build();
+
+    private ServiceProvider Services(IAdoNetDatabaseConnectionProvider connectionProvider)
+    {
+        var graph = AuditGraph();
         var masks = Substitute.For<IFieldMaskSource>();
         masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
@@ -142,8 +145,10 @@ public sealed class McpAccessAuditPostgresIntegrationTests(DatabaseFixtureAdapte
         return services.BuildServiceProvider();
     }
 
-    private static async Task DispatchAsync(McpDataAccessSurface surface, HttpContext context, string method, string parameters)
+    private static async Task DispatchAsync(
+        McpDataAccessSurface surface, HttpContext context, (string Method, string Parameters) call)
     {
+        var (method, parameters) = call;
         using var document = JsonDocument.Parse(parameters);
         var response = await surface.DispatchAsync(context, new McpJsonRpcRequest
         {

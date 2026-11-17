@@ -28,20 +28,21 @@ internal static class McpAccessAudit
         "folderId", "itemId", "versionId", "draftId", "mapPackageId", "appPackageId", "datasetId",
     ];
 
-    public static Task RecordToolCallAsync(
-        HttpContext context,
-        string toolName,
-        JsonElement? arguments,
-        string? errorCode,
-        ILogger logger) =>
-        RecordAsync(context, ToolCallAction, toolName, ToolDetails(arguments, errorCode), errorCode, logger);
+    public static McpAccess ToolCall(string toolName, JsonElement? arguments, string? errorCode) => new()
+    {
+        Action = ToolCallAction,
+        ResourceId = toolName,
+        Details = ToolDetails(arguments, errorCode),
+        ErrorCode = errorCode,
+    };
 
-    public static Task RecordResourceReadAsync(
-        HttpContext context,
-        string uri,
-        string? errorCode,
-        ILogger logger) =>
-        RecordAsync(context, ResourceReadAction, ResourcePath(uri), CodeDetails(errorCode), errorCode, logger);
+    public static McpAccess ResourceRead(string uri, string? errorCode) => new()
+    {
+        Action = ResourceReadAction,
+        ResourceId = ResourcePath(uri),
+        Details = CodeDetails(errorCode),
+        ErrorCode = errorCode,
+    };
 
     public static AuditOutcome Outcome(string? errorCode) => errorCode switch
     {
@@ -125,13 +126,7 @@ internal static class McpAccessAudit
         }
     }
 
-    private static async Task RecordAsync(
-        HttpContext context,
-        string action,
-        string resourceId,
-        string details,
-        string? errorCode,
-        ILogger logger)
+    public static async Task RecordAsync(HttpContext context, McpAccess access, ILogger logger)
     {
         if (context.User.Identity?.IsAuthenticated != true
             || context.RequestServices.GetService<IAuditLog>() is not { } auditLog)
@@ -141,29 +136,41 @@ internal static class McpAccessAudit
 
         try
         {
-            var timeProvider = context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
-            await auditLog.RecordAsync(
-                new AuditEvent
-                {
-                    Timestamp = timeProvider.GetUtcNow(),
-                    EventType = AuditEventType.DataExport,
-                    Actor = AuditContextResolver.ResolveActor(context, out var actorType),
-                    ActorType = actorType,
-                    ActorAgent = AuditContextResolver.ResolveAgent(context),
-                    ResourceType = ResourceType,
-                    ResourceId = resourceId,
-                    Action = action,
-                    Outcome = Outcome(errorCode),
-                    CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
-                    RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
-                    UserAgent = AuditContextResolver.ResolveUserAgent(context),
-                    Details = details,
-                },
-                CancellationToken.None).ConfigureAwait(false);
+            await auditLog.RecordAsync(ToAuditEvent(context, access), CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            McpLog.AccessAuditFailed(logger, action, resourceId, ex);
+            McpLog.AccessAuditFailed(logger, access.Action, access.ResourceId, ex);
         }
     }
+
+    private static AuditEvent ToAuditEvent(HttpContext context, McpAccess access) => new()
+    {
+        Timestamp = (context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow(),
+        EventType = AuditEventType.DataExport,
+        Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+        ActorType = actorType,
+        ActorAgent = AuditContextResolver.ResolveAgent(context),
+        ResourceType = ResourceType,
+        ResourceId = access.ResourceId,
+        Action = access.Action,
+        Outcome = Outcome(access.ErrorCode),
+        CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
+        RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
+        UserAgent = AuditContextResolver.ResolveUserAgent(context),
+        Details = access.Details,
+    };
+}
+
+// What one audited MCP access names: the action, the tool or resource path, identifier-only
+// details, and the error code when the access failed.
+internal sealed class McpAccess
+{
+    public required string Action { get; init; }
+
+    public required string ResourceId { get; init; }
+
+    public required string Details { get; init; }
+
+    public string? ErrorCode { get; init; }
 }

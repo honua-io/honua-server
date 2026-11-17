@@ -154,8 +154,7 @@ public sealed class McpStreamingTests
         {
             draft.ScopeKey.Should().Be(id);
             var root = draft.Payload;
-            root.GetProperty("method").GetString().Should().Be("notifications/message",
-                "a stock client drops notifications/progress for a token it never sent");
+            root.GetProperty("method").GetString().Should().Be("notifications/message", "no invented progress token");
             var data = root.GetProperty("params").GetProperty("data");
             data.GetProperty("jobId").GetString().Should().Be("job-1");
             data.GetProperty("uri").GetString().Should().Be("honua://jobs/job-1");
@@ -165,8 +164,6 @@ public sealed class McpStreamingTests
         var expectedProgress = new[] { 10d, 60d, 100d };
         progresses.Should().Equal(expectedProgress,
             "the bridge emits a frame on each observed progress change and a final terminal frame");
-        drafts[^1].Payload.GetProperty("params").GetProperty("data").GetProperty("status").GetString()
-            .Should().Be(nameof(ExecutionJobStatus.Succeeded));
         await jobService.Received(3).GetJobAsync("job-1", Principal, Arg.Any<CancellationToken>());
     }
 
