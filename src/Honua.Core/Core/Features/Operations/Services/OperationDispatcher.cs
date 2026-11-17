@@ -402,7 +402,7 @@ public sealed partial class OperationDispatcher : IOperationInvoker, IOperationP
             }
             catch (CapabilityUnavailableException)
             {
-                // The approval lane needs a capability this host never composed (the Redis-backed
+                // The approval lane needs a capability this host never composed (the durable
                 // proposal control plane). Record the failed envelope, then keep
                 // the structured dependency receipt so REST and MCP refuse with the typed
                 // capability-unavailable outcome rather than a generic failed handle.

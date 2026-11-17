@@ -80,8 +80,8 @@ trap teardown EXIT
 "${COMPOSE[@]}" --profile roster --profile multidim-fixture down -v --remove-orphans >/dev/null 2>&1 || true
 
 # --- stack -----------------------------------------------------------------
-log "starting postgres, redis, localstack"
-"${COMPOSE[@]}" up -d --wait postgres redis localstack
+log "starting postgres and localstack"
+"${COMPOSE[@]}" up -d --wait postgres localstack
 log "starting the candidate"
 if ! "${COMPOSE[@]}" up -d --wait --wait-timeout 420 honua; then
   # A migration that raced PostgreSQL's first accept is retried once, before any seed exists.

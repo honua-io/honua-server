@@ -64,7 +64,6 @@
       "src/Honua.Server/Features/WorkflowPackages/",
       "tests/dotnet/Honua.Server.Tests/Features/",
       "tests/dotnet/Honua.Server.Tests/Features/WorkflowPackages/",
-      "tests/dotnet/RedisCollection.cs",
       "tests/dotnet/Shared/AlertUnitSupport/",
       "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",

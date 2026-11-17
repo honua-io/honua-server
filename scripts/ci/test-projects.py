@@ -112,7 +112,7 @@ def proposed(root, project):
     resources = []
     if 'Testcontainers' in text or 'PostgresFixture' in text:
         resources.append('docker')
-    for token, resource in [('PostgresFixture', 'postgres'), ('RedisFixture', 'redis'), ('GdalCli', 'native-gdal')]:
+    for token, resource in [('PostgresFixture', 'postgres'), ('GdalCli', 'native-gdal')]:
         if token in text:
             resources.append(resource)
     if name == 'Honua.Architecture.SourceTests':

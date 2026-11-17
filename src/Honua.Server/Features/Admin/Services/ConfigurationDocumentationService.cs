@@ -499,7 +499,7 @@ public sealed class ConfigurationDocumentationService
         return new ConfigurationSection
         {
             Name = "TemporaryFiles",
-            Description = "Temporary export and artifact file storage configuration. Shared cloud-backed temporary files require Redis coordination so quotas remain correct across replicas.",
+            Description = "Temporary export and artifact file storage configuration. Shared cloud-backed temporary files require durable database coordination so quotas remain correct across replicas.",
             Properties =
             [
                 // Path.Combine is safe here: the second segment is a fixed relative literal,

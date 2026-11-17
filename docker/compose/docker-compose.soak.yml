@@ -1,5 +1,5 @@
 # Local-docker substrate for the candidate capacity soak (honua-release#235, operator
-# ruling A 2026-09-12). One PostGIS, one Redis, one Honua Server running the CANDIDATE
+# ruling A 2026-09-12). One PostGIS and one Honua Server running the CANDIDATE
 # image under the Production startup policy — the same posture the receipt claims, on a
 # substrate the producer can also fault-inject into (the recovery drill restarts the
 # `honua` service and measures how long it takes to serve again).
@@ -32,18 +32,6 @@ services:
       timeout: 5s
       retries: 30
 
-  redis:
-    image: redis:7-alpine
-    # Append-only persistence keeps the cache and coordination state across a Redis restart.
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
-    ports:
-      - "127.0.0.1:${SOAK_REDIS_PORT:-6379}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   honua:
     image: ${SOAK_SERVER_IMAGE:?Set SOAK_SERVER_IMAGE to the candidate image built from candidate_sha}
     ports:
@@ -60,7 +48,6 @@ services:
       HONUA_GIT_SHA: ${SOAK_CANDIDATE_SHA:?Set SOAK_CANDIDATE_SHA}
       ConnectionStrings__DefaultConnection: >-
         Host=postgres;Port=5432;Database=${SOAK_DB_NAME:-honua_soak};Username=${SOAK_DB_USER:-honua};Password=${SOAK_DB_PASSWORD};Maximum Pool Size=100
-      ConnectionStrings__redis: "redis:6379"
       Security__DisableHttpsRedirection: "true"
       Security__ConnectionEncryption__MasterKey: ${SOAK_MASTER_KEY:?Set SOAK_MASTER_KEY}
       # The soak floods the server from a single host, so the opt-in app-level limiter
@@ -104,15 +91,13 @@ services:
       # Alerting stays Preview/off; single-tenant context resolution keeps its default.
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
-      # Production composes the Redis-backed durable operation secret channel and will not boot
+      # Production composes the durable operation secret channel and will not boot
       # unless an operator certificate encrypts its data-protection key ring (#4722, #4885). The
       # workflow mints a throwaway PKCS#12 per run; no key material lives in this repository.
       Operations__SecretChannel__KeyRingCertificatePath: /keyring/operation-keyring.pfx
       Operations__SecretChannel__KeyRingCertificatePassword: ${SOAK_KEYRING_PASSWORD:?Set SOAK_KEYRING_PASSWORD}
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     volumes:
       - honua_storage:/var/lib/honua/storage
