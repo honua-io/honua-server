@@ -5,6 +5,7 @@
   "description": "Argument shape for the discovery/query layer-listing tool. The bare standard taxonomy models discovery as a CapabilityCatalog read; the reference implementation exposes it as a tool (advertised name honua_list_layers) over the open-core data-access surface. x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "properties": {
     "filter": {
       "type": "string",

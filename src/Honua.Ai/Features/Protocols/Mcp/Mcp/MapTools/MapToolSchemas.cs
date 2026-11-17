@@ -29,6 +29,7 @@ internal static class MapToolSchemas
     private const string ListLayersArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "filter": {
               "type": "string",
@@ -133,6 +134,7 @@ internal static class MapToolSchemas
     private const string RenderMapArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["layers", "bbox"],
           "properties": {
             "layers": {
@@ -210,6 +212,7 @@ internal static class MapToolSchemas
     private const string GetStyleArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "styleId": {
               "type": "string",
@@ -244,6 +247,8 @@ internal static class MapToolSchemas
     private const string ApplyStylePresetArgumentSchemaJson = """
         {
           "type": "object",
+          "description": "Open schema for geospatial-mcp compatibility: members beyond these properties are accepted and ignored; only the listed properties are read.",
+          "additionalProperties": true,
           "required": ["serviceId", "serviceLayerIndex", "styleId"],
           "properties": {
             "dryRun": {

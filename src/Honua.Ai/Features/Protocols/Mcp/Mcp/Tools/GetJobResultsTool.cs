@@ -17,6 +17,7 @@ internal sealed class GetJobResultsTool : IMcpTool
     private const string InputSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["jobId"],
           "properties": {
             "jobId": {
