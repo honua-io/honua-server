@@ -65,7 +65,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
                 "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=0&resultRecordCount=1&outSR=4326",
                 "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=1&resultRecordCount=1&outSR=4326",
                 "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=2&resultRecordCount=1&outSR=4326",
-                // #4600: the source is re-counted after the last page to detect changes during the transfer.
+                // The source is re-counted after the last page to detect changes during the transfer.
                 "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true");
             handler.SanitizedPaths.Should().NotContain(path => path.Contains(accessToken, StringComparison.Ordinal));
 

@@ -30,7 +30,7 @@ public sealed class StartupDatabaseResilienceNpgsqlTests
     [Operation(Operations.HealthCheck)]
     public void IsTransientConnectivityError_WithTooManyConnections_ReturnsTrue()
     {
-        // SQLSTATE 53300 (too_many_connections) is the exact pool/slot-exhaustion failure from #1632.
+        // SQLSTATE 53300 (too_many_connections) is the exact pool/slot-exhaustion failure under connection exhaustion.
         var exception = BuildPostgresException("53300");
         StartupDatabaseResilience.IsTransientConnectivityError(exception).Should().BeTrue();
     }

@@ -30,7 +30,7 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
         var seedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-v1.sql");
         var seedSql = await File.ReadAllTextAsync(seedPath);
 
-        // honua-server#1568 (signature 2): the seed runs ALTER/INSERT DDL against the literal,
+        // The seed runs ALTER/INSERT DDL against the literal,
         // process-global honua schema, which the per-test search_path isolation does not scope.
         // Apply it under the shared seed advisory lock so parallel [Collection("Database")] tests
         // do not deadlock (40P01) racing ACCESS EXCLUSIVE locks on the same global honua.* objects.
@@ -59,7 +59,7 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
             "without the JSONB accessor the reader projects bare columns and Postgres "
             + "rejects the query with 42703 (the honua-server#1238 failure)");
 
-        // The fix: with the accessor, declared fields resolve as attributes->>'field'.
+        // Declared fields resolve through the accessor as attributes->>'field'.
         await MobileOfflineDemoGraphPublisher.PublishAsync(Provider, includeAttributesAccessor: true);
 
         var fixedResponse = await _fixture.Client.GetAsync(requestUri);

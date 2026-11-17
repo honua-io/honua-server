@@ -67,7 +67,7 @@ public sealed class ExternalFormatCorpusImportTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_GdalAuthoredGeoPackage_StoresEveryFeatureWithCorrectOrdinates()
     {
-        // honua-server#4419: StreamingImportTests has 30 methods and none posts a .gpkg, so the
+        // StreamingImportTests has 30 methods and none posts a .gpkg, so the
         // GeoPackage upload path had no HTTP coverage whatsoever.
         await ImportAndAssertSitesAsync(
             "survey-sites-gpkg", "survey-sites.gpkg", "application/geopackage+sqlite3",

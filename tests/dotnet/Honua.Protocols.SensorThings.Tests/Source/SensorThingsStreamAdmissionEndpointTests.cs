@@ -74,7 +74,7 @@ public sealed class SensorThingsStreamAdmissionEndpointTests : IAsyncLifetime
             .Which.Message.Should().Contain("429");
 
         // A different principal in the same tenant is still admitted: the saturated
-        // credential cannot lock other subscribers out (the #4198 defect).
+        // credential cannot lock other subscribers out.
         using var otherPrincipalStream = await OpenStreamAsync(
             _fixture.Client, await PortalRouteAsync("sta-admission-1", "tenant-a", ct), ct, Referer);
 

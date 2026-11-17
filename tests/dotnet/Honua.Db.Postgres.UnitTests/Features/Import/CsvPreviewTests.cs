@@ -92,7 +92,7 @@ public sealed class CsvPreviewTests
     [Fact]
     public async Task PreviewFileAsync_CsvWithEwktSrid_DetectsEmbeddedSridInsteadOf4326()
     {
-        // #6171: a PostGIS CSV export declares the CRS on the geometry. Detection must
+        // A PostGIS CSV export declares the CRS on the geometry. Detection must
         // not replace that SRID with the geographic default.
         var csv = """
             id,geom

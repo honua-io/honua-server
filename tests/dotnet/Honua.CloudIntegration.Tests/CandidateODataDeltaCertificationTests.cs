@@ -229,7 +229,6 @@ public sealed class CandidateODataDeltaCertificationTests
     private sealed class CandidateODataEnvironment : IAsyncDisposable
     {
         private const string PostgresImage = "postgis/postgis:18-3.6";
-        private const string RedisImage = "redis:7.2-alpine";
         private const int CandidateContainerPort = 8080;
         private const string DatabasePassword = "candidate-3872-odata-delta";
 
@@ -237,7 +236,6 @@ public sealed class CandidateODataDeltaCertificationTests
         private readonly ITestOutputHelper _output;
         private readonly string _networkName;
         private readonly string _postgresContainerName;
-        private readonly string _redisContainerName;
         private readonly string _candidateContainerName;
         private readonly string _postgresConnectionStringFromHost;
         private readonly int _candidateHostPort;
@@ -247,7 +245,6 @@ public sealed class CandidateODataDeltaCertificationTests
             ITestOutputHelper output,
             string networkName,
             string postgresContainerName,
-            string redisContainerName,
             string candidateContainerName,
             string postgresConnectionStringFromHost,
             int candidateHostPort)
@@ -256,7 +253,6 @@ public sealed class CandidateODataDeltaCertificationTests
             _output = output;
             _networkName = networkName;
             _postgresContainerName = postgresContainerName;
-            _redisContainerName = redisContainerName;
             _candidateContainerName = candidateContainerName;
             _postgresConnectionStringFromHost = postgresConnectionStringFromHost;
             _candidateHostPort = candidateHostPort;
@@ -270,7 +266,6 @@ public sealed class CandidateODataDeltaCertificationTests
             var suffix = Guid.NewGuid().ToString("N")[..8];
             var networkName = $"honua-cod-{suffix}";
             var postgresContainerName = $"honua-cod-pg-{suffix}";
-            var redisContainerName = $"honua-cod-redis-{suffix}";
             var candidateContainerName = $"honua-cod-server-{suffix}";
 
             await Docker.RunCheckedAsync(["network", "create", networkName]);
@@ -290,12 +285,9 @@ public sealed class CandidateODataDeltaCertificationTests
 
                 // The candidate is certified under Production, the deployment profile it claims to
                 // certify: Development takes materially different composition and validation
-                // branches (e.g. the durable-event/Redis-required guardrail below is skipped
-                // entirely outside Production), so this lane must not pass on a boot mode a real
-                // release never runs. Production requires a reachable Redis for durable
-                // coordination, so a real one is booted here too.
-                await Docker.RunCheckedAsync(["run", "-d", "--name", redisContainerName, "--network", networkName, RedisImage]);
-
+                // branches (some startup guardrails are skipped entirely outside Production), so
+                // this lane must not pass on a boot mode a real release never runs.
+                //
                 // Boot the candidate first so its own migrations create the schema (including the
                 // metadata_v2_snapshots family the compat activation below writes into) exactly as
                 // a real deployment would; only then seed and activate the V1-to-V2 projection
@@ -308,7 +300,6 @@ public sealed class CandidateODataDeltaCertificationTests
                     "-p", $"127.0.0.1:{candidateHostPort.ToString(CultureInfo.InvariantCulture)}:{CandidateContainerPort.ToString(CultureInfo.InvariantCulture)}",
                     "-e", "ASPNETCORE_ENVIRONMENT=Production",
                     "-e", $"ConnectionStrings__DefaultConnection=Host={postgresContainerName};Port=5432;Database=honua;Username=honua;Password={DatabasePassword}",
-                    "-e", $"ConnectionStrings__Redis={redisContainerName}:6379",
                     "-e", "HONUA_ADMIN_PASSWORD=Candidate-3872-Odata-Delta!admin",
                     "-e", "Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                     "-e", "HostValidation__AllowedHosts__0=127.0.0.1",
@@ -321,7 +312,6 @@ public sealed class CandidateODataDeltaCertificationTests
                     output,
                     networkName,
                     postgresContainerName,
-                    redisContainerName,
                     candidateContainerName,
                     postgresConnectionStringFromHost,
                     candidateHostPort);
@@ -335,7 +325,6 @@ public sealed class CandidateODataDeltaCertificationTests
             catch
             {
                 await Docker.RunAsync(["rm", "-f", candidateContainerName]);
-                await Docker.RunAsync(["rm", "-f", redisContainerName]);
                 await Docker.RunAsync(["rm", "-f", postgresContainerName]);
                 await Docker.RunAsync(["network", "rm", networkName]);
                 throw;
@@ -526,7 +515,6 @@ public sealed class CandidateODataDeltaCertificationTests
         {
             HttpClient.Dispose();
             await Docker.RunAsync(["rm", "-f", _candidateContainerName]);
-            await Docker.RunAsync(["rm", "-f", _redisContainerName]);
             await Docker.RunAsync(["rm", "-f", _postgresContainerName]);
             await Docker.RunAsync(["network", "rm", _networkName]);
         }

@@ -320,7 +320,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_BandIdsNonAscending_AlignsStatisticsWithHistogramsByBand()
     {
-        // Regression: GetStatisticsAsync streams cached rows in DB-ascending band order,
+        // GetStatisticsAsync streams cached rows in DB-ascending band order,
         // while GetHistogramsAsync preserves caller-supplied order. When the caller asks
         // for bands 3,1 (bandIds=2,0) the parallel statistics/histograms arrays would silently
         // misalign — the handler must reorder both to a single canonical order so that
@@ -443,7 +443,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_BandIdsZero_AddressesFirstBandLikeExportImage()
     {
-        // #4068: bandIds is 0-based on exportImage, so bandIds=0 must address the first
+        // BandIds is 0-based on exportImage, so bandIds=0 must address the first
         // band here too (raster-store band 1), not be rejected.
         SetupSuccessfulCompute();
 
@@ -533,7 +533,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
         // The renderingRule must reach the store as a non-null rendering so statistics describe
-        // the rendered pixels (#1871).
+        // the rendered pixels.
         await _rasterStore.Received(1).GetStatisticsAsync(
             1, 100, Arg.Any<int[]?>(), Arg.Is<RasterIdentifyRendering?>(r => r != null && r.Value.HasRendering), Arg.Any<CancellationToken>());
         await _rasterStore.Received(1).GetHistogramsAsync(
@@ -574,7 +574,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        // Not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
     }
 
@@ -609,7 +609,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
 
         // ExtractBand changes the band set; computeStatisticsHistograms does not yet honour it, so it
-        // returns NotImplemented (501), which GeoServices passes through as body error.code 501 (#2795).
+        // returns NotImplemented (501), which GeoServices passes through as body error.code 501.
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
     }
 

@@ -54,8 +54,8 @@ public sealed class OperationsToolsetTests
         services.AddSingleton(readiness);
         services.AddSingleton<IOperationPolicyDecisionPoint>(new AllowAllPolicyDecisionPoint());
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
-        // Deliberately leave IStudioPackageLifecycleService unresolved. Constructing its
-        // executor used to prevent even validation of an unrelated status operation.
+        // Leave IStudioPackageLifecycleService unresolved to verify that unrelated status
+        // validation does not construct the package executor.
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var invoker = scope.ServiceProvider.GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationInvoker>();
@@ -206,7 +206,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public void AddOperationsToolset_WithoutProposalStore_UsesFailClosedReplayVerifierAndBoots()
     {
-        // Regression: the real replay verifier requires IOperationProposalStore in its
+        // The real replay verifier requires IOperationProposalStore in its
         // constructor and the dispatcher requires a verifier, so no-store hosts failed
         // ValidateOnBuild at boot (trunk red, run 33241561197). Degraded hosts must
         // compose, and replay verification must refuse without the durable authority.
@@ -243,7 +243,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public void AddOperationsToolset_StoreRegisteredAfterComposition_UsesDurableReplayVerifier()
     {
-        // The reviewer's exact scenario: fixtures add the proposal store AFTER
+        // Fixtures add the proposal store after
         // AddOperationsToolset (post-Program ConfigureServices). Resolution-time
         // selection must honor the final composition, not a registration snapshot.
         var services = new ServiceCollection();
@@ -297,7 +297,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public void AddOperationsToolset_WithControlPlaneExecutors_RegistersLegacyAdaptersWithoutThrowing()
     {
-        // Regression: the legacy adapters are factory descriptors, and registering
+        // The legacy adapters are factory descriptors, and registering
         // them via TryAddEnumerable threw ArgumentException ("indistinguishable
         // from other services") the moment a control-plane executor was present —
         // i.e. in every full host, but in no unit-scoped test host, which is how
@@ -319,7 +319,7 @@ public sealed class OperationsToolsetTests
                 AdminOperateOperationCatalog.Definitions.Count + 4 + 16 + 4,
                 "each admin operation, legacy operation class, and typed actuator gets one deferred projection");
 
-        // Idempotence across repeated composition, previously TryAddEnumerable's job.
+        // Repeated composition must be idempotent.
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         services.Count(descriptor =>
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
@@ -545,8 +545,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task ScopeGovernedCaller_WithoutReadScope_CannotInvokeAccessReadOperations()
     {
-        // admin.api-key.list executes directly, so it never reaches the approved-replay branch
-        // where scope authority used to be the only thing enforced.
+        // admin.api-key.list executes directly and must enforce scope authority there.
         var handler = new CapturingOperationHandler(_ => Task.FromResult(
             // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             new HttpResponseMessage(HttpStatusCode.OK)
@@ -990,8 +989,6 @@ public sealed class OperationsToolsetTests
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
-        // Approved replays must carry an exact method/path grant; the old broad admin:write
-        // assertion described the authorization bug this test is intended to prevent.
         executionAuthority!.Record.Permissions.Should().Equal(
             AdminApiKeyPermission.CreateApprovedOperationGrant(
                 definition.Method.Method,
@@ -1444,7 +1441,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task LaneA_Validation_RequiresSecretReference_ForConnectionDraftTest()
     {
-        // honua-server#4880: every connection operation requires a secret reference, including
+        // Every connection operation requires a secret reference, including
         // the read-only draft test, so a plaintext password never enters an operation request.
         var definition = AdminConnectImportOperationCatalog.Definitions.Single(
             item => item.OperationId == "admin.connections.test-draft");
@@ -1479,7 +1476,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task LaneA_ReadOnlyPostOperation_ForReadScopedCaller_UsesCredentialBoundToTheExactRoute()
     {
-        // honua-server#4880: a read-only operation served by a POST route is authorized on its
+        // A read-only operation served by a POST route is authorized on its
         // semantic read class. The loopback call carries that decision with a single-use
         // credential bound to the one method and path, instead of the caller's read-only key.
         var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);

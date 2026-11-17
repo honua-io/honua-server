@@ -54,7 +54,7 @@ public sealed class DatumTransformSqlTests
     {
         // A reverse selection (e.g. NAD83 -> NAD27) carries the forward NADCON pipeline verbatim
         // with TransformForward=false. Emitting it as-is would shift coordinates the wrong way —
-        // roughly twice the intended NADCON correction (#2069). The emitted pipeline must invert
+        // roughly twice the intended NADCON correction. The emitted pipeline must invert
         // the direction-sensitive hgridshift step (+inv) and reverse the step order.
         var selection = new DatumTransformationSelection
         {

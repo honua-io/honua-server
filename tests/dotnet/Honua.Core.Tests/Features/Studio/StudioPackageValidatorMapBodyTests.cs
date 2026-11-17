@@ -109,7 +109,7 @@ public sealed class StudioPackageValidatorMapBodyTests
     [UnitTest]
     public void Validate_MapBodyWithoutStatusOrTimestamps_IsValid()
     {
-        // The portable schema requires neither; the server record used to require both.
+        // The portable schema requires neither field.
         var summary = ValidateBody("""{"mapPackageId":"map-4898","format":"honua_map_package.v1","sourceBindings":[]}""");
 
         Assert.Empty(summary.Diagnostics);

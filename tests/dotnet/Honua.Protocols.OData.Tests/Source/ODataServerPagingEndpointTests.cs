@@ -99,7 +99,7 @@ public sealed class ODataServerPagingEndpointTests : IAsyncLifetime
         pages.Should().BeGreaterThan(1, "a 15-row layer with a page size of 5 requires multiple pages");
     }
 
-    // OData 4.01 Part 1 §11.2.6.3 / §11.2.6.7 (#5464): $top bounds the whole requested
+    // OData 4.01 Part 1 §11.2.6.3 / §11.2.6.7: $top bounds the whole requested
     // collection. When the server page is smaller than $top, each nextLink carries the
     // remaining budget, and the page that exhausts it carries no nextLink.
     [IntegrationTest]

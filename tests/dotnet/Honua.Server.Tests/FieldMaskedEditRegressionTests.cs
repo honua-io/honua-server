@@ -1,10 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-// Audit platform-20261006 outcomes:
-// SRV-DB-001 -> fixed; SRV_DB_001_PartialUpdate_PreservesEveryOmittedStoredAttribute.
-// SRV-OGC-003 -> fixed; SRV_OGC_003_WfsUpdate_CarriesProviderReadStateToken.
-// SRV-OGC-015 -> fixed; PatchConcurrencyTests.SRV_OGC_015_Delete_WithMaskedSnapshotAndMatchingIfMatch_Succeeds.
 
 using System.Collections.Immutable;
 using Honua.Core.Features.Edit;

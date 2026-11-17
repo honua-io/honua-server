@@ -23,8 +23,8 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
     private const int SeededFeatureCount = 15;
     private const int SeededLayerCount = 2;
 
-    // Server page smaller than the seeded layer and feature counts, so the #1989 paging
-    // tests exercise server-driven paging. A client $top is a total ceiling (#5464) and
+    // Server page smaller than the seeded layer and feature counts, so the paging
+    // tests exercise server-driven paging. A client $top is a total ceiling and
     // cannot produce a continuation on its own.
     private const int MaxPageSize = 1;
 
@@ -122,7 +122,7 @@ public sealed class ODataV4ConformanceEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Layers?$top=1")]
     public async Task Layers_WithTop_IsTotalCeiling()
     {
-        // OData 4.01 Part 1 §11.2.6.3 (#5464): $top=1 requests at most one layer, so the
+        // OData 4.01 Part 1 §11.2.6.3: $top=1 requests at most one layer, so the
         // response that returns it ends the requested collection.
         var response = await _fixture.Client.GetAsync("/odata/Layers?$top=1");
 

@@ -54,10 +54,19 @@ class RetiredCacheTests(unittest.TestCase):
 
     def test_history_notices_and_policy_sources_pass(self):
         for path in ["CHANGELOG.md", "docs/changelog/2026.md", "THIRD-PARTY-NOTICES.md",
-                     "scripts/ci/check-retired-cache.py", "scripts/ci/check-retired-cache.test.py"]:
+                     "scripts/ci/check-retired-cache.py", "scripts/ci/check-retired-cache.test.py",
+                     "tests/dotnet/Honua.Architecture.SourceTests/RetiredCacheDependencyTests.cs"]:
             self.write(path, "Redis\n")
         self.commit()
         self.assertEqual(self.check().returncode, 0)
+
+    def test_architecture_guard_exemption_is_exact(self):
+        path = "tests/dotnet/Honua.Architecture.SourceTests/RetiredCacheDependencyTestsCopy.cs"
+        self.write(path, "Redis\n")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(f"{path}:1:", result.stdout)
 
     def test_ci_routing_data_mirroring_tests_passes(self):
         routing = [".github/ci-shards.json", "scripts/ci/fixtures/full-run-capacity-contracts.json",

@@ -416,7 +416,7 @@ public sealed class GdalRasterInterpolateExecutorTests
     public async Task Idw_OverCapOutputSize_FailsBeforeReachingTheCli()
     {
         // A tiny point input requesting an enormous -outsize grid must be refused before
-        // gdal_grid allocates the width×height surface (#2782).
+        // gdal_grid allocates the width×height surface.
         var runner = new FakeGdalCommandRunner((_, _, _) =>
             throw new InvalidOperationException("gdal_grid must not run for an over-cap output grid"));
         var scratch = GdalCli.NewScratch(ScratchSuite);

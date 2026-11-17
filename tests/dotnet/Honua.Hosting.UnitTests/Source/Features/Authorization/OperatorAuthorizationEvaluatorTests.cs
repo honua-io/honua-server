@@ -28,7 +28,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
     [UnitTest]
     public void Evaluator_AsSingleton_BuildsWithScopedRoleStore_NoCaptiveDependency()
     {
-        // Regression for #1575: the evaluator is registered as a singleton, but a durable
+        // The evaluator is registered as a singleton, but a durable
         // IRoleStore (PostgresRoleStore) is scoped. ValidateOnBuild + ValidateScopes would
         // throw "Cannot consume scoped service from singleton" if the evaluator captured the
         // store directly — it resolves it per call via IServiceScopeFactory instead.
@@ -581,13 +581,12 @@ public sealed class OperatorAuthorizationEvaluatorTests
     [UnitTest]
     public async Task Evaluate_ApiKeyPrincipal_LooksUpGrantsUnderApiKeyId()
     {
-        // PR #3024 review (P1): API-key principals carry neither NameIdentifier nor "sub"
-        // (ApiKeyAuthenticationHandler stamps Name/Role/api_key_id/api_key_name), so the
-        // evaluator used to collapse every API-key caller onto the same empty subject id --
-        // per-key grants could never match and a role-level grant authorized every scoped key.
-        // The grant-lookup subject must be the api_key_id, mirroring
-        // StudioAuthorizationService.ResolveCallerId so ownership ids and grant-subject ids
-        // agree.
+        // API-key principals carry neither NameIdentifier nor "sub"
+        // (ApiKeyAuthenticationHandler stamps Name/Role/api_key_id/api_key_name). Collapsing
+        // every API-key caller onto the same empty subject id would mean per-key grants never
+        // match and a role-level grant authorizes every scoped key. The grant-lookup subject
+        // must be the api_key_id, mirroring StudioAuthorizationService.ResolveCallerId so
+        // ownership ids and grant-subject ids agree.
         _roleStore.AddGrant("scoped-api-key", "process", "*", "execute");
         var principal = CreateApiKeyPrincipal("key-1111", "alice-key", "scoped-api-key");
 
@@ -645,7 +644,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
     [UnitTest]
     public async Task Evaluate_ScopedAdminReadKey_AllowedForJobRead()
     {
-        // Regression for #4981: a key minted with only admin:read authenticates with
+        // A key minted with only admin:read authenticates with
         // role "scoped-admin-key", never "admin", so the operator-RBAC role-store
         // lookup below has no grant for it and must not be the last word on Read.
         var principal = CreateScopedAdminKeyPrincipal("admin:read");

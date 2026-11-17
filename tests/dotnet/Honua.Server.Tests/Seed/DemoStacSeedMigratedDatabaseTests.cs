@@ -230,7 +230,7 @@ public sealed class DemoStacSeedMigratedDatabaseTests
             properties.GetProperty("quality_score").GetInt32().Should().Be(scene.QualityScore);
             properties.GetProperty("eo:cloud_cover").GetDouble().Should().BeApproximately(scene.CloudCover, 1e-9);
             properties.GetProperty("view:sun_azimuth").GetDouble().Should().BeApproximately(scene.SunAzimuth, 1e-9);
-            // #3384 closes on all three declared colon-key extension fields, so the
+            // All three declared colon-key extension fields are required, so the
             // regression has to assert proj:epsg too - the seed declares and inserts
             // it, and asserting only two let it go missing with the gate still green.
             properties.GetProperty("proj:epsg").GetInt32().Should().Be(scene.Epsg, $"{scene.Id} proj:epsg");

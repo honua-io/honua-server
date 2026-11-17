@@ -186,20 +186,19 @@ Studio route without updating the document fails the OpenAPI drift gate.
 > persistence succeeds. The endpoints are part of the
 > supported public interface.
 
-## Form Package API
+## Forms API
 
 **Protocol**: REST API
-**Base URLs**: `/api/v1/admin/forms/packages`, `/api/v1/forms/packages`
-**Authentication**: Admin route authorization for the shipped slice; submissions also require target layer data-editor authorization.
+**Base URLs**: `/api/v1/admin/forms`, `/api/v1/forms`
+**Authentication**: Admin route authorization; submissions also require edit permission on the target Layer.
 
-> **Note**: The Forms contract covers versioned package drafts, validation,
-> immutable publish, reopened drafts, published-package readback, offline-policy
-> discovery, and idempotent JSON-compatible or multipart submissions with attachment outcomes. The
-> bundled `admin-api.json` snapshot does not yet include the Forms routes or schemas, so the
-> response and usage contract is documented in
-> [Form Package API](../../reference/admin-api/forms.md). Offline-policy responses point to
-> the existing FeatureServer replica and FieldCollection mobile sync routes
-> instead of defining a separate form-only sync protocol.
+The Forms contract covers Drafts, validation, immutable Released Versions, reopened
+Drafts, runtime readback, offline-policy discovery, and idempotent JSON or multipart
+submissions with attachment outcomes. The bundled `admin-api.json` snapshot includes
+the authoring routes. See [Forms](../../reference/admin-api/forms.md) for runtime
+routes and response contracts, and the [migration guide](../../reference/control-plane-migration-guide.md#forms-routes-and-operation-names)
+for the route and operation renames. Offline-policy responses link to the existing
+FeatureServer replica and FieldCollection sync routes.
 
 ## Testing the APIs
 

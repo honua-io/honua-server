@@ -29,7 +29,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 public sealed class FeatureServerPluginValidationTests : IAsyncLifetime
 {
     // Enterprise grants the FeatureServer editing gate that fronts GeoServices writes
-    // (#1591) as well as the plugin.sdk entitlement.
+    // as well as the plugin.sdk entitlement.
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;

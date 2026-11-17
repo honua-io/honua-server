@@ -328,7 +328,7 @@ public sealed class GdalSurfaceExecutorTests
             (payload[0] == 0x49 && payload[1] == 0x49 || payload[0] == 0x4D && payload[1] == 0x4D)
                 .Should().BeTrue("output must be a real GeoTIFF");
 
-            // #4400: the value oracle. The source DEM is constant at
+            // The value oracle. The source DEM is constant at
             // GdalCli.SampleDemConstantElevation, so slope must be identically zero. Without
             // this the assertions above pass for any GeoTIFF gdaldem happens to emit.
             var statistics = await GdalCli.ReadBandStatisticsAsync(payload, scratch).ConfigureAwait(false);

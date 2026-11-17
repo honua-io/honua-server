@@ -146,7 +146,7 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
 
             // Weight convergence is not restored data-plane proof. This lane has no stable-service
             // identity, target-health sample, or functional query, so the operation must stay
-            // non-terminal instead of reporting RolledBack (honua-server#3892).
+            // non-terminal instead of reporting RolledBack.
             var rollingBack = operation with { Status = WorkflowOperationStatus.RollbackRequested };
             var settled = await backend.ObserveAsync(rollingBack);
             settled.Status.Should().Be(

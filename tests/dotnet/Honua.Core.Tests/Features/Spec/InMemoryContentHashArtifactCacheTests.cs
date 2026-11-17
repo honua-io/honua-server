@@ -96,12 +96,8 @@ public class InMemoryContentHashArtifactCacheTests
     [Fact]
     public async Task PutAsync_SweepsPreviouslyExpiredEntries()
     {
-        // Regression for the review finding: TTL-backed entries used to leak
-        // memory because expiration was only reclaimed lazily inside
-        // TryGetAsync/OpenReadAsync. A workload that keeps producing unique
-        // mutable-source hashes therefore left expired byte arrays resident
-        // indefinitely. PutAsync now opportunistically sweeps TTL-expired
-        // entries so writers reclaim memory without requiring a read.
+        // PutAsync sweeps TTL-expired entries so write-only workloads with unique
+        // mutable-source hashes reclaim memory without requiring reads.
         var clock = new TestTimeProvider();
         var cache = new InMemoryContentHashArtifactCache(clock);
 
@@ -165,11 +161,8 @@ public class InMemoryContentHashArtifactCacheTests
     [Fact]
     public async Task PutAsync_ExceedsMaxEntries_EvictsDownToBudget()
     {
-        // Regression for the review finding: EnforceBudget's over-budget eviction
-        // loop used to re-sum every resident entry's byte length on every single
-        // eviction step (O(n^2) for a heavily over-budget cache). It now tracks a
-        // running total incrementally, so this also exercises that bookkeeping
-        // stays correct across many distinct-key inserts.
+        // Budget eviction maintains an incremental byte total. Exercise its
+        // bookkeeping across many distinct-key inserts.
         var cache = new InMemoryContentHashArtifactCache();
         const int overBudgetBy = 64;
 

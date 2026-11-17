@@ -104,9 +104,9 @@ public sealed class GPServerEsriTaskAliasesTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public void EveryAliasedProcess_IsPublishedOnTheTaskListExactlyOnce()
     {
-        // #4781: the alias contract, the parity alias claim that counts it, and the
-        // published task list must agree. GPServer publishes only job-callable processes
-        // (#4409), so an alias mapped onto a protocol-only or workflow-only process — as
+        // The alias contract, the parity alias claim that counts it, and the
+        // published task list must agree. GPServer publishes only job-callable processes,
+        // so an alias mapped onto a protocol-only or workflow-only process — as
         // DeleteFeatures/CalculateField once were — promises a task that is never
         // discoverable, describable or submittable. Iterate the REAL contract rather than
         // a hand-maintained copy so a future alias for an unpublished process fails here.
@@ -131,7 +131,7 @@ public sealed class GPServerEsriTaskAliasesTests
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public void ProtocolOnlyDataManagementProcesses_CarryNoAlias()
     {
-        // Regression for #4781. Both processes mutate a caller-owned layer through the
+        // Both processes mutate a caller-owned layer through the
         // owning synchronous FeatureServer edit endpoint and register no job executor, so
         // GPServer must neither publish them nor claim an alias for them.
         var catalog = new BuiltInProcessCatalog();
@@ -154,7 +154,7 @@ public sealed class GPServerEsriTaskAliasesTests
     {
         // The GeoServices parity claim (docs/gis/data/geoservices-parity-judgment.json:
         // "40 unambiguous aliases ... are published alongside canonical process IDs")
-        // counts this contract. Changing one without the other is the drift #4781 filed:
+        // counts this contract. Changing one without the other is drift:
         // update the judgement source and rerun scripts/ci/generate-geoservices-parity.sh.
         GPServerEsriTaskAliases.Contract.Should().HaveCount(40);
     }
@@ -181,7 +181,7 @@ public sealed class GPServerEsriTaskAliasesTests
     }
 
     // Process IDs that carry an Esri alias, read from the real contract so this file can
-    // never claim an alias set the adapter does not actually publish (#4781).
+    // never claim an alias set the adapter does not actually publish.
     private static readonly string[] KnownAliasedProcessIds =
         [.. GPServerEsriTaskAliases.Contract.Keys];
 }

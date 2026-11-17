@@ -4,6 +4,7 @@
 using System.Text.Json.Serialization;
 
 using Honua.Core.Serialization;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
@@ -24,4 +25,15 @@ public static class MetadataV2PermanentFilterLanguages
     public const string Cql2Text = "cql2-text";
 
     public const string Cql2Json = "cql2-json";
+
+    public static FilterLanguage? Resolve(string? language)
+    {
+        return (language ?? GeoServicesSql).Trim().ToLowerInvariant() switch
+        {
+            GeoServicesSql or "arcgis" or "geoservices-sql" => FilterLanguage.GeoServicesSql,
+            Cql2Text or "cql2" => FilterLanguage.Cql2Text,
+            Cql2Json => FilterLanguage.Cql2Json,
+            _ => null
+        };
+    }
 }

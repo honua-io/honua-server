@@ -73,8 +73,7 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
             CursorKind: TemporalCursorKind.Generation,
             CurrentGeneration: currentGeneration,
             DeferredCapabilities: new TemporalDeferredCapabilities(
-                // Slices 2-5 are now implemented; report them as supported when the layer is
-                // history-capable so clients negotiate the diff/timeline/attribution/rollback surfaces.
+                // History-capable layers support diff/timeline/attribution/rollback.
                 SupportsDiff: historyCapable,
                 SupportsTimeline: historyCapable,
                 SupportsAttribution: historyCapable,

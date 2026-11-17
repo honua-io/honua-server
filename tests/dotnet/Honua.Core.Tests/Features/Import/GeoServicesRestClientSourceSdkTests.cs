@@ -710,7 +710,7 @@ public sealed class GeoServicesRestClientSourceSdkTests
     [Theory]
     [InlineData("https://gis.example.com/arcgis/rest/services/Inspections/FeatureServer/0/query")]
     // An ArcGIS service root names its service before the type segment; a bare host-level
-    // FeatureServer has no service id the SDK can address (honua-sdk-dotnet#381).
+    // FeatureServer has no service id the SDK can address.
     [InlineData("https://gis.example.com/FeatureServer")]
     public async Task NonServiceRootUrl_IsRejectedWithoutRequest(string serviceUrl)
     {

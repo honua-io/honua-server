@@ -591,7 +591,7 @@ public sealed partial class OgcTileCacheExportService
                 .Replace("{TileRow}", y.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
                 .Replace("{Style}", styleIdentifier, StringComparison.Ordinal)
                 .Replace("{Layer}", layerIdentifier, StringComparison.Ordinal);
-            if (Uri.TryCreate(resolved, UriKind.Absolute, out var templateUri))
+            if (!MigrationSourceUrls.IsSourceRelativeHref(resolved) && Uri.TryCreate(resolved, UriKind.Absolute, out var templateUri))
             {
                 return templateUri;
             }

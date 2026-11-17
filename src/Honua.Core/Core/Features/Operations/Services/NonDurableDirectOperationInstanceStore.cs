@@ -7,7 +7,7 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Services;
 
-// Without Redis, a direct policy-allowed configure or style operation is recorded in process memory; every other operation still receives the durable store's refusal.
+// Without a durable operation store, a direct policy-allowed configure or style operation is recorded in process memory; every other operation still receives the durable store's refusal.
 public sealed class NonDurableDirectOperationInstanceStore : IOperationInstanceStore
 {
     // The handle's identities are real, but the instance cannot be read back through the operation status surfaces.

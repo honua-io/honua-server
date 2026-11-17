@@ -332,14 +332,14 @@ Release evidence:
 
 Run from the repository root with Docker access and the manifest's digest-pinned
 server image already pulled. The harness checks its OCI digest and source label,
-starts isolated PostGIS and persistent Redis containers, and boots that installed
+starts an isolated PostGIS container, and boots that installed
 image with its own migrations. It never builds the server from checkout. It uses
 the existing CNG point fixture and independently specified expected names,
 populations, six longitude/latitude pairs, and EPSG:4326. SQL seeds and observes
 only the isolated fixture; release submission and concurrent service-policy
 updates use the admin API, and functional checks use the public FeatureServer.
 
-Test-owned Redis leases pause the **real polling worker** between durable stages;
+Test-owned rows in `honua.leases` pause the **real polling worker** between durable stages;
 the harness never writes an operation record or replaces a runtime component.
 A SIGKILL/restart with the candidate staged must preserve the operation and leave
 the prior graph active. The existing non-production fault injection fails only

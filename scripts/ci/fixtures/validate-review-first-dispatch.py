@@ -306,6 +306,12 @@ def main() -> None:
     )
     require(
         review_gate,
+        "const failFinalRevalidation = async description => {\n"
+        "              if (await shedIfClosed()) return;",
+        "final revalidation must not post a red status on a merged or closed pull request",
+    )
+    require(
+        review_gate,
         "return { review, admission: await evaluateCurrentAdmission(review) };",
         "each joint snapshot must bind admission to its review snapshot",
     )

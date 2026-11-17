@@ -212,13 +212,13 @@ public sealed class GeoservicesCatalogSceneServerTests
     // schema-qualified honua.scene_datasets table instead of the schema-partitioned
     // in-memory Metadata v2 graph, so it is shared process-globally across every parallel
     // test schema. Clear it around each case so the global registry state is deterministic
-    // for this serialized collection (honua-server#1568).
+    // for this serialized collection.
     private static Task ResetSceneRegistryAsync(WebAppFixture fixture)
     {
         // honua.scene_datasets is schema-qualified to the literal global honua schema, so
         // the search_path the fixture sets is irrelevant here — any connection on the shared
         // data source clears the one table every scene-catalog test contends on.
-        // #2020: route the global honua.scene_datasets TRUNCATE through the schema-mutation advisory lock.
+        // Route the global honua.scene_datasets TRUNCATE through the schema-mutation advisory lock.
         return fixture.Postgres.ApplyGlobalSeedSqlAsync("TRUNCATE TABLE honua.scene_datasets;");
     }
 }

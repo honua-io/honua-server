@@ -112,7 +112,7 @@ retain full-host integration coverage and existing fast/full policies.
 | TestKit.Abstractions | Shared attributes and fixture-independent contracts |
 | TestKit.Core | Pure Core/Geometry helpers; no host or provider fixtures |
 | TestKit.Hosting | Minimal component TestServer composition |
-| TestKit.Postgres / TestKit.Redis | Explicit bounded service fixtures |
+| TestKit.Postgres | Explicit bounded service fixture |
 | TestKit.Postgres.Hosting | Minimal Postgres-backed component composition |
 | Legacy TestKit | Retained full-host integration suites |
 

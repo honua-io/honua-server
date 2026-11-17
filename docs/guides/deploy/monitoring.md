@@ -164,7 +164,7 @@ Expected: `Healthy` followed by a JSON health snapshot with status fields.
 - **`/metrics` returns 404** — the path was moved with `Observability__Prometheus__Path`, or no meter provider is registered (the server logs that it skipped mapping the endpoint).
 - **`/metrics` returns 401** — the scrape request is missing the `X-API-Key` header (or OIDC bearer token).
 - **No traces in your backend** — set `OTEL_EXPORTER_OTLP_ENDPOINT`, and check `Tracing__Enabled` has not been turned off; confirm status via `GET /api/v1/admin/observability/telemetry`.
-- **`/healthz/ready` flaps** — usually database connectivity; check `GET /monitoring/health/comprehensive` for the failing dependency. If Redis is configured, an unreachable Redis also fails readiness (durable feature-change event storage); a deployment with no Redis configured runs events in single-node in-memory mode and stays `Ready`.
+- **`/healthz/ready` flaps** — usually database connectivity; check `GET /monitoring/health/comprehensive` for the failing dependency. Readiness checks include migrations, PostgreSQL connectivity, the per-replica cache, and feature-change storage. Inspect server logs for the named failing check; a healthy cache alone does not prove durable shared-state availability.
 
 ## Next steps
 
