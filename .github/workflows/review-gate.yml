@@ -225,10 +225,17 @@ jobs:
             // A pull request that merged or closed while this attestation ran can
             // no longer consume a Review Gate status. Re-read it before any red
             // status, so a landed head is not stamped with a failure.
+            // A failed read keeps the red status (fail closed).
             const shedIfClosed = async () => {
-              const { data: live } = await github.rest.pulls.get({
-                ...context.repo, pull_number: prNumber,
-              });
+              let live;
+              try {
+                ({ data: live } = await github.rest.pulls.get({
+                  ...context.repo, pull_number: prNumber,
+                }));
+              } catch (error) {
+                core.warning(`Could not re-read PR #${prNumber} before a red status: ${error.message}`);
+                return false;
+              }
               if (live.state === 'open') return false;
               core.notice(
                 `superseded: PR #${prNumber} became ${live.state} during attestation; no Review Gate status posted`);

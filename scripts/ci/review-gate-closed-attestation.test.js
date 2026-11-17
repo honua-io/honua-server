@@ -42,7 +42,7 @@ const snapshot = ({ state, labels = [] }) => ({
   reviewThreads: page([]),
 });
 
-const runAttest = async ({ snapshotState, liveState, labels }) => {
+const runAttest = async ({ snapshotState, liveState, labels, liveError }) => {
   const statuses = [];
   const notices = [];
   let failure = null;
@@ -62,7 +62,12 @@ const runAttest = async ({ snapshotState, liveState, labels }) => {
   };
   const github = {
     rest: {
-      pulls: { async get() { return { data: { number: PR_NUMBER, state: liveState } }; } },
+      pulls: {
+        async get() {
+          if (liveError) throw liveError;
+          return { data: { number: PR_NUMBER, state: liveState } };
+        },
+      },
       repos: { async createCommitStatus(status) { statuses.push(status); } },
     },
   };
@@ -96,4 +101,13 @@ test('an open pull request with a blocking reason still gets a red Review Gate s
   assert.equal(result.statuses[0].state, 'failure');
   assert.equal(result.statuses[0].sha, HEAD);
   assert.match(result.statuses[0].description, /blocked by hold/);
+});
+
+test('a failed pull request re-read keeps the red Review Gate status', async () => {
+  const result = await runAttest({
+    snapshotState: 'MERGED', liveState: 'closed', liveError: new Error('HTTP 502'),
+  });
+  assert.equal(result.statuses.length, 1);
+  assert.equal(result.statuses[0].state, 'failure');
+  assert.match(result.statuses[0].description, /pull request is not open/);
 });
