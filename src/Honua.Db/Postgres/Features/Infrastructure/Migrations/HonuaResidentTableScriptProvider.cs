@@ -15,7 +15,7 @@ internal sealed class HonuaResidentTableScriptProvider(IScriptProvider source) :
 {
     internal const string ResidentSchema = "honua";
 
-    private static readonly IReadOnlyDictionary<string, Regex> _residentReferences = new Dictionary<string, Regex>(StringComparer.Ordinal)
+    private static readonly Dictionary<string, Regex> _residentReferences = new(StringComparer.Ordinal)
     {
         ["Honua.Server.Migrations.157_FeatureChangeRealtimeStream.sql"] = ReferencesTo("feature_changes", "feature_change_outbox"),
         ["Honua.Server.Migrations.199_AddAnalysisContentTenantOwnership.sql"] = ReferencesTo("analysis_content_items")
