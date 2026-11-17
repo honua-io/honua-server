@@ -8,13 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-public interface IQueryExecutionContext : IDisposable
-{
-    void Complete(bool success, long? rowCount = null, IDictionary<string, object>? additionalMetrics = null);
-
-    void RecordException(Exception exception);
-}
-
 public sealed class QueryPerformanceMonitoringOptions
 {
     public double SlowQueryThresholdMs { get; set; } = 1000; // 1 second
@@ -111,11 +104,19 @@ public sealed partial class DatabaseQueryPerformanceMonitor : IDisposable
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
-    public IQueryExecutionContext StartQueryExecution(string queryType, string correlationId)
+    // Fed by IPerformanceMonitor.RecordDatabaseQuery, which the PostgreSQL, MySQL and DuckDB feature
+    // data access paths call with each completed query's measured duration.
+    public void RecordQuery(string queryType, TimeSpan duration, long? rowCount)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        return new QueryExecutionContext(this, queryType, correlationId, _options);
+        RecordQueryExecution(new QueryExecutionData
+        {
+            QueryType = queryType,
+            CorrelationId = Activity.Current?.TraceId.ToString() ?? string.Empty,
+            ExecutionTimeMs = duration.TotalMilliseconds,
+            Success = true,
+            RowCount = rowCount,
+            ExecutedAt = DateTime.UtcNow - duration
+        });
     }
 
     public QueryPerformanceStatistics GetStatistics()
@@ -123,36 +124,30 @@ public sealed partial class DatabaseQueryPerformanceMonitor : IDisposable
         if (_disposed)
             return new QueryPerformanceStatistics();
 
+        // Every recorded query takes this lock, so only copy under it; sort outside.
+        long totalQueries;
+        double totalExecutionTimeMs;
+        double maxExecutionTimeMs;
+        double[] recentTimes;
         lock (_statisticsLock)
         {
-            var totalQueries = Interlocked.Read(ref _totalQueries);
-            var avgTimeMs = totalQueries > 0 ? _totalExecutionTimeMs / totalQueries : 0;
-
-            // Calculate 95th percentile from circular buffer
-            var validTimes = _executionTimes.Take(Math.Min((int)totalQueries, _executionTimes.Length))
-                .Where(t => t > 0)
-                .OrderBy(t => t)
-                .ToArray();
-
-            var p95TimeMs = validTimes.Length > 0
-                ? validTimes[(int)(validTimes.Length * 0.95)]
-                : 0;
-
-            var byQueryType = _queryTypeMetrics.ToDictionary(
-                kvp => kvp.Key,
-                kvp => kvp.Value.ToStatistics());
-
-            return new QueryPerformanceStatistics
-            {
-                TotalQueries = totalQueries,
-                SlowQueries = Interlocked.Read(ref _slowQueriesCount),
-                FailedQueries = Interlocked.Read(ref _failedQueries),
-                AvgExecutionTimeMs = avgTimeMs,
-                P95ExecutionTimeMs = p95TimeMs,
-                MaxExecutionTimeMs = _maxExecutionTimeMs,
-                ByQueryType = byQueryType
-            };
+            totalQueries = Interlocked.Read(ref _totalQueries);
+            totalExecutionTimeMs = _totalExecutionTimeMs;
+            maxExecutionTimeMs = _maxExecutionTimeMs;
+            recentTimes = _executionTimes[..(int)Math.Min(totalQueries, _executionTimes.Length)];
         }
+
+        var validTimes = recentTimes.Where(t => t > 0).Order().ToArray();
+        return new QueryPerformanceStatistics
+        {
+            TotalQueries = totalQueries,
+            SlowQueries = Interlocked.Read(ref _slowQueriesCount),
+            FailedQueries = Interlocked.Read(ref _failedQueries),
+            AvgExecutionTimeMs = totalQueries > 0 ? totalExecutionTimeMs / totalQueries : 0,
+            P95ExecutionTimeMs = validTimes.Length > 0 ? validTimes[(int)(validTimes.Length * 0.95)] : 0,
+            MaxExecutionTimeMs = maxExecutionTimeMs,
+            ByQueryType = _queryTypeMetrics.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToStatistics())
+        };
     }
 
     public IReadOnlyList<SlowQueryRecord> GetRecentSlowQueries(int maxCount = 100)
@@ -307,98 +302,19 @@ public sealed partial class DatabaseQueryPerformanceMonitor : IDisposable
         public Exception? Exception { get; init; }
     }
 
-    private sealed class QueryExecutionContext : IQueryExecutionContext
-    {
-        private readonly DatabaseQueryPerformanceMonitor _monitor;
-        private readonly string _queryType;
-        private readonly string _correlationId;
-        private readonly QueryPerformanceMonitoringOptions _options;
-        private readonly Stopwatch _stopwatch;
-        private readonly DateTime _startTime;
-        private bool _completed;
-        private bool _disposed;
-
-        public QueryExecutionContext(
-            DatabaseQueryPerformanceMonitor monitor,
-            string queryType,
-            string correlationId,
-            QueryPerformanceMonitoringOptions options)
-        {
-            _monitor = monitor;
-            _queryType = queryType;
-            _correlationId = correlationId;
-            _options = options;
-            _stopwatch = Stopwatch.StartNew();
-            _startTime = DateTime.UtcNow;
-        }
-
-        public void Complete(bool success, long? rowCount = null, IDictionary<string, object>? additionalMetrics = null)
-        {
-            if (_completed || _disposed) return;
-
-            _stopwatch.Stop();
-            _completed = true;
-
-            var executionData = new QueryExecutionData
-            {
-                QueryType = _queryType,
-                CorrelationId = _correlationId,
-                ExecutionTimeMs = _stopwatch.Elapsed.TotalMilliseconds,
-                Success = success,
-                RowCount = rowCount,
-                ExecutedAt = _startTime,
-                AdditionalMetrics = additionalMetrics
-            };
-
-            _monitor.RecordQueryExecution(executionData);
-        }
-
-        public void RecordException(Exception exception)
-        {
-            if (_completed || _disposed) return;
-
-            _stopwatch.Stop();
-            _completed = true;
-
-            var executionData = new QueryExecutionData
-            {
-                QueryType = _queryType,
-                CorrelationId = _correlationId,
-                ExecutionTimeMs = _stopwatch.Elapsed.TotalMilliseconds,
-                Success = false,
-                ExecutedAt = _startTime,
-                Exception = exception
-            };
-
-            _monitor.RecordQueryExecution(executionData);
-        }
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-
-            if (!_completed)
-            {
-                // Auto-complete on disposal with failure status
-                Complete(false);
-            }
-
-            _stopwatch?.Stop();
-        }
-    }
-
     private static partial class MonitoringLog
     {
         [LoggerMessage(
             EventId = 9001,
-            Level = LogLevel.Warning,
+            // Debug: the feature data access already logs slow queries at Warning (event 6120) with layer and protocol.
+            Level = LogLevel.Debug,
             Message = "Slow query detected: {QueryType} took {ExecutionTimeMs:F2}ms [CorrelationId={CorrelationId}]")]
         public static partial void SlowQueryDetected(ILogger logger, string queryType, double executionTimeMs, string correlationId);
 
         [LoggerMessage(
             EventId = 9002,
-            Level = LogLevel.Error,
+            // Information, not Error: every feature query reaches this monitor, and data access already warns.
+            Level = LogLevel.Information,
             Message = "Critical slow query detected: {QueryType} took {ExecutionTimeMs:F2}ms [CorrelationId={CorrelationId}]")]
         public static partial void CriticalSlowQueryDetected(ILogger logger, string queryType, double executionTimeMs, string correlationId);
     }

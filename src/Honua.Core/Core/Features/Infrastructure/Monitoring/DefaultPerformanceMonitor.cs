@@ -21,11 +21,14 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
     private readonly RequestMetricsAggregator _requestMetrics;
     private readonly MemoryPressureTracker _memoryTracker;
     private readonly ILogger<DefaultPerformanceMonitor>? _logger;
+    private readonly DatabaseQueryPerformanceMonitor? _queryMonitor;
 
     public DefaultPerformanceMonitor(
         IOptions<PerformanceMonitoringOptions>? options = null,
-        ILogger<DefaultPerformanceMonitor>? logger = null)
+        ILogger<DefaultPerformanceMonitor>? logger = null,
+        DatabaseQueryPerformanceMonitor? queryMonitor = null)
     {
+        _queryMonitor = queryMonitor;
         var slowThresholdMs = options?.Value.SlowRequestThreshold.TotalMilliseconds ?? 1000.0;
         _requestMetrics = new RequestMetricsAggregator(slowThresholdMs);
         _memoryTracker = new MemoryPressureTracker();
@@ -43,6 +46,7 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         PerformanceMetrics.DatabaseQueryDuration.Record(duration.TotalMilliseconds, tags);
         PerformanceMetrics.DatabaseQueryCount.Add(1, tags);
         PerformanceMetrics.DatabaseQueryRecordCount.Record(recordCount, tags);
+        _queryMonitor?.RecordQuery(queryType, duration, recordCount);
     }
 
     public void RecordHttpRequest(string method, string endpoint, int statusCode, TimeSpan duration)
