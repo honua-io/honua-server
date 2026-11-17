@@ -44,10 +44,9 @@ public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifet
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_RetryAfterProviderRejectionWithSameIdempotencyKey_RepeatsRejectionInsteadOfConflict()
     {
-        // #3052: the rejection is thrown after TryReserveAsync has won the key. Before the fix no
-        // exception exit released it, so a retry inside the ~60s reservation window found no replay
-        // value, lost the reserve, and was answered with the idempotency conflict (error code 409)
-        // instead of a deterministic repeat of the original 405 rejection.
+        // A rejection after TryReserveAsync wins the key must release the reservation.
+        // Retrying inside its roughly 60-second window must repeat the original 405
+        // rejection rather than return an idempotency conflict (409).
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var request = new ApplyEditsRequest
         {
@@ -81,7 +80,7 @@ public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifet
             $"concurrent request: {retryBody}");
         retryCode.Should().Be(405, retryBody);
 
-        // #4406: the response code alone cannot distinguish "the retry was refused" from "the
+        // The response code alone cannot distinguish "the retry was refused" from "the
         // retry ran and inserted a row". Only the table can.
         (await _fixture.CountStoredFeaturesByNameAsync(LayerId, $"Rejected-{idempotencyKey}"))
             .Should().Be(0, "a read-only provider rejects the write outright, so neither attempt may leave a row");
@@ -166,7 +165,7 @@ public sealed class FeatureServerApplyEditsTransactionalCancellationTests : IAsy
             409,
             "the cancelled all-or-nothing transaction could not commit, so its reservation must be released");
 
-        // #4406: releasing the reservation is only safe because nothing was written. Prove it.
+        // Releasing the reservation is only safe because nothing was written. Prove it.
         (await _fixture.CountStoredFeaturesByNameAsync(0, $"Cancelled-{idempotencyKey}"))
             .Should().Be(0, "neither the cancelled attempt nor the released retry may leave a row behind");
     }
@@ -268,7 +267,7 @@ public sealed class FeatureServerApplyEditsPostCommitExceptionTests : IAsyncLife
             409,
             "a post-commit exception must not be mistaken for the provider's read-only rejection");
 
-        // #4406: the refusal is what stops a second row. The substituted writer never touches
+        // The refusal is what stops a second row. The substituted writer never touches
         // Postgres, so the table must be untouched by both the original and the refused retry.
         (await _fixture.CountStoredFeaturesByNameAsync(0, "post-commit"))
             .Should().Be(0, "the retry was refused, so it cannot have written a row");
@@ -353,8 +352,8 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
         // The writer was dispatched and then threw, so whether rows landed is unknowable from the
         // exception. The reservation must survive: an immediate same-key retry gets the idempotency
         // conflict (code 409) instead of being allowed to re-run a write that may already have
-        // committed. Releasing here — which the first cut of #3052 did, because the "did anything
-        // commit?" flag was only assigned after ExecuteEdits returned — is what would duplicate rows.
+        // committed. Releasing here — for example because a "did anything commit?" flag is only
+        // assigned after ExecuteEdits returns — is what would duplicate rows.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var request = new ApplyEditsRequest
         {
@@ -385,7 +384,7 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
             "the write may have committed rows before it threw, so the reservation must be kept " +
             $"and the retry refused rather than re-applied: {retryBody}");
 
-        // #4406: the refused retry must be a no-op on the table, not merely a 409 in the envelope.
+        // The refused retry must be a no-op on the table, not merely a 409 in the envelope.
         (await _fixture.CountStoredFeaturesByNameAsync(LayerId, $"Ambiguous-{idempotencyKey}"))
             .Should().Be(0, "a refused retry must not add a row");
     }

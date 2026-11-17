@@ -51,18 +51,7 @@ internal sealed record SqlServerLayerMapping
     public static SqlServerLayerMapping FromStorage(int layerId, LayerStorageMapping storage)
     {
         ArgumentNullException.ThrowIfNull(storage);
-        return FromStorage(
-            layerId,
-            new FeatureStorageMapping(
-                TableName: storage.TableName,
-                SchemaName: storage.SchemaName,
-                CatalogName: storage.CatalogName,
-                DatabaseName: storage.DatabaseName,
-                PrimaryKeyColumn: storage.PrimaryKeyColumn,
-                GeometryColumn: storage.GeometryColumn,
-                StorageSrid: storage.StorageSrid,
-                TemporalColumn: storage.TemporalColumn,
-                ProviderOptions: storage.ProviderOptions));
+        return FromStorage(layerId, storage.ToFeatureStorageMapping());
     }
 
     public static SqlServerLayerMapping FromStorage(int layerId, FeatureStorageMapping storage)

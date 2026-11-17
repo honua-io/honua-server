@@ -11,7 +11,7 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Edit;
 
-public sealed class FeatureEditGateTests
+public sealed partial class FeatureEditGateTests
 {
     private static readonly FeatureEditHookScope Scope = new("svc", 1) { LayerName = "layer", UserName = "alice", TraceId = "trace" };
 

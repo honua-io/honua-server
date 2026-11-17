@@ -107,7 +107,7 @@ public sealed class IntentDrafterTests
     [UnitTest]
     public void Draft_PublishFamilyWithHighConfidenceServiceTopCandidate_DoesNotAutoResolveAsFeatureLayer()
     {
-        // Regression: service catalog entries must not be collapsed into a
+        // Service catalog entries must not be collapsed into a
         // PublishSourceKind.FeatureLayer draft — PublishSourceKind has no
         // FeatureService value, and mislabeling a service as a layer would
         // leak an incorrect sourceKind into downstream planning. When the
@@ -146,7 +146,7 @@ public sealed class IntentDrafterTests
     [UnitTest]
     public void Draft_PublishFamilyWithServiceIdExplicitInput_DoesNotCreatePublishingBlock()
     {
-        // Regression: a caller who pins a service catalog id via
+        // A caller who pins a service catalog id via
         // ExplicitInputs must not receive a publish intent labeled
         // FeatureLayer — PublishSourceKind has no FeatureService value, so
         // mislabeling it would leak an incorrect sourceKind downstream. When
@@ -189,7 +189,7 @@ public sealed class IntentDrafterTests
     [UnitTest]
     public void Draft_PublishFamilyWithServiceIdFromPublishSourceAnswer_DoesNotCreatePublishingBlock()
     {
-        // Regression: a free-text `publish.source` answer that names a
+        // A free-text `publish.source` answer that names a
         // service catalog entry must not produce a FeatureLayer-labeled
         // publish intent. The drafter treats a resolvedPublishSourceId that
         // resolves to a service candidate the same way it treats ExplicitInputs
@@ -350,7 +350,7 @@ public sealed class IntentDrafterTests
     [UnitTest]
     public void Draft_ClarificationsAnswered_AreSortedOrdinallyEvenWhenInputIsAHashSet()
     {
-        // Regression: GroundingService passes a HashSet of applied question
+        // GroundingService passes a HashSet of applied question
         // ids into the drafter. HashSet enumeration order is unspecified, so
         // the drafter must sort before assigning ProvenanceRecord.ClarificationsAnswered
         // to honour the "fixed request + catalog snapshot" determinism contract

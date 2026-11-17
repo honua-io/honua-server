@@ -36,11 +36,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
+      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:e5c72b9d88d8484fe11ae04b76efbf38bddd642282c69363e965a17a7cda7278
       # Compose requires this placeholder even though no worker service starts.
-      HONUA_WORKER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
-      HONUA_REHEARSAL_DIGEST: sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
-      HONUA_REHEARSAL_SOURCE_SHA: fe1636ca0a3cbd3ec3994f5faafa3490672694e7
+      HONUA_WORKER_IMAGE: ghcr.io/honua-io/honua-server@sha256:e5c72b9d88d8484fe11ae04b76efbf38bddd642282c69363e965a17a7cda7278
+      HONUA_REHEARSAL_DIGEST: sha256:e5c72b9d88d8484fe11ae04b76efbf38bddd642282c69363e965a17a7cda7278
+      HONUA_REHEARSAL_SOURCE_SHA: 95fe8e29155f429e2cef3d772f93a0fdd8662662
       HONUA_GP_OBJECT_ROOT: ${{ github.workspace }}/.gp-canary-rehearsal-objects
       COMPOSE_FILE: docker/gp-reliability/compose.yml:docker/gp-reliability/canary-rehearsal.yml
       COMPOSE_PROJECT_NAME: gp-canary-rehearsal
@@ -55,7 +55,7 @@ jobs:
           docker pull "$HONUA_SERVER_IMAGE"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$HONUA_SERVER_IMAGE")" = "$HONUA_REHEARSAL_SOURCE_SHA"
           python3 scripts/qualification/gp_canary_rehearsal.py --provision-store
-          docker compose up -d --wait --wait-timeout 240 postgres redis server
+          docker compose up -d --wait --wait-timeout 240 postgres server
       - name: Exercise real async API shape and both numerical oracles
         run: python3 scripts/qualification/gp_canary_rehearsal.py
       - name: Retain rehearsal diagnostics and dispose topology

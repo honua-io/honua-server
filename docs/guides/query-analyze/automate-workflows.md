@@ -8,7 +8,7 @@ resource: "honua://capability/jobs.durable-runtime"
 
 Chain geoprocessing steps into a declarative DAG, publish it on a cron schedule, and watch runs — the orchestration engine handles step wiring, retries, and crash recovery.
 
-**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) with Redis configured — the orchestration stores and scheduler only register when a Redis connection is available — and an admin API key ([authentication](../secure/authentication.md)).
+**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) with a system database configured — the orchestration stores and scheduler only register when `ConnectionStrings__DefaultConnection` is set — and an admin API key ([authentication](../secure/authentication.md)).
 
 A workflow package is a graph of nodes (each node is a catalog process, node type `process:{processId}`) connected by data edges that pipe one step's output artifact into the next step's input. Packages are drafted, versioned immutably, validated, dry-run, and then published to a schedule. Also available in Honua Console — UI guide coming soon.
 
@@ -104,11 +104,11 @@ Expected (trimmed): run progress that ends in a succeeded state with both steps 
 
 ## Troubleshoot
 
-- **503 on orchestration operations** — no Redis connection: the orchestration engine and scheduler are not hosted in Redis-less deployments. Configure Redis and restart.
+- **503 on orchestration operations** — no system database: the orchestration engine and scheduler are not hosted without one. Configure `ConnectionStrings__DefaultConnection` and restart.
 - **400 on publish: `cannot resolve cross-node data bindings`** — graphs with data edges must use `"target": "Schedule"`, not `Job` or `ProcessEndpoint`.
 - **Validation errors name `steps[simplify].inputs.wkb`** — a required input is neither a literal parameter nor fed by a data edge; add the edge `targetPort` or the parameter.
 - **Schedule never fires** — invalid cron expressions or unknown time zones are skipped and logged at warning (event 8116); fix the expression. Cron is 5-field (`min hour dom mon dow`).
-- **Run stuck with warnings about job observation** — transient Redis reads are retried each reconcile tick; persistent warnings point at Redis health. See [troubleshooting](../deploy/troubleshooting.md).
+- **Run stuck with warnings about job observation** — transient database reads are retried each reconcile tick; persistent warnings point at database health. See [troubleshooting](../deploy/troubleshooting.md).
 
 ## Next steps
 

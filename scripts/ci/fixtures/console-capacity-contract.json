@@ -22,7 +22,6 @@
       "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertChannelNamesTests.cs",
       "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertWebhookDeliveryE2eTests.cs",
       "tests/dotnet/Honua.Server.Tests/Features/Console/",
-      "tests/dotnet/RedisCollection.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",

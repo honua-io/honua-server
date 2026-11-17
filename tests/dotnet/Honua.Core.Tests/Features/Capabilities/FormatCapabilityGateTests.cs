@@ -11,7 +11,7 @@ public sealed class FormatCapabilityGateTests
 {
     // A registry that reports a single format id as experimental, so the
     // experimental-disabled path is exercised without flipping the real (all-Implemented)
-    // roster — that flip is T10 (#2346). Every other id resolves via the real
+    // roster — that flip is T10. Every other id resolves via the real
     // CapabilityGateResolver precedence against the supplied descriptor.
     private sealed class ExperimentalFormatRegistry : ICapabilityRegistry
     {

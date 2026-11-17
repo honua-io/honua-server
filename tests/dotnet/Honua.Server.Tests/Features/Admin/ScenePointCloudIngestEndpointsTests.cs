@@ -139,7 +139,7 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
     public async Task Ingest_LazCompressed_WithoutWorker_Returns400()
     {
         // The default fixture has no live point-cloud worker, so the auto-dispatch
-        // (#1854) submits the pcloud.translate plan, the runtime cannot run it, and
+        // submits the pcloud.translate plan, the runtime cannot run it, and
         // the decompression failure surfaces as a 400 problem-detail — the
         // compressed buffer is still never tiled by the managed reader.
         using var upload = BuildUpload(
@@ -155,7 +155,7 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/scenes/ingest/pointcloud")]
     public async Task Ingest_LazCompressed_WithDecompressor_Returns201AndServesTileset()
     {
-        // With a decompressor registered (#1854), a LAZ upload is routed through
+        // With a decompressor registered, a LAZ upload is routed through
         // the worker, which returns uncompressed geographic LAS; the managed tiler
         // then tiles it inline exactly as for a natively-uploaded LAS. A fake
         // factory stands in for the out-of-tree PDAL worker so the dispatch path

@@ -261,7 +261,7 @@ public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
     public async Task RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer()
     {
-        // #2066: on a default-OBJECTID layer, the edit not-found guard was skipped on the fast
+        // On a default-OBJECTID layer, the edit not-found guard was skipped on the fast
         // path, so a caller could delete/update a row RLS hides from them by its OBJECTID. The
         // guard must now reject the hidden objectId ("Feature not found") and leave the row intact.
         var adminClient = CreateAdminClient();

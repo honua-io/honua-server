@@ -1534,6 +1534,34 @@ internal static class Wfs20DispatcherEndpoint
         return stringWriter.ToString();
     }
 
+    // OWS ContactInfo children in schema order: Phone, Address, OnlineResource.
+    private static void WriteOwsContactInfo(XmlWriter writer, ContactInfo info)
+    {
+        writer.WriteStartElement("ContactInfo", Wfs20Utilities.OwsNamespace);
+        if (info.Phone is { Voice: { } voice })
+        {
+            writer.WriteStartElement("Phone", Wfs20Utilities.OwsNamespace);
+            WriteOwsElement(writer, "Voice", voice);
+            writer.WriteEndElement();
+        }
+
+        if (info.Address is { } address)
+        {
+            writer.WriteStartElement("Address", Wfs20Utilities.OwsNamespace);
+            WriteOwsElement(writer, "ElectronicMailAddress", address.ElectronicMailAddress);
+            writer.WriteEndElement();
+        }
+
+        if (info.OnlineResource is { } online)
+        {
+            writer.WriteStartElement("OnlineResource", Wfs20Utilities.OwsNamespace);
+            writer.WriteAttributeString("href", Wfs20Utilities.XLinkNamespace, online.Href);
+            writer.WriteEndElement();
+        }
+
+        writer.WriteEndElement();
+    }
+
     private static void WriteOwsElement(XmlWriter writer, string localName, string? value)
     {
         if (value is null)
@@ -1599,22 +1627,7 @@ internal static class Wfs20DispatcherEndpoint
             WriteOwsElement(writer, "PositionName", contact.PositionName);
             if (contact.ContactInfo is { } info)
             {
-                writer.WriteStartElement("ContactInfo", Wfs20Utilities.OwsNamespace);
-                if (info.Address is { } address)
-                {
-                    writer.WriteStartElement("Address", Wfs20Utilities.OwsNamespace);
-                    WriteOwsElement(writer, "ElectronicMailAddress", address.ElectronicMailAddress);
-                    writer.WriteEndElement();
-                }
-
-                if (info.OnlineResource is { } online)
-                {
-                    writer.WriteStartElement("OnlineResource", Wfs20Utilities.OwsNamespace);
-                    writer.WriteAttributeString("href", Wfs20Utilities.XLinkNamespace, online.Href);
-                    writer.WriteEndElement();
-                }
-
-                writer.WriteEndElement();
+                WriteOwsContactInfo(writer, info);
             }
 
             WriteOwsElement(writer, "Role", contact.Role);

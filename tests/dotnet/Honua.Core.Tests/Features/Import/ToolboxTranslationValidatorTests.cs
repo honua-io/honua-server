@@ -301,7 +301,7 @@ public sealed class ToolboxTranslationValidatorTests
     {
         // Where the discriminator's domain IS enumerable the probe answers exactly, so the
         // report must name the faulting branches instead of falling back to the conservative
-        // "cannot pin this down" wording (#3048).
+        // "cannot pin this down" wording.
         var report = ToolboxTranslationValidator.Validate(
             Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_layer", "layerId"))),
             new FakeCatalog(),
@@ -329,7 +329,7 @@ public sealed class ToolboxTranslationValidatorTests
         // Gaps are reported per PARAMETER, so each group read as individually escapable even
         // when the groups TOGETHER covered every branch. With eps missing on dbscan and k
         // missing on kmeans, no value of `algorithm` executes, and telling the operator to
-        // "constrain the source value" points at a remedy that cannot exist (#3048 review).
+        // "constrain the source value" points at a remedy that cannot exist.
         var report = ToolboxTranslationValidator.Validate(
             Manifest(Tool("ClusterLikeTool", "test.branching", Mapping("in_layer", "input"), Mapping("algo", "algorithm"))),
             new FakeCatalog(),
@@ -379,7 +379,7 @@ public sealed class ToolboxTranslationValidatorTests
     {
         // NDBI is executable, but NDVI/SAVI/EVI all fail for red and NDWI fails for green.
         // Each per-parameter issue must describe the collective uncovered branch rather than
-        // claim every value outside that individual parameter's list executes (#3048 review).
+        // claim every value outside that individual parameter's list executes.
         var report = ToolboxTranslationValidator.Validate(
             Manifest(Tool(
                 "SpectralLikeTool",

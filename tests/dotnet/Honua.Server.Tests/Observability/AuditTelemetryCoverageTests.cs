@@ -56,7 +56,7 @@ public sealed class AuditTelemetryCoverageTests
 {
     private const string ServingInstrument = "honua_serving_request_duration_ms";
 
-    // ── A3-001 / #5473: MCP and gRPC serving samples ───────────────────────────────────────
+    // ── A3-001: MCP and gRPC serving samples ───────────────────────────────────────
 
     [Theory]
     [InlineData("POST", 200, "mcp.rpc", "2xx", false)]
@@ -155,7 +155,7 @@ public sealed class AuditTelemetryCoverageTests
         Assert.Equal("5xx", sample.Tags["status_class"]);
     }
 
-    // ── A3-002 / #5474: durable GP execution keeps submission trace linkage ────────────────
+    // ── A3-002: durable GP execution keeps submission trace linkage ────────────────
 
     [Fact]
     [Trait("Tier", "Fast")]
@@ -246,7 +246,7 @@ public sealed class AuditTelemetryCoverageTests
         Assert.Empty(backendCall.Links);
     }
 
-    // ── A3-003 / #5475: span-event exception details and the event ceiling ────────────────
+    // ── A3-003: span-event exception details and the event ceiling ────────────────
 
     [Theory]
     [InlineData(false)]
@@ -361,7 +361,7 @@ public sealed class AuditTelemetryCoverageTests
         Assert.DoesNotContain("a3-003-event-4", exported, StringComparison.Ordinal);
     }
 
-    // ── A3-004 / #5476: every declared ActivitySource reaches the server tracer ───────────
+    // ── A3-004: every declared ActivitySource reaches the server tracer ───────────
 
     [Fact]
     [Trait("Tier", "Fast")]

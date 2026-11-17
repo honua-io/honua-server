@@ -43,6 +43,8 @@ internal static class McpInputDescriptions
     {
         if (operationId == "admin.import.preview" && parameter == "file")
             return "Caller-supplied base64-encoded file content. Supply fileName with its original format extension.";
+        if (operationId.StartsWith("dataset.stage.", StringComparison.Ordinal) && parameter == "targetId")
+            return $"Caller-supplied replay label. {description} Reuse the same value when replaying this import.";
         var source = ReadSource(operationId, parameter);
         if (source is not null) return $"{description} Source: {source}.";
         if (operationId is "admin.layer.display.set" or "admin.layer.spatial.set")
@@ -60,7 +62,7 @@ internal static class McpInputDescriptions
         {
             return parameter switch
             {
-                "targetId" or "jobId" or "resultPackageId" or "artifactId" or "referenceSha256"
+                "jobId" or "resultPackageId" or "artifactId" or "referenceSha256"
                     => "honua_get_job_results (server artifact reference)",
                 "previewFingerprint" => PublishedOperationTool.ProjectName("dataset.stage.preview"),
                 _ => null,

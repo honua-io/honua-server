@@ -287,7 +287,7 @@ class Collector:
         """Retain actual dimensions, including mismatches; never echo lock targets as observations."""
         self.capture_gp_errors()
         dimensions, proofs = {}, {}
-        metric = dict(worker=None, database=None, redis=None, queueAgeSeconds=None)
+        metric = dict(worker=None, database=None, queueAgeSeconds=None)
         try:
             await self.driver.observe_deployment(client)
             dimensions["tenants"] = 1 if self.driver.deployment["tenantSource"] == "Default" and not self.driver._capabilities.get("admin.multi-tenancy", {}).get("available") else None
@@ -339,11 +339,6 @@ class Collector:
             proofs["workerCpu"] = dict(percent=float(cpu_percent.rstrip("%")), allocatedCpus=cpu_count)
             proofs["workerConfiguration"] = configured_workers
             proofs["admissionActiveJobLimit"] = admission_limit
-            redis = await command("docker", "exec", "honua-capacity-soak-redis-1", "redis-cli", "INFO", "clients")
-            clients = dict(line.split(":", 1) for line in redis.splitlines() if ":" in line)
-            maximum = (await command("docker", "exec", "honua-capacity-soak-redis-1", "redis-cli", "--raw", "CONFIG", "GET", "maxclients")).splitlines()[-1]
-            metric["redis"] = int(clients["connected_clients"])/int(maximum)
-            proofs["redisClients"] = dict(connected=int(clients["connected_clients"]), maximum=int(maximum))
         except Exception as exc:
             self.failures.append(f"dependency sample: {type(exc).__name__}: {exc}")
         if any(metric[k] is None for k in metric):
@@ -357,7 +352,7 @@ class Collector:
         return at
 
     async def faults(self, client):
-        for dependency, container in (("worker", "honua"), ("database", "postgres"), ("redis", "redis")):
+        for dependency, container in (("worker", "honua"), ("database", "postgres")):
             injected = now()
             name = f"honua-capacity-soak-{container}-1"
             try:
@@ -371,11 +366,9 @@ class Collector:
                 while time.monotonic() < deadline:
                     try:
                         # A direct dependency probe plus a serving count prevents
-                        # cached readiness from masquerading as database/Redis recovery.
+                        # cached readiness from masquerading as database recovery.
                         if dependency == "database":
                             await command("docker", "exec", name, "pg_isready", "-U", os.environ["SOAK_DB_USER"], "-d", os.environ["SOAK_DB_NAME"])
-                        if dependency == "redis" and await command("docker", "exec", name, "redis-cli", "PING") != "PONG":
-                            raise ValueError("Redis not ready")
                         document = await self.driver._get_json(client, "/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true")
                         if document.get("count") != self.lock["supportedEnvelope"]["featuresPerLayer"]:
                             raise ValueError("recovery count mismatch")
@@ -448,7 +441,7 @@ class Collector:
             await asyncio.wait_for(gp_task, 60)
         gp_jobs = await self.drain_gp(client)
         ended = now()
-        recovered = {event["dependency"] for event in self.recoveries} == {"worker", "database", "redis"}
+        recovered = {event["dependency"] for event in self.recoveries} == {"worker", "database"}
         gp_errors = self.driver.gp.errors[gp_error_cursor:]
         self.fault_drill = dict(
             window=dict(startedAt=iso(began), endedAt=iso(ended)), excludedFromMeasuredWindow=True,
@@ -518,7 +511,7 @@ class Collector:
                     candidateIdentity=dict(serverRevision=self.args.candidate_sha, imageDigest=self.args.image_digest),
                     observedRevision=self.driver.deployment["observedRevision"], producer=producer,
                     topology=dict(replicas=[dict(id="honua", failureDomain="local-docker-host", imageDigest=self.args.image_digest)],
-                                  database=dict(kind="postgres", failureDomain="local-docker-host"), redis=dict(kind="redis", failureDomain="local-docker-host"),
+                                  database=dict(kind="postgres", failureDomain="local-docker-host"),
                                   gpWorkers=self.workloads[0]["proofs"].get("workerConfiguration")),
                     window=dict(startedAt=iso(self.ledger.started), endedAt=iso(self.ledger.ended)),
                     samplingFailures=self.failures, populationMode="complete-disjoint-intervals", samplePeriodSeconds=60,

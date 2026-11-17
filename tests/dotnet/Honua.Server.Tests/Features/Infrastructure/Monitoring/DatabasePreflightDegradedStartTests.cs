@@ -131,7 +131,7 @@ public sealed class DatabasePreflightDegradedStartTests
     [Trait("Tier", "Integration")]
     public async Task Startup_BeforeMigrationsAreApplied_StartsDegradedWithSchemaFloorAndRecovers()
     {
-        // honua-server#5916: cp-tick/cp-backstop cold-started before the migration task ran and exited
+        // Cp-tick/cp-backstop cold-started before the migration task ran and exited
         // with DatabaseSchemaFloorException (001_CreateRasterTables.sql MigrationNotApplied).
         var guard = new ScriptedSchemaGuard(
             new DatabaseSchemaFloorException(

@@ -7,6 +7,8 @@ import re
 import subprocess
 
 POLICY_FILES = {
+    # The architecture guard must name the banned packages it detects.
+    "tests/dotnet/Honua.Architecture.SourceTests/RetiredCacheDependencyTests.cs",
     "scripts/ci/check-retired-cache.py",
     "scripts/ci/check-retired-cache.test.py",
     "scripts/ci/check-retired-cache-workflow.test.py",

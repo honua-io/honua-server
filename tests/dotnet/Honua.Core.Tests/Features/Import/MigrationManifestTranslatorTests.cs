@@ -740,11 +740,11 @@ public sealed class MigrationManifestTranslatorTests
     [Fact]
     public void Translate_WithGeoServicesRelationshipKeyFields_PropagatesOriginAndDestinationFields()
     {
-        // Issue #1256: simple ArcGIS relationships use the same keyField on
-        // both sides; the fidelity scanner now records originKeyField and
-        // destinationKeyField metadata. The translator surfaces them on the
-        // emitted MigrationManifestRelationshipRecord so the apply pass can
-        // build foreign-key references without re-fetching the source JSON.
+        // Simple ArcGIS relationships use the same keyField on both sides; the
+        // fidelity scanner records originKeyField and destinationKeyField metadata.
+        // The translator surfaces them on the emitted
+        // MigrationManifestRelationshipRecord so the apply pass can build
+        // foreign-key references without re-fetching the source JSON.
         var inventory = CreateGeoServicesRelationshipInventory(
             classifications:
             [

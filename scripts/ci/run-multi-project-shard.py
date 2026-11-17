@@ -178,7 +178,7 @@ def validate_projects(projects, catalog):
         resources = entry.get('resources')
         if (entry.get('role') not in ('unit', 'component')
                 or not isinstance(resources, list)
-                or any(resource not in ('docker', 'postgres', 'redis') for resource in resources)):
+                or any(resource not in ('docker', 'postgres') for resource in resources)):
             raise ValueError('Grouped shards require catalogued unit/component assemblies with supported resources')
 
 

@@ -71,7 +71,7 @@ public static class CapabilityUnavailableCodes
         "only on that data source.";
 
     public const string WorkflowDefinitionStoreRemediationRef =
-        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";
+        "https://honua.io/docs/guides/deploy/docker-compose/#durable-administration-requires-the-system-database";
 
     public const string DurableWorkflowPublicationDetail =
         "Publishing a workflow package to a Schedule target requires the durable workflow " +

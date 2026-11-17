@@ -378,7 +378,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     {
         // MonitorAsync exclusively owns disposal of `process` from this point on (Launch
         // handed it off after a successful Start()); a using statement here documents
-        // that ownership instead of the previous manual Dispose() in `finally`.
+        // that ownership.
         using (process)
         {
             try

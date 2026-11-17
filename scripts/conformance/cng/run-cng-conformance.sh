@@ -177,11 +177,10 @@ bring_up_stack() {
             $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" build honua-server || return 1
     fi
 
-    echo -e "${YELLOW}Starting PostgreSQL + Redis + ephemeral S3 fixture...${NC}"
+    echo -e "${YELLOW}Starting PostgreSQL + ephemeral S3 fixture...${NC}"
     $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" down --remove-orphans --volumes 2>/dev/null || true
-    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" up -d postgres redis localstack || return 1
+    $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" up -d postgres localstack || return 1
     wait_for_health postgres 120 || return 1
-    wait_for_health redis 60 || return 1
     wait_for_health localstack 120 || return 1
     $COMPOSE_CMD "${CNG_COMPOSE_ARGS[@]}" exec -T localstack awslocal s3api create-bucket --bucket honua-cng-fixtures || return 1
 

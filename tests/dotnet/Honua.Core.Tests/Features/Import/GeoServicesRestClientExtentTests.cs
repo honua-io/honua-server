@@ -52,7 +52,6 @@ public sealed class GeoServicesRestClientExtentTests
         {
             Query = request.RequestUri!.Query;
             // The live source rejects repeated scalar flags, even when their values agree.
-            // A permissive fixture used to hide the failed source-extent observation.
             if (HttpUtility.ParseQueryString(Query).GetValues("returnExtentOnly") is not ["true"])
             {
                 return Task.FromResult<HttpResponseMessage>(new CallerOwnedHttpResponseMessage(HttpStatusCode.BadRequest)

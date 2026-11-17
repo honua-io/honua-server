@@ -32,7 +32,7 @@ internal sealed class ScheduledTickDispatcher : IScheduledTickDispatcher
                 nameof(kind),
                 kind,
                 "No scheduled-tick handler is registered for this kind. The owning feature may be "
-                + "disabled (for example its store/Redis dependency is absent) in this deployment.");
+                + "disabled (for example its durable store dependency is absent) in this deployment.");
         }
 
         return handler.RunTickAsync(cancellationToken);

@@ -23,8 +23,6 @@ public sealed class PagedQueryResultTests
     [UnitTest]
     public void DefaultStructInstance_IsSafeToEnumerate()
     {
-        // The default(struct) path historically NRE'd on Items.Length — guard
-        // against regressions.
         var result = default(PagedQueryResult<int>);
 
         // Default struct produces an uninitialized ImmutableArray; the Create()

@@ -110,7 +110,7 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_EveryAliasInTheContract_IsPublishedOnceAndResolves()
     {
-        // #4781: the certification harness reads /GPServer?f=json and requires every
+        // The certification harness reads /GPServer?f=json and requires every
         // canonical id and its alias exactly once. DeleteFeatures and CalculateField were
         // in the contract but never published, because their processes are protocol-only.
         // Drive the assertion from the real contract so the two can never disagree again.
@@ -263,7 +263,7 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         root.GetProperty("displayName").GetString().Should().Be("Buffer");
         root.GetProperty("description").GetString().Should().Contain("Creates a polygon");
 
-        // CONTRACT HONESTY (#2788): the alias renames the task, it does not adapt the
+        // CONTRACT HONESTY: the alias renames the task, it does not adapt the
         // wire contract to Esri Buffer's. Task-info must publish the canonical Honua
         // inputs (base64 WKB + SRID + distance) — not Esri Buffer's feature-record-set
         // input or linear-unit distance — so a client driving invocation from this

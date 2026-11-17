@@ -17,8 +17,7 @@ public sealed class FeatureStreamLoggingTests
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(call => call.Arg<LogLevel>() >= LogLevel.Information);
         var sessions = Enumerable.Range(0, 1000).Select(_ => Guid.NewGuid()).ToArray();
 
-        // Ten one-second sweeps at the declared subscription envelope would
-        // previously write 10,000 Information records, despite zero events.
+        // Idle subscription sweeps must not emit Information records for every subscriber.
         for (var sweep = 0; sweep < 10; sweep++)
         {
             foreach (var session in sessions)

@@ -56,7 +56,7 @@ public sealed class SpatialReferenceExtensionsTests
         SpatialReferenceExtensions.IsWebMercatorSrid(srid).Should().BeFalse();
     }
 
-    // PA-024: GetAuthorityName and GetAuthorityCode must return the OGC-defined values for WKID 4326
+    // GetAuthorityName and GetAuthorityCode must return the OGC-defined values for WKID 4326
     // (CRS84) so that WFS 2.0 / OGC API conformance URNs are formed correctly.
 
     [Trait("Tier", "Fast")]
@@ -96,7 +96,7 @@ public sealed class SpatialReferenceExtensionsTests
         sr.GetAuthorityCode().Should().Be(expected);
     }
 
-    // PA-022: WGS84 layers must advertise both CRS84 (EastNorth) and EPSG:4326 (NorthEast).
+    // WGS84 layers must advertise both CRS84 (EastNorth) and EPSG:4326 (NorthEast).
     [Trait("Tier", "Fast")]
     [Fact]
     public void GetSupportedCrsUris_Wgs84Layer_IncludesBothCrs84AndEpsg4326()
@@ -108,7 +108,7 @@ public sealed class SpatialReferenceExtensionsTests
         uris.Should().Contain("http://www.opengis.net/def/crs/EPSG/0/4326");
     }
 
-    // PA-023: Non-WGS84, non-WebMercator layers must NOT advertise EPSG:3857.
+    // Non-WGS84, non-WebMercator layers must NOT advertise EPSG:3857.
     [Trait("Tier", "Fast")]
     [Fact]
     public void GetSupportedCrsUris_NonWgs84NonWebMercator_DoesNotInclude3857()
@@ -119,7 +119,7 @@ public sealed class SpatialReferenceExtensionsTests
         uris.Should().NotContain("http://www.opengis.net/def/crs/EPSG/0/3857");
     }
 
-    // PA-028: https:// CRS84 URI must be normalised to the canonical http:// form.
+    // https:// CRS84 URI must be normalised to the canonical http:// form.
     [Trait("Tier", "Fast")]
     [Fact]
     public void FromOgcCrsUri_HttpsCrs84Uri_ReturnsWgs84()
@@ -130,7 +130,7 @@ public sealed class SpatialReferenceExtensionsTests
         result!.Value.Wkid.Should().Be(4326);
     }
 
-    // PA-028: https:// EPSG URI must resolve to the correct SRID.
+    // https:// EPSG URI must resolve to the correct SRID.
     [Trait("Tier", "Fast")]
     [Fact]
     public void FromOgcCrsUri_HttpsEpsgUri_ReturnsCorrectSrid()

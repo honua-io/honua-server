@@ -15,6 +15,7 @@ using Honua.Server.Features.Streaming.Conformance;
 using Honua.Server.Features.Streaming;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Server.Startup;
 
@@ -109,12 +110,17 @@ internal static class FeatureEventsAndStreamingRegistration
         }
 
         services.AddSingleton<FeatureChangeEventSinkBroadcaster>();
+        // A primary provider other than PostgreSQL registers no data source, so it has no realtime tail
+        // or change log; its edits still reach the sinks.
         services.AddSingleton<IFeatureChangeEventPublisher>(sp =>
-            new FeatureStreamPublisher(
-                sp.GetRequiredService<IRealtimeWakeSignal>(),
-                sp.GetRequiredService<PostgresFeatureChangeLog>(),
+        {
+            var hasSystemDatabase = sp.GetService<NpgsqlDataSource>() is not null;
+            return new FeatureStreamPublisher(
+                hasSystemDatabase ? sp.GetRequiredService<IRealtimeWakeSignal>() : null,
+                hasSystemDatabase ? sp.GetRequiredService<PostgresFeatureChangeLog>() : null,
                 sp.GetRequiredService<ILogger<FeatureStreamPublisher>>(),
-                sp.GetRequiredService<FeatureChangeEventSinkBroadcaster>()));
+                sp.GetRequiredService<FeatureChangeEventSinkBroadcaster>());
+        });
         services.AddSingleton<FeatureMutationEventService>();
 
         // Feature-change transactional outbox: capability provider, dispatcher, health,

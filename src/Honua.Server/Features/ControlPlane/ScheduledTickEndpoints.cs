@@ -101,7 +101,7 @@ internal static class ScheduledTickEndpoints
         catch (ArgumentOutOfRangeException)
         {
             // No handler is registered for the kind in this deployment (the owning feature is disabled,
-            // e.g. its store/Redis dependency is absent). Report 503 so the scheduler can retry/log
+            // e.g. its durable store dependency is absent). Report 503 so the scheduler can retry/log
             // rather than treating it as a client error.
             return Problem(
                 StatusCodes.Status503ServiceUnavailable,

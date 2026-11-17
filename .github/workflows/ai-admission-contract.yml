@@ -28,7 +28,6 @@ on:
       - 'tests/dotnet/Honua.TestKit.Core/Honua.TestKit.Core.csproj'
       - 'tests/dotnet/Honua.TestKit/**'
       - 'tests/dotnet/Honua.TestKit.Postgres/**'
-      - 'tests/dotnet/Honua.TestKit.Redis/**'
       - 'tests/dotnet/Honua.TestKit.Abstractions/**'
       - 'src/Honua.Core/Core/Features/Security/Admission/**'
       - 'src/Honua.Core/Core/Features/Reporting/**'

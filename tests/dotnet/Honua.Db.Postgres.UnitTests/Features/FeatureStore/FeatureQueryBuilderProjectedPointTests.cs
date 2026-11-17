@@ -113,7 +113,7 @@ public sealed class FeatureQueryBuilderProjectedPointTests
         result.WhereParameters[4].Should().BeEquivalentTo(new byte[] { 1, 2, 3 });
     }
 
-    // BH2-D04 regression: OFFSET was never emitted for projected-point queries; page 2
+    // OFFSET was never emitted for projected-point queries; page 2
     // always returned page 1 (infinite-loop / duplicate-export bug).
     [Fact]
     public void BuildProjectedPointQuery_WithLimitAndOffset_EmitsBothPlaceholders()

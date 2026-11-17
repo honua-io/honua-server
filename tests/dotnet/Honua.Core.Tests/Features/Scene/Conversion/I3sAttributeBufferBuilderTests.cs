@@ -152,7 +152,7 @@ public sealed class I3sAttributeBufferBuilderTests
         I3sAttributeBufferBuilder.Build(features, field).Should().BeNull();
     }
 
-    // BH-S-03 regression: feature IDs > Int32.MaxValue (e.g. OSM building IDs) must not
+    // feature IDs > Int32.MaxValue (e.g. OSM building IDs) must not
     // silently truncate to negative/wrong values. Both Build overloads must throw before
     // packing any Oid32 value that does not fit in the 32-bit signed space.
 

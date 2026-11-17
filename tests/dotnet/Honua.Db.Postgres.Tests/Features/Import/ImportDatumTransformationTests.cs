@@ -221,8 +221,8 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
         {
             await EnsureImportFunctionsAsync();
 
-            // A reverse selection used to be dropped. The invalid pipeline must now be inverted
-            // and executed, so the import fails instead of silently using ST_Transform.
+            // Invert and execute the selected reverse pipeline; an invalid pipeline must fail
+            // rather than fall back to ST_Transform.
             var service = CreateService(schema, new ReverseDirectionPipelineCatalog());
             var result = await ImportPointAsync(service, schema, "datum_reverse", sourceSrid: 4269, targetSrid: 4326);
 
@@ -281,10 +281,8 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
         }
     }
 
-    // honua-server#6114: a FileGDB feature class in NAD83 / California zone 3 (ftUS), stored as
-    // ESRI WKT without an AUTHORITY node (as ArcGIS writes it). Every feature used to be stamped
-    // EPSG:4326 by the reader, so an explicit SourceSrid was ignored and State Plane feet were
-    // stored as degrees.
+    // FileGDB NAD83 / California zone 3 (ftUS), stored as ESRI WKT without an
+    // AUTHORITY node, requires the explicit SourceSrid to preserve State Plane feet.
     private static readonly string StatePlaneGdbPath = Path.Join(
         AppContext.BaseDirectory, "Features", "Import", "Fixtures", "FileGdb", "stateplane-parcels.gdb.zip");
 
@@ -404,7 +402,7 @@ public sealed partial class ImportDatumTransformationTests(PostgresFixture fixtu
 
     private async Task EnsureImportFunctionsAsync()
     {
-        // honua-server#1568 (signature 2): this creates the literal, process-global honua schema
+        // This creates the literal, process-global honua schema
         // and import functions (search_path isolation does not scope them), so apply it under the
         // shared seed advisory lock to keep parallel [Collection("Database")] tests off the 40P01
         // deadlock path racing locks on the same global schema/pg_proc objects.
