@@ -307,6 +307,9 @@ public sealed partial class AdminAuthEndpointsTests
         browser.BaseAddress = new Uri("https://localhost");
         using var response = await browser.GetAsync("/admin/auth/callback?code=code-123&state=untrusted");
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+        var page = await response.Content.ReadAsStringAsync();
+        page.Should().Contain("expired").And.Contain("href=\"/console/auth/signin\"");
     }
 
     [IntegrationTheory]

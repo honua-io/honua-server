@@ -49,11 +49,13 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
    Run `GET /ogc/processes/jobs/{jobId}` in the explorer.
 
-5. Fetch the results document for a terminal job, and dismiss the job when you are done with it:
+5. Fetch the results document for a successful job:
 
-   Run `GET /ogc/processes/jobs/{jobId}/results`, then `DELETE /ogc/processes/jobs/{jobId}` in the explorer.
+   Run `GET /ogc/processes/jobs/{jobId}/results` in the explorer.
 
    Catalog processes return inline qualified values in document mode, or native/multipart content when raw mode was requested; `GET /ogc/processes/jobs` lists your recent jobs.
+
+To cancel an accepted or running job, use `DELETE /ogc/processes/jobs/{jobId}` when its backend supports dismissal, then poll its status to confirm the outcome. Dismissal cancels active work; it does not delete completed job records. A job that has already succeeded or failed returns `409 Conflict` when dismissal is requested.
 
 Job status, results, cancellation, and listing use the effective submission tenant and the durable submitting actor. An authenticated administrator may access jobs in that same tenant. Actor identity includes the authentication scheme, issuer and stable subject, or the API-key identifier; display names do not establish ownership. Keyed submissions require a durable identity and are scoped to that actor and tenant, so separate submitters can use the same retry key independently. A refreshed token for the same actor and tenant retains the original job. Trusted deferred submissions retain the captured submitter as owner. Older jobs without tenant metadata or a durable owner need resubmission for owner access. Stored workflow and approval snapshots without durable actor metadata must be republished or resubmitted before keyed execution. Named GP workspaces retain their established owner key and tenant scope independently of job lifecycle ownership, so existing workspace outputs and overwrite behavior remain available.
 
@@ -195,7 +197,7 @@ Expected (trimmed):
 - **404 for a process id you saw in the full catalog** — the OGC route projects catalog processes classified as executable jobs. Protocol-only, workflow-only, and unavailable entries are described in the [reference](../../reference/geoprocessing-operations.md).
 - **400 `Invalid response mode`**: the canonical `honua-geoprocessing` plan process requires document mode because it has no declared value outputs. Catalog processes support raw results with synchronous or asynchronous execution.
 - **413 when fetching results**: the selected results exceed the configured `Geoprocessing:Executors:MaxArtifactBytes` response limit.
-- **Job stuck in `accepted`** — the job queue needs the durable job substrate (the system database) to be healthy; see [troubleshooting](../deploy/troubleshooting.md).
+- **Job stuck in `accepted`** — check PostgreSQL connectivity for the durable job store and whether job workers are running; see [troubleshooting](../deploy/troubleshooting.md).
 
 ## Next steps
 
