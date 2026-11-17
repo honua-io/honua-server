@@ -831,9 +831,11 @@ def mapserver() -> None:
         with qgiskit.recording() as recorder:
             layer = QgsRasterLayer(source, "ms", "arcgismapserver")
             painted, colours = qgiskit.render(layer, BROWSER_EXTENT_3857, "EPSG:3857")
-        exports = [item for item in recorder.matching("/MapServer/export") if item.status == 200]
-        expect(layer.isValid() and painted > 0 and exports, (layer.isValid(), painted, recorder.summary(6)))
-        c.detail = f"painted {painted} px in {colours} colours via {len(exports)} exports"
+        # A MapServer that advertises its tile cache is drawn from /tile.
+        images = [item for item in recorder.exchanges
+                  if item.status == 200 and ("/MapServer/export" in item.url or "/MapServer/tile" in item.url)]
+        expect(layer.isValid() and painted > 0 and images, (layer.isValid(), painted, recorder.summary(6)))
+        c.detail = f"painted {painted} px in {colours} colours via {len(images)} export or tile responses"
     with cell.check("metadata", "service and layer JSON drive CRS, extent and layer list") as c:
         layer = QgsRasterLayer(source, "ms", "arcgismapserver")
         expect(layer.isValid() and layer.extent().width() > 0, layer.extent().toString())
@@ -842,7 +844,7 @@ def mapserver() -> None:
         with qgiskit.recording() as recorder:
             qgiskit.render(QgsRasterLayer(source, "ms", "arcgismapserver"), BROWSER_EXTENT_3857, "EPSG:3857")
         types = sorted({(item.url.split("?")[0].rsplit("/", 1)[-1], item.content_type) for item in recorder.exchanges if item.status == 200})
-        expect(any(name == "export" and (ctype or "").startswith("image/png") for name, ctype in types), types)
+        expect(any(name in ("export", "tile") and (ctype or "").startswith("image/png") for name, ctype in types), types)
         c.detail = f"{types}"
     cell.write()
 

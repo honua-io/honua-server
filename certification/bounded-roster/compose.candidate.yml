@@ -20,6 +20,12 @@ services:
     image: ${HONUA_CANDIDATE_IMAGE:?set HONUA_CANDIDATE_IMAGE to the candidate image digest reference}
     pull_policy: never
     build: !reset null
+    environment:
+      # Every client reaches the candidate through the wire proxy, so failed-key
+      # cells share one source address. Ten failures in fifteen minutes then
+      # refuse later valid keys. The proxy is the front for many clients; the
+      # pinned compat range is exempt, and the key check itself still applies.
+      Authentication__FailedAttempts__ExemptNetworks__0: 172.31.250.0/24
     networks:
       compat:
         aliases:
@@ -121,5 +127,9 @@ services:
       - roster-clients
 
 networks:
+  compat:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
   roster-clients:
     internal: true

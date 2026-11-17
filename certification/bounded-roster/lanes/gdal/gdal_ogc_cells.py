@@ -33,7 +33,8 @@ FIXTURE = {
     9: ("iota", "active", (-122.37, 37.79)), 10: ("lambda", "inactive", None),
 }
 # Anonymous collections of the fixture: client-compat layers plus docker/cng/seed.sql's 1000.
-PUBLIC_COLLECTIONS = {"0", "10", "11", "12", "1000", "2000", "2001", "2002", "3000"}
+# 20-22 are the anonymous cert_relations attachment and related-record layers.
+PUBLIC_COLLECTIONS = {"0", "10", "11", "12", "20", "21", "22", "1000", "2000", "2001", "2002", "3000"}
 PROTECTED_COLLECTION = "2011"
 
 
@@ -105,7 +106,12 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
             dataset = _open_vector(connection, ["PREFERRED_CRS=EPSG:4326"])
             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
             srs = layer.GetSpatialRef()
-            expect(srs is not None and srs.GetAuthorityCode(None) == "4326", "layer SRS is not EPSG:4326")
+            authority = (srs.GetAuthorityName(None) if srs is not None else "") or ""
+            code = srs.GetAuthorityCode(None) if srs is not None else None
+            # GDAL treats the first advertised CRS84 as the same as EPSG:4326.
+            crs84 = authority.upper() == "OGC" and code == "CRS84"
+            epsg4326 = authority.upper() == "EPSG" and code == "4326"
+            expect(crs84 or epsg4326, f"layer SRS is {authority}:{code}, not CRS84 or EPSG:4326")
             located = {fid: value[2] for fid, value in _features(layer).items()}
             layer.SetSpatialFilterRect(-122.47, 37.715, -122.44, 37.745)
             windowed = sorted(_features(layer))
@@ -114,8 +120,13 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
         bbox_requests = record.fetched_path("bbox=")
         expect(located == {fid: value[2] for fid, value in FIXTURE.items()}, f"lon/lat coordinates differ: {located}")
         expect(windowed == [3, 4], f"bbox window returned {windowed}")
-        expect(bbox_requests and "bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" in bbox_requests[-1]
-               and "bbox=37.7" in bbox_requests[-1], f"GDAL did not send a latitude-first EPSG:4326 bbox: {bbox_requests}")
+        last_bbox = bbox_requests[-1] if bbox_requests else ""
+        if crs84:
+            axis_ok = "bbox=-122." in last_bbox
+        else:
+            axis_ok = ("bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" in last_bbox
+                       and "bbox=37.7" in last_bbox)
+        expect(axis_ok, f"bbox axis order does not match {authority}:{code}: {bbox_requests}")
         with gdalkit.session() as projected_record:
             dataset = _open_vector(connection, ["PREFERRED_CRS=EPSG:3857"])
             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
@@ -127,7 +138,7 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
                f"EPSG:3857 feature 1 {projected} != {expected}")
         expect(any("crs=http://www.opengis.net/def/crs/EPSG/0/3857" in value for value in projected_record.fetched),
                projected_record.fetched)
-        c.detail = (f"lon/lat features match the fixture; lat-first EPSG:4326 bbox {bbox_requests[-1].split('?', 1)[1]} "
+        c.detail = (f"lon/lat features match the fixture; {authority}:{code} bbox {bbox_requests[-1].split('?', 1)[1]} "
                     f"-> features {windowed}; crs=EPSG:3857 feature 1 {projected}")
 
 
