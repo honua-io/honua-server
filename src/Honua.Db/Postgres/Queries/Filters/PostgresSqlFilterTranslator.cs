@@ -584,7 +584,8 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
         var args = function.Arguments.Select(arg => TranslateExpression(arg, context)).ToArray();
         var argString = string.Join(", ", args);
 
-        return function.FunctionName.ToUpperInvariant() switch
+        var admitted = TranslateAdmittedFunction(function.FunctionName.ToUpperInvariant(), args, argString);
+        return admitted ?? function.FunctionName.ToUpperInvariant() switch
         {
             "UPPER" => $"UPPER({argString})",
             "LOWER" => $"LOWER({argString})",
@@ -597,24 +598,11 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
             "SUBSTRING" => TranslateSubstring(args, function.FunctionName),
             "SUBSTR" => TranslateSubstring(args, function.FunctionName),
             "REPLACE" => $"REPLACE({argString})",
-            "LEFT" or "RIGHT" => args.Length == 2
-                ? $"{function.FunctionName.ToUpperInvariant()}({args[0]}, {CastInteger(args[1])})"
-                : throw new ArgumentException("LEFT/RIGHT require two arguments"),
-            "CONTAINS" => args.Length == 2
-                ? $"(POSITION({args[1]} IN {args[0]}) > 0)"
-                : throw new ArgumentException("CONTAINS requires two arguments"),
-            "STARTSWITH" => args.Length == 2
-                ? $"STARTS_WITH({args[0]}, {args[1]})"
-                : throw new ArgumentException("STARTSWITH requires two arguments"),
-            "ENDSWITH" => args.Length == 2
-                ? $"STARTS_WITH(REVERSE({args[0]}), REVERSE({args[1]}))"
-                : throw new ArgumentException("ENDSWITH requires two arguments"),
             "CONCAT" => $"CONCAT({string.Join(", ", args.Select(arg => $"CAST({arg} AS text)"))})",
             "POSITION" => args.Length == 2
                 ? $"POSITION({args[0]} IN {args[1]})"
                 : throw new ArgumentException("POSITION requires two arguments"),
             "ABS" => $"ABS({argString})",
-            "SIGN" => $"SIGN({argString})",
             "CEIL" => $"CEIL({argString})",
             "CEILING" => $"CEILING({argString})",
             "FLOOR" => $"FLOOR({argString})",
@@ -670,9 +658,6 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
                 : throw new ArgumentException("CURRENT_TIME does not accept arguments"),
             "COALESCE" => $"COALESCE({argString})",
             "NULLIF" => $"NULLIF({argString})",
-            "IIF" => args.Length == 3
-                ? $"(CASE WHEN {args[0]} THEN {args[1]} ELSE {args[2]} END)"
-                : throw new ArgumentException("IIF requires three arguments"),
             "POWER" => $"POWER({argString})",
             "MOD" => args.Length == 2
                 ? $"MOD({CastNumeric(args[0])}, {CastNumeric(args[1])})"
@@ -681,16 +666,6 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
             "ACCENTI" => $"UNACCENT(LOWER({argString}))",
 
             // Spatial functions per OGC standards
-            "ST_X" => TranslateSpatialFunction("ST_X", args, 1),
-            "ST_Y" => TranslateSpatialFunction("ST_Y", args, 1),
-            "ST_CONTAINS" => TranslateSpatialFunction("ST_Contains", args, 2),
-            "ST_WITHIN" => TranslateSpatialFunction("ST_Within", args, 2),
-            "ST_INTERSECTS" => TranslateSpatialFunction("ST_Intersects", args, 2),
-            "ST_DISJOINT" => TranslateSpatialFunction("ST_Disjoint", args, 2),
-            "ST_TOUCHES" => TranslateSpatialFunction("ST_Touches", args, 2),
-            "ST_CROSSES" => TranslateSpatialFunction("ST_Crosses", args, 2),
-            "ST_OVERLAPS" => TranslateSpatialFunction("ST_Overlaps", args, 2),
-            "ST_EQUALS" => TranslateSpatialFunction("ST_Equals", args, 2),
             "ST_AREA" => TranslateSpatialFunction("ST_Area", args, 1),
             "ST_LENGTH" => TranslateSpatialFunction("ST_Length", args, 1),
             "ST_PERIMETER" => TranslateSpatialFunction("ST_Perimeter", args, 1),
@@ -726,6 +701,41 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
             // Type conversion
 
             _ => throw new NotSupportedException($"Function {function.FunctionName}")
+        };
+    }
+
+    // Functions the external source validator admits beyond the core set; null for other names.
+    private static string? TranslateAdmittedFunction(string name, string[] args, string argString)
+    {
+        return name switch
+        {
+            "LEFT" or "RIGHT" => args.Length == 2
+                ? $"{name}({args[0]}, {CastInteger(args[1])})"
+                : throw new ArgumentException("LEFT/RIGHT require two arguments"),
+            "CONTAINS" => args.Length == 2
+                ? $"(POSITION({args[1]} IN {args[0]}) > 0)"
+                : throw new ArgumentException("CONTAINS requires two arguments"),
+            "STARTSWITH" => args.Length == 2
+                ? $"STARTS_WITH({args[0]}, {args[1]})"
+                : throw new ArgumentException("STARTSWITH requires two arguments"),
+            "ENDSWITH" => args.Length == 2
+                ? $"STARTS_WITH(REVERSE({args[0]}), REVERSE({args[1]}))"
+                : throw new ArgumentException("ENDSWITH requires two arguments"),
+            "SIGN" => $"SIGN({argString})",
+            "IIF" => args.Length == 3
+                ? $"(CASE WHEN {args[0]} THEN {args[1]} ELSE {args[2]} END)"
+                : throw new ArgumentException("IIF requires three arguments"),
+            "ST_X" => TranslateSpatialFunction("ST_X", args, 1),
+            "ST_Y" => TranslateSpatialFunction("ST_Y", args, 1),
+            "ST_CONTAINS" => TranslateSpatialFunction("ST_Contains", args, 2),
+            "ST_WITHIN" => TranslateSpatialFunction("ST_Within", args, 2),
+            "ST_INTERSECTS" => TranslateSpatialFunction("ST_Intersects", args, 2),
+            "ST_DISJOINT" => TranslateSpatialFunction("ST_Disjoint", args, 2),
+            "ST_TOUCHES" => TranslateSpatialFunction("ST_Touches", args, 2),
+            "ST_CROSSES" => TranslateSpatialFunction("ST_Crosses", args, 2),
+            "ST_OVERLAPS" => TranslateSpatialFunction("ST_Overlaps", args, 2),
+            "ST_EQUALS" => TranslateSpatialFunction("ST_Equals", args, 2),
+            _ => null,
         };
     }
 
