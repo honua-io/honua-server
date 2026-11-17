@@ -20,7 +20,9 @@ public sealed partial class JobReconciliationServiceTests
     public async Task HeartbeatExpiry_Retry_RecordsLostAttemptEvent()
     {
         var snapshot = CreateExpiredJob(attemptCount: 1, maxAttempts: 3);
-        var (written, logged, _) = await SweepExpiredJobAsync(snapshot, Substitute.For<IExecutionLogStore>());
+        var (written, logged, sweepError) = await SweepExpiredJobAsync(snapshot, Substitute.For<IExecutionLogStore>());
+
+        sweepError.Should().BeNull();
 
         written.Status.Should().Be(ExecutionJobStatus.Queued);
         logged.Should().NotBeNull();
@@ -37,7 +39,9 @@ public sealed partial class JobReconciliationServiceTests
     [UnitTest]
     public async Task HeartbeatExpiry_FinalFailure_RecordsLastLostAttemptEvent()
     {
-        var (written, logged, _) = await SweepExpiredJobAsync(CreateExpiredJob(attemptCount: 3, maxAttempts: 3), Substitute.For<IExecutionLogStore>());
+        var (written, logged, sweepError) = await SweepExpiredJobAsync(CreateExpiredJob(attemptCount: 3, maxAttempts: 3), Substitute.For<IExecutionLogStore>());
+
+        sweepError.Should().BeNull();
 
         written.Status.Should().Be(ExecutionJobStatus.Failed);
         logged.Should().NotBeNull();
@@ -52,7 +56,9 @@ public sealed partial class JobReconciliationServiceTests
         logStore.AppendAsync(Arg.Any<string>(), Arg.Any<ExecutionLogEntry>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("log store down"));
 
-        var (written, _, _) = await SweepExpiredJobAsync(CreateExpiredJob(attemptCount: 1, maxAttempts: 3), logStore);
+        var (written, _, sweepError) = await SweepExpiredJobAsync(CreateExpiredJob(attemptCount: 1, maxAttempts: 3), logStore);
+
+        sweepError.Should().BeNull();
 
         written.Status.Should().Be(ExecutionJobStatus.Queued);
     }
@@ -91,7 +97,9 @@ public sealed partial class JobReconciliationServiceTests
         var job = CreateExpiredJob(attemptCount: 1, maxAttempts: 3);
         var snapshot = job with { Spec = job.Spec with { Kind = ExecutionJobKind.GeoservicesImport } };
 
-        var (written, logged, _) = await SweepExpiredJobAsync(snapshot, Substitute.For<IExecutionLogStore>());
+        var (written, logged, sweepError) = await SweepExpiredJobAsync(snapshot, Substitute.For<IExecutionLogStore>());
+
+        sweepError.Should().BeNull();
 
         written.CurrentPhase.Should().Be("Recovering committed import outcome");
         logged.Should().NotBeNull();
