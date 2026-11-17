@@ -67,7 +67,7 @@ public sealed class AttachmentDownloadLinksTests
         _links.CreateUrl(Request("https", "http://maps.example.test"), Target, expires).Should().BeNull();
     }
 
-    private static HttpContext Request(string scheme, string publicBaseUrl)
+    private static DefaultHttpContext Request(string scheme, string publicBaseUrl)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Public:BaseUrl"] = publicBaseUrl })
