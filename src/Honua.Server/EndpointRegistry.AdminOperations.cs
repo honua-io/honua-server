@@ -81,6 +81,8 @@ public static partial class EndpointRegistry
         // Forms package lifecycle, offline policy, and submissions
         new("GET", "/api/v1/admin/forms/packages"),
         new("POST", "/api/v1/admin/forms/packages"),
+        new("POST", "/api/v1/admin/forms/packages/import"),
+        new("GET", "/api/v1/admin/forms/packages/{formId}/export"),
         new("GET", "/api/v1/admin/forms/packages/{formId}"),
         new("GET", "/api/v1/admin/forms/packages/{formId}/versions"),
         new("GET", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),

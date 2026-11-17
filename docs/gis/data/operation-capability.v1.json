@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 531,
+    "operationCount": 533,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 437,
+      "admin-api": 439,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -25,7 +25,7 @@
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
-      "fieldops.forms": 16,
+      "fieldops.forms": 18,
       "fieldops.offline-sync": 5,
       "geocoding.forward": 4,
       "identity.mtls-client-certificate": 13,
@@ -1159,6 +1159,16 @@
     },
     {
       "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/import",
+      "operationId": "importFormPackageXlsForm",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-forms-packages-import"
+    },
+    {
+      "spec": "admin-api",
       "method": "GET",
       "path": "/api/v1/admin/forms/packages/{formId}",
       "operationId": "getCurrentFormPackage",
@@ -1166,6 +1176,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "get-api-v1-admin-forms-packages-formid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}/export",
+      "operationId": "exportFormPackageXlsForm",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-forms-packages-formid-export"
     },
     {
       "spec": "admin-api",
