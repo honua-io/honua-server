@@ -18,29 +18,37 @@ class TerminalRecoveryTests(unittest.TestCase):
     def run_shell(self, script, **environment):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(["bash", "-c", script], cwd=directory,
-                                    env={**os.environ, **environment}, capture_output=True,
+                                    env={**os.environ, "repo_root": str(ROOT), **environment}, capture_output=True,
                                     text=True, check=False)
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
 
-    def test_fence_requires_matching_durable_success_and_withheld_success_reply(self):
+    def test_fence_requires_matching_durable_success_and_unreleased_hold(self):
         terminal = {"operationId": "job-1", "status": 3, "claimedBy": "worker-1",
                     "version": 5, "artifactReferences": ["descriptor"]}
-        fence = {"operationId": "job-1", "workerId": "worker-1",
-                 "barrier": "terminal-committed-registration-pending", "redis_reply": ":1",
-                 "reply_forwarded": False, "terminal_record": terminal}
-        variants = [({}, True), ({"reply_forwarded": True}, False), ({"redis_reply": ":0"}, False),
-                    ({"operationId": "other"}, False), ({"workerId": "other"}, False),
-                    ({"terminal_record": {**terminal, "version": 6}}, False),
-                    ({"terminal_record": {**terminal, "status": 2}}, False)]
-        for mutation, expected in variants:
-            with self.subTest(mutation=mutation):
+        fence = {"operationId": "job-1", "workerId": "worker-1", "workerProcessId": 7,
+                 "barrier": "terminal-committed-registration-pending"}
+        variants = [({}, False, True), ({}, True, False), ({"workerProcessId": None}, False, False),
+                    ({"operationId": "other"}, False, False), ({"workerId": "other"}, False, False),
+                    ({"barrier": "claimed"}, False, False)]
+        for mutation, released, expected in variants:
+            with self.subTest(mutation=mutation, released=released):
                 script = functions(RECOVERY, "terminal_assert_fence") + r'''
-job=job-1; before_record="$TERMINAL"; ready="$FENCE"
+barrier_directory() { printf '%s/%s' "$PWD" "$1"; }
+job=job-1; before_record="$TERMINAL"; ready="$FENCE"; mkdir -p job-1
+if [[ "$RELEASED" == yes ]]; then echo '{}' > job-1/terminal-committed-registration-pending.released.json; fi
 result=0; terminal_assert_fence || result=$?
 if [[ "$EXPECTED" == pass ]]; then [[ "$result" == 0 ]]; else [[ "$result" != 0 ]]; fi
 '''
                 self.run_shell(script, TERMINAL=json.dumps(terminal), FENCE=json.dumps({**fence, **mutation}),
-                               EXPECTED="pass" if expected else "fail")
+                               RELEASED="yes" if released else "no", EXPECTED="pass" if expected else "fail")
+        for status in (2, 4):
+            with self.subTest(status=status):
+                script = functions(RECOVERY, "terminal_assert_fence") + r'''
+barrier_directory() { printf '%s/%s' "$PWD" "$1"; }
+job=job-1; before_record="$TERMINAL"; ready="$FENCE"
+! terminal_assert_fence
+'''
+                self.run_shell(script, TERMINAL=json.dumps({**terminal, "status": status}), FENCE=json.dumps(fence))
 
     def test_worker_death_requires_sigkill_not_stop_or_oom(self):
         for running, exit_code, oom, expected in (

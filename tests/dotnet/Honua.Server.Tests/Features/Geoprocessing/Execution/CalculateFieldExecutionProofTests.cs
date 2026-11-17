@@ -42,7 +42,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         await _fixture.InitializeAsync();
 
         // calculate is a bulk field UPDATE, and the shared FeatureServer edit pipeline
-        // rejects an edit kind the publication never advertised (#4073). Declare Create so
+        // rejects an edit kind the publication never advertised. Declare Create so
         // the fixture rows go in through that same pipeline, and Update for calculate
         // itself — not Delete.
         _fixture.EnableV2ServiceEditingCapabilities(ServiceId, ["Create", "Update"]);

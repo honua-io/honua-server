@@ -90,8 +90,9 @@ public sealed class OgcRecordsTemporalAndTitleTests : IAsyncLifetime
     [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
     public async Task GetItems_Datetime_StillKeepsRecordsThatHaveNoTemporalValue()
     {
-        // The #1988 guarantee, now asserted against a fixture where OTHER records do have a
-        // timestamp — so "kept" is a real decision rather than the only possible outcome.
+        // Records without a temporal value are kept, asserted against a fixture where OTHER
+        // records do have a timestamp — so "kept" is a real decision rather than the only
+        // possible outcome.
         var ids = await GetRecordIdsAsync(
             "datetime=" + Uri.EscapeDataString("2020-01-01T00:00:00Z/2020-12-31T23:59:59Z") + "&limit=100");
 

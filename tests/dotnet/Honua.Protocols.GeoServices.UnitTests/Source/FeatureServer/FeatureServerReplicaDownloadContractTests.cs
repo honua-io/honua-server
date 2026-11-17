@@ -117,7 +117,7 @@ public sealed class FeatureServerReplicaDownloadContractTests
     [UnitTest]
     public void ToPublicObjectIds_CustomPrimaryId_ProjectsTheChangeLogPublicIdAndKeepsUnmappedStorageIds()
     {
-        // A layer whose id.primary differs from the storage identity: clients hold the public id (#4017).
+        // A layer whose id.primary differs from the storage identity: clients hold the public id.
         var changes = new[]
         {
             Change(objectId: 11, publicObjectId: 9001, FeatureChangeOperation.Insert),

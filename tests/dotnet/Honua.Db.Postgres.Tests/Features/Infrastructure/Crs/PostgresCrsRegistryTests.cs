@@ -68,7 +68,7 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
             "PRIMEM[\"Greenwich\",0],CS[ellipsoidal,2],AXIS[\"Longitude\",east],AXIS[\"Latitude\",north]," +
             "UNIT[\"degree\",0.0174532925199433]]";
 
-        // #2020: spatial_ref_sys is a database-global PostGIS table; route the upsert/delete
+        // Spatial_ref_sys is a database-global PostGIS table; route the upsert/delete
         // through the shared schema-mutation advisory lock so this parallelized collection
         // serializes its global writes instead of racing the catalog and deadlocking (40P01).
         await _fixture.ApplyGlobalSeedSqlAsync(

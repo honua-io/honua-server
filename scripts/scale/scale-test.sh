@@ -268,9 +268,9 @@ test_cache_stampede_protection() {
 
     local test_url="${BASE_URL}/rest/services/1/FeatureServer"
 
-    log_info "Clearing cache by restarting Redis..."
-    compose_cmd restart redis
-    sleep 5
+    log_info "Clearing the in-process caches by restarting the Honua instances..."
+    compose_cmd restart honua
+    wait_for_services
 
     log_info "Sending concurrent requests to trigger potential stampede..."
 
@@ -281,36 +281,6 @@ test_cache_stampede_protection() {
 
     wait
     log_info "✓ Concurrent requests completed (stampede protection should prevent duplicate work)"
-}
-
-# Function to test Redis failover
-test_redis_failover() {
-    log_info "Testing Redis failover behavior..."
-
-    local test_url="${BASE_URL}/rest/services/1/FeatureServer"
-
-    log_info "Making request with Redis available..."
-    response1=$(curl -s -w "%{http_code}" "${test_url}" -o /dev/null)
-
-    log_info "Stopping Redis..."
-    compose_cmd stop redis
-    sleep 2
-
-    log_info "Making request with Redis unavailable (should fallback)..."
-    response2=$(curl -s -w "%{http_code}" "${test_url}" -o /dev/null)
-
-    log_info "Restarting Redis..."
-    compose_cmd start redis
-    sleep 5
-
-    log_info "Making request with Redis restored..."
-    response3=$(curl -s -w "%{http_code}" "${test_url}" -o /dev/null)
-
-    if [ "$response1" = "200" ] && [ "$response2" = "200" ] && [ "$response3" = "200" ]; then
-        log_info "✓ Redis failover working correctly"
-    else
-        log_warn "⚠ Redis failover test results: $response1 → $response2 → $response3"
-    fi
 }
 
 test_deploy_rollback() {
@@ -500,13 +470,11 @@ EOF
 # Function to show monitoring URLs
 show_monitoring_urls() {
     log_info "Monitoring URLs (if --monitoring flag was used):"
-    echo "  Insight:        http://127.0.0.1:${HONUA_SCALE_TEST_INSIGHT_PORT:-8001}"
     echo "  Prometheus:     http://127.0.0.1:${HONUA_SCALE_TEST_PROMETHEUS_PORT:-9090}"
     echo "  Grafana:        http://127.0.0.1:${HONUA_SCALE_TEST_GRAFANA_PORT:-3000} (admin/admin)"
     echo ""
     echo "Load Balancer:    $BASE_URL"
     echo "Direct DB:        postgresql://honua_user:honua_password@127.0.0.1:${HONUA_SCALE_TEST_POSTGRES_PORT:-5434}/honua_scale_test"
-    echo "Direct Redis:     redis://localhost:6379"
 }
 
 print_stop_command() {
@@ -539,8 +507,8 @@ main() {
                 echo "Usage: $0 [--monitoring] [--test <type>]"
                 echo ""
                 echo "Options:"
-                echo "  --monitoring    Start monitoring stack (Redis Insight, Prometheus, Grafana)"
-                echo "  --test <type>   Run specific test type: basic|load|cache|stampede|failover|rollback|canary|all"
+                echo "  --monitoring    Start monitoring stack (Prometheus, Grafana)"
+                echo "  --test <type>   Run specific test type: basic|load|cache|stampede|rollback|canary|all"
                 echo "  --help          Show this help message"
                 echo ""
                 echo "Examples:"
@@ -585,9 +553,6 @@ main() {
         stampede)
             test_cache_stampede_protection
             ;;
-        failover)
-            test_redis_failover
-            ;;
         rollback)
             test_deploy_rollback
             ;;
@@ -599,7 +564,6 @@ main() {
             test_load_balancing
             test_distributed_caching
             test_cache_stampede_protection
-            test_redis_failover
             ;;
         *)
             log_error "Unknown test type: $test_type"

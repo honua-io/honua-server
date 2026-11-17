@@ -124,7 +124,7 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
         response.Be200Ok();
     }
 
-    // BH7-003 regression: outStatistics with groupByFieldsForStatistics must apply
+    // outStatistics with groupByFieldsForStatistics must apply
     // the configured MaxRecordCount cap (default 10 000, not null) so a
     // high-cardinality groupBy cannot exhaust server memory. With few groups the
     // cap is never hit; the test guards the code path and verifies no regression

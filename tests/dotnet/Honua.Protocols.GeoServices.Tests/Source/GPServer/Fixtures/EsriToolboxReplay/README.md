@@ -81,7 +81,7 @@ licence configuration stay with evidence id `desktop-arcgis`.
 
 `soap-auth-controls.json` recorded the first three of these controls on the managed
 diagnostic image only. Evidence id `desktop-arcgis`.
-`GPServerDurableRuntimeTests.SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState`
+`GPServerDurableRuntimeTests.AuthenticationTests.SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState`
 keeps the same controls as a regression. It runs the real API-key handler (the dev
 bypass is off), the real job service, the Redis job store and the production
 executor. It also asserts that no challenged submission creates a job.

@@ -14,7 +14,7 @@ public sealed class ReadOnlyReplicaRepositoryTests
     public void SupportsReplicaPersistence_IsFalse()
     {
         // Read-only providers cannot durably persist replicas, so the synchronize adapter emits a
-        // conformant "operation not supported" response instead of silently no-op'ing a sync (#2136).
+        // conformant "operation not supported" response instead of silently no-op'ing a sync.
         Assert.False(_repo.SupportsReplicaPersistence);
     }
 

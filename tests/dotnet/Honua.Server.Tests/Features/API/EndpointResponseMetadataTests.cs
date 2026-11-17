@@ -126,7 +126,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
     {
         using var _ = _factory.CreateClient();
 
-        // honua-server#4980: exportImage answers provider faults with an HTTP 200 error
+        // ExportImage answers provider faults with an HTTP 200 error
         // envelope and is keyed by an ad hoc bbox, so it must stay outside the output cache;
         // with no named policy only the base policy applies, and that never stores a route.
         var exportImageEndpoints = _factory.Services
@@ -165,7 +165,7 @@ public sealed class EndpointResponseMetadataTests : IDisposable
             .Select(process => $"{process.ProcessId}:{string.Join(',', process.OutputArtifactKinds)}")
             .Should().Equal(
             [
-                // conversion.geometry-format became an executable sync/async job in #3936;
+                // conversion.geometry-format is an executable sync/async job;
                 // it publishes a Scalar GeometryFormatResult document, so it joins the
                 // reachable raw-output set without adding a new media type.
                 "conversion.geometry-format:Scalar",

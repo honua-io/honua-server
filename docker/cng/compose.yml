@@ -26,7 +26,6 @@ services:
       - HONUA_ADMIN_PASSWORD=CngAdminPassword123!
       - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cng;User Id=postgres;Password=cng_password;
       - ConnectionStrings__honua=Server=postgres;Port=5432;Database=honua_cng;User Id=postgres;Password=cng_password;
-      - ConnectionStrings__Redis=redis:6379
       # Real supported PMTiles proxy path through the configured S3 backend.
       # These credentials belong only to the ephemeral LocalStack fixture.
       - FileStorage__Provider=AwsS3
@@ -45,8 +44,6 @@ services:
       - Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       localstack:
         condition: service_healthy
@@ -72,17 +69,6 @@ services:
       - cng-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly no
-    networks:
-      - cng-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

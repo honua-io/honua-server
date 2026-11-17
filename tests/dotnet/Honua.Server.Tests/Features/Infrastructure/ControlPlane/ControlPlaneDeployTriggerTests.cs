@@ -48,7 +48,7 @@ public sealed class ControlPlaneDeployTriggerTests
     public async Task HandleDeployEvent_DuplicateAndOutOfOrderInvocation_AdvancesDeployOnce()
     {
         // Real deploy reconciler behind the real dispatcher. The backend reports a terminal Succeeded
-        // observation, which honua-server#4618 turns into an open post-activation observation window
+        // observation, which opens a post-activation observation window
         // rather than an immediate terminal state — so duplicate/out-of-order events during that window
         // legitimately keep re-observing (safe: ObserveAsync is read-only and the window guard prevents
         // a second promotion). The invariant that must hold is idempotency of MUTATING actions, not a

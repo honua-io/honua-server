@@ -788,10 +788,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         if (!string.IsNullOrEmpty(cacheText))
         {
             // The docs bound cacheMaxAgeSeconds to [0, 86400] and require
-            // SCENE_OPTIONS_INVALID for invalid values. The previous code
-            // silently swallowed parse failures and negative values into the
-            // 3600-second default, which then passed SceneDatasetValidator's
-            // range check downstream. Reject the parse/negative case here so
+            // SCENE_OPTIONS_INVALID for invalid values. Reject the parse/negative case here so
             // the contract holds; SceneDatasetValidator continues to enforce
             // the upper bound after a successful parse.
             if (!int.TryParse(cacheText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCache)
@@ -1081,7 +1078,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     private static (bool IsPublic, bool RequiresAuth, string[]? AllowedRoles) ResolveSceneAccess(
         AccessPolicy? layerAccessPolicy)
     {
-        // No layer-level access policy ⇒ historic default (public scene).
+        // No layer-level access policy ⇒ default (public scene).
         // Existing public layers continue to materialise public tilesets.
         if (layerAccessPolicy is null)
         {
@@ -1130,10 +1127,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     }
 
     private static double ComputeGeometricError(double[] bounds, double minHeight, double maxHeight)
-        // Shared cos-lat-corrected 3D-diagonal geodesy (see GeodesicError). This is
-        // the root LOD budget handed to the partitioner, so it now also carries the
-        // positive floor the helper applies — ensuring the root tile (even a
-        // root-leaf) declares a non-zero geometric error.
+        // GeodesicError supplies the partitioner's root LOD budget. Its positive floor
+        // ensures that root and root-leaf tiles declare a non-zero geometric error.
         => GeodesicError.RootGeometricError(bounds, minHeight, maxHeight);
 
     private static string SlugifyName(string name, int maxLength)

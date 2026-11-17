@@ -65,7 +65,7 @@ public sealed class ReplicaSyncServiceUploadFilterTests
     public async Task ApplyUpload_RollbackOnFailureRequested_FlowsThroughToEditApplier()
     {
         // The protocol adapter's rollbackOnFailure=true must reach the edit applier so the shared edit
-        // pipeline applies each layer's batch atomically (#2136).
+        // pipeline applies each layer's batch atomically.
         var tracker = new RecordingChangeTracker();
         var service = CreateService(tracker);
         var applier = new CountingEditApplier();

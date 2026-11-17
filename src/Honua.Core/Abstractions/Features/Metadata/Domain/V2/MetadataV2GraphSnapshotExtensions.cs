@@ -166,7 +166,7 @@ public static class MetadataV2GraphSnapshotExtensions
         // Last resort for graphs that carry no binding handle. The service-local index is
         // only usable as a storage handle when no other resource's binding claims that
         // number; otherwise it names a different resource's storage and the publication
-        // resolves to no handle (SEC-4).
+        // resolves to no handle.
         var layerIndex = publication.LayerIndex;
         if (layerIndex is int index
             && snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(index, out var claimant)

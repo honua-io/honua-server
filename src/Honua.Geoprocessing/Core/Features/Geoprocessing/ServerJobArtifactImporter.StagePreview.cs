@@ -7,7 +7,10 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Geoprocessing.Execution;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Geoprocessing;
 
@@ -31,6 +34,11 @@ internal static partial class ServerJobArtifactImporter
         CancellationToken cancellationToken)
     {
         ValidateCommand(command);
+        if (!ImportTargetSchemaPolicy.IsAllowed(command.Schema, context.Services.GetService<IConfiguration>()))
+        {
+            throw new GeoprocessingValidationException(ImportTargetSchemaPolicy.NotOperationalSchemaMessage);
+        }
+
         var authorized = await ReadAuthorizedAsync(command, context.Principal, context.Jobs,
             context.Services, context.Imports.Limits.MaxMemoryBytes, cancellationToken).ConfigureAwait(false);
         await using (authorized.Content.ConfigureAwait(false))

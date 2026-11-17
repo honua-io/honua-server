@@ -37,7 +37,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     private const string Audience = "recovery-fence-client";
     private const string SigningKey = "recovery-fence-cross-tenant-signing-key-32!";
 
-    // honua-server#4987: two tenant-bound platform administrators, exactly as the live reproduction
+    // Two tenant-bound platform administrators, exactly as the live reproduction
     // minted them, plus a tenant-bound admin that holds no platform role.
     private static readonly FencePrincipal TenantAPlatformAdmin = new("ops-a", "tenant-a", ["admin", "platform_admin"]);
     private static readonly FencePrincipal TenantBPlatformAdmin = new("ops-b", "tenant-b", ["admin", "platform_admin"]);
@@ -92,8 +92,8 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     {
         var activation = await CreateProtectedActivationAsync();
 
-        // The terms a caller has to quote are published, not guessed: honua-devops#191 reads them from
-        // this record. The pinned candidate published none of grantId/actor/permittedCompensation.
+        // The terms a caller has to quote are published, not guessed: callers read them from this
+        // record, so it must publish grantId/actor/permittedCompensation.
         activation.Protection.GetProperty("grantId").GetString().Should().StartWith("grant-");
         activation.Protection.GetProperty("actor").GetString().Should().NotBeNullOrWhiteSpace();
         activation.Protection.GetProperty("permittedCompensation").GetString()
@@ -250,8 +250,9 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
     public async Task Rollback_WithUnknownProperty_IsRefusedWithoutTransition()
     {
-        // Ask 4: the pinned candidate's binder silently dropped every one of these. `expectedCurrentRevision`
-        // is exactly the name the honua-devops#191 probe sent believing it was fencing the rollback.
+        // A binder that silently drops unknown properties would ignore every one of these.
+        // `expectedCurrentRevision` is exactly the name a caller could send believing it was fencing the
+        // rollback.
         var activation = await CreateProtectedActivationAsync();
         var before = await GetOperationAsync(activation.OperationId);
 
@@ -272,8 +273,8 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
     public async Task Rollback_ByAnotherTenantsPlatformAdministratorDeclaringItsOwnIdentity_IsRefusedWithoutTransition()
     {
-        // honua-server#4987 request 2: a complete fence quoting tenant-a's sealed grant while declaring
-        // tenant-b's own actor and tenant. nightly-2cc2213 returned 200 and rolled tenant-a back.
+        // A complete fence quoting tenant-a's sealed grant while declaring tenant-b's own actor and
+        // tenant must not return 200 and roll tenant-a back.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantB = CreateBearerClient(TenantBPlatformAdmin);
         var activation = await CreateProtectedActivationAsync(tenantA);
@@ -301,7 +302,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
     public async Task Rollback_ByAnotherTenantsPlatformAdministratorWithNoFence_IsRefusedWithoutTransition()
     {
-        // honua-server#4987 request 3: no fence at all. A platform role is no exemption from the sealed
+        // No fence at all. A platform role is no exemption from the sealed
         // binding, and silence is not a way around it.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantB = CreateBearerClient(TenantBPlatformAdmin);
@@ -343,8 +344,8 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/deploy/operations")]
     public async Task Reads_ByTenantBoundAdminWithoutPlatformRole_DoNotPublishTheSealedGrantIdentity()
     {
-        // honua-server#4987 secondary: a tenant-bound admin without a platform role read tenant-a's grantId,
-        // actor and tenant. It can actuate no compensation, so it is shown none of the grant's identity.
+        // A tenant-bound admin without a platform role must not read tenant-a's grantId, actor and tenant.
+        // It can actuate no compensation, so it is shown none of the grant's identity.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantC = CreateBearerClient(TenantCAdmin);
         var activation = await CreateProtectedActivationAsync(tenantA);
@@ -411,8 +412,8 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [Trait("Tier", "Fast")]
     public void Fence_DeclaredIdentityIsBoundToTheSealedGrantNotOnlyToTheCaller()
     {
-        // honua-server#4987 ask 1: every declared term but actor/tenant quotes tenant-a's grant; the body
-        // names the caller's own identity. Checking only the caller admitted it.
+        // Every declared term but actor/tenant quotes tenant-a's grant; the body names the caller's own
+        // identity. Checking only the caller would admit it.
         var operation = ProtectedRecord(actor: "ops-a", tenantId: "tenant-a");
         static RollbackDeployOperationRequest QuotedGrant(string actor, string? tenantId) => new()
         {

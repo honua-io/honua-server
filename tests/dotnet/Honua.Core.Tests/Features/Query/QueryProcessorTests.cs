@@ -146,7 +146,7 @@ public sealed class QueryProcessorTests
     {
         // EndPropertyName changes the SQL predicate from instant filtering on
         // PropertyName alone to interval intersection over [PropertyName,
-        // COALESCE(EndPropertyName, PropertyName)] (#379). Two filters that
+        // COALESCE(EndPropertyName, PropertyName)]. Two filters that
         // differ only by EndPropertyName produce different result sets, so
         // the cache key must distinguish them; otherwise an interval-style
         // request would collide with the instant-style cache entry.

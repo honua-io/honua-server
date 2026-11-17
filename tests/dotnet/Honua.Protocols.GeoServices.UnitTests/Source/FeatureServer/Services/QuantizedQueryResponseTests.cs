@@ -11,12 +11,12 @@ namespace Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services;
 
 public sealed class QuantizedQueryResponseTests
 {
-    // The polygon exchange from #5438: two clockwise fixture rectangles requested with
+    // The polygon exchange: two clockwise fixture rectangles requested with
     // view-mode, lowerLeft quantization at a 1.65e-5 degree tolerance.
     private const string PolygonQuantizationJson =
         """{"mode":"view","originPosition":"lowerLeft","tolerance":1.6527810833389295e-05,"extent":{"xmin":-122.43401947248334,"ymin":37.76498053451662,"xmax":-122.40598,"ymax":37.78602,"spatialReference":{"wkid":4326}}}""";
 
-    // The point exchange from #5438: the test layer's four located points requested with
+    // The point exchange: the test layer's four located points requested with
     // view-mode, lowerLeft quantization at a 0.001 degree tolerance.
     private const string PointQuantizationJson =
         """{"mode":"view","originPosition":"lowerLeft","tolerance":0.0010000020000040025,"extent":{"xmin":-122.80687566301286,"ymin":37.1681245869876307,"xmax":-121.793124336987134,"ymax":37.9318754130123708,"spatialReference":{"wkid":4326,"latestWkid":4326}}}""";

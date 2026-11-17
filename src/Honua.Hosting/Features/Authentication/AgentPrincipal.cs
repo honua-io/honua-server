@@ -50,6 +50,19 @@ internal static class AgentPrincipal
             return;
         }
 
+        MarkAgent(principal);
+    }
+
+    // Marks an authenticated principal as an agent; the operation loopback uses it for a hop whose
+    // attestation says the original caller was an agent.
+    public static void MarkAgent(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        if (principal.Identity?.IsAuthenticated != true || HasAgentRole(principal))
+        {
+            return;
+        }
+
         principal.AddIdentity(new ClaimsIdentity([CanonicalSecurityActor.CreateStampedClaim(ClaimTypes.Role, AgentApprovalRule.AgentRole)]));
     }
 

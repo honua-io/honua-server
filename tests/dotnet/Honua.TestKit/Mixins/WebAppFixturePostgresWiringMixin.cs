@@ -74,7 +74,7 @@ internal static class WebAppFixturePostgresWiringMixin
             // Request-supplied secret references are refused unless an operator permits them;
             // integration tests name variables under this prefix.
             ["Security:RequestSecretReferences:AllowedEnvironmentVariablePrefixes:0"] = "HONUA_TEST_",
-            // The ops-health rollup sampler (#2553) is a hosted background service that would
+            // The ops-health rollup sampler is a hosted background service that would
             // otherwise boot in EVERY integration-test host and add constant background
             // Postgres sampling/flush/downsample/prune load across the whole parallel
             // Server.Tests fleet — enough to time out already-contended CI shards. Default it
@@ -206,7 +206,7 @@ internal static class WebAppFixturePostgresWiringMixin
         RemoveBackgroundPollers(services);
 
         // The isolated host owns its fixture schema, so configure it as an operational schema
-        // exactly as an operator would (#5391): a secure connection whose search path names that
+        // exactly as an operator would: a secure connection whose search path names that
         // schema then resolves under the unchanged connection policy. Drop the composition root's
         // schema configuration so AddPostgreSqlServices registers this one.
         services.RemoveAll<Honua.Db.Postgres.Features.Infrastructure.PostgresSchemaConfiguration>();
@@ -223,7 +223,7 @@ internal static class WebAppFixturePostgresWiringMixin
         BindFixtureAttachmentStore(services);
 
         // Mirror the production composition root: wrap the provider raster-coverage
-        // renderer with the vector-aware styled-render decorator (honua-server#2498) so
+        // renderer with the vector-aware styled-render decorator so
         // integration tests exercise the same IRasterMapRenderer the running server uses.
         Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
             .AddVectorAwareRasterMapRendering(services);
@@ -270,7 +270,7 @@ internal static class WebAppFixturePostgresWiringMixin
         BindFixtureAttachmentStore(services);
 
         // Mirror the production composition root: wrap the provider raster-coverage
-        // renderer with the vector-aware styled-render decorator (honua-server#2498) so
+        // renderer with the vector-aware styled-render decorator so
         // integration tests exercise the same IRasterMapRenderer the running server uses.
         Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
             .AddVectorAwareRasterMapRendering(services);
@@ -280,7 +280,7 @@ internal static class WebAppFixturePostgresWiringMixin
         // present in the test database.
         WebAppFixtureMetadataV2Mixin.RegisterDefaultMetadataV2Graph(services);
 
-        // Incremental shared-host seam (#3712): request-local service overrides are
+        // Incremental shared-host seam: request-local service overrides are
         // selected by a per-fixture opaque header. General ConfigureServices actions
         // still use ConfigureIsolatedTestServices; only the explicit opt-in API can
         // reach this registry, so unsupported registration shapes fail closed.

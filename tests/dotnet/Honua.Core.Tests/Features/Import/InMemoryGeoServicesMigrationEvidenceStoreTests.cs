@@ -140,7 +140,7 @@ public sealed class InMemoryGeoServicesMigrationEvidenceStoreTests
     [Fact]
     public async Task SaveManifestAsync_AfterParity_ClearsStaleVerdict()
     {
-        // #6180: a later manifest must not keep the previous run's pass.
+        // A later manifest must not keep the previous run's pass.
         var store = new InMemoryGeoServicesMigrationEvidenceStore();
         await store.SaveManifestAsync(NewRecord("run-1", "https://example.com/v1"), BuildManifest(targetCount: 1));
         await store.SaveParityAsync("run-1", BuildParity(GeoServicesMigrationParityClassifications.Pass));

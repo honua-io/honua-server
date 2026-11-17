@@ -135,7 +135,7 @@ trap cleanup EXIT
 
 "${COMPOSE_CMD[@]}" -f "$CITE_COMPOSE_FILE" --profile test down \
     --remove-orphans --volumes >/dev/null 2>&1 || true
-"${COMPOSE_CMD[@]}" -f "$CITE_COMPOSE_FILE" up -d postgres redis honua-server
+"${COMPOSE_CMD[@]}" -f "$CITE_COMPOSE_FILE" up -d postgres honua-server
 
 mapfile -t server_ids < <(
     "${COMPOSE_CMD[@]}" -f "$CITE_COMPOSE_FILE" ps --all -q honua-server | sed '/^$/d'

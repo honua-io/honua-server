@@ -222,6 +222,26 @@ jobs:
             } = require('./scripts/ci/review-first-dispatch');
             const prNumber = Number('${{ needs.resolve.outputs.pr }}');
 
+            // A pull request that merged or closed while this attestation ran can
+            // no longer consume a Review Gate status. Re-read it before any red
+            // status, so a landed head is not stamped with a failure.
+            // A failed read keeps the red status (fail closed).
+            const shedIfClosed = async () => {
+              let live;
+              try {
+                ({ data: live } = await github.rest.pulls.get({
+                  ...context.repo, pull_number: prNumber,
+                }));
+              } catch (error) {
+                core.warning(`Could not re-read PR #${prNumber} before a red status: ${error.message}`);
+                return false;
+              }
+              if (live.state === 'open') return false;
+              core.notice(
+                `superseded: PR #${prNumber} became ${live.state} during attestation; no Review Gate status posted`);
+              return true;
+            };
+
             const evaluateCurrentReview = async () => {
               const pr = await fetchPullRequestSnapshot(
                 github, context.repo.owner, context.repo.repo, prNumber);
@@ -297,6 +317,7 @@ jobs:
             const description = reasons.length === 0
               ? reviewDescription
               : reasons.join('; ').slice(0, 140);
+            if (state === 'failure' && await shedIfClosed()) return;
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha: head, state, context: 'Review Gate', description,
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`,
@@ -395,6 +416,7 @@ jobs:
             };
 
             const failFinalRevalidation = async description => {
+              if (await shedIfClosed()) return;
               await github.rest.repos.createCommitStatus({
                 ...context.repo, sha: head, state: 'failure', context: 'Review Gate',
                 description: description.slice(0, 140),

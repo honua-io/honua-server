@@ -214,7 +214,7 @@ def main() -> int:
             receipt["publishQuery"] = True
             key = (work / "secrets/honua_admin_password").read_text().strip()
             receipt["geoservicesLayerId"] = verify_geoservices_layer(base, key)
-            run(compose + ["restart", "honua", "postgres", "redis"])
+            run(compose + ["restart", "honua", "postgres"])
             wait_ready(base)
             # Query the persisted layer through the published SDK, without seed,
             # registration or publication again. No duplicate installation recipe.

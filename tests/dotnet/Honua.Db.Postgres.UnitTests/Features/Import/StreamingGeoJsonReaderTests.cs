@@ -13,6 +13,8 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 
 public sealed class StreamingGeoJsonReaderTests
 {
+    private const string FirstFeaturePrefix = """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":{"n":1}}""";
+
     [Theory]
     [InlineData("created_at")]
     [InlineData("CREATED_AT")]
@@ -176,6 +178,90 @@ public sealed class StreamingGeoJsonReaderTests
         stream.Position.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("{\"type\":\"FeatureCollecti", 1)]
+    [InlineData("{\"type\":\"FeatureCollecti", 7)]
+    [InlineData("{", 7)]
+    [InlineData("{\"type\":", 7)]
+    [InlineData("{\"type\":\"FeatureCollection\",\"features\":[", 7)]
+    [InlineData("{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{\"value\":1", 7)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ReadFeaturesAsync_TruncatedDocument_RejectsAtEndOfStream(string json, int chunkSize)
+    {
+        await using var stream = new EofGuardedStream(Encoding.UTF8.GetBytes(json), chunkSize);
+        var reader = new StreamingGeoJsonReader();
+
+        var act = async () =>
+        {
+            await foreach (var _ in reader.ReadFeaturesAsync(stream))
+            {
+                // Fully enumerate so malformed input must be rejected at EOF.
+            }
+        };
+
+        await act.Should().ThrowAsync<JsonException>();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ReadFeaturesAsync_FeatureLimit_StopsBeforeUnreadTruncatedFeature()
+    {
+        var bytes = Encoding.UTF8.GetBytes(FirstFeaturePrefix + ",{\"type\":\"Feature\",\"properties\":");
+        await using var stream = new FragmentedStream(bytes, FirstFeaturePrefix.Length);
+        var reader = new StreamingGeoJsonReader(new ImportLimits { MaxFeaturesPerFile = 1 });
+        var features = new List<NetTopologySuite.Features.IFeature>();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await foreach (var feature in reader.ReadFeaturesAsync(stream, timeout.Token))
+        {
+            features.Add(feature);
+        }
+
+        features.Should().ContainSingle();
+        stream.BytesRead.Should().Be(FirstFeaturePrefix.Length);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ReadFeaturesAsync_ConsumerStops_DoesNotReadTruncatedRemainder()
+    {
+        var bytes = Encoding.UTF8.GetBytes(FirstFeaturePrefix + ",{\"type\":\"Feature\",\"properties\":");
+        await using var stream = new FragmentedStream(bytes, 1);
+        var reader = new StreamingGeoJsonReader();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await foreach (var _ in reader.ReadFeaturesAsync(stream, timeout.Token))
+        {
+            break;
+        }
+
+        stream.BytesRead.Should().Be(FirstFeaturePrefix.Length);
+    }
+
+    private sealed class EofGuardedStream(byte[] bytes, int chunkSize) : MemoryStream(bytes)
+    {
+        private int _endOfStreamReads;
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_endOfStreamReads > 0)
+            {
+                throw new InvalidOperationException("The reader requested more data after end of stream.");
+            }
+
+            var read = await base.ReadAsync(buffer[..Math.Min(chunkSize, buffer.Length)], cancellationToken);
+            if (read == 0)
+            {
+                _endOfStreamReads++;
+            }
+
+            return read;
+        }
+    }
+
     private sealed class FragmentedStream(byte[] bytes, int chunkSize) : MemoryStream(bytes)
     {
         public int BytesRead { get; private set; }
@@ -247,7 +333,7 @@ public sealed class StreamingGeoJsonReaderTests
     {
         // A bowtie polygon is topologically invalid but structurally well-formed. The validate/
         // preview surface must report it as a NON-fatal, row-level warning (repaired on import by
-        // the shared validity gate) rather than failing the whole file (#2743).
+        // the shared validity gate) rather than failing the whole file.
         const string geoJson = """
             {
               "type": "FeatureCollection",

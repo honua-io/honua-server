@@ -105,7 +105,7 @@ public sealed class SavedMapOperationDraftApplierTests
     {
         // StudioJsonContext writes with WhenWritingNull, so a replacement carrying no `view`
         // emitted no `view` key and WriteBody's overlay left the STORED viewport in place — the
-        // wholesale replacement was not wholesale (honua-server#2999 review).
+        // wholesale replacement was not wholesale.
         var envelope = BuildEnvelope("""
             {
               "mapPackageId": "map-1",

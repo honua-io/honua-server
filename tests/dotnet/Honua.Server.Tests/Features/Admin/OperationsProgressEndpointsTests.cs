@@ -724,7 +724,7 @@ public sealed partial class OperationsProgressEndpointsTests
         }
     }
 
-    // Regression: a remote job the reconciler re-queued for retry sits at
+    // A remote job the reconciler re-queued for retry sits at
     // Queued + AttemptCount > 0 + NextRetryAt != null + ProviderOperationId == null. The
     // admin cancel surface must treat that between-retries state as pre-submission and must
     // not invoke backend.CancelAsync against the stale (possibly TTL-cleaned) prior attempt.
