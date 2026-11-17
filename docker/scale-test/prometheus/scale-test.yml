@@ -21,12 +21,6 @@ scrape_configs:
       - targets: ['postgres-exporter:9187']
     scrape_interval: 30s
 
-  # Redis monitoring
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis-exporter:9121']
-    scrape_interval: 30s
-
   # Nginx monitoring
   - job_name: 'nginx'
     static_configs:

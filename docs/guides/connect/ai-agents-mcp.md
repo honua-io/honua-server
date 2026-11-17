@@ -247,6 +247,10 @@ To upgrade the platform, an agent reads `honua_platform_release_status` and `GET
 
 Import a completed job artifact in two steps, without touching an existing table.
 
+The target schema must be the configured default operational schema, `public`, or a schema listed in `Database:OperationalSchemas`. Preview and proposal preparation refuse metadata and PostgreSQL system schemas even when listed as operational. Proposal preparation checks the current schema configuration again, so an earlier preview cannot retain permission for a removed destination.
+
+Read `honua_get_job_results` for the completed job. Use its `jobId`, `resultPackageId`, and a supported feature artifact's `artifactId` and `referenceSha256` as the source inputs. The matching `honua://jobs/{jobId}/results` resource returns the same artifact metadata. `referenceSha256` hashes the exact UTF-8 `uri` string, including any escaping; it is distinct from the preview's content checksum. A checksum alone does not make an artifact importable. Choose your own stable `targetId` replay label and reuse it across preview, import and retries.
+
 1. `honua_op_dataset_stage_preview` (`dataset.stage.preview`) is read-only. It reads the artifact with your own job access, checks it is the server's verified result, and returns:
    - `previewFingerprint`;
    - the content SHA-256, feature count, source CRS and target SRID;
@@ -391,7 +395,7 @@ layer over an illustrative extent in EPSG:4326:
 
 Replace the example pair and extent with the selected layer and the requested area.
 
-Layer display and spatial configuration are available through the admin `full` catalog as
+Layer display and spatial configuration tools are discoverable through the authenticated `full` catalog as
 `honua_admin_layer_display_get`, `honua_admin_layer_display_set`,
 `honua_admin_layer_spatial_get`, and `honua_admin_layer_spatial_set`.
 Use the storage layer ID from connection-layer discovery. Read the current configuration
@@ -403,7 +407,7 @@ A view is **discovery, not authority**:
 
 - Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.
 - Every `tools/call` is independently reauthenticated and reauthorized against the current actor, tenant, roles/grants, OAuth scope, and policy — whether or not the tool was discovered through a view.
-- The complete paginated catalog is an explicit admin operation: pass the reserved name `full`, which overrides a session or profile default and requires an admin role. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
+- To discover the complete paginated catalog, authenticate and pass the reserved name `full`, which overrides a session or profile default. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
 - `honua_list_capabilities` returns at most 12 tools and 12 resources by default. Follow `nextToolCursor` and `nextResourceCursor`; `fullExport: true` is admin-only.
 - `resources/read` returns at most 64,000 characters by default. A caller may explicitly request `maxChars` up to the hard ceiling of 1,000,000.
 - Members carry the **exact** canonical description, annotations, and input/output schemas the full catalog serves; nothing is truncated or re-described.

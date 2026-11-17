@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -75,6 +76,7 @@ public sealed class McpMrtrApprovalTests
         var output = result.StructuredContent!.Value;
         output.GetProperty("status").GetString().Should().Be(expected);
         output.GetProperty("proposalId").GetString().Should().Be(ProposalId);
+        result.IsError.Should().Be(expected == "Failed");
     }
 
     [UnitTheory]
@@ -110,6 +112,9 @@ public sealed class McpMrtrApprovalTests
         output.GetProperty("status").GetString().Should().Be(status.ToString());
         output.GetProperty("updatedAt").GetDateTimeOffset().Should().Be(operation.UpdatedAt);
         output.GetProperty("message").GetString().Should().Be(operation.Reason);
+        result.IsError.Should().Be(status == OperationHandleStatus.Failed);
+        var text = result.Content.Last(block => block.Type == "text").Text!;
+        JsonNode.DeepEquals(JsonNode.Parse(text), JsonNode.Parse(output.GetRawText())).Should().BeTrue();
     }
 
     [UnitTheory]

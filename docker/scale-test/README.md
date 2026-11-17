@@ -4,7 +4,7 @@ This directory contains the local multi-node scale-test stack and files that are
 
 ## Layout
 
-- `compose.yml` - Docker Compose stack for multiple Honua instances, PostGIS, Redis, Nginx, optional exporters, Prometheus, and Grafana.
+- `compose.yml` - Docker Compose stack for multiple Honua instances, PostGIS, Nginx, optional exporters, Prometheus, and Grafana.
 - `nginx/` - Nginx load-balancer template and entrypoint renderer used only by the scale-test stack.
 - `prometheus/scale-test.yml` - Prometheus scrape configuration for the local scale-test services.
 

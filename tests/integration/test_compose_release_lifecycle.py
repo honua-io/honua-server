@@ -233,12 +233,12 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         failed_proposal = failed["targets"][0]["proposalId"]
         assert failed_proposal
         wait_for_approval(base, key, failed_proposal)
-        # The stable manager keeps its own Redis; only the serving stack loses Redis.
-        dc("stop", "redis")
+        # The stable manager keeps its own database; only the serving stack loses PostgreSQL.
+        dc("stop", "postgres")
         human.approve(failed_proposal)
         wait_for_proposal(base, key, failed_proposal, "failed", proposer_key, session)
-        dc("start", "redis")
-        wait_until_ready(port, "serving stack did not recover after its stopped dependency restarted")
+        dc("start", "postgres")
+        wait_until_ready(port, "serving stack did not recover after PostgreSQL restarted")
         convergence = call("honua_propose_platform_release_convergence", {
             "reason": "candidate convergence after failed operation"}, 2)
         proposal = convergence["targets"][0]["proposalId"]
@@ -306,7 +306,7 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
         assert_live_revision(prior_id, True)
         # Fault injection stops only services in this disposable install. The product
         # must find and restart each one through MCP and an interactive human approval.
-        for service_name in ("honua", "redis", "postgres", "honua"):
+        for service_name in ("honua", "postgres", "honua"):
             dc("stop", service_name)
             health = call("honua_ops_health", {}, 41)
             managed = next(target for target in health["managedTargets"] if target["targetId"] == "compose-local")
@@ -388,8 +388,9 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
                         diagnostics.append({"operationId": operation_id, "status": "unavailable"})
             checkpoint = {}
             if re.fullmatch(r"restore-[a-f0-9]{32}", restore_id):
-                raw_checkpoint = dc("exec", "-T", "compose-manager-redis", "redis-cli", "--raw", "GET",
-                                    f"controlplane:workflow:{restore_id}", check=False)
+                raw_checkpoint = dc("exec", "-T", "compose-manager-postgres", "psql", "-U", "honua", "-d", "honua_manager",
+                                    "-tA", "-c", f"SELECT record FROM honua.workflow_operations WHERE operation_id = '{restore_id}'",
+                                    check=False)
                 try:
                     saved = json.loads(raw_checkpoint)
                     saved_context = saved.get("preMigrationRestore") or {}
@@ -438,5 +439,5 @@ def test_rc2_prior_mcp_convergence_and_verified_rollback(tmp_path):
     finally:
         identity.close()
         dc("down", "-v", "--remove-orphans", check=False)
-        run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "redis:7.4-alpine", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(project_dir)], check=False)
+        run(["docker", "run", "--rm", "-v", f"{project_dir}:{project_dir}", "alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf", "chown", "-R", f"{os.getuid()}:{os.getgid()}", str(project_dir)], check=False)
         shutil.rmtree(project_dir, ignore_errors=True)

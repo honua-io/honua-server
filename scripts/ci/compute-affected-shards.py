@@ -70,22 +70,25 @@ ORDERING ("largest-impact first")
 
       2. `path_hits` -- how many of the diff's files this shard's own `paths`
          prefixes claim. A shard that owns twelve changed files is a better
-         guess at the regression than one that owns a single file, and this is
-         the only signal a source-only diff produces.
-      3. `project_affected` -- whether the shard's test project is in the
+         guess at the regression than one that owns a single file.
+      3. `priority_source_hits` -- changed files covered by a targeted override
+         marked `prioritize: true` for this shard. Explicit source owners rank
+         ahead of broad inherited coverage paths when path-hit counts tie.
+         Priority never adds a candidate or bypasses the time budget.
+      4. `project_affected` -- whether the shard's test project is in the
          reverse-dependency closure of the diff. Under `run_all` this is the
          only discriminator the router leaves, and it is what keeps an
          unmapped-source escalation from spending the cap on six shards whose
          assemblies the change cannot even reach.
-      4. `dispatch_rank` descending -- the observed shard duration in minutes
+      5. `dispatch_rank` descending -- the observed shard duration in minutes
          that ci.yml already dispatches by. The longest shard carries the most
          test surface, so it is the better use of a remaining slot; it also
          front-loads the slowest job, which is what keeps six parallel shards
          near one shard of wall clock.
-      5. Shard name, so the selection is deterministic.
+      6. Shard name, so the selection is deterministic.
 
     Numbered children of a shard split for capacity ("WFS 1" .. "WFS 9") are
-    one family. Among candidates that tie on the first three terms, each
+    one family. Among candidates that tie on the first four terms, each
     family's first child ranks before any family's second child, so a change to
     a class split across many children cannot spend the whole cap and time
     budget on that one class while another changed test's owner waits.
@@ -119,7 +122,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, NamedTuple, Sequence
 
 
 def _load_sibling(name: str) -> Any:
@@ -509,6 +512,15 @@ def count_path_hits(shard: dict[str, Any], changed_files: Sequence[str]) -> int:
     return sum(1 for changed in changed_files if changed.startswith(prefixes))
 
 
+def count_priority_source_hits(name: str, changed_files: Sequence[str], config: dict[str, Any]) -> int:
+    prefixes = tuple(
+        override["prefix"]
+        for override in config.get("targeted_override_prefixes") or ()
+        if override.get("prioritize") is True and name in override.get("shards", ())
+    )
+    return sum(changed.startswith(prefixes) for changed in changed_files)
+
+
 def product_code_prefixes(config: dict[str, Any]) -> tuple[str, ...]:
     """`PRODUCT_CODE_PREFIXES` plus every root the shard map itself routes on.
 
@@ -540,152 +552,110 @@ def has_product_code(changed_files: Iterable[str], config: dict[str, Any]) -> bo
     return any(changed.startswith(prefixes) for changed in changed_files)
 
 
-def select(
-    *,
-    config: dict[str, Any],
-    changed_files: Sequence[str],
-    descriptor: dict[str, Any],
-    affected_projects: list[str] | None,
-    cap: int,
-    test_class_hits: dict[str, int] | None = None,
-) -> dict[str, Any]:
-    """Pure selection. Every I/O-bound input is already resolved by the caller."""
-    shards_by_name = {shard["name"]: shard for shard in config["shards"]}
+class SelectionInputs(NamedTuple):
+    """Resolved router and ownership signals plus the selection cap."""
+    descriptor: dict[str, Any]
+    affected_projects: list[str] | None
+    cap: int
+    test_class_hits: dict[str, int] | None = None
 
-    if affected_projects is None:
-        project_scope = "unknown"
-        closure: set[str] = set()
-    elif affected_projects == ["ALL"]:
-        project_scope = "all"
-        closure = set()
-    else:
-        project_scope = "closure"
-        closure = set(affected_projects)
 
-    def project_affected(shard: dict[str, Any]) -> bool:
-        # An unknown or force-full closure carries no narrowing information, so
-        # it must not be read as "this shard is unaffected".
-        if project_scope in ("unknown", "all"):
-            return True
-        return any(project in closure for project in shard_projects(shard))
+def project_scope(projects: list[str] | None) -> str:
+    if projects is None:
+        return "unknown"
+    return "all" if projects == ["ALL"] else "closure"
 
-    router_run_all = bool(descriptor.get("run_all"))
-    router_shards = [name for name in descriptor.get("shards") or [] if name in shards_by_name]
 
-    if router_run_all:
-        # The router escalated. Narrowing by the reverse-dependency closure is
-        # the only honest signal left: a shard whose test assembly the diff
-        # cannot reach is not a candidate for the regression this lane hunts.
-        narrowed = [name for name in router_shards if project_affected(shards_by_name[name])]
-        if narrowed and len(narrowed) < len(router_shards):
-            candidates = narrowed
-            candidate_reason = "run_all_narrowed_by_affected_projects"
-        else:
-            candidates = router_shards
-            candidate_reason = "run_all"
-    else:
-        # The router already targeted. Its answer is authoritative and is NEVER
-        # trimmed by the project closure here -- a shard the `paths` map
-        # explicitly claims is exactly what the trailing matrix will run, and
-        # dropping it would make this lane predict something else.
-        candidates = router_shards
-        candidate_reason = descriptor.get("reason") or "targeted"
+def project_affected(shard: dict[str, Any], projects: list[str] | None) -> bool:
+    # Unknown and force-full closures carry no narrowing information.
+    return project_scope(projects) != "closure" or any(
+        project in projects for project in shard_projects(shard)
+    )
 
-        # ...but `no_path_match` is not a targeted answer. It is the router's
-        # DEFAULT (`default_shards_when_no_match`, currently ["Core and Cloud
-        # Contracts"]) for a file no `paths` entry claims, so it says nothing
-        # about ownership. For a changed TEST file under a protocol-split
-        # project that matters: `tests/dotnet/Honua.Protocols.OData.Tests/Source/
-        # ODataFeatureProviderResolverTests.cs` is not listed by exact path, so
-        # the router answers with the Core shard while the shard that actually
-        # runs the changed test (`OData Core`, a different assembly entirely)
-        # is never selected.
-        #
-        # `test_class_hits` already answers exactly that question, and it
-        # answers it with the shard runner's own filter evaluator rather than a
-        # guess -- so a nonzero entry IS the owning shard. Add those, keeping
-        # the router's default alongside them.
-        #
-        # Only the ownership signal is used. Widening to the project closure
-        # instead would add every shard sharing the test assembly (~40 for the
-        # Honua.Server.Tests default), which the cap would then truncate by
-        # dispatch_rank -- six arbitrary shards, the exact meaningless verdict
-        # this module's FAIL-SAFE DIRECTION note refuses to publish.
-        if candidate_reason == "no_path_match":
-            owners = [
-                name
-                for name, hits in sorted((test_class_hits or {}).items())
-                if hits > 0 and name not in router_shards
-            ]
-            if owners:
-                candidates = router_shards + owners
-                candidate_reason = "no_path_match_plus_test_owners"
 
-    # Advisory shards (ci.yml matrix.advisory) are the #1965 rotted buckets:
-    # non-gating and currently always red. Including one would manufacture a
-    # false red in the very measurement that decides whether to promote.
-    candidates = [name for name in candidates if not shards_by_name[name].get("advisory", False)]
+def selection_candidates(config: dict[str, Any], inputs: SelectionInputs) -> tuple[list[str], str]:
+    shards = {shard["name"]: shard for shard in config["shards"]}
+    descriptor = inputs.descriptor
+    names = [name for name in descriptor.get("shards") or [] if name in shards]
+    if descriptor.get("run_all"):
+        # Only an escalated answer may narrow by project closure.
+        narrowed = [name for name in names if project_affected(shards[name], inputs.affected_projects)]
+        if narrowed and len(narrowed) < len(names):
+            return narrowed, "run_all_narrowed_by_affected_projects"
+        return names, "run_all"
+    reason = descriptor.get("reason") or "targeted"
+    if reason == "no_path_match":
+        # A default answer says nothing about ownership. Add exact changed-test
+        # owners, never the whole project closure, and preserve the default.
+        owners = [name for name, hits in sorted((inputs.test_class_hits or {}).items())
+                  if hits > 0 and name not in names]
+        if owners:
+            return names + owners, "no_path_match_plus_test_owners"
+    return names, reason
 
+
+def ranked_candidates(config: dict[str, Any], changed_files: Sequence[str],
+                      inputs: SelectionInputs) -> tuple[list[dict[str, Any]], str]:
+    shards = {shard["name"]: shard for shard in config["shards"]}
+    candidates, reason = selection_candidates(config, inputs)
     ranked = []
     for name in candidates:
-        shard = shards_by_name[name]
-        ranked.append(
-            {
-                "name": name,
-                "test_class_hits": (test_class_hits or {}).get(name, 0),
-                "path_hits": count_path_hits(shard, changed_files),
-                "project_affected": project_affected(shard),
-                "dispatch_rank": float(shard.get("dispatch_rank") or 0.0),
-                "timeout_minutes": shard.get("timeout_minutes"),
-                "test_timeout_minutes": shard.get("test_timeout_minutes"),
-                "test_project": shard_test_project(shard),
-                "test_projects": shard_projects(shard),
-            }
-        )
-    ranked.sort(
-        key=lambda entry: (
-            -entry["test_class_hits"],
-            -entry["path_hits"],
-            not entry["project_affected"],
-            -entry["dispatch_rank"],
-            entry["name"],
-        )
-    )
-    ranked = interleave_split_families(ranked)
+        shard = shards[name]
+        # Advisory buckets remain outside gating selection.
+        if shard.get("advisory", False):
+            continue
+        ranked.append({
+            "name": name,
+            "test_class_hits": (inputs.test_class_hits or {}).get(name, 0),
+            "path_hits": count_path_hits(shard, changed_files),
+            "priority_source_hits": count_priority_source_hits(name, changed_files, config),
+            "project_affected": project_affected(shard, inputs.affected_projects),
+            "dispatch_rank": float(shard.get("dispatch_rank") or 0.0),
+            "timeout_minutes": shard.get("timeout_minutes"),
+            "test_timeout_minutes": shard.get("test_timeout_minutes"),
+            "test_project": shard_test_project(shard),
+            "test_projects": shard_projects(shard),
+        })
+    ranked.sort(key=lambda entry: (
+        -entry["test_class_hits"], -entry["path_hits"], -entry["priority_source_hits"],
+        not entry["project_affected"], -entry["dispatch_rank"], entry["name"],
+    ))
+    return interleave_split_families(ranked), reason
 
-    selected = ranked[:cap]
-    dropped = [entry["name"] for entry in ranked[cap:]]
 
-    result: dict[str, Any] = {
+def selection_result(ranked: list[dict[str, Any]], changed_files: Sequence[str],
+                     inputs: SelectionInputs) -> dict[str, Any]:
+    selected = ranked[:inputs.cap]
+    return {
         "contract": CONTRACT,
-        "skip": False,
-        "reason": candidate_reason,
-        "router_reason": descriptor.get("reason"),
-        "router_run_all": router_run_all,
-        "project_scope": project_scope,
+        "skip": not selected,
+        "router_reason": inputs.descriptor.get("reason"),
+        "router_run_all": bool(inputs.descriptor.get("run_all")),
+        "project_scope": project_scope(inputs.affected_projects),
         "test_ownership": (
-            "unavailable"
-            if test_class_hits is None
-            else (
-                "resolved"
-                if any(changed.startswith("tests/") for changed in changed_files)
+            "unavailable" if inputs.test_class_hits is None else (
+                "resolved" if any(path.startswith("tests/") for path in changed_files)
                 else "not_applicable"
             )
         ),
-        "cap": cap,
+        "cap": inputs.cap,
         "changed_file_count": len(changed_files),
         "candidate_count": len(ranked),
         "selected": selected,
         "shards": [entry["name"] for entry in selected],
-        "dropped": dropped,
+        "dropped": [entry["name"] for entry in ranked[inputs.cap:]],
         "time_budget": None,
         "deferred_to_trunk": [],
         **time_budget.projected_minutes(selected),
     }
 
-    if not selected:
-        result["skip"] = True
-        result["reason"] = "no_shards_selected"
+
+def select(config: dict[str, Any], changed_files: Sequence[str],
+           inputs: SelectionInputs) -> dict[str, Any]:
+    """Pure selection. Every I/O-bound input is already resolved by the caller."""
+    ranked, reason = ranked_candidates(config, changed_files, inputs)
+    result = selection_result(ranked, changed_files, inputs)
+    result["reason"] = reason if ranked[:inputs.cap] else "no_shards_selected"
     return result
 
 
@@ -699,7 +669,8 @@ def interleave_split_families(ranked: Sequence[dict[str, Any]]) -> list[dict[str
         return rounds[family]
 
     def tie(entry: dict[str, Any]) -> tuple[Any, ...]:
-        return (-entry["test_class_hits"], -entry["path_hits"], not entry["project_affected"])
+        return (-entry["test_class_hits"], -entry["path_hits"],
+                -entry.get("priority_source_hits", 0), not entry["project_affected"])
 
     keyed = [(tie(entry), round_of(entry), position, entry) for position, entry in enumerate(ranked)]
     return [entry for *_, entry in sorted(keyed, key=lambda item: item[:3])]
@@ -746,6 +717,17 @@ def matrix_include(result: dict[str, Any], config: dict[str, Any]) -> list[dict[
     return entries
 
 
+def selection_rows(result: dict[str, Any]) -> list[str]:
+    lines = []
+    for entry in result["selected"]:
+        lines.append(
+            f"| {entry['name']} | {entry.get('test_class_hits', 0)} | {entry['path_hits']} | "
+            f"{entry.get('priority_source_hits', 0)} | "
+            f"{'yes' if entry['project_affected'] else 'no'} | {entry['dispatch_rank']} |"
+        )
+    return lines
+
+
 def render_summary(result: dict[str, Any]) -> str:
     lines = ["### PR Gate / Affected shards — selection", ""]
     if result["skip"] and result["reason"] == time_budget.DEFERRED_SKIP_REASON:
@@ -770,14 +752,10 @@ def render_summary(result: dict[str, Any]) -> str:
         f"- Projected cost: `{result['projected_runner_minutes']}` runner-minutes, "
         f"`{result['projected_wall_clock_minutes']}` min wall clock (parallel)",
         "",
-        "| Shard | Changed tests it runs | Diff files claimed | Test project affected | dispatch_rank (min) |",
-        "|---|---:|---:|:---:|---:|",
+        "| Shard | Changed tests it runs | Diff files claimed | Priority source files | Test project affected | dispatch_rank (min) |",
+        "|---|---:|---:|---:|:---:|---:|",
     ]
-    for entry in result["selected"]:
-        lines.append(
-            f"| {entry['name']} | {entry.get('test_class_hits', 0)} | {entry['path_hits']} | "
-            f"{'yes' if entry['project_affected'] else 'no'} | {entry['dispatch_rank']} |"
-        )
+    lines += selection_rows(result)
     if result["dropped"]:
         lines += [
             "",
@@ -886,14 +864,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         affected_projects = run_affected_projects(root, args.projects_script, args.base, args.head)
 
-    result = select(
-        config=config,
-        changed_files=changed_files,
-        descriptor=descriptor,
-        affected_projects=affected_projects,
-        cap=len(config["shards"]) if budget else args.cap,
-        test_class_hits=count_test_class_hits(root, config, changed_files),
-    )
+    inputs = SelectionInputs(descriptor, affected_projects,
+                             len(config["shards"]) if budget else args.cap,
+                             count_test_class_hits(root, config, changed_files))
+    result = select(config, changed_files, inputs)
     if budget:
         result = apply_time_budget(result, args.cap, budget)
     return emit(result, config, args)

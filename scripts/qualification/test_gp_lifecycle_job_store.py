@@ -117,7 +117,7 @@ exit 0
             self.assertEqual(0, completed.returncode, completed.stderr)
 
     def tenant_tokens(self, script):
-        functions = "\n".join(harness_function(name) for name in ("qualification_tenant_tokens", "mint_tenant_token"))
+        functions = "\n".join(harness_function(name) for name in ("qualification_tenant_tokens", "mint_tenant_token", "tenant_role_name"))
         env = {k: v for k, v in os.environ.items() if not k.startswith(("HONUA_GP_TENANT_", "HONUA_GP_OIDC_"))}
         with tempfile.TemporaryDirectory() as directory:
             return subprocess.run(["bash", "-c", functions + script], cwd=directory, env=env,

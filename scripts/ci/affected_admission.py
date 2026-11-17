@@ -12,6 +12,9 @@ JOB_LIMIT = 40
 # both MCP transports and all three Postgres versions. The fixture checks this
 # against ci.yml so additions cannot silently expand admitted fanout.
 SIDE_JOB_BUDGET = 33
+# A transient router or history failure is retried by the next push instead of
+# being recorded as a range owed to scheduled full CI.
+UNAVAILABLE = "Selection is unavailable."
 
 
 def selection(base, head):
@@ -40,7 +43,7 @@ def admission(base, head):
     try:
         return decision(selection(base, head))
     except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
-        return False, "Selection is unavailable."
+        return False, UNAVAILABLE
 
 
 def record(reason):
@@ -68,6 +71,7 @@ def main():
         print(reason)
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         output.write(f"admitted={str(allowed).lower()}\n")
+        output.write(f"deferred={str(not allowed and reason != UNAVAILABLE).lower()}\n")
 
 
 if __name__ == "__main__":
