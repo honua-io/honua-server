@@ -132,7 +132,7 @@ internal static partial class ExecutionJobSubmissionHelper
         var updated = provisioning with
         {
             // TrySetAsync increments the durable version, not this immutable record.
-            // Use the version just committed above; otherwise every Redis submission
+            // Use the version just committed above; otherwise every durable submission
             // takes the conflict path and leaves its own Provisioning state behind.
             Version = provisioning.Version + 1,
             Status = submission.Status,
