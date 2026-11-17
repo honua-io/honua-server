@@ -600,12 +600,13 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
             {
                 ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
                 LayerId = 0,
-                TableName = "test_degraded_import"
+                TableName = "test_degraded_import",
+                AutoPublish = false
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("durable background job storage");
+        content.Should().Contain("Durable import storage is unavailable");
     }
 
     [IntegrationTest]

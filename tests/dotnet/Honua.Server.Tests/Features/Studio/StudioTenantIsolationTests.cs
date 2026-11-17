@@ -47,19 +47,16 @@ public sealed class StudioTenantIsolationTests : IAsyncLifetime
     private const string JsonMediaType = "application/json";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private readonly RedisFixture _redis = new();
     private HttpClient _tenantA = null!;
     private HttpClient _tenantB = null!;
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         _fixture
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("MultiTenancy:Enabled", "true");
-                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 // Authentication must be decided by the presented credential only: the dev-auth
                 // bypass would hand both tenants the same identity and the same tenant.
@@ -104,7 +101,6 @@ public sealed class StudioTenantIsolationTests : IAsyncLifetime
         _tenantA?.Dispose();
         _tenantB?.Dispose();
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
     }
 
     [IntegrationTest]

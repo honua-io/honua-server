@@ -74,6 +74,31 @@ internal static partial class OperationsProgressEndpoints
             await ExecutionJobSubmissionHelper.BridgeTerminalSubmissionProgressAsync(
                 progressStore, cancelledJob, TimeSpan.FromDays(7), cancellationToken: cancellationToken).ConfigureAwait(false);
         }
+
+        if (cancelOutcome.Job is { Spec.Kind: ExecutionJobKind.GeoServerImport or ExecutionJobKind.GeoservicesImport } cancelledImport)
+        {
+            var progressStore = httpContext.RequestServices.GetRequiredService<IUniversalProgressStore>();
+            await MarkUnclaimedProgressCancelledAsync(progressStore, cancelledImport, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    // An import cancelled before any worker claimed it has no worker left to end its snapshot. The
+    // replacement only lands on the snapshot that was read, so a concurrent writer wins.
+    private static async Task MarkUnclaimedProgressCancelledAsync(
+        IUniversalProgressStore progressStore,
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        var current = await progressStore.GetProgressAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+        if (current is not ICancellableOperationProgress cancellable
+            || current.Status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled)
+        {
+            return;
+        }
+
+        var cancelled = cancellable.WithCancellation(job.CompletedAt ?? DateTimeOffset.UtcNow, "Cancelled");
+        await progressStore.TryReplaceProgressAsync(
+            new OperationProgressWrite(job.OperationId, cancelled, TimeSpan.FromDays(7)), current, cancellationToken).ConfigureAwait(false);
     }
     private static async Task<IResult> CancelLocalExecutionAsync(
         HttpContext context,

@@ -17,13 +17,8 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifetime
+public sealed partial class McpConnectionDiscoveryIntegrationTests
 {
-    private readonly RedisFixture _redis = new();
-
-    public Task InitializeAsync() => _redis.InitializeAsync();
-    public Task DisposeAsync() => _redis.DisposeAsync();
-
     private const string SecretVariable = "HONUA_MCP_DISCOVERY_PG";
     [IntegrationTest]
     [Operation(Operations.Metadata)]
@@ -72,7 +67,6 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
     private WebAppFixture CreateConnectionDiscoveryFixture() =>
         new WebAppFixture().WithProductionJobSubstrate().UseKestrel().ConfigureWebHost(builder =>
         {
-            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");

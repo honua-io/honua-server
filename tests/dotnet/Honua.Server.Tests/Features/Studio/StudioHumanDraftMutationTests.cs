@@ -29,16 +29,13 @@ namespace Honua.Server.Tests.Features.Studio;
 public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private readonly RedisFixture _redis = new();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         HumanApprovalHttpClient.Configure(_fixture, _identityProvider)
             .ConfigureWebHost(builder =>
             {
-                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -54,8 +51,7 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         using var identityProvider = _identityProvider;
-        try { await _fixture.DisposeAsync(); }
-        finally { await _redis.DisposeAsync(); }
+        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]
