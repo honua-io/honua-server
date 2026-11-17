@@ -3023,6 +3023,9 @@ jobs:
             -p:HonuaSkipAdminClientForAotVerification=true \
             -p:HonuaSkipOracleForAotVerification=true \
             -p:HonuaSkipSnowflakeForAotVerification=true \
+            -p:DebugType=None \
+            -p:DebugSymbols=false \
+            -p:IlcSingleThreaded=true \
             -p:StripSymbols=true \
             -o ./publish
         working-directory: src/Honua.Server
