@@ -172,7 +172,7 @@ HONUA_CONFORMANCE_SERVER_IMAGE=honua-server:ogcapi-local \
 - **Scope:** `GetCapabilities`, `GetMap`.
 - **Profiles:** `minimal`, `default`, `full`.
 - **Test params:** `docker/cite/wms13/config/test-params.xml`.
-- **Layer names:** WMS advertises each layer under its service-local identifier, which the seeded v1 catalog makes numeric (`0`, `1`, …). The ETS needs the CITE names, so the runner persists a Metadata v2 snapshot from `docker/cite/shared/scripts/author-wms-publications.sql` that names each layer without its `cite:` prefix (`BasicPolygons`, `Lakes`, …).
+- **Layer names:** WMS advertises each layer under its service-local identifier, which the seeded v1 catalog makes numeric (`0`, `1`, …). The ETS needs the CITE names, so the runner persists a Metadata v2 snapshot from `docker/cite/shared/scripts/author-wms-publications.sql` that names each layer without its `cite:` prefix (`BasicPolygons`, `Lakes`, …). Capabilities publish catalog metadata, not placeholders, so the same snapshot gives the cite services a publisher, contact point and `describedby` link for the contact-information and `MetadataURL` recommendations.
 - **Sanity check:** open `http://localhost:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0` in a browser. Layer `<Name>` values are the CITE names.
 
 ### WMTS 1.0
