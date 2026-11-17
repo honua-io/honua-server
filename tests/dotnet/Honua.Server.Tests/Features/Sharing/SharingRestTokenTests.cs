@@ -628,7 +628,7 @@ public sealed partial class SharingRestTokenTests : IClassFixture<SharingRestTok
     public async Task GenerateToken_ExchangePresentedFromAnotherIp_Returns498_Issue5491()
     {
         // generateToken always binds an IP token to the caller's own address, so mint one
-        // bound to another address directly; the request comes from the fixture's client IP.
+        // bound to another address directly; the request comes from this case's client IP.
         var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
         var portalToken = await issuer.IssueAsync(
             new PortalTokenIssueRequest(
