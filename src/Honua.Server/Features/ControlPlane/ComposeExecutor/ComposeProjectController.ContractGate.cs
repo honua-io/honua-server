@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
 
@@ -86,11 +87,16 @@ internal sealed partial class ComposeProjectController
             return Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "The prior image override could not be restored.");
         }
 
-        var started = await ComposeAsync(CommandTimeout, ["start", "--", _options.ServiceName], CancellationToken.None)
-            .ConfigureAwait(false);
+        // Wait for health, as the candidate start does: a prior that starts and then fails must keep
+        // the recovery path, which the contract-gate code would end.
+        var wait = _options.ComposeWaitTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
+        var started = await ComposeAsync(
+            TimeSpan.FromSeconds(_options.ComposeWaitTimeoutSeconds + 60),
+            ["up", "-d", "--no-deps", "--pull", "never", "--wait", "--wait-timeout", wait, "--", _options.ServiceName],
+            CancellationToken.None).ConfigureAwait(false);
         if (started.ExitCode != 0)
         {
-            return Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "The prior revision could not be restarted.");
+            return Refuse(null, ComposeExecutorCodes.ReadbackIncomplete, "The prior revision did not become healthy again.");
         }
 
         var approval = refusal.Nonce == null
@@ -102,7 +108,7 @@ internal sealed partial class ComposeProjectController
             ComposeExecutorCodes.ContractApprovalRequired,
             "The release has contract migrations that need operator approval before they are applied: "
             + string.Join(", ", refusal.Scripts)
-            + ". Nothing was migrated and the prior revision was restarted. Review the scripts and upgrade with the"
+            + ". Nothing was migrated and the prior revision is healthy again. Review the scripts and upgrade with the"
             + " manual migrate-only step in the upgrade and rollback guide." + approval);
     }
 

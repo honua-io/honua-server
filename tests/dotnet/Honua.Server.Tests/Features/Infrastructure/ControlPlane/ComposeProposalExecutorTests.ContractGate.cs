@@ -34,7 +34,8 @@ public sealed partial class ComposeProposalExecutorTests
         Assert.Contains(ContractScript, refusal.Message, StringComparison.Ordinal);
         Assert.Contains("HONUA_APPROVE_CONTRACT_MIGRATIONS) is " + ApprovalNonce, refusal.Message, StringComparison.Ordinal);
         Assert.Equal(priorOverride, await File.ReadAllTextAsync(overridePath));
-        Assert.Equal(["run", "rm", "start"], docker.Subcommands);
+        Assert.Equal(["run", "rm", "up"], docker.Subcommands);
+        Assert.Contains("--wait", docker.Argv[2]);
     }
 
     [UnitTest]
@@ -51,7 +52,7 @@ public sealed partial class ComposeProposalExecutorTests
     }
 
     [UnitTest]
-    public async Task PrepareCandidate_PriorDoesNotRestart_KeepsTheRecoveryPath()
+    public async Task PrepareCandidate_PriorDoesNotBecomeHealthy_KeepsTheRecoveryPath()
     {
         var options = ValidOptions(Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N")), Digest('a'));
         var docker = new MigrateOnlyDocker(5, MigrateOnlySummary("contract-approval-required", 5, "contract-annotated"), startExitCode: 1);
@@ -178,7 +179,7 @@ public sealed partial class ComposeProposalExecutorTests
             return Task.FromResult(subcommand switch
             {
                 "run" => new DockerProcessResult(runExitCode, runStdout, string.Empty),
-                "start" => new DockerProcessResult(startExitCode, string.Empty, string.Empty),
+                "up" => new DockerProcessResult(startExitCode, string.Empty, string.Empty),
                 _ => new DockerProcessResult(0, string.Empty, string.Empty),
             });
         }
