@@ -57,16 +57,14 @@ public sealed class ZarrMetadataExtractor
 
         var variables = ResolveVariables(groupDoc, attrsDoc, consolidatedDoc);
 
-        var arrays = new List<ZarrArrayMetadata>();
+        var scan = new ZarrCfScan { Reader = reader, Bucket = bucket, RootPath = normalizedRoot };
+        var arrays = scan.Arrays;
         if (variables.Count == 0)
         {
             // Treat the root itself as a single-array store.
             var rootArray = await ReadArrayAsync(
-                    reader,
-                    bucket,
-                    arrayPath: normalizedRoot,
-                    relativePath: string.Empty,
-                    name: ResolveSingleName(normalizedRoot),
+                    scan,
+                    (ArrayPath: normalizedRoot, RelativePath: string.Empty, Name: ResolveSingleName(normalizedRoot)),
                     cancellationToken)
                 .ConfigureAwait(false);
             arrays.Add(rootArray);
@@ -77,7 +75,7 @@ public sealed class ZarrMetadataExtractor
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var arrayPath = JoinKey(normalizedRoot, name);
-                var arr = await ReadArrayAsync(reader, bucket, arrayPath, relativePath: name, name, cancellationToken)
+                var arr = await ReadArrayAsync(scan, (arrayPath, RelativePath: name, name), cancellationToken)
                     .ConfigureAwait(false);
                 arrays.Add(arr);
             }
@@ -88,10 +86,20 @@ public sealed class ZarrMetadataExtractor
             throw new InvalidDataException("Zarr store contains no arrays.");
         }
 
-        var (srid, extent, primary, xDim, yDim, tDim, temporal, axes) =
-            ResolveStoreGeoreferencing(attrsDoc?.RootElement, arrays);
+        return await BuildStoreMetadataAsync(scan, attrsDoc?.RootElement, cancellationToken).ConfigureAwait(false);
+    }
 
-        return new ZarrStoreMetadata(
+    // A store without a Honua root manifest may still be a CF store (GDAL, xarray).
+    private static async Task<ZarrStoreMetadata> BuildStoreMetadataAsync(
+        ZarrCfScan scan,
+        JsonElement? rootAttrs,
+        CancellationToken cancellationToken)
+    {
+        var arrays = scan.Arrays;
+        var (srid, extent, primary, xDim, yDim, tDim, temporal, axes) =
+            ResolveStoreGeoreferencing(rootAttrs, arrays);
+
+        var metadata = new ZarrStoreMetadata(
             ZarrFormat: arrays[0].ZarrFormat,
             Srid: srid,
             Extent: extent,
@@ -102,6 +110,9 @@ public sealed class ZarrMetadataExtractor
             TemporalDimension: tDim,
             Temporal: temporal,
             Axes: axes);
+        return ZarrCfGeoreferencing.DeclaresGeoreferencing(rootAttrs)
+            ? metadata
+            : await ZarrCfGeoreferencing.ApplyAsync(scan, metadata, cancellationToken).ConfigureAwait(false);
     }
 
     private static string NormalizeRootPath(string rootPath)
@@ -209,13 +220,12 @@ public sealed class ZarrMetadataExtractor
     }
 
     private static async Task<ZarrArrayMetadata> ReadArrayAsync(
-        ICloudRangeReader reader,
-        string bucket,
-        string arrayPath,
-        string relativePath,
-        string name,
+        ZarrCfScan scan,
+        (string ArrayPath, string RelativePath, string Name) array,
         CancellationToken cancellationToken)
     {
+        var (reader, bucket) = (scan.Reader, scan.Bucket);
+        var (arrayPath, relativePath, name) = array;
         var zarrayDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(arrayPath, ".zarray"), cancellationToken)
             .ConfigureAwait(false);
         if (zarrayDoc is null)
@@ -303,6 +313,7 @@ public sealed class ZarrMetadataExtractor
             }
 
             var dimNames = ReadDimensionNames(root, shape.Length);
+            ZarrCfGeoreferencing.Collect(scan.Hints, name, arrayAttrs?.RootElement);
             if (arrayAttrs is not null)
             {
                 var attrDims = ReadDimensionNamesFromAttrs(arrayAttrs.RootElement, shape.Length);
@@ -348,7 +359,8 @@ public sealed class ZarrMetadataExtractor
             ? attrsEl
             : default;
 
-        var arrays = new List<ZarrArrayMetadata>();
+        var scan = new ZarrCfScan { Reader = reader, Bucket = bucket, RootPath = normalizedRoot };
+        var arrays = scan.Arrays;
         if (string.Equals(nodeType, "array", StringComparison.Ordinal))
         {
             arrays.Add(ReadV3Array(root, ResolveSingleName(normalizedRoot), relativePath: string.Empty));
@@ -374,6 +386,7 @@ public sealed class ZarrMetadataExtractor
                 using (arrayDoc)
                 {
                     arrays.Add(ReadV3Array(arrayDoc.RootElement, name, relativePath: name));
+                    ZarrCfGeoreferencing.Collect(scan.Hints, name, ReadV3Attributes(arrayDoc.RootElement));
                 }
             }
         }
@@ -383,21 +396,16 @@ public sealed class ZarrMetadataExtractor
             throw new InvalidDataException("Zarr v3 store contains no arrays.");
         }
 
-        var (srid, extent, primary, xDim, yDim, tDim, temporal, axes) =
-            ResolveStoreGeoreferencing(storeAttrs.ValueKind == JsonValueKind.Object ? storeAttrs : (JsonElement?)null, arrays);
-
-        return new ZarrStoreMetadata(
-            ZarrFormat: ZarrFormatVersion.V3,
-            Srid: srid,
-            Extent: extent,
-            Arrays: arrays.ToArray(),
-            PrimaryVariable: primary,
-            SpatialXDimension: xDim,
-            SpatialYDimension: yDim,
-            TemporalDimension: tDim,
-            Temporal: temporal,
-            Axes: axes);
+        return await BuildStoreMetadataAsync(
+            scan,
+            storeAttrs.ValueKind == JsonValueKind.Object ? storeAttrs : null,
+            cancellationToken).ConfigureAwait(false);
     }
+
+    private static JsonElement? ReadV3Attributes(JsonElement arrayRoot)
+        => arrayRoot.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object
+            ? attributes
+            : null;
 
     private static string ValidateV3Node(JsonElement root, string? expectedNodeType, string name)
     {
@@ -904,17 +912,20 @@ public sealed class ZarrMetadataExtractor
             axes = ResolveAdditionalAxes(root, xDim, yDim, tDim, arrays);
         }
 
-        if (string.IsNullOrEmpty(primary) && arrays.Count > 0)
+        if (string.IsNullOrEmpty(primary))
         {
-            primary = arrays[0].Name;
+            // CF coordinate variables (latitude, time, ...) are not the coverage's data.
+            primary = ZarrCfGeoreferencing.ResolveDefaultPrimary(arrays);
         }
+
+        var shapeSource = arrays.FirstOrDefault(array => array.Name == primary) ?? arrays.FirstOrDefault();
 
         var extent = new RasterExtent
         {
             XMin = hasExtent ? xMin : 0,
             YMin = hasExtent ? yMin : 0,
-            XMax = hasExtent ? xMax : (arrays.Count > 0 && arrays[0].Shape.Length >= 1 ? arrays[0].Shape[^1] : 0),
-            YMax = hasExtent ? yMax : (arrays.Count > 0 && arrays[0].Shape.Length >= 2 ? arrays[0].Shape[^2] : 0),
+            XMax = hasExtent ? xMax : (shapeSource is { Shape.Length: >= 1 } ? shapeSource.Shape[^1] : 0),
+            YMax = hasExtent ? yMax : (shapeSource is { Shape.Length: >= 2 } ? shapeSource.Shape[^2] : 0),
             Srid = srid
         };
 
