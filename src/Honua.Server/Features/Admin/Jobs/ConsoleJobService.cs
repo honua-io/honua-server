@@ -91,6 +91,7 @@ internal sealed partial class ConsoleJobService(
         }
 
         var summary = MapSummary(context, job);
+        var operatorView = await IsOperatorViewAsync(context.User, job.OperationId, cancellationToken).ConfigureAwait(false);
         return new ConsoleJobDetail
         {
             JobId = summary.JobId,
@@ -118,8 +119,8 @@ internal sealed partial class ConsoleJobService(
             ArtifactCount = summary.ArtifactCount,
             LatestEvent = summary.LatestEvent,
             Links = summary.Links,
-            ProviderOperationId = job.ProviderOperationId,
-            ClaimedBy = job.ClaimedBy,
+            ProviderOperationId = operatorView ? job.ProviderOperationId : null,
+            ClaimedBy = operatorView ? job.ClaimedBy : null,
             ClaimedAt = job.ClaimedAt,
             LastHeartbeatAt = job.LastHeartbeatAt,
             CancellationRequestedAt = job.CancellationRequestedAt,
@@ -165,18 +166,16 @@ internal sealed partial class ConsoleJobService(
             };
         }
 
-        var page = await logStore.QueryAsync(
-                job.OperationId,
-                new ExecutionLogQuery { Cursor = cursor, Limit = limit },
-                cancellationToken)
-            .ConfigureAwait(false);
+        var query = new ExecutionLogQuery { Cursor = cursor, Limit = limit };
+        var page = await logStore.QueryAsync(job.OperationId, query, cancellationToken).ConfigureAwait(false);
+        var operatorView = await IsOperatorViewAsync(context.User, job.OperationId, cancellationToken).ConfigureAwait(false);
 
         return new ConsoleJobLogPageResponse
         {
             JobId = job.OperationId,
             CorrelationId = job.Audit.CorrelationId,
             State = "available",
-            Items = page.Items.Select(MapLogEntry).ToArray(),
+            Items = [.. page.Items.Select(entry => operatorView ? MapLogEntry(entry) : MapOwnerLogEntry(entry))],
             NextCursor = page.NextCursor
         };
     }

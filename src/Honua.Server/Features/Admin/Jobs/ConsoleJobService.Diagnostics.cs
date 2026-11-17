@@ -63,16 +63,7 @@ internal sealed partial class ConsoleJobService
         var truncated = new List<string>();
         var notes = new List<string>();
 
-        var executeDecision = await approvalGate.CheckAuthorizationAsync(
-            user,
-            new OperatorAuthorizationRequest
-            {
-                ResourceType = OperatorResourceType.Job,
-                Operation = OperatorOperation.Execute,
-                ResourceId = job.OperationId
-            },
-            cancellationToken).ConfigureAwait(false);
-        var operatorView = executeDecision.IsAllowed;
+        var operatorView = await IsOperatorViewAsync(user, job.OperationId, cancellationToken).ConfigureAwait(false);
         if (!operatorView)
         {
             notes.Add("owner view: worker and provider identities are withheld; an execute-scoped principal receives them");
@@ -168,6 +159,22 @@ internal sealed partial class ConsoleJobService
             },
             Links = BuildLinks(pathBase, job)
         };
+    }
+
+    // One owner/operator decision for every job read: a worker or provider identity withheld
+    // from the owner view here must not be served by detail, logs or steps either.
+    private async Task<bool> IsOperatorViewAsync(ClaimsPrincipal user, string operationId, CancellationToken cancellationToken)
+    {
+        var executeDecision = await approvalGate.CheckAuthorizationAsync(
+            user,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Execute,
+                ResourceId = operationId
+            },
+            cancellationToken).ConfigureAwait(false);
+        return executeDecision.IsAllowed;
     }
 
     private async Task<ExecutionJobRecord?> GetAuthorizedJobAsync(

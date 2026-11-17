@@ -46,6 +46,12 @@ internal sealed partial class ConsoleJobService
     private static ConsoleJobStep[] WithholdLostAttemptWorker(ConsoleJobStep[] steps)
         => [.. steps.Select(step => step with { Metadata = WithoutWorker(step.Metadata) })];
 
+    private static ConsoleJobLogEntry MapOwnerLogEntry(ExecutionLogEntry entry)
+    {
+        var mapped = MapLogEntry(entry);
+        return mapped with { Metadata = WithoutWorker(mapped.Metadata) };
+    }
+
     private static Dictionary<string, string>? WithoutWorker(Dictionary<string, string>? metadata)
     {
         if (metadata is null || !metadata.ContainsKey(LostAttemptWorkerMetadataKey))
