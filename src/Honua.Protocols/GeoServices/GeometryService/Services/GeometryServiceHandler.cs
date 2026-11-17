@@ -2715,36 +2715,13 @@ internal sealed class GeometryServiceHandler(
         // the line direction; Esri treats a positive offsetDistance as the RIGHT side,
         // so the distance is negated for polylines to match the GeoServices contract.
         var results = parameters.GeometryJsonStrings
-            .Select(geomJson => parameters.ResultBudget.Add(writer.Write(OffsetGeometry(ReadGeometry(geomJson), joinStyle, parameters))))
+            .Select(geomJson => parameters.ResultBudget.Add(writer.Write(GeometryServiceOffset.Draw(ReadGeometry(geomJson), joinStyle, parameters))))
             .ToList();
 
         var response = ConvertToResponse(results, parameters.SR, parameters.GeometryType);
         GeometryServiceLog.BinaryOperationCompleted(_logger, "offset", results.Count);
         scope.SetSuccess(results.Count);
         return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
-    }
-
-    // Both offsets are drawn by buffering, which nodes curves that can cross far more often than
-    // the input does; the buffer is counted against the overlay budget as it nodes them.
-    private static Geometry OffsetGeometry(
-        Geometry geometry, NetTopologySuite.Operation.Buffer.JoinStyle joinStyle, OffsetParameters parameters)
-    {
-        var distance = parameters.OffsetDistance;
-        if (geometry is IPolygonal)
-        {
-            return parameters.OverlayBudget.Buffer(geometry, distance, new NetTopologySuite.Operation.Buffer.BufferParameters());
-        }
-
-        // OffsetCurve buffers the line by the distance and keeps the side of the outline it needs;
-        // the same buffer is built under the budget first.
-        var quadrantSegments = NetTopologySuite.Operation.Buffer.BufferParameters.DefaultQuadrantSegments;
-        var mitreLimit = Math.Max(parameters.BevelRatio, NetTopologySuite.Operation.Buffer.BufferParameters.DefaultMitreLimit);
-        parameters.OverlayBudget.Buffer(
-            geometry,
-            Math.Abs(distance),
-            new NetTopologySuite.Operation.Buffer.BufferParameters(
-                quadrantSegments, NetTopologySuite.Operation.Buffer.EndCapStyle.Round, joinStyle, mitreLimit));
-        return NetTopologySuite.Operation.Buffer.OffsetCurve.GetCurve(geometry, -distance, quadrantSegments, joinStyle, mitreLimit);
     }
 
     private static NetTopologySuite.Operation.Buffer.JoinStyle ResolveOffsetJoinStyle(string? offsetHow)
