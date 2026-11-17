@@ -16,7 +16,7 @@ public sealed class Cql2LiteralInputValidationTests(
     InputValidationIntegrationTests.ProductionApplication application)
     : IClassFixture<InputValidationIntegrationTests.ProductionApplication>
 {
-    [Theory]
+    [IntegrationTheory]
     [InlineData("audit -- note")]
     [InlineData("O'Brien -- note")]
     [InlineData("audit /* note */")]
