@@ -34,11 +34,6 @@ def affected_run_schedules_shards(reason: str) -> bool:
     return reason != "no_path_match"
 
 
-def full_run_schedules_shards(reason: str) -> bool:
-    """Pull requests and full runs keep every shard the router returned."""
-    return isinstance(reason, str)
-
-
 def core_package_required(paths: list[str]) -> bool:
     return any(path and CORE_PACKAGE_SKIP.match(path) is None for path in paths)
 
@@ -60,10 +55,8 @@ def main(argv: list[str] | None = None) -> None:
                 selective = next(tokens) == "true"
             else:
                 raise SystemExit(f"unknown argument {token}")
-        scheduled = (
-            affected_run_schedules_shards(reason)
-            if selective
-            else full_run_schedules_shards(reason))
+        # Non-selective and full runs keep the router result, smoke shards included.
+        scheduled = affected_run_schedules_shards(reason) if selective else True
         print("true" if scheduled else "false")
         return
     if argv:

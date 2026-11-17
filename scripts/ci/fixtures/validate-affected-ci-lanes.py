@@ -146,6 +146,15 @@ class AffectedLaneTests(unittest.TestCase):
         self.assertIn(
             "needs.changes.outputs.core_package == 'true'",
             jobs['core-package-compatibility']['if'])
+        summary = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Check required test job results')
+        receipts = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Verify server shard execution receipts')
+        receipt_download = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Download server shard receipts')
+        self.assertIn("schedule_shards != 'false'", receipt_download['if'])
+        self.assertIn('no_shards_selected', receipts['run'])
+        self.assertIn('SCHEDULE_SHARDS', summary['run'])
+        self.assertIn('!= skipped', summary['run'])
+        self.assertIn('!cancelled() && !failure()', jobs['aot-build']['if'])
+        self.assertIn('!cancelled() && !failure()', jobs['mcp-certification']['if'])
         step = next(step for step in jobs['changes']['steps'] if step.get('id') == 'specialized')
         self.assertIn("trailing_selective == 'true'", step['env']['SELECTIVE'])
         self.assertIn("full_ci != 'true'", step['env']['SELECTIVE'])
@@ -173,7 +182,6 @@ class ShardWidthTests(unittest.TestCase):
 
     def test_selective_no_path_match_skips_default_smoke_shards(self):
         self.assertFalse(TRAILING.affected_run_schedules_shards("no_path_match"))
-        self.assertTrue(TRAILING.full_run_schedules_shards("no_path_match"))
         self.assertTrue(TRAILING.affected_run_schedules_shards("targeted"))
         self.assertTrue(TRAILING.affected_run_schedules_shards("unmapped_source_change"))
 

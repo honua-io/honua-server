@@ -261,6 +261,8 @@ Stage 3 details:
   the diff, and the twice-daily full run keeps them. The same run skips
   Honua.Core package compatibility when every changed file is docs, a workflow,
   a `scripts/ci/` file or a test. Any other path still runs that heavy job.
+  A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+  Core package or Postgres compatibility job still does.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
@@ -1390,7 +1392,8 @@ Admitted affected runs use two concurrent server shards. A selective run whose
 router reason is `no_path_match` schedules none of those default smoke shards.
 Honua.Core package compatibility, which uses the heavy pool, runs on a selective
 dispatch only when a changed file sits outside docs, workflows, `scripts/ci/` and
-tests. All trusted indices
+tests. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+Core package or Postgres compatibility job still does. All trusted indices
 use the configured `honua-heavy` pool, so a run holds at most two heavy runners
 for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,
 except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full server
