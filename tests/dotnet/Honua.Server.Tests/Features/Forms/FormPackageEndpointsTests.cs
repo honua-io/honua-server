@@ -67,6 +67,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
     [InlineData("/api/v1/admin/forms/packages/{0}/versions/1")]
     [InlineData("/api/v1/forms/packages/{0}/versions/1")]
     [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/v1/admin/forms/{formId}/versions/{formVersion}")]
     public async Task RetiredPackageRoutes_AreNotAliases(string retiredRoute)
     {
         var draft = await CreateDraftAsync(CreatePackage("Canonical Form route"));
