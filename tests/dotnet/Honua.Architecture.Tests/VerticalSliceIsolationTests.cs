@@ -165,7 +165,10 @@ public sealed class VerticalSliceIsolationTests
             // Surfaced once these became tracked features; tech debt to retire by
             // routing through shared Core abstractions (and, for the ingest set,
             // by the Honua.Import extraction).
-            ["Admin"] = new[] { "Styling", "ControlPlane", "Console", "Import", "Migration", "FileImport", "RasterImport" },
+            // Operations: Admin folder routes bind their path, method and metadata to the
+            // canonical AdminApiOperationCatalog definitions, so the HTTP surface and governed
+            // execution cannot drift apart.
+            ["Admin"] = new[] { "Styling", "ControlPlane", "Console", "Import", "Migration", "FileImport", "RasterImport", "Operations" },
             // ControlPlane orchestrates deploy/release workflows over the
             // Geoprocessing job runtime and is wired from the Admin surface.
             ["ControlPlane"] = new[] { "Geoprocessing", "Admin" },

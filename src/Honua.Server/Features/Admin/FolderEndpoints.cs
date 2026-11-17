@@ -107,20 +107,6 @@ internal static class FolderEndpoints
         _ => throw new InvalidOperationException("Unknown folder execution failure.")
     };
 
-    internal static async Task<IResult?> AuthorizeAffectedServices(HttpContext context, MetadataV2Graph original, FolderMutation mutation)
-    {
-        var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
-        {
-            Original = original,
-            Mutation = mutation,
-            Services = context.RequestServices,
-            OperatorPrincipal = context.User,
-            RequesterAccess = ServiceAccess(context),
-            FolderTenant = Tenant(context)
-        }, context.RequestAborted).ConfigureAwait(false);
-        return MapServiceAuthorization(context, authorization);
-    }
-
     private static IResult? MapServiceAuthorization(HttpContext context, FolderAuthorizationResult authorization)
     {
         foreach (var evaluation in authorization.RequesterEvaluations)
