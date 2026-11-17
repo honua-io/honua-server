@@ -682,6 +682,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             : -1;
     }
 
+    public FeatureStreamEnvelope? PrepareSubscriptionDelivery(
+        Guid sessionId, string subscriptionId, long generation, FeatureStreamEnvelope envelope)
+        => _sessions.TryGetValue(sessionId, out var entry)
+            ? entry.PrepareSubscriptionDelivery(subscriptionId, generation, envelope)
+            : null;
+
     public bool TryRemoveSubscription(Guid sessionId, string subscriptionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
@@ -1021,6 +1027,28 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 sequence = current.NextSequence;
                 _subscriptions[subscriptionId] = current with { NextSequence = sequence + 1 };
                 return true;
+            }
+        }
+
+        public FeatureStreamEnvelope? PrepareSubscriptionDelivery(
+            string subscriptionId, long generation, FeatureStreamEnvelope envelope)
+        {
+            lock (_subscriptionLock)
+            {
+                if (!_subscriptions.TryGetValue(subscriptionId, out var current) ||
+                    (generation > 0 && current.Generation != generation))
+                {
+                    return null;
+                }
+
+                var authorized = current.Filter is null ? envelope : current.Filter.PrepareDelivery(envelope);
+                if (authorized is null)
+                {
+                    return null;
+                }
+
+                _subscriptions[subscriptionId] = current with { NextSequence = current.NextSequence + 1 };
+                return authorized with { Sequence = current.NextSequence };
             }
         }
 

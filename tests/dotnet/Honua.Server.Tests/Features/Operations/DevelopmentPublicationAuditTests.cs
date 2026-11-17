@@ -26,9 +26,7 @@ public sealed class DevelopmentPublicationAuditTests
     public async Task Publish_DevelopmentHost_PersistsActorAndTimeInAdminAudit()
     {
         var publisher = CreatePublisher();
-        await using var redis = new RedisFixture();
-        await redis.InitializeAsync();
-        var fixture = CreateFixture(publisher, redis.ConnectionString);
+        var fixture = CreateFixture(publisher);
         await fixture.InitializeAsync();
         try
         {
@@ -72,7 +70,7 @@ public sealed class DevelopmentPublicationAuditTests
         }
     }
 
-    private static WebAppFixture CreateFixture(ILayerPublishingService publisher, string redisConnectionString)
+    private static WebAppFixture CreateFixture(ILayerPublishingService publisher)
     {
         var resolver = Substitute.For<ISecureConnectionResolver>();
         resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns("Host=localhost;Database=test");
@@ -82,7 +80,6 @@ public sealed class DevelopmentPublicationAuditTests
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Licensing:Mode", "Disabled");
-                builder.UseSetting("ConnectionStrings:redis", redisConnectionString);
                 builder.UseSetting("Public:BaseUrl", "http://localhost");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
