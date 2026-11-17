@@ -20,6 +20,8 @@ public sealed partial class GrpcIntegrationTests
 {
     private static readonly Guid AttachmentGlobalId = Guid.Parse("1841c89c-d3f4-46e1-9991-93a40a01be13");
 
+    private const long LocalAttachmentId = 24;
+
     private readonly IAttachmentNativeMetadataStore _attachmentMetadata = host.AttachmentMetadata;
 
     public sealed partial class GrpcHost
@@ -41,6 +43,13 @@ public sealed partial class GrpcIntegrationTests
             _attachments.GetAsync(WebAppFixture.TestLayerId, 1, 23, Arg.Any<CancellationToken>()).Returns(attachment);
             _attachmentStorage.GetPresignedUrlAsync("private/attachment-object", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
                 .Returns("https://downloads.example.test/attachment?signature=test");
+            var local = Attachment.CreateForUpload(LocalAttachmentId, 1, WebAppFixture.TestLayerId,
+                "local.txt", "text/plain", 5, "local/attachment-object");
+            _attachments.GetAsync(WebAppFixture.TestLayerId, 1, LocalAttachmentId, Arg.Any<CancellationToken>()).Returns(local);
+            _attachments.DownloadAsync(WebAppFixture.TestLayerId, 1, LocalAttachmentId, Arg.Any<CancellationToken>())
+                .Returns(_ => AttachmentContent.Create(local, new MemoryStream("local"u8.ToArray())));
+            _attachmentStorage.GetPresignedUrlAsync("local/attachment-object", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+                .Returns("file:///var/lib/honua/attachments/local/attachment-object");
             Fixture.ConfigureServices(services =>
             {
                 services.AddSingleton(AttachmentMetadata);
@@ -79,6 +88,30 @@ public sealed partial class GrpcIntegrationTests
         await _attachmentMetadata.Received(1).QueryPageAsync(Arg.Is<AttachmentPageQuery>(query =>
             query.LayerId == WebAppFixture.TestLayerId && query.FeatureId == 1 && query.Limit == 101),
             Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.FeatureService/GetAttachmentUrl")]
+    [Endpoint("GET /api/v1/attachments/downloads/{token}")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/GetAttachmentUrl")]
+    public async Task GetAttachmentUrl_LocalFileStorage_ReturnsSignedServerLinkThatDownloads()
+    {
+        var download = await _client.GetAttachmentUrlAsync(new Proto.GetAttachmentUrlRequest
+        {
+            Parent = ExistingAttachmentParent(),
+            AttachmentId = LocalAttachmentId
+        }, _headers);
+        download.Url.Should().StartWith("http://localhost/api/v1/attachments/downloads/");
+        download.Url.Should().NotContain("attachment-object");
+        using var http = _fixture.CreateClient();
+        using var response = await http.GetAsync(new Uri(download.Url).PathAndQuery);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Be("local");
+        response.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
+        response.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
+        using var tampered = await http.GetAsync(new Uri(download.Url).PathAndQuery + "x");
+        tampered.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

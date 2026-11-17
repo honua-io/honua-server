@@ -64,7 +64,18 @@ internal sealed partial class HonuaFeatureService
         var expires = DateTimeOffset.UtcNow.Add(lifetime);
         var url = await AttachmentService<ICloudFileStorage>(context).GetPresignedUrlAsync(
             attachment.StoragePath, lifetime, context.CancellationToken).ConfigureAwait(false);
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile)
+        {
+            // Local file storage answers with a file path; serve it through a signed server link instead.
+            url = AttachmentService<AttachmentDownloadLinks>(context).CreateUrl(context.GetHttpContext(),
+                new AttachmentDownloadTarget(target.Layer.StorageLayerId, target.FeatureId, attachment.Id, attachment.StoragePath),
+                expires);
+        }
+        else if (uri?.Scheme != Uri.UriSchemeHttps)
+        {
+            url = null;
+        }
+        if (url is null)
         {
             throw AttachmentError(StatusCode.FailedPrecondition, "Secure attachment downloads are not configured.");
         }

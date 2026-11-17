@@ -124,6 +124,8 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"),
+        // Signed download links that gRPC GetAttachmentUrl issues for local file storage.
+        new("GET", "/api/v1/attachments/downloads/{token}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/replicas"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}"),
     ];
