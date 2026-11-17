@@ -15,9 +15,9 @@ namespace Honua.Server.Tests.Features.Studio;
 
 public sealed partial class StudioPackageEndpointsTests
 {
-    // One host per class. Drafts, versions and content items are created under fresh ids per case
-    // and read back by those ids, so cases share the in-memory stores; the audit log is cleared
-    // at the start of each case.
+    // One host per class. Each case creates drafts and items under its own package keys and reads
+    // them back by id, so cases share the in-memory stores; the audit log is cleared at the start
+    // of each case.
     public sealed class StudioHost : IAsyncLifetime
     {
         internal CapturingAuditLog AuditLog { get; } = new();

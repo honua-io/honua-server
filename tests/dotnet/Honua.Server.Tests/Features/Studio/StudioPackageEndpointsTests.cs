@@ -55,7 +55,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "bodyless-version-save",
+                PackageKey = $"bodyless-version-save-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -107,7 +107,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "parcels-query",
+                PackageKey = $"parcels-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -253,7 +253,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     {
         var body = new CreateStudioPackageDraftRequest
         {
-            PackageKey = "idempotent-draft",
+            PackageKey = $"idempotent-draft-{Guid.NewGuid():N}",
             Envelope = BuildEnvelope("1=1"),
         };
 
@@ -294,7 +294,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "list-draft-only",
+                PackageKey = $"list-draft-only-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 OwnerId = "bob",
                 Envelope = BuildEnvelope("1=1"),
@@ -310,7 +310,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "list-published",
+                PackageKey = $"list-published-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 OwnerId = "alice",
                 Envelope = BuildEnvelope("1=1"),
@@ -462,7 +462,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "enduser-owner-query",
+                    PackageKey = $"enduser-owner-query-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     OwnerId = "someone-else",
                     Envelope = BuildEnvelope("1=1"),
@@ -475,7 +475,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "enduser-owner-query",
+                    PackageKey = $"enduser-owner-query-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     Envelope = BuildEnvelope("1=1"),
                 },
@@ -753,7 +753,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "admin-read-only-query",
+                    PackageKey = $"admin-read-only-query-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     Envelope = BuildEnvelope("1=1"),
                 },
@@ -946,7 +946,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "unpublished-export-map",
+                    PackageKey = $"unpublished-export-map-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     OwnerId = ownerId,
                     Envelope = BuildDeliverableEnvelope(StudioPackageFamily.Map, "honua_map_package.v1"),
@@ -1409,7 +1409,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "stale-generation-query",
+                PackageKey = $"stale-generation-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -1463,7 +1463,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "invalid-publication-intent-query",
+                PackageKey = $"invalid-publication-intent-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -1756,7 +1756,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = $"{family.ToString().ToLowerInvariant()}-export",
+                PackageKey = $"{family.ToString().ToLowerInvariant()}-export-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildDeliverableEnvelope(family, format),
             },
