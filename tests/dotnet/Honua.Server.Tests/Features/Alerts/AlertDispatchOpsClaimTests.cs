@@ -65,7 +65,7 @@ public sealed class AlertDispatchOpsClaimTests : IAsyncLifetime
         var eventStore = _fixture.GetService<IAlertEventStore>();
         var eventId = await eventStore.TryAppendAsync(new AlertEventEnvelope
         {
-            DedupeKey = $"{source}:test-8191:{Guid.NewGuid():N}",
+            DedupeKey = $"{source}:ops-claim-test:{Guid.NewGuid():N}",
             RuleId = ruleId,
             ServiceId = "alert-dispatch-ops-claim-tests",
             LayerId = 0,
@@ -74,7 +74,7 @@ public sealed class AlertDispatchOpsClaimTests : IAsyncLifetime
             Generation = 0,
             Severity = AlertSeverity.Warning,
             OccurredAt = DateTimeOffset.UtcNow,
-            PayloadJson = "{\"test\":\"8191\"}",
+            PayloadJson = "{\"test\":\"ops-claim\"}",
             IncidentStatus = AlertIncidentStatus.Started,
             Source = source,
         });
