@@ -99,6 +99,12 @@ The server omits facts absent from canonical metadata, including unknown time
 zones and tracking timestamps. An absent default differs from an explicit null. Structured defaults are encoded
 as JSON in the default value's string branch.
 
+Fields of type `Decimal` and `TimestampOffset` carry exact values in the
+`decimal_value` and `timestamp_offset_value` string branches. A PostgreSQL layer
+reports these types only when it was published with `exactTypes: true` (see
+[Connections and layers](../admin-api/connections-and-layers.md#exact-field-types));
+otherwise `numeric` columns are `Double` and `timestamptz` columns are `DateTime`.
+
 Managed edit capabilities require a writable storage binding, declared publication
 capability and caller authorization. Unsupported operations remain false;
 attachment editing additionally requires explicit attachment enablement. Clients must

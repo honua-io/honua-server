@@ -55,6 +55,10 @@ public sealed class LayerPublishRequest
 
     public bool SupportsAttachments { get; init; }
 
+    // Opt-in: numeric/decimal columns publish as Decimal and timestamptz as TimestampOffset
+    // (the primary key and the temporal column keep their default types).
+    public bool ExactTypes { get; init; }
+
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
 
     public string? ServiceName { get; init; }
@@ -99,6 +103,9 @@ public sealed class TablePublishValidationRequest
     public bool AllowEmptyTable { get; init; }
 
     public bool ManagedStore { get; init; }
+
+    // Reports numeric/decimal and timestamptz columns with their exact published types.
+    public bool ExactTypes { get; init; }
 
     public required string Schema { get; init; }
 

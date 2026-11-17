@@ -38,9 +38,13 @@ internal static partial class GeoJsonFeatureBaseBuilder
                 {
                     DateOnlyFields.Add(field.Name);
                 }
-                else if (field.Type == MetadataV2FieldType.DateTime)
+                else if (field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset)
                 {
                     DateTimeFields.Add(field.Name);
+                }
+                else if (field.Type == MetadataV2FieldType.Decimal)
+                {
+                    DecimalFields.Add(field.Name);
                 }
             }
         }
@@ -55,5 +59,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
         // attributes whose spelling differs from the declared schema.
         internal HashSet<string> DateOnlyFields { get; } = new(StringComparer.OrdinalIgnoreCase);
         internal HashSet<string> DateTimeFields { get; } = new(StringComparer.OrdinalIgnoreCase);
+        // Exact decimals arrive as canonical text and leave as JSON numbers with every digit.
+        internal HashSet<string> DecimalFields { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 }

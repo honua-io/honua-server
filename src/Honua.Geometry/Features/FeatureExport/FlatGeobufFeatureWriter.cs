@@ -166,9 +166,9 @@ internal static class FlatGeobufFeatureWriter
         MetadataV2FieldType.Integer => ColumnType.Int,
         MetadataV2FieldType.BigInteger => ColumnType.Long,
         MetadataV2FieldType.Float => ColumnType.Float,
-        MetadataV2FieldType.Double => ColumnType.Double,
+        MetadataV2FieldType.Double or MetadataV2FieldType.Decimal => ColumnType.Double,
         MetadataV2FieldType.Boolean => ColumnType.Bool,
-        MetadataV2FieldType.DateTime => ColumnType.DateTime,
+        MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => ColumnType.DateTime,
         MetadataV2FieldType.Json => ColumnType.Json,
         MetadataV2FieldType.Binary => ColumnType.Binary,
         // The format has no standalone date, wall-clock time, or UUID type.
@@ -281,7 +281,7 @@ internal static class FlatGeobufFeatureWriter
         {
             return (value is Guid guid ? guid : Guid.Parse(ScalarText(value))).ToString("D");
         }
-        if (type == MetadataV2FieldType.DateTime)
+        if (type is MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset)
         {
             // GDAL rejects a FlatGeobuf datetime value longer than 32 bytes.
             // DateTimeOffset "O" writes "+00:00" and is 33 bytes, so every

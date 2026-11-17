@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
@@ -118,6 +119,36 @@ public static partial class ExactAttributeValues
 
         return number;
     }
+
+    // A canonical base-10 number (optional sign, no exponent, no leading zeros) is also a valid
+    // JSON number of any length.
+    public static bool IsCanonicalDecimalText(string? value)
+        => value is not null && DecimalPattern().IsMatch(value);
+
+    // A stored attribute value (exact decimal text, CLR number, JSON number or string) as a finite
+    // double for formats without an exact decimal type. Text parses culture-invariantly.
+    public static double? ToFiniteDouble(object? value)
+    {
+        var number = value switch
+        {
+            double d => d,
+            float f => f,
+            decimal m => (double)m,
+            long l => l,
+            int i => i,
+            short s => s,
+            string text => ParseInvariantDouble(text),
+            JsonElement { ValueKind: JsonValueKind.Number } element => element.GetDouble(),
+            JsonElement { ValueKind: JsonValueKind.String } element => ParseInvariantDouble(element.GetString()),
+            _ => double.NaN
+        };
+        return double.IsFinite(number) ? number : null;
+    }
+
+    private static double ParseInvariantDouble(string? text)
+        => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : double.NaN;
 
     private static string NormalizeNegativeZero(string value)
         => value.StartsWith('-') && value.AsSpan(1).TrimStart('0').TrimStart('.').TrimStart('0').IsEmpty

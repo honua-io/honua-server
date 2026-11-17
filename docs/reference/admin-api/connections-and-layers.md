@@ -134,6 +134,12 @@ A published layer reads its source table by default, and the server cannot write
 
 For example, publish `{"schema":"public","table":"parcels","layerName":"parcels-edit","serviceName":"parcels-edit","srid":4326,"storageMode":"managed","capabilities":["Query","Create","Update","Delete"]}` to the same route. The response echoes `storageMode` and `capabilities`, and reports the managed `features` table as the layer's storage. Create, update and delete requests to `/ogc/features/collections/{layerId}/items` and FeatureServer `applyEdits` then read back through every serving protocol.
 
+### Exact field types
+
+By default a `numeric`/`decimal` column publishes as `Double` and a `timestamp with time zone` column as `DateTime`. Set `exactTypes: true` on the publish request to publish them as `Decimal` and `TimestampOffset` instead, so the gRPC feature API returns their exact digits and original offsets. The primary key and the `temporalColumn` keep their default types. The flag is off by default and does not change existing layers; republishing a layer that already has exact fields keeps them. `POST /api/v1/admin/connections/{id}/tables/validate` accepts the same flag to preview the field types.
+
+Other protocols and exports keep working on such a layer: GeoServices, PBF, GeoArrow, FlatGeobuf, GeoParquet, Shapefile and GeoPackage write decimals as doubles and offset timestamps as UTC date-times; GeoJSON (OGC API Features) writes decimals as JSON numbers with every digit and offset timestamps as RFC 3339 UTC date-times.
+
 ## Service and layer settings
 
 | Method | Path | Purpose |
