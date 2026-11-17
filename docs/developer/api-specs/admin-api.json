@@ -16241,7 +16241,7 @@
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16294,7 +16294,7 @@
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16339,7 +16339,7 @@
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16399,7 +16399,7 @@
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16493,7 +16493,7 @@
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16502,7 +16502,7 @@
             "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Package version number to validate.",
+            "description": "Form Version number to validate.",
             "schema": {
               "type": "integer"
             }
@@ -16547,7 +16547,7 @@
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16622,7 +16622,7 @@
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16631,7 +16631,7 @@
             "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Published version number to reopen.",
+            "description": "Released Version number to reopen.",
             "schema": {
               "type": "integer"
             }
