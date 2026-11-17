@@ -726,6 +726,26 @@ def skipped(reason: str, *, cap: int, changed_file_count: int = 0, **extra: Any)
     return result
 
 
+def uses_server_producer(entry: dict[str, Any]) -> bool:
+    """A shard restores the parallel Server.Tests producer only when that is its whole closure.
+
+    Multi-project and non-server entries stay with the main producer. A mixed
+    closure rebuilds locally and must not start on the server-producer lane.
+    """
+    if entry.get("csprojs"):
+        return False
+    return entry.get("csproj") == DEFAULT_TEST_PROJECT
+
+
+def partition_producer_matrices(
+    include: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split a selection into server-producer entries and everything else."""
+    early = [entry for entry in include if uses_server_producer(entry)]
+    held = [entry for entry in include if not uses_server_producer(entry)]
+    return early, held
+
+
 def matrix_include(result: dict[str, Any], config: dict[str, Any]) -> list[dict[str, Any]]:
     """Project the selection into ci.yml's matrix-entry shape.
 
@@ -801,6 +821,9 @@ def append_github_output(result: dict[str, Any], include: list[dict[str, Any]]) 
         handle.write(f"reason={result['reason']}\n")
         handle.write(f"selected_count={len(result['shards'])}\n")
         handle.write(f"matrix_include={json.dumps(include, separators=(',', ':'))}\n")
+        early, held = partition_producer_matrices(include)
+        handle.write(f"matrix_server={json.dumps(early, separators=(',', ':'))}\n")
+        handle.write(f"matrix_other={json.dumps(held, separators=(',', ':'))}\n")
         # Suffixes only. The execution matrix carries test filters and must
         # not enter a job environment (validate-matrix-file-transport.py).
         receipt_matrix = [
