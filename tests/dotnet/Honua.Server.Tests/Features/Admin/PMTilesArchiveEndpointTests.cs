@@ -108,7 +108,7 @@ public sealed class PMTilesArchiveEndpointTests(PMTilesArchiveEndpointTests.Tile
     [Endpoint("GET /api/v1/admin/tile-operations/jobs")]
     public async Task ListJobs_WithArchiveJob_IncludesArchiveInList()
     {
-        await StartArchiveJobAsync();
+        var jobId = await StartArchiveJobAsync();
 
         var response = await _client.GetAsync("/api/v1/admin/tile-operations/jobs?activeOnly=false");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -116,7 +116,8 @@ public sealed class PMTilesArchiveEndpointTests(PMTilesArchiveEndpointTests.Tile
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var jobs = GetPropertyCaseInsensitive(json.RootElement, "jobs");
         jobs.ValueKind.Should().Be(JsonValueKind.Array);
-        jobs.GetArrayLength().Should().BeGreaterThan(0);
+        // The host is shared, so other cases' jobs are listed too: look for this case's job.
+        jobs.EnumerateArray().Select(job => GetPropertyCaseInsensitive(job, "jobId").GetString()).Should().Contain(jobId);
     }
 
     [IntegrationTest]

@@ -53,7 +53,11 @@ public sealed class PMTilesPublishEndpointTests(PMTilesPublishEndpointTests.Tile
             Client = Fixture.CreateAdminClient();
         }
 
-        public Task DisposeAsync() => Fixture.DisposeAsync();
+        public async Task DisposeAsync()
+        {
+            Client?.Dispose();
+            await Fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

@@ -59,7 +59,7 @@ public class SceneDatasetEndpointsTests(SceneDatasetEndpointsTests.SceneHost hos
 
         public async Task DisposeAsync()
         {
-            Client.Dispose();
+            Client?.Dispose();
             await Fixture.DisposeAsync();
         }
     }
