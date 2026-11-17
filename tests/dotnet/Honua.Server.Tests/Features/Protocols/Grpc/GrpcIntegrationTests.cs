@@ -12,6 +12,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Proto = Geospatial.V1;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -20,7 +21,8 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
-public sealed partial class GrpcIntegrationTests : IAsyncLifetime
+public sealed partial class GrpcIntegrationTests(GrpcIntegrationTests.GrpcHost host)
+    : IClassFixture<GrpcIntegrationTests.GrpcHost>, IDisposable
 {
     private const long SeededFeatureCount = 5;
 
@@ -34,47 +36,70 @@ public sealed partial class GrpcIntegrationTests : IAsyncLifetime
     private const double AddedFeatureX = -157.85;
     private const double AddedFeatureY = 21.30;
 
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .WithTestLicense(HonuaEdition.Community)
-        .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configuration) =>
-            configuration.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Grpc:StreamBatchSize"] = StreamBatchSize.ToString(CultureInfo.InvariantCulture)
-            })));
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly Proto.FeatureService.FeatureServiceClient _client = host.Client;
+    private readonly Metadata _headers = host.Headers;
 
-    private GrpcChannel? _channel;
-    private Proto.FeatureService.FeatureServiceClient? _client;
-    private Metadata? _headers;
-
-    public async Task InitializeAsync()
+    // The paired-publication cases add publications to the shared graph; put the seeded
+    // ones back so the next case reads the seed.
+    public void Dispose()
     {
-        ConfigureAttachmentReadServices();
-        await _fixture.InitializeAsync();
-
-        // Use GrpcWebHandler wrapping the test server's handler.
-        // This converts gRPC to gRPC-Web format (HTTP/1.1), and the server's
-        // UseGrpcWeb middleware (DefaultEnabled = true) converts back to native gRPC.
-        var testServerHandler = _fixture.CreateHandler();
-        var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, testServerHandler);
-        _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
+        if (_fixture.GetCurrentV2GraphSnapshot().Graph.Revision != host.GraphRevision)
         {
-            HttpHandler = grpcWebHandler
-        });
-        _client = new Proto.FeatureService.FeatureServiceClient(_channel);
-
-        // The shared WebAppFixture uses X-Honua-Test-Schema headers for schema-based isolation.
-        // gRPC metadata entries become HTTP headers, so the server's schema middleware can read them.
-        _headers = new Metadata();
-        if (_fixture.CurrentSchema is not null)
-        {
-            _headers.Add("X-Honua-Test-Schema", _fixture.CurrentSchema);
+            _fixture.MutateV2Graph(graph => graph with { Publications = host.SeededPublications });
+            host.GraphRevision = _fixture.GetCurrentV2GraphSnapshot().Graph.Revision;
         }
     }
 
-    public async Task DisposeAsync()
+    // One host per class. The cases read the seeded layer; the one case that adds a row
+    // deletes it again.
+    public sealed partial class GrpcHost : IAsyncLifetime
     {
-        _channel?.Dispose();
-        await _fixture.DisposeAsync();
+        private GrpcChannel? _channel;
+
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Community)
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Grpc:StreamBatchSize"] = StreamBatchSize.ToString(CultureInfo.InvariantCulture)
+                })));
+
+        internal Proto.FeatureService.FeatureServiceClient Client { get; private set; } = null!;
+        internal Metadata Headers { get; } = [];
+        internal IReadOnlyList<MetadataV2Layer> SeededPublications { get; private set; } = [];
+        internal long GraphRevision { get; set; }
+
+        public async Task InitializeAsync()
+        {
+            ConfigureAttachmentReadServices();
+            await Fixture.InitializeAsync();
+            var seeded = Fixture.GetCurrentV2GraphSnapshot().Graph;
+            SeededPublications = seeded.Publications;
+            GraphRevision = seeded.Revision;
+
+            // GrpcWebHandler converts gRPC to gRPC-Web (HTTP/1.1) for the test server; the
+            // server's UseGrpcWeb middleware (DefaultEnabled = true) converts it back.
+            var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, Fixture.CreateHandler());
+            _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
+            {
+                HttpHandler = grpcWebHandler
+            });
+            Client = new Proto.FeatureService.FeatureServiceClient(_channel);
+
+            // gRPC metadata entries become HTTP headers, so the schema middleware reads the
+            // X-Honua-Test-Schema isolation header from them.
+            if (Fixture.CurrentSchema is not null)
+            {
+                Headers.Add("X-Honua-Test-Schema", Fixture.CurrentSchema);
+            }
+        }
+
+        public async Task DisposeAsync()
+        {
+            _channel?.Dispose();
+            await Fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTheory]
@@ -325,30 +350,52 @@ public sealed partial class GrpcIntegrationTests : IAsyncLifetime
 
         var objectId = response.AddResults[0].ObjectId;
 
-        // Read the row back over the protocol that wrote it: an echoed ObjectId proves
-        // nothing on its own.
-        var readBack = new Proto.QueryFeaturesRequest
+        try
+        {
+            // Read the row back over the protocol that wrote it: an echoed ObjectId proves
+            // nothing on its own.
+            var readBack = new Proto.QueryFeaturesRequest
+            {
+                ServiceId = WebAppFixture.TestServiceId,
+                LayerId = WebAppFixture.TestLayerId,
+                ReturnGeometry = true
+            };
+            readBack.OutFields.Add("*");
+            readBack.ObjectIds.Add(objectId);
+
+            var readBackResponse = await _client.QueryFeaturesAsync(readBack, _headers);
+            var stored = readBackResponse.Features.Should().ContainSingle().Subject;
+            stored.Id.Should().Be(objectId);
+            stored.Attributes["name"].StringValue.Should().Be(AddedFeatureName);
+            stored.Geometry.Should().NotBeNull("the add carried a point geometry");
+            stored.Geometry.Point.X.Should().BeApproximately(AddedFeatureX, 1e-6);
+            stored.Geometry.Point.Y.Should().BeApproximately(AddedFeatureY, 1e-6);
+
+            // ...and in PostGIS, not merely in a response projection.
+            (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
+                .Should().Be(AddedFeatureName);
+            (await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId))
+                .Should().Be(SeededFeatureCount + 1, "exactly one row was added");
+        }
+        finally
+        {
+            await RemoveAddedFeatureAsync(objectId);
+        }
+    }
+
+    // The host is shared by the class: remove the added row so the seeded counts hold.
+    private async Task RemoveAddedFeatureAsync(long objectId)
+    {
+        var cleanup = new Proto.ApplyEditsRequest
         {
             ServiceId = WebAppFixture.TestServiceId,
             LayerId = WebAppFixture.TestLayerId,
-            ReturnGeometry = true
+            RollbackOnFailure = true
         };
-        readBack.OutFields.Add("*");
-        readBack.ObjectIds.Add(objectId);
-
-        var readBackResponse = await _client.QueryFeaturesAsync(readBack, _headers);
-        var stored = readBackResponse.Features.Should().ContainSingle().Subject;
-        stored.Id.Should().Be(objectId);
-        stored.Attributes["name"].StringValue.Should().Be(AddedFeatureName);
-        stored.Geometry.Should().NotBeNull("the add carried a point geometry");
-        stored.Geometry.Point.X.Should().BeApproximately(AddedFeatureX, 1e-6);
-        stored.Geometry.Point.Y.Should().BeApproximately(AddedFeatureY, 1e-6);
-
-        // ...and in PostGIS, not merely in a response projection.
-        (await _fixture.ReadStoredFeatureNameAsync(WebAppFixture.TestLayerId, objectId))
-            .Should().Be(AddedFeatureName);
-        (await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId))
-            .Should().Be(SeededFeatureCount + 1, "exactly one row was added");
+        cleanup.Deletes.Add(objectId);
+        (await _client.ApplyEditsAsync(cleanup, _headers)).DeleteResults.Should().ContainSingle()
+            .Which.Success.Should().BeTrue();
+        (await _fixture.CountStoredFeaturesAsync(WebAppFixture.TestLayerId)).Should().Be(SeededFeatureCount);
     }
 
     [IntegrationTest]

@@ -123,20 +123,14 @@ that work and add request restrictions when you create them:
 Referrer restrictions stop other websites from using a key inside a browser; they do
 not stop a non-browser client, which can send any `Origin` or `Referer`. Treat them
 as abuse prevention, pair them with IP restrictions where the callers' networks are
-known, and keep keys used this way read-only. Restrictions are set when a key is
-created; to change them, create a replacement key and revoke the old one.
+known, and keep keys used this way read-only. Use the `PATCH` operation above to
+update restrictions while keeping the same key.
 
 Credential expiry denies authentication while preserving the managed key's
 metadata, so administrators can still inspect its expired or revoked status.
-Redis retains this metadata for 3,650 days after expiry, or after the latest
-registry write when there is no future expiry. Internal approval replay
-credentials remain short-lived and are removed at their credential expiry.
-
-After upgrading an existing Redis registry, older records retain their original
-Redis expiry until they are rewritten by successful authentication, rotation, or
-revocation. Rotate or revoke these keys before their original expiry to retain
-their metadata. Records already removed by Redis cannot be recovered by this
-change; create a replacement key if access is still needed.
+Managed keys are stored in the system PostgreSQL database; their metadata is not
+automatically deleted on expiry. Internal approval replay credentials remain
+short-lived and are removed by the expired-row cleanup after credential expiry.
 
 An empty permissions array is normalized to `admin:*` for legacy compatibility and
 therefore grants full admin access; do not use it for CI. Grant only the operations
@@ -440,7 +434,7 @@ When `Oidc:TokenValidation:EnableTokenReplayProtection` is enabled, replay regis
 
 Existing cached registrations keep their original expiration. Renew access tokens after upgrading all replay-tracking nodes to obtain the full retention window for new admissions.
 
-Redis shares replay registrations across nodes. When a configured Redis connection is disconnected or faults, the default fallback is per-node memory; `Oidc:TokenValidation:ReplayProtectionFailClosed=true` refuses that fallback. Without a Redis connection, memory tracks registrations on the current node. Independent replicas need the same shared replay store for cross-node isolation.
+The system PostgreSQL database shares replay registrations across nodes. Without a system database data source, registrations use per-node memory; independent replicas need the same system database for cross-node isolation. If the selected replay store is unavailable or faults, the default is to admit the token without recording a replay registration. Set `Oidc:TokenValidation:ReplayProtectionFailClosed=true` to refuse that admission. A PostgreSQL failure does not switch replay tracking to per-node memory.
 
 #### Human operation approval
 
