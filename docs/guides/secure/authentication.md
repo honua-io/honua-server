@@ -266,8 +266,9 @@ and password-token sign-in, `X-API-Key`, Basic compatibility, and bearer and
 `token` credentials. It still applies while the key store is unavailable. Nothing
 counts when no administrator password is configured or it cannot be resolved.
 Unknown or expired portal tokens and OIDC access tokens are not compared and do
-not count. For `generateToken`, every exchange the administrator verifier rejects
-counts. A success does not clear earlier failures; they expire with the window.
+not count. For `generateToken`, a value that matches no managed key counts when
+it is sent under any username other than `admin`, or when it does not match the
+administrator password. Managed-key lookups do not reserve password-check slots. A success does not clear earlier failures; they expire with the window.
 OAuth client-credential secrets are not counted.
 
 While a source is refused, no credential from it is checked. Password sign-in
@@ -290,6 +291,12 @@ server instance, and a request without a client address is not counted.
 | `BlockDuration` | `00:15:00` | How long a source stays refused. |
 | `MaxTrackedSources` | `10000` | Addresses tracked per instance; expired entries are evicted first. |
 | `ExemptNetworks` | none | Ranges that are never counted or refused, written as a network address and prefix length: `10.0.0.0/8`, or `/32` and `/128` for one address. |
+
+The `honua_authentication_failed_attempts_total` counter aggregates completed
+failed credential checks across tracked sources on each instance. It has no
+source-address or credential labels. Use its rate to detect failures spread across
+many sources; admission remains per source so one caller cannot exhaust a global
+authentication budget.
 
 `Window` and `BlockDuration` are at most one day. In Development and Test, an
 administrator password of exactly 64 lowercase hex characters is treated as a
@@ -374,6 +381,16 @@ path. The pending login cookie uses `SameSite=Lax` for the provider redirect; th
 authenticated session cookie uses `SameSite=Strict`. On landing, Console refreshes
 its session identity and CSRF token before sending authenticated mutations.
 
+When the identity provider returns an error instead of a code (for example
+`error=invalid_scope` or `access_denied`), the callback answers `400` with a
+short "Sign-in failed" page. The page names the provider's error code and links
+back to `/console/auth/signin`. It never shows the provider's free-text
+`error_description`; the server logs it with the provider key and error code as
+a warning. An error carrying the attempt's own `state` ends that attempt, so
+**Try again** starts a fresh one. An error with any other `state` leaves the
+pending attempt alone. A callback that arrives after the 15-minute attempt
+expired, or in a different browser, shows the same page without a provider code.
+
 For Amazon Cognito, configure the user-pool issuer as `Authority` and the hosted
 login domain separately for logout:
 
@@ -414,6 +431,11 @@ legacy admin aliases and approved-operation/API-key roles. Replacing these optio
 does not establish an approver-only policy for all authentication schemes.
 
 Provider blocks exist for `Generic`, `AzureAd`, `Google`, `Okta`, and `Auth0`; OIDC providers can also be managed at runtime via `/api/v1/admin/oidc/providers`. When OIDC is enabled, `Authorization: Bearer` tokens are evaluated before API keys. Map your IdP's admin group to a role in `Oidc__AdminRoles` (default `admin`, `administrator`) — without it, signed-in users hold no admin rights.
+
+Production deployments require issuer, audience, lifetime and signing-key validation
+to remain enabled; startup fails otherwise. These safeguards also apply when OIDC
+is disabled, so an unsafe configuration cannot be activated later. Prefer provider
+metadata and JWKS discovery.
 
 An explicitly configured static JWT issuer may set
 `Oidc__TokenValidation__SymmetricSigningKey` to an `env:NAME` or
@@ -594,6 +616,9 @@ A wrong or missing key returns `401` with a `WWW-Authenticate: ApiKey` challenge
 | `generateToken` refuses to issue | Issuance is HTTPS-only by default — front the server with TLS (see [TLS and mTLS](tls-and-mtls.md)). |
 | Token works from one host but not another | Portal tokens are bound to `client=referer` or `client=ip`; re-issue with the binding the caller actually presents. |
 | `admin:write` or `admin:manage` key gets `403` creating, rotating or revoking API keys, changing user roles, deprovisioning users or managing OAuth clients | Expected: these routes need full-administrator authority. Use a key granted `admin`, `*` or `admin:*`, the bootstrap credential, an administrator session, or submit the change as a proposal for approval. See [Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management). |
+| "Sign-in failed" page with `invalid_scope` | The provider client does not allow every scope Honua requests (`Oidc__Generic__Scopes`, default `openid profile email`). Allow the missing scope on the client, or remove it from the setting. |
+| "Sign-in failed" page with `access_denied`, or another provider code | The provider refused the user or the client. The server log warning names the provider and holds the provider's description. |
+| "Sign-in failed" page without a provider code | The attempt expired or the callback opened in a different browser. Choose **Try again**. |
 | OIDC user signed in but gets `403` on admin routes | The IdP token lacks a role matching `Oidc__AdminRoles`; fix the claims mapping in your IdP. |
 
 More general failures: [Troubleshooting](../deploy/troubleshooting.md).

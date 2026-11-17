@@ -37,3 +37,51 @@ writes, branch-overlay writes, and COPY/import alongside an edit. Use bounded
 cancellation and database state to establish ordering. Compare blocking and commit
 latency on the build host. Run the N-1 reader check with the actual supported baseline;
 the presence of this migration alone does not prove that older binaries use it.
+
+## Inactive publisher stage
+
+Migration 214 creates `honua.feature_change_prefix` and
+`honua.publish_feature_change_prefix()`. It does not change the reader function,
+start a publisher loop or narrow either writer lock. An older supported reader
+therefore keeps its existing behavior during this additive stage.
+
+Call the publisher once per fresh writable READ COMMITTED transaction, on a
+managed connection outside feature writes and cursor reads. It rejects a
+transaction that already owns a transaction ID or uses a stronger isolation
+level. Competing publishers use a separate nonblocking advisory lock. Idle calls
+leave the row unchanged and do not assign a transaction ID.
+
+The publisher captures the sequence cutoff before assigning its own transaction
+ID as a fence. Every feature allocation through that cutoff already belongs to
+an older transaction. A later fresh snapshot whose oldest active transaction ID
+has reached the fence proves those writers have committed or rolled back. The
+publisher then advances the persisted prefix, including harmless rollback holes.
+Snapshot xmax alone is unsafe: it can equal a lone open writer's ID and permit
+premature publication on the next call. Repeated calls while that writer is open
+must retain the old prefix, whether the writer later commits or rolls back.
+
+This protocol requires transaction identity before every feature generation
+allocation, a monotonically increasing sequence with CACHE 1, and no sequence
+reset. The function checks the sequence configuration. Long transactions,
+including prepared transactions, can conservatively delay the prefix even when
+they do not edit features. Monitor publication lag before activating the horizon;
+staging this function does not establish a latency bound or remove contention.
+
+## Publisher driver
+
+The existing outbox dispatcher calls the publisher before claiming pending events,
+including when the outbox is empty. Publication uses a fresh READ COMMITTED
+transaction that commits before the claim statement, on the same managed connection
+lease. This adds no background service or connection pool. A competing publisher
+does not block the claim; cancellation or publication failure releases the lease.
+
+Snapshot xmin can also be held back by transactions in other databases on the same
+PostgreSQL cluster. This conservatively delays publication; measure that lag under
+the deployed workload before activating the horizon. The driver does not replace
+the reader function or narrow either writer lock.
+
+The driver runs only where the PostgreSQL outbox dispatcher is hosted. Control-plane
+event Lambda hosts omit database polling loops, and providers without transactional
+outbox capability skip dispatch. Before activation, establish a running publisher for
+every database whose readers will use the persisted prefix; a writer-only host does
+not advance it by itself. This stage does not add another publisher for those hosts.

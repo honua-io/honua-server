@@ -75,8 +75,7 @@ public sealed class ContainerGrpcTransportConfigurationTests
         Assert.Contains("Kestrel__Endpoints__Grpc__Url: http://+:5001", compose, StringComparison.Ordinal);
         Assert.Contains("Kestrel__Endpoints__Grpc__Protocols: Http2", compose, StringComparison.Ordinal);
         Assert.Contains("PUBLIC_BASE_URL: http://honua:5000", compose, StringComparison.Ordinal);
-        Assert.Contains("ConnectionStrings__Redis: redis:6379", compose, StringComparison.Ordinal);
-        var postgresService = GetComposeServiceBlock(compose, "postgres", "redis");
+        var postgresService = GetComposeServiceBlock(compose, "postgres", "localstack");
         Assert.Contains("POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL", postgresService, StringComparison.Ordinal);
         var openLayersService = GetComposeServiceBlock(compose, "openlayers", "cesium");
         Assert.Contains("HONUA_SERVICE_ID: browser_compat", openLayersService, StringComparison.Ordinal);
@@ -84,7 +83,6 @@ public sealed class ContainerGrpcTransportConfigurationTests
         var honuaService = GetComposeServiceBlock(compose, "honua", "gdal-worker");
         Assert.Contains("HONUA_HEALTH_PORT: \"5000\"", honuaService, StringComparison.Ordinal);
         Assert.Contains("[\"CMD\", \"/app/honua-healthcheck\", \"--ready\"]", honuaService, StringComparison.Ordinal);
-        Assert.Contains("image: redis:7.4-alpine", compose, StringComparison.Ordinal);
     }
 
     private static string GetComposeServiceBlock(string compose, string serviceName, string nextServiceName)

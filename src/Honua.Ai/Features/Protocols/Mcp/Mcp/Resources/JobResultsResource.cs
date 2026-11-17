@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -98,6 +100,9 @@ internal sealed class JobResultsResource : IMcpResource
                 Kind = artifact.Kind.ToString(),
                 Label = artifact.Label,
                 Uri = artifact.Uri,
+                ReferenceSha256 = artifact.Uri is null
+                    ? null
+                    : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(artifact.Uri))),
                 ContentType = artifact.ContentType,
                 Metadata = artifact.Metadata
             })

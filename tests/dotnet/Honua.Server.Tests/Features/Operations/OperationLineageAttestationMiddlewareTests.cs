@@ -83,7 +83,7 @@ public sealed class OperationLineageAttestationMiddlewareTests
             ProposalId = "proposal-exact",
         };
         using var message = new HttpRequestMessage();
-        OperationLineageHeaders.Apply(message, policy, store);
+        OperationLineageHeaders.Apply(message, new OperationLoopbackHop(policy, new DefaultHttpContext()), store);
         var context = new DefaultHttpContext();
         foreach (var header in message.Headers)
         {

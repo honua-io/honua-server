@@ -149,6 +149,26 @@ public sealed class McpResourceSerializationTests
         body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
     }
 
+    [UnitTheory]
+    [InlineData(null, null)]
+    [InlineData("honua://artifacts/a%2Fb", "ef0329fc8c7782d34ee0d3af02d0f46c3e7b215610b6259a8336e1f40d865579")]
+    [InlineData("honua://artifacts/a/b", "da653253ceb4a953db579c794ec84eb8b549c3d3aa1e7cd5a2e876024f651b3f")]
+    [InlineData("honua://artifacts/日本", "17f84f9781c9f215b1644c83f8e15f069e781a54e77fd7db71bb41cb909e4222")]
+    public void JobResultsProjection_ReferenceChecksumUsesExactUtf8Uri(string? uri, string? expectedChecksum)
+    {
+        var package = AnalysisResultPackage.CreateCompleted(
+            "package-1",
+            new ResultSummary { Title = "Completed output" },
+            [new ArtifactRef { ArtifactId = "artifact-1", Kind = ArtifactKind.FeatureLayer, Label = "Output", Uri = uri }],
+            [],
+            new ProvenanceRecord { Sources = [], ProcessDefinitions = [] });
+
+        var projected = JobResultsResource.ToResource("job-1", package);
+
+        projected.Artifacts[0].ReferenceSha256.Should().Be(expectedChecksum);
+        projected.Artifacts[0].Uri.Should().Be(uri);
+    }
+
     [UnitTest]
     [Endpoint("POST /mcp resources/read honua://jobs/{jobId}/results")]
     public async Task JobResultsResource_NonTerminalJob_PropagatesFailedPrecondition()

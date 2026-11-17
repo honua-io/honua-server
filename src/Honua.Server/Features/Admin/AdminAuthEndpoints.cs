@@ -855,7 +855,7 @@ internal static class AdminAuthEndpoints
         response.Cookies.Append(name, value, options);
     }
 
-    private static void DeleteCookie(HttpResponse response, string name)
+    internal static void DeleteCookie(HttpResponse response, string name)
     {
         response.Cookies.Delete(name, new CookieOptions
         {

@@ -279,8 +279,6 @@ Honua.Server.Tests:Honua.Server.Tests.Features.Export.Writers.GeoPackageAttribut
 Honua.Server.Tests:Honua.Server.Tests.Features.Export.Writers.GeoPackageAttributeRoundtripTests.ImportExport_ReservedAttributeNames_PreserveNamesTypesAndValues`0(System.String)
 Honua.Server.Tests:Honua.Server.Tests.Features.Export.Writers.GeoPackageAttributeRoundtripTests.ImportExport_TimestampWithoutOffset_PreservesUtcInstant`0(System.String)
 Honua.Server.Tests:Honua.Server.Tests.Features.Export.Writers.GeoPackageAttributeRoundtripTests.Import_MalformedTemporalCell_ReportsInvalidData`0(System.Boolean,System.String)
-Honua.Server.Tests:Honua.Server.Tests.Features.Export.Writers.GeoPackageExportCrsTests.WriteAsync_AlwaysSeedsTheReservedUndefinedSrsRows`0()
-Honua.Server.Tests:Honua.Server.Tests.Features.Export.Writers.GeoPackageExportCrsTests.WriteAsync_RecordsTheSrsInEveryPlaceTheGeoPackageSpecRequires`0(System.Int32,System.String,System.String,System.Int32)
 Honua.Server.Tests:Honua.Server.Tests.Features.Export.Writers.GeoPackageExportWriterTests.WriteAsync_WithMixedZGeometry_RegistersOptionalZMetadata`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Export.Writers.GeoPackageExportWriterTests.WriteAsync_WithPolygonLayer_WritesConformantGeoPackageMetadata`0()
 Honua.Server.Tests:Honua.Server.Tests.Features.Export.Writers.GeoPackageExportWriterTests.WriteAsync_WithZmGeometry_RegistersMandatoryZAndMMetadata`0()

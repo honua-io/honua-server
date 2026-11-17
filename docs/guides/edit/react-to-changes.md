@@ -136,16 +136,23 @@ Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000):
 connections per effective tenant on each server process. All principals in a tenant
 share that tenant's limit. When tenancy is disabled or there is no effective tenant,
 the limit applies per authenticated principal, using the same scheme- and
-issuer-qualified identity as other security boundaries. Anonymous connections share
-one partition. Changing `clientLabel`, transport, or subscription count does not
+issuer-qualified identity as other security boundaries. Anonymous connections are
+limited per client address by `FeatureStreaming__MaxAnonymousSessionsPerClient`
+(default 64; an IPv6 /64 counts as one client), and all anonymous clients together
+share one `MaxConcurrentSessions` allowance, separate from any tenant's. Client
+addresses come from forwarded-header processing: behind a proxy, configure it so
+the server sees the viewer, or many viewers share one address and its allowance.
+`FeatureStreaming__MaxNodeSessions` (default 2048) caps every partition together on
+one node. Changing `clientLabel`, transport, or subscription count does not
 create additional capacity.
 
 A full partition receives HTTP `503` and a problem document describing the session
 limit before the SSE stream or WebSocket handshake opens. Disconnecting a session
-returns capacity only to its own partition. The cap does not impose a second global
-limit, and it is not a distributed cluster quota. The streaming health check retains
+returns capacity only to its own partition. The node cap is per server process;
+none of these limits is a distributed cluster quota. The streaming health check retains
 the total active-session count and reports saturation using the largest partition,
-without exposing tenant or principal identifiers.
+the anonymous total and the node total, without exposing tenant, principal or client
+identifiers.
 
 ## Verify
 
@@ -167,7 +174,7 @@ Then insert a feature in another terminal ([Edit features](edit-features.md)) an
 | Symptom | Fix |
 |---|---|
 | `403` before the stream connects | Community edition fails closed; streaming needs Pro or Enterprise. Capabilities reports `enabled=false`. |
-| `401` on an unfiltered stream | All-layer streams require admin. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
+| `401` or `403` on an unfiltered stream | All-layer streams require admin: anonymous callers get `401`, signed-in non-admins `403`. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
 | `503` on connect | The tenant or principal has exhausted `FeatureStreaming__MaxConcurrentSessions`; free sessions in that partition or raise the configured cap applied to every partition. Other tenants and principals retain their own admission capacity. |
 | Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup validation and delivery logs, DNS resolution and your receiver's signature validation. |
 | Duplicate events | Expected: delivery is at-least-once (and once per matching subscription). Dedupe on `eventId` (or `(subscriptionId, eventId)` for multi-subscription sockets). |

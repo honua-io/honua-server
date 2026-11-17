@@ -43,13 +43,14 @@ on:
       # OpenAPI document the drift checker declares, so both move it.
       - 'scripts/ci/generate-operation-capability.py'
       - 'scripts/ci/generate-operation-capability.test.py'
-      # WS1: the manifest crosswalk reads the registry source, the keys and the
-      # adjudication, so all three move it.
+      # The manifest crosswalk resolves registry entitlements through licensing
+      # constants, capability keys and authored adjudication.
       - 'scripts/ci/generate-capability-manifest-crosswalk.py'
       - 'scripts/ci/generate-capability-manifest-crosswalk.test.py'
       - 'docs/gis/data/capability-manifest-adjudication.v1.json'
       - 'docs/gis/data/capability-manifest-crosswalk.v1.json'
       - 'src/Honua.Core/Core/Features/Capabilities/CapabilityRegistry.cs'
+      - 'src/Honua.Core/Core/Features/Licensing/Domain/FeatureCatalog.cs'
       - 'scripts/ci/openapi-drift-check.py'
       - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/openapi.json'

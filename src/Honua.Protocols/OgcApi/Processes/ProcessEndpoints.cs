@@ -548,6 +548,11 @@ internal static class ProcessEndpoints
                     idempotencyKeyError!);
             }
 
+            if (definition != null && idempotencyKey != null)
+            {
+                analysisPlan = analysisPlan! with { PlanId = ProtocolPlanId.Create(OgcPlanIdPrefix(definition), idempotencyKey) };
+            }
+
             var submissionCatalog = definition != null
                 && OgcProcessesCiteEchoFixture.IsDefinition(definition)
                     ? processCatalog
@@ -895,16 +900,16 @@ internal static class ProcessEndpoints
             }
         }
 
-        var slug = processDefinition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
+        var prefix = OgcPlanIdPrefix(processDefinition);
         plan = new AnalysisPlan
         {
-            PlanId = $"ogc-{slug}-{Guid.NewGuid():N}",
+            PlanId = ProtocolPlanId.Create(prefix, idempotencyKey: null),
             IntentId = $"ogc-process:{processDefinition.ProcessId}",
             Steps =
             [
                 new AnalysisPlanStep
                 {
-                    StepId = $"ogc-{slug}",
+                    StepId = prefix,
                     Kind = AnalysisPlanStepKind.Geoprocess,
                     ProcessId = processDefinition.ProcessId,
                     Inputs = inputs
@@ -915,6 +920,9 @@ internal static class ProcessEndpoints
 
         return true;
     }
+
+    private static string OgcPlanIdPrefix(ProcessDefinition definition)
+        => $"ogc-{definition.ProcessId.Replace(".", "-", StringComparison.Ordinal)}";
 
     private static int? TryReadInputSrid(ImmutableDictionary<string, JsonElement> inputs)
     {

@@ -106,6 +106,7 @@ public sealed partial class FolderOperationIntegrationTests(FolderOperationInteg
             Memberships.Reset();
             Licensing.Reset();
             Authorization.DeniedService = null;
+            Authorization.BeforeServiceAuthorization = null;
             await Fixture.Postgres.ExecuteDdlUnderLockAsync(RestoreGraphTables(_baselineSchema, Fixture.CurrentSchema!));
             Fixture.Services.GetService<IMetadataV2GraphCacheInvalidator>()?.InvalidateAll();
         }
@@ -293,11 +294,20 @@ public sealed partial class FolderOperationIntegrationTests(FolderOperationInteg
     {
         public string? DeniedService { get; set; }
 
-        public Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, OperatorAuthorizationRequest request,
+        public Func<Task>? BeforeServiceAuthorization { get; set; }
+
+        public async Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, OperatorAuthorizationRequest request,
             CancellationToken cancellationToken = default)
-            => request.ResourceType == OperatorResourceType.PublishedService && request.ResourceId == DeniedService
-                ? Task.FromResult(AccessDecision.Forbidden("Service access denied."))
-                : evaluator.EvaluateAsync(principal, request, cancellationToken);
+        {
+            if (request.ResourceType == OperatorResourceType.PublishedService && BeforeServiceAuthorization is { } before)
+            {
+                BeforeServiceAuthorization = null;
+                await before();
+            }
+            return request.ResourceType == OperatorResourceType.PublishedService && request.ResourceId == DeniedService
+                ? AccessDecision.Forbidden("Service access denied.")
+                : await evaluator.EvaluateAsync(principal, request, cancellationToken);
+        }
     }
 
     private async Task ApplyAsync(string operationId, Dictionary<string, string?> parameters)

@@ -15,6 +15,17 @@ def workflow(name):
 
 
 class StoreProfileWorkflowTests(unittest.TestCase):
+    def test_derived_zarr_worker_uses_serving_host_job_database(self):
+        base = yaml.safe_load((ROOT / 'docker/cng/compose.yml').read_text())
+        overlay = yaml.safe_load((ROOT / 'docker/cng/derived-zarr.yml').read_text())
+        server_environment = dict(entry.split('=', 1) for entry in
+                                  base['services']['honua-server']['environment'])
+        worker = overlay['services']['zarr-worker']
+        self.assertEqual(worker['environment']['ConnectionStrings__DefaultConnection'],
+                         server_environment['ConnectionStrings__DefaultConnection'])
+        self.assertEqual(worker['depends_on']['postgres']['condition'], 'service_healthy')
+        self.assertIn('healthcheck', base['services']['postgres'])
+
     def test_serving_formats_smoke_disables_excluded_test_providers(self):
         script = (ROOT / 'scripts/ci/smoke-serving-formats.sh').read_text()
         override = script.split('cat > "$work/override.yml" <<EOF\n', 1)[1].split('\nEOF', 1)[0]
@@ -53,6 +64,11 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn('${channel}-jit', text)
         self.assertIn(':latest-jit', text)
         self.assertNotIn('${channel}-aot', text)
+
+    def test_release_bundle_reports_rc_budget(self):
+        steps = workflow('release-bundle.yml')['jobs']['rc-image']['steps']
+        verify = next(step for step in steps if step.get('name') == 'Verify RC JIT candidate before registry publication')
+        self.assertIn('--release-stage rc', verify['run'])
 
     def test_release_inventory_registers_resolved_platform_manifest(self):
         jobs = workflow('release-security-assets.yml')['jobs']

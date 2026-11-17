@@ -431,12 +431,10 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         outbox.CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>())
             .Returns(call => ImmutableArray.CreateRange(Enumerable.Repeat(true, call.ArgAt<IReadOnlyList<AlertOutboxEntry>>(1).Count)));
-        var policy = Substitute.For<IAlertEditionPolicy>();
-        policy.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);
         var configured = Options.Create(options);
         var metrics = TestTelemetry.CreateAlertPipelineMetrics();
         return new OpsNotificationService(new AlertDispatchWriter(outbox, metrics, NullLogger<AlertDispatchWriter>.Instance),
-            policy, new AlertChannelCircuitBreaker(configured), configured, metrics, NullLogger<OpsNotificationService>.Instance);
+            new AlertChannelCircuitBreaker(configured), configured, metrics, NullLogger<OpsNotificationService>.Instance);
     }
 
     private sealed class ReminderClock(DateTimeOffset now) : TimeProvider

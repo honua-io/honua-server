@@ -34,6 +34,9 @@ COLLECTION_ID = "0"
 # honua.seed_metadata_v2_compat_snapshot; WFS names use publication IDs.
 AUTHENTICATED_WFS_TYPE_LOCAL_NAME = "pub-cert-auth-vector-feature-2011"
 
+# Styles resolve an exact publication; protected vector-tile URLs retain layer IDs.
+AUTHENTICATED_RASTER_PUBLICATION_ID = "pub-cert-auth-raster-ogc-2010"
+
 # Authored catalog metadata in the compatibility snapshot, inherited by services.
 CATALOG_TITLE = "CI compatibility seed"
 CATALOG_DESCRIPTION = "Authored metadata for the canonical client compatibility fixture."

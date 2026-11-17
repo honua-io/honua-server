@@ -28,13 +28,10 @@ services:
       - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
       - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cite_wcs;User Id=postgres;Password=cite_password;
       - ConnectionStrings__honua=Server=postgres;Port=5432;Database=honua_cite_wcs;User Id=postgres;Password=cite_password;
-      - ConnectionStrings__Redis=redis:6379
       - Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security
       - Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - cite-wcs20-network
@@ -64,17 +61,6 @@ services:
       - cite-wcs20-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d honua_cite_wcs"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly no
-    networks:
-      - cite-wcs20-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

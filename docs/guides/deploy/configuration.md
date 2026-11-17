@@ -109,4 +109,4 @@ A successful admin upload persists `<LicensePath>.uploaded`, which startup reads
 
 Configure a stable deployment identity and initialize a durable admission policy before enabling
 model calls. Follow [AI invocation admission](../../reference/configuration/ai-execution-admission.md)
-for both PostgreSQL and Redis, operator controls, secure defaults and migration.
+for PostgreSQL admission authority, operator controls, secure defaults and migration.
