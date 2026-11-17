@@ -14,8 +14,8 @@ Whole-class selections are retained except the GP/NAS routing class, whose
 methods are partitioned with a residual fallback for future tests. Method-union,
 future-method and mutation checks enforce complete, disjoint selection and
 unchanged projects, source triggers and budgets. Historical TRX interval weights
-guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
-refresh measured 23 of those 26 children (gate-model.md, "Measured ranks").
+guide the cuts; they are not measured child elapsed runtimes. The 17 Nov rank
+refresh measured all 26 children (gate-model.md, "Measured ranks").
 
 OGC Classic WMTS exhausted its 20-minute test budget in full run `43612492209`
 (job 132511815046) while producing output three seconds before termination; its
@@ -816,18 +816,14 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (16 Nov 2026): each recorded `dispatch_rank` is the median passing
-job duration over eleven full trunk runs, counting a sample only when its filter
+Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the median passing
+job duration over twelve full trunk runs, counting a sample only when its filter
 and project selection match the current definition (gate-model.md, "Measured
-ranks"). Full run 43819793722 supplies 205 passing child samples. On the timing
-repair's 225-child layout, 209 definitions have matching passing measurements;
-the ten replacement children and six other definitions retain their prior ranks
-or estimates. Remove 39 obsolete child estimates; eleven split-child estimates
-remain until passing measurements exist. Migration 3 inherits its parent's
-rank after an admission change; File and Raster Import 1–3 keep prior trunk
-ranks after filter edits. Ranks sum to 1,581.4 runner-minutes,
-previously 1,696.9 on the repaired layout; 196 children fit the unchanged
-10-minute PR shard budget. These are scheduling estimates, not runtime savings.
+ranks"). Full run 44013566836 passed all 225 children and gives every current
+definition at least one matching measurement, so no split-child estimate
+remains. Ranks sum to 1,524.6 runner-minutes, previously 1,581.4; 202 children
+fit the unchanged 10-minute PR shard budget, previously 196. These are
+scheduling estimates, not runtime savings.
 Temporal's explicit source override uses `prioritize: true` as a tie-breaker
 after changed-test and path-hit counts; candidate admission and caps still apply.
 Override priorities must be boolean; malformed values fail schema validation.

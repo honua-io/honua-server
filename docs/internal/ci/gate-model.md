@@ -27,8 +27,8 @@ Whole-class selections are retained except the GP/NAS routing class, whose
 methods are partitioned with a residual fallback for future tests. Method-union,
 future-method and mutation checks enforce complete, disjoint selection and
 unchanged projects, source triggers and budgets. Historical TRX interval weights
-guide the cuts; they are not measured child elapsed runtimes. The 14 Nov rank
-refresh measured 23 of those 26 children (see "Measured ranks" below).
+guide the cuts; they are not measured child elapsed runtimes. The 17 Nov rank
+refresh measured all 26 children (see "Measured ranks" below).
 
 OGC Classic WMTS exhausted its 20-minute test budget in full run `43612492209`
 (job 132511815046) while producing output three seconds before termination; its
@@ -1054,34 +1054,30 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (16 Nov 2026): each recorded `dispatch_rank` is the median
+Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the median
 passing job duration across full trunk runs 43348507021, 43471044721,
 43540829683, 43564575677, 43580101834, 43612492209, 43661416329, 43703260559,
-43709972683, 43726623779 and 43819793722. A sample counts only when the shard's
-filter and project selection at the run's head match the current definition.
-Passing children count even when their full workflow fails or is cancelled;
-failed, skipped and cancelled children do not supply timing samples.
+43709972683, 43726623779, 43819793722 and 44013566836. A sample counts only
+when the shard's filter and project selection at the run's head match the
+current definition. Passing children count even when their full workflow fails
+or is cancelled; failed, skipped and cancelled children do not supply timing
+samples.
 
-The latest completed run, [43819793722](https://github.com/honua-io/honua-server/actions/runs/43819793722),
-contains all 219 then-current server children: 205 passed and 14 failed. After
-the separately owned timing repair replaces four definitions with ten children,
-209 of 225 current definitions have matching passing samples: 1 to 7 each,
-median 3; 49 have one sample. The ten replacement children retain their repair's
-conservative estimates until matching passing full-run measurements exist.
-Migration 3 and File and Raster Import 1–3 changed filters after these runs;
-their old samples are excluded. Migration 3 inherits its parent's 21.8-minute
-rank; File and Raster Import 1–3 retain trunk's prior ranks pending fresh
-measurements. Server Features Miscellaneous 8 and Migration Source Imports also have no
-matching passing sample. Migration Source Imports changed project selection;
-its predecessor's timing cannot be reused. Failed duration is not a successful
+The latest completed run, [44013566836](https://github.com/honua-io/honua-server/actions/runs/44013566836),
+passed all 225 current server children on trunk `532565b`. Every current
+definition now has matching passing samples: 1 to 8 each, median 3; 16 have
+one sample (the ten timing-repair children, Migration 3, Migration Source
+Imports, File and Raster Import 1–3 and Server Features Miscellaneous 8). Samples from
+before a definition's filter or project change are excluded, so those 16 rest
+on the single run since their change. Failed duration is not a successful
 completion estimate, and failures remain gating.
 
 `scripts/ci/fixtures/measured-dispatch-ranks.json` records the ranks and runs;
 `test-full-run-capacity-partitions.py` rejects rank drift. Split children use
 their measured rank, else their contract estimate, else the parent's rank.
 Remove a child's estimate once measured; the estimate-sum conservation rule
-applies only while every child is estimated. This refresh removes 39 obsolete
-child estimates and retains eleven, including the ten newly partitioned children.
+applies only while every child is estimated. This refresh removes the last
+eleven child estimates, including the ten timing-repair children.
 The timing repair's exact partitions, execution policies and evidence remain intact.
 
 An explicit Temporal source override uses `prioritize: true` to keep a narrow
