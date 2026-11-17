@@ -17,34 +17,41 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
-public sealed class GlobalAdminDataAuthorizationTests : IAsyncLifetime
+public sealed class GlobalAdminDataAuthorizationTests(GlobalAdminDataAuthorizationTests.GlobalAdminHost host)
+    : IClassFixture<GlobalAdminDataAuthorizationTests.GlobalAdminHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .UseSeed("tests/seed/server.yaml")
-        .ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "global-admin-data-test-bootstrap");
-        })
-        .ConfigureServices(services =>
-        {
-            services.Configure<TenantContextOptions>(options =>
+    private readonly WebAppFixture _fixture = host.Fixture;
+
+    // One host for the class: every case only reads an authorization outcome.
+    public sealed class GlobalAdminHost : IAsyncLifetime
+    {
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
             {
-                options.Enabled = true;
-                options.TenantClaimTypes = ["category"];
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "global-admin-data-test-bootstrap");
+            })
+            .ConfigureServices(services =>
+            {
+                services.Configure<TenantContextOptions>(options =>
+                {
+                    options.Enabled = true;
+                    options.TenantClaimTypes = ["category"];
+                });
+                services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
+                    RlsClaimsTestAuthHandler.SchemeName, _ => { });
+                services.PostConfigure<AuthorizationOptions>(options => options.AddPolicy(
+                    AuthenticationExtensions.AdminPolicy,
+                    new AuthorizationPolicyBuilder(RlsClaimsTestAuthHandler.SchemeName)
+                        .RequireAuthenticatedUser().RequireRole("admin").Build()));
             });
-            services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
-                RlsClaimsTestAuthHandler.SchemeName, _ => { });
-            services.PostConfigure<AuthorizationOptions>(options => options.AddPolicy(
-                AuthenticationExtensions.AdminPolicy,
-                new AuthorizationPolicyBuilder(RlsClaimsTestAuthHandler.SchemeName)
-                    .RequireAuthenticatedUser().RequireRole("admin").Build()));
-        });
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTheory]
     [InlineData("GET", "/api/v1/admin/feature-events/replay")]
