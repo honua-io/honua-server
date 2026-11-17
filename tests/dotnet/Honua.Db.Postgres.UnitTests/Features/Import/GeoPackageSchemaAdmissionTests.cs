@@ -13,15 +13,28 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class GeoPackageSchemaAdmissionTests
 {
     [Theory]
-    [InlineData("sample_layer", true)]
-    [InlineData("gpkg_contents", true)]
-    [InlineData("gpkg_geometry_columns", true)]
-    [InlineData("gpkg_spatial_ref_sys", true)]
-    [InlineData("sample_layer", false)]
-    [InlineData("gpkg_contents", false)]
-    [InlineData("gpkg_geometry_columns", false)]
-    [InlineData("gpkg_spatial_ref_sys", false)]
-    public async Task ReadGeoPackage_ViewBackedSchema_RejectsImport(string tableName, bool preview)
+    [InlineData("sample_layer")]
+    [InlineData("gpkg_contents")]
+    [InlineData("gpkg_geometry_columns")]
+    [InlineData("gpkg_spatial_ref_sys")]
+    public Task PreviewGeoPackage_ViewBackedSchema_RejectsImport(string tableName) =>
+        AssertViewRejectedAsync(tableName, PreviewAsync);
+
+    [Theory]
+    [InlineData("sample_layer")]
+    [InlineData("gpkg_contents")]
+    [InlineData("gpkg_geometry_columns")]
+    [InlineData("gpkg_spatial_ref_sys")]
+    public Task StreamGeoPackage_ViewBackedSchema_RejectsImport(string tableName) =>
+        AssertViewRejectedAsync(tableName, async path => { await ReadAllFeaturesAsync(path); });
+
+    private static async Task PreviewAsync(string filePath)
+    {
+        await using var stream = File.OpenRead(filePath);
+        await PreviewImportServiceFactory.Create().PreviewFileAsync(stream, "sample.gpkg");
+    }
+
+    private static async Task AssertViewRejectedAsync(string tableName, Func<string, Task> read)
     {
         var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
         try
@@ -39,18 +52,7 @@ public sealed class GeoPackageSchemaAdmissionTests
                 await command.ExecuteNonQueryAsync();
             }
 
-            await using var stream = File.OpenRead(filePath);
-            Func<Task> action = async () =>
-            {
-                if (preview)
-                {
-                    await PreviewImportServiceFactory.Create().PreviewFileAsync(stream, "sample.gpkg");
-                    return;
-                }
-
-                await ReadAllFeaturesAsync(filePath);
-            };
-
+            Func<Task> action = () => read(filePath);
             await action.Should().ThrowAsync<InvalidDataException>();
         }
         finally
