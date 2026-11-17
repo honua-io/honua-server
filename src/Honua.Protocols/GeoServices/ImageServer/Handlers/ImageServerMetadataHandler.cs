@@ -80,6 +80,12 @@ internal sealed class ImageServerMetadataHandler
 
             // Get raster information
             var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
+            var cogBacked = rasters.Length == 0; // cloud COGs (tile fallback) have no scanned band statistics
+            if (cogBacked)
+            {
+                rasters = await ImageServerCogRasters.ListAsync(context.RequestServices.GetService<ICogStore>(), (snapshot, resolved.Publication), cancellationToken).ConfigureAwait(false);
+            }
+
             if (rasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
@@ -103,7 +109,7 @@ internal sealed class ImageServerMetadataHandler
             // the whole metadata response instead of just omitting statistics.
             var rasterIds = rasters.Select(r => r.Id).ToArray();
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-            var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+            var statistics = cogBacked ? [] : await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
                 ImageServerStatisticsBudget.CreateStatisticsOperationKey(
                     schemaName, layerId, rasterIds, mergeStrategy),

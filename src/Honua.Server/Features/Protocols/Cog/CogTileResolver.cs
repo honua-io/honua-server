@@ -91,8 +91,9 @@ internal sealed class CogTileResolver : ICogTileResolver
             return null;
         }
 
-        if (!TryResolveAlignedTileIndex(metadata, overviewLevel, level, row, col, out var tileIndex) ||
-            tileIndex < 0 || tileIndex >= overviewLevel.TileOffsets.Length ||
+        var window = ResolveTileWindow(metadata, overviewLevel, (level, row, col));
+        if (window is not { TileIndex: >= 0 and var tileIndex } ||
+            tileIndex >= overviewLevel.TileOffsets.Length ||
             tileIndex >= overviewLevel.TileByteCounts.Length)
         {
             CogLog.CogTileNotFound(_logger, registration.Id, level, row, col);
@@ -151,6 +152,14 @@ internal sealed class CogTileResolver : ICogTileResolver
         // The decoder's 128 MiB ceiling also accommodates codecs whose frame size is
         // unknown (ZSTD reports a window bound). Encoders require the exact sample length.
         var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
+        var enlarged = window.ZoomDelta > 0 ? CogOverzoomTile.Enlarge(decompressedData, metadata, window) : decompressedData;
+        if (enlarged is null)
+        {
+            CogLog.CogTileNotFound(_logger, registration.Id, level, row, col);
+            return null;
+        }
+
+        decompressedData = enlarged;
 
         if (format == RasterFormat.PNG && contentType == "application/octet-stream")
         {
@@ -325,6 +334,36 @@ internal sealed class CogTileResolver : ICogTileResolver
             tileSpanX, tileSpanY, metadata.TileWidth, metadata.TileHeight, candidateResolutions);
 
         return bestIndex >= 0 ? metadata.OverviewLevels[bestIndex] : metadata.OverviewLevels[0];
+    }
+
+    // A stored tile aligned with the request, else (full-resolution level only) the ancestor tile
+    // whose window is enlarged. JPEG tiles pass through undecoded, so they cannot be enlarged.
+    private static CogTileWindow? ResolveTileWindow(
+        CogMetadata metadata,
+        CogOverviewLevel overviewLevel,
+        (int Level, int Row, int Col) tile)
+    {
+        if (TryResolveAlignedTileIndex(metadata, overviewLevel, tile.Level, tile.Row, tile.Col, out var tileIndex))
+        {
+            return new CogTileWindow { TileIndex = tileIndex };
+        }
+
+        if (!ReferenceEquals(overviewLevel, metadata.OverviewLevels[0]) || metadata.Compression == "JPEG")
+        {
+            return null;
+        }
+
+        var maxDelta = Math.Min(CogOverzoomTile.MaxZoomDelta, tile.Level);
+        for (var delta = 1; delta <= maxDelta; delta++)
+        {
+            if (TryResolveAlignedTileIndex(
+                    metadata, overviewLevel, tile.Level - delta, tile.Row >> delta, tile.Col >> delta, out var ancestorIndex))
+            {
+                return CogOverzoomTile.CreateWindow(metadata, ancestorIndex, (delta, tile.Row, tile.Col));
+            }
+        }
+
+        return null;
     }
 
     private static bool TryResolveAlignedTileIndex(
