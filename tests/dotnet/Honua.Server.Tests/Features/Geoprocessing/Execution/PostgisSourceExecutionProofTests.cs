@@ -106,7 +106,8 @@ public sealed partial class PostgisSourceExecutionProofTests(WebAppFixture fixtu
         var rows = new List<DagSourceFeature>();
         await foreach (var feature in source.ReadAsync(new DagSourceRequest
         {
-            PostgisTable = "survey", Where = "name = 'O''Brien; -- survey' AND active = true"
+            PostgisTable = "survey",
+            Where = "name = 'O''Brien; -- survey' AND active = true"
         }))
         {
             rows.Add(feature);
