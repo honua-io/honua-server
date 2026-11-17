@@ -135,7 +135,7 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
             return null;
         }
         PostgresSqlSafety.ValidateReadOnlySingleStatement("SELECT 1 WHERE (" + request.Where + ")");
-        return new GeoServicesSqlParser().Parse(request.Where);
+        return new GeoServicesSqlParser().Parse(request.Where, static text => text);
     }
 
     private static void BindFilterParameters(NpgsqlCommand command, SqlFragment? predicate)
@@ -146,7 +146,15 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
         }
         for (var i = 0; i < predicate.Parameters.Count; i++)
         {
-            command.Parameters.AddWithValue($"p{i}", predicate.Parameters[i] ?? DBNull.Value);
+            var value = predicate.Parameters[i] ?? DBNull.Value;
+            if (value is string text)
+            {
+                command.Parameters.AddWithValue($"p{i}", NpgsqlTypes.NpgsqlDbType.Unknown, text);
+            }
+            else
+            {
+                command.Parameters.AddWithValue($"p{i}", value);
+            }
         }
     }
 

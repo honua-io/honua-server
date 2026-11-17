@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 [Collection("Database")]
 [Trait("Category", "RemoteSourceExecutionProof")]
-public sealed class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
+public sealed partial class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
     [Fact]
     public async Task Postgis_RegisteredExternalDatabase_PublishesOnlyPredicateWatermarkAndBboxMatches()
