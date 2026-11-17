@@ -45,4 +45,19 @@ public class PostgresFixtureMigrationDiscoveryTests
             reader.ReadToEnd().Should().NotBeNullOrWhiteSpace();
         }
     }
+
+    [UnitTest]
+    public void Discover_AdminApiKeyMigrations_ApplyExpansionAfterStoreAndRestrictions()
+    {
+        var migrations = PostgresFixtureMigrations.Discover();
+
+        var adminKeyExpansion = Array.IndexOf(migrations, "Honua.Server.Migrations.200_ExpandAdminApiKeyStorage.sql");
+        var adminKeyStore = Array.IndexOf(migrations, "Honua.Server.Migrations.136_CreateAdminApiKeys.sql");
+        var adminKeyRestrictions = Array.IndexOf(migrations, "Honua.Server.Migrations.139_AddAdminApiKeyRestrictions.sql");
+        var adminKeyExpiry = Array.IndexOf(migrations, "Honua.Server.Migrations.152_IndexAdminApiKeyExpiry.sql");
+        adminKeyStore.Should().BeGreaterThanOrEqualTo(0);
+        adminKeyRestrictions.Should().BeGreaterThan(adminKeyStore);
+        adminKeyExpiry.Should().BeGreaterThan(adminKeyRestrictions);
+        adminKeyExpansion.Should().BeGreaterThan(adminKeyExpiry);
+    }
 }

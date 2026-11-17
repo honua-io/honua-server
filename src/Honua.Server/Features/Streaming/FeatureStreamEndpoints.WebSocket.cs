@@ -77,7 +77,7 @@ internal static partial class FeatureStreamEndpoints
         // using the replay cursor so events are delivered exactly once.
         // Snapshot-then-delta on the query-string (default) subscription. A baseline
         // replaces the delta stream when the subscription is fresh, or when the supplied
-        // resume cursor has fallen outside the retained window (#3038 REQ-001).
+        // resume cursor has fallen outside the retained window.
         string? snapshotReason = null;
         if (addDefaultSubscription &&
             (cursor.HasValue || IsSnapshotMode(mode)) &&
@@ -124,7 +124,7 @@ internal static partial class FeatureStreamEndpoints
                 // publish a cursor past the incomplete baseline, so the client checkpoints it
                 // and permanently omits the features the cap dropped — they did not change, so
                 // no delta will ever carry them. SSE ends the stream here; the socket paths must
-                // not silently accept what SSE refuses (honua-server#3038 review).
+                // not silently accept what SSE refuses.
                 if (!snapshotResult.Complete)
                 {
                     await SendWebSocketStatusAsync(
@@ -156,8 +156,7 @@ internal static partial class FeatureStreamEndpoints
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
                 // The socket is already open, so the failure can only be reported in-band. End
-                // with a terminal error frame rather than unwinding into an aborted connection
-                // (honua-server#3181 REQ-002).
+                // with a terminal error frame rather than unwinding into an aborted connection.
                 FeatureStreamLog.SnapshotEmitFailed(
                     logger,
                     session.SessionId,
@@ -635,7 +634,7 @@ internal static partial class FeatureStreamEndpoints
 
                     // Sequence is allocated after the delivery claim and immediately before
                     // the write, so numbers are never burned by filtered, deduplicated, or
-                    // stale-generation frames (#3038 REQ-002).
+                    // stale-generation frames.
                     if (!await SendStampedWebSocketJsonAsync(
                             webSocket,
                             session.WriteLock,
@@ -920,7 +919,7 @@ internal static partial class FeatureStreamEndpoints
                 // Same contract as the query-string path above: an incomplete baseline is not a
                 // resumable checkpoint. The subscription is REMOVED rather than unpaused, so the
                 // client must re-subscribe and take a fresh snapshot instead of resuming deltas
-                // from a truncated one (honua-server#3038 review).
+                // from a truncated one.
                 if (!snapshotResult.Complete)
                 {
                     deps.SessionManager.TryRemoveSubscription(session.SessionId, subscriptionId);

@@ -66,7 +66,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // layer could be cleared by a matching role or a permissive access policy, and the
         // executor would then read that foreign layer through its global storage address. The
         // principal's own tenant wins; the ambient scope value is the fallback for a background
-        // caller that is not user-attributed (honua-server#3046 review).
+        // caller that is not user-attributed.
         var tenantId = ResolveAuthorizationTenantId(
             principal,
             scope.ServiceProvider.GetService<ITenantContext>()?.TenantId);
@@ -193,13 +193,12 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // index. Those are separate namespaces and small values collide constantly — a
         // publication index of 1 exists in most services — so requiring both to allow denied
         // jobs whose only sin was that an unrelated, restricted publication happened to share
-        // the number. A collision does not make that publication an input to this plan
-        // (honua-server#3046 review).
+        // the number. A collision does not make that publication an input to this plan.
         // An id absent from the storage index is REFUSED, never resolved some other way. Falling
         // back to the publication triple authorized whichever publication happened to share the
         // integer, while `HonuaLayerDagSource` still passes it unchanged to StreamFeaturesAsync
         // and the store queries by storage id — so the gate would have cleared one resource and
-        // the executor read another (honua-server#3046 review).
+        // the executor read another.
         if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var storageResource)
             || LayerValidationHelpers.IsRetired(storageResource))
         {
@@ -214,7 +213,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // holding a grant through service B was denied because restricted service A happened to
         // sort first, even though the synchronous query surface would have allowed it through B.
         // Every live publication is therefore evaluated and ANY grant admits — matching what the
-        // caller could already do interactively (honua-server#3046 review).
+        // caller could already do interactively.
         var candidates = new List<(MetadataV2Object Resource, MetadataV2Service? Service)>();
         var hasLivePublication = false;
         var publications = snapshot.Index.PublicationsByResource[storageResource.Metadata.Id].ToList();

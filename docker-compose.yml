@@ -119,6 +119,7 @@ services:
       AuditLog__ChainVerification__Key: "${AuditLog__ChainVerification__Key:-}"
       FileStorage__Provider: "${HONUA_STORAGE_PROVIDER:-Local}"
       FileStorage__LocalStorage__BasePath: "/var/lib/honua/storage"
+      SceneGeneration__OutputRoot: /var/lib/honua/storage/scenes-generated
       FileStorage__AwsS3__BucketName: "${HONUA_S3_BUCKET:-}"
       FileStorage__AwsS3__Region: "${HONUA_S3_REGION:-us-east-1}"
       FileStorage__AwsS3__ServiceUrl: "${HONUA_S3_SERVICE_URL:-}"

@@ -31,7 +31,6 @@ public sealed class DeployTargetKindContractTests
                 ["Kubernetes"] = 0,
                 ["AwsEcs"] = 1,
                 ["AwsLambda"] = 3,
-                ["SelfHostedRolling"] = 5,
                 ["LocalCompose"] = 6
             });
     }
@@ -47,6 +46,7 @@ public sealed class DeployTargetKindContractTests
     [UnitTheory]
     [InlineData(2)]
     [InlineData(4)]
+    [InlineData(5)]
     public void TargetDefinition_WithUnassignedKindNumber_DoesNotReadAsADefinedKind(int number)
     {
         var json = JsonSerializer.Serialize(Definition((DeployTargetKind)number), ControlPlaneJsonContext.Default.DeployTargetDefinition);
@@ -60,6 +60,7 @@ public sealed class DeployTargetKindContractTests
     [UnitTheory]
     [InlineData("AzureContainerApps")]
     [InlineData("AzureFunctions")]
+    [InlineData("SelfHostedRolling")]
     [InlineData("NotATarget")]
     public void Bind_UnknownKindName_IsRefused(string name)
     {
@@ -71,6 +72,7 @@ public sealed class DeployTargetKindContractTests
     [UnitTheory]
     [InlineData(2)]
     [InlineData(4)]
+    [InlineData(5)]
     [InlineData(99)]
     public async Task PlanAsync_UnassignedKindNumber_FindsNoBackend(int number)
     {

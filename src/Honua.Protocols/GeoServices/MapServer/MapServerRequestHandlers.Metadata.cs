@@ -488,9 +488,9 @@ internal static partial class MapServerEndpoints
             SupportsDistinct = true,
             SupportsPagination = true,
             // The FeatureServer-backed query path supports outStatistics on the same
-            // layer, so advertise the capability here too — previously this flag was
-            // left false, and clients reading MapServer layer metadata incorrectly
-            // concluded statistics were unavailable.
+            // layer, so advertise the capability here too — leaving this flag false
+            // makes clients reading MapServer layer metadata incorrectly conclude
+            // statistics are unavailable.
             SupportsStatistics = true,
             AdvancedQueryCapabilities = FeatureServerEndpoints.BuildAdvancedQueryCapabilities(
                 supportsAdvancedQueries: true,
@@ -692,69 +692,6 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    private static GeoServicesExtent? ResolveLayerExtent(MetadataV2Object resource, GeoServicesExtent? serviceExtent)
-    {
-        var layerSpatialReference = ResolveLayerSpatialReference(resource);
-        var bbox = resource.ReadBbox();
-        if (bbox is not null)
-        {
-            return ToEsriExtent(bbox, layerSpatialReference);
-        }
-
-        if (HasMapServerGeometry(resource))
-        {
-            return serviceExtent;
-        }
-
-        return null;
-    }
-
-    private static GeoServicesExtent? ResolveServiceExtent(
-        IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
-        MetadataV2SpatialReference spatialReference)
-    {
-        double? west = null;
-        double? south = null;
-        double? east = null;
-        double? north = null;
-
-        foreach (var bbox in layers.Select(layer => layer.Resource.ReadBbox()))
-        {
-            if (bbox is null)
-            {
-                continue;
-            }
-
-            west = west.HasValue ? Math.Min(west.Value, bbox.West) : bbox.West;
-            south = south.HasValue ? Math.Min(south.Value, bbox.South) : bbox.South;
-            east = east.HasValue ? Math.Max(east.Value, bbox.East) : bbox.East;
-            north = north.HasValue ? Math.Max(north.Value, bbox.North) : bbox.North;
-        }
-
-        return west.HasValue && south.HasValue && east.HasValue && north.HasValue
-            ? new GeoServicesExtent
-            {
-                Xmin = west.Value,
-                Ymin = south.Value,
-                Xmax = east.Value,
-                Ymax = north.Value,
-                SpatialReference = ToEsriSpatialReference(spatialReference)
-            }
-            : null;
-    }
-
-    private static GeoServicesExtent ToEsriExtent(
-        MetadataV2Bbox bbox,
-        MetadataV2SpatialReference spatialReference)
-        => new()
-        {
-            Xmin = bbox.West,
-            Ymin = bbox.South,
-            Xmax = bbox.East,
-            Ymax = bbox.North,
-            SpatialReference = ToEsriSpatialReference(spatialReference)
-        };
-
     private static double? ResolveServiceMinScale(IReadOnlyList<MapServerMetadataLayerDescriptor> layers)
     {
         var scales = layers
@@ -775,14 +712,6 @@ internal static partial class MapServerEndpoints
         return scales.Length > 0 ? scales.Min() : null;
     }
 
-    private static MetadataV2SpatialReference ResolveServiceSpatialReference(
-        MetadataV2Service service,
-        IReadOnlyList<MapServerMetadataLayerDescriptor> layers)
-        => service.SpatialReference
-           ?? layers.Select(static layer => layer.Resource.Spatial?.SpatialReference)
-               .FirstOrDefault(static spatialReference => spatialReference is not null)
-           ?? MetadataV2SpatialReference.Wgs84;
-
     private static MetadataV2SpatialReference ResolveLayerSpatialReference(MetadataV2Object resource)
         => resource.Spatial?.SpatialReference ?? MetadataV2SpatialReference.Wgs84;
 
@@ -791,11 +720,6 @@ internal static partial class MapServerEndpoints
         {
             Wkid = spatialReference.ResolveSrid() ?? SpatialReference.WGS84.Wkid
         };
-
-    private static string ResolveMapUnits(MetadataV2SpatialReference spatialReference)
-        => spatialReference.IsGeographic || spatialReference.ResolveSrid() == SpatialReference.WGS84.Wkid
-            ? "esriDecimalDegrees"
-            : "esriMeters";
 
     private static bool HasMapServerGeometry(MetadataV2Object resource)
     {
@@ -807,7 +731,7 @@ internal static partial class MapServerEndpoints
     private static MapServerFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName)
     {
         // The layer's object-id field must be typed esriFieldTypeOID regardless of its
-        // SQL type so Esri clients can locate the OID field by type (see issue #1299).
+        // SQL type so Esri clients can locate the OID field by type.
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
         return new()
         {

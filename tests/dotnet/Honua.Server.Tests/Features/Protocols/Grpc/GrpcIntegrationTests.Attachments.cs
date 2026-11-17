@@ -18,29 +18,36 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 public sealed partial class GrpcIntegrationTests
 {
-    private readonly IAttachmentNativeMetadataStore _attachmentMetadata = Substitute.For<IAttachmentNativeMetadataStore>();
-    private readonly IAttachmentStore _attachments = Substitute.For<IAttachmentStore>();
-    private readonly ICloudFileStorage _attachmentStorage = Substitute.For<ICloudFileStorage>();
     private static readonly Guid AttachmentGlobalId = Guid.Parse("1841c89c-d3f4-46e1-9991-93a40a01be13");
 
-    private void ConfigureAttachmentReadServices()
+    private readonly IAttachmentNativeMetadataStore _attachmentMetadata = host.AttachmentMetadata;
+
+    public sealed partial class GrpcHost
     {
-        var metadata = new AttachmentNativeMetadata(AttachmentGlobalId, ["photo", "original"], SHA256.HashData("test"u8));
-        var attachment = Attachment.CreateForUpload(23, 1, WebAppFixture.TestLayerId,
-            "photo.txt", "text/plain", 4, "private/attachment-object");
-        _attachmentMetadata.QueryPageAsync(Arg.Any<AttachmentPageQuery>(), Arg.Any<CancellationToken>())
-            .Returns(new[] { new AttachmentPageItem(attachment, metadata) });
-        _attachmentMetadata.GetNativeMetadataAsync(Arg.Any<AttachmentNativeMetadataQuery>(), Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<long, AttachmentNativeMetadata> { [23] = metadata });
-        _attachments.GetAsync(WebAppFixture.TestLayerId, 1, 23, Arg.Any<CancellationToken>()).Returns(attachment);
-        _attachmentStorage.GetPresignedUrlAsync("private/attachment-object", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns("https://downloads.example.test/attachment?signature=test");
-        _fixture.ConfigureServices(services =>
+        private readonly IAttachmentStore _attachments = Substitute.For<IAttachmentStore>();
+        private readonly ICloudFileStorage _attachmentStorage = Substitute.For<ICloudFileStorage>();
+
+        internal IAttachmentNativeMetadataStore AttachmentMetadata { get; } = Substitute.For<IAttachmentNativeMetadataStore>();
+
+        private void ConfigureAttachmentReadServices()
         {
-            services.AddSingleton(_attachmentMetadata);
-            services.AddSingleton(_attachments);
-            services.AddSingleton(_attachmentStorage);
-        });
+            var metadata = new AttachmentNativeMetadata(AttachmentGlobalId, ["photo", "original"], SHA256.HashData("test"u8));
+            var attachment = Attachment.CreateForUpload(23, 1, WebAppFixture.TestLayerId,
+                "photo.txt", "text/plain", 4, "private/attachment-object");
+            AttachmentMetadata.QueryPageAsync(Arg.Any<AttachmentPageQuery>(), Arg.Any<CancellationToken>())
+                .Returns(new[] { new AttachmentPageItem(attachment, metadata) });
+            AttachmentMetadata.GetNativeMetadataAsync(Arg.Any<AttachmentNativeMetadataQuery>(), Arg.Any<CancellationToken>())
+                .Returns(new Dictionary<long, AttachmentNativeMetadata> { [23] = metadata });
+            _attachments.GetAsync(WebAppFixture.TestLayerId, 1, 23, Arg.Any<CancellationToken>()).Returns(attachment);
+            _attachmentStorage.GetPresignedUrlAsync("private/attachment-object", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+                .Returns("https://downloads.example.test/attachment?signature=test");
+            Fixture.ConfigureServices(services =>
+            {
+                services.AddSingleton(AttachmentMetadata);
+                services.AddSingleton(_attachments);
+                services.AddSingleton(_attachmentStorage);
+            });
+        }
     }
 
     [IntegrationTest]
@@ -51,8 +58,9 @@ public sealed partial class GrpcIntegrationTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/GetAttachmentUrl")]
     public async Task AttachmentReads_GrpcWeb_ReturnNativeMetadataAndSignedDownload()
     {
+        _attachmentMetadata.ClearReceivedCalls(); // the class shares one host
         var parent = ExistingAttachmentParent();
-        var response = await _client!.ListAttachmentsAsync(new Proto.ListAttachmentsRequest { Parent = parent }, _headers);
+        var response = await _client.ListAttachmentsAsync(new Proto.ListAttachmentsRequest { Parent = parent }, _headers);
         var attachment = response.Attachments.Should().ContainSingle().Subject;
         attachment.AttachmentId.Should().Be(23);
         attachment.GlobalId.Should().Be(AttachmentGlobalId.ToString("D"));
@@ -79,9 +87,10 @@ public sealed partial class GrpcIntegrationTests
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ListAttachments")]
     public async Task ListAttachments_GrpcWeb_MissingFeatureNeverReadsAttachmentStore()
     {
+        _attachmentMetadata.ClearReceivedCalls(); // the class shares one host
         var parent = ExistingAttachmentParent();
         parent.ObjectId = long.MaxValue;
-        var call = async () => await _client!.ListAttachmentsAsync(new Proto.ListAttachmentsRequest { Parent = parent }, _headers);
+        var call = async () => await _client.ListAttachmentsAsync(new Proto.ListAttachmentsRequest { Parent = parent }, _headers);
         (await call.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.NotFound);
         await _attachmentMetadata.DidNotReceiveWithAnyArgs().QueryPageAsync(default!);
     }
@@ -118,14 +127,14 @@ public sealed partial class GrpcIntegrationTests
         {
             switch (method)
             {
-                case "ListAttachments": await _client!.ListAttachmentsAsync(new Proto.ListAttachmentsRequest(), _headers); break;
-                case "GetAttachmentUrl": await _client!.GetAttachmentUrlAsync(new Proto.GetAttachmentUrlRequest(), _headers); break;
-                case "UploadAttachment": await _client!.UploadAttachmentAsync(new Proto.UploadAttachmentRequest(), _headers); break;
-                case "BeginAttachmentUpload": await _client!.BeginAttachmentUploadAsync(new Proto.BeginAttachmentUploadRequest(), _headers); break;
-                case "UploadAttachmentChunk": await _client!.UploadAttachmentChunkAsync(new Proto.UploadAttachmentChunkRequest(), _headers); break;
-                case "CommitAttachmentUpload": await _client!.CommitAttachmentUploadAsync(new Proto.CommitAttachmentUploadRequest(), _headers); break;
-                case "AbortAttachmentUpload": await _client!.AbortAttachmentUploadAsync(new Proto.AbortAttachmentUploadRequest(), _headers); break;
-                case "DeleteAttachment": await _client!.DeleteAttachmentAsync(new Proto.DeleteAttachmentRequest(), _headers); break;
+                case "ListAttachments": await _client.ListAttachmentsAsync(new Proto.ListAttachmentsRequest(), _headers); break;
+                case "GetAttachmentUrl": await _client.GetAttachmentUrlAsync(new Proto.GetAttachmentUrlRequest(), _headers); break;
+                case "UploadAttachment": await _client.UploadAttachmentAsync(new Proto.UploadAttachmentRequest(), _headers); break;
+                case "BeginAttachmentUpload": await _client.BeginAttachmentUploadAsync(new Proto.BeginAttachmentUploadRequest(), _headers); break;
+                case "UploadAttachmentChunk": await _client.UploadAttachmentChunkAsync(new Proto.UploadAttachmentChunkRequest(), _headers); break;
+                case "CommitAttachmentUpload": await _client.CommitAttachmentUploadAsync(new Proto.CommitAttachmentUploadRequest(), _headers); break;
+                case "AbortAttachmentUpload": await _client.AbortAttachmentUploadAsync(new Proto.AbortAttachmentUploadRequest(), _headers); break;
+                case "DeleteAttachment": await _client.DeleteAttachmentAsync(new Proto.DeleteAttachmentRequest(), _headers); break;
                 default: throw new ArgumentOutOfRangeException(nameof(method));
             }
         };

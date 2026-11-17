@@ -1,7 +1,7 @@
-// Behavior reference: registration ordering bug #1575 — the durable PostgresRoleStore
-// (registered in AddPostgreSqlServices via RegisterInfrastructureServices, earlier in
-// Program.cs) was shadowed by a later unconditional AddSingleton<IRoleStore, InMemory...>.
-// Using TryAdd makes the in-memory store a true default that durable providers override.
+// Registration ordering: the durable PostgresRoleStore (registered in
+// AddPostgreSqlServices via RegisterInfrastructureServices, earlier in Program.cs) must
+// not be shadowed by a later unconditional AddSingleton<IRoleStore, InMemory...>. Using
+// TryAdd makes the in-memory store a true default that durable providers override.
 
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Identity.Abstractions;

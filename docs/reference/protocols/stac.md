@@ -30,10 +30,10 @@ Accepted on `GET /stac/search` as query parameters and on `POST /stac/search` as
 | Parameter | Notes |
 | --- | --- |
 | `limit` | Page size; must be >= 1. |
-| `bbox` | `xmin,ymin,xmax,ymax` spatial filter. |
+| `bbox` | Spatial filter: `xmin,ymin,xmax,ymax` in GET; a JSON number array in POST. |
 | `datetime` | RFC 3339 instant or interval. |
 | `collections` | Comma-separated collection ids (array in POST body). |
-| `ids` | Comma-separated item ids. |
+| `ids` | Comma-separated item ids in GET; a JSON string array in POST. |
 | `intersects` | GeoJSON geometry filter. |
 | `fields` | Include/exclude field selection (fields extension). |
 | `sortby` | Sort expressions (sort extension). |

@@ -53,7 +53,7 @@ internal static partial class OidcProviderEndpoints
             .RequireAdminAuthorization()
             .RequirePlatformAdminAuthority()
             // OIDC provider configuration is the Pro identity.oidc surface (ADR-0024
-            // Identity tier — "no SSO tax for one provider"), mirroring the #2978 SAML/SCIM
+            // Identity tier — "no SSO tax for one provider"), mirroring the SAML/SCIM
             // gate shape. Configuring a second provider additionally requires the Enterprise
             // identity.oidc-multi-provider entitlement; that check runs first for creates that
             // would grow the store beyond one provider so the 402 names the entitlement that

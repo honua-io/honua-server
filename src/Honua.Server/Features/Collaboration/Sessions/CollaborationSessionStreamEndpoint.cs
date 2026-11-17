@@ -110,7 +110,7 @@ internal static partial class CollaborationSessionStreamEndpoint
             // multi-replica and the op log is process-local, the advertised capability already
             // says Replay=false — so this handshake must not hand back node-local history that
             // another replica's history contradicts. Presence still streams; the client is told
-            // to load the durable document instead (honua-server#2999 review).
+            // to load the durable document instead.
             var replayAvailable = sessions.Capabilities.Replay;
             var resyncAnnounced = false;
 
@@ -119,8 +119,8 @@ internal static partial class CollaborationSessionStreamEndpoint
             // fallen outside the retained window the client must reload the durable document,
             // which only reflects CHECKPOINTED operations — so the snapshot must carry the whole
             // retained window instead of nothing, otherwise every retained-but-not-yet-
-            // checkpointed operation is dropped while the snapshot advertises the head cursor
-            // (honua-server#2999 review). Re-sending an already-checkpointed prefix is safe:
+            // checkpointed operation is dropped while the snapshot advertises the head cursor.
+            // Re-sending an already-checkpointed prefix is safe:
             // every operation family is absolute-state and the reducer rebuilds from the snapshot.
             var tailSince = resumeFrom;
             if (!replayAvailable)
@@ -198,7 +198,7 @@ internal static partial class CollaborationSessionStreamEndpoint
                     // only checkpointed ones, and would then discard those operations' later
                     // envelopes as already-seen. There is no cursor that honestly describes this
                     // state, so terminate the handshake and let the client reconnect into a
-                    // stable window (honua-server#2999 review).
+                    // stable window.
                     await CloseWithErrorAsync(
                         webSocket,
                         "The retained operation replay window is advancing faster than the snapshot "
@@ -211,10 +211,9 @@ internal static partial class CollaborationSessionStreamEndpoint
                 // concurrent appends pruned it before the snapshot tail was read. The client is
                 // NOT holding a complete history any more, so the gap must be announced —
                 // silently restarting the tail from the new window base would leave it believing
-                // it had every operation between its cursor and that base (honua-server#2999
-                // review). The announcement is emitted before the snapshot is sent and the
-                // snapshot is re-stamped afterwards, so the error keeps a lower sequence than the
-                // snapshot the client rebuilds from.
+                // it had every operation between its cursor and that base. The announcement is
+                // emitted before the snapshot is sent and the snapshot is re-stamped afterwards,
+                // so the error keeps a lower sequence than the snapshot the client rebuilds from.
                 await AnnounceResyncAsync(
                     webSocket,
                     writeLock,
@@ -237,7 +236,7 @@ internal static partial class CollaborationSessionStreamEndpoint
             // not the channel's current sequence. Using the current one would place the boundary
             // after operations that were appended during snapshot assembly but are absent from
             // Operations, and the reducer would then discard their envelopes as pre-snapshot,
-            // silently losing committed edits (honua-server#2999 review).
+            // silently losing committed edits.
             var snapshot = sessions.GetSnapshot(mapId) with
             {
                 Sequence = snapshotEnvelope.Sequence,
@@ -245,7 +244,7 @@ internal static partial class CollaborationSessionStreamEndpoint
                 // Never advertise a cursor the snapshot did not actually deliver up to. Claiming
                 // the current head while withholding operations would advance the client past
                 // committed edits it never received, and its reducer would then discard those
-                // operations' later envelopes as already-seen (honua-server#2999 review). When
+                // operations' later envelopes as already-seen. When
                 // replay is unavailable there is no defensible position at all, so no cursor is
                 // advertised.
                 Cursor = replayAvailable

@@ -569,10 +569,10 @@ internal static class DeployControlEndpoints
             return platformDenied;
         }
 
-        // honua-server#4958 ask 4: the body is read here rather than model-bound so an unrecognized
-        // property is a refusal a client can branch on, not a framework 400 with no code and not the
-        // silent drop the pinned candidate shipped. RollbackDeployOperationRequest is marked
-        // JsonUnmappedMemberHandling.Disallow, so the deserializer itself is what rejects it.
+        // The body is read here rather than model-bound so an unrecognized property is a refusal a
+        // client can branch on, not a framework 400 with no code and not a silent drop.
+        // RollbackDeployOperationRequest is marked JsonUnmappedMemberHandling.Disallow, so the
+        // deserializer itself is what rejects it.
         RollbackDeployOperationRequest? request;
         try
         {

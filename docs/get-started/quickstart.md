@@ -255,6 +255,7 @@ services:
       Database__MigrationSafety__ContractApplyPolicy: Gate
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
+      SceneGeneration__OutputRoot: /var/lib/honua/storage/scenes-generated
     depends_on:
       keyring-init:
         condition: service_completed_successfully

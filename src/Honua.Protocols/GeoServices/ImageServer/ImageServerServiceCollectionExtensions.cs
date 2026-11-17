@@ -20,7 +20,7 @@ internal static class ImageServerServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         // Opt-in WebMercatorQuad tileInfo advertising. Defaults OFF to keep the
-        // dynamic (#1456-safe) ImageServer contract the ArcGIS Maps SDK for .NET
+        // dynamic ImageServer contract the ArcGIS Maps SDK for .NET
         // native runtime requires; deployments serving tiled Esri clients enable it
         // via GeoServices:ImageServer:TileMetadata:Enabled.
         services.Configure<ImageServerTileMetadataOptions>(

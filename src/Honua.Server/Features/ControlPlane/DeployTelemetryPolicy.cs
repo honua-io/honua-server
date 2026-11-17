@@ -442,8 +442,8 @@ internal sealed record DeployTelemetryPolicy
             GpBatchPolicyName or "serverless-gp" => (CreateGpBatchPreset(parameters), null),
             "aws-alb-canary" => (CreateAwsAlbCanaryPreset(parameters), null),
             "aws-lambda-canary" => (CreateAwsLambdaCanaryPreset(parameters), null),
-            // An unsupported preset is rejected even alongside explicit query overrides: silently
-            // ignoring the name the operator asked for is exactly the #4617 failure mode.
+            // An unsupported preset is rejected even alongside explicit query overrides rather than
+            // silently ignoring the name the operator asked for.
             _ => (null, $"Deploy telemetry policy '{policyName}' is not supported.")
         };
     }
@@ -464,11 +464,6 @@ internal sealed record DeployTelemetryPolicy
                 ? "aws-alb-canary"
                 : "honua-http",
             DeployTargetKind.AwsLambda => HasCanarySignalConfiguration(spec.Parameters) ? "aws-lambda-canary" : "honua-http",
-            // Self-hosted rolling replace maps to the "honua-http" preset so a configured metrics
-            // connection is gated like any other target (ADR-0060). A probe-only self-hosted gate
-            // (no metrics substrate on-prem/air-gapped) must select telemetry.policy = health-only
-            // explicitly; the backend's own standby health gate drives promotion either way.
-            DeployTargetKind.SelfHostedRolling => "honua-http",
             // Local Compose readback uses the executor's operator-configured probe URLs. It must not
             // select a metrics preset or a localhost telemetry gate.
             DeployTargetKind.LocalCompose => null,

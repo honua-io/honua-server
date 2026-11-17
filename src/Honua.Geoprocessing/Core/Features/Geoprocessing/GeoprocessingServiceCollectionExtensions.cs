@@ -166,8 +166,8 @@ internal static class GeoprocessingServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        // Built-in production executors (ticket #1031; GP Devkit authoring
-        // contract #2122). Each per-process executor implements IProcessExecutor
+        // Built-in production executors (GP Devkit authoring contract). Each
+        // per-process executor implements IProcessExecutor
         // and self-declares the process id(s) it handles, so they are registered
         // through a single auto-registration scan rather than ~31 hand-maintained
         // lines, and GeoprocessingDispatchJobExecutor — the single IJobExecutor
@@ -181,10 +181,9 @@ internal static class GeoprocessingServiceCollectionExtensions
         //    reconciliation of geometry.make-valid + geometry.difference;
         //  - analytics.*-managed NTS counterparts to the PostGIS-protocol analytics
         //    paths: spatial-join, cluster, buffer-aggregate and density;
-        //  - transform.* / source.* / sink.* GeoETL executors (feat/geoetl-baseline
-        //    reconciled onto the #1185 add-a-capability contract), including the
-        //    relational attribute-join / aggregate / pivot / unpivot transforms and
-        //    transform.computed-field op=expression (feat/etl-expression-and-joins);
+        //  - transform.* / source.* / sink.* GeoETL executors (add-a-capability
+        //    contract), including the relational attribute-join / aggregate /
+        //    pivot / unpivot transforms and transform.computed-field op=expression;
         //  - import.dataset durable import orchestration.
         AddProcessExecutors(services);
 
@@ -278,7 +277,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, CustomCodeDispatchJobExecutor>());
 
-        // Job orchestration substrate (queue, log store — ticket #681) is wired
+        // Job orchestration substrate (queue, log store) is wired
         // by the Honua.Server composition root via AddJobOrchestration, which
         // also registers the Share-export terminal callback that depends on
         // Honua.Server.Features.Admin.Share (out of reach for this assembly).

@@ -174,7 +174,7 @@ internal static class JobSecurityContextCapture
         // pathological number of descriptive claims could have had its tenant claim truncated
         // away. Restoring it from the dedicated field keeps the tenant SCOPE on the restored
         // identity, which the deferred-submission lanes authorize against; a tenant-less
-        // identity would widen, not narrow (honua-server#3046 review).
+        // identity would widen, not narrow.
         // The dedicated field is the effective tenant resolved by middleware, while the raw
         // captured claims can still contain the token's original tenant. An accepted
         // X-Honua-Tenant override must win on deferred authorization, so replace both standard

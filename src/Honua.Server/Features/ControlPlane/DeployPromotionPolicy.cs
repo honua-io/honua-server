@@ -20,7 +20,7 @@ internal static class DeployPromotionPolicy
 {
     internal const string PromotionGateParameterKey = "deployment.promotion_gate";
 
-    // An explicit gate wins; otherwise self-hosted rolling and local Compose default to health-only, and every other target stays on the telemetry gate.
+    // An explicit gate wins; otherwise local Compose defaults to health-only, and every other target stays on the telemetry gate.
     public static DeployPromotionGateMode Resolve(DeployOperationSpec? spec)
     {
         if (spec == null)
@@ -47,7 +47,7 @@ internal static class DeployPromotionPolicy
             }
         }
 
-        return spec.TargetKind is DeployTargetKind.SelfHostedRolling or DeployTargetKind.LocalCompose
+        return spec.TargetKind is DeployTargetKind.LocalCompose
             ? DeployPromotionGateMode.Health
             : DeployPromotionGateMode.Telemetry;
     }

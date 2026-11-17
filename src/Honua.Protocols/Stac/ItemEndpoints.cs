@@ -110,9 +110,9 @@ internal static class ItemEndpoints
             var layerId = publication.LayerIndex ?? readerResolution.StorageLayerId;
 
             // Reject limit < 1 with 400 to match the canonical POST /search surface
-            // (SearchEndpoints), which 400s on limit < 1. Previously this path silently
-            // clamped limit=0 up to 1 while search rejected it — an inconsistent contract
-            // across the two STAC item-listing surfaces.
+            // (SearchEndpoints), which 400s on limit < 1, so the two STAC item-listing
+            // surfaces share one contract instead of this path silently clamping limit=0
+            // up to 1.
             if (limit is < 1)
             {
                 StacTelemetry.SetFailed(activity, "invalid_limit");

@@ -137,7 +137,7 @@ internal static partial class FeatureStreamEndpoints
 
         // Snapshot servability is decided here, ahead of the transport handshake: it is the last
         // point at which an unservable baseline can still be reported as a typed problem document
-        // rather than as a dead stream (honua-server#3181 REQ-002).
+        // rather than as a dead stream.
         var snapshotError = await ValidateSnapshotServabilityAsync(
             deps,
             logger,

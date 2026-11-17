@@ -102,20 +102,6 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             var key = value?.ToString() ?? "<null>";
             _valueFrequency.AddOrUpdate(key, 1, (_, count) => count + 1);
         }
-
-        public double GetSelectivity()
-        {
-            var total = _totalValues;
-            if (total == 0) return 1.0;
-
-            var distinctCount = _valueFrequency.Count;
-            return (double)distinctCount / total;
-        }
-
-        public string GetMostFrequentValue()
-        {
-            return _valueFrequency.OrderByDescending(kvp => kvp.Value).FirstOrDefault().Key ?? "";
-        }
     }
 
     public sealed class QueryComplexityScore
@@ -985,18 +971,6 @@ internal static partial class PreparedStatementCacheLog
         Level = LogLevel.Debug,
         Message = "Predictive caching triggered for statement: {StatementHash} (avg time: {AverageTimeMs}ms)")]
     public static partial void PredictiveCachingTriggered(ILogger logger, string statementHash, double averageTimeMs);
-
-    [LoggerMessage(
-        EventId = 8713,
-        Level = LogLevel.Information,
-        Message = "Query plan changed for statement: {StatementName}")]
-    public static partial void QueryPlanChanged(ILogger logger, string statementName);
-
-    [LoggerMessage(
-        EventId = 8714,
-        Level = LogLevel.Warning,
-        Message = "Failed to analyze query plan for statement: {StatementName}")]
-    public static partial void PlanAnalysisFailed(ILogger logger, string statementName, Exception exception);
 
     [LoggerMessage(
         EventId = 8715,
