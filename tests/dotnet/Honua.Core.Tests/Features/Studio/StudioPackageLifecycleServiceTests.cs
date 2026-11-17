@@ -778,7 +778,7 @@ public sealed partial class StudioPackageLifecycleServiceTests
         Assert.All(capabilities.Families, family => Assert.True(family.GovernsStudioRoutes));
         Assert.Contains(capabilities.Families, f =>
             f.Family == StudioPackageFamily.Map &&
-            f.Format == "honua_map_package.v1" &&
+            f.Format == "honua_map.v1" &&
             f.SupportedOperations.Contains(StudioPackageOperation.ContentVersionCreate));
         Assert.Contains(capabilities.Families, f =>
             f.Family == StudioPackageFamily.Etl &&

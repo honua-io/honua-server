@@ -64,7 +64,7 @@ internal static class AiBuilderScenarioMapper
 
         if (apply.HasValue)
         {
-            output.AppPackage = TryReadAppPackage(apply.Value);
+            output.App = TryReadApp(apply.Value);
         }
 
         if (clarification.HasValue)
@@ -194,7 +194,7 @@ internal static class AiBuilderScenarioMapper
         return output;
     }
 
-    private static McpPlanAnalysisAppPackage? TryReadAppPackage(JsonElement apply)
+    private static McpPlanAnalysisApp? TryReadApp(JsonElement apply)
     {
         var packages = TryGet(apply, "packages");
         if (!packages.HasValue || packages.Value.ValueKind != JsonValueKind.Object)
@@ -202,28 +202,28 @@ internal static class AiBuilderScenarioMapper
             return null;
         }
 
-        var appPackage = TryGet(packages.Value, "appPackage");
-        if (!appPackage.HasValue || appPackage.Value.ValueKind != JsonValueKind.Object)
+        var app = TryGet(packages.Value, "appPackage");
+        if (!app.HasValue || app.Value.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
 
-        var output = new McpPlanAnalysisAppPackage
+        var output = new McpPlanAnalysisApp
         {
-            AppPackageId = ReadStringProperty(appPackage.Value, "appPackageId") ?? string.Empty,
-            TemplateId = ReadStringProperty(appPackage.Value, "templateId"),
-            TargetSdk = ReadStringProperty(appPackage.Value, "targetSdk"),
-            Format = ReadStringProperty(appPackage.Value, "format"),
-            MapPackageId = ReadStringProperty(appPackage.Value, "mapPackageId"),
-            ResourceUri = ReadStringProperty(appPackage.Value, "resourceUri"),
-            EntryPoint = ReadStringProperty(appPackage.Value, "entryPoint"),
-            ManifestArtifactId = ReadStringProperty(appPackage.Value, "manifestArtifactId"),
-            BundleArtifactId = ReadStringProperty(appPackage.Value, "bundleArtifactId"),
-            GeneratedFiles = ReadStringArray(appPackage.Value, "generatedFiles"),
-            DeliveryHints = ReadStringMap(appPackage.Value, "deliveryHints")
+            AppId = ReadStringProperty(app.Value, "appId") ?? string.Empty,
+            TemplateId = ReadStringProperty(app.Value, "templateId"),
+            TargetSdk = ReadStringProperty(app.Value, "targetSdk"),
+            Format = ReadStringProperty(app.Value, "format"),
+            MapId = ReadStringProperty(app.Value, "mapId"),
+            ResourceUri = ReadStringProperty(app.Value, "resourceUri"),
+            EntryPoint = ReadStringProperty(app.Value, "entryPoint"),
+            ManifestArtifactId = ReadStringProperty(app.Value, "manifestArtifactId"),
+            BundleArtifactId = ReadStringProperty(app.Value, "bundleArtifactId"),
+            GeneratedFiles = ReadStringArray(app.Value, "generatedFiles"),
+            DeliveryHints = ReadStringMap(app.Value, "deliveryHints")
         };
 
-        var manifestPreview = TryGet(appPackage.Value, "manifestPreview");
+        var manifestPreview = TryGet(app.Value, "manifestPreview");
         if (manifestPreview.HasValue)
         {
             output.Widgets = ReadStringArray(manifestPreview.Value, "widgets");

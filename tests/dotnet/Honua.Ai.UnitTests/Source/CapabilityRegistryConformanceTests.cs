@@ -377,16 +377,16 @@ public sealed class CapabilityRegistryConformanceTests
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new AdminServerStatusTool(),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
-            new CreateMapPackageTool(
+            new CreateMapTool(
                 jobService,
-                new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                new MapDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
                 new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
-                NullLogger<CreateMapPackageTool>.Instance),
-            new CreateAppPackageTool(
+                NullLogger<CreateMapTool>.Instance),
+            new CreateAppTool(
                 jobService,
-                new AppPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                new AppDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
                 new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
-                NullLogger<CreateAppPackageTool>.Instance),
+                NullLogger<CreateAppTool>.Instance),
             new PlanAnalysisTool(
                 Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
                 jobService,
@@ -441,8 +441,8 @@ public sealed class CapabilityRegistryConformanceTests
             new PublishedServiceResource(
                 services, deployments, jobService, NullLogger<PublishedServiceResource>.Instance),
             new DeploymentResource(deployments, jobService, NullLogger<DeploymentResource>.Instance),
-            new MapPackageResource(deployments, drafts, jobService, NullLogger<MapPackageResource>.Instance),
-            new AppPackageResource(deployments, drafts, jobService, NullLogger<AppPackageResource>.Instance),
+            new MapResource(deployments, drafts, jobService, NullLogger<MapResource>.Instance),
+            new AppResource(deployments, drafts, jobService, NullLogger<AppResource>.Instance),
             new PromotionSurfaceIndexResource(
                 services, deployments, jobService, NullLogger<PromotionSurfaceIndexResource>.Instance),
         ];

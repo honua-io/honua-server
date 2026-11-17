@@ -13,9 +13,9 @@ public sealed record DeploymentSource
 
     public string? PublishedServiceId { get; init; }
 
-    public string? MapPackageId { get; init; }
+    public string? MapId { get; init; }
 
-    public string? AppPackageId { get; init; }
+    public string? AppId { get; init; }
 
     public Guid? StudioItemId { get; init; }
 
@@ -39,24 +39,24 @@ public sealed record DeploymentSource
             PublishedServiceId = publishedServiceId
         };
 
-    public static DeploymentSource FromMapPackage(string mapPackageId)
+    public static DeploymentSource FromMap(string mapId)
         => new()
         {
-            Kind = DeploymentSourceKind.MapPackage,
-            SourceId = mapPackageId,
-            MapPackageId = mapPackageId
+            Kind = DeploymentSourceKind.Map,
+            SourceId = mapId,
+            MapId = mapId
         };
 
-    public static DeploymentSource FromAppPackage(
-        string appPackageId,
-        string? mapPackageId = null,
+    public static DeploymentSource FromApp(
+        string appId,
+        string? mapId = null,
         string? publishedServiceId = null)
         => new()
         {
-            Kind = DeploymentSourceKind.AppPackage,
-            SourceId = appPackageId,
-            AppPackageId = appPackageId,
-            MapPackageId = mapPackageId,
+            Kind = DeploymentSourceKind.App,
+            SourceId = appId,
+            AppId = appId,
+            MapId = mapId,
             PublishedServiceId = publishedServiceId
         };
 

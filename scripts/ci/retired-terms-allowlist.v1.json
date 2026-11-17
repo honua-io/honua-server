@@ -2442,6 +2442,558 @@
       "rule": "content-item",
       "line": "    {\"id\": \"studio-kind\", \"object\": \"actual kind, such as Map, App or Dashboard\", \"terms\": [\"content item\", \"item\", \"package\", \"composition\", \"family\"]},",
       "reason": "Surface vocabulary policy lists the retired term so the check can reject it."
+    },
+    {
+      "path": "docs/reference/rc2-release-notes.md",
+      "rule": "map-envelope",
+      "line": "Map and App models now use `Map` and `App`, replacing `MapPackage` and",
+      "reason": "Upgrade instructions name the removed contract so operators can migrate; no compatibility alias is exposed."
+    },
+    {
+      "path": "docs/reference/rc2-release-notes.md",
+      "rule": "app-envelope",
+      "line": "`AppPackage`. Their JSON identities are `mapId` and `appId`, replacing",
+      "reason": "Upgrade instructions name the removed contract so operators can migrate; no compatibility alias is exposed."
+    },
+    {
+      "path": "docs/reference/rc2-release-notes.md",
+      "rule": "map-envelope",
+      "line": "`mapPackageId` and `appPackageId`. App and analysis-result references use the same",
+      "reason": "Upgrade instructions name the removed contract so operators can migrate; no compatibility alias is exposed."
+    },
+    {
+      "path": "docs/reference/rc2-release-notes.md",
+      "rule": "app-envelope",
+      "line": "`mapPackageId` and `appPackageId`. App and analysis-result references use the same",
+      "reason": "Upgrade instructions name the removed contract so operators can migrate; no compatibility alias is exposed."
+    },
+    {
+      "path": "docs/reference/rc2-release-notes.md",
+      "rule": "map-envelope",
+      "line": "`app`. Report Map embed sections use `mapUri` instead of `mapPackageUri`.",
+      "reason": "Upgrade instructions name the removed contract so operators can migrate; no compatibility alias is exposed."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/218_RenameMapAppReportReferences.sql",
+      "rule": "map-envelope",
+      "line": "        WHERE section ->> 'kind' = 'map-embed' AND section ? 'mapPackageUri' AND section ? 'mapUri'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/218_RenameMapAppReportReferences.sql",
+      "rule": "map-envelope",
+      "line": "                section ->> 'mapPackageUri', '^honua://map-packages/', 'honua://maps/'))) THEN",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/218_RenameMapAppReportReferences.sql",
+      "rule": "map-envelope",
+      "line": "    SELECT jsonb_agg(CASE WHEN section ->> 'kind' = 'map-embed' AND section ? 'mapPackageUri'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/218_RenameMapAppReportReferences.sql",
+      "rule": "map-envelope",
+      "line": "        THEN (section - 'mapPackageUri') || jsonb_build_object('mapUri', regexp_replace(",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/218_RenameMapAppReportReferences.sql",
+      "rule": "map-envelope",
+      "line": "            section ->> 'mapPackageUri', '^honua://map-packages/', 'honua://maps/'))",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/218_RenameMapAppReportReferences.sql",
+      "rule": "map-envelope",
+      "line": "    WHERE section ->> 'kind' = 'map-embed' AND section ? 'mapPackageUri');",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "map-envelope",
+      "line": "            (envelope #> '{body}' ? 'mapPackageId' AND envelope #> '{body}' ? 'mapId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "map-envelope",
+      "line": "                AND envelope #> '{body,mapPackageId}' IS DISTINCT FROM envelope #> '{body,mapId}')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "app-envelope",
+      "line": "            OR (envelope #> '{body}' ? 'appPackageId' AND envelope #> '{body}' ? 'appId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "app-envelope",
+      "line": "                AND envelope #> '{body,appPackageId}' IS DISTINCT FROM envelope #> '{body,appId}'))) THEN",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "map-envelope",
+      "line": "    ((envelope -> 'body') - 'mapPackageId' - 'appPackageId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "app-envelope",
+      "line": "    ((envelope -> 'body') - 'mapPackageId' - 'appPackageId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "map-envelope",
+      "line": "    || CASE WHEN envelope -> 'body' ? 'mapPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "map-envelope",
+      "line": "        THEN jsonb_build_object('mapId', envelope #> '{body,mapPackageId}') ELSE '{}'::jsonb END",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "app-envelope",
+      "line": "    || CASE WHEN envelope -> 'body' ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "app-envelope",
+      "line": "        THEN jsonb_build_object('appId', envelope #> '{body,appPackageId}') ELSE '{}'::jsonb END",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "map-envelope",
+      "line": "    envelope -> 'body' ? 'mapPackageId' OR envelope -> 'body' ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/217_RenameMapAppStudioDraftBodies.sql",
+      "rule": "app-envelope",
+      "line": "    envelope -> 'body' ? 'mapPackageId' OR envelope -> 'body' ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "map-envelope",
+      "line": "        WHERE (package::jsonb ? 'mapPackageId' AND package::jsonb ? 'mapId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "map-envelope",
+      "line": "            AND package::jsonb -> 'mapPackageId' IS DISTINCT FROM package::jsonb -> 'mapId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "app-envelope",
+      "line": "           OR (package::jsonb ? 'appPackageId' AND package::jsonb ? 'appId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "app-envelope",
+      "line": "            AND package::jsonb -> 'appPackageId' IS DISTINCT FROM package::jsonb -> 'appId')) THEN",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "map-envelope",
+      "line": "    (package::jsonb - 'mapPackageId' - 'appPackageId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "app-envelope",
+      "line": "    (package::jsonb - 'mapPackageId' - 'appPackageId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "map-envelope",
+      "line": "    || CASE WHEN package::jsonb ? 'mapPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "map-envelope",
+      "line": "        THEN jsonb_build_object('mapId', package::jsonb -> 'mapPackageId') ELSE '{}'::jsonb END",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "app-envelope",
+      "line": "    || CASE WHEN package::jsonb ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "app-envelope",
+      "line": "        THEN jsonb_build_object('appId', package::jsonb -> 'appPackageId') ELSE '{}'::jsonb END",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "map-envelope",
+      "line": "WHERE package::jsonb ? 'mapPackageId' OR package::jsonb ? 'appPackageId';",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/216_RenameMapAppResultReferences.sql",
+      "rule": "app-envelope",
+      "line": "WHERE package::jsonb ? 'mapPackageId' OR package::jsonb ? 'appPackageId';",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "map-envelope",
+      "line": "            WHERE source_kind IN ('MapPackage', 'AppPackage')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "app-envelope",
+      "line": "            WHERE source_kind IN ('MapPackage', 'AppPackage')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "map-envelope",
+      "line": "            WHERE ((document -> 'source') ? 'mapPackageId' AND (document -> 'source') ? 'mapId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "map-envelope",
+      "line": "                AND document #> '{source,mapPackageId}' IS DISTINCT FROM document #> '{source,mapId}')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "app-envelope",
+      "line": "               OR ((document -> 'source') ? 'appPackageId' AND (document -> 'source') ? 'appId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "app-envelope",
+      "line": "                AND document #> '{source,appPackageId}' IS DISTINCT FROM document #> '{source,appId}'))",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "map-envelope",
+      "line": "        SET source_kind = CASE source_kind WHEN 'MapPackage' THEN 'Map'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "app-envelope",
+      "line": "                WHEN 'AppPackage' THEN 'App' ELSE source_kind END,",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "map-envelope",
+      "line": "                ((document -> 'source') - 'mapPackageId' - 'appPackageId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "app-envelope",
+      "line": "                ((document -> 'source') - 'mapPackageId' - 'appPackageId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "map-envelope",
+      "line": "                || CASE WHEN (document -> 'source') ? 'mapPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "map-envelope",
+      "line": "                    THEN jsonb_build_object('mapId', document #> '{source,mapPackageId}') ELSE '{}'::jsonb END",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "app-envelope",
+      "line": "                || CASE WHEN (document -> 'source') ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "app-envelope",
+      "line": "                    THEN jsonb_build_object('appId', document #> '{source,appPackageId}') ELSE '{}'::jsonb END",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "map-envelope",
+      "line": "        WHERE source_kind IN ('MapPackage', 'AppPackage')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "app-envelope",
+      "line": "        WHERE source_kind IN ('MapPackage', 'AppPackage')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "map-envelope",
+      "line": "           OR (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/215_RenameMapAppDeploymentSources.sql",
+      "rule": "app-envelope",
+      "line": "           OR (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "map-envelope",
+      "line": "        WHERE (record::jsonb ? 'mapPackageId' AND record::jsonb ? 'mapId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "map-envelope",
+      "line": "            AND record::jsonb -> 'mapPackageId' IS DISTINCT FROM record::jsonb -> 'mapId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "app-envelope",
+      "line": "           OR (record::jsonb ? 'appPackageId' AND record::jsonb ? 'appId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "app-envelope",
+      "line": "            AND record::jsonb -> 'appPackageId' IS DISTINCT FROM record::jsonb -> 'appId')) THEN",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "map-envelope",
+      "line": "    (record::jsonb - 'mapPackageId' - 'appPackageId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "app-envelope",
+      "line": "    (record::jsonb - 'mapPackageId' - 'appPackageId')",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "map-envelope",
+      "line": "    || CASE WHEN record::jsonb ? 'mapPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "map-envelope",
+      "line": "        THEN jsonb_build_object('mapId', record::jsonb -> 'mapPackageId') ELSE '{}'::jsonb END",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "app-envelope",
+      "line": "    || CASE WHEN record::jsonb ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "app-envelope",
+      "line": "        THEN jsonb_build_object('appId', record::jsonb -> 'appPackageId') ELSE '{}'::jsonb END",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "map-envelope",
+      "line": "WHERE record::jsonb ? 'mapPackageId' OR record::jsonb ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "src/Honua.Server/Migrations/214_RenameMapAppDraftIdentities.sql",
+      "rule": "app-envelope",
+      "line": "WHERE record::jsonb ? 'mapPackageId' OR record::jsonb ? 'appPackageId'",
+      "reason": "Forward migration must identify retired persisted fields and reject conflicting identities; new writes use canonical Map/App names."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppResultVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                    ('job-stable', '{\"resultPackageId\":\"result-stable\",\"mapPackageId\":\"map-stable\",\"appPackageId\":\"app-stable\",\"artifacts\":[{\"metadata\":{\"mapPackageId\":\"opaque-user-value\"}}]}', now() + interval '1 hour');",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppResultVocabularyMigrationTests.cs",
+      "rule": "app-envelope",
+      "line": "                    ('job-stable', '{\"resultPackageId\":\"result-stable\",\"mapPackageId\":\"map-stable\",\"appPackageId\":\"app-stable\",\"artifacts\":[{\"metadata\":{\"mapPackageId\":\"opaque-user-value\"}}]}', now() + interval '1 hour');",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppResultVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                    (package::jsonb #>> '{artifacts,0,metadata,mapPackageId}') FROM \"{schema}\".geoprocessing_result_packages",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppResultVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                WHERE package::jsonb ? 'mapPackageId' OR package::jsonb ? 'appPackageId'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppResultVocabularyMigrationTests.cs",
+      "rule": "app-envelope",
+      "line": "                WHERE package::jsonb ? 'mapPackageId' OR package::jsonb ? 'appPackageId'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppResultVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                    ('job-stable', '{\"mapPackageId\":\"map-stable\",\"mapId\":\"another-map\"}', now());",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppStudioDraftVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                SELECT envelope #>> '{body,mapSpec,mapPackageId}' FROM \"{schema}\".studio_package_drafts WHERE family = 'map'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppStudioDraftVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "            ('map-draft', 'map', 7, '{\"family\":\"map\",\"format\":\"honua_map_package.v1\",\"body\":{\"mapPackageId\":\"map-stable\",\"format\":\"honua_map_package.v1\",\"mapSpec\":{\"mapPackageId\":\"opaque-user-value\"}}}'),",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppStudioDraftVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "            ('app-draft', 'app', 7, '{\"family\":\"app\",\"format\":\"honua_app_package.v1\",\"body\":{\"appPackageId\":\"app-stable\",\"mapPackageId\":\"map-stable\",\"format\":\"honua_app_package.v1\"}}');",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppStudioDraftVocabularyMigrationTests.cs",
+      "rule": "app-envelope",
+      "line": "            ('app-draft', 'app', 7, '{\"family\":\"app\",\"format\":\"honua_app_package.v1\",\"body\":{\"appPackageId\":\"app-stable\",\"mapPackageId\":\"map-stable\",\"format\":\"honua_app_package.v1\"}}');",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppStudioDraftVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "            ('immutable-digest', decode('010203', 'hex'), '{\"family\":\"map\",\"body\":{\"mapPackageId\":\"map-stable\",\"format\":\"honua_map_package.v1\"}}');",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                WHERE record::jsonb ? 'mapPackageId' OR record::jsonb ? 'appPackageId'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.cs",
+      "rule": "app-envelope",
+      "line": "                WHERE record::jsonb ? 'mapPackageId' OR record::jsonb ? 'appPackageId'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                SELECT record::jsonb #>> '{runtimeConfig,mapPackageId}'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                SELECT record::jsonb #>> '{mapSpec,mapPackageId}' FROM \"{schema}\".package_drafts WHERE kind = 'map'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "            ('map', 'map-stable', 'owner', now(), '{\"mapPackageId\":\"map-stable\",\"format\":\"honua_map_package.v1\",\"mapSpec\":{\"mapPackageId\":\"opaque-user-value\"}}', now() + interval '1 hour'),",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "            ('app', 'app-stable', 'owner', now(), '{\"appPackageId\":\"app-stable\",\"mapPackageId\":\"map-stable\",\"format\":\"honua_app_package.v1\",\"runtimeConfig\":{\"mapPackageId\":\"opaque-user-value\"}}', now() + interval '2 hours');",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.cs",
+      "rule": "app-envelope",
+      "line": "            ('app', 'app-stable', 'owner', now(), '{\"appPackageId\":\"app-stable\",\"mapPackageId\":\"map-stable\",\"format\":\"honua_app_package.v1\",\"runtimeConfig\":{\"mapPackageId\":\"opaque-user-value\"}}', now() + interval '2 hours');",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppReportVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                    (body::jsonb #>> '{sections,1,mapPackageUri}') FROM \"{schema}\".analysis_reports",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppReportVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "                WHERE body::jsonb #> '{sections,0}' ? 'mapPackageUri'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppReportVocabularyMigrationTests.cs",
+      "rule": "map-envelope",
+      "line": "            '{\"reportId\":\"report-stable\",\"sections\":[{\"kind\":\"map-embed\",\"mapPackageUri\":\"honua://map-packages/map-stable\"},{\"kind\":\"table\",\"mapPackageUri\":\"opaque-user-value\"}]}', now(), now() + interval '1 hour');",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.Deployments.cs",
+      "rule": "map-envelope",
+      "line": "                SELECT (document #>> '{target,configuration,mapPackageId}') || ':' ||",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.Deployments.cs",
+      "rule": "map-envelope",
+      "line": "                WHERE (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.Deployments.cs",
+      "rule": "app-envelope",
+      "line": "                WHERE (document -> 'source') ? 'mapPackageId' OR (document -> 'source') ? 'appPackageId'",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.Deployments.cs",
+      "rule": "app-envelope",
+      "line": "            ('deployment-stable', 'AppPackage', 'app-stable', 'target-stable', 'Active', 7,",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.Deployments.cs",
+      "rule": "map-envelope",
+      "line": "             '{\"deploymentId\":\"deployment-stable\",\"version\":7,\"source\":{\"kind\":\"app_package\",\"sourceId\":\"app-stable\",\"appPackageId\":\"app-stable\",\"mapPackageId\":\"map-stable\"},\"target\":{\"configuration\":{\"mapPackageId\":\"opaque-user-value\"}}}',",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
+    },
+    {
+      "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/MapAppVocabularyMigrationTests.Deployments.cs",
+      "rule": "app-envelope",
+      "line": "             '{\"deploymentId\":\"deployment-stable\",\"version\":7,\"source\":{\"kind\":\"app_package\",\"sourceId\":\"app-stable\",\"appPackageId\":\"app-stable\",\"mapPackageId\":\"map-stable\"},\"target\":{\"configuration\":{\"mapPackageId\":\"opaque-user-value\"}}}',",
+      "reason": "Migration fixture retains retired persisted inputs to prove canonical conversion, preservation and conflict rejection."
     }
   ]
 }

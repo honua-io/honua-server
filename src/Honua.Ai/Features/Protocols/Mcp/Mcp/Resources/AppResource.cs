@@ -10,22 +10,21 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-// Drafts are consulted because a newly created package has a URI and no deployment yet.
-internal sealed class MapPackageResource : IMcpResource
+internal sealed class AppResource : IMcpResource
 {
-    public const string Template = McpResourceUris.MapPackagesPrefix + "{packageId}";
-    private const string PackageKind = "map_package";
+    public const string Template = McpResourceUris.AppsPrefix + "{appId}";
+    private const string PackageKind = "app";
 
     private readonly IDeploymentStore _deployments;
     private readonly IPackageDraftStore _drafts;
     private readonly IGeoprocessingJobService _jobService;
-    private readonly ILogger<MapPackageResource> _logger;
+    private readonly ILogger<AppResource> _logger;
 
-    public MapPackageResource(
+    public AppResource(
         IDeploymentStore deployments,
         IPackageDraftStore drafts,
         IGeoprocessingJobService jobService,
-        ILogger<MapPackageResource> logger)
+        ILogger<AppResource> logger)
     {
         _deployments = deployments;
         _drafts = drafts;
@@ -33,7 +32,7 @@ internal sealed class MapPackageResource : IMcpResource
         _logger = logger;
     }
 
-    public string Family => McpTelemetry.ResourceFamily.MapPackages;
+    public string Family => McpTelemetry.ResourceFamily.Apps;
 
     public IReadOnlyList<McpResourceDescriptor> Describe() => [];
 
@@ -42,20 +41,20 @@ internal sealed class MapPackageResource : IMcpResource
         new McpResourceTemplateDescriptor
         {
             UriTemplate = Template,
-            Name = "Map package",
-            Description = "Map package surface: a created draft held by the draft store, or a package derived from the deployments that reference it. Exposes lifecycle status and deployment provenance edges only.",
+            Name = "App",
+            Description = "App surface: a created draft held by the draft store, or a package derived from the deployments that reference it. Exposes lifecycle status and deployment provenance edges only.",
             MimeType = McpResourceHelpers.JsonMimeType
         }
     };
 
     public bool CanHandle(string uri)
     {
-        if (!uri.StartsWith(McpResourceUris.MapPackagesPrefix, StringComparison.Ordinal))
+        if (!uri.StartsWith(McpResourceUris.AppsPrefix, StringComparison.Ordinal))
         {
             return false;
         }
 
-        var remainder = uri.AsSpan(McpResourceUris.MapPackagesPrefix.Length);
+        var remainder = uri.AsSpan(McpResourceUris.AppsPrefix.Length);
         return remainder.Length > 0 && !remainder.Contains('/');
     }
 
@@ -64,17 +63,17 @@ internal sealed class MapPackageResource : IMcpResource
         string uri,
         CancellationToken cancellationToken)
     {
-        McpTelemetry.EnrichActivity("GetMapPackage");
+        McpTelemetry.EnrichActivity("GetApp");
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await _jobService.EnsureCallerAuthorizedAsync(
                 principal, OperatorResourceType.Package, OperatorOperation.Read, cancellationToken)
             .ConfigureAwait(false);
 
-        var packageId = uri[McpResourceUris.MapPackagesPrefix.Length..];
+        var appId = uri[McpResourceUris.AppsPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);
 
         var deployments = await _deployments
-            .ListBySourceAsync(DeploymentSourceKind.MapPackage, packageId, cancellationToken)
+            .ListBySourceAsync(DeploymentSourceKind.App, appId, cancellationToken)
             .ConfigureAwait(false);
         deployments = PackageViewFactory.FilterPublished(deployments);
 
@@ -86,28 +85,28 @@ internal sealed class MapPackageResource : IMcpResource
             var ownerId = PackageDraftCaller.ResolveOwnerId(principal);
             var draft = string.IsNullOrWhiteSpace(ownerId)
                 ? null
-                : await _drafts.GetMapDraftAsync(packageId, ownerId, cancellationToken).ConfigureAwait(false);
+                : await _drafts.GetAppDraftAsync(appId, ownerId, cancellationToken).ConfigureAwait(false);
             if (draft is null)
             {
                 throw new GeoprocessingNotFoundException(
-                    $"Map package '{packageId}' is not a known draft and is not referenced by any currently-published deployment.");
+                    $"App '{appId}' is not a known draft and is not referenced by any currently-published deployment.");
             }
 
-            McpLog.PackageRead(_logger, PackageKind, packageId, 0);
+            McpLog.PackageRead(_logger, PackageKind, appId, 0);
 
             var draftView = PackageViewFactory.BuildDraft(
                 PackageKind,
-                packageId,
-                McpResourceUris.MapPackageUri(packageId));
+                appId,
+                McpResourceUris.AppUri(appId));
             return McpResourceHelpers.SingleJsonContent(uri, draftView, McpJsonContext.Default.McpPackageView);
         }
 
-        McpLog.PackageRead(_logger, PackageKind, packageId, deployments.Count);
+        McpLog.PackageRead(_logger, PackageKind, appId, deployments.Count);
 
         var view = PackageViewFactory.Build(
             PackageKind,
-            packageId,
-            McpResourceUris.MapPackageUri(packageId),
+            appId,
+            McpResourceUris.AppUri(appId),
             deployments);
         return McpResourceHelpers.SingleJsonContent(uri, view, McpJsonContext.Default.McpPackageView);
     }

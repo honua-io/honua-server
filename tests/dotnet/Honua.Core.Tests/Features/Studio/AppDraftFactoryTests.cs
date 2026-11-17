@@ -8,7 +8,7 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-public sealed class AppPackageDraftFactoryTests
+public sealed class AppDraftFactoryTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
 
@@ -18,16 +18,16 @@ public sealed class AppPackageDraftFactoryTests
         var result = CreateFactory().CreateDraft(FullRequest());
 
         Assert.Empty(result.Errors);
-        var package = Assert.IsType<AppPackage>(result.Package);
-        Assert.StartsWith("app_", package.AppPackageId, StringComparison.Ordinal);
+        var package = Assert.IsType<App>(result.App);
+        Assert.StartsWith("app_", package.AppId, StringComparison.Ordinal);
     }
 
     [UnitTest]
     public void CreateDraft_ServerOwnsFormatAndStatusAndCreatedAt()
     {
-        var package = CreateFactory().CreateDraft(FullRequest()).Package!;
+        var package = CreateFactory().CreateDraft(FullRequest()).App!;
 
-        Assert.Equal("honua_app_package.v1", package.Format);
+        Assert.Equal("honua_app.v1", package.Format);
         Assert.Equal(PackageStatus.Draft, package.Status);
         Assert.Equal(FixedNow, package.CreatedAt);
     }
@@ -36,7 +36,7 @@ public sealed class AppPackageDraftFactoryTests
     public void CreateDraft_SharingIsClosedByDefault()
     {
         // Retained knowledge §5: visibility private, embed false, reviewed false.
-        var package = CreateFactory().CreateDraft(FullRequest()).Package!;
+        var package = CreateFactory().CreateDraft(FullRequest()).App!;
 
         Assert.NotNull(package.SharePolicy);
         Assert.Equal("private", package.SharePolicy!.Visibility);
@@ -47,11 +47,11 @@ public sealed class AppPackageDraftFactoryTests
     [UnitTest]
     public void CreateDraft_HonoursTemplateBindingsAndRuntimeConfig()
     {
-        var package = CreateFactory().CreateDraft(FullRequest()).Package!;
+        var package = CreateFactory().CreateDraft(FullRequest()).App!;
 
         Assert.Equal("analysis_dashboard", package.TemplateId);
         Assert.Equal("honua-sdk-js", package.TargetSdk);
-        Assert.Equal("map_5a90", package.MapPackageId);
+        Assert.Equal("map_5a90", package.MapId);
         Assert.Equal(["artifact_summary_report"], package.BoundArtifacts);
         Assert.Equal(
             "Flood Exposure Dashboard",
@@ -63,8 +63,8 @@ public sealed class AppPackageDraftFactoryTests
     {
         var factory = CreateFactory();
 
-        var first = factory.CreateDraft(FullRequest()).Package!;
-        var second = factory.CreateDraft(FullRequest()).Package!;
+        var first = factory.CreateDraft(FullRequest()).App!;
+        var second = factory.CreateDraft(FullRequest()).App!;
 
         Assert.Equal(Serialize(first), Serialize(second));
     }
@@ -73,14 +73,14 @@ public sealed class AppPackageDraftFactoryTests
     public void CreateDraft_RequestCarriesNoNaturalLanguageSurface()
     {
         Assert.DoesNotContain(
-            typeof(AppPackageDraftRequest).GetProperties(),
+            typeof(AppDraftRequest).GetProperties(),
             property => property.Name.Contains("Prompt", StringComparison.OrdinalIgnoreCase));
     }
 
     [UnitTest]
     public void CreateDraft_WithoutTargetSdk_DefaultsToTheStandardsDeclaredDefault()
     {
-        var package = CreateFactory().CreateDraft(FullRequest() with { TargetSdk = null }).Package!;
+        var package = CreateFactory().CreateDraft(FullRequest() with { TargetSdk = null }).App!;
 
         Assert.Equal("honua-sdk-js", package.TargetSdk);
     }
@@ -89,20 +89,20 @@ public sealed class AppPackageDraftFactoryTests
     public void CreateDraft_WithoutMapPackage_WarnsButStillProducesADraft()
     {
         // Retained knowledge §2: an unresolved binding defers to publish.
-        var result = CreateFactory().CreateDraft(FullRequest() with { MapPackageId = null });
+        var result = CreateFactory().CreateDraft(FullRequest() with { MapId = null });
 
         Assert.Empty(result.Errors);
-        Assert.NotNull(result.Package);
+        Assert.NotNull(result.App);
         Assert.Contains(result.Warnings, warning => warning.Code == "bindingNotResolved");
     }
 
     [UnitTest]
-    public void CreateDraft_WithBlankMapPackageId_IsRejected()
+    public void CreateDraft_WithBlankMapId_IsRejected()
     {
-        var result = CreateFactory().CreateDraft(FullRequest() with { MapPackageId = " " });
+        var result = CreateFactory().CreateDraft(FullRequest() with { MapId = " " });
 
-        Assert.Null(result.Package);
-        Assert.Contains(result.Errors, error => error.Code == "mapPackageIdInvalid");
+        Assert.Null(result.App);
+        Assert.Contains(result.Errors, error => error.Code == "mapIdInvalid");
     }
 
     [UnitTest]
@@ -110,7 +110,7 @@ public sealed class AppPackageDraftFactoryTests
     {
         var result = CreateFactory().CreateDraft(FullRequest() with { BoundArtifactIds = ["  "] });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.App);
         Assert.Contains(result.Errors, error => error.Code == "boundArtifactIdInvalid");
     }
 
@@ -122,7 +122,7 @@ public sealed class AppPackageDraftFactoryTests
             BoundArtifactIds = ["artifact_a", "artifact_a"]
         });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.App);
         Assert.Contains(result.Errors, error => error.Code == "boundArtifactIdDuplicate");
     }
 
@@ -136,7 +136,7 @@ public sealed class AppPackageDraftFactoryTests
             RuntimeConfig = document.RootElement.Clone()
         });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.App);
         Assert.Contains(result.Errors, error => error.Code == "runtimeConfigInvalid");
     }
 
@@ -146,30 +146,30 @@ public sealed class AppPackageDraftFactoryTests
         var package = CreateFactory().CreateDraft(FullRequest() with
         {
             BoundArtifactIds = ["artifact_b", "artifact_a"]
-        }).Package!;
+        }).App!;
 
         Assert.Equal(["artifact_b", "artifact_a"], package.BoundArtifacts);
     }
 
-    private static AppPackageDraftFactory CreateFactory() => new(
+    private static AppDraftFactory CreateFactory() => new(
         new StubIdentifierGenerator(),
         new FixedTimeProvider(FixedNow));
 
-    private static AppPackageDraftRequest FullRequest()
+    private static AppDraftRequest FullRequest()
     {
         using var document = JsonDocument.Parse("""{"title":"Flood Exposure Dashboard"}""");
-        return new AppPackageDraftRequest
+        return new AppDraftRequest
         {
             TemplateId = "analysis_dashboard",
             TargetSdk = "honua-sdk-js",
-            MapPackageId = "map_5a90",
+            MapId = "map_5a90",
             BoundArtifactIds = ["artifact_summary_report"],
             RuntimeConfig = document.RootElement.Clone()
         };
     }
 
-    private static string Serialize(AppPackage package) =>
-        JsonSerializer.Serialize(package, PackagingJsonContext.Default.AppPackage);
+    private static string Serialize(App package) =>
+        JsonSerializer.Serialize(package, PackagingJsonContext.Default.App);
 
     private sealed class StubIdentifierGenerator : IDraftIdentifierGenerator
     {

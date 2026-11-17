@@ -786,7 +786,7 @@ internal sealed class McpIngestDatasetOutput
 }
 
 // Draft creation performs no inference, so a prompt, provider, or model member is ignored rather than changing the result.
-internal sealed class McpCreateMapPackageArgument
+internal sealed class McpCreateMapArgument
 {
     [JsonPropertyName("templateId")]
     public string? TemplateId { get; set; }
@@ -840,7 +840,7 @@ internal sealed class McpInitialViewArgument
     public JsonElement? Crs { get; set; }
 }
 
-internal sealed class McpCreateAppPackageArgument
+internal sealed class McpCreateAppArgument
 {
     [JsonPropertyName("templateId")]
     public string? TemplateId { get; set; }
@@ -848,8 +848,8 @@ internal sealed class McpCreateAppPackageArgument
     [JsonPropertyName("targetSdk")]
     public string? TargetSdk { get; set; }
 
-    [JsonPropertyName("mapPackageId")]
-    public string? MapPackageId { get; set; }
+    [JsonPropertyName("mapId")]
+    public string? MapId { get; set; }
 
     [JsonPropertyName("boundArtifactIds")]
     public IReadOnlyList<string>? BoundArtifactIds { get; set; }
@@ -858,19 +858,37 @@ internal sealed class McpCreateAppPackageArgument
     public JsonElement? RuntimeConfig { get; set; }
 }
 
-internal sealed class McpPackageDraftOutput
+internal sealed class McpMapDraftOutput
 {
     [JsonPropertyName("status")]
     public string Status { get; set; } = "created";
 
-    [JsonPropertyName("packageId")]
-    public string PackageId { get; set; } = string.Empty;
+    [JsonPropertyName("mapId")]
+    public string MapId { get; set; } = string.Empty;
 
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
 
-    [JsonPropertyName("package")]
-    public JsonElement? Package { get; set; }
+    [JsonPropertyName("map")]
+    public JsonElement? Map { get; set; }
+
+    [JsonPropertyName("warnings")]
+    public IReadOnlyList<McpPackageDraftFinding> Warnings { get; set; } = [];
+}
+
+internal sealed class McpAppDraftOutput
+{
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = "created";
+
+    [JsonPropertyName("appId")]
+    public string AppId { get; set; } = string.Empty;
+
+    [JsonPropertyName("resourceUri")]
+    public string ResourceUri { get; set; } = string.Empty;
+
+    [JsonPropertyName("app")]
+    public JsonElement? App { get; set; }
 
     [JsonPropertyName("warnings")]
     public IReadOnlyList<McpPackageDraftFinding> Warnings { get; set; } = [];

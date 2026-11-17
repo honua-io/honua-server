@@ -122,7 +122,7 @@ public sealed class McpResourceSerializationTests
                     GeneratedArtifactIds = ["artifact-1"]
                 },
                 assumptions: ["output uses source CRS"],
-                mapPackageId: "map-55"));
+                mapId: "map-55"));
 
         var resource = new JobResultsResource(_jobService, NullLogger<JobResultsResource>.Instance);
 
@@ -145,7 +145,7 @@ public sealed class McpResourceSerializationTests
         body.GetProperty("artifacts")[0].GetProperty("artifactId").GetString().Should().Be("artifact-1");
         body.GetProperty("workspaceRefs").GetArrayLength().Should().Be(1);
         body.GetProperty("workspaceRefs")[0].GetProperty("resourceUri").GetString().Should().Be("honua://workspaces/ws-42");
-        body.GetProperty("mapPackageId").GetString().Should().Be("map-55");
+        body.GetProperty("mapId").GetString().Should().Be("map-55");
         body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
     }
 

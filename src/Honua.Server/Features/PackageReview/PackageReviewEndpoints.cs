@@ -52,7 +52,7 @@ internal static partial class PackageReviewEndpoints
             .WithDisplayName("Publish Map Package")
             .WithSummary("Persist a map package as an immutable Studio version and propose its publication for separate-principal approval.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Accepts<MapPackagePublishRequest>("application/json")
+            .Accepts<MapPublishRequest>("application/json")
             .Produces<MapPackagePublishResponse>(StatusCodes.Status202Accepted)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict);
@@ -119,14 +119,14 @@ internal static partial class PackageReviewEndpoints
     {
         // The body is read here rather than bound by the framework. Framework
         // binding refused every package the installed CLI sends with an empty 400: the
-        // honua_map_package.v1 document makes status/createdAt optional where MapPackage marks
+        // honua_map.v1 document makes status/createdAt optional where Map marks
         // them required, and the combined HTTP resolver reads PackageStatus without the
         // package contexts' string-enum converter.
-        var read = await MapPackagePublishRequestReader.ReadAsync(context.Request, context.RequestAborted).ConfigureAwait(false);
+        var read = await MapPublishRequestReader.ReadAsync(context.Request, context.RequestAborted).ConfigureAwait(false);
         if (read.MissingPackage)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
-                context, StatusCodes.Status400BadRequest, "Map package is required", "package.mapPackageId is required.");
+                context, StatusCodes.Status400BadRequest, "Map package is required", "package.mapId is required.");
         }
 
         if (read.Request is not { } request)
@@ -136,10 +136,10 @@ internal static partial class PackageReviewEndpoints
 
         var actor = ConsolePrincipal.ResolveActorId(context.User);
         var mutation = BuildMutationContext(context, actor);
-        var packageJson = JsonSerializer.SerializeToElement(request.Package, PackagingJsonContext.Default.MapPackage);
+        var packageJson = JsonSerializer.SerializeToElement(request.Package, PackagingJsonContext.Default.Map);
         var draftReceipt = await mutationRuntime.CreateAsync(new CreateStudioPackageDraftCommand
         {
-            PackageKey = request.Package.MapPackageId,
+            PackageKey = request.Package.MapId,
             WorkspaceId = request.WorkspaceId,
             OwnerId = actor,
             Envelope = new StudioPackageEnvelope
@@ -187,7 +187,7 @@ internal static partial class PackageReviewEndpoints
 
         return Results.Json(new MapPackagePublishResponse
         {
-            PackageId = request.Package.MapPackageId,
+            PackageId = request.Package.MapId,
             ItemId = version.ItemId,
             VersionId = version.VersionId,
             ContentHash = version.ContentHash,
@@ -251,9 +251,9 @@ internal static partial class PackageReviewEndpoints
         return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, title, detail);
     }
 
-    internal sealed record MapPackagePublishRequest
+    internal sealed record MapPublishRequest
     {
-        public required MapPackage Package { get; init; }
+        public required Map Package { get; init; }
         public string? MapId { get; init; }
         public string? WorkspaceId { get; init; }
         public string? Message { get; init; }
@@ -267,7 +267,7 @@ internal static partial class PackageReviewEndpoints
         public required Guid ItemId { get; init; }
         public required Guid VersionId { get; init; }
         public required string ContentHash { get; init; }
-        public required MapPackage Package { get; init; }
+        public required Map Package { get; init; }
         public required string PublicationStatus { get; init; }
         public required string ProposalId { get; init; }
         public required string OperationInstanceId { get; init; }

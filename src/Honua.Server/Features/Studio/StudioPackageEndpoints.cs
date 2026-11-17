@@ -130,21 +130,20 @@ internal static class StudioPackageEndpoints
         //
         // ADR-0076: both routes are deterministic draft-creation entry points. They
         // take structured composition input, perform no model inference, and delegate every
-        // validation rule to the shared draft factories in Honua.Core. The route paths are
-        // unchanged so existing clients keep resolving.
-        group.MapPost("/map-packages/generate", HandleCreateMapPackageDraft)
-            .WithDisplayName("Create Studio Map Package Draft")
-            .WithSummary("Create a map package draft deterministically from structured composition input.")
+        // validation rule to the shared draft factories in Honua.Core.
+        group.MapPost("/maps/generate", HandleCreateMapDraft)
+            .WithDisplayName("Create Studio Map Draft")
+            .WithSummary("Create a Map draft deterministically from structured input.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Accepts<MapPackageDraftRequest>("application/json")
-            .Produces<ApiResponse<StudioMapPackageDraftResponse>>(StatusCodes.Status201Created);
+            .Accepts<MapDraftRequest>("application/json")
+            .Produces<ApiResponse<StudioMapDraftResponse>>(StatusCodes.Status201Created);
 
-        group.MapPost("/app-packages/generate", HandleCreateAppPackageDraft)
-            .WithDisplayName("Create Studio App Package Draft")
-            .WithSummary("Create a studio-app/v1 app package draft deterministically from structured composition input.")
+        group.MapPost("/apps/generate", HandleCreateAppDraft)
+            .WithDisplayName("Create Studio App Draft")
+            .WithSummary("Create an App draft deterministically from structured input.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Accepts<AppPackageDraftRequest>("application/json")
-            .Produces<ApiResponse<StudioAppPackageDraftResponse>>(StatusCodes.Status201Created);
+            .Accepts<AppDraftRequest>("application/json")
+            .Produces<ApiResponse<StudioAppDraftResponse>>(StatusCodes.Status201Created);
 
         group.MapPost("/{kind}/{id:guid}/export", HandleExportDeliverable)
             .WithDisplayName("Export Studio Deliverable")
@@ -346,9 +345,9 @@ internal static class StudioPackageEndpoints
         }
     }
 
-    private static async Task<IResult> HandleCreateAppPackageDraft(
+    private static async Task<IResult> HandleCreateAppDraft(
         HttpContext context,
-        [FromServices] AppPackageDraftFactory drafts,
+        [FromServices] AppDraftFactory drafts,
         [FromServices] StudioEndpointAuthorization authorization)
     {
         var authResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-app-generation").ConfigureAwait(false);
@@ -357,12 +356,12 @@ internal static class StudioPackageEndpoints
             return authResult;
         }
 
-        AppPackageDraftRequest? request;
+        AppDraftRequest? request;
         try
         {
             request = await JsonSerializer.DeserializeAsync(
                 context.Request.Body,
-                StudioPackageDraftJsonContext.Default.AppPackageDraftRequest,
+                StudioPackageDraftJsonContext.Default.AppDraftRequest,
                 context.RequestAborted).ConfigureAwait(false);
         }
         catch (JsonException ex)
@@ -370,7 +369,7 @@ internal static class StudioPackageEndpoints
             return BadRequest(context, $"The request body is not valid JSON: {ex.Message}");
         }
 
-        request ??= new AppPackageDraftRequest();
+        request ??= new AppDraftRequest();
 
         // A JSON null for an array member deserializes to null even though the canonical
         // request declares it non-nullable, so normalize before handing it to the factory.
@@ -378,25 +377,25 @@ internal static class StudioPackageEndpoints
             ? request with { BoundArtifactIds = [] }
             : request);
 
-        if (result.Package is null)
+        if (result.App is null)
         {
-            return BadRequest(context, DescribeFindings("App-package draft input is invalid", result.Errors));
+            return BadRequest(context, DescribeFindings("App draft input is invalid", result.Errors));
         }
 
         return Results.Json(
-            ApiResponse<StudioAppPackageDraftResponse>.CreateSuccess(new StudioAppPackageDraftResponse
+            ApiResponse<StudioAppDraftResponse>.CreateSuccess(new StudioAppDraftResponse
             {
-                PackageId = result.Package.AppPackageId,
-                Package = result.Package,
+                AppId = result.App.AppId,
+                App = result.App,
                 Warnings = result.Warnings
             }),
-            StudioPackageDraftJsonContext.Default.ApiResponseStudioAppPackageDraftResponse,
+            StudioPackageDraftJsonContext.Default.ApiResponseStudioAppDraftResponse,
             statusCode: StatusCodes.Status201Created);
     }
 
-    private static async Task<IResult> HandleCreateMapPackageDraft(
+    private static async Task<IResult> HandleCreateMapDraft(
         HttpContext context,
-        [FromServices] MapPackageDraftFactory drafts,
+        [FromServices] MapDraftFactory drafts,
         [FromServices] StudioEndpointAuthorization authorization)
     {
         var authResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-map-generation").ConfigureAwait(false);
@@ -405,12 +404,12 @@ internal static class StudioPackageEndpoints
             return authResult;
         }
 
-        MapPackageDraftRequest? request;
+        MapDraftRequest? request;
         try
         {
             request = await JsonSerializer.DeserializeAsync(
                 context.Request.Body,
-                StudioPackageDraftJsonContext.Default.MapPackageDraftRequest,
+                StudioPackageDraftJsonContext.Default.MapDraftRequest,
                 context.RequestAborted).ConfigureAwait(false);
         }
         catch (JsonException ex)
@@ -418,25 +417,25 @@ internal static class StudioPackageEndpoints
             return BadRequest(context, $"The request body is not valid JSON: {ex.Message}");
         }
 
-        request ??= new MapPackageDraftRequest();
+        request ??= new MapDraftRequest();
 
         var result = drafts.CreateDraft(request.SourceBindings is null
             ? request with { SourceBindings = [] }
             : request);
 
-        if (result.Package is null)
+        if (result.Map is null)
         {
-            return BadRequest(context, DescribeFindings("Map-package draft input is invalid", result.Errors));
+            return BadRequest(context, DescribeFindings("Map draft input is invalid", result.Errors));
         }
 
         return Results.Json(
-            ApiResponse<StudioMapPackageDraftResponse>.CreateSuccess(new StudioMapPackageDraftResponse
+            ApiResponse<StudioMapDraftResponse>.CreateSuccess(new StudioMapDraftResponse
             {
-                PackageId = result.Package.MapPackageId,
-                Package = result.Package,
+                MapId = result.Map.MapId,
+                Map = result.Map,
                 Warnings = result.Warnings
             }),
-            StudioPackageDraftJsonContext.Default.ApiResponseStudioMapPackageDraftResponse,
+            StudioPackageDraftJsonContext.Default.ApiResponseStudioMapDraftResponse,
             statusCode: StatusCodes.Status201Created);
     }
 

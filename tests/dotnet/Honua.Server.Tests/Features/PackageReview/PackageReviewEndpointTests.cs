@@ -116,9 +116,9 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
     public async Task PublishMapPackage_WithCliBuiltPackage_ProposesPublicationWithoutMovingPublishedPointer()
     {
         // honua-server#4906: the body `honua map publish <id> --package @map.json` sends
-        // (honua-sdk-js map-package.publish), carrying the honua_map_package.v1 fixture from the
+        // (honua-sdk-js map-package.publish), carrying the honua_map.v1 fixture from the
         // sdk-js#1426 replay. It omits nothing the CLI omits and keeps the members the server's
-        // MapPackage record does not model (view, layers, widgets, styleRefs[].body).
+        // Map record does not model (view, layers, widgets, styleRefs[].body).
         var body = $$"""
             {
               "mapId": "honolulu-places",
@@ -172,7 +172,7 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/packages")]
     public async Task PublishMapPackage_WithoutLifecycleMembers_DefaultsThemAndProposesPublication()
     {
-        // status and createdAt are optional in honua_map_package.v1 and in the CLI's HonuaMapPackage.
+        // status and createdAt are optional in honua_map.v1 and in the CLI's HonuaMapPackage.
         await using var host = await PublishingHost.StartAsync();
         using var response = await PostPublishAsync(host.Client, $$"""{"package": {{CliMapPackageJson(string.Empty)}}}""");
 
@@ -195,7 +195,7 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
         using var incompleteBinding = await PostPublishAsync(
             _client,
-            """{"package": {"mapPackageId": "m", "format": "honua_map_package.v1", "sourceBindings": [{"sourceId": "places"}], "mapSpec": {"version": 8}}}""");
+            """{"package": {"mapId": "m", "format": "honua_map.v1", "sourceBindings": [{"sourceId": "places"}], "mapSpec": {"version": 8}}}""");
 
         var errors = await AssertMemberProblemAsync(incompleteBinding, "$.package.sourceBindings[0]");
         errors[0].GetProperty("message").GetString().Should().Contain("protocol").And.Contain("locator")
@@ -222,8 +222,8 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
 
     private static string CliMapPackageJson(string lifecycleMembers) => $$"""
         {
-          "mapPackageId": "honolulu-places",
-          "format": "honua_map_package.v1",
+          "mapId": "honolulu-places",
+          "format": "honua_map.v1",
           {{lifecycleMembers}}
           "sourceBindings": [],
           "styleRefs": [

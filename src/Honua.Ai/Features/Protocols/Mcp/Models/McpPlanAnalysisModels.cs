@@ -58,16 +58,16 @@ internal sealed class McpPlanAnalysisOutput
     public string? NextSteps { get; set; }
 
     [JsonPropertyName("appPackage")]
-    public McpPlanAnalysisAppPackage? AppPackage { get; set; }
+    public McpPlanAnalysisApp? App { get; set; }
 
     [JsonPropertyName("context")]
     public JsonElement? Context { get; set; }
 }
 
-internal sealed class McpPlanAnalysisAppPackage
+internal sealed class McpPlanAnalysisApp
 {
-    [JsonPropertyName("appPackageId")]
-    public string AppPackageId { get; set; } = string.Empty;
+    [JsonPropertyName("appId")]
+    public string AppId { get; set; } = string.Empty;
 
     [JsonPropertyName("templateId")]
     public string? TemplateId { get; set; }
@@ -78,8 +78,8 @@ internal sealed class McpPlanAnalysisAppPackage
     [JsonPropertyName("format")]
     public string? Format { get; set; }
 
-    [JsonPropertyName("mapPackageId")]
-    public string? MapPackageId { get; set; }
+    [JsonPropertyName("mapId")]
+    public string? MapId { get; set; }
 
     [JsonPropertyName("resourceUri")]
     public string? ResourceUri { get; set; }

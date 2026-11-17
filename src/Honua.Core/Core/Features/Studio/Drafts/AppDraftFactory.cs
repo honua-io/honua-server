@@ -6,9 +6,9 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Studio.Drafts;
 
-public sealed class AppPackageDraftFactory
+public sealed class AppDraftFactory
 {
-    public const string AppPackageFormat = "honua_app_package.v1";
+    public const string AppFormat = "honua_app.v1";
 
     public const string IdentifierPrefix = "app";
 
@@ -17,7 +17,7 @@ public sealed class AppPackageDraftFactory
     private readonly IDraftIdentifierGenerator _identifiers;
     private readonly TimeProvider _timeProvider;
 
-    public AppPackageDraftFactory(IDraftIdentifierGenerator identifiers, TimeProvider timeProvider)
+    public AppDraftFactory(IDraftIdentifierGenerator identifiers, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(identifiers);
         ArgumentNullException.ThrowIfNull(timeProvider);
@@ -25,7 +25,7 @@ public sealed class AppPackageDraftFactory
         _timeProvider = timeProvider;
     }
 
-    public AppPackageDraftResult CreateDraft(AppPackageDraftRequest request)
+    public AppDraftResult CreateDraft(AppDraftRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -33,7 +33,7 @@ public sealed class AppPackageDraftFactory
         var warnings = new List<PackageDraftFinding>();
 
         var templateId = NormalizeOptional(request.TemplateId, "templateId", "/templateId", errors);
-        var mapPackageId = NormalizeOptional(request.MapPackageId, "mapPackageId", "/mapPackageId", errors);
+        var mapId = NormalizeOptional(request.MapId, "mapId", "/mapId", errors);
         var boundArtifacts = BuildBoundArtifacts(request.BoundArtifactIds, errors);
         var runtimeConfig = ValidateRuntimeConfig(request.RuntimeConfig, errors);
 
@@ -41,32 +41,32 @@ public sealed class AppPackageDraftFactory
             ? DefaultTargetSdk
             : request.TargetSdk.Trim();
 
-        if (mapPackageId is null)
+        if (mapId is null)
         {
             // Retained knowledge §2: an unresolved binding is deferred to publish,
             // not blocking — an app draft with no map yet is a legitimate draft.
             warnings.Add(Finding(
                 "bindingNotResolved",
-                "/mapPackageId",
-                "No map package is bound to this application draft; bind one before publish."));
+                "/mapId",
+                "No Map is bound to this App draft; bind one before going live."));
         }
 
         if (errors.Count > 0)
         {
-            return new AppPackageDraftResult { Errors = errors, Warnings = warnings };
+            return new AppDraftResult { Errors = errors, Warnings = warnings };
         }
 
-        var package = new AppPackage
+        var package = new App
         {
-            AppPackageId = _identifiers.NewIdentifier(IdentifierPrefix),
+            AppId = _identifiers.NewIdentifier(IdentifierPrefix),
             TargetSdk = targetSdk,
 
             // Server-owned discriminators (retained knowledge §5): never caller supplied.
-            Format = AppPackageFormat,
+            Format = AppFormat,
             Status = PackageStatus.Draft,
 
             TemplateId = templateId,
-            MapPackageId = mapPackageId,
+            MapId = mapId,
             BoundArtifacts = boundArtifacts,
             RuntimeConfig = runtimeConfig,
 
@@ -77,7 +77,7 @@ public sealed class AppPackageDraftFactory
             CreatedAt = _timeProvider.GetUtcNow()
         };
 
-        return new AppPackageDraftResult { Package = package, Warnings = warnings };
+        return new AppDraftResult { App = package, Warnings = warnings };
     }
 
     private static List<string> BuildBoundArtifacts(

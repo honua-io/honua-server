@@ -112,6 +112,11 @@
       "literal": "package",
       "replacement": "The actual saved kind (Map, App, Form, Workflow, and so on)",
       "exceptions": "Dependency distributions, signed release archives and protocol-required wire names"
+    },
+    {
+      "literal": "Map/App identity",
+      "replacement": "Use Map/App, MapId/AppId, mapId/appId, honua_map.v1/honua_app.v1, maps/apps routes and MCP resources in both models and user contracts; rename outright without aliases.",
+      "exceptions": "Immutable historical versions and forward migration input fixtures retain their original bytes; migrate mutable persisted references explicitly and verify identity, expiry and concurrency revisions."
     }
   ]
 }

@@ -8,7 +8,7 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-public sealed class MapPackageDraftFactoryTests
+public sealed class MapDraftFactoryTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
 
@@ -19,17 +19,17 @@ public sealed class MapPackageDraftFactoryTests
 
         Assert.Empty(result.Errors);
         Assert.True(result.Succeeded);
-        var package = Assert.IsType<MapPackage>(result.Package);
-        Assert.StartsWith("map_", package.MapPackageId, StringComparison.Ordinal);
+        var package = Assert.IsType<Map>(result.Map);
+        Assert.StartsWith("map_", package.MapId, StringComparison.Ordinal);
     }
 
     [UnitTest]
     public void CreateDraft_ServerOwnsFormatAndStatusAndCreatedAt()
     {
         // Retained knowledge §5: format and status are server-owned discriminators.
-        var package = CreateFactory().CreateDraft(FullRequest()).Package!;
+        var package = CreateFactory().CreateDraft(FullRequest()).Map!;
 
-        Assert.Equal("honua_map_package.v1", package.Format);
+        Assert.Equal("honua_map.v1", package.Format);
         Assert.Equal(PackageStatus.Draft, package.Status);
         Assert.Equal(FixedNow, package.CreatedAt);
     }
@@ -39,7 +39,7 @@ public sealed class MapPackageDraftFactoryTests
     {
         // The two defects ADR-0076 calls out: sourceBindings was rejected outright
         // and initialView was advertised then silently dropped.
-        var package = CreateFactory().CreateDraft(FullRequest()).Package!;
+        var package = CreateFactory().CreateDraft(FullRequest()).Map!;
 
         var binding = Assert.Single(package.SourceBindings);
         Assert.Equal("parcels", binding.SourceId);
@@ -62,8 +62,8 @@ public sealed class MapPackageDraftFactoryTests
         // a double[], whose default equality is by reference.
         var factory = CreateFactory();
 
-        var first = factory.CreateDraft(FullRequest()).Package!;
-        var second = factory.CreateDraft(FullRequest()).Package!;
+        var first = factory.CreateDraft(FullRequest()).Map!;
+        var second = factory.CreateDraft(FullRequest()).Map!;
 
         Assert.Equal(Serialize(first), Serialize(second));
     }
@@ -75,12 +75,12 @@ public sealed class MapPackageDraftFactoryTests
         // reach the factory and therefore cannot change what it produces. This
         // pins that the request record carries no natural-language surface.
         Assert.DoesNotContain(
-            typeof(MapPackageDraftRequest).GetProperties(),
+            typeof(MapDraftRequest).GetProperties(),
             property => property.Name.Contains("Prompt", StringComparison.OrdinalIgnoreCase));
 
         var factory = CreateFactory();
-        var withStyle = factory.CreateDraft(FullRequest()).Package!;
-        var alsoWithStyle = factory.CreateDraft(FullRequest() with { }).Package!;
+        var withStyle = factory.CreateDraft(FullRequest()).Map!;
+        var alsoWithStyle = factory.CreateDraft(FullRequest() with { }).Map!;
 
         Assert.Equal(Serialize(withStyle), Serialize(alsoWithStyle));
     }
@@ -99,7 +99,7 @@ public sealed class MapPackageDraftFactoryTests
         });
 
         Assert.Empty(result.Errors);
-        Assert.Equal(crs, result.Package!.InitialView!.Crs);
+        Assert.Equal(crs, result.Map!.InitialView!.Crs);
     }
 
     [Trait("Tier", "Fast")]
@@ -117,7 +117,7 @@ public sealed class MapPackageDraftFactoryTests
             InitialView = new MapInitialViewInput { Bbox = [-1, -1, 1, 1], Crs = crs }
         });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.Map);
         Assert.Contains(result.Errors, error => error.Code == "crsUnsupported");
     }
 
@@ -129,7 +129,7 @@ public sealed class MapPackageDraftFactoryTests
             InitialView = new MapInitialViewInput { Bbox = [-1, -1, 1, 1] }
         });
 
-        Assert.Equal("EPSG:4326", result.Package!.InitialView!.Crs);
+        Assert.Equal("EPSG:4326", result.Map!.InitialView!.Crs);
     }
 
     [UnitTest]
@@ -142,7 +142,7 @@ public sealed class MapPackageDraftFactoryTests
             InitialView = new MapInitialViewInput { Bbox = [10, -1, -10, 1] }
         });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.Map);
         Assert.Contains(result.Errors, error => error.Code == "bboxNotOrdered" && error.Message.Contains("minLon", StringComparison.Ordinal));
     }
 
@@ -154,7 +154,7 @@ public sealed class MapPackageDraftFactoryTests
             InitialView = new MapInitialViewInput { Bbox = [-10, 10, 10, -10] }
         });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.Map);
         Assert.Contains(result.Errors, error => error.Code == "bboxNotOrdered" && error.Message.Contains("minLat", StringComparison.Ordinal));
     }
 
@@ -170,7 +170,7 @@ public sealed class MapPackageDraftFactoryTests
             InitialView = new MapInitialViewInput { Bbox = Enumerable.Repeat(1.0, count).ToArray() }
         });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.Map);
         Assert.Contains(result.Errors, error => error.Code == "bboxInvalid");
     }
 
@@ -182,7 +182,7 @@ public sealed class MapPackageDraftFactoryTests
         var result = CreateFactory().CreateDraft(FullRequest() with { InitialView = null });
 
         Assert.Empty(result.Errors);
-        Assert.Null(result.Package!.InitialView);
+        Assert.Null(result.Map!.InitialView);
     }
 
     [UnitTest]
@@ -196,7 +196,7 @@ public sealed class MapPackageDraftFactoryTests
 
         Assert.Empty(result.Errors);
         Assert.Contains(result.Warnings, warning => warning.Code == "sourceNotResolved");
-        Assert.Equal("honua://unresolved/parcels", result.Package!.SourceBindings[0].Locator.Url);
+        Assert.Equal("honua://unresolved/parcels", result.Map!.SourceBindings[0].Locator.Url);
     }
 
     [UnitTest]
@@ -205,7 +205,7 @@ public sealed class MapPackageDraftFactoryTests
         // Retained knowledge §2: a present styleRef with a blank styleId blocks.
         var result = CreateFactory().CreateDraft(FullRequest() with { StyleId = "  " });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.Map);
         Assert.Contains(result.Errors, error => error.Code == "styleRefInvalid");
     }
 
@@ -215,7 +215,7 @@ public sealed class MapPackageDraftFactoryTests
         var result = CreateFactory().CreateDraft(FullRequest() with { StyleId = null });
 
         Assert.Empty(result.Errors);
-        Assert.Empty(result.Package!.StyleRefs);
+        Assert.Empty(result.Map!.StyleRefs);
     }
 
     [UnitTest]
@@ -226,7 +226,7 @@ public sealed class MapPackageDraftFactoryTests
             SourceBindings = [new SourceBindingInput { SourceId = "parcels", Protocol = "ogc_api_features" }]
         });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.Map);
         Assert.Contains(result.Errors, error => error.Code == "sourceProtocolInvalid");
     }
 
@@ -238,7 +238,7 @@ public sealed class MapPackageDraftFactoryTests
             SourceBindings = [new SourceBindingInput { SourceId = " ", Protocol = "ogc_features" }]
         });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.Map);
         Assert.Contains(result.Errors, error => error.Code == "sourceIdMissing");
     }
 
@@ -254,7 +254,7 @@ public sealed class MapPackageDraftFactoryTests
             ]
         });
 
-        Assert.Null(result.Package);
+        Assert.Null(result.Map);
         Assert.Contains(result.Errors, error => error.Code == "sourceIdDuplicate");
     }
 
@@ -270,14 +270,14 @@ public sealed class MapPackageDraftFactoryTests
             ]
         });
 
-        Assert.Equal(["b", "a"], result.Package!.SourceBindings.Select(binding => binding.SourceId));
+        Assert.Equal(["b", "a"], result.Map!.SourceBindings.Select(binding => binding.SourceId));
     }
 
-    private static MapPackageDraftFactory CreateFactory() => new(
+    private static MapDraftFactory CreateFactory() => new(
         new StubIdentifierGenerator(),
         new FixedTimeProvider(FixedNow));
 
-    private static MapPackageDraftRequest FullRequest() => new()
+    private static MapDraftRequest FullRequest() => new()
     {
         TemplateId = "analysis_default",
         StyleId = "style_choropleth",
@@ -294,8 +294,8 @@ public sealed class MapPackageDraftFactoryTests
         InitialView = new MapInitialViewInput { Bbox = [-97.95, 30.15, -97.55, 30.55] }
     };
 
-    private static string Serialize(MapPackage package) =>
-        JsonSerializer.Serialize(package, PackagingJsonContext.Default.MapPackage);
+    private static string Serialize(Map package) =>
+        JsonSerializer.Serialize(package, PackagingJsonContext.Default.Map);
 
     private sealed class StubIdentifierGenerator : IDraftIdentifierGenerator
     {

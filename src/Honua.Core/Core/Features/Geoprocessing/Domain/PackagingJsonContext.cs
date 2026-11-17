@@ -11,8 +11,8 @@ namespace Honua.Core.Features.Geoprocessing.Domain;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     Converters = [typeof(JsonStringEnumConverter<PackageStatus>), typeof(JsonStringEnumConverter<SourceProtocol>)])]
-[JsonSerializable(typeof(MapPackage))]
-[JsonSerializable(typeof(AppPackage))]
+[JsonSerializable(typeof(Map))]
+[JsonSerializable(typeof(App))]
 [JsonSerializable(typeof(SourceBinding))]
 [JsonSerializable(typeof(SourceLocator))]
 [JsonSerializable(typeof(StyleRef))]

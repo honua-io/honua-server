@@ -3,12 +3,12 @@
 
 namespace Honua.Core.Tests.Features.Studio;
 
-internal static class MapPackageCanonicalFixture
+internal static class MapCanonicalFixture
 {
     public const string RuntimeParityShowcase = """
         {
-          "mapPackageId": "runtime-parity-showcase",
-          "format": "honua_map_package.v1",
+          "mapId": "runtime-parity-showcase",
+          "format": "honua_map.v1",
           "status": "Ready",
           "createdAt": "2026-05-01T12:00:00.000Z",
           "updatedAt": "2026-05-01T12:00:00.000Z",

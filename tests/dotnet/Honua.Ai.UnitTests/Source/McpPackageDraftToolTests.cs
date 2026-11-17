@@ -26,6 +26,41 @@ public sealed class McpPackageDraftToolTests
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/list")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task MapAppVocabulary_ToolsListUsesCanonicalNamesWithoutAliases()
+    {
+        var response = await DispatchAsync(ListToolsRequest("vocabulary-list"));
+        var names = response!.Result!.Value.GetProperty("tools").EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString()).ToArray();
+        names.Should().Contain(["honua_create_map", "honua_create_app"]);
+        names.Should().NotContain(["honua_create_map_package", "honua_create_app_package"]);
+    }
+
+    [Theory]
+    [InlineData("map")]
+    [InlineData("app")]
+    [Trait("Category", "Unit")]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task MapAppVocabulary_CreateReturnsCanonicalIdentityAndResource(string kind)
+    {
+        var response = await DispatchAsync(ToolCall("vocabulary-create", "honua_create_" + kind, "{}"));
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var content = result.GetProperty("structuredContent");
+        var id = content.GetProperty(kind + "Id").GetString();
+        id.Should().StartWith(kind + "_");
+        content.GetProperty("resourceUri").GetString().Should().Be("honua://" + kind + "s/" + id);
+        content.GetProperty(kind).GetProperty(kind + "Id").GetString().Should().Be(id);
+        content.TryGetProperty("packageId", out _).Should().BeFalse();
+        content.TryGetProperty("package", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/list")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task ToolsList_IncludesAuthoringTools()
     {
         var response = await DispatchAsync(ListToolsRequest("list-1"));
@@ -37,16 +72,16 @@ public sealed class McpPackageDraftToolTests
             .Select(t => t.GetProperty("name").GetString())
             .ToArray();
 
-        names.Should().Contain([CreateMapPackageTool.ToolName, CreateAppPackageTool.ToolName]);
+        names.Should().Contain([CreateMapTool.ToolName, CreateAppTool.ToolName]);
     }
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_map_package")]
+    [Endpoint("POST /mcp tools/call honua_create_map")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_CreateMapPackage_ReturnsRealPackageWithStableIdentifier()
     {
-        var response = await DispatchAsync(ToolCall("map-1", CreateMapPackageTool.ToolName,
+        var response = await DispatchAsync(ToolCall("map-1", CreateMapTool.ToolName,
             """
             {
               "templateId": "analysis_default",
@@ -67,14 +102,14 @@ public sealed class McpPackageDraftToolTests
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("status").GetString().Should().Be("created");
 
-        var packageId = structured.GetProperty("packageId").GetString();
+        var packageId = structured.GetProperty("mapId").GetString();
         packageId.Should().StartWith("map_");
-        structured.GetProperty("resourceUri").GetString().Should().Be("honua://map-packages/" + packageId);
+        structured.GetProperty("resourceUri").GetString().Should().Be("honua://maps/" + packageId);
 
         // A real package, not an empty envelope.
-        var package = structured.GetProperty("package");
-        package.GetProperty("mapPackageId").GetString().Should().Be(packageId);
-        package.GetProperty("format").GetString().Should().Be("honua_map_package.v1");
+        var package = structured.GetProperty("map");
+        package.GetProperty("mapId").GetString().Should().Be(packageId);
+        package.GetProperty("format").GetString().Should().Be("honua_map.v1");
         package.GetProperty("status").GetString().Should().Be("Draft");
         package.GetProperty("templateId").GetString().Should().Be("analysis_default");
 
@@ -87,14 +122,14 @@ public sealed class McpPackageDraftToolTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_map_package")]
+    [Endpoint("POST /mcp tools/call honua_create_map")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_CreateMapPackage_HonoursSourceBindingsAndInitialView()
     {
         // Both inputs were defects before D5: sourceBindings was not accepted at
         // all, and initialView was published in the schema then dropped by the
         // parser. An integer crs is the standard's own alternate spelling.
-        var response = await DispatchAsync(ToolCall("map-2", CreateMapPackageTool.ToolName,
+        var response = await DispatchAsync(ToolCall("map-2", CreateMapTool.ToolName,
             """
             {
               "sourceBindings": [
@@ -104,7 +139,7 @@ public sealed class McpPackageDraftToolTests
             }
             """));
 
-        var package = response!.Result!.Value.GetProperty("structuredContent").GetProperty("package");
+        var package = response!.Result!.Value.GetProperty("structuredContent").GetProperty("map");
 
         var binding = package.GetProperty("sourceBindings").EnumerateArray().Single();
         binding.GetProperty("sourceId").GetString().Should().Be("parcels");
@@ -120,36 +155,36 @@ public sealed class McpPackageDraftToolTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_map_package")]
+    [Endpoint("POST /mcp tools/call honua_create_map")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_CreateMapPackage_WithoutPrompt_StillCreatesAPackage()
     {
         // The pre-D5 implementation threw invalid_argument here: a fully
         // structured call with no prose was a hard error.
-        var response = await DispatchAsync(ToolCall("map-3", CreateMapPackageTool.ToolName,
+        var response = await DispatchAsync(ToolCall("map-3", CreateMapTool.ToolName,
             """{"styleId":"style_blue"}"""));
 
         var result = response!.Result!.Value;
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
-        result.GetProperty("structuredContent").GetProperty("packageId").GetString().Should().StartWith("map_");
+        result.GetProperty("structuredContent").GetProperty("mapId").GetString().Should().StartWith("map_");
     }
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_map_package")]
+    [Endpoint("POST /mcp tools/call honua_create_map")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_CreateMapPackage_WithPrompt_IgnoresIt()
     {
         // A caller that still sends prose gets the same draft as one that does
         // not: the prompt is not a modelled member, so it cannot reach the
         // factory and cannot change the output.
-        var withPrompt = await DispatchAsync(ToolCall("map-4", CreateMapPackageTool.ToolName,
+        var withPrompt = await DispatchAsync(ToolCall("map-4", CreateMapTool.ToolName,
             """{"prompt":"a beautiful map of parcels in red","styleId":"style_blue"}"""));
-        var withoutPrompt = await DispatchAsync(ToolCall("map-5", CreateMapPackageTool.ToolName,
+        var withoutPrompt = await DispatchAsync(ToolCall("map-5", CreateMapTool.ToolName,
             """{"styleId":"style_blue"}"""));
 
         static JsonElement PackageOf(McpJsonRpcResponse? response) =>
-            response!.Result!.Value.GetProperty("structuredContent").GetProperty("package");
+            response!.Result!.Value.GetProperty("structuredContent").GetProperty("map");
 
         // Everything except the freshly minted identity must match.
         var promptedStyle = PackageOf(withPrompt).GetProperty("styleRefs").EnumerateArray().Single();
@@ -161,11 +196,11 @@ public sealed class McpPackageDraftToolTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_map_package")]
+    [Endpoint("POST /mcp tools/call honua_create_map")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_CreateMapPackage_WithUnorderedBbox_ReturnsInvalidArgument()
     {
-        var response = await DispatchAsync(ToolCall("map-6", CreateMapPackageTool.ToolName,
+        var response = await DispatchAsync(ToolCall("map-6", CreateMapTool.ToolName,
             """{"initialView":{"bbox":[10,-1,-10,1]}}"""));
 
         var result = response!.Result!.Value;
@@ -177,16 +212,16 @@ public sealed class McpPackageDraftToolTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_app_package")]
+    [Endpoint("POST /mcp tools/call honua_create_app")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_CreateAppPackage_ReturnsRealPackageWithStableIdentifier()
     {
-        var response = await DispatchAsync(ToolCall("app-1", CreateAppPackageTool.ToolName,
+        var response = await DispatchAsync(ToolCall("app-1", CreateAppTool.ToolName,
             """
             {
               "templateId": "analysis_dashboard",
               "targetSdk": "honua-sdk-js",
-              "mapPackageId": "map_5a90",
+              "mapId": "map_5a90",
               "boundArtifactIds": ["artifact_summary_report"],
               "runtimeConfig": {"title":"Flood Exposure Dashboard"}
             }
@@ -200,15 +235,15 @@ public sealed class McpPackageDraftToolTests
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("status").GetString().Should().Be("created");
 
-        var packageId = structured.GetProperty("packageId").GetString();
+        var packageId = structured.GetProperty("appId").GetString();
         packageId.Should().StartWith("app_");
-        structured.GetProperty("resourceUri").GetString().Should().Be("honua://app-packages/" + packageId);
+        structured.GetProperty("resourceUri").GetString().Should().Be("honua://apps/" + packageId);
 
-        var package = structured.GetProperty("package");
-        package.GetProperty("appPackageId").GetString().Should().Be(packageId);
-        package.GetProperty("format").GetString().Should().Be("honua_app_package.v1");
+        var package = structured.GetProperty("app");
+        package.GetProperty("appId").GetString().Should().Be(packageId);
+        package.GetProperty("format").GetString().Should().Be("honua_app.v1");
         package.GetProperty("status").GetString().Should().Be("Draft");
-        package.GetProperty("mapPackageId").GetString().Should().Be("map_5a90");
+        package.GetProperty("mapId").GetString().Should().Be("map_5a90");
         package.GetProperty("runtimeConfig").GetProperty("title").GetString().Should().Be("Flood Exposure Dashboard");
 
         // Retained knowledge §5: sharing stays closed by default.
@@ -220,20 +255,20 @@ public sealed class McpPackageDraftToolTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_app_package")]
+    [Endpoint("POST /mcp tools/call honua_create_app")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_CreateAppPackage_WithoutPrompt_StillCreatesAPackage()
     {
-        var response = await DispatchAsync(ToolCall("app-2", CreateAppPackageTool.ToolName, "{}"));
+        var response = await DispatchAsync(ToolCall("app-2", CreateAppTool.ToolName, "{}"));
 
         var result = response!.Result!.Value;
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
         var structured = result.GetProperty("structuredContent");
-        structured.GetProperty("packageId").GetString().Should().StartWith("app_");
+        structured.GetProperty("appId").GetString().Should().StartWith("app_");
 
         // Absent targetSdk falls back to the standard's declared default, and the
         // unbound map package is a deferred warning rather than a failure.
-        structured.GetProperty("package").GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
+        structured.GetProperty("app").GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
         structured.GetProperty("warnings").EnumerateArray()
             .Select(w => w.GetProperty("code").GetString())
             .Should().Contain("bindingNotResolved");
@@ -241,11 +276,11 @@ public sealed class McpPackageDraftToolTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_app_package")]
+    [Endpoint("POST /mcp tools/call honua_create_app")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_CreateAppPackage_WithDuplicateArtifacts_ReturnsInvalidArgument()
     {
-        var response = await DispatchAsync(ToolCall("app-3", CreateAppPackageTool.ToolName,
+        var response = await DispatchAsync(ToolCall("app-3", CreateAppTool.ToolName,
             """{"boundArtifactIds":["artifact_a","artifact_a"]}"""));
 
         var result = response!.Result!.Value;
@@ -255,27 +290,27 @@ public sealed class McpPackageDraftToolTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_map_package")]
+    [Endpoint("POST /mcp tools/call honua_create_map")]
     public async Task Create_RecordsTheCaller_AndHidesTheDraftFromAnotherOwner()
     {
         var drafts = new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System);
-        var mapTool = new CreateMapPackageTool(
+        var mapTool = new CreateMapTool(
             _jobService,
-            new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+            new MapDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
             drafts,
-            NullLogger<CreateMapPackageTool>.Instance);
-        var appTool = new CreateAppPackageTool(
+            NullLogger<CreateMapTool>.Instance);
+        var appTool = new CreateAppTool(
             _jobService,
-            new AppPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+            new AppDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
             drafts,
-            NullLogger<CreateAppPackageTool>.Instance);
+            NullLogger<CreateAppTool>.Instance);
         using var arguments = JsonDocument.Parse("{}");
         var caller = McpTestFactory.AuthenticatedHttpContext("ada");
 
         var mapResult = await mapTool.InvokeAsync(caller, arguments.RootElement.Clone(), CancellationToken.None);
         var appResult = await appTool.InvokeAsync(caller, arguments.RootElement.Clone(), CancellationToken.None);
-        var mapId = mapResult.StructuredContent!.Value.GetProperty("packageId").GetString()!;
-        var appId = appResult.StructuredContent!.Value.GetProperty("packageId").GetString()!;
+        var mapId = mapResult.StructuredContent!.Value.GetProperty("mapId").GetString()!;
+        var appId = appResult.StructuredContent!.Value.GetProperty("appId").GetString()!;
 
         (await drafts.GetMapDraftAsync(mapId, "ada")).Should().NotBeNull();
         (await drafts.GetAppDraftAsync(appId, "ada")).Should().NotBeNull();
@@ -285,15 +320,15 @@ public sealed class McpPackageDraftToolTests
 
     [UnitTest]
     [Operation(Operations.Create)]
-    [Endpoint("POST /mcp tools/call honua_create_map_package")]
+    [Endpoint("POST /mcp tools/call honua_create_map")]
     public async Task Create_WithoutOwnerSubject_DoesNotSave()
     {
         var drafts = new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System);
-        var tool = new CreateMapPackageTool(
+        var tool = new CreateMapTool(
             _jobService,
-            new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+            new MapDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
             drafts,
-            NullLogger<CreateMapPackageTool>.Instance);
+            NullLogger<CreateMapTool>.Instance);
         using var arguments = JsonDocument.Parse("{}");
         var context = new DefaultHttpContext
         {
@@ -311,16 +346,16 @@ public sealed class McpPackageDraftToolTests
     {
         var surface = new McpDataAccessSurface(
             [
-                new CreateMapPackageTool(
+                new CreateMapTool(
                     _jobService,
-                    new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                    new MapDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
                     new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
-                    NullLogger<CreateMapPackageTool>.Instance),
-                new CreateAppPackageTool(
+                    NullLogger<CreateMapTool>.Instance),
+                new CreateAppTool(
                     _jobService,
-                    new AppPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                    new AppDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
                     new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
-                    NullLogger<CreateAppPackageTool>.Instance),
+                    NullLogger<CreateAppTool>.Instance),
             ],
             [],
             NullLogger<McpDataAccessSurface>.Instance);

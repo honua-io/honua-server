@@ -59,7 +59,7 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
     {
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"map-draft","method":"tools/call","params":{
-                "name":"honua_create_map_package",
+                "name":"honua_create_map",
                 "arguments":{
                   "templateId":"analysis_default",
                   "styleId":"style_choropleth",
@@ -82,11 +82,11 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
 
         var packageId = structured.GetProperty("packageId").GetString();
         packageId.Should().StartWith("map_");
-        structured.GetProperty("resourceUri").GetString().Should().Be("honua://map-packages/" + packageId);
+        structured.GetProperty("resourceUri").GetString().Should().Be("honua://maps/" + packageId);
 
         var package = structured.GetProperty("package");
-        package.GetProperty("mapPackageId").GetString().Should().Be(packageId);
-        package.GetProperty("format").GetString().Should().Be("honua_map_package.v1");
+        package.GetProperty("mapId").GetString().Should().Be(packageId);
+        package.GetProperty("format").GetString().Should().Be("honua_map.v1");
         package.GetProperty("sourceBindings").GetArrayLength().Should().Be(1);
         package.GetProperty("initialView").GetProperty("crs").GetString().Should().Be("EPSG:4326");
     }
@@ -99,10 +99,10 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
     {
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"app-draft","method":"tools/call","params":{
-                "name":"honua_create_app_package",
+                "name":"honua_create_app",
                 "arguments":{
                   "templateId":"analysis_dashboard",
-                  "mapPackageId":"map_5a90",
+                  "mapId":"map_5a90",
                   "boundArtifactIds":["artifact_summary_report"],
                   "runtimeConfig":{"title":"Flood Exposure Dashboard"}
                 }
@@ -122,10 +122,10 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
 
         var packageId = structured.GetProperty("packageId").GetString();
         packageId.Should().StartWith("app_");
-        structured.GetProperty("resourceUri").GetString().Should().Be("honua://app-packages/" + packageId);
+        structured.GetProperty("resourceUri").GetString().Should().Be("honua://apps/" + packageId);
 
         var package = structured.GetProperty("package");
-        package.GetProperty("appPackageId").GetString().Should().Be(packageId);
+        package.GetProperty("appId").GetString().Should().Be(packageId);
         package.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
         package.GetProperty("sharePolicy").GetProperty("visibility").GetString().Should().Be("private");
     }
@@ -140,7 +140,7 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         // structured call is a valid one.
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"map-empty","method":"tools/call","params":{
-                "name":"honua_create_map_package","arguments":{}
+                "name":"honua_create_map","arguments":{}
             }}
             """);
 
@@ -163,10 +163,10 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         // (honua-server#3262), so both halves are asserted in one call sequence.
         var resourceUri = await CreateAndReadUriAsync("""
             {"jsonrpc":"2.0","id":"map-persist","method":"tools/call","params":{
-                "name":"honua_create_map_package",
+                "name":"honua_create_map",
                 "arguments":{"templateId":"analysis_default"}
             }}
-            """, "map_", "honua://map-packages/");
+            """, "map_", "honua://maps/");
 
         var body = await ReadResourceAsync(resourceUri);
 
@@ -186,10 +186,10 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
     {
         var resourceUri = await CreateAndReadUriAsync("""
             {"jsonrpc":"2.0","id":"app-persist","method":"tools/call","params":{
-                "name":"honua_create_app_package",
+                "name":"honua_create_app",
                 "arguments":{"templateId":"analysis_dashboard"}
             }}
-            """, "app_", "honua://app-packages/");
+            """, "app_", "honua://apps/");
 
         var body = await ReadResourceAsync(resourceUri);
 
@@ -209,7 +209,7 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
         // accepts any identifier: an id nobody created is still unknown.
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":"map-unknown","method":"resources/read","params":{
-                "uri":"honua://map-packages/map_never_created"
+                "uri":"honua://maps/map_never_created"
             }}
             """);
 

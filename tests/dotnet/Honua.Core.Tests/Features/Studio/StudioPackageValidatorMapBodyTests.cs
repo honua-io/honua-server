@@ -14,8 +14,8 @@ namespace Honua.Core.Tests.Features.Studio;
 public sealed class StudioPackageValidatorMapBodyTests
 {
     private const string ReplayBaseMembers = """
-        "mapPackageId": "map-4898",
-        "format": "honua_map_package.v1",
+        "mapId": "map-4898",
+        "format": "honua_map.v1",
         "status": "Draft",
         "createdAt": "2026-09-15T00:00:00Z",
         "mapSpec": { "version": 8, "sources": {}, "layers": [] },
@@ -102,7 +102,7 @@ public sealed class StudioPackageValidatorMapBodyTests
 
         Assert.Equal(StudioPackageValidationStatus.Invalid, summary.Status);
         Assert.DoesNotContain(summary.Diagnostics, d => d.Code == "studio.body.invalid");
-        Assert.Contains(summary.Diagnostics, d => d.Code == "studio.map.member.required" && d.Path == "/body/mapPackageId");
+        Assert.Contains(summary.Diagnostics, d => d.Code == "studio.map.member.required" && d.Path == "/body/mapId");
         Assert.Contains(summary.Diagnostics, d => d.Code == "studio.map.member.required" && d.Path == "/body/format");
     }
 
@@ -110,7 +110,7 @@ public sealed class StudioPackageValidatorMapBodyTests
     public void Validate_MapBodyWithoutStatusOrTimestamps_IsValid()
     {
         // The portable schema requires neither; the server record used to require both.
-        var summary = ValidateBody("""{"mapPackageId":"map-4898","format":"honua_map_package.v1","sourceBindings":[]}""");
+        var summary = ValidateBody("""{"mapId":"map-4898","format":"honua_map.v1","sourceBindings":[]}""");
 
         Assert.Empty(summary.Diagnostics);
     }
@@ -119,7 +119,7 @@ public sealed class StudioPackageValidatorMapBodyTests
     public void Validate_MapBodyWithUnknownStatusBadTimestampOrOtherFormat_NamesEachMember()
     {
         var summary = ValidateBody(
-            """{"mapPackageId":"map-4898","format":"honua_map_package.v2","status":"Published","createdAt":"yesterday"}""");
+            """{"mapId":"map-4898","format":"honua_map_package.v2","status":"Published","createdAt":"yesterday"}""");
 
         Assert.Equal(StudioPackageValidationStatus.Invalid, summary.Status);
         Assert.Collection(
@@ -132,7 +132,7 @@ public sealed class StudioPackageValidatorMapBodyTests
     [UnitTest]
     public void Validate_SdkCanonicalMapArtifact_IsValid()
     {
-        var summary = ValidateBody(MapPackageCanonicalFixture.RuntimeParityShowcase);
+        var summary = ValidateBody(MapCanonicalFixture.RuntimeParityShowcase);
 
         Assert.Empty(summary.Diagnostics);
         Assert.Equal(StudioPackageValidationStatus.Valid, summary.Status);
@@ -143,7 +143,7 @@ public sealed class StudioPackageValidatorMapBodyTests
     {
         using var provider = BuildServiceProvider();
         var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
-        using var fixture = JsonDocument.Parse(MapPackageCanonicalFixture.RuntimeParityShowcase);
+        using var fixture = JsonDocument.Parse(MapCanonicalFixture.RuntimeParityShowcase);
 
         var created = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
         {
@@ -191,7 +191,7 @@ public sealed class StudioPackageValidatorMapBodyTests
     {
         Family = StudioPackageFamily.Map,
         SchemaVersion = "1.0",
-        Format = "honua_map_package.v1",
+        Format = "honua_map.v1",
         Body = body,
     };
 

@@ -6,9 +6,9 @@ using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
-public sealed record MapPackage
+public sealed record Map
 {
-    public required string MapPackageId { get; init; }
+    public required string MapId { get; init; }
 
     public required string Format { get; init; }
 
@@ -40,8 +40,8 @@ public sealed record MapPackage
 
     public DateTimeOffset? UpdatedAt { get; init; }
 
-    public static MapPackage CreateDraft(
-        string mapPackageId,
+    public static Map CreateDraft(
+        string mapId,
         string format,
         IReadOnlyList<SourceBinding> sourceBindings,
         IReadOnlyList<StyleRef> styleRefs,
@@ -49,7 +49,7 @@ public sealed record MapPackage
         string? themeId = null)
         => new()
         {
-            MapPackageId = mapPackageId,
+            MapId = mapId,
             Format = format,
             Status = PackageStatus.Draft,
             TemplateId = templateId,

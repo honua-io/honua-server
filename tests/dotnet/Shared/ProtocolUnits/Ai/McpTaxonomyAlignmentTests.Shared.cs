@@ -47,16 +47,16 @@ public sealed partial class McpTaxonomyAlignmentTests
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
-            new CreateMapPackageTool(
+            new CreateMapTool(
                 jobService,
-                new MapPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                new MapDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
                 new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
-                NullLogger<CreateMapPackageTool>.Instance),
-            new CreateAppPackageTool(
+                NullLogger<CreateMapTool>.Instance),
+            new CreateAppTool(
                 jobService,
-                new AppPackageDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
+                new AppDraftFactory(new GuidDraftIdentifierGenerator(), TimeProvider.System),
                 new InMemoryPackageDraftStore(new PackageDraftRetentionOptions(), TimeProvider.System),
-                NullLogger<CreateAppPackageTool>.Instance),
+                NullLogger<CreateAppTool>.Instance),
             new PlanAnalysisTool(
                 Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
                 jobService,

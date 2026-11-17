@@ -14,8 +14,8 @@ public static class StudioDraftServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IDraftIdentifierGenerator, GuidDraftIdentifierGenerator>();
-        services.TryAddSingleton<MapPackageDraftFactory>();
-        services.TryAddSingleton<AppPackageDraftFactory>();
+        services.TryAddSingleton<MapDraftFactory>();
+        services.TryAddSingleton<AppDraftFactory>();
 
         // The store is what makes the identifier the factories mint actually
         // resolvable at honua://map-packages/{id}. It is a

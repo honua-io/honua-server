@@ -5,6 +5,33 @@ description: "Client-visible behavior clarified for the 2026.1 rc.2 release."
 ---
 # 2026.1 rc.2 release notes
 
+## Map and App identities
+
+Map and App models now use `Map` and `App`, replacing `MapPackage` and
+`AppPackage`. Their JSON identities are `mapId` and `appId`, replacing
+`mapPackageId` and `appPackageId`. App and analysis-result references use the same
+fields. Deployment sources use `map` and `app` instead of `map_package` and
+`app_package`. New Studio content uses `honua_map.v1` and `honua_app.v1` formats
+instead of `honua_map_package.v1` and `honua_app_package.v1`. Retired names have
+no compatibility aliases. HTTP draft creation uses
+`/api/v1/studio/maps/generate` and `/api/v1/studio/apps/generate`; MCP uses
+`honua_create_map` / `honua_create_app` and `honua://maps/{mapId}` /
+`honua://apps/{appId}`. Draft responses contain `mapId` / `map` or `appId` /
+`app`. Report Map embed sections use `mapUri` instead of `mapPackageUri`.
+
+Before upgrading, verify a database backup, drain pending Proposals, and stop
+writers using the earlier contract. Forward migrations convert mutable drafts,
+stored result and report references, and deployment source records. IDs, ownership, expiry,
+deployment revisions, and opaque Map specifications and App configuration remain
+unchanged. Converting a mutable Studio draft advances its generation once so a
+stale editor must reload before writing.
+
+Published Studio versions retain their original envelope, content hash, and hash
+input bytes. Historical exports can therefore contain the earlier spelling; new
+content must use the canonical shape. Do not rewrite immutable history during
+upgrade. Rollback requires restoring the verified backup and the matching server
+and clients; an earlier server cannot read the migrated records safely.
+
 ## Map collaboration routes
 
 Map collaboration endpoints now use `/api/v1/maps/{mapId}/collaboration/`

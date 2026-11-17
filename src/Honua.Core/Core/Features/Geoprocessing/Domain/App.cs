@@ -5,9 +5,9 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
-public sealed record AppPackage
+public sealed record App
 {
-    public required string AppPackageId { get; init; }
+    public required string AppId { get; init; }
 
     public required string TargetSdk { get; init; }
 
@@ -27,7 +27,7 @@ public sealed record AppPackage
 
     public IReadOnlyList<AssetManifestEntry> AssetManifest { get; init; } = [];
 
-    public string? MapPackageId { get; init; }
+    public string? MapId { get; init; }
 
     public JsonElement? RuntimeConfigSchema { get; init; }
 
@@ -43,20 +43,20 @@ public sealed record AppPackage
 
     public DateTimeOffset? UpdatedAt { get; init; }
 
-    public static AppPackage CreateDraft(
-        string appPackageId,
+    public static App CreateDraft(
+        string appId,
         string targetSdk,
         string format,
         string? templateId = null,
-        string? mapPackageId = null)
+        string? mapId = null)
         => new()
         {
-            AppPackageId = appPackageId,
+            AppId = appId,
             TargetSdk = targetSdk,
             Format = format,
             Status = PackageStatus.Draft,
             TemplateId = templateId,
-            MapPackageId = mapPackageId,
+            MapId = mapId,
             CreatedAt = DateTimeOffset.UtcNow
         };
 }

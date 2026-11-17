@@ -8,13 +8,13 @@ using Honua.Core.Features.Validation.Contracts;
 
 namespace Honua.PackageReview;
 
-internal static class MapPackagePublishRequestReader
+internal static class MapPublishRequestReader
 {
     private const string PackageMember = "package";
 
     internal sealed record Result
     {
-        public PackageReviewEndpoints.MapPackagePublishRequest? Request { get; init; }
+        public PackageReviewEndpoints.MapPublishRequest? Request { get; init; }
 
         public bool MissingPackage { get; init; }
 
@@ -45,17 +45,17 @@ internal static class MapPackagePublishRequestReader
 
         if (packageNode is not JsonObject package)
         {
-            return Refused("$.package", "invalid_type", "'package' must be a honua_map_package.v1 object.");
+            return Refused("$.package", "invalid_type", "'package' must be a honua_map.v1 object.");
         }
 
-        if (package["mapPackageId"] is not JsonValue mapPackageId
-            || !mapPackageId.TryGetValue<string>(out var mapPackageIdText)
-            || string.IsNullOrWhiteSpace(mapPackageIdText))
+        if (package["mapId"] is not JsonValue mapId
+            || !mapId.TryGetValue<string>(out var mapIdText)
+            || string.IsNullOrWhiteSpace(mapIdText))
         {
             return new Result { MissingPackage = true };
         }
 
-        // honua_map_package.v1 leaves the lifecycle members to the server: an unsaved package is
+        // honua_map.v1 leaves the lifecycle members to the server: an unsaved package is
         // a draft created now.
         if (package["status"] is null)
         {
@@ -71,7 +71,7 @@ internal static class MapPackagePublishRequestReader
         {
             // The package-review context carries the package enum converters that the combined
             // HTTP resolver does not apply to nested members.
-            var parsed = body.Deserialize(PackageReviewJsonContext.Default.MapPackagePublishRequest);
+            var parsed = body.Deserialize(PackageReviewJsonContext.Default.MapPublishRequest);
             return parsed is null
                 ? Refused("$", "invalid_type", "The request body must be a JSON object.")
                 : new Result { Request = parsed };
@@ -94,7 +94,7 @@ internal static class MapPackagePublishRequestReader
             return $"Required members are missing: {members}.";
         }
 
-        return "The value does not match the honua_map_package.v1 schema.";
+        return "The value does not match the honua_map.v1 schema.";
     }
 
     private static Result Refused(string path, string code, string message) => new()

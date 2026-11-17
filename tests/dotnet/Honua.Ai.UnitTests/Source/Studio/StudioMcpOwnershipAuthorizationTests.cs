@@ -838,7 +838,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
     private static StudioPackageDraft BuildDraft(string? ownerId)
     {
         using var body = System.Text.Json.JsonDocument.Parse(
-            """{"format":"honua_map_package.v1","layers":[],"widgets":[]}""");
+            """{"format":"honua_map.v1","layers":[],"widgets":[]}""");
         return new StudioPackageDraft
         {
             DraftId = DraftId,

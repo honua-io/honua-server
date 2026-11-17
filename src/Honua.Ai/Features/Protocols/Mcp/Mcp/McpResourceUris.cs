@@ -22,10 +22,10 @@ internal static class McpResourceUris
     public const string PublishedServicesPrefix = "honua://published-services/";
     public const string DeploymentsRoot = "honua://deployments";
     public const string DeploymentsPrefix = "honua://deployments/";
-    public const string MapPackagesRoot = "honua://map-packages";
-    public const string MapPackagesPrefix = "honua://map-packages/";
-    public const string AppPackagesRoot = "honua://app-packages";
-    public const string AppPackagesPrefix = "honua://app-packages/";
+    public const string MapsRoot = "honua://maps";
+    public const string MapsPrefix = "honua://maps/";
+    public const string AppsRoot = "honua://apps";
+    public const string AppsPrefix = "honua://apps/";
 
     public static string JobUri(string jobId) => $"{JobsPrefix}{jobId}";
 
@@ -69,7 +69,7 @@ internal static class McpResourceUris
 
     public static string DeploymentUri(string deploymentId) => $"{DeploymentsPrefix}{deploymentId}";
 
-    public static string MapPackageUri(string packageId) => $"{MapPackagesPrefix}{packageId}";
+    public static string MapUri(string mapId) => $"{MapsPrefix}{mapId}";
 
-    public static string AppPackageUri(string packageId) => $"{AppPackagesPrefix}{packageId}";
+    public static string AppUri(string appId) => $"{AppsPrefix}{appId}";
 }

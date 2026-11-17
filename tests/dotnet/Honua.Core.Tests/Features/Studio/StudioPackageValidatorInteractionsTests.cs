@@ -14,7 +14,7 @@ public sealed class StudioPackageValidatorInteractionsTests
     public void Validate_MapBodyWithNoInteractionsOrLayout_EmitsNoInteractionDiagnostics()
     {
         var summary = ValidateBody(
-            """{"format":"honua_map_package.v1","layers":[{"id":"parcels"}]}""");
+            """{"format":"honua_map.v1","layers":[{"id":"parcels"}]}""");
 
         Assert.Empty(InteractionCodes(summary));
     }
@@ -25,7 +25,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "interactions": [
@@ -57,7 +57,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "interactions": [
@@ -75,7 +75,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "interactions": [
                 { "id": "i1", "on": { "ref": "layer:parcels", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setBasemap" } }
@@ -92,7 +92,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "interactions": [
                 { "id": "i1", "on": { "ref": "parcels", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setViewport" } }
@@ -109,7 +109,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "interactions": [
@@ -134,7 +134,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [null],
               "widgets": [null],
               "interactions": [
@@ -157,7 +157,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "controls": [{ "id": "year-slider", "kind": "timeSlider", "sourceId": "parcels" }],
               "interactions": [
@@ -176,7 +176,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "controls": [{ "id": "year-slider", "kind": "timeSlider", "sourceId": "parcels" }],
               "interactions": [
@@ -196,7 +196,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "controls": [{ "id": "year-slider", "kind": "timeSlider" }],
               "interactions": [
@@ -218,7 +218,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "interactions": [
                 { "id": "i1", "on": { "ref": "layer:parcels", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setViewport" } },
@@ -237,7 +237,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "interactions": [
                 { "id": "{{id}}", "on": { "ref": "layer:parcels", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setViewport" } }
@@ -259,7 +259,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "interactions": [
                 { "id": "i1", "on": { "ref": "layer:parcels", "event": "featureSelect" }, "do": { "ref": "map", "verb": "setViewport", "args": {{argsJson}} } }
@@ -287,7 +287,7 @@ public sealed class StudioPackageValidatorInteractionsTests
     public void Validate_InteractionsThatAreNotAnArray_Fails()
     {
         var summary = ValidateBody(
-            """{"format":"honua_map_package.v1","layers":[],"interactions":{"id":"i1"}}""");
+            """{"format":"honua_map.v1","layers":[],"interactions":{"id":"i1"}}""");
 
         AssertInvalidWith(summary, "studio.interactions.array");
     }
@@ -299,7 +299,7 @@ public sealed class StudioPackageValidatorInteractionsTests
     public void Validate_ExplicitNullCompositionBlock_Fails(string memberName, string expectedCode)
     {
         var summary = ValidateBody(
-            $$"""{"format":"honua_map_package.v1","layers":[],"{{memberName}}":null}""");
+            $$"""{"format":"honua_map.v1","layers":[],"{{memberName}}":null}""");
 
         AssertInvalidWith(summary, expectedCode);
     }
@@ -313,7 +313,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "layout": { "items": [{ "ref": "widget:area-chart", {{coordinateJson}}, "w": 6, "h": 4 }] }
             }
@@ -328,7 +328,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "interactions": [{
@@ -363,7 +363,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "interactions": [{
                 "id": "i1",
@@ -387,7 +387,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "layout": { "grid": { "columns": {{columns}} }, "items": [] }
             }
@@ -406,7 +406,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "layout": { "grid": { "columns": {{columns}} } }
             }
@@ -421,7 +421,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "layout": { "items": [{ "ref": "widget:not-here", "x": 0, "y": 0, "w": 6, "h": 4 }] }
             }
@@ -437,7 +437,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "layout": { "items": [{ "ref": "widget:area-chart", "x": -1, "y": 0, "w": 0, "h": 4 }] }
             }
@@ -453,7 +453,7 @@ public sealed class StudioPackageValidatorInteractionsTests
         var summary = ValidateBody(
             """
             {
-              "format": "honua_app_package.v1",
+              "format": "honua_app.v1",
               "widgets": [{ "id": "area-chart", "kind": "chart" }],
               "interactions": [
                 { "id": "i1", "on": { "ref": "widget:area-chart", "event": "selection" }, "do": { "ref": "layer:missing", "verb": "setFilter" } }
@@ -486,7 +486,7 @@ public sealed class StudioPackageValidatorInteractionsTests
 
         return $$"""
             {
-              "format": "honua_map_package.v1",
+              "format": "honua_map.v1",
               "layers": [{ "id": "parcels" }],
               "interactions": [
                 {{bindings}}
@@ -528,8 +528,8 @@ public sealed class StudioPackageValidatorInteractionsTests
 
     private static string FormatFor(StudioPackageFamily family) => family switch
     {
-        StudioPackageFamily.Map => "honua_map_package.v1",
-        StudioPackageFamily.App => "honua_app_package.v1",
+        StudioPackageFamily.Map => "honua_map.v1",
+        StudioPackageFamily.App => "honua_app.v1",
         _ => "studio_query_package.v1",
     };
 }

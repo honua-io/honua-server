@@ -32,7 +32,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class StudioVersionMcpTests
 {
     private static readonly string MapBody = """
-        {"mapPackageId":"fixture-map","format":"honua_map_package.v1","status":"Ready","createdAt":"1970-01-01T00:00:00Z","layers":[{"id":"parcels","type":"fill","sourceId":"content.parcels","styleRef":"style_parcels"}],
+        {"mapId":"fixture-map","format":"honua_map.v1","status":"Ready","createdAt":"1970-01-01T00:00:00Z","layers":[{"id":"parcels","type":"fill","sourceId":"content.parcels","styleRef":"style_parcels"}],
          "view":{"center":[-157.86,21.31],"zoom":10},"widgets":[{"id":"legend","kind":"legend"}]}
         """;
 
@@ -343,16 +343,16 @@ public sealed class StudioVersionMcpTests
         {
             Family = family,
             SchemaVersion = "1.0",
-            Format = family == StudioPackageFamily.Map ? "honua_map_package.v1" : "studio_dashboard_package.v1",
+            Format = family == StudioPackageFamily.Map ? "honua_map.v1" : "studio_dashboard_package.v1",
             Body = McpTestFactory.ParseJson(family == StudioPackageFamily.Map ? MapBody :
-                MapBody.Replace("honua_map_package.v1", "studio_dashboard_package.v1", StringComparison.Ordinal)),
+                MapBody.Replace("honua_map.v1", "studio_dashboard_package.v1", StringComparison.Ordinal)),
         },
     });
 
     private static void AssertMap(StudioPackageEnvelope envelope, StudioPackageFamily family)
     {
         envelope.Family.Should().Be(family);
-        envelope.Format.Should().Be(family == StudioPackageFamily.Map ? "honua_map_package.v1" : "studio_dashboard_package.v1");
+        envelope.Format.Should().Be(family == StudioPackageFamily.Map ? "honua_map.v1" : "studio_dashboard_package.v1");
         envelope.SchemaVersion.Should().Be("1.0");
         var body = StudioCompositionBodyEditor.ReadBody(envelope);
         body.Layers.Should().ContainSingle(layer => layer.Id == "parcels" && layer.SourceId == "content.parcels" && layer.StyleRef == "style_parcels");

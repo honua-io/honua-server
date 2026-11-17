@@ -131,11 +131,11 @@ internal sealed class McpJobResultsResource
     [JsonPropertyName("workspaceRefs")]
     public IReadOnlyList<McpWorkspaceRef> WorkspaceRefs { get; set; } = [];
 
-    [JsonPropertyName("mapPackageId")]
-    public string? MapPackageId { get; set; }
+    [JsonPropertyName("mapId")]
+    public string? MapId { get; set; }
 
-    [JsonPropertyName("appPackageId")]
-    public string? AppPackageId { get; set; }
+    [JsonPropertyName("appId")]
+    public string? AppId { get; set; }
 
     [JsonPropertyName("assumptions")]
     public IReadOnlyList<string> Assumptions { get; set; } = [];

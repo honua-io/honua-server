@@ -5,7 +5,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Studio.Drafts;
 
-public sealed record MapPackageDraftRequest
+public sealed record MapDraftRequest
 {
     public string? TemplateId { get; init; }
 
@@ -42,13 +42,13 @@ public sealed record MapInitialViewInput
     public string? Crs { get; init; }
 }
 
-public sealed record MapPackageDraftResult
+public sealed record MapDraftResult
 {
-    public MapPackage? Package { get; init; }
+    public Map? Map { get; init; }
 
     public IReadOnlyList<PackageDraftFinding> Errors { get; init; } = [];
 
     public IReadOnlyList<PackageDraftFinding> Warnings { get; init; } = [];
 
-    public bool Succeeded => Package is not null;
+    public bool Succeeded => Map is not null;
 }

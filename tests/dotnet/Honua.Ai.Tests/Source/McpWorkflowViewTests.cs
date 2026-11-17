@@ -127,11 +127,11 @@ public sealed partial class McpWorkflowViewTests
         var authenticated = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName);
 
         anonymous.Names.Should().BeEmpty();
-        authenticated.Names.Should().Contain(["honua_create_map_package", "honua_create_app_package"]);
+        authenticated.Names.Should().Contain(["honua_create_map", "honua_create_app"]);
         authenticated.Names.Should().NotContain(["honua_validate_package", "honua_preview_package"]);
         McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v7");
 
-        foreach (var name in new[] { "honua_create_map_package", "honua_create_app_package" })
+        foreach (var name in new[] { "honua_create_map", "honua_create_app" })
         {
             var response = await DispatchAsync(
                 surface,
@@ -224,8 +224,8 @@ public sealed partial class McpWorkflowViewTests
             "honua_studio_remove_interaction",
             "honua_studio_add_control",
             "honua_studio_remove_control",
-            "honua_create_map_package",
-            "honua_create_app_package",
+            "honua_create_map",
+            "honua_create_app",
             "honua_studio_propose_publication",
             "honua_supported_operation_kinds",
         ]);

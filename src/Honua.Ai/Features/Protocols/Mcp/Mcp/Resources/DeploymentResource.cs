@@ -139,8 +139,8 @@ internal sealed class DeploymentResource : IMcpResource
     private static string? ResolveSourceResourceUri(DeploymentSource source) => source.Kind switch
     {
         DeploymentSourceKind.PublishedService => McpResourceUris.PublishedServiceUri(source.SourceId),
-        DeploymentSourceKind.MapPackage => McpResourceUris.MapPackageUri(source.SourceId),
-        DeploymentSourceKind.AppPackage => McpResourceUris.AppPackageUri(source.SourceId),
+        DeploymentSourceKind.Map => McpResourceUris.MapUri(source.SourceId),
+        DeploymentSourceKind.App => McpResourceUris.AppUri(source.SourceId),
         _ => null
     };
 }

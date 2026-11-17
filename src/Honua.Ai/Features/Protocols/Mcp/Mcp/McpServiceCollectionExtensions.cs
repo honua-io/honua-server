@@ -162,7 +162,7 @@ internal static class McpServiceCollectionExtensions
         // Authoring tools (re-founded by ADR-0076):
         // create_map_package / create_app_package create draft packages
         // deterministically from structured input through the shared
-        // MapPackageDraftFactory / AppPackageDraftFactory in Honua.Core. They
+        // MapDraftFactory / AppDraftFactory in Honua.Core. They
         // make no model call and take no prompt.
         //
         // Both factories arrive by CONSTRUCTOR injection rather than a
@@ -179,8 +179,8 @@ internal static class McpServiceCollectionExtensions
         // here so the MCP surface is self-sufficient regardless of whether the
         // host also composes the Studio slice.
         services.AddStudioDraftFactories();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateMapPackageTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateAppPackageTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateMapTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateAppTool>());
 
         // Studio draft lifecycle + composition tools (composition state IS a
         // lifecycle draft; the browser is a projection). Every tool authorizes
@@ -192,7 +192,7 @@ internal static class McpServiceCollectionExtensions
         // AddStudioPackageLifecycle registers IStudioPackageLifecycleService /
         // IStudioPackageValidator as Scoped and, in the real host composition
         // (FeatureRegistrationExtensions.AddServerFeatures), runs AFTER this
-        // method — the same ordering CreateMapPackageTool/CreateAppPackageTool
+        // method — the same ordering CreateMapTool/CreateAppTool
         // already handle for their own later-registered generation services.
         // A descriptor-list gate here would therefore never see the lifecycle
         // service and silently drop the tools; instead, each tool resolves it
@@ -520,8 +520,8 @@ internal static class McpServiceCollectionExtensions
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, PublishedServiceResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, DeploymentResource>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, MapPackageResource>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, AppPackageResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, MapResource>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, AppResource>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, PromotionSurfaceIndexResource>());
 
         return services;

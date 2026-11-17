@@ -39,8 +39,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_preview_package"] = "preview_package",
             ["honua_execute_plan"] = "execute_plan",
             ["honua_cancel_job"] = "cancel_job",
-            ["honua_create_map_package"] = "create_map_package",
-            ["honua_create_app_package"] = "create_app_package",
+            ["honua_create_map"] = "create_map_package",
+            ["honua_create_app"] = "create_app_package",
             ["honua_geocode_address"] = "geocode_address",
             ["honua_geocode_addresses"] = "geocode_addresses",
             ["honua_ingest_dataset"] = "ingest_dataset",
@@ -736,7 +736,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     // standard resource family must match the vendored index.json uriForm
     // (Decision A grammar), and every standard family the index marks
     // 'implemented' must be served by a live template. This makes any URI
-    // drift — e.g. reverting honua://map-packages/{id} to honua://maps/{id} —
+    // drift — e.g. reverting honua://maps/{id} to honua://maps/{id} —
     // a build failure rather than a silent spec/server divergence.
     // -------------------------------------------------------------------
 

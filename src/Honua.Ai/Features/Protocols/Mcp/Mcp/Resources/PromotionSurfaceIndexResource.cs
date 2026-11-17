@@ -50,7 +50,7 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
     public string Family => McpTelemetry.ResourceFamily.PromotionIndex;
 
     // Counter telemetry routes through the per-URI family so the four promotion
-    // roots — published-services, deployments, map-packages, app-packages —
+    // roots — published-services, deployments, maps, apps —
     // emit distinct `resource_family` tag values. Without this the dispatcher
     // would collapse all four roots into a single `promotion-index` series and
     // lose per-root success/error observability.
@@ -66,14 +66,14 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
             return McpTelemetry.ResourceFamily.Deployments;
         }
 
-        if (string.Equals(uri, McpResourceUris.MapPackagesRoot, StringComparison.Ordinal))
+        if (string.Equals(uri, McpResourceUris.MapsRoot, StringComparison.Ordinal))
         {
-            return McpTelemetry.ResourceFamily.MapPackages;
+            return McpTelemetry.ResourceFamily.Maps;
         }
 
-        if (string.Equals(uri, McpResourceUris.AppPackagesRoot, StringComparison.Ordinal))
+        if (string.Equals(uri, McpResourceUris.AppsRoot, StringComparison.Ordinal))
         {
-            return McpTelemetry.ResourceFamily.AppPackages;
+            return McpTelemetry.ResourceFamily.Apps;
         }
 
         return Family;
@@ -103,16 +103,16 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         },
         new McpResourceDescriptor
         {
-            Uri = McpResourceUris.MapPackagesRoot,
-            Name = "Map packages index",
-            Description = "Map packages referenced by at least one currently-published deployment.",
+            Uri = McpResourceUris.MapsRoot,
+            Name = "Maps index",
+            Description = "Maps referenced by at least one currently-published deployment.",
             MimeType = McpResourceHelpers.JsonMimeType
         },
         new McpResourceDescriptor
         {
-            Uri = McpResourceUris.AppPackagesRoot,
-            Name = "App packages index",
-            Description = "App packages referenced by at least one currently-published deployment.",
+            Uri = McpResourceUris.AppsRoot,
+            Name = "Apps index",
+            Description = "Apps referenced by at least one currently-published deployment.",
             MimeType = McpResourceHelpers.JsonMimeType
         }
     };
@@ -123,8 +123,8 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         string.Equals(uri, McpResourceUris.PublishedServicesRoot, StringComparison.Ordinal) ||
         (_deployments is not null &&
             (string.Equals(uri, McpResourceUris.DeploymentsRoot, StringComparison.Ordinal) ||
-             string.Equals(uri, McpResourceUris.MapPackagesRoot, StringComparison.Ordinal) ||
-             string.Equals(uri, McpResourceUris.AppPackagesRoot, StringComparison.Ordinal)));
+             string.Equals(uri, McpResourceUris.MapsRoot, StringComparison.Ordinal) ||
+             string.Equals(uri, McpResourceUris.AppsRoot, StringComparison.Ordinal)));
 
     public async Task<McpResourcesReadResult> ReadAsync(
         HttpContext httpContext,
@@ -143,16 +143,16 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
             return await ReadDeploymentIndexAsync(httpContext, principal, uri, cancellationToken).ConfigureAwait(false);
         }
 
-        if (string.Equals(uri, McpResourceUris.MapPackagesRoot, StringComparison.Ordinal))
+        if (string.Equals(uri, McpResourceUris.MapsRoot, StringComparison.Ordinal))
         {
             return await ReadPackageIndexAsync(
-                principal, uri, DeploymentSourceKind.MapPackage,
-                "map_package", McpResourceUris.MapPackageUri, cancellationToken).ConfigureAwait(false);
+                principal, uri, DeploymentSourceKind.Map,
+                "map", McpResourceUris.MapUri, cancellationToken).ConfigureAwait(false);
         }
 
         return await ReadPackageIndexAsync(
-            principal, uri, DeploymentSourceKind.AppPackage,
-            "app_package", McpResourceUris.AppPackageUri, cancellationToken).ConfigureAwait(false);
+            principal, uri, DeploymentSourceKind.App,
+            "app", McpResourceUris.AppUri, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<McpResourcesReadResult> ReadPublishedServiceIndexAsync(
@@ -320,15 +320,15 @@ internal sealed class PromotionSurfaceIndexResource : IMcpResource
         Func<string, string> packageUriFactory,
         CancellationToken cancellationToken)
     {
-        McpTelemetry.EnrichActivity(packageKind == DeploymentSourceKind.MapPackage
-            ? "ListMapPackages"
-            : "ListAppPackages");
+        McpTelemetry.EnrichActivity(packageKind == DeploymentSourceKind.Map
+            ? "ListMaps"
+            : "ListApps");
         await _jobService.EnsureCallerAuthorizedAsync(
                 principal, OperatorResourceType.Package, OperatorOperation.Read, cancellationToken)
             .ConfigureAwait(false);
-        var listFamily = packageKind == DeploymentSourceKind.MapPackage
-            ? McpTelemetry.ResourceFamily.MapPackages
-            : McpTelemetry.ResourceFamily.AppPackages;
+        var listFamily = packageKind == DeploymentSourceKind.Map
+            ? McpTelemetry.ResourceFamily.Maps
+            : McpTelemetry.ResourceFamily.Apps;
         McpLog.ResourceRead(_logger, listFamily, uri);
 
         // Packages are visible only through currently-published deployments so the

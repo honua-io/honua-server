@@ -41,8 +41,8 @@ internal sealed class GetJobResultsTool : IMcpTool
             "totalArtifactCount": { "type": "integer" },
             "artifactsTruncated": { "type": "boolean" },
             "workspaceRefs": { "type": "array", "items": { "type": "object", "required": ["workspaceId", "kind", "label"], "properties": { "workspaceId": { "type": "string" }, "kind": { "type": "string" }, "label": { "type": "string" }, "resourceUri": { "type": ["string", "null"] } } } },
-            "mapPackageId": { "type": ["string", "null"] },
-            "appPackageId": { "type": ["string", "null"] },
+            "mapId": { "type": ["string", "null"] },
+            "appId": { "type": ["string", "null"] },
             "assumptions": { "type": "array", "items": { "type": "string" } },
             "provenance": { "type": "object" },
             "errors": { "type": "array" }

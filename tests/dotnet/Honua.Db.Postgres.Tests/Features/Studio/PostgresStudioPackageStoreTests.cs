@@ -34,7 +34,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var writer = new PostgresStudioPackageStore(provider, schema);
             var deploymentReader = new PostgresDeploymentStore(fixture.DataSource, schema);
-            var map = MapPackage.CreateDraft("map-provenance", "honua_map_package.v1", [], []);
+            var map = Map.CreateDraft("map-provenance", "honua_map.v1", [], []);
             var draft = BuildDraft("1=1", "map-provenance") with
             {
                 Family = StudioPackageFamily.Map,
@@ -44,7 +44,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
                     Family = StudioPackageFamily.Map,
                     SchemaVersion = "studio_map.v1",
                     Format = map.Format,
-                    Body = JsonSerializer.SerializeToElement(map, PackagingJsonContext.Default.MapPackage)
+                    Body = JsonSerializer.SerializeToElement(map, PackagingJsonContext.Default.Map)
                 }
             };
             draft = await writer.CreateDraftAsync(draft);

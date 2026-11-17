@@ -249,8 +249,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
     [InlineData("package.metadata-v2", MetadataV2Constants.SchemaVersion)]
     [InlineData("package.release-package", MetadataV2Constants.ApiVersion)]
     [InlineData("package.gitops-manifest", MetadataV2Constants.ApiVersion)]
-    [InlineData("package.map", "honua_map_package.v1")]
-    [InlineData("package.app", "honua_app_package.v1")]
+    [InlineData("package.map", "honua_map.v1")]
+    [InlineData("package.app", "honua_app.v1")]
     public void Registry_PackageDescriptors_CarryPackageSchemaVersion(string id, string expectedSchemaVersion)
     {
         // The null seam B1 left is now populated from the package families so the

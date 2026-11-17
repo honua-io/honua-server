@@ -668,15 +668,15 @@ public sealed partial class CapabilityManifestEndpointTests
                     "analytics.buffer-aggregate",
                     "analytics.density");
 
-            var mapPackage = GetCapability(document.RootElement, "package.map");
-            mapPackage.GetProperty("available").GetBoolean().Should().BeTrue();
-            mapPackage.TryGetProperty("reasonCode", out _).Should().BeFalse();
-            mapPackage.TryGetProperty("entitlementKey", out _).Should().BeFalse();
+            var map = GetCapability(document.RootElement, "package.map");
+            map.GetProperty("available").GetBoolean().Should().BeTrue();
+            map.TryGetProperty("reasonCode", out _).Should().BeFalse();
+            map.TryGetProperty("entitlementKey", out _).Should().BeFalse();
 
-            var appPackage = GetCapability(document.RootElement, "package.app");
-            appPackage.GetProperty("available").GetBoolean().Should().BeTrue();
-            appPackage.TryGetProperty("reasonCode", out _).Should().BeFalse();
-            appPackage.TryGetProperty("entitlementKey", out _).Should().BeFalse();
+            var app = GetCapability(document.RootElement, "package.app");
+            app.GetProperty("available").GetBoolean().Should().BeTrue();
+            app.TryGetProperty("reasonCode", out _).Should().BeFalse();
+            app.TryGetProperty("entitlementKey", out _).Should().BeFalse();
         }
         finally
         {

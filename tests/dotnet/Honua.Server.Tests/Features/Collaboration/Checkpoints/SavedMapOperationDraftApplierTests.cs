@@ -14,8 +14,8 @@ public sealed class SavedMapOperationDraftApplierTests
 {
     private const string CanonicalMapBody = """
         {
-          "mapPackageId": "map-1",
-          "format": "honua_map_package.v1",
+          "mapId": "map-1",
+          "format": "honua_map.v1",
           "status": "Ready",
           "createdAt": "2026-01-01T00:00:00Z",
           "sourceBindings": [],
@@ -39,11 +39,11 @@ public sealed class SavedMapOperationDraftApplierTests
         body.GetProperty("layers").EnumerateArray().Select(layer => layer.GetProperty("id").GetString())
             .Should().Equal("roads");
 
-        // ...while every member the canonical MapPackage contract requires survives. Installing
+        // ...while every member the canonical Map contract requires survives. Installing
         // the payload as the whole body deleted all of these and produced an invalid immutable
         // version.
-        body.GetProperty("mapPackageId").GetString().Should().Be("map-1");
-        body.GetProperty("format").GetString().Should().Be("honua_map_package.v1");
+        body.GetProperty("mapId").GetString().Should().Be("map-1");
+        body.GetProperty("format").GetString().Should().Be("honua_map.v1");
         body.GetProperty("status").GetString().Should().Be("Ready");
         body.GetProperty("createdAt").GetString().Should().Be("2026-01-01T00:00:00Z");
         body.TryGetProperty("sourceBindings", out _).Should().BeTrue();
@@ -55,7 +55,7 @@ public sealed class SavedMapOperationDraftApplierTests
     {
         var envelope = BuildEnvelope("""
             {
-              "mapPackageId": "map-1",
+              "mapId": "map-1",
               "sourceBindings": [{ "sourceId": "ds-parcels", "layerId": 7 }],
               "layers": []
             }
@@ -97,7 +97,7 @@ public sealed class SavedMapOperationDraftApplierTests
 
         var body = applied.Body!.Value;
         body.GetProperty("layers").GetArrayLength().Should().Be(0);
-        body.GetProperty("mapPackageId").GetString().Should().Be("map-1");
+        body.GetProperty("mapId").GetString().Should().Be("map-1");
     }
 
     [UnitTest]
@@ -108,7 +108,7 @@ public sealed class SavedMapOperationDraftApplierTests
         // wholesale replacement was not wholesale (honua-server#2999 review).
         var envelope = BuildEnvelope("""
             {
-              "mapPackageId": "map-1",
+              "mapId": "map-1",
               "layers": [{"id":"parcels"}],
               "view": {"zoom": 12, "bearing": 90}
             }
@@ -123,7 +123,7 @@ public sealed class SavedMapOperationDraftApplierTests
             "a replacement that carries no view replaces the view with nothing");
         body.GetProperty("layers").EnumerateArray().Single().GetProperty("id").GetString()
             .Should().Be("roads");
-        body.GetProperty("mapPackageId").GetString().Should().Be("map-1",
+        body.GetProperty("mapId").GetString().Should().Be("map-1",
             "clearing the view must not disturb unmodelled package metadata");
     }
 
@@ -133,7 +133,7 @@ public sealed class SavedMapOperationDraftApplierTests
         // The counterpart: a supplied view still replaces the stored one wholesale.
         var envelope = BuildEnvelope("""
             {
-              "mapPackageId": "map-1",
+              "mapId": "map-1",
               "layers": [],
               "view": {"zoom": 12, "bearing": 90}
             }
@@ -169,7 +169,7 @@ public sealed class SavedMapOperationDraftApplierTests
         var layer = body.GetProperty("layers").EnumerateArray().Single();
         layer.GetProperty("id").GetString().Should().Be("roads");
         layer.GetProperty("visible").GetBoolean().Should().BeFalse();
-        body.GetProperty("format").GetString().Should().Be("honua_map_package.v1");
+        body.GetProperty("format").GetString().Should().Be("honua_map.v1");
     }
 
     [UnitTest]
@@ -221,7 +221,7 @@ public sealed class SavedMapOperationDraftApplierTests
         {
             Family = StudioPackageFamily.Map,
             SchemaVersion = "1.0",
-            Format = "honua_map_package.v1",
+            Format = "honua_map.v1",
             Body = document.RootElement.Clone(),
         };
     }

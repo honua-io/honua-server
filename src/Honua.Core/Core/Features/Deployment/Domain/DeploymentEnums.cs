@@ -10,11 +10,11 @@ public enum DeploymentSourceKind
     [JsonStringEnumMemberName("published_service")]
     PublishedService = 0,
 
-    [JsonStringEnumMemberName("map_package")]
-    MapPackage = 1,
+    [JsonStringEnumMemberName("map")]
+    Map = 1,
 
-    [JsonStringEnumMemberName("app_package")]
-    AppPackage = 2,
+    [JsonStringEnumMemberName("app")]
+    App = 2,
 
     [JsonStringEnumMemberName("studio_published_version")]
     StudioPublishedVersion = 3

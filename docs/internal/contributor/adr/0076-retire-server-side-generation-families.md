@@ -14,6 +14,19 @@ Amends the operator-contract posture set by [ADR-0026](0026-ai-first-operator-co
 and the clarification workflow in [ADR-0027](0027-deterministic-intent-clarification-workflow.md):
 both stand, but the inference that serves them moves to the client.
 
+## Current vocabulary
+
+The vocabulary adopted in [the canonical glossary](../../../concepts/domain/README.md)
+supersedes the names recorded below. Deterministic draft creation uses
+`honua_create_map` and `honua_create_app`, returning `mapId` / `appId` and
+`map` / `app` at `honua://maps/{mapId}` / `honua://apps/{appId}`. Models are
+`Map` and `App`; formats are `honua_map.v1` and `honua_app.v1`. The corresponding
+HTTP draft routes are `/api/v1/studio/maps/generate` and
+`/api/v1/studio/apps/generate`. The earlier names below describe the decision's
+implementation history and are not compatibility aliases. See the
+[upgrade notes](../../../reference/rc2-release-notes.md#map-and-app-identities)
+for persistence and rollback requirements.
+
 ## Context
 
 `src/Honua.Ai/Features/` carries **eight** generation families — `AnalysisGeneration`,

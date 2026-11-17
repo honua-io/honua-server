@@ -176,7 +176,7 @@ internal static class McpToolSchemas
     // deterministic, so there is nothing for a prompt to drive. sourceBindings
     // items stay open (as in the standard) because the canonical SourceBinding
     // member set is validated by the shared draft factory, not by the schema.
-    private const string CreateMapPackageArgumentSchemaJson = """
+    private const string CreateMapArgumentSchemaJson = """
         {
           "type": "object",
           "additionalProperties": true,
@@ -211,22 +211,22 @@ internal static class McpToolSchemas
         }
         """;
 
-    private const string CreateAppPackageArgumentSchemaJson = """
+    private const string CreateAppArgumentSchemaJson = """
         {
           "type": "object",
           "additionalProperties": true,
           "properties": {
             "templateId": {
               "type": "string",
-              "description": "App-template registry identifier (surfaced through AppPackage.templateId)."
+              "description": "App-template registry identifier (surfaced through App.templateId)."
             },
             "targetSdk": {
               "type": "string",
               "description": "Target SDK declaration. V1 default is honua-sdk-js."
             },
-            "mapPackageId": {
+            "mapId": {
               "type": "string",
-              "description": "MapPackage (map_…) bound into the application."
+              "description": "Map (map_…) bound into the application."
             },
             "boundArtifactIds": {
               "type": "array",
@@ -300,9 +300,9 @@ internal static class McpToolSchemas
 
     public static readonly JsonElement PlanAnalysisArgumentSchema = Parse(PlanAnalysisArgumentSchemaJson);
 
-    public static readonly JsonElement CreateMapPackageArgumentSchema = Parse(CreateMapPackageArgumentSchemaJson);
+    public static readonly JsonElement CreateMapArgumentSchema = Parse(CreateMapArgumentSchemaJson);
 
-    public static readonly JsonElement CreateAppPackageArgumentSchema = Parse(CreateAppPackageArgumentSchemaJson);
+    public static readonly JsonElement CreateAppArgumentSchema = Parse(CreateAppArgumentSchemaJson);
 
     // packageFamily is not marked required because the service reports a missing or unknown family as a finding the tool exists to inspect.
     public static readonly JsonElement PackageReviewArgumentSchema = Parse(PackageReviewArgumentSchemaJson);

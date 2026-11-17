@@ -11,20 +11,20 @@ using Honua.Ai.Protocols.Mcp.Models;
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
 // The factory is a constructor dependency so a missing registration fails at startup instead of advertising a tool that always returns unavailable.
-internal sealed class CreateMapPackageTool : IMcpTool
+internal sealed class CreateMapTool : IMcpTool
 {
-    public const string ToolName = "honua_create_map_package";
+    public const string ToolName = "honua_create_map";
 
     private readonly IGeoprocessingJobService _jobService;
-    private readonly MapPackageDraftFactory _drafts;
+    private readonly MapDraftFactory _drafts;
     private readonly IPackageDraftStore _draftStore;
-    private readonly ILogger<CreateMapPackageTool> _logger;
+    private readonly ILogger<CreateMapTool> _logger;
 
-    public CreateMapPackageTool(
+    public CreateMapTool(
         IGeoprocessingJobService jobService,
-        MapPackageDraftFactory drafts,
+        MapDraftFactory drafts,
         IPackageDraftStore draftStore,
-        ILogger<CreateMapPackageTool> logger)
+        ILogger<CreateMapTool> logger)
     {
         _jobService = jobService;
         _drafts = drafts;
@@ -39,18 +39,18 @@ internal sealed class CreateMapPackageTool : IMcpTool
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
-        Title = "Create map package",
-        Description = "Create a MapPackage draft deterministically from structured composition input "
+        Title = "Create Map",
+        Description = "Create a Map draft deterministically from structured input "
             + "(templateId, sourceBindings, styleId, themeId, initialView). Performs no model inference and takes no "
-            + "natural-language input; returns a draft package with a stable map_… identifier and its "
-            + "honua://map-packages/{id} resource URI, plus any deferred-resolution warnings.",
-        InputSchema = McpToolSchemas.CreateMapPackageArgumentSchema,
-        OutputSchema = McpToolOutputSchemas.CreateMapPackageOutputSchema,
-        // Write tool: it authors a new MapPackage draft. Not destructive (it
+            + "natural-language input; returns a draft Map with a stable map_… identifier and its "
+            + "honua://maps/{id} resource URI, plus any deferred-resolution warnings.",
+        InputSchema = McpToolSchemas.CreateMapArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.CreateMapOutputSchema,
+        // Write tool: it authors a new Map draft. Not destructive (it
         // creates rather than destroys state) and not idempotent — the draft is
         // a pure function of the input except for its freshly minted identity,
-        // so a replay yields an equivalent package under a new map_… id.
-        Annotations = McpToolAnnotationSets.Write("Create map package", destructive: false, idempotent: false)
+        // so a replay yields an equivalent Map under a new map_… id.
+        Annotations = McpToolAnnotationSets.Write("Create Map", destructive: false, idempotent: false)
     };
 
     public async Task<McpToolsCallResult> InvokeAsync(
@@ -58,7 +58,7 @@ internal sealed class CreateMapPackageTool : IMcpTool
         JsonElement? arguments,
         CancellationToken cancellationToken)
     {
-        McpTelemetry.EnrichActivity("CreateMapPackage");
+        McpTelemetry.EnrichActivity("CreateMap");
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
@@ -67,9 +67,9 @@ internal sealed class CreateMapPackageTool : IMcpTool
             .ConfigureAwait(false);
         var ownerId = PackageDraftCaller.RequireOwnerId(principal);
 
-        var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpCreateMapPackageArgument);
+        var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpCreateMapArgument);
 
-        var result = _drafts.CreateDraft(new MapPackageDraftRequest
+        var result = _drafts.CreateDraft(new MapDraftRequest
         {
             TemplateId = argument.TemplateId,
             StyleId = argument.StyleId,
@@ -78,26 +78,26 @@ internal sealed class CreateMapPackageTool : IMcpTool
             InitialView = MapInitialView(argument.InitialView)
         });
 
-        if (result.Package is null)
+        if (result.Map is null)
         {
             throw new GeoprocessingValidationException(McpPackageDraftProjection.DescribeErrors(
-                "Map-package draft input is invalid", result.Errors));
+                "Map draft input is invalid", result.Errors));
         }
 
         // Persist before returning: ADR-0076 promises a package "addressable at
-        // its honua://map-packages/{id} URI", and MapPackageResource can only
+        // its honua://maps/{id} URI", and MapResource can only
         // honour that for a deployment-less draft if the draft was recorded.
-        await _draftStore.SaveMapDraftAsync(result.Package, ownerId, cancellationToken).ConfigureAwait(false);
+        await _draftStore.SaveMapDraftAsync(result.Map, ownerId, cancellationToken).ConfigureAwait(false);
 
-        var output = new McpPackageDraftOutput
+        var output = new McpMapDraftOutput
         {
-            PackageId = result.Package.MapPackageId,
-            ResourceUri = McpResourceUris.MapPackageUri(result.Package.MapPackageId),
-            Package = JsonSerializer.SerializeToElement(result.Package, PackagingJsonContext.Default.MapPackage),
+            MapId = result.Map.MapId,
+            ResourceUri = McpResourceUris.MapUri(result.Map.MapId),
+            Map = JsonSerializer.SerializeToElement(result.Map, PackagingJsonContext.Default.Map),
             Warnings = McpPackageDraftProjection.MapFindings(result.Warnings)
         };
 
-        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpPackageDraftOutput);
+        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpMapDraftOutput);
     }
 
     private static List<SourceBindingInput> MapSourceBindings(

@@ -6,9 +6,9 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Studio.Drafts;
 
-public sealed partial class MapPackageDraftFactory
+public sealed partial class MapDraftFactory
 {
-    public const string MapPackageFormat = "honua_map_package.v1";
+    public const string MapFormat = "honua_map.v1";
 
     public const string IdentifierPrefix = "map";
 
@@ -22,7 +22,7 @@ public sealed partial class MapPackageDraftFactory
     private readonly IDraftIdentifierGenerator _identifiers;
     private readonly TimeProvider _timeProvider;
 
-    public MapPackageDraftFactory(IDraftIdentifierGenerator identifiers, TimeProvider timeProvider)
+    public MapDraftFactory(IDraftIdentifierGenerator identifiers, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(identifiers);
         ArgumentNullException.ThrowIfNull(timeProvider);
@@ -30,7 +30,7 @@ public sealed partial class MapPackageDraftFactory
         _timeProvider = timeProvider;
     }
 
-    public MapPackageDraftResult CreateDraft(MapPackageDraftRequest request)
+    public MapDraftResult CreateDraft(MapDraftRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -45,15 +45,15 @@ public sealed partial class MapPackageDraftFactory
 
         if (errors.Count > 0)
         {
-            return new MapPackageDraftResult { Errors = errors, Warnings = warnings };
+            return new MapDraftResult { Errors = errors, Warnings = warnings };
         }
 
-        var package = new MapPackage
+        var package = new Map
         {
-            MapPackageId = _identifiers.NewIdentifier(IdentifierPrefix),
+            MapId = _identifiers.NewIdentifier(IdentifierPrefix),
 
             // Server-owned discriminators (retained knowledge §5): never caller supplied.
-            Format = MapPackageFormat,
+            Format = MapFormat,
             Status = PackageStatus.Draft,
 
             TemplateId = templateId,
@@ -64,7 +64,7 @@ public sealed partial class MapPackageDraftFactory
             CreatedAt = _timeProvider.GetUtcNow()
         };
 
-        return new MapPackageDraftResult { Package = package, Warnings = warnings };
+        return new MapDraftResult { Map = package, Warnings = warnings };
     }
 
     private static List<SourceBinding> BuildSourceBindings(

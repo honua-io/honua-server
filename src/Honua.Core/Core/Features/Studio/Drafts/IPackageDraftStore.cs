@@ -7,13 +7,13 @@ namespace Honua.Core.Features.Studio.Drafts;
 
 public interface IPackageDraftStore
 {
-    Task SaveMapDraftAsync(MapPackage package, string ownerId, CancellationToken cancellationToken = default);
+    Task SaveMapDraftAsync(Map package, string ownerId, CancellationToken cancellationToken = default);
 
-    Task SaveAppDraftAsync(AppPackage package, string ownerId, CancellationToken cancellationToken = default);
+    Task SaveAppDraftAsync(App package, string ownerId, CancellationToken cancellationToken = default);
 
-    Task<MapPackage?> GetMapDraftAsync(string mapPackageId, string ownerId, CancellationToken cancellationToken = default);
+    Task<Map?> GetMapDraftAsync(string mapId, string ownerId, CancellationToken cancellationToken = default);
 
-    Task<AppPackage?> GetAppDraftAsync(string appPackageId, string ownerId, CancellationToken cancellationToken = default);
+    Task<App?> GetAppDraftAsync(string appId, string ownerId, CancellationToken cancellationToken = default);
 }
 
 public sealed record PackageDraftRetentionOptions

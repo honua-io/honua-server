@@ -54,8 +54,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_cancel_job",
         "honua_publish_service",
         "honua_publish_result",
-        "honua_create_map_package",
-        "honua_create_app_package",
+        "honua_create_map",
+        "honua_create_app",
         "honua_plan_analysis",
         "honua_ground_candidates",
         "honua_clarify_intent",
@@ -132,10 +132,10 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua://published-services/{serviceId}",
         "honua://deployments",
         "honua://deployments/{deploymentId}",
-        "honua://map-packages",
-        "honua://map-packages/{packageId}",
-        "honua://app-packages",
-        "honua://app-packages/{packageId}"
+        "honua://maps",
+        "honua://maps/{packageId}",
+        "honua://apps",
+        "honua://apps/{packageId}"
     };
 
     [UnitTest]
@@ -321,8 +321,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             McpTelemetry.ResourceFamily.OpsFindings,
             McpTelemetry.ResourceFamily.PublishedServices,
             McpTelemetry.ResourceFamily.Deployments,
-            McpTelemetry.ResourceFamily.MapPackages,
-            McpTelemetry.ResourceFamily.AppPackages,
+            McpTelemetry.ResourceFamily.Maps,
+            McpTelemetry.ResourceFamily.Apps,
             McpTelemetry.ResourceFamily.PromotionIndex
         });
     }
@@ -424,8 +424,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_ingest_job_artifact"] = (Destructive: false, Idempotent: true),
             ["honua_publish_service"] = (Destructive: false, Idempotent: false),
             ["honua_publish_result"] = (Destructive: false, Idempotent: false),
-            ["honua_create_map_package"] = (Destructive: false, Idempotent: false),
-            ["honua_create_app_package"] = (Destructive: false, Idempotent: false),
+            ["honua_create_map"] = (Destructive: false, Idempotent: false),
+            ["honua_create_app"] = (Destructive: false, Idempotent: false),
             ["honua_apply_style_preset"] = (Destructive: false, Idempotent: true),
             // Studio draft lifecycle + composition tools (honua-server#3002).
             // No honua_studio_publish/honua_studio_rollback tool exists — only
@@ -926,8 +926,8 @@ public sealed partial class McpTaxonomyAlignmentTests
                 services, deployments, jobService,
                 NullLogger<PublishedServiceResource>.Instance),
             new DeploymentResource(deployments, jobService, NullLogger<DeploymentResource>.Instance),
-            new MapPackageResource(deployments, drafts, jobService, NullLogger<MapPackageResource>.Instance),
-            new AppPackageResource(deployments, drafts, jobService, NullLogger<AppPackageResource>.Instance),
+            new MapResource(deployments, drafts, jobService, NullLogger<MapResource>.Instance),
+            new AppResource(deployments, drafts, jobService, NullLogger<AppResource>.Instance),
             new PromotionSurfaceIndexResource(
                 services, deployments, jobService,
                 NullLogger<PromotionSurfaceIndexResource>.Instance)

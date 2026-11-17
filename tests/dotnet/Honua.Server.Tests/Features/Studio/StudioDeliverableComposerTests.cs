@@ -116,7 +116,7 @@ public sealed class StudioDeliverableComposerTests
             "use-default" => family switch
             {
                 StudioPackageFamily.Map =>
-                    """{"format":"honua_map_package.v1","title":"Parcels Overview","description":"Parcel coverage map.","layers":[{"title":"Parcels"},{"title":"Roads"}],"basemap":"streets"}""",
+                    """{"format":"honua_map.v1","title":"Parcels Overview","description":"Parcel coverage map.","layers":[{"title":"Parcels"},{"title":"Roads"}],"basemap":"streets"}""",
                 StudioPackageFamily.Dashboard =>
                     """{"title":"Operations Dashboard","description":"Live metrics.","widgets":[{"title":"Throughput","type":"chart"}]}""",
                 _ =>
