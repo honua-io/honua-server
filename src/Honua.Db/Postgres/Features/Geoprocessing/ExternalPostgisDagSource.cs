@@ -41,12 +41,7 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
         ArgumentNullException.ThrowIfNull(request);
 
         var sourceTable = GetSourceTable(request);
-        FilterExpression? filter = null;
-        if (!string.IsNullOrWhiteSpace(request.Where))
-        {
-            PostgresSqlSafety.ValidateReadOnlySingleStatement("SELECT 1 WHERE (" + request.Where + ")");
-            filter = new GeoServicesSqlParser().Parse(request.Where);
-        }
+        var filter = ParseFilter(request);
 
         await using var connection = await OpenConnectionAsync(request, cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -74,13 +69,7 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
             command.Parameters.AddWithValue(name, NpgsqlTypes.NpgsqlDbType.Unknown, value);
         }
 
-        if (predicate is not null)
-        {
-            for (var i = 0; i < predicate.Parameters.Count; i++)
-            {
-                command.Parameters.AddWithValue($"p{i}", predicate.Parameters[i] ?? DBNull.Value);
-            }
-        }
+        BindFilterParameters(command, predicate);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var geometryOrdinal = reader.GetOrdinal("__honua_geom_geojson");
@@ -137,6 +126,28 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
         var connection = new NpgsqlConnection(request.PostgisConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return connection;
+    }
+
+    private static FilterExpression? ParseFilter(DagSourceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Where))
+        {
+            return null;
+        }
+        PostgresSqlSafety.ValidateReadOnlySingleStatement("SELECT 1 WHERE (" + request.Where + ")");
+        return new GeoServicesSqlParser().Parse(request.Where);
+    }
+
+    private static void BindFilterParameters(NpgsqlCommand command, SqlFragment? predicate)
+    {
+        if (predicate is null)
+        {
+            return;
+        }
+        for (var i = 0; i < predicate.Parameters.Count; i++)
+        {
+            command.Parameters.AddWithValue($"p{i}", predicate.Parameters[i] ?? DBNull.Value);
+        }
     }
 
     private sealed record SourceTable(string Schema, string Table, string GeometryColumn);
