@@ -129,7 +129,7 @@ perform full log reads.
 | `claimedBy`, `claimedAt`, `lastHeartbeatAt` | Worker claim and heartbeat state. |
 | `cancellationRequestedAt` | Set when remote or cooperative cancellation is in progress. |
 | `warnings[]` | Retained warnings on the durable record. |
-| `failure` | `{ message, classification }`; classification is `execution_failed` or `cancelled`. |
+| `failure` | `{ message, classification }`; classification is `execution_failed`, `worker_lost`, `timeout` or `cancelled`, the same value `/diagnostics` reports. |
 | `retryPolicy` | `{ maxAttempts, strategy, baseDelayMs, maxDelayMs }`. |
 | `parentJobId`, `childJobIds[]` | Workflow parent/child metadata from canonical job parameters. |
 | `selectedMetadata` | Safe metadata keys only; secret-like keys/values are omitted and long values are truncated to 512 characters. |

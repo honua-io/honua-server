@@ -26224,6 +26224,8 @@
             "type": "string",
             "enum": [
               "execution_failed",
+              "worker_lost",
+              "timeout",
               "cancelled"
             ]
           }
