@@ -359,6 +359,92 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
         jobChanged.Version.Should().Be(beforeRefused);
     }
 
+    [IntegrationTest]
+    public async Task TryClaimAsync_JobWhoseRecordCannotBeRead_IsFailedAndTheNextJobIsClaimed()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var unreadable = await CreateEnqueuedJobAsync(harness, "unreadable");
+        var valid = await CreateEnqueuedJobAsync(harness, "valid");
+        await CorruptRecordAsync(harness, unreadable.OperationId);
+
+        (await harness.Queue.TryClaimAsync("worker-a")).Should().BeNull("the unreadable job cannot be executed");
+        (await harness.Queue.TryClaimAsync("worker-a")).Should().Be(valid.OperationId);
+
+        var row = await ReadRowStateAsync(harness, unreadable.OperationId);
+        row.Should().Be(("Failed", (string?)null, ExecutionJobRow.UnreadableRecordPhase, true, false));
+    }
+
+    [IntegrationTest]
+    public async Task ListActiveAsync_JobWhoseRecordCannotBeRead_IsSkippedSoOtherJobsStillReconcile()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var unreadable = await CreateEnqueuedJobAsync(harness, "unreadable-active");
+        var valid = await CreateEnqueuedJobAsync(harness, "valid-active");
+        await CorruptRecordAsync(harness, unreadable.OperationId);
+
+        var active = await harness.JobStore.ListActiveAsync();
+
+        active.Select(job => job.OperationId).Should().Contain(valid.OperationId).And.NotContain(unreadable.OperationId);
+    }
+
+    [IntegrationTest]
+    public async Task ListExpiryAndDispatchCandidatesAsync_StaleClaimWhoseRecordCannotBeRead_FailsIt()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var job = await CreateEnqueuedJobAsync(harness, "unreadable-stale-claim");
+        (await harness.Queue.TryClaimAsync("worker-gone")).Should().Be(job.OperationId);
+        await CorruptRecordAsync(harness, job.OperationId);
+        await harness.AgeClaimAsync(job.OperationId, TimeSpan.FromDays(1));
+
+        (await harness.JobStore.ListExpiryAndDispatchCandidatesAsync(CancellationToken.None))
+            .Select(candidate => candidate.OperationId).Should().NotContain(job.OperationId);
+
+        (await ReadRowStateAsync(harness, job.OperationId))
+            .Should().Be(("Failed", (string?)null, ExecutionJobRow.UnreadableRecordPhase, true, false));
+    }
+
+    [IntegrationTest]
+    public async Task QueryAsync_PageEndingOnAnUnreadableJob_StillLeadsToTheOlderJobs()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var older = await CreateEnqueuedJobAsync(harness, "older-readable");
+        var newer = await CreateEnqueuedJobAsync(harness, "newer-unreadable");
+        await CorruptRecordAsync(harness, newer.OperationId);
+
+        var first = await harness.JobStore.QueryAsync(new ExecutionJobQuery { Limit = 1 });
+        first.Items.Should().BeEmpty();
+        first.NextCursor.Should().NotBeNull("an unreadable row must not end paging");
+
+        var second = await harness.JobStore.QueryAsync(new ExecutionJobQuery { Limit = 1, Cursor = first.NextCursor });
+        second.Items.Select(job => job.OperationId).Should().Equal(older.OperationId);
+    }
+
+    private static async Task CorruptRecordAsync(PostgresJobSubstrateHarness harness, string operationId)
+    {
+        await using var connection = await harness.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            $"UPDATE {harness.JobsTable} SET record = '{{\"poison\":true}}'::json WHERE operation_id = @operation_id", connection);
+        command.Parameters.Add(new NpgsqlParameter("operation_id", operationId));
+        (await command.ExecuteNonQueryAsync()).Should().Be(1);
+    }
+
+    private static async Task<(string Status, string? ClaimedBy, string? Phase, bool Completed, bool Queued)> ReadRowStateAsync(
+        PostgresJobSubstrateHarness harness, string operationId)
+    {
+        await using var connection = await harness.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            $"""
+            SELECT status, claimed_by, current_phase, completed_at IS NOT NULL, queue_visible_at IS NOT NULL
+            FROM {harness.JobsTable} WHERE operation_id = @operation_id
+            """,
+            connection);
+        command.Parameters.Add(new NpgsqlParameter("operation_id", operationId));
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        return (reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetBoolean(3), reader.GetBoolean(4));
+    }
+
     private Task<PostgresJobSubstrateHarness> CreateHarnessAsync()
         => PostgresJobSubstrateHarness.CreateAsync(database, nameof(PostgresJobQueueTests));
 }
