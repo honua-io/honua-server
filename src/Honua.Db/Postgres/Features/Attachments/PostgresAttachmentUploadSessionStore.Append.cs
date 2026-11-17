@@ -19,7 +19,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         }
         chunk = chunk with { Content = (byte[])chunk.Content.Clone(), Sha256 = (byte[])chunk.Sha256.Clone() };
         ValidateChunk(chunk);
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionOwner = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionOwner.RequireNpgsqlConnection();
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         var database = new SessionDatabase(connection, transaction, cancellationToken);
         var session = (await ReadSessionAsync(database, chunk.Key, "FOR UPDATE").ConfigureAwait(false)).Session;
@@ -76,7 +77,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
 
     public async Task AbortAsync(AttachmentUploadSessionKey key, CancellationToken cancellationToken = default)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionOwner = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionOwner.RequireNpgsqlConnection();
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         var database = new SessionDatabase(connection, transaction, cancellationToken);
         var session = (await ReadSessionAsync(database, key, "FOR UPDATE").ConfigureAwait(false)).Session;

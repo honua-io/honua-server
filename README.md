@@ -4,7 +4,7 @@
 [![CodeQL](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml)
 [![Security Nightly](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml)
 [![License](https://img.shields.io/badge/License-FCL--1.0--ALv2-blue.svg)](https://github.com/honua-io/honua-server/blob/trunk/LICENSE)
-[![.NET](https://img.shields.io/badge/.NET-10.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![.NET](https://img.shields.io/badge/.NET-11.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/11.0)
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.4--3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-honuaio%2Fhonua--server-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
@@ -232,7 +232,7 @@ Honua Server stands on the shoulders of the open geospatial community. The piece
 - **[NetTopologySuite](https://github.com/NetTopologySuite/NetTopologySuite)** for geometry in .NET, with its GeoJSON, Shapefile and GeoPackage readers.
 - **[PostgreSQL](https://www.postgresql.org/)** and **[PostGIS](https://postgis.net/)** as the primary store, through **[Npgsql](https://www.npgsql.org/)**, plus **[DuckDB](https://duckdb.org/)** and **[Apache Arrow and Parquet](https://arrow.apache.org/)** for cloud-native analytics.
 - **[FlatGeobuf](https://flatgeobuf.org/)**, **[GeoParquet](https://geoparquet.org/)**, **[PMTiles](https://github.com/protomaps/PMTiles)** and the **[STAC](https://stacspec.org/)** and **[OGC API](https://ogcapi.ogc.org/)** specifications for the formats and protocols we serve.
-- **[SkiaSharp](https://github.com/mono/SkiaSharp)** for map rendering, **[MapLibre](https://maplibre.org/)** style compatibility, **[OpenTelemetry](https://opentelemetry.io/)**, **[Serilog](https://serilog.net/)**, **[Polly](https://github.com/App-vNext/Polly)** and **[YARP](https://microsoft.github.io/reverse-proxy/)** for the service fabric, and **[xUnit](https://xunit.net/)** with **[Testcontainers](https://testcontainers.com/)** for the test suite.
+- **[SkiaSharp](https://github.com/mono/SkiaSharp)** for map rendering, **[MapLibre](https://maplibre.org/)** style compatibility, **[OpenTelemetry](https://opentelemetry.io/)**, **[Serilog](https://serilog.net/)** and **[Polly](https://github.com/App-vNext/Polly)** for the service fabric, and **[xUnit](https://xunit.net/)** with **[Testcontainers](https://testcontainers.com/)** for the test suite.
 - Conformance is checked against the OGC **[CITE TEAM Engine](https://cite.opengeospatial.org/teamengine/)** suites, **[stac-api-validator](https://github.com/stac-utils/stac-api-validator)** and **[Schemathesis](https://schemathesis.io/)**.
 
 Thank you to the maintainers. The complete list of distributed third-party components and their licenses is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

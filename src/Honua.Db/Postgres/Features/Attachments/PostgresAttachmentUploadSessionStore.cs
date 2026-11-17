@@ -26,7 +26,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore : IAttachment
 
     public async Task<AttachmentUploadSession> GetAsync(AttachmentUploadSessionKey key, CancellationToken cancellationToken = default)
     {
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionOwner = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionOwner.RequireNpgsqlConnection();
         var stored = await ReadSessionAsync(new SessionDatabase(connection, null, cancellationToken), key, "").ConfigureAwait(false);
         return stored.Session;
     }

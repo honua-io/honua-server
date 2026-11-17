@@ -18,36 +18,6 @@ internal static class StaEntityMapper
         return utc.ToString(pattern, CultureInfo.InvariantCulture);
     }
 
-    public static StaThing MapThing(SensorThingsThing thing, string staBase) => new()
-    {
-        IotId = thing.Id,
-        IotSelfLink = $"{staBase}/Things({thing.Id})",
-        Name = thing.Name,
-        Description = thing.Description,
-        DatastreamsNavigationLink = $"{staBase}/Things({thing.Id})/Datastreams"
-    };
-
-    public static StaSensor MapSensor(SensorThingsSensor sensor, string staBase) => new()
-    {
-        IotId = sensor.Id,
-        IotSelfLink = $"{staBase}/Sensors({sensor.Id})",
-        Name = sensor.Name,
-        Description = sensor.Description,
-        EncodingType = sensor.EncodingType,
-        Metadata = sensor.Metadata,
-        DatastreamsNavigationLink = $"{staBase}/Sensors({sensor.Id})/Datastreams"
-    };
-
-    public static StaObservedProperty MapObservedProperty(SensorThingsObservedProperty property, string staBase) => new()
-    {
-        IotId = property.Id,
-        IotSelfLink = $"{staBase}/ObservedProperties({property.Id})",
-        Name = property.Name,
-        Definition = property.Definition,
-        Description = property.Description,
-        DatastreamsNavigationLink = $"{staBase}/ObservedProperties({property.Id})/Datastreams"
-    };
-
     public static StaObservation MapObservation(SensorThingsObservation observation, string staBase)
     {
         // FeaturesOfInterest has no entity read surface in this Preview adapter.
@@ -68,44 +38,5 @@ internal static class StaEntityMapper
         if (observation.JsonResult is { } result) return result;
         using var document = System.Text.Json.JsonDocument.Parse(observation.Result?.ToString("R", CultureInfo.InvariantCulture) ?? "null");
         return document.RootElement.Clone();
-    }
-
-    public static StaDatastream MapDatastream(
-        SensorThingsDatastream datastream,
-        string staBase,
-        IReadOnlyList<StaObservation>? expandedObservations = null,
-        StaThing? expandedThing = null,
-        StaSensor? expandedSensor = null,
-        StaObservedProperty? expandedObservedProperty = null)
-    {
-        string? phenomenonTime = null;
-        if (datastream.PhenomenonTimeStart is { } start && datastream.PhenomenonTimeEnd is { } end)
-        {
-            phenomenonTime = $"{FormatInstant(start)}/{FormatInstant(end)}";
-        }
-
-        return new StaDatastream
-        {
-            IotId = datastream.Id,
-            IotSelfLink = $"{staBase}/Datastreams({datastream.Id})",
-            Name = datastream.Name,
-            Description = datastream.Description,
-            ObservationType = datastream.ObservationType,
-            UnitOfMeasurement = new StaUnitOfMeasurement
-            {
-                Name = datastream.UnitName,
-                Symbol = datastream.UnitSymbol,
-                Definition = datastream.UnitDefinition
-            },
-            PhenomenonTime = phenomenonTime,
-            ObservationsNavigationLink = $"{staBase}/Datastreams({datastream.Id})/Observations",
-            ThingNavigationLink = $"{staBase}/Datastreams({datastream.Id})/Thing",
-            SensorNavigationLink = $"{staBase}/Datastreams({datastream.Id})/Sensor",
-            ObservedPropertyNavigationLink = $"{staBase}/Datastreams({datastream.Id})/ObservedProperty",
-            Observations = expandedObservations,
-            Thing = expandedThing,
-            Sensor = expandedSensor,
-            ObservedProperty = expandedObservedProperty
-        };
     }
 }

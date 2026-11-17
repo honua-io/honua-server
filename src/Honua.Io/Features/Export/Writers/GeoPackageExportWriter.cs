@@ -55,6 +55,7 @@ internal static class GeoPackageExportWriter
 
         await CreateMetadataTablesAsync(connection, cancellationToken).ConfigureAwait(false);
         await InsertSpatialRefAsync(connection, srid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
+        await InsertSpatialRefAsync(connection, 4326, "EPSG:4326", WellKnownCrsWkt.Epsg4326, cancellationToken).ConfigureAwait(false);
         var usedNames = fields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var idColumn = ColumnNameReservation.Reserve("fid", usedNames);
         var geometryColumn = ColumnNameReservation.Reserve("geom", usedNames);
@@ -130,7 +131,7 @@ internal static class GeoPackageExportWriter
         cmd.Parameters.AddWithValue("$srid", srid);
         cmd.Parameters.AddWithValue("$org", organization);
         cmd.Parameters.AddWithValue("$orgCoordsysId", coordsysId);
-        cmd.Parameters.AddWithValue("$definition", srsWkt ?? "undefined");
+        cmd.Parameters.AddWithValue("$definition", srsWkt ?? (srid == 4326 ? WellKnownCrsWkt.Epsg4326 : "undefined"));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 

@@ -331,8 +331,8 @@ public sealed class DeployWorkflowReconcilerPostActivationObservationTests
             Deploy = new DeployOperationSpec
             {
                 TargetId = "target",
-                TargetKind = DeployTargetKind.SelfHostedRolling,
-                Backend = "honua-yarp-rolling",
+                TargetKind = DeployTargetKind.LocalCompose,
+                Backend = "honua-compose",
                 Environment = "production",
                 TargetName = "honua-server",
                 ArtifactReference = "ghcr.io/honua/server",
@@ -364,9 +364,9 @@ public sealed class DeployWorkflowReconcilerPostActivationObservationTests
 
         public int CompleteProtectionCalls { get; private set; }
 
-        public string BackendName => "honua-yarp-rolling";
+        public string BackendName => "honua-compose";
 
-        public DeployTargetKind TargetKind => DeployTargetKind.SelfHostedRolling;
+        public DeployTargetKind TargetKind => DeployTargetKind.LocalCompose;
 
         public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(new DeployBackendCapabilities
@@ -423,8 +423,8 @@ public sealed class DeployWorkflowReconcilerPostActivationObservationTests
         private static readonly DeployTargetDefinition Target = new()
         {
             TargetId = "target",
-            TargetKind = DeployTargetKind.SelfHostedRolling,
-            Backend = "honua-yarp-rolling",
+            TargetKind = DeployTargetKind.LocalCompose,
+            Backend = "honua-compose",
             Environment = "production",
             TargetName = "honua-server",
             ArtifactReference = "ghcr.io/honua/server",

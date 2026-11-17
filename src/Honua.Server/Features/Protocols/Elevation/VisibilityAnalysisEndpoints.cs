@@ -1,12 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Raster;
@@ -33,7 +31,7 @@ internal static partial class VisibilityAnalysisEndpoints
         // HANDLER-AUTHORIZED: these POST routes mirror the read-only
         // elevation API (GET /elevation/{datasetId}/profile). Access is enforced
         // inside the handler — LicenseGate.RequireEntitlement gates the Pro-tier
-        // entitlement, and ValidateDatasetAsync runs the layer access check
+        // entitlement, and ElevationAnalysisValidation.ValidateDatasetAsync runs the layer access check
         // (AccessScope.Read) before any analysis. Marked AllowAnonymous so the
         // audit architecture guard records the explicit (read-only) decision.
         endpoints.MapPost("/elevation/{datasetId}/line-of-sight", HandleLineOfSight)
@@ -53,7 +51,7 @@ internal static partial class VisibilityAnalysisEndpoints
             .AllowAnonymous();
 
         // HANDLER-AUTHORIZED: see the line-of-sight route above —
-        // LicenseGate.RequireEntitlement + ValidateDatasetAsync (AccessScope.Read)
+        // LicenseGate.RequireEntitlement + ElevationAnalysisValidation.ValidateDatasetAsync (AccessScope.Read)
         // enforce access inside the handler. Marked AllowAnonymous so the audit
         // architecture guard records the explicit (read-only) decision.
         endpoints.MapPost("/elevation/{datasetId}/viewshed", HandleViewshed)
@@ -114,22 +112,25 @@ internal static partial class VisibilityAnalysisEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Request body is required.");
         }
 
-        if (!TryResolveCoordinate(request.ObserverLon, request.ObserverLat, out var observerLon, out var observerLat))
+        var (observerLonValid, observerLon, observerLat) = ElevationAnalysisValidation.ResolveCoordinate(request.ObserverLon, request.ObserverLat);
+        if (!observerLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "Observer 'observerLon' and 'observerLat' are required and must be finite WGS 84 coordinates within longitude [-180, 180] and latitude [-90, 90].");
         }
 
-        if (!TryResolveCoordinate(request.TargetLon, request.TargetLat, out var targetLon, out var targetLat))
+        var (targetLonValid, targetLon, targetLat) = ElevationAnalysisValidation.ResolveCoordinate(request.TargetLon, request.TargetLat);
+        if (!targetLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "Target 'targetLon' and 'targetLat' are required and must be finite WGS 84 coordinates within longitude [-180, 180] and latitude [-90, 90].");
         }
 
-        if (!TryResolveHeight(request.ObserverHeight, out var observerHeight)
-            || !TryResolveHeight(request.TargetHeight, out var targetHeight))
+        var (observerHeightValid, observerHeight) = ElevationAnalysisValidation.ResolveHeight(request.ObserverHeight);
+        var (targetHeightValid, targetHeight) = ElevationAnalysisValidation.ResolveHeight(request.TargetHeight);
+        if (!observerHeightValid || !targetHeightValid)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
@@ -165,7 +166,7 @@ internal static partial class VisibilityAnalysisEndpoints
                 "Observer and target must be distinct coordinates.");
         }
 
-        var validation = await ValidateDatasetAsync(context, datasetId, cancellationToken);
+        var validation = await ElevationAnalysisValidation.ValidateDatasetAsync(context, datasetId, cancellationToken);
         if (!validation.IsValid)
         {
             return validation.ErrorResult!;
@@ -242,7 +243,8 @@ internal static partial class VisibilityAnalysisEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Request body is required.");
         }
 
-        if (!TryResolveCoordinate(request.ObserverLon, request.ObserverLat, out var observerLon, out var observerLat))
+        var (observerLonValid, observerLon, observerLat) = ElevationAnalysisValidation.ResolveCoordinate(request.ObserverLon, request.ObserverLat);
+        if (!observerLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -256,8 +258,9 @@ internal static partial class VisibilityAnalysisEndpoints
                 "'radiusMeters' is required and must be a positive finite distance in meters.");
         }
 
-        if (!TryResolveHeight(request.ObserverHeight, out var observerHeight)
-            || !TryResolveHeight(request.TargetHeight, out var targetHeight))
+        var (observerHeightValid, observerHeight) = ElevationAnalysisValidation.ResolveHeight(request.ObserverHeight);
+        var (targetHeightValid, targetHeight) = ElevationAnalysisValidation.ResolveHeight(request.TargetHeight);
+        if (!observerHeightValid || !targetHeightValid)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
@@ -278,7 +281,7 @@ internal static partial class VisibilityAnalysisEndpoints
                 "'samplesPerRay' must be at least 2 when supplied.");
         }
 
-        var validation = await ValidateDatasetAsync(context, datasetId, cancellationToken);
+        var validation = await ElevationAnalysisValidation.ValidateDatasetAsync(context, datasetId, cancellationToken);
         if (!validation.IsValid)
         {
             return validation.ErrorResult!;
@@ -323,71 +326,6 @@ internal static partial class VisibilityAnalysisEndpoints
             HonuaTelemetry.RecordException(activity, ex);
             return MapElevationException(context, ex);
         }
-    }
-
-    private static bool TryResolveCoordinate(double? lon, double? lat, out double resolvedLon, out double resolvedLat)
-    {
-        resolvedLon = 0;
-        resolvedLat = 0;
-        if (lon is not { } x || lat is not { } y)
-        {
-            return false;
-        }
-
-        if (!double.IsFinite(x) || !double.IsFinite(y))
-        {
-            return false;
-        }
-
-        if (x < -180 || x > 180 || y < -90 || y > 90)
-        {
-            return false;
-        }
-
-        resolvedLon = x;
-        resolvedLat = y;
-        return true;
-    }
-
-    private static bool TryResolveHeight(double? height, out double resolvedHeight)
-    {
-        resolvedHeight = 0;
-        if (height is not { } value)
-        {
-            return true;
-        }
-
-        if (!double.IsFinite(value) || value < 0)
-        {
-            return false;
-        }
-
-        resolvedHeight = value;
-        return true;
-    }
-
-    private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
-        HttpContext context,
-        string datasetId,
-        CancellationToken cancellationToken)
-    {
-        if (int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-        {
-            return LayerValidationHelpers.ValidateLayerWithAccessV2Async(
-                context,
-                layerId,
-                LayerValidationHelpers.ValidationProtocol.OgcFeatures,
-                AccessScope.Read,
-                Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols.Elevation,
-                cancellationToken);
-        }
-
-        return LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-            context,
-            datasetId,
-            AccessScope.Read,
-            Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols.Elevation,
-            cancellationToken: cancellationToken);
     }
 
     private static IResult MapElevationException(HttpContext context, ElevationQueryException exception)

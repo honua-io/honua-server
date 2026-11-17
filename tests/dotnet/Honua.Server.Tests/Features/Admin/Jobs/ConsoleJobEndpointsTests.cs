@@ -1157,7 +1157,7 @@ public sealed partial class ConsoleJobEndpointsTests
                 services.RemoveAll<IExecutionJobStore>();
                 services.RemoveAll<IExecutionLogStore>();
                 services.AddSingleton<IExecutionJobStore>(jobStore);
-                services.AddSingleton<IExecutionLogStore>(new InMemoryLogStore());
+                services.AddSingleton<IExecutionLogStore>(LostAttemptLogStore("job-diag-owner", "worker-internal-7"));
             });
         await gatedFixture.InitializeAsync();
         try

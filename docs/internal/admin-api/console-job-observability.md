@@ -129,7 +129,7 @@ perform full log reads.
 | `claimedBy`, `claimedAt`, `lastHeartbeatAt` | Worker claim and heartbeat state. |
 | `cancellationRequestedAt` | Set when remote or cooperative cancellation is in progress. |
 | `warnings[]` | Retained warnings on the durable record. |
-| `failure` | `{ message, classification }`; classification is `execution_failed` or `cancelled`. |
+| `failure` | `{ message, classification }`; classification is `execution_failed`, `worker_lost`, `timeout` or `cancelled`, the same value `/diagnostics` reports. |
 | `retryPolicy` | `{ maxAttempts, strategy, baseDelayMs, maxDelayMs }`. |
 | `parentJobId`, `childJobIds[]` | Workflow parent/child metadata from canonical job parameters. |
 | `selectedMetadata` | Safe metadata keys only; secret-like keys/values are omitted and long values are truncated to 512 characters. |
@@ -220,7 +220,7 @@ Action advertisement rules:
 
 | Action | Advertised when | Additional checks |
 | --- | --- | --- |
-| `cancel` | Job status is `Queued`, `Provisioning`, or `Running`. | Caller needs `OperatorOperation.Execute`; destructive-approval policy can require approval. |
+| `cancel` | Job status is `Queued`, `Provisioning`, or `Running`. | Caller needs `OperatorOperation.Execute`; destructive-approval policy can require approval. After a cancel is recorded (`cancellationRequestedAt`), the job can keep running until its worker or the reconciler stops it; meanwhile `allowed = false` with `disabledReason` `cancellation requested; waiting for the worker to stop`. |
 | `retry` | Job status is `Failed` or `Cancelled`. | Caller needs execute permission and `JobRetryPolicy` must allow another attempt. Local jobs also require `IJobQueue`; remote jobs require a registered backend that supports retry. |
 
 Use the `actions[]` response, not the presence of `links.cancel` or

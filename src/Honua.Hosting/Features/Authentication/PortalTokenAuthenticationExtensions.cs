@@ -140,7 +140,7 @@ public static class PortalTokenAuthenticationExtensions
         });
     }
 
-    private static IPortalCredentialVerifier CountAttempts(IServiceProvider provider, IPortalCredentialVerifier admin)
+    private static IPortalCredentialVerifier CountAttempts(IServiceProvider provider, AdminPortalCredentialVerifier admin)
         => provider.GetService<AuthenticationAttemptGate>() is { } gate
             ? new AttemptCountingPortalCredentialVerifier(admin, gate, provider.GetRequiredService<IHttpContextAccessor>())
             : admin;

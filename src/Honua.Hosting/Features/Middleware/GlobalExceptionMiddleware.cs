@@ -10,7 +10,6 @@ using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.Infrastructure.Models;
-using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using InfrastructureLog = Honua.Infrastructure.Logging.ProtocolRequestLog;
 
@@ -28,7 +27,6 @@ internal sealed class GlobalExceptionMiddleware(
     private readonly IOptions<LimitsOptions> _limitsOptions = limitsOptions ?? throw new ArgumentNullException(nameof(limitsOptions));
 
     // WEEK 5 FIX: Fast-path optimization components
-    private static readonly ObjectPool<StringBuilder> _stringBuilderPool = new DefaultObjectPool<StringBuilder>(new StringBuilderPooledObjectPolicy());
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -167,57 +165,6 @@ internal sealed class GlobalExceptionMiddleware(
 
         // Use standardized error formatter for protocol-appropriate response
         await StandardErrorResponseFormatter.WriteErrorAsync(context, errorResponse, options);
-    }
-
-    private async Task GenerateOptimizedErrorResponse(HttpContext context, Exception exception, ExceptionCategory category)
-    {
-        var stringBuilder = _stringBuilderPool.Get();
-        try
-        {
-            // Set response headers optimally
-            context.Response.StatusCode = category.StatusCode;
-            context.Response.ContentType = "application/problem+json; charset=utf-8";
-
-            // Build ProblemDetails-compliant JSON response efficiently using StringBuilder
-            stringBuilder.Clear();
-            stringBuilder.Append('{');
-            stringBuilder.Append("\"title\":\"").Append(EscapeJsonString(category.Title)).Append("\",");
-            stringBuilder.Append("\"detail\":\"").Append(EscapeJsonString(category.Message)).Append("\",");
-            stringBuilder.Append("\"status\":").Append(category.StatusCode);
-
-            if (_includeDebugDetails)
-            {
-                stringBuilder.Append(",\"exception\":{");
-                stringBuilder.Append("\"type\":\"").Append(EscapeJsonString(exception.GetType().Name)).Append("\",");
-                stringBuilder.Append("\"message\":\"").Append(EscapeJsonString(exception.Message)).Append('\"');
-                if (!string.IsNullOrEmpty(exception.StackTrace))
-                {
-                    stringBuilder.Append(",\"stackTrace\":\"").Append(EscapeJsonString(exception.StackTrace)).Append('\"');
-                }
-                stringBuilder.Append('}');
-            }
-
-            stringBuilder.Append(",\"traceId\":\"").Append(context.TraceIdentifier).Append('\"');
-            stringBuilder.Append('}');
-
-            // WEEK 5 FIX: Use streaming write for better performance
-            await StreamingErrorHandler.WriteJsonResponseAsync(context, stringBuilder.ToString());
-        }
-        finally
-        {
-            _stringBuilderPool.Return(stringBuilder);
-        }
-    }
-
-    private static string EscapeJsonString(string input)
-    {
-        if (string.IsNullOrEmpty(input))
-            return string.Empty;
-
-        // JsonEncodedText produces a spec-conformant JSON string body (handles all
-        // control characters 0x00–0x1F, surrogate pairs, and quote/backslash) rather
-        // than the hand-rolled Replace chain which missed \b, \f, and C0 controls.
-        return System.Text.Json.JsonEncodedText.Encode(input).Value;
     }
 }
 
@@ -409,12 +356,6 @@ internal sealed class PrecompiledErrorResponseCache
         PrecompileCommonResponses();
     }
 
-    public static bool TryGetPrecompiledResponse(ExceptionType type, bool includeDebugDetails, out PrecompiledResponse? response)
-    {
-        var key = $"{type}_{includeDebugDetails}";
-        return _cache.TryGetValue(key, out response);
-    }
-
     private static void PrecompileCommonResponses()
     {
         var commonResponses = new[]
@@ -479,54 +420,6 @@ internal sealed class PrecompiledErrorResponseCache
         503 => "Service Unavailable",
         _ => "Error"
     };
-}
-
-internal sealed class StreamingErrorHandler
-{
-    private static readonly byte[] _correlationIdPlaceholder = "{correlationId}"u8.ToArray();
-
-    public static async Task WritePrecompiledResponseAsync(HttpContext context, PrecompiledResponse response)
-    {
-        context.Response.StatusCode = response.StatusCode;
-        context.Response.ContentType = response.ContentType;
-
-        // Replace correlation ID placeholder with actual ID
-        var bodyWithCorrelationId = response.JsonTemplate.Replace("{correlationId}", context.TraceIdentifier, StringComparison.Ordinal);
-        var bodyBytes = Encoding.UTF8.GetBytes(bodyWithCorrelationId);
-
-        context.Response.ContentLength = bodyBytes.Length;
-
-        // WEEK 5 FIX: Direct byte array write for maximum performance
-        await context.Response.Body.WriteAsync(bodyBytes);
-    }
-
-    public static async Task WriteJsonResponseAsync(HttpContext context, string jsonContent)
-    {
-        var bodyBytes = Encoding.UTF8.GetBytes(jsonContent);
-        context.Response.ContentLength = bodyBytes.Length;
-
-        // WEEK 5 FIX: Direct streaming write
-        await context.Response.Body.WriteAsync(bodyBytes);
-    }
-}
-
-internal sealed class StringBuilderPooledObjectPolicy : IPooledObjectPolicy<StringBuilder>
-{
-    public StringBuilder Create()
-    {
-        return new StringBuilder(1024); // Pre-size for typical error response
-    }
-
-    public bool Return(StringBuilder obj)
-    {
-        if (obj.Capacity > 8192) // Don't keep very large builders
-        {
-            return false;
-        }
-
-        obj.Clear();
-        return true;
-    }
 }
 
 // WEEK 5 FIX: Supporting data structures

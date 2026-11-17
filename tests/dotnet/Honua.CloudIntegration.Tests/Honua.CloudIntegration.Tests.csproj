@@ -53,9 +53,6 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
-    <!-- LocalSubstrate serving lane: a real embedded-YARP reverse proxy fronts the rolling cutover so
-         the continuous request loop proves zero downtime through the atomic destination swap. -->
-    <PackageReference Include="Yarp.ReverseProxy" />
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />

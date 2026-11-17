@@ -179,12 +179,6 @@ public static class AuthenticationExtensions
         policy.AuthenticationSchemes.Add(OidcAuthenticationExtensions.CompositeScheme);
     }
 
-    public static IApplicationBuilder UseApiKeyAuthentication(this IApplicationBuilder app)
-    {
-        return app.UseAuthentication()
-                  .UseAuthorization();
-    }
-
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
 

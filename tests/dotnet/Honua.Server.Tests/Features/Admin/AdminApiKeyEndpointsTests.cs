@@ -19,7 +19,8 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApiKeyManagement)]
-public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
+public sealed class AdminApiKeyEndpointsTests(AdminApiKeyEndpointsTests.ApiKeyHost host)
+    : IClassFixture<AdminApiKeyEndpointsTests.ApiKeyHost>
 {
     private const string AdminPassword = "api-key-admin-bootstrap-key";
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -28,12 +29,16 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Client;
 
-    public AdminApiKeyEndpointsTests()
+    // One host per class: every case creates its own keys and finds them by id, and only revokes or
+    // rotates keys it created, so the bootstrap admin key the shared client uses stays valid. Failed
+    // credential checks now share one failure limiter (10 per source address); the class counts
+    // about four.
+    public sealed class ApiKeyHost : IAsyncLifetime
     {
-        _fixture = new WebAppFixture()
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {
@@ -41,15 +46,21 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             });
-    }
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-    }
+        internal HttpClient Client { get; private set; } = null!;
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public async Task InitializeAsync()
+        {
+            await Fixture.InitializeAsync();
+            Client = Fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        }
+
+        public async Task DisposeAsync()
+        {
+            Client?.Dispose();
+            await Fixture.DisposeAsync();
+        }
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/api-keys")]

@@ -21,17 +21,28 @@ namespace Honua.Server.Tests.Features.Infrastructure;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
-public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
+public sealed class EmptyServerCatalogEndpointTests(EmptyServerCatalogEndpointTests.EmptyCatalogHost host)
+    : IClassFixture<EmptyServerCatalogEndpointTests.EmptyCatalogHost>
 {
-    private readonly WebAppFixture _fixture;
+    private readonly WebAppFixture _fixture = host.Fixture;
 
-    public EmptyServerCatalogEndpointTests()
+    // One host for the class: every case reads the same empty catalog.
+    public sealed class EmptyCatalogHost : IAsyncLifetime
+    {
+        internal WebAppFixture Fixture { get; } = CreateEmptyCatalogFixture();
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
+    private static WebAppFixture CreateEmptyCatalogFixture()
     {
         // Provide an in-memory graph with zero services/resources/publications to
         // simulate a freshly deployed server that has never had a dataset published.
         var emptyGraph = new TestMetadataV2GraphBuilder().Build();
 
-        _fixture = new WebAppFixture()
+        return new WebAppFixture()
             // A fresh instance seeds a default layerless "geoprocessing" GPServer service so
             // the GP facade is drivable out of the box (honua-server#2349, enabled by default
             // via GeoprocessingSeedHostedService -> GeoprocessingServiceSeeder). That seed
@@ -69,13 +80,6 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
                 services.AddSingleton<ISceneRegistrationService>(new StubRegistrationService());
             });
     }
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-    }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     // --- STAC ---
 

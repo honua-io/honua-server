@@ -355,11 +355,31 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
             ? EvidencePostureFactory.Complete(sourceId, backendKind, backendId, now, SignalValidity)
             : EvidencePostureFactory.NotConfigured(sourceId, backendKind, backendId);
 
-    public async Task<OpsFindingProposalResult> ProposeAsync(
+    public Task<OpsFindingProposalResult> ProposeAsync(
         string findingId,
         string? rootProvisioningOperationId = null,
         CancellationToken cancellationToken = default)
+        => SubmitFindingAsync(new FindingSubmissionRequest(findingId, rootProvisioningOperationId, FindingSubmission.Proposal), cancellationToken);
+
+    internal Task<OpsFindingProposalResult> RemediateAsync(
+        string findingId,
+        CancellationToken cancellationToken = default)
+        => SubmitFindingAsync(new FindingSubmissionRequest(findingId, null, FindingSubmission.BackgroundRemediation), cancellationToken);
+
+    private enum FindingSubmission
     {
+        Proposal,
+        BackgroundRemediation,
+    }
+
+    private sealed record FindingSubmissionRequest(string FindingId, string? RootProvisioningOperationId, FindingSubmission Origin);
+
+    private async Task<OpsFindingProposalResult> SubmitFindingAsync(
+        FindingSubmissionRequest submission,
+        CancellationToken cancellationToken)
+    {
+        var findingId = submission.FindingId;
+        var rootProvisioningOperationId = submission.RootProvisioningOperationId;
         var root = RootProvisioningOperationIds.Normalize(rootProvisioningOperationId);
         OpsFindingProposalResult WithRoot(OpsFindingProposalResult result)
             => result with { RootProvisioningOperationId = root };
@@ -440,7 +460,11 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
             },
         };
 
-        var result = await _gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
+        var result = submission.Origin == FindingSubmission.BackgroundRemediation
+            ? await (_gateway as IOpsRemediationGateway
+                ?? throw new InvalidOperationException("The gateway does not support server remediation."))
+                .RouteRemediationAsync(request, cancellationToken).ConfigureAwait(false)
+            : await _gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
 
         return WithRoot(new OpsFindingProposalResult
         {

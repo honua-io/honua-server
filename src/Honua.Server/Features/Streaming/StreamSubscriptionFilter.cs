@@ -62,6 +62,9 @@ internal sealed class StreamSubscriptionFilter
 
     internal StreamSubscriberSecurity? SubscriberSecurity => _subscriberSecurity;
 
+    internal FeatureStreamEnvelope? PrepareDelivery(FeatureStreamEnvelope envelope)
+        => _subscriberSecurity is null ? envelope : _subscriberSecurity.PrepareDelivery(envelope, _valueFilterFields);
+
     internal string? FindMaskedFilterField()
         => _valueFilterFields.Length == 0 ? null : _subscriberSecurity?.FindMaskedField(_valueFilterFields);
 

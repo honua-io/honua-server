@@ -121,6 +121,12 @@ internal static class MobileAuthEndpoints
 
     private static MobileTokenMaterial? ResolveTokenMaterial(MobileAuthOptions options, IHostEnvironment environment)
     {
+        // Static token pairs support development fixtures only.
+        if (!IsDevelopmentLike(environment))
+        {
+            return null;
+        }
+
         var refreshToken = NullIfWhiteSpace(options.RefreshToken);
         var accessToken = NullIfWhiteSpace(options.AccessToken);
         var nextRefreshToken = NullIfWhiteSpace(options.NextRefreshToken) ?? refreshToken;
@@ -130,7 +136,7 @@ internal static class MobileAuthEndpoints
 
         if (refreshToken is null || accessToken is null)
         {
-            if (!options.EnableDevelopmentTokenFallback || !IsDevelopmentLike(environment))
+            if (!options.EnableDevelopmentTokenFallback)
             {
                 return null;
             }

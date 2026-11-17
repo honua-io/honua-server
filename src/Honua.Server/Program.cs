@@ -208,7 +208,7 @@ var serveApiDocs = builder.Configuration.GetValue(
 // material.
 await StartupConfigurationHelpers.ResolveSecuritySecretReferencesAsync(
     builder.Configuration,
-    builder.Environment.IsProduction());
+    builder.Environment.EnvironmentName);
 // Responses do not name the web server implementation.
 builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(
     options => options.AddServerHeader = false);
@@ -499,10 +499,6 @@ builder.Services.AddResilientHttpClient(
 #endif
 // ---- Extracted: control-plane deploy + batch-compute backends (Startup/BatchAndDeployBackendsRegistration.cs)
 builder.Services.AddHonuaBatchAndDeployBackends();
-// Substrate-neutral single-host rolling-replace proxy seams (ADR-0060). The embedded reverse proxy is
-// only wired into the request pipeline when ControlPlane:SelfHosted:Enabled is true, so default
-// deployments are untouched.
-builder.Services.AddHonuaSelfHostedRollingProxy(builder.Configuration);
 // ---- End extracted block
 
 // The workflow, proposal and release members of this block live in the system database and take
@@ -749,6 +745,7 @@ builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
+builder.Services.AddSingleton<Honua.Server.Features.HealthCheck.DeepProbe>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
 // Edition guardrail ladder: resolves DirectExecute/RequiresApproval/Blocked
@@ -2008,14 +2005,6 @@ app.MapProductionMonitoringEndpoints();
 
 // Map enhanced performance monitoring endpoints
 app.MapEnhancedPerformanceEndpoints();
-
-// Substrate-neutral single-host rolling-replace front proxy (ADR-0060). Mapped only when the
-// self-hosted backend is enabled; the catch-all proxy route only handles paths not claimed by an
-// explicit endpoint, so the control-plane API and health endpoints keep their normal precedence.
-if (Honua.ControlPlane.SelfHostedRollingProxyRegistration.IsSelfHostedProxyEnabled(builder.Configuration))
-{
-    app.MapReverseProxy();
-}
 
 app.Run();
 

@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using Honua.Core.Features.Attachments.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -15,7 +16,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         ValidateRequest(request);
         request = request with { Sha256 = (byte[])request.Sha256.Clone(), Keywords = (string[])request.Keywords.Clone() };
         var digest = Fingerprint(request);
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionOwner = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionOwner.RequireNpgsqlConnection();
         var database = new SessionDatabase(connection, null, cancellationToken);
         await InsertSessionAsync(database, request, digest).ConfigureAwait(false);
         var key = await FindSessionKeyAsync(database, request).ConfigureAwait(false);

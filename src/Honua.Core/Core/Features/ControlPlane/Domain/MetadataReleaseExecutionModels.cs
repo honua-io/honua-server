@@ -33,31 +33,6 @@ public sealed record MetadataReleaseScript
 
     public IReadOnlyList<MetadataReleaseScriptOperation> InverseOperations { get; init; }
         = Array.Empty<MetadataReleaseScriptOperation>();
-
-    public IReadOnlyList<MetadataReleaseScriptOperation> ResolveInverseOperations()
-    {
-        if (InverseOperations.Count > 0)
-        {
-            return InverseOperations;
-        }
-
-        var derived = new List<MetadataReleaseScriptOperation>(ForwardOperations.Count);
-        for (var index = ForwardOperations.Count - 1; index >= 0; index--)
-        {
-            var forward = ForwardOperations[index];
-            if (forward.Kind == MetadataReleaseScriptOperationKind.AddColumn)
-            {
-                derived.Add(new MetadataReleaseScriptOperation
-                {
-                    Kind = MetadataReleaseScriptOperationKind.DropColumn,
-                    ResourceSemanticId = forward.ResourceSemanticId,
-                    FieldName = forward.FieldName
-                });
-            }
-        }
-
-        return derived;
-    }
 }
 
 public sealed record MetadataReleaseExecutionPlan
