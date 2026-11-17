@@ -141,8 +141,8 @@ Release evidence:
   documented in
   [Console Content, Share, and RBAC (Admin API)](../../admin-api/console-content-and-rbac.md)
   and listed in `EndpointRegistry.All`.
-- `ConsoleContentItem.itemType` covers `service`, `layer`, `saved-map`,
-  `dashboard`, `report`, `generated-app`, and `open-data`; sidecar shapes per
+- `ConsoleContentItem.itemType` covers `service`, `layer`, `dataset`, `map`,
+  `dashboard`, `report`, `app`, and `open-data`; sidecar shapes per
   type are tracked through `ConsoleJsonContext` source-generated serializers.
 - Seven Console verbs (`view`, `edit`, `publish`, `share`, `embed`, `operate`,
   `administer`) map onto the existing policy action set in
