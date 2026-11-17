@@ -49,11 +49,10 @@ barrier_record() {
   if [[ "$MODE" == missing-late-barrier && -e first-alive ]]; then echo null
   else echo '{"childProcessId":123}'; fi
 }
-compose() {
-  if [[ "$1" == ps ]]; then echo worker-container
-  elif [[ "$*" == *'GET '* ]]; then echo '{"attemptCount":1}'
-  fi
-}
+compose() { [[ "$1" != ps ]] || echo worker-container; }
+job_record() { echo '{"attemptCount":1}'; }
+job_queue_position() { :; }
+native_entry_hold_active() { return 1; }
 docker() {
   if [[ "$1" == inspect ]]; then
     [[ "$2 $3 $4 $5" == "--type container --format {{.State.Running}}" ]] || return 98
@@ -103,7 +102,7 @@ fi
         for restoration_fails in ("yes", "no"):
             with self.subTest(restoration_fails=restoration_fails), tempfile.TemporaryDirectory() as directory:
                 script = functions + r'''
-set -uo pipefail
+set -uo pipefail; keep_held_worker_logs() { :; }
 runtime_taint=""; preflight_failure=""; lane=self-test; receipt_root="$PWD"
 scenario_state_reset() { scenario_name="$1"; scenario_finding=""; scenario_cleanup_failure=""; }
 run_timeout_case() { scenario_finding='original assertion failure'; return 17; }
@@ -141,7 +140,7 @@ fi
             for failure in ("setup", "readiness", "submit", "barrier"):
                 with self.subTest(initial=initial, failure=failure), tempfile.TemporaryDirectory() as directory:
                     script = functions + r'''
-set -uo pipefail
+set -uo pipefail; keep_held_worker_logs() { :; }
 scenario_finding=""; scenario_cleanup_failure=""; scenario_name=timeout
 native_payload='{}'
 unset HONUA_GP_TIMEOUT_SECONDS HONUA_GP_QUALIFICATION_BARRIER_ROOT HONUA_GP_QUALIFICATION_EXECUTOR_MODE
@@ -196,7 +195,7 @@ cmp before last-peer-ready || exit 54
             for case_status in (0, 17):
                 with self.subTest(failure=failure, case_status=case_status):
                     script = wrapper + r'''
-set -uo pipefail
+set -uo pipefail; keep_held_worker_logs() { :; }
 scenario_name=timeout; scenario_finding=""; scenario_cleanup_failure=""
 run_timeout_case() {
   job=job-1; state=failed

@@ -124,6 +124,7 @@ services:
       Geoprocessing__OutputStaging__OrphanRetention: 00:00:02
       HONUA_GP_QUALIFICATION_BARRIER_ROOT: ${HONUA_GP_QUALIFICATION_BARRIER_ROOT:-}
       HONUA_GP_QUALIFICATION_EXECUTOR_MODE: ${HONUA_GP_QUALIFICATION_EXECUTOR_MODE:-}
+      HONUA_GP_QUALIFICATION_PAUSE_AT: ${HONUA_GP_QUALIFICATION_PAUSE_AT:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,7 +132,8 @@ services:
         condition: service_healthy
     volumes:
       - ${HONUA_GP_OBJECT_ROOT:-/tmp/honua-gp-reliability-objects}:/var/lib/honua/gp-outputs
-      - ${HONUA_GP_BARRIER_ROOT:-/tmp/honua-gp-reliability-barriers}:/var/run/honua/qualification
+      # /var/run is a link to /run in the image, and the native entry hold refuses a linked barrier root.
+      - ${HONUA_GP_BARRIER_ROOT:-/tmp/honua-gp-reliability-barriers}:/run/honua/qualification
     tmpfs:
       - /tmp:noexec,nosuid,size=256m
 

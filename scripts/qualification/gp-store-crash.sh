@@ -49,7 +49,7 @@ run_store_crash_case() {
   local target="$1" disruption="$2" barrier terminal before_record after_record
   local before_inventory after_inventory before_sha content ready
   local package_before package_after outage_evidence='null' write_failure_record='null' outage_started
-  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification
   local -x HONUA_GP_WORKER_REDIS=terminal-proxy:6379
   compose --profile crash-boundaries up -d --wait terminal-proxy >/dev/null || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
@@ -61,7 +61,7 @@ run_store_crash_case() {
   wait_barrier "$job" claimed || { scenario_fail "worker did not reach claimed fence"; return 1; }
   # The production worker creates this directory as its unprivileged UID.
   # Permit the host-side qualification controller to publish release files.
-  compose exec -T --user 0 worker chmod 777 "/var/run/honua/qualification/$job" || return 1
+  compose exec -T --user 0 worker chmod 777 "/run/honua/qualification/$job" || return 1
   if [[ "$target" == terminal-committed-registration-pending ]]; then
     : > "$(barrier_directory "$job")/$target.arm"
   fi
