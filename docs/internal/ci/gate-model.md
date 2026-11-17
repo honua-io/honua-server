@@ -1027,9 +1027,10 @@ name, required aggregate dependency, workflow, or shard definition.
 ### ImageServer endpoint database lifetime
 
 `ImageServerEndpointsTests` retains a `PostgresFixture` reference for the class
-to avoid repeating shared database initialization between cases. Each case owns
-its configured application, isolated schema, and raster substitutes; the class
-fixture releases the infrastructure after the last case. Pure capability XML
+to avoid repeating shared database initialization between cases. Default-store
+read-only cases share the class-owned application and schema; cases with custom
+configuration own their applications, schemas, and raster substitutes. Class
+fixtures release the shared infrastructure after the last case. Pure capability XML
 coverage lives in `ImageServerWmtsCapabilitiesTests` without a database fixture.
 Full trunk runs include every case; PR routing selects affected ImageServer shards.
 
