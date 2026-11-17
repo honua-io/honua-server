@@ -8,6 +8,8 @@ using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Proto = Geospatial.V1;
@@ -58,7 +60,7 @@ public sealed partial class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/GetAttachmentUrl")]
-    public async Task GetAttachmentUrl_LocalStoragePath_IsNeverReturned()
+    public async Task GetAttachmentUrl_LocalStoragePath_IsReplacedByAServerLink()
     {
         ArrangeAttachmentParent();
         var store = Substitute.For<IAttachmentStore>();
@@ -71,15 +73,18 @@ public sealed partial class GrpcFeatureServiceTests
         {
             services.AddSingleton(store);
             services.AddSingleton(storage);
+            services.AddDataProtection().UseEphemeralDataProtectionProvider();
         });
-        var action = () => _sut.GetAttachmentUrl(new Proto.GetAttachmentUrlRequest
+        var request = context.GetHttpContext().Request;
+        request.Scheme = "https";
+        request.Host = new HostString("gis.example.test");
+        var response = await _sut.GetAttachmentUrl(new Proto.GetAttachmentUrlRequest
         {
             Parent = AttachmentParent(),
             AttachmentId = 2
         }, context);
-        var exception = (await action.Should().ThrowAsync<RpcException>()).Which;
-        exception.StatusCode.Should().Be(StatusCode.FailedPrecondition);
-        exception.Status.Detail.Should().NotContain("private/two");
+        response.Url.Should().StartWith("https://gis.example.test/api/v1/attachments/downloads/");
+        response.Url.Should().NotContain("private");
     }
 
     [UnitTest]

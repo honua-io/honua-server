@@ -137,8 +137,16 @@ to both upload paths.
 IDs and SHA-256 digests when available. Legacy attachments can lack these native
 identity and digest fields. Page size defaults to 100, with a maximum of 500;
 follow `next_page_token` with the same parent and filters. `GetAttachmentUrl`
-returns an HTTPS signed download URL valid for five minutes. Download the content
-from that URL; descriptors never expose storage paths. `DeleteAttachment` uses an
+returns a signed download URL valid for five minutes. With S3 or Azure storage it
+is the store's HTTPS presigned URL. With local file storage, as in the Docker
+Compose quickstart, it is a link to this server under
+`/api/v1/attachments/downloads/`; the link names one attachment, is signed with
+the server's data-protection keys and uses the scheme of your request. Behind a
+TLS-terminating proxy, set `ForwardedHeaders:Enabled` so the server sees the
+original HTTPS scheme; otherwise it returns an `http://` link. The token is in
+the URL path, so treat access logs that record paths as holding short-lived
+download links. Download the content from that URL;
+descriptors never expose storage paths. `DeleteAttachment` uses an
 idempotency key and rechecks edit access before applying or replaying a deletion.
 
 Session calls remain bound to the initiating caller and published layer. They

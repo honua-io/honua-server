@@ -8,7 +8,9 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 // the server clock into Date, DateTime, String, BigInteger or Double fields.
 internal static class MetadataV2EditorTrackingPatch
 {
-    private static readonly MetadataV2FieldType[] UserTypes = [MetadataV2FieldType.String];
+    private static readonly TrackingSlot Creator = new("creatorField", [MetadataV2FieldType.String]);
+
+    private static readonly TrackingSlot Editor = new("editorField", [MetadataV2FieldType.String]);
 
     private static readonly MetadataV2FieldType[] TimeTypes =
     [
@@ -18,6 +20,10 @@ internal static class MetadataV2EditorTrackingPatch
         MetadataV2FieldType.BigInteger,
         MetadataV2FieldType.Double
     ];
+
+    private static readonly TrackingSlot CreatedAt = new("createdAtField", TimeTypes);
+
+    private static readonly TrackingSlot UpdatedAt = new("updatedAtField", TimeTypes);
 
     public static MetadataV2ObjectEditing Apply(
         MetadataV2Object resource,
@@ -31,24 +37,16 @@ internal static class MetadataV2EditorTrackingPatch
 
         return editing with
         {
-            CreatorField = Resolve(resource, patch.CreatorField, editing.CreatorField, "creatorField", UserTypes),
-            CreatedAtField = Resolve(resource, patch.CreatedAtField, editing.CreatedAtField, "createdAtField", TimeTypes),
-            EditorField = Resolve(resource, patch.EditorField, editing.EditorField, "editorField", UserTypes),
-            UpdatedAtField = Resolve(resource, patch.UpdatedAtField, editing.UpdatedAtField, "updatedAtField", TimeTypes)
+            CreatorField = patch.CreatorField is null ? editing.CreatorField : Resolve(resource, patch.CreatorField, Creator),
+            CreatedAtField = patch.CreatedAtField is null ? editing.CreatedAtField : Resolve(resource, patch.CreatedAtField, CreatedAt),
+            EditorField = patch.EditorField is null ? editing.EditorField : Resolve(resource, patch.EditorField, Editor),
+            UpdatedAtField = patch.UpdatedAtField is null ? editing.UpdatedAtField : Resolve(resource, patch.UpdatedAtField, UpdatedAt)
         };
     }
 
-    private static string? Resolve(
-        MetadataV2Object resource,
-        string? requested,
-        string? current,
-        string slot,
-        MetadataV2FieldType[] allowed)
+    // An empty string clears the field; any other value must name a declared field of an allowed type.
+    private static string? Resolve(MetadataV2Object resource, string requested, TrackingSlot slot)
     {
-        if (requested is null)
-        {
-            return current;
-        }
         if (requested.Length == 0)
         {
             return null;
@@ -56,11 +54,13 @@ internal static class MetadataV2EditorTrackingPatch
 
         var field = resource.SchemaFields.FirstOrDefault(candidate =>
             candidate.Name.Equals(requested, StringComparison.OrdinalIgnoreCase));
-        if (field is null || !allowed.Contains(field.Type))
+        if (field is null || !slot.Allowed.Contains(field.Type))
         {
             throw new ArgumentException(
-                $"{slot} must reference a declared field of type {string.Join(", ", allowed)}.", nameof(requested));
+                $"{slot.Name} must reference a declared field of type {string.Join(", ", slot.Allowed)}.", nameof(requested));
         }
         return field.Name;
     }
+
+    private sealed record TrackingSlot(string Name, MetadataV2FieldType[] Allowed);
 }
