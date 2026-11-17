@@ -265,6 +265,10 @@ public static class MetadataV2GraphValidator
                 else
                 {
                     EnsureFieldDeclared(errors, resource, rule.FieldName, "attributeRules.fieldName");
+                    if (rule.FieldName.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))
+                    {
+                        errors.Add($"resource '{resource.Metadata.Id}' calculation attributeRule '{rule.Name}' cannot target the global ID field.");
+                    }
                 }
             }
         }

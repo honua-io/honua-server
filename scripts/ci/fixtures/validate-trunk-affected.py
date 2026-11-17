@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 SUSPECT_RANGE = ROOT / "scripts/ci/trunk-suspect-range.sh"
 CERTIFIED_SELECTOR = ROOT / "scripts/ci/select-certified-nightly-sha.py"
+sys.path.insert(0, str(ROOT / "scripts/ci"))
+from completed_ci_base import DEFERRED_STEP  # noqa: E402
 
 
 def workflow(name):
@@ -100,11 +102,12 @@ class CompletedBaseExecutionTests(unittest.TestCase):
             self.heads.append(self.git("rev-parse", "HEAD"))
         gh = self.clone / "gh"
         gh.write_text('#!/bin/bash\n'
-                      'if [[ "$2" == *"status=success"* ]]; then\n'
-                      '  jq -r "$4" green.json\n'
-                      'else\n'
-                      '  cat completed.json\n'
-                      'fi\n')
+                      'case "$2" in\n'
+                      '  *trunk-affected.yml*) cat affected.json ;;\n'
+                      '  */jobs) cat "jobs-${2//[^0-9]/}.json" ;;\n'
+                      '  *status=success*) jq -r "$4" green.json ;;\n'
+                      '  *) cat completed.json ;;\n'
+                      'esac\n')
         gh.chmod(0o755)
         self.env["PATH"] = f"{self.clone}:{os.environ['PATH']}"
         helper = self.clone / "scripts/ci/completed_ci_base.py"
@@ -117,8 +120,8 @@ class CompletedBaseExecutionTests(unittest.TestCase):
         return subprocess.run(["git", "-c", "user.name=ci", "-c", "user.email=ci@example.invalid", *args],
                               cwd=self.clone, check=True, capture_output=True, text=True).stdout.strip()
 
-    def resolve(self, completed, green):
-        for name, runs in (("completed", completed), ("green", green)):
+    def resolve(self, completed, green, affected=()):
+        for name, runs in (("completed", completed), ("green", green), ("affected", list(affected))):
             (self.clone / f"{name}.json").write_text(json.dumps({"workflow_runs": runs}))
         subprocess.run(["bash", "-e", "-c", self.script], cwd=self.clone, env=self.env,
                        check=True, capture_output=True, text=True)
@@ -165,6 +168,61 @@ class CompletedBaseExecutionTests(unittest.TestCase):
         malformed = dict(foreign, head_sha="invalid", updated_at="2026-11-10T14:00:00Z")
         outputs = self.resolve([malformed, foreign, ancestor], [ancestor])
         self.assertEqual(outputs["completed_base"], self.heads[0])
+
+    def affected_run(self, index, run_id, step_conclusion):
+        steps = [{"name": "Bound affected CI fanout", "conclusion": "success"},
+                 {"name": DEFERRED_STEP, "conclusion": step_conclusion}]
+        (self.clone / f"jobs-{run_id}.json").write_text(json.dumps({"jobs": [{"steps": steps}]}))
+        return {"id": run_id, "head_sha": self.heads[index], "updated_at": f"2026-11-10T1{index}:30:00Z"}
+
+    def test_range_deferred_to_full_ci_no_longer_holds_back_later_merges(self):
+        green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
+        outputs = self.resolve([green], [green], [self.affected_run(1, 71, "success")])
+        self.assertEqual(outputs["completed_base"], self.heads[1])
+        self.assertEqual(outputs["last_green"], self.heads[0])
+
+    def test_dispatched_range_still_needs_a_successful_run(self):
+        green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
+        outputs = self.resolve([green], [green], [self.affected_run(1, 72, "skipped")])
+        self.assertEqual(outputs["completed_base"], self.heads[0])
+
+    def test_newer_success_after_a_deferral_remains_the_base(self):
+        runs = [self.run_record(2, "success", "2026-11-10T15:00:00Z"),
+                self.run_record(0, "success", "2026-11-10T12:00:00Z")]
+        outputs = self.resolve(runs, runs, [self.affected_run(1, 73, "success")])
+        self.assertEqual(outputs["completed_base"], self.heads[2])
+
+    def test_deferral_before_the_completed_base_is_ignored(self):
+        green = self.run_record(1, "success", "2026-11-10T13:00:00Z")
+        outputs = self.resolve([green], [green], [self.affected_run(0, 75, "success")])
+        self.assertEqual(outputs["completed_base"], self.heads[1])
+
+    def test_newest_of_several_deferrals_wins(self):
+        green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
+        deferrals = [self.affected_run(2, 76, "success"), self.affected_run(1, 77, "success")]
+        outputs = self.resolve([green], [green], deferrals)
+        self.assertEqual(outputs["completed_base"], self.heads[2])
+
+    def test_deferral_on_a_side_branch_is_ignored(self):
+        green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
+        self.git("checkout", "-q", "-b", "side", self.heads[0])
+        self.git("commit", "-q", "--allow-empty", "-m", "side")
+        side = dict(self.affected_run(1, 78, "success"), head_sha=self.git("rev-parse", "HEAD"))
+        self.git("checkout", "-q", "trunk")
+        outputs = self.resolve([green], [green], [side])
+        self.assertEqual(outputs["completed_base"], self.heads[0])
+
+    def test_unavailable_deferral_history_keeps_the_completed_base(self):
+        green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
+        missing_jobs = {"id": 74, "head_sha": self.heads[1], "updated_at": "2026-11-10T13:00:00Z"}
+        outputs = self.resolve([green], [green], [missing_jobs])
+        self.assertEqual(outputs["completed_base"], self.heads[0])
+
+    def test_deferral_is_recorded_only_when_admission_refuses(self):
+        steps = workflow("trunk-affected.yml")["jobs"]["dispatch"]["steps"]
+        record = next(step for step in steps if step.get("name") == DEFERRED_STEP)
+        self.assertEqual(record["if"], "steps.base.outputs.superseded == 'false' "
+                                       "&& steps.admission.outputs.deferred == 'true'")
 
     def test_superseded_push_does_not_dispatch(self):
         self.env["PUSHED_HEAD"] = self.heads[0]

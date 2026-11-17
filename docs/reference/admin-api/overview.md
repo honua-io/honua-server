@@ -118,7 +118,7 @@ Operate validation also enforces declared scalar types, enum and format constrai
 and explicit nullability of supplied objects, collections, and collection entries.
 Optional nullable values remain valid when their target scope does not require them.
 
-On a server started without Redis, `POST /api/v1/operations/service.publish/submit`
+On a server started without a system database, `POST /api/v1/operations/service.publish/submit`
 and `POST /api/v1/operations/style.apply-preset/submit` execute directly when the
 operation policy allows the caller. The handle carries the evidence reference
 `operation-instance:non-durable` and cannot be read back from

@@ -1060,7 +1060,8 @@ public class ImportEndpointTests : IAsyncLifetime
             ProposalId = "proposal-import-exact",
         };
         var attestationStore = _fixture.Services.GetRequiredService<OperationLineageAttestationStore>();
-        OperationLineageHeaders.Apply(request, lineage, attestationStore);
+        OperationLineageHeaders.Apply(
+            request, new OperationLoopbackHop(lineage, new Microsoft.AspNetCore.Http.DefaultHttpContext()), attestationStore);
         using var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);

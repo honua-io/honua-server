@@ -208,7 +208,7 @@ deferred to release/2026.2.
 | `GetTile` | `LAYER`, `STYLE`, `TILEMATRIXSET`, `TILEMATRIX`, `TILEROW`, `TILECOL`, `FORMAT`, optional `TIME` (temporal layers) and `ELEVATION` (elevation-aware layers); serves built-in and custom gridsets. RESTful tile paths also supported. |
 | `GetFeatureInfo` | Tile-coordinate identify with `I`/`J` and `INFOFORMAT`; resolves the requested gridset through the same `ITileMatrixSetRegistry` as `GetTile`, so the built-in `WebMercatorQuad`/`WorldCRS84Quad` gridsets and operator-defined custom gridsets are supported. The clicked pixel is mapped to a world coordinate using the gridset's own origin, cell size and matrix dimensions (WebMercatorQuad stays byte-identical to before); unsupported gridsets are rejected with `InvalidParameterValue`. |
 
-> Open `https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png` in a browser.
+> Open `https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png` in a browser.
 
 WMTS GetTile and GetFeatureInfo ignore unknown KVP parameters, including
 unadvertised `TIME` and `ELEVATION` dimensions. Known parameters and advertised

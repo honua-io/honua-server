@@ -124,6 +124,22 @@ public static class ExecutionQualificationBarrier
                 childProcessId));
     }
 
+    // Waits at the barrier only when the qualification controller armed it for this operation
+    // by creating {barrier}.arm in the operation directory, so every other qualification
+    // scenario passes through without having to release it.
+    public static Task WaitIfArmedAsync(string barrier, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(barrier);
+        var root = Environment.GetEnvironmentVariable(RootEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(root) || Current.Value is not { } scope)
+        {
+            return Task.CompletedTask;
+        }
+
+        var armPath = Path.Join(root, Safe(scope.OperationId), $"{Safe(barrier)}.arm");
+        return File.Exists(armPath) ? WaitAsync(barrier, cancellationToken) : Task.CompletedTask;
+    }
+
     private static string Safe(string value)
         => value.Replace("/", "_", StringComparison.Ordinal)
             .Replace("\\", "_", StringComparison.Ordinal)

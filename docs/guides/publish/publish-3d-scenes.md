@@ -16,6 +16,8 @@ Honua serves OGC 3D Tiles through `/scenes/{sceneId}/...` so CesiumJS resolves e
 
 **Edition and lifecycle:** Existing serving, discovery, elevation and generation from feature layers remain Community. Specialised CityGML/BIM and point-cloud ingest and I3S remain Enterprise. 3D is Experimental in 2026.1; this guide is for evaluation, with no production commitment. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
+The scene routes are off by default and return `404` until you enable their experimental capabilities (at least `scene.catalog` and `serve.3d-tiles-scene`); see [enable the 3D surfaces](../../reference/protocols/3d-tiles-and-scenes.md#enable-the-3d-surfaces).
+
 ## Steps
 
 ### 1. Generate a tileset from a PostGIS layer

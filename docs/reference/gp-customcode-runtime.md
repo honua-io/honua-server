@@ -66,7 +66,7 @@ terminal source of truth in that case. A lost acknowledgement after the broker h
 stored the journal can also leave a journal describing tool success beside a failed
 provider exit; consumers must use the durable job/provider state for final outcome.
 
-The Redis execution-log store retains at most 2,000 entries of 4 KiB each per job.
+The execution-log store retains at most 2,000 entries of 4 KiB each per job.
 Queries use absolute append cursors, so trimming earlier entries does not shift a
 cursor onto different events. Tail and step responses disclose total and dropped
 counts; diagnostics includes a truncation warning. Canonical terminal metadata
@@ -74,5 +74,5 @@ survives oversized messages. The legacy `GetLogsAsync` helper returns at most th
 latest 500 entries; use explicit pagination when reading the retained history.
 
 Source and CI tests exercise the definition guards, real HTTP upload transports,
-Redis ingestion, crash recovery and bounded log reads. They do not constitute a
+log ingestion, crash recovery and bounded log reads. They do not constitute a
 live cloud security or deployment qualification receipt.
