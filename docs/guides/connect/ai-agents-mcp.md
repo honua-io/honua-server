@@ -186,6 +186,10 @@ Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnly
 
 Every successful tool result returns its data twice: as `structuredContent` and as the same serialized JSON in a `text` content block, so clients that pass only `content` to the model still see the full result. For large results, tools that provide a summary send it as a one-line text block before the JSON.
 
+### Review what an agent read
+
+Each tool call and resource read by an authenticated caller writes one record to the audit feed. A platform administrator reads them at `GET /api/v1/admin/observability/audit?resourceType=mcp`, narrowed with `actor=<actor>` to one key or user (`actorAgent` matches calls made with an `agent`-grant key) and with `action=mcp.tool.call` or `action=mcp.resource.read`. A record names the tool or the resource URI without its query, the outcome (`Success`, `Failure` or `Denied`) and, for a tool call, the service, layer, job, style or item identifiers it was given, never query text or results. Refused calls also keep their existing authorization records. Records follow the audit feed's retention.
+
 ## What the tools do
 
 ### Plan, validate, and run geoprocessing

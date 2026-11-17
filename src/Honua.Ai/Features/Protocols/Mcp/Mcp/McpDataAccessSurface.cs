@@ -679,7 +679,17 @@ internal sealed partial class McpDataAccessSurface
             McpRequestContinuation.Detach(httpContext);
         }
 
-        if (invocationStarted) result = McpInputGuidance.Enrich(tool, parameters.Arguments, result);
+        if (invocationStarted)
+        {
+            result = McpInputGuidance.Enrich(tool, parameters.Arguments, result);
+            await McpAccessAudit.RecordToolCallAsync(
+                httpContext,
+                tool.Name,
+                parameters.Arguments,
+                result.IsError ? ExtractErrorCode(result) : null,
+                _logger).ConfigureAwait(false);
+        }
+
         return result.InputRequired is { } inputRequired
             ? new McpJsonRpcResponse { Id = request.Id, Result = McpModernResults.InputRequired(inputRequired) }
             : SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
@@ -880,6 +890,11 @@ internal sealed partial class McpDataAccessSurface
                         1,
                         new KeyValuePair<string, object?>("resource_family", resourceFamily),
                         new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
+                    await McpAccessAudit.RecordResourceReadAsync(
+                        httpContext,
+                        parameters.Uri,
+                        McpErrorMapper.Codes.InvalidArgument,
+                        _logger).ConfigureAwait(false);
                     return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
                 }
             }
@@ -889,6 +904,8 @@ internal sealed partial class McpDataAccessSurface
                 1,
                 new KeyValuePair<string, object?>("resource_family", resourceFamily),
                 new KeyValuePair<string, object?>("status", completionStatus));
+            await McpAccessAudit.RecordResourceReadAsync(httpContext, parameters.Uri, errorCode: null, _logger)
+                .ConfigureAwait(false);
             return SuccessResponse(request.Id, result, McpJsonContext.Default.McpResourcesReadResult);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -903,6 +920,12 @@ internal sealed partial class McpDataAccessSurface
             {
                 McpLog.ResourceReadFailed(_logger, resourceFamily, parameters.Uri, ex);
             }
+
+            await McpAccessAudit.RecordResourceReadAsync(
+                httpContext,
+                parameters.Uri,
+                error.Data?.Code ?? McpErrorMapper.Codes.Internal,
+                _logger).ConfigureAwait(false);
             return ErrorResponse(request.Id, error);
         }
     }
