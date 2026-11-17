@@ -94,7 +94,6 @@ public sealed class DeployReleaseTimelineTests : IAsyncLifetime
             .ToList();
         titlesForTwo.Should().Contain(t => t!.StartsWith("Deploy needs manual intervention"));
 
-        // The ReleaseId filter now returns data and scopes to a single release.
         var scoped = await GetReleaseEventsAsync($"releaseId={Uri.EscapeDataString(releaseOne)}&pageSize=200");
         scoped.Should().NotBeEmpty();
         scoped.Should().OnlyContain(e => e.GetProperty("releaseId").GetString() == releaseOne);

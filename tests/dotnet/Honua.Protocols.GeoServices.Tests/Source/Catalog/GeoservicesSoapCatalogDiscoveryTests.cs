@@ -306,7 +306,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests : IClassFixture<Geoserv
         descriptions.Should().OnlyContain(entry => entry.SoapUrl.StartsWith(publicBaseUrl, StringComparison.Ordinal));
     }
 
-    // Captured verbatim from ArcGIS Pro 3.7.1 adding an ArcGIS Server connection (#4973):
+    // Captured verbatim from ArcGIS Pro 3.7.1 adding an ArcGIS Server connection:
     // the operation is qualified, its argument is unqualified (elementFormDefault="unqualified").
     private const string GeoServicesPro371GetServiceDescriptionsEx = """
         <?xml version="1.0" encoding="utf-8" ?>

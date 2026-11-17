@@ -86,7 +86,7 @@ public sealed class VersionAccessPolicyTests
             "Protected versions are read-visible to anonymous callers with service query access");
     }
 
-    // ---- IsVersionVisible — Private visibility (BH3-002) -----------------------------------
+    // ---- IsVersionVisible — Private visibility -----------------------------------
 
     [UnitTest]
     public void IsVersionVisible_PrivateVersion_OwnerCanSee()
@@ -120,8 +120,7 @@ public sealed class VersionAccessPolicyTests
     [UnitTest]
     public void IsVersionVisible_PrivateVersion_NonOwnerNonAdminCannotSee()
     {
-        // BH3-002 core regression: before the fix, HandleListVersions returned all Private
-        // versions to any query-access caller. This test pins the corrected behavior.
+
         var version = MakeVersion("alice", VersionAccess.Private);
 
         VersionAccessPolicy.IsVersionVisible(version, callerName: "bob", isAdmin: false).Should().BeFalse(
@@ -130,7 +129,7 @@ public sealed class VersionAccessPolicyTests
             "anonymous callers must not see a Private version");
     }
 
-    // ---- CanManageVersion — owner-only lifecycle ops (BH3-003 / BH3-004) ------------------
+    // ---- CanManageVersion — owner-only lifecycle ops ------------------
 
     [UnitTest]
     public void CanManageVersion_Owner_CanManageRegardlessOfAccessLevel()
@@ -157,8 +156,7 @@ public sealed class VersionAccessPolicyTests
     [UnitTest]
     public void CanManageVersion_NonOwnerNonAdmin_CannotManage_PrivateVersion()
     {
-        // BH3-003 / BH3-004 core regression: before the fix any write-access principal
-        // could call delete/alter/reconcile/post/inspectConflicts on any version.
+
         var version = MakeVersion("alice", VersionAccess.Private);
 
         VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(
@@ -170,7 +168,7 @@ public sealed class VersionAccessPolicyTests
     [UnitTest]
     public void CanManageVersion_NonOwnerNonAdmin_CannotManage_PublicVersion()
     {
-        // BH3-004: even a Public version's lifecycle operations are owner-or-admin-only.
+        // even a Public version's lifecycle operations are owner-or-admin-only.
         // Read access is public, but delete/alter/reconcile/post are not.
         var version = MakeVersion("alice", VersionAccess.Public);
 
@@ -182,7 +180,7 @@ public sealed class VersionAccessPolicyTests
     [UnitTest]
     public void CanManageVersion_NonOwnerNonAdmin_CannotManage_ProtectedVersion()
     {
-        // BH3-004: same restriction applies to Protected versions.
+        // same restriction applies to Protected versions.
         var version = MakeVersion("alice", VersionAccess.Protected);
 
         VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(
@@ -200,16 +198,13 @@ public sealed class VersionAccessPolicyTests
             "owner name comparison must be case-insensitive for lifecycle operations");
     }
 
-    // ---- BH6-001 regression: HandleInspectConflicts Protected-version access leak ----------
+    // ---- HandleInspectConflicts Protected-version access leak ----------
 
     [UnitTest]
     public void CanManageVersion_ProtectedVersion_NonOwnerNonAdmin_CannotInspectConflicts()
     {
-        // BH6-001 regression: HandleInspectConflicts previously only gated CanManageVersion on
-        // Private versions; Protected versions bypassed the check, exposing full conflict
-        // before/after attribute and geometry payloads to any query-authorized caller. The fix
-        // widens the condition to `Private or Protected`. This test pins the policy the fixed
-        // endpoint now applies for Protected versions: a non-owner, non-admin must be blocked.
+        // Protected version conflict payloads require management permission;
+        // a non-owner, non-admin caller must be blocked.
         var version = MakeVersion("alice", VersionAccess.Protected);
 
         VersionAccessPolicy.CanManageVersion(version, callerName: "bob", isAdmin: false).Should().BeFalse(

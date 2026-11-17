@@ -119,7 +119,7 @@ public sealed class FeatureQueryBuilderStatisticsTests
         result.Sql.Should().Contain("MAX((attributes->>'bucket')::numeric) AS \"max_bucket\"");
     }
 
-    // #3372: an aggregate result set's columns are the statistic aliases and the group-by
+    // An aggregate result set's columns are the statistic aliases and the group-by
     // fields, so ORDER BY must be able to name them. The emitted SQL is rebuilt from the
     // matched declaration (the aggregate expression / the group-by field expression), never
     // from the order-by clause's own text.

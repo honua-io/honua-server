@@ -62,7 +62,7 @@ public sealed class GpJobWorkerCompositionRootTests(DatabaseFixtureAdapter datab
         {
             // The in-process job worker must be registered by the production composition
             // root (FeatureRegistrationExtensions), not by this test. This is the direct
-            // assertion of the #1841 fix; if AddJobWorker were dead code again, this fails
+            // assertion of that wiring; if AddJobWorker were dead code, this fails
             // before the (slower) end-to-end poll below.
             var workerHostedServices = fixture.Services
                 .GetServices<Microsoft.Extensions.Hosting.IHostedService>()

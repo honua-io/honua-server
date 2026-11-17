@@ -236,7 +236,7 @@ public sealed class QueryFormatterTests
         geoJson.Features[0].Id.Should().Be(42L);
         geoJson.Features[0].Properties.Should().Contain("objectid", 42L);
         // GeoJSON properties mirror the f=json attributes (lowercase objectid only);
-        // the synthetic uppercase OBJECTID alias is intentionally suppressed (#1518).
+        // the synthetic uppercase OBJECTID alias is intentionally suppressed.
         geoJson.Features[0].Properties.Should().NotContainKey("OBJECTID");
         geoJson.Features[0].Properties.Should().Contain("name", "alpha");
     }
@@ -736,7 +736,7 @@ public sealed class QueryFormatterTests
     [Fact]
     public async Task FormatQueryResultAsync_GeoJson_MultipartPolygon_EmitsMultiPolygonNotGeometryCollection()
     {
-        // Regression (#1824): a multipart Esri geometry surfaces as an NTS GeometryCollection
+        // A multipart Esri geometry surfaces as an NTS GeometryCollection
         // of single-part polygons; RFC 7946 requires the homogeneous form to be tagged
         // MultiPolygon, not GeometryCollection.
         var geoJson = await FormatGeoJsonGeometryAsync(

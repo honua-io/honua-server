@@ -167,7 +167,7 @@ public sealed class McpDiscoveryToolTests
     [UnitTest]
     public async Task ListCapabilities_WithRegistry_ReportsCatalogPublishedToolsButNotOrphanRuntimeTools()
     {
-        // honua-server#3363: capability truth for the published set. A tool projected
+        // Capability truth for the published set. A tool projected
         // from the canonical operation catalog is bound through its operation
         // descriptor, so the manifest reports it; any other runtime tool without a
         // registry descriptor is still withheld.

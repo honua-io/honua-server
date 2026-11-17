@@ -159,7 +159,7 @@ public sealed class ManagedBufferAggregateExecutorTests
     {
         // A linear buffer distance is meaningless in degree space; when the caller declares
         // the input CRS as geographic (EPSG:4326) the executor must reject rather than emit a
-        // silently-wrong meters-as-degrees buffer (#2808).
+        // silently-wrong meters-as-degrees buffer.
         var executor = new ManagedBufferAggregateExecutor(Options());
         var (status, _) = await RunAsync(
             executor,

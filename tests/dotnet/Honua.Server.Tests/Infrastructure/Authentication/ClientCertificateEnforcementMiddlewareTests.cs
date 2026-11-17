@@ -369,7 +369,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
         string mode,
         string path)
     {
-        // #6106: admin groups are mapped as /api/v{version:apiVersion}/admin and URL-segment
+        // Admin groups are mapped as /api/v{version:apiVersion}/admin and URL-segment
         // versioning accepts /api/v1.0/admin, so RequiredForAdmin must not bind to the literal
         // /api/v1/admin prefix only. The mode arrives as a string because
         // ClientCertificateAuthenticationMode is internal and cannot appear on this public signature.
@@ -455,7 +455,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
     [UnitTest]
     public async Task InvokeAsync_RequiredForAdmin_VersionOnePointZeroNonAdminCertificatePrincipal_Forbids()
     {
-        // #6106: the admin-role check for certificate principals must also fire for /api/v1.0/admin.
+        // The admin-role check for certificate principals must also fire for /api/v1.0/admin.
         using var certificate = CreateCertificate();
         var auditLog = new CapturingAuditLog();
         var services = new ServiceCollection();

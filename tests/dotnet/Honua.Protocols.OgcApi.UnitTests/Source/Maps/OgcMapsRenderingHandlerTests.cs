@@ -288,7 +288,7 @@ public class OgcMapsRenderingHandlerTests
             .Should().BeFalse();
     }
 
-    // #5048: a mixed-CRS dataset returned HTTP 500 from the dataset-map route because the
+    // A mixed-CRS dataset returned HTTP 500 from the dataset-map route because the
     // default viewport was combined through the synchronous transformer, which throws for
     // CRS pairs the canonical transform service resolves. These cover the combination itself;
     // the endpoint's status codes and landing metadata are covered by the Maps integration

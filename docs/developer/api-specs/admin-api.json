@@ -6035,6 +6035,9 @@
           "409": {
             "$ref": "#/components/responses/Conflict"
           },
+          "412": {
+            "description": "The request body declares a recovery grant whose notAfter has passed (problem code recovery_fence_expired). An expired grant preauthorizes nothing; the operation is left unchanged."
+          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           },

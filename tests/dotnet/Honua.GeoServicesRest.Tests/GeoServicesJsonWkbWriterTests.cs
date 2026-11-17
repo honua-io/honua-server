@@ -93,7 +93,7 @@ public class GeoServicesJsonWkbWriterTests
     [Fact]
     public void Write_PolygonTwoShellRings_EmitsMultiPolygonWkb()
     {
-        // Regression for #2003: an Esri rings[] payload carrying two clockwise
+        // An Esri rings[] payload carrying two clockwise
         // (negative signed-area) exterior shells must classify as two distinct
         // polygons and serialize as a WKB MultiPolygon (type 6), not collapse
         // into a single Polygon (type 3) with the second shell treated as a hole.
@@ -119,7 +119,7 @@ public class GeoServicesJsonWkbWriterTests
     [Fact]
     public void CheckedBufferSize_WithCountThatOverflowsInt32_Throws()
     {
-        // Regression for #2003: a hostile/oversized coordinate count must be
+        // A hostile/oversized coordinate count must be
         // multiplied out in 64-bit arithmetic and rejected against the 256 MiB
         // WKB cap, rather than overflowing Int32 into a wrong-sized (or negative)
         // allocation. int.MaxValue points at 16 bytes each is ~32 GiB, far above

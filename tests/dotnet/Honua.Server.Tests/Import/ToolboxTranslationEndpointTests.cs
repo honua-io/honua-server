@@ -680,7 +680,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     public async Task ValidateTranslation_BranchDependentRequirement_IsReportedPerBranch()
     {
         // analytics.cluster-managed requires 'k' only when algorithm=kmeans. The catalog now
-        // publishes 'algorithm''s value domain (#3048), so the probe walks every branch and the
+        // publishes 'algorithm''s value domain, so the probe walks every branch and the
         // report states exactly which one faults instead of downgrading the whole mapping as
         // unverifiable. 'k' is neither mapped nor defaulted, so the tool stays uncertified.
         var response = await PostJsonAsync(
@@ -750,7 +750,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // body is RFC 7807 application/problem+json, NOT the ErrorResponse envelope the
         // reusable BadRequest component advertises. The admin OpenAPI bundle documents this
         // operation's own 400 for that reason; assert the runtime shape the doc claims so a
-        // regression in either direction is caught (#3040 review).
+        // regression in either direction is caught.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -785,7 +785,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // conversion.rasterize requires exactly one of burnValue/attribute, and the canonical
         // validator raises that as INVALID_PARAMETER_VALUE rather than
         // MISSING_REQUIRED_PARAMETER. Mapping neither is rejected at submit time, so the
-        // report must not classify it 'translated' (#3040 review).
+        // report must not classify it 'translated'.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -822,9 +822,8 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_SatisfiedExactlyOneOfGroup_IsCertifiedExecutable()
     {
-        // The counterpart of the case above: mapping one burn source and the grid definition
-        // satisfies every rule, so the report must still certify it. Guards the fix against
-        // over-reporting every rasterize mapping.
+        // Mapping one burn source and the grid definition satisfies every rasterize rule
+        // and must be certified.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -860,8 +859,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // raster.map-algebra's 'expression' is format-constrained (an allow-listed band
         // expression), not an undeclared discriminator: no rule branches on its value and
         // dataType/noData are optional on every branch. Treating the format rejection as a
-        // token domain downgraded this ordinary mapping to 'partially-translated' (#3040
-        // review).
+        // token domain downgraded this ordinary mapping to 'partially-translated'.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -896,8 +894,8 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // data-management.delete-features validates cleanly but is reachable only through
         // its owning synchronous protocol endpoint, and translated tools execute through the
         // job runtime. A report that certifies it tells a migrating user a tool works when
-        // it can never execute from a toolbox (#3040 review, #4409 entry points).
-        // (conversion.geometry-format was this exemplar until #3936 gave it a job executor.)
+        // it can never execute from a toolbox (unsupported entry points).
+        // (conversion.geometry-format has a job executor and is excluded.)
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -975,8 +973,8 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         // Mapping analytics.cluster-managed's input/algorithm/k executes when the caller
         // supplies algorithm=kmeans, while the dbscan branch wants eps/minPoints — a
         // requirement the caller avoids. The report must not declare the tool unsupported on
-        // the strength of one branch (#3040); with the domain published it names that branch
-        // exactly rather than calling the mapping unverifiable (#3048).
+        // the strength of one branch; with the domain published it names that branch
+        // exactly rather than calling the mapping unverifiable.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -1014,7 +1012,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     public async Task ValidateTranslation_EmitsTelemetrySpanWithOutcomeCounts()
     {
         // The validation outcome must be traceable, not log-only: a clean toolbox and a
-        // degraded one are otherwise indistinguishable in OpenTelemetry (#3040).
+        // degraded one are otherwise indistinguishable in OpenTelemetry.
         var activities = new List<Activity>();
         using var listener = new ActivityListener
         {
@@ -1081,7 +1079,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     {
         // ReadFromJsonAsync refuses the media type before deserialization, and the generic catch
         // reported a perfectly well-formed manifest as "Invalid request body" — a 400 that tells
-        // the caller to fix a payload that is not the problem (#3040).
+        // the caller to fix a payload that is not the problem.
         using var content = new StringContent(
             """{ "toolboxName": "T", "sourceFormat": "pyt", "tools": [] }""",
             Encoding.UTF8,

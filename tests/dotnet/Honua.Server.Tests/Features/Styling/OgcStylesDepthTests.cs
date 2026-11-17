@@ -864,7 +864,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
     {
         await SeedTestLayerStyleAsync(adminClient);
 
-        // Every feature collection now publishes a style (#4993), so the list is not just the
+        // Every feature collection now publishes a style, so the list is not just the
         // seeded one: resolve the seeded layer's own style id and prove it is listed.
         var styleId = _fixture.GetCurrentV2GraphSnapshot()
             .Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId].Metadata.Name;

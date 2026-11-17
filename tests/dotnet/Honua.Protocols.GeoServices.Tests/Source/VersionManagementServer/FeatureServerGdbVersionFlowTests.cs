@@ -110,7 +110,7 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithGdbVersion_ReadsAndWritesBranchOnly()
     {
-        // #6095: calculate must read candidates from the named version and write the
+        // Calculate must read candidates from the named version and write the
         // updates there; DEFAULT must stay untouched.
         var marker = "vcalc_" + Guid.NewGuid().ToString("N")[..8];
         var seed = await PostFormAsync($"{LayerBase}/applyEdits", ("adds", BuildAddsJson(marker)), ("f", "json"));
@@ -154,7 +154,7 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
     public async Task Append_WithGdbVersion_UpsertsWithinBranchOnly()
     {
-        // #6095: append must match upserts within the named version and write adds and
+        // Append must match upserts within the named version and write adds and
         // updates there; DEFAULT must stay untouched.
         var marker = "vappend_" + Guid.NewGuid().ToString("N")[..8];
         var versionGuid = await CreateVersionAsync("admin." + marker);

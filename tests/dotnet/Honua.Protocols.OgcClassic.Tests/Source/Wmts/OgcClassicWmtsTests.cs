@@ -54,7 +54,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_GetCapabilities_WithWmtsEnabledAndMapServerDisabled_ReturnsXml()
     {
-        // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
+        // Protocol gating reads MetadataV2Service.Protocols.
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
@@ -293,7 +293,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
     public async Task Wmts_GetCapabilities_AdvertisesWorldCrs84QuadTileMatrixSet()
     {
-        // #1660: WMTS now advertises the WorldCRS84Quad (CRS84/EPSG:4326) gridset in addition
+        // WMTS now advertises the WorldCRS84Quad (CRS84/EPSG:4326) gridset in addition
         // to the WebMercatorQuad default. Both TileMatrixSet definitions and per-layer links
         // must be present so OGC clients can request CRS84 tiles.
         var response = await _fixture.Client.GetAsync(
@@ -306,7 +306,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:OGC:1.3:CRS84</ows:SupportedCRS>");
         content.Should().Contain("<TileMatrixSet>WorldCRS84Quad</TileMatrixSet>");
 
-        // #2738: CRS84 is a lon,lat CRS, so the WorldCRS84Quad TopLeftCorner is emitted
+        // CRS84 is a lon,lat CRS, so the WorldCRS84Quad TopLeftCorner is emitted
         // easting-first (-180 90), matching the OGC WorldCRS84Quad definition.
         var document = XDocument.Parse(content);
         var worldCrs84Quad = document
@@ -327,7 +327,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
     public async Task Wmts_GetTile_WorldCrs84Quad_ReturnsPngImage()
     {
-        // #1660: GetTile must serve the WorldCRS84Quad gridset. At TileMatrix 0 the grid is two
+        // GetTile must serve the WorldCRS84Quad gridset. At TileMatrix 0 the grid is two
         // columns by one row, so TILECOL up to 1 is valid.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WorldCRS84Quad&TILEMATRIX=0&TILEROW=0&TILECOL=1");
@@ -344,7 +344,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
     public async Task Wmts_GetTile_WebMercatorQuad_StillReturnsPngImage()
     {
-        // #1660 no-regression guard: adding WorldCRS84Quad must not change the existing
+        // No-regression guard: adding WorldCRS84Quad must not change the existing
         // WebMercatorQuad GetTile path (the CITE-conformant baseline).
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=1&TILEROW=0&TILECOL=0");
@@ -727,7 +727,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetFeatureInfo")]
     public async Task Wmts_GetFeatureInfo_WorldCrs84Quad_ReturnsPlainText()
     {
-        // #1873: GetFeatureInfo now resolves the clicked pixel for non-WebMercatorQuad
+        // GetFeatureInfo now resolves the clicked pixel for non-WebMercatorQuad
         // gridsets through the tile matrix set registry. WorldCRS84Quad is 2 cols x 1 row
         // at level 0, so TILECOL up to 1 is valid and the pixel->world math uses the
         // gridset's own (CRS84) origin and cell size rather than Web Mercator constants.
@@ -956,7 +956,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
     }
 
-    // honua-server#2945: GetTile proving tests above only assert content-type/length; none
+    // GetTile proving tests above only assert content-type/length; none
     // exercised actual rendered tile content. This binds a deterministic style to the
     // seeded point layer and asserts a matching pixel appears in the WebMercatorQuad z=0
     // tile (a single tile spanning the whole globe, so it always contains the seeded point),
@@ -998,7 +998,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
 
     // ---- OGC-native service route (/ogc/services/{serviceId}/wmts) ----
     //
-    // honua-release#100: `serve.wmts` is the capability key behind the OGC-native service
+    // `serve.wmts` is the capability key behind the OGC-native service
     // route ONLY — the /rest/services/{id}/MapServer/WMTS alias above belongs to the
     // GeoServices MapServer key, so none of the GetTile/GetFeatureInfo depth above counts as
     // proving evidence for `serve.wmts`. Before this block the OGC route had GetCapabilities

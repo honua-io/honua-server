@@ -59,7 +59,7 @@ public sealed class FeatureServerAppendTests
     [UnitTest]
     public void CreateAppendApplyEditsRequest_GdbVersion_ReachesTheEditRequest()
     {
-        // #6095: append must target the named branch version, not DEFAULT.
+        // Append must target the named branch version, not DEFAULT.
         var request = FeatureServerEndpoints.CreateAppendApplyEditsRequest(
             [], [], rollbackOnFailure: true, gdbVersion: "admin.edit1");
 
@@ -69,7 +69,7 @@ public sealed class FeatureServerAppendTests
     [UnitTest]
     public async Task LoadAppendUpsertMatches_VersionContext_ReadsWithinTheVersion()
     {
-        // #6095: upsert matching must read the named version, not DEFAULT.
+        // Upsert matching must read the named version, not DEFAULT.
         var resource = MatchResource();
         var version = new VersionContext { VersionId = Guid.NewGuid(), VersionName = "admin.edit1" };
         var reader = Substitute.For<IFeatureReader>();

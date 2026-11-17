@@ -13,14 +13,6 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderTopFeaturesTests
 {
-    // Audit platform-20261006 / #5613 outcomes:
-    // SRV-DB-002 -> fixed; SRV_DB_002_TopFeaturesProjectionHonorsMasksAndOutFields.
-    // SRV-GS-004 -> not attempted; remaining ImageServer surfaces require a separate complete slice.
-    // SRV-INF-002 -> fixed; SRV_INF_002_FieldMasksPartitionMapTileCache (MapServerTileEndpointTests).
-    // SRV-INF-012 -> not attempted; async export security-context persistence remains.
-    // SRV-DB-012 -> not attempted; temporal field-mask behavior remains.
-    // SRV-DB-014 -> fixed; SRV_DB_014_DefaultProjectionRemovesMasksCaseInsensitively.
-    // SRV-DB-015 -> not attempted; DuckDB permanent-filter temporal extent remains.
 
     [Fact]
     public void SRV_DB_002_TopFeaturesProjectionHonorsMasksAndOutFields()
@@ -92,7 +84,7 @@ public sealed class FeatureQueryBuilderTopFeaturesTests
     {
         // resultRecordCount/resultOffset must page the top-feature result; the LIMIT/OFFSET
         // placeholders are bound after the where/topCount parameters, so they must be the
-        // trailing placeholders in numeric order (#1906).
+        // trailing placeholders in numeric order.
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
         {
@@ -133,7 +125,7 @@ public sealed class FeatureQueryBuilderTopFeaturesTests
     public void BuildTopFeaturesQuery_WithOutputSrid_TransformsGeometry()
     {
         // outSR (OutputSrid) must reproject output geometry via ST_Transform, mirroring
-        // the normal query path (#1906).
+        // the normal query path.
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
         {

@@ -279,7 +279,7 @@ public sealed class CustomCodeSubmitTests
     }
 
     // -----------------------------------------------------------------------
-    // Open policy admin gate (PA-196)
+    // Open policy admin gate
     // -----------------------------------------------------------------------
 
     [UnitTest]
@@ -287,7 +287,7 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_OpenPolicy_NonAdminPrincipal_Forbidden()
     {
-        // Open policy accepts any HTTPS repo but must require admin elevation (PA-196) so
+        // Open policy accepts any HTTPS repo but must require admin elevation so
         // the widest-policy execution surface is never reachable from a non-admin caller.
         var sut = CreateService(options => options.RepoPolicy = CustomCodeRepoPolicy.Open);
 
@@ -316,10 +316,10 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_OrgAllowlistPolicy_NonAdminPrincipal_AllowedWhenOnList()
     {
-        // OrgAllowlist does not require the full admin role that the Open policy demands
-        // (PA-196). A non-admin caller that HOLDS the custom-code authorization (#2752 —
-        // Process.ExecuteCustomCode; granted here by the always-allow evaluator) is
-        // accepted, proving the #2752 who-gate is not an admin-only over-gate.
+        // OrgAllowlist does not require the full admin role that the Open policy
+        // demands. A non-admin caller that HOLDS the custom-code authorization
+        // (Process.ExecuteCustomCode; granted here by the always-allow evaluator) is
+        // accepted, proving the who-gate is not an admin-only over-gate.
         var sut = CreateService(options =>
         {
             options.RepoPolicy = CustomCodeRepoPolicy.OrgAllowlist;
@@ -332,7 +332,7 @@ public sealed class CustomCodeSubmitTests
     }
 
     // -----------------------------------------------------------------------
-    // #2752: custom-code submission requires an elevated, custom-code-specific
+    // Custom-code submission requires an elevated, custom-code-specific
     // authorization (Process.ExecuteCustomCode) under EVERY repo policy — not just
     // Open. A baseline Process.Execute caller (which the built-in tool catalog uses)
     // must NOT be able to submit operator-supplied code.
@@ -344,7 +344,7 @@ public sealed class CustomCodeSubmitTests
     public async Task SubmitJob_CustomCode_OrgAllowlist_WithoutCustomCodePermission_Forbidden()
     {
         // OrgAllowlist is the default posture. A caller authorized for Process.Execute but
-        // NOT for Process.ExecuteCustomCode must be rejected — this is the #2752 gap.
+        // NOT for Process.ExecuteCustomCode must be rejected.
         DenyCustomCodePermission();
         var sut = CreateService(options =>
         {
@@ -366,7 +366,7 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_SignedOnly_WithoutCustomCodePermission_Forbidden()
     {
-        // SignedOnly is the strictest repo policy; the #2752 who-gate must apply there too.
+        // SignedOnly is the strictest repo policy; the who-gate must apply there too.
         // The authorization denial precedes the signature check, so no verifier is needed.
         DenyCustomCodePermission();
         var sut = CreateService(options =>
@@ -412,7 +412,7 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_BuiltInTool_WithoutCustomCodePermission_StillSucceeds()
     {
-        // The #2752 who-gate must not over-gate ordinary geoprocessing: the SAME caller
+        // The who-gate must not over-gate ordinary geoprocessing: the SAME caller
         // that is denied ExecuteCustomCode can still submit a built-in-tool job, because
         // that only requires the baseline Process.Execute (which remains granted).
         DenyCustomCodePermission();
@@ -452,7 +452,7 @@ public sealed class CustomCodeSubmitTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_CustomCode_NonHttpsRepo_Rejected()
     {
-        // Use an admin principal so the Open-policy admin gate (PA-196) is satisfied and
+        // Use an admin principal so the Open-policy admin gate is satisfied and
         // the URL scheme check is reached — the non-https rejection must still apply to admins.
         var sut = CreateService(options => options.RepoPolicy = CustomCodeRepoPolicy.Open);
         var metadata = CustomCodeMetadata(repoUrl: "http://github.com/honua-io/example.git");
@@ -621,7 +621,7 @@ public sealed class CustomCodeSubmitTests
     }
 
     // -----------------------------------------------------------------------
-    // param -> env contract (#2191): the customcode.* spec params must reach the
+    // param -> env contract: the customcode.* spec params must reach the
     // harness as env.CUSTOMCODE_* so AwsBatchComputeBackend surfaces them as the
     // CUSTOMCODE_* container env the harness reads. Pins the key map end-to-end.
     // -----------------------------------------------------------------------
@@ -688,7 +688,7 @@ public sealed class CustomCodeSubmitTests
     {
         // The harness (docker/worker-customcode-python/harness/jobspec.py) reads these
         // exact CUSTOMCODE_* names. Pinning the map here catches parallel-build drift
-        // between the server and harness halves of the contract (#2191).
+        // between the server and harness halves of the contract.
         CustomCodeJobContract.ParameterToEnvName.Should().BeEquivalentTo(new Dictionary<string, string>
         {
             ["customcode.runtime"] = "CUSTOMCODE_RUNTIME",
@@ -1165,7 +1165,7 @@ public sealed class CustomCodeSubmitTests
             ],
             "Test"));
 
-    // Admin carries the "admin" role that gates the Open repo policy (PA-196).
+    // Admin carries the "admin" role that gates the Open repo policy.
     private static ClaimsPrincipal AdminPrincipal()
         => new(new ClaimsIdentity(
             [

@@ -84,7 +84,7 @@ public class NetworkTopologyEditAdminEndpointsTests
         var id = NewId(suffix);
 
         // NetworkDatasetRegistry.ResolveAsync (the real, non-mocked resolver this endpoint
-        // uses to discover the dataset's SRID and #2655 travel-profile cost columns) only
+        // uses to discover the dataset's SRID and travel-profile cost columns) only
         // advertises a profile when its forward/reverse cost columns actually exist as
         // numeric columns on the edge table. Unlike the registry-CRUD-only tests in
         // NetworkDatasetAdminEndpointsTests, this endpoint calls that resolver, so the

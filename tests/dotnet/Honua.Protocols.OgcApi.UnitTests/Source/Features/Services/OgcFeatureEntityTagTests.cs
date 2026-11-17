@@ -142,7 +142,7 @@ public sealed class OgcFeatureEntityTagTests
 
         var payloadV2 = System.Text.Encoding.UTF8.GetBytes("{\"id\":1,\"properties\":{\"name\":\"updated\"}}");
 
-        // After the fix: both entity hash and payload bytes come from V2.
+        // Both entity hash and payload bytes must come from V2.
         var consistentTag = OgcFeatureEntityTag.ComputeRepresentation(payloadV2, entityETagV2, ETagService);
 
         OgcFeatureEntityTag.MatchesEntityOrRepresentation(consistentTag, entityETagV2, ETagService)

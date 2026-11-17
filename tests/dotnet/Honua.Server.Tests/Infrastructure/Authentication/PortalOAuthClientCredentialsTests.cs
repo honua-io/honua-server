@@ -66,7 +66,7 @@ public sealed class PortalOAuthClientCredentialsTests
 
         // The token is IP-bound: it validates only from the issuing client IP. The
         // hydrated principal carries the admin role the key confers on X-API-Key, and
-        // no permission label becomes a role (#4577).
+        // no permission label becomes a role.
         var validation = await issuer.ValidateAsync(
             result.AccessToken!,
             new PortalTokenBinding(Referer: null, ClientIp: ClientIp),
@@ -132,7 +132,7 @@ public sealed class PortalOAuthClientCredentialsTests
     [UnitTest]
     public async Task Exchange_ClientCredentials_ConstrainedKeys_AreRefusedNotProjectedAsRoles()
     {
-        // #4577: X-API-Key authenticates these keys as non-admin principals with
+        // X-API-Key authenticates these keys as non-admin principals with
         // permission claims. A token holds roles only, so the exchange is refused
         // instead of turning a label such as "field-editor" into a role.
         var operation = AdminApiKeyPermission.CreateApprovedOperationGrants(
@@ -371,7 +371,7 @@ public sealed class PortalOAuthClientCredentialsTests
     [UnitTest]
     public async Task Exchange_ValidAdminApiKey_WithFederationEnabled_DoesNotCallIdp()
     {
-        // #6166: a Honua admin API key is accepted locally. The stub answers 200
+        // A Honua admin API key is accepted locally. The stub answers 200
         // text/html so a federation-first regression cannot mint a token and is visible
         // as a call.
         var handler = new RecordingHandler(_ => HtmlOk());

@@ -246,7 +246,7 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.DoesNotContain("ORDER BY", result.Sql);
     }
 
-    // #3372: an aggregate result set's columns are the declared statistic aliases plus the
+    // An aggregate result set's columns are the declared statistic aliases plus the
     // group-by fields, so ORDER BY must be able to name them. Each clause is re-resolved
     // against those declarations, so only a declared name can reach the SQL.
     [Fact]
@@ -323,7 +323,7 @@ public class DuckDBFeatureQueryBuilderTests
     {
         // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
         // geometry must be the FIRST operand: ST_Within(filter, feature). Leading with the
-        // feature column inverts the relationship and returns the wrong (empty) set (#2068).
+        // feature column inverts the relationship and returns the wrong (empty) set.
         var wkb = new byte[] { 1, 2, 3, 4 };
         var query = new FeatureQuery
         {
@@ -340,7 +340,7 @@ public class DuckDBFeatureQueryBuilderTests
     public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
     {
         // Esri esriSpatialRelContains = filter geometry contains feature geometry: the filter
-        // geometry must be the FIRST operand, ST_Contains(filter, feature) (#2068).
+        // geometry must be the FIRST operand, ST_Contains(filter, feature).
         var wkb = new byte[] { 1, 2, 3, 4 };
         var query = new FeatureQuery
         {
@@ -599,7 +599,7 @@ public class DuckDBFeatureQueryBuilderTests
     {
         // EPSG:4674 (SIRGAS 2000) is a geographic degree CRS but is not in the geodesic allowlist.
         // Running planar ST_DWithin(metres) against degrees would match the whole planet, so the
-        // builder must reject the distance filter rather than emit silently-wrong SQL (#2731).
+        // builder must reject the distance filter rather than emit silently-wrong SQL.
         var geographicMapping = new DuckDBLayerMapping
         {
             LayerId = 1,

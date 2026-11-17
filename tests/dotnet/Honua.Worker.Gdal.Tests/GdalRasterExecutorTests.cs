@@ -695,12 +695,12 @@ public sealed class GdalRasterExecutorTests
             // Explicit raster CRS-conversion idiom, routed by the same
             // GdalRasterReprojectCatalogJobExecutor that handles raster.reproject.
             "conversion.raster-reproject",
-            // Raster analysis tool pack (#2141): resample / IDW + kriging interpolation
+            // Raster analysis tool pack: resample / IDW + kriging interpolation
             // / mosaic. Kriging is routed here too (the executor fails it fast with a
             // flagged-unsupported message rather than the dispatcher rejecting it).
             "raster.resample", "raster.interpolate-idw",
             "raster.interpolate-kriging", "raster.mosaic",
-            // Raster analysis & terrain GP tool pack (#2239 / #2240). map-algebra /
+            // Raster analysis & terrain GP tool pack. map-algebra /
             // spectral-index / reclassify compile to gdal_calc.py; euclidean distance
             // runs gdal_proximity.py (allocation is routed here too but fails fast as
             // flagged-unsupported); contour / viewshed / polygonize / rasterize run
@@ -711,7 +711,7 @@ public sealed class GdalRasterExecutorTests
             "conversion.polygonize", "conversion.rasterize",
             // Internal multidimensional-coverage metadata scan (ADR-0039 Path B).
             "coverage.multidim.metadata",
-            // LAZ/COPC decompress + reproject (#1854).
+            // LAZ/COPC decompress + reproject.
             "pcloud.translate",
             // Existing native-routed ids must still be present.
             "gdal.gdalwarp", "gdal.ogr2ogr",

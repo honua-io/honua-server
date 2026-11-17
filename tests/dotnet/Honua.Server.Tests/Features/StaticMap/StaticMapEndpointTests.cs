@@ -353,7 +353,7 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
         }
     }
 
-    // --- Dimension entitlement band (honua-server#2945): 1280 (Community max) is the
+    // --- Dimension entitlement band: 1280 (Community max) is the
     // entitlement boundary, 4096 (Pro max) is the absolute hard cap. Everything strictly
     // between the two requires the "staticmap.large-dimensions" entitlement.
 
@@ -562,7 +562,7 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
     [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
     public async Task CenterZoom_ProEditionHighDpi_ScalesOutputResolution()
     {
-        // honua-server#2945: prove the dpi parameter actually changes the rendered
+        // Prove the dpi parameter actually changes the rendered
         // pixel dimensions (dpiFactor = dpi/72), not just that the request succeeds.
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
         await fixture.InitializeAsync();

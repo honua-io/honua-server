@@ -18,8 +18,7 @@ public sealed class DuckDBProviderResolutionTests
     public void AddDuckDBServices_RegistersDatabaseHealthChecker()
     {
         // ReadinessCheckService takes IDatabaseHealthChecker as a REQUIRED ctor param.
-        // Before PA-158, resolving /healthz/ready under DataSource:Provider=duckdb threw
-        // InvalidOperationException because no IDatabaseHealthChecker was registered.
+
         using var provider = BuildDuckDbServiceProvider();
         using var scope = provider.CreateScope();
 

@@ -93,8 +93,7 @@ internal static class GdalCli
             // zeroes, so -scale rewrites that constant onto the declared elevation and -a_nodata
             // parks NoData on a value the raster never takes. Emitting the zeroes verbatim under
             // NoData=0 -- as this fallback first did -- would hand gdaldem a DEM with no valid
-            // cells at all, leaving the statistics oracle downstream nothing to compute
-            // (honua-server#4400).
+            // cells at all, leaving the statistics oracle downstream nothing to compute.
             var vrtPath = Path.Join(scratch, "sample.vrt");
             File.WriteAllText(vrtPath, $$"""
                 <VRTDataset rasterXSize="{{size}}" rasterYSize="{{size}}">

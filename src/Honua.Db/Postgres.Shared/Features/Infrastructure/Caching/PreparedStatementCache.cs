@@ -54,10 +54,10 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         public long MinExecutionTimeMs => _minExecutionTimeMs == long.MaxValue ? 0 : _minExecutionTimeMs;
         public long MaxExecutionTimeMs => _maxExecutionTimeMs;
 
-        // WEEK 5 FIX: Parameter distribution tracking for adaptive optimization
+        // Parameter distribution tracking for adaptive optimization
         public ConcurrentDictionary<string, ParameterDistribution> ParameterDistributions { get; } = new();
 
-        // WEEK 5 FIX: Query complexity scoring
+        // Query complexity scoring
         public QueryComplexityScore ComplexityScore { get; set; } = new();
 
         public void IncrementExecutionCount() => Interlocked.Increment(ref _executionCount);
@@ -137,7 +137,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             set => Volatile.Write(ref _hitCount, value);
         }
 
-        // WEEK 5 FIX: Performance tracking for cached statements
+        // Performance tracking for cached statements
         public double AverageExecutionTimeMs
         {
             get
@@ -147,7 +147,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             }
         }
 
-        // WEEK 5 FIX: Query plan stability scoring
+        // Query plan stability scoring
         public double PlanStabilityScore { get; set; } = 1.0;
         public string? LastExplainPlan { get; set; }
         public int PlanChangeCount { get; set; }
@@ -223,7 +223,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             {
                 ExecutionCount = 1,
                 LastUsed = DateTime.UtcNow,
-                ComplexityScore = AnalyzeQueryComplexity(sql) // WEEK 5 FIX: Analyze complexity for intelligent caching
+                ComplexityScore = AnalyzeQueryComplexity(sql) // Analyze complexity for intelligent caching
             },
             (_, existing) =>
             {
@@ -265,7 +265,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             return null;
         }
 
-        // WEEK 5 FIX: Intelligent caching decision based on complexity and execution patterns
+        // Intelligent caching decision based on complexity and execution patterns
         var shouldCache = ShouldCacheStatement(metrics, sql);
         if (shouldCache)
         {
@@ -275,7 +275,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
                 if (GetConnectionCacheCount(connectionId) >= _options.MaxCachedStatements)
                 {
-                    EvictLowestPriorityStatement(connectionId); // WEEK 5 FIX: Use priority-based eviction
+                    EvictLowestPriorityStatement(connectionId); // Use priority-based eviction
                 }
 
                 var cachedStatement = new CachedStatement
@@ -720,7 +720,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
 
         var complexityScore = metrics.ComplexityScore.GetComplexityScore();
 
-        // WEEK 5 FIX: Early caching for high-complexity queries with lower execution threshold
+        // Early caching for high-complexity queries with lower execution threshold
         if (complexityScore >= 10 && metrics.ExecutionCount >= Math.Max(1, _options.MinExecutionsForCaching / 2))
         {
             if (_logger.IsEnabled(LogLevel.Debug))
@@ -731,7 +731,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             return true;
         }
 
-        // WEEK 5 FIX: Cache geospatial queries earlier due to high cost
+        // Cache geospatial queries earlier due to high cost
         if (metrics.ComplexityScore.HasGeospatialOperations && metrics.ExecutionCount >= 2)
         {
             if (_logger.IsEnabled(LogLevel.Debug))
@@ -742,7 +742,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             return true;
         }
 
-        // WEEK 5 FIX: Predictive caching for queries with consistent performance patterns
+        // Predictive caching for queries with consistent performance patterns
         if (metrics.ExecutionCount >= 3 && metrics.AverageExecutionTimeMs > 50 && IsConsistentPerformance(metrics))
         {
             if (_logger.IsEnabled(LogLevel.Debug))
@@ -953,7 +953,7 @@ internal static partial class PreparedStatementCacheLog
         Message = "Error during cache cleanup")]
     public static partial void CleanupFailed(ILogger logger, Exception exception);
 
-    // WEEK 5 FIX: Advanced caching decision logging
+    // Advanced caching decision logging
     [LoggerMessage(
         EventId = 8710,
         Level = LogLevel.Debug,

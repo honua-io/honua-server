@@ -180,11 +180,11 @@ public static class Operations
     public const string QueryBufferAggregate = "QueryBufferAggregate";
     public const string QueryDensity = "QueryDensity";
 
-    // Data Enrichment Operations (Pro tier, #374)
+    // Data Enrichment Operations (Pro tier)
     public const string EnrichCatalog = "EnrichCatalog";
     public const string Enrich = "Enrich";
 
-    // Managed enrichment-dataset catalog operations (#2280)
+    // Managed enrichment-dataset catalog operations
     public const string ListEnrichmentDatasets = "ListEnrichmentDatasets";
     public const string GetEnrichmentDataset = "GetEnrichmentDataset";
     public const string RegisterEnrichmentDataset = "RegisterEnrichmentDataset";
