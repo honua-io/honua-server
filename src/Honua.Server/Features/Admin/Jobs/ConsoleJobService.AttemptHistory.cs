@@ -1,6 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Admin.Jobs;
@@ -37,6 +40,40 @@ internal sealed partial class ConsoleJobService
             RetryDisabledReasons.NotRetryable => $"nothing is re-dispatched: the retry policy allows a single attempt; {effects}",
             RetryDisabledReasons.RetryBudgetExhausted => $"nothing is re-dispatched: all {policy.MaxAttempts} attempts allowed by the retry policy have been used; {effects}",
             _ => $"re-dispatches the whole job as attempt {Math.Max(1, job.AttemptCount) + 1} of {policy.MaxAttempts} on backend '{job.Spec.Backend}' with the same spec; {effects}"
+        };
+    }
+
+    // An execute-scoped principal gets the operator view; every other reader gets the owner
+    // view, which withholds the lost-attempt worker identity on the log, steps and diagnostics reads.
+    private async Task<bool> IsOperatorViewAsync(ClaimsPrincipal user, ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        var executeDecision = await approvalGate.CheckAuthorizationAsync(
+            user,
+            new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Job,
+                Operation = OperatorOperation.Execute,
+                ResourceId = job.OperationId
+            },
+            cancellationToken).ConfigureAwait(false);
+        return executeDecision.IsAllowed;
+    }
+
+    private async Task<ConsoleJobLogPageResponse> BuildLogPageAsync(HttpContext context, ExecutionJobRecord job, ExecutionLogPage page)
+    {
+        var items = page.Items.Select(MapLogEntry).ToArray();
+        if (!await IsOperatorViewAsync(context.User, job, context.RequestAborted).ConfigureAwait(false))
+        {
+            items = [.. items.Select(item => item with { Metadata = WithoutWorker(item.Metadata) })];
+        }
+
+        return new ConsoleJobLogPageResponse
+        {
+            JobId = job.OperationId,
+            CorrelationId = job.Audit.CorrelationId,
+            State = "available",
+            Items = items,
+            NextCursor = page.NextCursor
         };
     }
 

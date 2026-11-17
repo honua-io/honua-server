@@ -35,6 +35,10 @@ public static class PerformanceEnhancementServiceExtensions
 
         services.AddSingleton<DatabaseQueryPerformanceMonitor>();
 
+        // The monitor measures database commands from the moment it exists; create it at
+        // startup rather than on the first performance endpoint read.
+        services.AddHostedService<DatabaseQueryPerformanceMonitorActivation>();
+
         // Add resource leak detection (development/test only)
         services.Configure<ResourceLeakDetectionOptions>(options =>
         {
@@ -98,6 +102,17 @@ public sealed class PerformanceEnhancementOptions
     public bool EnableDevelopmentOptimizations { get; set; } = true;
 
     public bool EnableDetailedMetrics { get; set; } = true;
+}
+
+internal sealed class DatabaseQueryPerformanceMonitorActivation(DatabaseQueryPerformanceMonitor monitor) : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        GC.KeepAlive(monitor);
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 internal sealed class ResourceLeakDetectorHostedService : IHostedService

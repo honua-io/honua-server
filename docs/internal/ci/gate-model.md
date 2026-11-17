@@ -256,7 +256,13 @@ Stage 3 details:
   successful CI base.
 - Admitted affected runs use two concurrent server shards and run beside PR
   Gate; only a covering full run or their own admission recheck cancels them.
-  Full runs retain width 16.
+  Full runs retain width 16. A selective affected run whose router reason is
+  `no_path_match` does not schedule those default smoke shards: they do not own
+  the diff, and the twice-daily full run keeps them. The same run skips
+  Honua.Core package compatibility when every changed file is docs, a workflow,
+  a `scripts/ci/` file or a test. Any other path, and an empty path list, still runs that heavy job.
+  A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+  Core package or Postgres compatibility job still does.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
@@ -1382,9 +1388,15 @@ router full-coverage escalation, API failure or a larger bound
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
 before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
-Admitted affected runs use two concurrent server shards. All trusted indices
-use the configured `honua-heavy` pool, so a run holds at most two heavy runners;
-side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today. Full server
+Admitted affected runs use two concurrent server shards. A selective run whose
+router reason is `no_path_match` schedules none of those default smoke shards.
+Honua.Core package compatibility, which uses the heavy pool, runs on a selective
+dispatch only when a changed file sits outside docs, workflows, `scripts/ci/` and
+tests. An empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+Core package or Postgres compatibility job still does. All trusted indices
+use the configured `honua-heavy` pool, so a run holds at most two heavy runners
+for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,
+except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full server
 matrices retain their 16-job limit. A single pool prevents admitted hosted shards
 waiting for capacity from exhausting that limit while heavy runners remain idle.
 Full run 43709972683 had 13 waiting hosted shards plus three executing shards at
@@ -2239,3 +2251,48 @@ The attestation now re-reads the pull request before any red status and sheds
 it when it is no longer open. Open pull requests keep every blocking reason, and
 the success and dispatch paths are unchanged. A failed re-read keeps the red status. No trigger, job, runner, required
 check or aggregate dependency changes.
+
+### Durable GP SOAP authentication host lifetime
+
+`GPServerDurableRuntimeTests.AuthenticationTests` shares one authenticated
+PostgreSQL job host across the anonymous, invalid API key and invalid bearer
+cases. Each case still creates its own owner job and clients, checks all seven
+SOAP operations for an unauthorized fault without job details, and verifies
+that job count, successful status and the independently computed area survive.
+
+The nested class keeps the existing serialized job-substrate collection and
+ends the shared worker lifetime before restart, migration and private-host
+cases clear the substrate. Those cases retain their private applications.
+The existing GPServer Durable and Aliases filter matches the parent class prefix,
+including the nested class, in selected PR and full trunk runs. No workflow,
+shard filter, required check or aggregate dependency changes; runner delta zero.
+Paired class build-host measurement: 25/25 identical passing cases, 498 to 470
+seconds.
+
+### Geocoding batch response fixture
+
+`GeocodingEndpointTests` shares an Enterprise-licensed batch application across
+11 response-only cases with identical provider capabilities. Provider results
+are derived from the current request; these cases never inspect request capture.
+The existing Community application remains separate. Each case owns its client
+and response. Cases that inspect captured requests, override capabilities or
+batch limits, exercise failover, or vary licensing retain private applications.
+The class fixture disposes both shared applications after the class completes.
+
+All existing case data, endpoint attributes, requests and assertions remain.
+The class stays in its existing PR-selected and full-trunk partition; this
+changes host lifetime without adding runners, jobs or required check names.
+
+### Catalog service typing host lifetime
+
+`GeoservicesCatalogServiceTypingTests.DefaultTypingFixture` initializes one
+application with the default typing graph and raster store for the four read-only
+service-directory cases. The lifecycle loop and duplicate-publication case retain
+their private applications and custom graphs. All service-name selection and
+response assertions remain in place; the class stays in its database collection.
+
+The existing Catalog and ImageServer Support partition retains these cases on
+selected PR runs and full trunk runs. No workflow, shard filter, required check,
+aggregate dependency or runner count changes. Paired class and existing-partition
+measurements are collected separately; test-body time excludes class-fixture
+startup and disposal, and does not establish complete CI job-wall savings.

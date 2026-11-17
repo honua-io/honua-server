@@ -20,8 +20,24 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.GeoservicesCatalog)]
-public sealed class GeoservicesCatalogServiceTypingTests
+public sealed class GeoservicesCatalogServiceTypingTests : IClassFixture<GeoservicesCatalogServiceTypingTests.DefaultTypingFixture>
 {
+    private readonly WebAppFixture _fixture;
+
+    public GeoservicesCatalogServiceTypingTests(DefaultTypingFixture fixture)
+    {
+        _fixture = fixture.Application;
+    }
+
+    public sealed class DefaultTypingFixture : IAsyncLifetime
+    {
+        public WebAppFixture Application { get; } = CreateFixture(BuildRasterStoreWithRasters());
+
+        public Task InitializeAsync() => Application.InitializeAsync();
+
+        public Task DisposeAsync() => Application.DisposeAsync();
+    }
+
     private const string VectorServiceName = "typing-vector";
     private const string RasterServiceName = "typing-raster";
     private const string MultiTypeServiceName = "typing-multi";
@@ -33,11 +49,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
     [Endpoint("GET /rest/services")]
     public async Task GetServicesDirectory_RasterService_TypedAsImageServerNotFeatureServer()
     {
-        var rasterStore = BuildRasterStoreWithRasters();
-
-        await using var fixture = await CreateFixtureAsync(rasterStore);
-
-        var services = await GetServicesByNameAsync(fixture, RasterServiceName);
+        var services = await GetServicesByNameAsync(_fixture, RasterServiceName);
 
         // The raster service exposes only the ImageServer protocol, so it must NOT
         // appear as a FeatureServer in the catalog.
@@ -51,11 +63,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
     [Endpoint("GET /rest/services")]
     public async Task GetServicesDirectory_VectorService_TypedAsFeatureServer()
     {
-        var rasterStore = BuildRasterStoreWithRasters();
-
-        await using var fixture = await CreateFixtureAsync(rasterStore);
-
-        var services = await GetServicesByNameAsync(fixture, VectorServiceName);
+        var services = await GetServicesByNameAsync(_fixture, VectorServiceName);
 
         services.Should().ContainSingle();
         services.Should().Contain(type => type == "FeatureServer");
@@ -66,11 +74,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
     [Endpoint("GET /rest/services")]
     public async Task GetServicesDirectory_MultiProtocolService_ListedOncePerEsriType()
     {
-        var rasterStore = BuildRasterStoreWithRasters();
-
-        await using var fixture = await CreateFixtureAsync(rasterStore);
-
-        var services = await GetServicesByNameAsync(fixture, MultiTypeServiceName);
+        var services = await GetServicesByNameAsync(_fixture, MultiTypeServiceName);
 
         // A service reachable as both FeatureServer and MapServer is listed once per
         // type (Esri Services Directory semantics), not collapsed to its primary
@@ -84,11 +88,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
     [Endpoint("GET /rest/services")]
     public async Task GetServicesDirectory_LayerlessGpService_TypedAsGpServer()
     {
-        var rasterStore = BuildRasterStoreWithRasters();
-
-        await using var fixture = await CreateFixtureAsync(rasterStore);
-
-        var services = await GetServicesByNameAsync(fixture, GpServiceName);
+        var services = await GetServicesByNameAsync(_fixture, GpServiceName);
 
         services.Should().ContainSingle().Which.Should().Be("GPServer");
     }
@@ -195,6 +195,15 @@ public sealed class GeoservicesCatalogServiceTypingTests
         IRasterStore rasterStore,
         MetadataV2Graph? graph = null)
     {
+        var fixture = CreateFixture(rasterStore, graph);
+        await fixture.InitializeAsync();
+        return fixture;
+    }
+
+    private static WebAppFixture CreateFixture(
+        IRasterStore rasterStore,
+        MetadataV2Graph? graph = null)
+    {
         var provider = new TestMetadataV2GraphProvider(graph ?? BuildTypingGraph());
 
         var fixture = new WebAppFixture()
@@ -208,7 +217,6 @@ public sealed class GeoservicesCatalogServiceTypingTests
                 services.AddSingleton(rasterStore);
             });
 
-        await fixture.InitializeAsync();
         return fixture;
     }
 
