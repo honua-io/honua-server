@@ -95,6 +95,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
     public async Task StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback()
     {
+        var route = $"/studio/parcels-{Guid.NewGuid():N}";
         var familiesResponse = await _client.GetAsync("/api/v1/studio/package-families");
         familiesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var families = await ReadAsync<StudioPackageFamilyCapabilities>(
@@ -109,7 +110,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
             {
                 PackageKey = $"parcels-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
-                Envelope = BuildEnvelope("1=1"),
+                Envelope = BuildEnvelope("1=1", route),
             },
             StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -174,7 +175,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
                 PackageKey = reopened.PackageKey,
                 WorkspaceId = reopened.WorkspaceId,
                 OwnerId = reopened.OwnerId,
-                Envelope = BuildEnvelope("POPULATION > 1000"),
+                Envelope = BuildEnvelope("POPULATION > 1000", route),
                 Generation = reopened.Generation,
             },
             StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest);
@@ -2139,7 +2140,12 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
         return envelope.Data!;
     }
 
+    // Accepted publications claim their route, so each envelope gets its own unless a case
+    // passes one route for all of its versions.
     private static StudioPackageEnvelope BuildEnvelope(string where)
+        => BuildEnvelope(where, $"/studio/parcels-{Guid.NewGuid():N}");
+
+    private static StudioPackageEnvelope BuildEnvelope(string where, string route)
     {
         using var body = JsonDocument.Parse($$"""{"where":"{{where}}"}""");
         return new StudioPackageEnvelope
@@ -2177,7 +2183,7 @@ public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPa
                     Rel = "generated-by",
                 },
             ],
-            PublicationIntent = new StudioPublicationIntent { Route = $"/studio/parcels-{Guid.NewGuid():N}", Visibility = "organization" },
+            PublicationIntent = new StudioPublicationIntent { Route = route, Visibility = "organization" },
             Body = body.RootElement.Clone(),
         };
     }
