@@ -1,1 +1,1 @@
-src/Honua.Server/Migrations/215_RenameConsoleAccessEnvironmentOwnership.sql
+src/Honua.Server/Migrations/215_AddConsoleAccessEnvironmentOwnership.sql

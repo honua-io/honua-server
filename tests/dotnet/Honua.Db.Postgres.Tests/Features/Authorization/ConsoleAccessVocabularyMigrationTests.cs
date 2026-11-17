@@ -12,7 +12,7 @@ namespace Honua.Db.Postgres.Tests.Features.Authorization;
 public sealed class ConsoleAccessVocabularyMigrationTests(PostgresFixture fixture)
 {
     [IntegrationTest]
-    public async Task Migration_ExistingOwnershipAndCanonicalCollision_PreservesRolesMembershipsAndOtherGrants()
+    public async Task Migration_ExistingOwnershipAndCanonicalCollision_AddsEnvironmentGrantAndKeepsExistingGrants()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ConsoleAccessVocabularyMigrationTests));
         try
@@ -25,7 +25,7 @@ public sealed class ConsoleAccessVocabularyMigrationTests(PostgresFixture fixtur
             (await ScalarAsync(schema, """
                 SELECT string_agg(service || ':' || layer || ':' || operation, ',' ORDER BY service COLLATE "C", layer COLLATE "C", operation COLLATE "C")
                 FROM "{schema}".rbac_role_permissions
-                """)).Should().Be("Console-Access:beta:environment-membership,console-access:alpha:environment-membership,console-access:alpha:query,other:alpha:workspace-membership");
+                """)).Should().Be("Console-Access:beta:environment-membership,Console-Access:beta:workspace-membership,console-access:alpha:environment-membership,console-access:alpha:query,console-access:alpha:workspace-membership,other:alpha:workspace-membership");
         }
         finally
         {
@@ -36,7 +36,7 @@ public sealed class ConsoleAccessVocabularyMigrationTests(PostgresFixture fixtur
     private async Task ApplyMigrationAsync(string schema)
     {
         var directory = RepositoryPaths.Resolve("src", "Honua.Server", "Migrations");
-        var path = Directory.EnumerateFiles(directory, "*_RenameConsoleAccessEnvironmentOwnership.sql").Single();
+        var path = Directory.EnumerateFiles(directory, "*_AddConsoleAccessEnvironmentOwnership.sql").Single();
         await ExecuteAsync(schema, (await File.ReadAllTextAsync(path))
             .Replace("$HonuaSchema$", "\"{schema}\"", StringComparison.Ordinal));
     }
