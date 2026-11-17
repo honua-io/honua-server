@@ -2323,8 +2323,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-forms",
-      "route": "/api/v1/admin/forms",
+      "id": "get-api-v1-admin-forms-packages",
+      "route": "/api/v1/admin/forms/packages",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -2337,8 +2337,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-admin-forms-formid",
-      "route": "/api/v1/admin/forms/{formId}",
+      "id": "get-api-v1-admin-forms-packages-formid",
+      "route": "/api/v1/admin/forms/packages/{formId}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -2351,8 +2351,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-admin-forms-formid-versions",
-      "route": "/api/v1/admin/forms/{formId}/versions",
+      "id": "get-api-v1-admin-forms-packages-formid-versions",
+      "route": "/api/v1/admin/forms/packages/{formId}/versions",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -2365,8 +2365,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-admin-forms-formid-versions-formversion",
-      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}",
+      "id": "get-api-v1-admin-forms-packages-formid-versions-packageversion",
+      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -6078,8 +6078,8 @@
       "capability": "fieldops.offline-sync"
     },
     {
-      "id": "get-api-v1-forms-formid",
-      "route": "/api/v1/forms/{formId}",
+      "id": "get-api-v1-forms-packages-formid",
+      "route": "/api/v1/forms/packages/{formId}",
       "method": "GET",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -6092,8 +6092,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-forms-formid-compatibility",
-      "route": "/api/v1/forms/{formId}/compatibility",
+      "id": "get-api-v1-forms-packages-formid-compatibility",
+      "route": "/api/v1/forms/packages/{formId}/compatibility",
       "method": "GET",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -6108,8 +6108,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-forms-formid-offline-policy",
-      "route": "/api/v1/forms/{formId}/offline-policy",
+      "id": "get-api-v1-forms-packages-formid-offline-policy",
+      "route": "/api/v1/forms/packages/{formId}/offline-policy",
       "method": "GET",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -6123,8 +6123,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-forms-formid-versions-formversion",
-      "route": "/api/v1/forms/{formId}/versions/{formVersion}",
+      "id": "get-api-v1-forms-packages-formid-versions-packageversion",
+      "route": "/api/v1/forms/packages/{formId}/versions/{packageVersion}",
       "method": "GET",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -17170,8 +17170,6 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
-        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
-        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_WithInvalidSalt_RejectsOtherwiseValidLegacyKey",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpiredKey_IsRejected_AndPermissionsDefaultToAdminWildcard",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation",
@@ -17216,7 +17214,6 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_ReturnsNewPlaintextAndInvalidatesOldKey",
         "Honua.Server.Tests.Features.Admin.PlatformAdminAuthorityEndpointTests.ManageApiKeys_TenantAdmin_RejectsBeforeStoreAccess",
-        "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.KeyMintedOnOneInstance_AuthenticatesOnAnother_AndRevocationAndRotationApplyEverywhere",
         "Honua.Server.Tests.Features.Admin.PostgresAdminApiKeyStoreTests.Restrictions_RoundTripAcrossInstances_AndSurviveRotation"
       ],
@@ -17972,8 +17969,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "post-api-v1-admin-forms",
-      "route": "/api/v1/admin/forms",
+      "id": "post-api-v1-admin-forms-packages",
+      "route": "/api/v1/admin/forms/packages",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -17987,8 +17984,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "post-api-v1-admin-forms-formid-versions-formversion-publish",
-      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}/publish",
+      "id": "post-api-v1-admin-forms-packages-formid-versions-packageversion-publish",
+      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -18002,8 +17999,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "post-api-v1-admin-forms-formid-versions-formversion-reopen",
-      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}/reopen",
+      "id": "post-api-v1-admin-forms-packages-formid-versions-packageversion-reopen",
+      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -18016,8 +18013,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "post-api-v1-admin-forms-formid-versions-formversion-validate",
-      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}/validate",
+      "id": "post-api-v1-admin-forms-packages-formid-versions-packageversion-validate",
+      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -20756,8 +20753,8 @@
       "capability": "fieldops.offline-sync"
     },
     {
-      "id": "post-api-v1-forms-formid-submissions",
-      "route": "/api/v1/forms/{formId}/submissions",
+      "id": "post-api-v1-forms-packages-formid-submissions",
+      "route": "/api/v1/forms/packages/{formId}/submissions",
       "method": "POST",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -26532,8 +26529,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-forms-formid-versions-formversion",
-      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}",
+      "id": "put-api-v1-admin-forms-packages-formid-versions-packageversion",
+      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
