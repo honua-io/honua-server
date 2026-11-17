@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Import.Domain;
 using NetTopologySuite.Features;
@@ -11,6 +12,26 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    private static void ObserveHiddenSourceProperties(
+        IFeature feature, IDictionary<string, string> warnings, SupportedFileFormat format)
+    {
+        foreach (var name in feature.Attributes.GetNames())
+        {
+            var isId = name.Equals("id", StringComparison.OrdinalIgnoreCase);
+            if ((!isId || format == SupportedFileFormat.Csv)
+                && !name.Equals("geometry", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var column = isId ? "id" : "geometry";
+            warnings.TryAdd(column,
+                $"Source property '{name}' conflicts with the importer-owned '{column}' column. "
+                + "Its original value is retained in the stored properties document but is hidden in published features. "
+                + $"Rename the source property to an unused name such as 'source_{column}' and re-import to publish its values.");
+        }
+    }
+
     private static async Task<HashSet<string>> ReadIncompatibleCsvAliasesAsync(
         NpgsqlConnection connection, (string Schema, string Table) target, CancellationToken cancellationToken)
     {

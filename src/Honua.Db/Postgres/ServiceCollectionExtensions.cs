@@ -553,7 +553,12 @@ internal static partial class ServiceCollectionExtensions
                 configuration["Database:Schema"]));
 
         // Register table discovery implementation
-        services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
+        services.AddScoped<ITableDiscoveryService>(provider => new PostgreSqlTableDiscoveryService(
+            provider.GetRequiredService<ILogger<PostgreSqlTableDiscoveryService>>(),
+            new PostgreSqlTableDiscoveryOptions(
+                provider.GetService<ISchemaContext>(),
+                provider.GetRequiredService<PostgresSchemaConfiguration>(),
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(provider, connectionString, cancellationToken))));
 
         // Register layer publishing implementation
         // Snapshot copies of large imported tables need a longer, explicit budget than ordinary
@@ -1077,7 +1082,7 @@ internal static partial class ServiceCollectionExtensions
         services.AddSingleton<IDatabaseCompatibilityChecker>(provider =>
             new PostgresDatabaseCompatibilityChecker(
                 provider.GetRequiredService<ILogger<PostgresDatabaseCompatibilityChecker>>(),
-                (connectionString, cancellationToken) => CreateMigrationServiceConnectionAsync(provider, connectionString, cancellationToken)));
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(provider, connectionString, cancellationToken)));
 
         return services;
     }
@@ -1090,15 +1095,15 @@ internal static partial class ServiceCollectionExtensions
             new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
                 serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
                 configuration,
-                (connectionString, cancellationToken) => CreateMigrationServiceConnectionAsync(serviceProvider, connectionString, cancellationToken)));
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(serviceProvider, connectionString, cancellationToken)));
         services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
             serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
     }
 
-    private static async ValueTask<NpgsqlConnection> CreateMigrationServiceConnectionAsync(
+    private static async ValueTask<NpgsqlConnection> CreateTargetConnectionAsync(
         IServiceProvider provider, string connectionString, CancellationToken cancellationToken)
     {
-        // Migrate-only composition has no serving pool. Explicit alternate targets retain their
+        // Migrate-only composition has no serving pool. Discovery and explicit migration targets retain their
         // connection string; only the resolved serving configuration shares its managed budget.
         var cache = provider.GetService<PostgresConnectionStringCache>();
         if (cache is not null && string.Equals(connectionString,

@@ -217,7 +217,7 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$CANDIDATE"
-          python3 scripts/ci/measure-serving-image.py "$CANDIDATE" --published --profile postgis --verify-jit-boundary --output artifacts/rc-image-size.json
+          python3 scripts/ci/measure-serving-image.py "$CANDIDATE" --published --profile postgis --verify-jit-boundary --release-stage rc --output artifacts/rc-image-size.json
 
       # Apply the committed not-affected decisions (eng/security/vex-statements.json); the
       # gate output lists every finding they suppress.

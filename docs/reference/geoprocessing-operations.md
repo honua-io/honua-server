@@ -240,7 +240,7 @@ GeoETL DAG sources that produce a FeatureCollection artifact. Seven are managed 
 | `source.esri-featureserver` | Stream a GeoServices REST FeatureServer/MapServer layer (paged), Esri-JSON → GeoJSON. | `serviceUrl`, `esriLayerId`, `where`, `outFields`, `outSrid`, `pageSize`, token/credential params, `since` | managed | workflow |
 | `source.ogc-features` | Stream an OGC API Features collection via `rel=next` link paging; `where` is CQL2-text. | `serviceUrl`, `collectionId`, `where`, `bbox`, `pageSize`, credential params, `since` | managed | workflow |
 | `source.wfs` | Stream a WFS GetFeature endpoint with startIndex/count paging, GeoJSON output. | `serviceUrl`, `typeName`, `bbox`, `pageSize`, credential params | managed | workflow |
-| `source.postgis` | Stream a customer-owned PostGIS table/view via a registered secure connection. | `connectionName`/`connectionId`, `table`, `schema`, `geometryColumn`, `where`, `bbox`, `outSrid`, `since`, `watermarkField` | managed | workflow |
+| `source.postgis` | Stream a customer-owned PostGIS table/view via a registered secure connection; `where` uses the shared GeoServices SQL filter syntax with bound literal values and supported functions. | `connectionName`/`connectionId`, `table`, `schema`, `geometryColumn`, `where`, `bbox`, `outSrid`, `since`, `watermarkField` | managed | workflow |
 | `source.ogr` | GDAL/OGR import reader for the full driver universe (FileGDB, GML, KML, MapInfo, Shapefile, GPKG, FlatGeobuf, …); multi-file datasets supplied as a base64 ZIP. | `source`, `sourceFormat` | **native** | workflow |
 
 ## Sink (4)

@@ -58,7 +58,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `HONUA_ADMIN_PASSWORD` | — (**required in production**) | Password for the admin API (`/api/v1/admin/*`). |
+| `HONUA_ADMIN_PASSWORD` | — (**required in production**) | Password for the admin API (`/api/v1/admin/*`). Outside Development and Test, configured passwords must contain at least 16 characters, including uppercase, lowercase, a digit and a special character. This applies to inline values and Secrets Manager values at startup and after rotation. Environment names are matched case-insensitively. |
 | `Security__ConnectionEncryption__MasterKey` | — (**required outside Development**) | Master key (minimum 32 characters) used to encrypt stored data-connection credentials; startup fails without it outside Development. |
 | `Security__ConnectionEncryption__Salt` | derived from master key | Optional explicit salt for master-key derivation; set it to control salt rotation (a warning is logged when derived). |
 | `Security__RequestSecretReferences__AllowedEnvironmentVariables__0..n` | empty | Environment variable names that a request-supplied `env:NAME` secret reference may name (exact match). With every `RequestSecretReferences` list empty, all request-supplied secret references are refused. See [Secret references](../../guides/deploy/configuration.md#references-supplied-in-a-request). |
@@ -293,7 +293,7 @@ Database connection pool and query admission:
 | `Limits__Connections__MinConnectionPoolSize` | `20` | Npgsql pool minimum. |
 | `Deployment__MaxTasks` | unset | Most server tasks that run at once against one database (the autoscaling maximum). With a value above 1, or `Deployment__Mode=MultiNode` and no count, each pool is sized from the database limit and admin changes to settings held in one task's memory are refused. |
 | `Database__InstanceClass` | unset | Database instance class, for example `db.t4g.small`. Pool sizing reads the database's connection limit from it. |
-| `Database__MaxConnections` | unset | The database's `max_connections`, when the instance class does not say it. Wins over `Database__InstanceClass`. |
+| `Database__MaxConnections` | unset | The database's `max_connections`. Wins over `Database__InstanceClass`. Automatic sizing reserves one listener per task within an 80% budget, then sizes two pools per task; it refuses a budget too small for one connection per pool. |
 | `Limits__Connections__ConnectionIdleLifetimeSeconds` | `600` | Idle connection lifetime. |
 | `Limits__Connections__CommandTimeoutSeconds` | `30` | Database command timeout. |
 | `Limits__Connections__RequestTimeout` | `00:01:00` | End-to-end request timeout. |
