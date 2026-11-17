@@ -1155,7 +1155,8 @@ run_poison_job_checks() {
   [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: poison affected valid job" "${job}"; return 1; }
   # Leaving the queue is not enough: a claimed poison row that never ends holds a claim forever.
   deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-180}))
-  while status="$(job_row_status "${poison}")" && [[ "${status}" =~ ^(Queued|Provisioning|Running)$ ]] && (( SECONDS < deadline )); do sleep 2; done
+  while status="$(job_row_status "${poison}")" || { write_receipt "${scenario}" fail "poison row status could not be read" "${job}"; return 1; }
+        [[ "${status}" =~ ^(Queued|Provisioning|Running)$ ]] && (( SECONDS < deadline )); do sleep 2; done
   [[ ! "${status}" =~ ^(Queued|Provisioning|Running)$ ]] || { write_receipt "${scenario}" fail "FINDING: poison row stranded in ${status}" "${job}"; return 1; }
   write_receipt "${scenario}" pass "poison_status=${status:-removed}" "${job}" successful "${digest}"
 }

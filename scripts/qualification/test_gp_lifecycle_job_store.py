@@ -157,6 +157,8 @@ job=gp-1
 echo "warn: Execution lease lost for job gp-1 on worker w-1; cancelling the stale attempt" > lease.log
 echo "warn: Skipping state transition for job gp-1: current status is Running" > skip.log
 echo "warn: Execution lease lost for job gp-2 on worker w-1" > other.log
+echo "warn: Execution lease lost for job gp-10; stale attempt will not write a terminal state" > prefix.log
+heartbeat_saw_stale_ownership prefix.log && exit 64
 heartbeat_saw_stale_ownership lease.log || exit 61
 heartbeat_saw_stale_ownership skip.log || exit 62
 heartbeat_saw_stale_ownership other.log && exit 63

@@ -38,7 +38,8 @@ run_heartbeat_recovery() {
 # The fenced worker either finds its claim moved when it writes a transition, or its
 # heartbeat finds the execution lease gone and cancels the attempt first.
 heartbeat_saw_stale_ownership() {
-  grep -Fq -e "Skipping state transition for job $job:" -e "Execution lease lost for job $job" "$1"
+  grep -Fq -e "Skipping state transition for job $job:" -e "Execution lease lost for job $job;" \
+    -e "Execution lease lost for job $job on worker" "$1"
 }
 
 heartbeat_job_record() {
