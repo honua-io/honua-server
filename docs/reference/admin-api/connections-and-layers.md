@@ -189,6 +189,15 @@ to declare edit support; Query-only imported table bindings currently do not.
 Repairing metadata alone does not make their writer available. Composite
 relationships remain read-only even when the underlying storage supports edits.
 
+To turn on editor tracking, name the fields in `editing`: `creatorField` and
+`editorField` must be declared String fields, and `createdAtField` and
+`updatedAtField` must be declared Date, DateTime, String, BigInteger or Double
+fields. Omitted or null fields keep their value and an empty string clears one.
+Every edit protocol then stamps these fields from the caller and the server
+clock; they appear in GeoServices `editFieldsInfo` and in gRPC `DescribeLayer`.
+A field of another type, or an unknown property in `editing`, returns `400` and
+changes nothing.
+
 ## Publish an editable managed copy
 
 `POST /api/v1/admin/connections/{id}/layers` accepts `createEditableCopy: true`.
