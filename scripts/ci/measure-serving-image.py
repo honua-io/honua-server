@@ -111,13 +111,39 @@ def manifest_matches_image(payload, image_id):
             or 'sha256:' + hashlib.sha256(payload).hexdigest() == image_id)
 
 
-def oci_image_payload(archive, image_id):
+def selected_index_child(manifest, platform=None):
+    candidates = [child for child in manifest['manifests']
+                  if child.get('platform', {}).get('os') not in (None, 'unknown')
+                  and child.get('annotations', {}).get('vnd.docker.reference.type')
+                  != 'attestation-manifest'
+                  and (platform is None or all(child['platform'].get(key) == value
+                                               for key, value in platform.items()))]
+    if len(candidates) != 1:
+        raise ValueError('Loaded image index has no unique runnable platform')
+    return candidates[0]
+
+
+def inspected_platform(inspection):
+    if not inspection.get('Os') or not inspection.get('Architecture'):
+        return None
+    platform = {'os': inspection['Os'], 'architecture': inspection['Architecture']}
+    if inspection.get('Variant'):
+        platform['variant'] = inspection['Variant']
+    return platform
+
+
+def oci_image_payload(archive, image_id, platform=None):
     pending = json.load(archive.extractfile('index.json'))['manifests']
     while pending:
         payload = oci_blob(archive, pending.pop())
         manifest = json.loads(payload)
         if 'manifests' in manifest:
-            pending.extend(manifest['manifests'])
+            if 'sha256:' + hashlib.sha256(payload).hexdigest() == image_id:
+                child = selected_index_child(manifest, platform)
+                image_id = child['digest']
+                pending = [child]
+            else:
+                pending.extend(manifest['manifests'])
         elif manifest_matches_image(payload, image_id):
             return payload
     raise ValueError('OCI archive does not contain the loaded image')
@@ -142,10 +168,10 @@ def uncompressed_oci_bytes(archive, payload):
     return size
 
 
-def measure_oci_archive(path, image_id):
+def measure_oci_archive(path, image_id, platform=None):
     with tarfile.open(path) as archive:
-        payload = oci_image_payload(archive, image_id)
-        return {**compressed_manifest_measurement(payload, image_id),
+        payload = oci_image_payload(archive, image_id, platform)
+        return {**compressed_manifest_measurement(payload, 'sha256:' + hashlib.sha256(payload).hexdigest()),
                 'uncompressed_layer_bytes': uncompressed_oci_bytes(archive, payload)}
 
 
@@ -168,10 +194,10 @@ def verified_layer_bytes(stream, diff_id):
     return size
 
 
-def saved_image_bytes(path, image_id):
+def saved_image_bytes(path, image_id, platform=None):
     with tarfile.open(path) as archive:
         if 'index.json' in archive.getnames():
-            return uncompressed_oci_bytes(archive, oci_image_payload(archive, image_id))
+            return uncompressed_oci_bytes(archive, oci_image_payload(archive, image_id, platform))
         manifests = json.load(archive.extractfile('manifest.json'))
         for manifest in manifests:
             payload = archive.extractfile(manifest['Config']).read()
@@ -183,11 +209,11 @@ def saved_image_bytes(path, image_id):
     raise ValueError('Saved archive does not contain the loaded image')
 
 
-def measure_saved_image(reference, image_id):
+def measure_saved_image(reference, image_id, platform=None):
     with tempfile.TemporaryDirectory(prefix='honua-image-size-') as directory:
         path = Path(directory) / 'image.tar'
         subprocess.run(['docker', 'image', 'save', '--output', str(path), reference], check=True)
-        return saved_image_bytes(path, image_id)
+        return saved_image_bytes(path, image_id, platform)
 
 
 def compressed_manifest_measurement(payload, image_id):
@@ -205,7 +231,7 @@ def compressed_manifest_measurement(payload, image_id):
             'layer_media_types': sorted({layer['mediaType'] for layer in layers})}
 
 
-def measure_registry_image(reference, image_id):
+def measure_registry_image(reference, image_id, platform=None):
     repository, separator, digest = reference.partition('@')
     if not separator or not re.fullmatch(r'sha256:[a-f0-9]{64}', digest):
         raise ValueError('Registry measurement requires an immutable image digest')
@@ -226,7 +252,12 @@ def measure_registry_image(reference, image_id):
             raise ValueError('Registry manifest size mismatch')
         manifest = json.loads(payload)
         if 'manifests' in manifest:
-            pending.extend((child['digest'], child['size']) for child in manifest['manifests'])
+            if digest == image_id:
+                child = selected_index_child(manifest, platform)
+                image_id = child['digest']
+                pending = [(child['digest'], child['size'])]
+            else:
+                pending.extend((child['digest'], child['size']) for child in manifest['manifests'])
         elif manifest_matches_image(payload, image_id):
             return compressed_manifest_measurement(payload, image_id)
     raise ValueError('Registry manifest does not contain the loaded image')
@@ -281,14 +312,14 @@ def main():
 
 
 def measure_published(args, inspection):
-    size = measure_saved_image(args.image, inspection['Id'])
+    size = measure_saved_image(args.image, inspection['Id'], inspected_platform(inspection))
     report = {'image': args.image, 'image_id': inspection['Id'], 'bytes': size,
               'docker_storage_bytes': inspection['Size'],
               'size_method': 'verified-uncompressed-layer-bytes',
               'release_stage': args.release_stage,
               'size_budget_bytes': IMAGE_SIZE_BUDGETS[args.release_stage],
               'profile': args.profile, 'tags': os.environ.get('IMAGE_TAGS', '').splitlines(),
-              'oci': measure_registry_image(args.image, inspection['Id'])}
+              'oci': measure_registry_image(args.image, inspection['Id'], inspected_platform(inspection))}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     if args.default_image:
@@ -304,9 +335,9 @@ def measure_published(args, inspection):
 
 def measure_export(args, inspection):
     baseline = inspect_image(args.baseline)
-    baseline_size = measure_saved_image(args.baseline, baseline['Id'])
-    oci = measure_oci_archive(args.oci_archive, inspection['Id']) if args.oci_archive else None
-    size = oci['uncompressed_layer_bytes'] if oci else measure_saved_image(args.image, inspection['Id'])
+    baseline_size = measure_saved_image(args.baseline, baseline['Id'], inspected_platform(baseline))
+    oci = measure_oci_archive(args.oci_archive, inspection['Id'], inspected_platform(inspection)) if args.oci_archive else None
+    size = oci['uncompressed_layer_bytes'] if oci else measure_saved_image(args.image, inspection['Id'], inspected_platform(inspection))
     files, deps = exported_files(args.image)
     evidence = {
         'assets': json.loads((args.evidence_directory / 'project.assets.json').read_text()),

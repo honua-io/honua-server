@@ -16,6 +16,7 @@ class ArchiveOptions:
     archive_format: str = 'docker'
     layer_content: str = 'valid'
     compression: str = 'gzip'
+    identity: str = 'config'
 
 
 class ImageLayerSizeTests(unittest.TestCase):
@@ -46,6 +47,13 @@ class ImageLayerSizeTests(unittest.TestCase):
                 layer_descriptor['mediaType'] += '+gzip'
             manifest = blob(json.dumps({'config': config_descriptor,
                                         'layers': [layer_descriptor]}).encode())
+            if options.identity == 'index':
+                manifest['platform'] = {'os': 'linux', 'architecture': 'amd64'}
+                attestation = blob(b'{"config":{},"layers":[]}')
+                attestation['platform'] = {'os': 'unknown', 'architecture': 'unknown'}
+                index = blob(json.dumps({'manifests': [manifest, attestation]}).encode())
+                image_id = index['digest']
+                manifest = index
             contents['index.json'] = json.dumps({'manifests': [manifest]}).encode()
         else:
             contents['config.json'] = config
@@ -84,6 +92,34 @@ class ImageLayerSizeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path, image_id, expected = self.archive(directory, ArchiveOptions('oci', compression='none'))
             self.assertEqual(self.measurement.saved_image_bytes(path, image_id), expected)
+
+    def test_saved_oci_accepts_attested_containerd_index_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, image_id, expected = self.archive(directory, ArchiveOptions('oci', identity='index'))
+            self.assertEqual(self.measurement.saved_image_bytes(path, image_id), expected)
+
+    def test_index_selection_rejects_ambiguous_or_missing_platform(self):
+        children = [{'digest': arch, 'platform': {'os': 'linux', 'architecture': arch}}
+                    for arch in ('amd64', 'arm64')]
+        for platform in (None, {'os': 'linux', 'architecture': 's390x'}):
+            with self.subTest(platform=platform), self.assertRaisesRegex(ValueError, 'unique'):
+                self.measurement.selected_index_child({'manifests': children}, platform)
+        self.assertEqual(self.measurement.selected_index_child(
+            {'manifests': children}, {'os': 'linux', 'architecture': 'amd64'}), children[0])
+
+    def test_oci_and_registry_index_use_the_same_selected_leaf(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, image_id, expected = self.archive(directory, ArchiveOptions('oci', identity='index'))
+            with tarfile.open(path) as archive:
+                index = archive.extractfile('blobs/sha256/' + image_id.split(':')[1]).read()
+                leaf = json.loads(index)['manifests'][0]['digest']
+                payload = archive.extractfile('blobs/sha256/' + leaf.split(':')[1]).read()
+            result = self.measurement.measure_oci_archive(path, image_id)
+            self.assertEqual(result['uncompressed_layer_bytes'], expected)
+            with patch.object(self.measurement.subprocess, 'check_output', side_effect=[index, payload]):
+                registry = self.measurement.measure_registry_image('example/image@' + image_id, image_id)
+            self.assertEqual(registry['config_digest'], result['config_digest'])
+            self.assertEqual(registry['compressed_layer_bytes'], result['compressed_layer_bytes'])
 
     def test_config_requires_one_diff_id_per_layer(self):
         for rootfs in ({}, {'type': 'layers', 'diff_ids': []},
