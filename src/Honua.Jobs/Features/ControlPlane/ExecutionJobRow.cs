@@ -26,14 +26,21 @@ internal sealed record ExecutionJobRow(
 {
     public const string TableName = "execution_jobs";
 
-    // Select list that Read expects, in order. operation_id comes last so a row whose record
-    // cannot be read can still be named.
+    // Select list that Read expects, in order. operation_id and created_at come last so a row
+    // whose record cannot be read can still be named and paged past.
     public const string SelectColumns =
         "version, status, attempt_count, claimed_by, claimed_at, last_heartbeat_at, next_retry_at, "
-        + "completed_at, percent_complete, current_phase, updated_at, record, operation_id";
+        + "completed_at, percent_complete, current_phase, updated_at, record, operation_id, created_at";
 
     // The phase of a job failed because its stored record cannot be read.
     public const string UnreadableRecordPhase = "Failed: unreadable record";
+
+    // Assignments that fail a job whose stored record cannot be read. The record is left as it was
+    // for diagnosis; the columns alone make the job terminal.
+    public const string FailUnreadableAssignments =
+        "status = 'Failed', version = version + 1, claimed_by = NULL, claimed_at = NULL, "
+        + "last_heartbeat_at = NULL, next_retry_at = NULL, queue_visible_at = NULL, queue_priority = NULL, "
+        + "current_phase = '" + UnreadableRecordPhase + "', completed_at = now(), updated_at = now()";
 
     public const string RecordColumns =
         "record, kind, runtime_profile, backend, priority, created_at, tenant_id, cancellation_requested, "
@@ -85,6 +92,9 @@ internal sealed record ExecutionJobRow(
             $"Execution job {ReadOperationId(reader)} holds a record this build cannot read.");
 
     public static string ReadOperationId(NpgsqlDataReader reader) => reader.GetString(12);
+
+    public static ExecutionJobCursor ReadCursor(NpgsqlDataReader reader)
+        => new(reader.GetFieldValue<DateTimeOffset>(13), ReadOperationId(reader));
 
     // Null when the stored record is empty or not a record this build can deserialize, for
     // example after corruption or when a newer build wrote it. Callers that scan many rows skip

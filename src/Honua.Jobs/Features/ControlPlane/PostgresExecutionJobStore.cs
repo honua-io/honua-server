@@ -306,5 +306,8 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
 
         [LoggerMessage(9013, LogLevel.Warning, "Skipped execution job {OperationId}: its stored record cannot be read")]
         public static partial void UnreadableJobSkipped(ILogger logger, string operationId);
+
+        [LoggerMessage(9014, LogLevel.Error, "Failed {Count} stale execution job(s) whose stored record cannot be read")]
+        public static partial void UnreadableJobsFailed(ILogger logger, int count);
     }
 }

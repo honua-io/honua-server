@@ -387,6 +387,38 @@ public sealed class PostgresJobQueueTests(DatabaseFixtureAdapter database) : ICl
         active.Select(job => job.OperationId).Should().Contain(valid.OperationId).And.NotContain(unreadable.OperationId);
     }
 
+    [IntegrationTest]
+    public async Task ListExpiryAndDispatchCandidatesAsync_StaleClaimWhoseRecordCannotBeRead_FailsIt()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var job = await CreateEnqueuedJobAsync(harness, "unreadable-stale-claim");
+        (await harness.Queue.TryClaimAsync("worker-gone")).Should().Be(job.OperationId);
+        await CorruptRecordAsync(harness, job.OperationId);
+        await harness.AgeClaimAsync(job.OperationId, TimeSpan.FromDays(1));
+
+        (await harness.JobStore.ListExpiryAndDispatchCandidatesAsync(CancellationToken.None))
+            .Select(candidate => candidate.OperationId).Should().NotContain(job.OperationId);
+
+        (await ReadRowStateAsync(harness, job.OperationId))
+            .Should().Be(("Failed", (string?)null, ExecutionJobRow.UnreadableRecordPhase, true, false));
+    }
+
+    [IntegrationTest]
+    public async Task QueryAsync_PageEndingOnAnUnreadableJob_StillLeadsToTheOlderJobs()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var older = await CreateEnqueuedJobAsync(harness, "older-readable");
+        var newer = await CreateEnqueuedJobAsync(harness, "newer-unreadable");
+        await CorruptRecordAsync(harness, newer.OperationId);
+
+        var first = await harness.JobStore.QueryAsync(new ExecutionJobQuery { Limit = 1 });
+        first.Items.Should().BeEmpty();
+        first.NextCursor.Should().NotBeNull("an unreadable row must not end paging");
+
+        var second = await harness.JobStore.QueryAsync(new ExecutionJobQuery { Limit = 1, Cursor = first.NextCursor });
+        second.Items.Select(job => job.OperationId).Should().Equal(older.OperationId);
+    }
+
     private static async Task CorruptRecordAsync(PostgresJobSubstrateHarness harness, string operationId)
     {
         await using var connection = await harness.DataSource.OpenConnectionAsync();

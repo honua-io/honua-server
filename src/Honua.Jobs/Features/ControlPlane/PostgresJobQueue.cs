@@ -298,12 +298,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             {
                 await using var command = new NpgsqlCommand(
                     $"""
-                    UPDATE {_jobs}
-                    SET status = '{nameof(ExecutionJobStatus.Failed)}', version = version + 1,
-                        claimed_by = NULL, claimed_at = NULL, last_heartbeat_at = NULL, next_retry_at = NULL,
-                        queue_visible_at = NULL, queue_priority = NULL,
-                        current_phase = '{ExecutionJobRow.UnreadableRecordPhase}',
-                        completed_at = now(), updated_at = now()
+                    UPDATE {_jobs} SET {ExecutionJobRow.FailUnreadableAssignments}
                     WHERE operation_id = @operation_id AND claimed_by = @worker_id
                       AND status = '{nameof(ExecutionJobStatus.Provisioning)}'
                     """,
