@@ -35,7 +35,7 @@ A publication is listed only when all of the following hold:
 
 - The service, the publication, the resource, and the storage binding are routable. Omitted `status` or omitted `status.lifecycle` is active and stays listed. Explicit `draft`, `retired`, and `archived` stay in the graph for administration and are omitted from every serving catalog. `deprecated` stays listed.
 - The publication is visible to the caller's tenant.
-- The caller may read that resource. A caller without a matching read grant sees an empty catalog. That is not permission to try another tenant.
+- The caller may read that resource. Catalog collections omit resources the caller cannot read. Some discovery endpoints instead return an authorization error when no publication is visible, as described for OData below. That is not permission to try another tenant.
 
 An empty catalog for one protocol while another protocol lists the layer usually means that protocol is not enabled on the service, or that protocol requires a publication type the publish did not write (STAC without a geometry column is the common case).
 
@@ -49,7 +49,7 @@ An empty catalog for one protocol while another protocol lists the layer usually
 | OGC API Features, Maps, Tiles | the matching `serve.ogc-api-*` key | Collections for routable publications on services that enable that protocol. |
 | OGC API Coverages | `serve.ogc-api-coverages` | Raster-backed collections. Preview in 2026.1. |
 | WMS, WFS 2.0, WMTS, WCS | the matching classic serve keys | Capabilities documents built from the same routable publications. |
-| OData | `serve.odata` | One entity set per primary OData publication that has a layer id and a storage layer. |
+| OData | `serve.odata` | Fixed `Layers` and `Features` entity sets; visible publications become rows in `Layers`. |
 | MCP | `ai.mcp-discovery` | `honua_list_layers` over the same routable publications. |
 | Scene discovery | `scene.catalog` | Active registered scenes, not metadata-graph layers. |
 | Capability manifest | `discovery.capability-manifest` | Deployment capabilities for this caller. Not a layer list. |
@@ -75,7 +75,7 @@ The open-data STAC projection under the open-data API is not this catalog. A pub
 
 ### GeoServices directory
 
-The services directory (`serve.geoservices-root`) lists each service type the service enables: FeatureServer, MapServer, ImageServer, GPServer, and VectorTileServer. A service enabled for more than one of those is listed once per type. OGC, STAC, and OData protocols are not directory entries; they have their own catalogs. There is no nested folder hierarchy. The only folder-shaped node is the built-in Utilities/PrintingTools GPServer.
+The services directory (`serve.geoservices-root`) lists each service type the service enables: FeatureServer, MapServer, ImageServer, GPServer, and VectorTileServer. A service enabled for more than one of those is listed once per type. OGC, STAC, and OData protocols are not directory entries; they have their own catalogs. Services may belong to one flat [Folder](../../concepts/domain/folder.md) or to the root; Folders do not nest. The directory lists Folders containing visible services, and a Folder directory lists its visible services using Folder-qualified public paths. The built-in Utilities Folder also contains the PrintingTools GPServer.
 
 A service with no visible resource is omitted, except a layerless GPServer the caller is allowed to query. ImageServer is listed only when a raster probe resolves a layer. SceneServer entries are appended only for active registered scenes, and only on an Enterprise license; other editions omit them with no error. An enabled geocoder is listed as GeocodeServer even when the metadata graph is empty. PrintingTools is added to a directory the caller is allowed to see.
 
@@ -93,7 +93,9 @@ GetCapabilities for these services is another projection of the same snapshot, n
 
 ### OData
 
-The OData service document lists one entity set per primary publication on an OData-enabled service that has a layer index and a storage layer id, and that the caller may read. A new layer publish enables OData, so the primary feature publication is an entity set. Secondary publications for the same layer are not extra entity sets. Detail: [OData](../../reference/protocols/odata.md).
+The OData service document at `/odata` exposes the fixed entity sets `Layers` and `Features`. `/odata/Layers` lists primary publications on OData-enabled services that have a layer index and a storage layer id, and that the caller may read. A new layer publish enables OData and adds a catalog row, not a new entity set. Use `/odata/Layers({layerId})/Features` to read that layer's features; the cross-layer `/odata/Features` feed requires a `LayerId` filter. Secondary publications for the same layer are not extra catalog rows.
+
+`/odata/Layers` returns an empty collection when no layer is visible. The service document and `/odata/$metadata` behave differently: they return `404` when no routable OData publication exists, or `401`/`403` when publications exist but none is visible to the caller. Detail: [OData](../../reference/protocols/odata.md).
 
 ### MCP and agents
 
@@ -140,7 +142,7 @@ Two different "domains" show up in catalogs. They are not interchangeable.
 
 These are the checks to make at the catalog the caller is using. They replace two older failure modes that the server no longer has: a missing snapshot does not by itself turn catalog reads into HTTP 500, and a service written without `status` is not silently drafted and hidden.
 
-**No activated snapshot.** Catalog reads for the running environment (Records, STAC, the GeoServices directory, OGC collections, OData, WFS capabilities, `honua_list_layers`) load `Metadata:Environment`. If that environment has no activated snapshot, the server synthesizes one from a legacy catalog when that catalog still has published layers. If neither exists, those reads return an empty success, not an error. A snapshot that is present but cannot be loaded still fails the read.
+**No activated snapshot.** Catalog reads for the running environment (Records, STAC, the GeoServices directory, OGC collections, the OData layer collection, WFS capabilities, `honua_list_layers`) load `Metadata:Environment`. If that environment has no activated snapshot, the server synthesizes one from a legacy catalog when that catalog still has published layers. If neither exists, those reads return an empty success. The OData service document and `$metadata` instead return `404` when no routable OData publication exists. A snapshot that is present but cannot be loaded still fails the read.
 
 The admin metadata inventory for an environment name with no active revision is not found, with `Metadata v2 environment '<env>' does not have an active revision.` A cross-environment binding query reports `environment-unavailable` for that name. If serving catalogs are empty while inventory for a different name is populated, `Metadata__Environment` does not match the snapshot you activated. Publishing a layer, or another metadata write, in the running environment activates a snapshot there. The first publish starts from an empty graph; it does not adopt the synthesized legacy view as its write base, and it does not fail merely because no snapshot existed yet.
 

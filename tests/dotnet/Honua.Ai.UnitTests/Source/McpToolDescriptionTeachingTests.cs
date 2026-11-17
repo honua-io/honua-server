@@ -227,6 +227,17 @@ public sealed class McpToolDescriptionTeachingTests
             .And.NotContain("executionKind=Job");
     }
 
+    [UnitTheory]
+    [InlineData("dataset.stage.preview")]
+    [InlineData("dataset.stage.import")]
+    public void StagedImportTargetDescription_TeachesCallerSelectedReplayLabel(string operationId)
+    {
+        var description = McpInputDescriptions.Describe(operationId, "targetId", string.Empty);
+
+        description.Should().Contain("Caller-supplied").And.Contain("replay");
+        description.Should().NotContain(GetJobResultsTool.ToolName);
+    }
+
     private static void AssertPlanStepDocumentsCatalog(
         JsonElement planSchema,
         IEnumerable<string> expectedProcessIds)
