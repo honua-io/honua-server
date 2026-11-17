@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Honua.Infrastructure.Security;
 
@@ -11,8 +12,10 @@ namespace Honua.Infrastructure.Security;
 // the masking already applied to quoted literals in CQL2-text filters. Literal values are
 // bound as parameters by the filter compiler, so "--" or "/* */" inside a JSON string
 // literal is data. Operators, property names, unknown members and malformed or trailing
-// content are written out decoded and stay visible to the injection pattern.
-internal static class Cql2JsonLiteralMask
+// content stay visible to the injection pattern. The result is inspected, never parsed, so
+// every JSON escape in it is decoded: escaped quotes, control characters and "\u002d" read as
+// the characters they represent, including on the raw-text fallback.
+internal static partial class Cql2JsonLiteralMask
 {
     private const string JsonFilterLanguage = "cql2-json";
 
@@ -45,18 +48,34 @@ internal static class Cql2JsonLiteralMask
                 WriteExpression(writer, document.RootElement);
             }
 
-            return Encoding.UTF8.GetString(buffer.ToArray());
+            return DecodeEscapes(Encoding.UTF8.GetString(buffer.ToArray()));
         }
         catch (JsonException)
         {
-            return value;
+            return DecodeEscapes(value);
         }
         catch (InvalidOperationException)
         {
             // A lone surrogate escape parses but cannot be decoded; inspect the raw text.
-            return value;
+            return DecodeEscapes(value);
         }
     }
+
+    private static string DecodeEscapes(string text)
+        => JsonEscapePattern().Replace(text, static match => match.Groups["hex"].Success
+            ? ((char)Convert.ToInt32(match.Groups["hex"].Value, 16)).ToString()
+            : match.Groups["simple"].Value switch
+            {
+                "b" => "\b",
+                "f" => "\f",
+                "n" => "\n",
+                "r" => "\r",
+                "t" => "\t",
+                var literal => literal
+            });
+
+    [GeneratedRegex(@"\\(?:u(?<hex>[0-9a-fA-F]{4})|(?<simple>[""\\/bfnrt]))", RegexOptions.CultureInvariant)]
+    private static partial Regex JsonEscapePattern();
 
     private static bool IsExplicitJsonLanguage(HttpRequest request)
     {

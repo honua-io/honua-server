@@ -77,6 +77,15 @@ public sealed class Cql2JsonParameterValidationTests
         (await InvokeAsync(ItemsPath, "cql2-json", filter)).Should().BeFalse();
     }
 
+    [UnitTheory]
+    [InlineData("""{"op":"=","args":[{"property":"a\u002d\u002db"},"v"],"x":"\ud800"}""")]
+    [InlineData("""{"op":"=","args":[{"property":"a union\nselect b"},"v"]}""")]
+    [InlineData("""{"op":"=","args":[{"property":"a union\u0009select b"},"v"]}""")]
+    public async Task Filter_EscapedStructuralContent_IsInspectedDecoded(string filter)
+    {
+        (await InvokeAsync(ItemsPath, "cql2-json", filter)).Should().BeFalse();
+    }
+
     // Literal content is masked without decoding; the filter parser reports an undecodable
     // literal as an invalid payload.
     [UnitTest]

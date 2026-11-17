@@ -58,7 +58,8 @@ public sealed class Cql2JsonParser
         }
         catch (InvalidOperationException ex)
         {
-            // A lone surrogate escape parses as JSON but cannot be decoded to text.
+            // Valid JSON the parser cannot read as CQL2: a member of the wrong JSON type, or a
+            // lone surrogate escape that cannot be decoded to text. Both are client errors.
             throw new ArgumentException($"Invalid CQL2-JSON payload: {ex.Message}", nameof(cql2Json), ex);
         }
     }

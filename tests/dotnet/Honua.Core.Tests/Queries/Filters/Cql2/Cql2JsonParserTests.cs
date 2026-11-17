@@ -76,7 +76,9 @@ public class Cql2JsonParserTests
     [Theory]
     [InlineData("""{"op":"=","args":[{"property":"name"},"\udc00 note"]}""")]
     [InlineData("""{"op":"=","args":[{"property":"\ud800"},"value"]}""")]
-    public void Parse_UndecodableStringEscape_ThrowsArgumentException(string json)
+    [InlineData("""{"op":5,"args":[{"property":"name"},"value"]}""")]
+    [InlineData("""{"op":"=","args":[{"property":true},"value"]}""")]
+    public void Parse_UnreadableStringMember_ThrowsArgumentException(string json)
     {
         var act = () => _parser.Parse(json);
 
