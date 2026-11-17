@@ -46,7 +46,18 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     {
         public WebApplicationFactory<Program> Application { get; } = CreateDefaultFactory();
 
-        public void Dispose() => Application.Dispose();
+        public WebApplicationFactory<Program> BatchApplication { get; } = CreateFactory(
+            new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+                SupportsSuggest: true,
+                SupportsBatch: true,
+                SupportsStructuredInput: false,
+                SupportsBiasing: true)), grantEnterpriseForBatch: true);
+
+        public void Dispose()
+        {
+            BatchApplication.Dispose();
+            Application.Dispose();
+        }
     }
 
     [IntegrationTest]
@@ -228,12 +239,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task GeocodeAddresses_WithOutFields_ProjectsAttributes()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         var addresses = Uri.EscapeDataString(
             """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""");
@@ -473,12 +479,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_HappyPath_ReturnsLocationsArray()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"SingleLine":"350 Fifth Avenue, New York"}}]""";
 
@@ -508,12 +509,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_Post_ReturnsLocationsArray()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}}]""";
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -538,12 +534,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     {
         // The ArcGIS API for Python batch_geocode and ArcGIS Pro send the batch payload under
         // the "addresses" parameter (addresses={"records":[{"attributes":{...}}]}), not "records".
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"OBJECTID":2,"SingleLine":"350 Fifth Avenue, New York"}}]}""";
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -575,12 +566,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_Post_WithEsriJsonOutSr_AcceptsSpatialReferenceObject()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""";
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -634,12 +620,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         // { locations, spatialReference } from the response ROOT and maps each entry via
         // AddressCandidate.fromJSON, which requires address/location/score per location and a
         // root spatialReference applied to each location. This locks that shape in for the POST path.
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""";
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -680,12 +661,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         // batch results by ResultID == the submitted record's OBJECTID. A record without
         // an OBJECTID gets its one-based position. ResultID must hold on the location and in its
         // attributes, even when outFields narrows the attributes.
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"OBJECTID":2,"SingleLine":"380 New York St"}},{"attributes":{"OBJECTID":"17","SingleLine":"1 Main St"}},{"attributes":{"SingleLine":"2 Main St"}}]}""";
         foreach (var outFields in new[] { "*", "Match_addr" })
@@ -720,12 +696,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     public async Task GeocodeServerMetadata_AdvertisesSupportsSuggest_WhenProviderSupports()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
 
@@ -745,12 +716,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_MissingRecords_Returns400()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/geocodeAddresses?f=json");
 
@@ -762,12 +728,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_MalformedRecordsJson_Returns400()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/geocodeAddresses?records=not-valid-json&f=json");
 
@@ -803,12 +764,7 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_InvalidRecordInBatch_Returns400WithIndex()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: true,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)), grantEnterpriseForBatch: true);
-        using var client = factory.CreateClient();
+        using var client = _fixture.BatchApplication.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"valid address"}},{"attributes":{}},{"attributes":{"SingleLine":"another valid"}}]""";
 
