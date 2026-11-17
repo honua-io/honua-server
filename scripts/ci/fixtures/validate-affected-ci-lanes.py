@@ -146,6 +146,16 @@ class AffectedLaneTests(unittest.TestCase):
         self.assertIn(
             "needs.changes.outputs.core_package == 'true'",
             jobs['core-package-compatibility']['if'])
+        step = next(step for step in jobs['changes']['steps'] if step.get('id') == 'specialized')
+        self.assertIn("trailing_selective == 'true'", step['env']['SELECTIVE'])
+        self.assertIn("full_ci != 'true'", step['env']['SELECTIVE'])
+        for job in ['js-integration-tests', 'esri-leaflet-browser-tests', 'maplibre-compat',
+                    'docker-build', 'python-integration-tests', 'mcp-certification', 'quickstart-console-smoke']:
+            self.assertIn('inputs.selective_base &&', jobs[job]['if'])
+            self.assertIn("full_ci == 'true'", jobs[job]['if'])
+
+    def test_selective_smoke_skip_is_proved_and_selected_lanes_still_run(self):
+        jobs = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)['jobs']
         summary = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Check required test job results')
         receipts = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Verify server shard execution receipts')
         receipt_download = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Download server shard receipts')
@@ -155,13 +165,6 @@ class AffectedLaneTests(unittest.TestCase):
         self.assertIn('!= skipped', summary['run'])
         self.assertIn('!cancelled() && !failure()', jobs['aot-build']['if'])
         self.assertIn('!cancelled() && !failure()', jobs['mcp-certification']['if'])
-        step = next(step for step in jobs['changes']['steps'] if step.get('id') == 'specialized')
-        self.assertIn("trailing_selective == 'true'", step['env']['SELECTIVE'])
-        self.assertIn("full_ci != 'true'", step['env']['SELECTIVE'])
-        for job in ['js-integration-tests', 'esri-leaflet-browser-tests', 'maplibre-compat',
-                    'docker-build', 'python-integration-tests', 'mcp-certification', 'quickstart-console-smoke']:
-            self.assertIn('inputs.selective_base &&', jobs[job]['if'])
-            self.assertIn("full_ci == 'true'", jobs[job]['if'])
 
 
 class ShardWidthTests(unittest.TestCase):
