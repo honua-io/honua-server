@@ -377,9 +377,9 @@ internal sealed partial class OperationGateway : IOperationGateway, IOpsRemediat
                 // Recheck after claim/scope/replay preparation, immediately before canonical dispatch.
                 await ValidateCurrentProposerAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
                 if (FolderOperationCredential.IsFolderMutation(proposal.OperationId ?? string.Empty) &&
-                    !await FolderApprovalAuthorization.IsCurrentAsync(proposal, scope.ServiceProvider, cancellationToken).ConfigureAwait(false))
+                    await FolderApprovalAuthorization.ValidateCurrentAsync(proposal, scope.ServiceProvider, cancellationToken).ConfigureAwait(false) is { } folderFailure)
                 {
-                    failureMessage = FolderApprovalAuthorization.FreshProposalRequired;
+                    failureMessage = folderFailure.Detail;
                 }
                 else
                 {

@@ -33,8 +33,12 @@ internal static class ComposeExecutorCodes
 
     public const string BackupFailed = "compose-backup-failed";
 
+    // The candidate's migrate-only run stopped at the contract gate; nothing was applied.
+    public const string ContractApprovalRequired = "contract-approval-required";
+
     internal static bool IsReportable(string code)
         => code is ScopeViolation or ConfigUnsupported or ImageNotImmutable or ExecutorUnconfigured
             or ApprovalRequired or BackupChecksumMismatch or BackupImageMismatch or BackupSchemaAhead
-            or RestoreIncomplete or ReadbackIncomplete or AuditUnrecorded or BackupFailed;
+            or RestoreIncomplete or ReadbackIncomplete or AuditUnrecorded or BackupFailed
+            or ContractApprovalRequired;
 }

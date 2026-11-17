@@ -18,7 +18,7 @@ public sealed class ScimProvisioningOptionsTests
     {
         using var provider = BuildProvider(new Dictionary<string, string?>
         {
-            ["Scim:BearerToken"] = "provisioning-secret",
+            ["Scim:BearerToken"] = "provisioning-secret-at-least-32-characters",
         });
 
         var act = () => provider.GetRequiredService<IOptions<ScimProvisioningOptions>>().Value;
@@ -32,12 +32,29 @@ public sealed class ScimProvisioningOptionsTests
     {
         using var provider = BuildProvider(new Dictionary<string, string?>
         {
-            ["Scim:BearerToken"] = "provisioning-secret",
+            ["Scim:BearerToken"] = "provisioning-secret-at-least-32-characters",
             ["Scim:OidcIssuer"] = "https://issuer.example.com/tenant",
         });
 
         provider.GetRequiredService<IOptions<ScimProvisioningOptions>>()
             .Value.OidcIssuer.Should().Be("https://issuer.example.com/tenant");
+    }
+
+    [UnitTheory]
+    [InlineData("short")]
+    [InlineData("                               ")]
+    public void EnabledProvisioning_WithShortToken_FailsValidation(string token)
+    {
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            ["Scim:BearerToken"] = token,
+            ["Scim:OidcIssuer"] = "https://issuer.example.com/tenant",
+        });
+
+        var act = () => provider.GetRequiredService<IOptions<ScimProvisioningOptions>>().Value;
+
+        act.Should().Throw<OptionsValidationException>()
+            .Which.Message.Should().Contain("Scim:BearerToken");
     }
 
     private static ServiceProvider BuildProvider(Dictionary<string, string?> settings)

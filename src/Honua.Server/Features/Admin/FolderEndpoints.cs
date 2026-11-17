@@ -68,6 +68,10 @@ internal static class FolderEndpoints
         {
             return await CommitMutationAsync(context, mutation, store).ConfigureAwait(false);
         }
+        catch (MetadataV2GraphConcurrencyException)
+        {
+            return SnapshotConflict(context).ToResult();
+        }
         catch (Exception exception) when (FolderMutationFailure.Handles(exception))
         {
             return FolderMutationFailure.From(exception).ToResult();
@@ -78,11 +82,11 @@ internal static class FolderEndpoints
         HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation, IMetadataV2GraphStore store)
     {
         if (context.Features.Get<FolderReplayServicePrincipal>() is { } replay &&
-            !await FolderApprovalAuthorization.IsCurrentAsync(replay.Proposal, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
-            return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: FolderApprovalAuthorization.FreshProposalRequired);
+            await FolderApprovalAuthorization.ValidateCurrentAsync(replay.Proposal, context.RequestServices, context.RequestAborted).ConfigureAwait(false) is { } failure)
+            return failure.ToResult();
         var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
-            return FolderMutationFailure.SnapshotChanged.ToResult();
+            return SnapshotConflict(context).ToResult();
         var changed = mutation(snapshot.Graph);
         var denial = await AuthorizeAffectedServices(context, snapshot.Graph, changed).ConfigureAwait(false);
         if (denial is not null) return denial;
@@ -96,6 +100,10 @@ internal static class FolderEndpoints
         return Results.Json(ApiResponse<MetadataV2Folder>.CreateSuccess(folder),
             FolderJsonContext.Default.ApiResponseMetadataV2Folder, statusCode: changed.Status);
     }
+
+    private static FolderMutationFailure SnapshotConflict(HttpContext context)
+        => context.Features.Get<FolderReplayServicePrincipal>() is not null
+            ? FolderMutationFailure.ApprovalSnapshotChanged : FolderMutationFailure.SnapshotChanged;
 
     private static async Task<IResult?> AuthorizeMutation(HttpContext context)
     {

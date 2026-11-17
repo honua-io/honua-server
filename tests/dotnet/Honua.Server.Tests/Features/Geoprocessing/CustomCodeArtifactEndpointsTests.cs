@@ -21,6 +21,7 @@ using Honua.Server.Features.Geoprocessing.CustomCode;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -47,6 +48,7 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
     private string _token = string.Empty;
     private bool _rotateDuringUpload;
     private int _failUploads;
+    private readonly ConcurrentBag<string> _scratchViolations = [];
     private bool _loseUploadAcknowledgement;
 
     public CustomCodeArtifactEndpointsTests()
@@ -67,6 +69,10 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
             .Returns(async call =>
             {
                 var request = call.ArgAt<FileUploadRequest>(0);
+                if (PrivateScratchFileAssertions.OwnerOnlyViolation(request.Content) is { } violation)
+                {
+                    _scratchViolations.Add(violation);
+                }
                 if (_failUploads > 0)
                 {
                     _failUploads--;
@@ -152,8 +158,15 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _fixture.DisposeAsync();
-        _cache.Dispose();
+        try
+        {
+            _scratchViolations.Should().BeEmpty("every upload spool must be an owner-only scratch file");
+        }
+        finally
+        {
+            await _fixture.DisposeAsync();
+            _cache.Dispose();
+        }
     }
 
     [IntegrationTest]
@@ -168,6 +181,8 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         CustomCodeArtifactDescriptor.TryParse(_records["broker-job"].ArtifactReferences.Single(), out var receipt).Should().BeTrue();
         receipt!.Sha256.Should().Be(Convert.ToHexStringLower(SHA256.HashData(bytes)));
         receipt.State.Should().Be("available");
+        _storage.DownloadAsync(receipt.ObjectKey, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(new PrivateDownloadStream(bytes)));
         using var download = await _admin.GetAsync("/api/geoprocessing/jobs/broker-job/custom-artifacts/result.json?attempt=1");
         download.StatusCode.Should().Be(HttpStatusCode.OK, await download.Content.ReadAsStringAsync());
         (await download.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);
@@ -460,6 +475,18 @@ public sealed class CustomCodeArtifactEndpointsTests : IAsyncLifetime
         await _ingestor.Received(2).IngestAsync(Arg.Any<ExecutionJobRecord>(),
             Arg.Is<CustomCodeArtifactDescriptor>(artifact => artifact.Name == HarnessEvents.FileName && artifact.Attempt == 1 && artifact.State == "available"),
             Arg.Any<CancellationToken>());
+    }
+
+    private sealed class PrivateDownloadStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        private const string ScratchPrefix = "honua-custom-code-download-";
+        private readonly IReadOnlySet<string> _existingPaths = PrivateScratchFileAssertions.Snapshot(ScratchPrefix);
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            PrivateScratchFileAssertions.AssertOwnerOnly(ScratchPrefix, _existingPaths);
+            return base.ReadAsync(buffer, cancellationToken);
+        }
     }
 
     private static ExecutionJobRecord Job(string id, string token) => new()

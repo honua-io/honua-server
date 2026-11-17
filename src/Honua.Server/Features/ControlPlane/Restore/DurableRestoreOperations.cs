@@ -359,7 +359,10 @@ internal sealed partial class DurableRestoreWorker(
         }
         if (workflow.Status is not (WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
         {
-            await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
+            // A contract-gate refusal applied nothing and restarted the prior, so report the gate itself.
+            var code = workflow is { Status: WorkflowOperationStatus.Failed, CurrentPhase: ComposeExecutorCodes.ContractApprovalRequired }
+                ? ComposeExecutorCodes.ContractApprovalRequired : PreMigrationRestoreCodes.RestoreIncomplete;
+            await FailAsync(record, code, cancellationToken).ConfigureAwait(false);
             return;
         }
         if (workflow.Status != WorkflowOperationStatus.Succeeded) return;

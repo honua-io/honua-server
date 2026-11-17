@@ -277,8 +277,7 @@ internal static partial class FeatureStreamEndpoints
             return envelope;
         }
 
-        var sequence = sessionManager.NextSubscriptionSequence(sessionId, subscriptionId, subscriptionGeneration);
-        return sequence < 0 ? null : envelope with { Sequence = sequence };
+        return sessionManager.PrepareSubscriptionDelivery(sessionId, subscriptionId, subscriptionGeneration, envelope);
     }
 
     internal sealed class FeatureStreamReplayWindowGapException(

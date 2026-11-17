@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Helpers;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.IO.Compression;
@@ -861,6 +862,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
 
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
         {
+            PrivateScratchFileAssertions.AssertOwnerOnly(request.Content);
             LastUpload = request;
             var fileId = !string.IsNullOrWhiteSpace(request.ObjectKeyOverride)
                 ? request.ObjectKeyOverride

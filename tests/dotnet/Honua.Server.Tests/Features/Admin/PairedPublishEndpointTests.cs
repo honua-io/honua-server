@@ -15,7 +15,7 @@ using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Admin.PairedPublications;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Infrastructure.Progress;
-using Honua.Server.Tests.Infrastructure;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -32,31 +32,68 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
-public sealed partial class PairedPublishEndpointTests(DatabaseFixtureAdapter database) : IAsyncLifetime
+public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTests.PairedPublishHost host)
+    : IClassFixture<PairedPublishEndpointTests.PairedPublishHost>, IAsyncLifetime
 {
     private const string JobsRoute = "/api/v1/admin/tile-operations/jobs";
     private const string IdentityField = "name";
     private const string HiddenField = "notes";
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
+    private readonly WebAppFixture _fixture = host.Fixture;
     private readonly string _publicationId = $"paired-{Guid.NewGuid():N}"[..24];
     private static readonly JSchema DescriptorSchema = JSchema.Parse(
         File.ReadAllText(RepositoryPaths.Resolve("docs", "gis", "schemas", "publication-descriptor.v1.schema.json")));
     private HttpClient _client = null!;
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
-        // The shared host otherwise authenticates every caller as an admin.
-        _fixture.ConfigureWebHost(builder =>
-        {
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        });
-        await _fixture.InitializeAsync();
+        host.RestoreSeededGraph();
         _client = _fixture.CreateAdminClient();
+        return Task.CompletedTask;
     }
 
-    public async Task DisposeAsync() => await _fixture.DisposeAsync();
+    public Task DisposeAsync()
+    {
+        _client.Dispose();
+        return Task.CompletedTask;
+    }
+
+    // One host per class. Each case publishes under its own publication id. The cases that hide a
+    // field or rebind the layer change the shared graph, so every case starts from the seeded graph.
+    public sealed class PairedPublishHost : IAsyncLifetime
+    {
+        private MetadataV2Graph _seeded = null!;
+        private long _revision;
+
+        internal WebAppFixture Fixture { get; } = new WebAppFixture().WithProductionJobSubstrate();
+
+        public async Task InitializeAsync()
+        {
+            // The shared host otherwise authenticates every caller as an admin.
+            Fixture.ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            });
+            await Fixture.InitializeAsync();
+            await Fixture.Postgres.DataSource.ClearJobSubstrateAsync();
+            _seeded = Fixture.GetCurrentV2GraphSnapshot().Graph;
+            _revision = _seeded.Revision;
+        }
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+
+        // The graph revision only moves forward, as the host's revision-keyed readers expect.
+        internal void RestoreSeededGraph()
+        {
+            if (Fixture.GetCurrentV2GraphSnapshot().Graph.Revision == _revision)
+            {
+                return;
+            }
+
+            Fixture.MutateV2Graph(_ => _seeded);
+            _revision = Fixture.GetCurrentV2GraphSnapshot().Graph.Revision;
+        }
+    }
 
     private ICloudFileStorage Storage => _fixture.GetOptionalService<ICloudFileStorage>()!;
 

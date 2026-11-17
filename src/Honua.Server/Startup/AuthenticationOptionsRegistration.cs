@@ -15,19 +15,16 @@ internal static class AuthenticationOptionsRegistration
         IConfiguration configuration,
         IHostEnvironment environment)
     {
-        // API key authentication options (admin password complexity is enforced in production)
+        // API key authentication options (admin password complexity is enforced outside Development and Test)
         services.Configure<ApiKeyAuthenticationOptions>(options =>
         {
             options.IsDevelopmentMode = environment.IsDevelopment();
             options.IsTestMode = environment.IsEnvironment("Test");
             var adminPassword = configuration["HONUA_ADMIN_PASSWORD"];
 
-            // SECURITY: Validate admin password complexity in production
-            if (environment.IsProduction() &&
-                !string.IsNullOrEmpty(adminPassword) &&
-                !AdminPasswordValidation.IsAwsSecretsManagerReference(adminPassword))
+            if (!AdminPasswordValidation.IsAwsSecretsManagerReference(adminPassword))
             {
-                AdminPasswordValidation.ValidateProductionPassword(adminPassword);
+                AdminPasswordValidation.ValidateForEnvironment(adminPassword, environment.EnvironmentName);
             }
 
             options.AdminPassword = adminPassword;
