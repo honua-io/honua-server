@@ -92,6 +92,12 @@ internal sealed partial class ConsoleJobService
 
         var events = await BuildEventsAsync(logStore, job, tail, limit, eventCursor, truncated, missing, cancellationToken).ConfigureAwait(false);
         var steps = await BuildDiagnosticStepsAsync(job, entries, workspace, ordinalOffset, cancellationToken).ConfigureAwait(false);
+        if (!operatorView)
+        {
+            events = WithholdLostAttemptWorker(events);
+            steps = WithholdLostAttemptWorker(steps);
+        }
+
         if (steps.Length == 0)
         {
             missing.Add("steps: no execution log entries were recorded for this job");
@@ -289,9 +295,7 @@ internal sealed partial class ConsoleJobService
     private static ConsoleJobDiagnosticLifecycle BuildLifecycle(ExecutionJobRecord job, DateTimeOffset now, List<string> missing)
     {
         var claimedAt = job.ClaimedAt;
-        long? queueDelay = claimedAt.HasValue && claimedAt.Value >= job.CreatedAt
-            ? (long)(claimedAt.Value - job.CreatedAt).TotalMilliseconds
-            : null;
+        long? queueDelay = MeasureQueueDelayMs(job, missing);
         long? execution = claimedAt.HasValue && job.CompletedAt.HasValue && job.CompletedAt.Value >= claimedAt.Value
             ? (long)(job.CompletedAt.Value - claimedAt.Value).TotalMilliseconds
             : null;
@@ -428,7 +432,7 @@ internal sealed partial class ConsoleJobService
         var effects = job.CommittedEffectReferences.Count > 0
             ? $"{job.CommittedEffectReferences.Count} committed effect(s) from earlier attempts are not undone"
             : "no committed effects are recorded from earlier attempts";
-        var wouldRepeat = $"re-dispatches the whole job as attempt {number + 1} of {policy.MaxAttempts} on backend '{job.Spec.Backend}' with the same spec; {effects}";
+        var wouldRepeat = DescribeWouldRepeat(job, policy, effects);
 
         return new ConsoleJobDiagnosticAttempt
         {

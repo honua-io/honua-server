@@ -302,6 +302,7 @@ internal sealed partial class JobReconciliationService(
                 preRetry.Priority,
                 delay > TimeSpan.Zero ? delay : null,
                 cancellationToken).ConfigureAwait(false);
+            await RecordLostAttemptAsync(preRetry, now, retryPolicy.MaxAttempts).ConfigureAwait(false);
         }
         else
         {
@@ -357,6 +358,8 @@ internal sealed partial class JobReconciliationService(
             {
                 Log.QueueRemovalFailed(logger, preFail.OperationId, ex);
             }
+
+            await RecordLostAttemptAsync(preFail, now, retryPolicy.MaxAttempts).ConfigureAwait(false);
 
             if (logStore != null)
             {
@@ -576,5 +579,8 @@ internal sealed partial class JobReconciliationService(
 
         [LoggerMessage(9074, LogLevel.Warning, "Log retention set failed for terminal job {OperationId}; execution logs may expire early")]
         public static partial void LogRetentionFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9079, LogLevel.Warning, "Lost-attempt event could not be written for job {OperationId}; the attempt history omits it")]
+        public static partial void LostAttemptLogFailed(ILogger logger, string operationId, Exception exception);
     }
 }
