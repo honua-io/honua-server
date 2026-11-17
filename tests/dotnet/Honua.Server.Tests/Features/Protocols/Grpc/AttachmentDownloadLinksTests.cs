@@ -16,7 +16,13 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 [Operation(Operations.Query)]
 public sealed class AttachmentDownloadLinksTests
 {
-    private static readonly AttachmentDownloadTarget Target = new(7, 42, 23, "attachments/7/42/photo.jpg");
+    private static readonly AttachmentDownloadTarget Target = new()
+    {
+        LayerId = 7,
+        FeatureId = 42,
+        AttachmentId = 23,
+        StoragePath = "attachments/7/42/photo.jpg"
+    };
 
     private readonly AttachmentDownloadLinks _links = new(new EphemeralDataProtectionProvider());
 

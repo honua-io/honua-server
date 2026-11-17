@@ -67,9 +67,13 @@ internal sealed partial class HonuaFeatureService
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile)
         {
             // Local file storage answers with a file path; serve it through a signed server link instead.
-            url = AttachmentService<AttachmentDownloadLinks>(context).CreateUrl(context.GetHttpContext(),
-                new AttachmentDownloadTarget(target.Layer.StorageLayerId, target.FeatureId, attachment.Id, attachment.StoragePath),
-                expires);
+            url = AttachmentService<AttachmentDownloadLinks>(context).CreateUrl(context.GetHttpContext(), new AttachmentDownloadTarget
+            {
+                LayerId = target.Layer.StorageLayerId,
+                FeatureId = target.FeatureId,
+                AttachmentId = attachment.Id,
+                StoragePath = attachment.StoragePath
+            }, expires);
         }
         else if (uri?.Scheme != Uri.UriSchemeHttps)
         {

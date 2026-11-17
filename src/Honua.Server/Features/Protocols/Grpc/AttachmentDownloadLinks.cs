@@ -6,7 +6,6 @@ using System.Security.Cryptography;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
@@ -50,8 +49,16 @@ internal sealed class AttachmentDownloadLinks(IDataProtectionProvider protection
     }
 }
 
-internal sealed record AttachmentDownloadTarget(int LayerId, long FeatureId, long AttachmentId, string StoragePath)
+internal sealed record AttachmentDownloadTarget
 {
+    public required int LayerId { get; init; }
+
+    public required long FeatureId { get; init; }
+
+    public required long AttachmentId { get; init; }
+
+    public required string StoragePath { get; init; }
+
     internal string Encode() => string.Join('\n',
         LayerId.ToString(CultureInfo.InvariantCulture),
         FeatureId.ToString(CultureInfo.InvariantCulture),
@@ -65,7 +72,13 @@ internal sealed record AttachmentDownloadTarget(int LayerId, long FeatureId, lon
             int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var layerId) &&
             long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var featureId) &&
             long.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var attachmentId)
-            ? new AttachmentDownloadTarget(layerId, featureId, attachmentId, parts[3])
+            ? new AttachmentDownloadTarget
+            {
+                LayerId = layerId,
+                FeatureId = featureId,
+                AttachmentId = attachmentId,
+                StoragePath = parts[3]
+            }
             : null;
     }
 }
@@ -87,18 +100,15 @@ internal static class AttachmentDownloadEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> HandleDownload(
-        string token,
-        HttpContext context,
-        [FromServices] AttachmentDownloadLinks links,
-        [FromServices] IAttachmentStore attachments,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> HandleDownload(string token, HttpContext context)
     {
-        if (links.Read(token) is not { } target)
+        var services = context.RequestServices;
+        if (services.GetRequiredService<AttachmentDownloadLinks>().Read(token) is not { } target)
         {
             return TypedResults.NotFound();
         }
-        var content = await attachments.DownloadAsync(target.LayerId, target.FeatureId, target.AttachmentId, cancellationToken)
+        var content = await services.GetRequiredService<IAttachmentStore>()
+            .DownloadAsync(target.LayerId, target.FeatureId, target.AttachmentId, context.RequestAborted)
             .ConfigureAwait(false);
         if (content is not { } found || !string.Equals(found.Attachment.StoragePath, target.StoragePath, StringComparison.Ordinal))
         {
