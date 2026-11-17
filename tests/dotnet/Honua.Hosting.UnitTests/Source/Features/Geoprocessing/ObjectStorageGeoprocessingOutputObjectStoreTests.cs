@@ -50,6 +50,38 @@ public sealed class ObjectStorageGeoprocessingOutputObjectStoreTests
     }
 
     [UnitTest]
+    public async Task WriteAsync_CreatesAnOwnerOnlySpoolAndRemovesItAfterUpload()
+    {
+        var storage = Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>();
+        string? spoolPath = null;
+        storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), null, Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var request = call.ArgAt<FileUploadRequest>(0);
+                PrivateScratchFileAssertions.AssertOwnerOnly(request.Content);
+                spoolPath = ((FileStream)request.Content).Name;
+                return UploadResult.CreateSuccess(new CloudFile
+                {
+                    Provider = CloudStorageProvider.AwsS3,
+                    FileId = request.ObjectKeyOverride!,
+                    FileName = request.FileName,
+                    StoragePath = request.ObjectKeyOverride!,
+                    ContentType = request.ContentType,
+                    SizeBytes = request.Content.Length,
+                    UploadedAt = DateTimeOffset.UtcNow
+                });
+            });
+        var store = new ObjectStorageGeoprocessingOutputObjectStore(storage,
+            Options.Create(new GeoprocessingOutputStagingOptions { Enabled = true }),
+            new GeoprocessingOutputStorageKeyPrefix(string.Empty));
+
+        await WriteAsync(store, NewKey(), _payload);
+
+        spoolPath.Should().NotBeNull();
+        File.Exists(spoolPath).Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task SetRetentionHoldAsync_WhenTheHoldCannotBeWritten_ThrowsInsteadOfReportingAHold()
     {
         var key = NewKey();
