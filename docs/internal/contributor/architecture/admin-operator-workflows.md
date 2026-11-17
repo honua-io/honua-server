@@ -124,7 +124,7 @@ The admin UI should reinforce these rules:
   name, renderer, popup, or field exposure override.
 - Projection Preview explains how that one resource will look in a specific
   service, catalog, or standard output.
-- Runtime snapshots and Redis caches are derived outputs. They should never be
+- Runtime snapshots and caches are derived outputs. They should never be
   presented as the user's editable source of truth.
 
 This keeps one storage model able to support many source types and one metadata

@@ -149,8 +149,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:DefaultConnection"] = _database.ConnectionString,
-                        ["ConnectionStrings:honua"] = _database.ConnectionString,
-                        ["ConnectionStrings:redis"] = "localhost"
+                        ["ConnectionStrings:honua"] = _database.ConnectionString
                     });
                 });
             });
@@ -182,8 +181,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:DefaultConnection"] = _database.ConnectionString,
-                        ["ConnectionStrings:honua"] = _database.ConnectionString,
-                        ["ConnectionStrings:redis"] = "localhost"
+                        ["ConnectionStrings:honua"] = _database.ConnectionString
                     });
                 });
             });
@@ -210,8 +208,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:DefaultConnection"] = _database.ConnectionString,
-                        ["ConnectionStrings:honua"] = _database.ConnectionString,
-                        ["ConnectionStrings:redis"] = "localhost"
+                        ["ConnectionStrings:honua"] = _database.ConnectionString
                     });
                 });
             });

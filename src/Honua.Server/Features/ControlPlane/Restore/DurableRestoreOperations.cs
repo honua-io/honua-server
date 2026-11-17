@@ -401,7 +401,7 @@ internal sealed partial class DurableRestoreWorker(
             await FailAsync(latest, completion.Code ?? PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
     }
 
-    // A short Redis lease serializes updates to the durable owner record. The owner survives
+    // A short operation-store lease serializes updates to the durable owner record. The owner survives
     // process replacement and remains held until the full deploy and readback have succeeded.
     // Terminal owners are reclaimable only after any child deployment is also terminal.
     internal async Task<bool> ClaimCellAsync(string id, CancellationToken cancellationToken)

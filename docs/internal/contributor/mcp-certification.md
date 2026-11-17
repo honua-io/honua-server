@@ -13,10 +13,10 @@ and integer ids are distinct. Concurrent duplicate ids are refused. Unknown,
 completed and repeated cancellation notifications create no work.
 
 The session store owns an atomic generation for each active request. Completion
-compares and removes that generation before returning success. Redis makes this
-authority available across replicas; correctness does not depend on pub/sub
-wakeup delivery. Existing session keys remain unchanged. Request keys share the
-session key's Redis Cluster slot. A separate generation-owned principal quota
+compares and removes that generation before returning success. PostgreSQL
+(`PostgresMcpSessionStore`) makes this authority available across replicas;
+correctness does not depend on wakeup delivery. Existing session keys remain
+unchanged. A separate generation-owned principal quota
 reservation is acquired before registration and compensated on refusal/failure;
 uncertain failures refuse admission, and lost compensation expires at its
 original deadline. Active handlers poll without extending the session or request
@@ -35,8 +35,10 @@ job; `honua_cancel_job` and observed worker cessation remain separate proof.
 while an independent PostGIS transaction blocks its production feature read.
 It observes database blocking, sends a second cancellation POST, and requires
 a cancelled response, released provider locks and unchanged row readback while
-the blocking transaction remains owned by the test. Unit and Redis controls
-cover binding, generation reuse, quotas and missed broadcasts. These tests are
+the blocking transaction remains owned by the test. Unit controls (`McpRequestCancellationTests`, `McpSessionSharedStoreTests`)
+cover binding, generation reuse, quotas and missed broadcasts;
+`PostgresMcpSessionStoreTests` covers cross-node session acceptance and idle
+expiry. These tests are
 server implementation evidence; candidate-bound canonical-client cancellation
 qualification remains tracked by [server #6299](https://github.com/honua-io/honua-server/issues/6299).
 

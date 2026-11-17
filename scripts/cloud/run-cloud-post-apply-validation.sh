@@ -42,7 +42,6 @@ Optional scale validation environment variables:
   HONUA_SCALE_TEST_BASE_URL                    Required for scale tests.
   HONUA_SCALE_TEST_ADMIN_API_KEY               Required for replica scale tests.
   HONUA_SCALE_TEST_SERVICE_ID                  Required for replica scale tests.
-  HONUA_SCALE_TEST_REDIS                       Optional but required for Redis cache assertions.
 
 Terraform output key candidates:
   base_url, public_base_url, service_url
@@ -59,7 +58,6 @@ Terraform output key candidates:
   scale_test_base_url
   scale_test_admin_api_key
   scale_test_service_id
-  redis_connection_string, scale_test_redis
 EOF
 }
 
@@ -192,7 +190,6 @@ if [[ -n "$TF_OUTPUT_JSON" ]]; then
     set_from_tf_candidates HONUA_SCALE_TEST_BASE_URL scale_test_base_url
     set_from_tf_candidates HONUA_SCALE_TEST_ADMIN_API_KEY scale_test_admin_api_key
     set_from_tf_candidates HONUA_SCALE_TEST_SERVICE_ID scale_test_service_id
-    set_from_tf_candidates HONUA_SCALE_TEST_REDIS redis_connection_string scale_test_redis redis
 fi
 
 if [[ -z "${HONUA_CLOUD_TEST_BASE_URL:-}" ]]; then

@@ -38,7 +38,7 @@ Release evidence:
 
 - Connections use references for endpoints, credentials, or connection handles.
 - Production validation rejects dev-only inline credentials.
-- Admin APIs and Redis snapshots do not expose resolved connection strings or
+- Admin APIs and runtime snapshots do not expose resolved connection strings or
   secrets.
 - Health checks resolve secrets at runtime without mutating canonical metadata.
 
@@ -205,11 +205,9 @@ Release evidence:
   retried attempts remain addressable by their stable operation ID for the
   configured retention window. Records and their package-ID index entries use
   `ControlPlane:MetadataRelease:OperationRetention`, which defaults to 30 days.
-  Creating an operation claims the package-ID index unconditionally; in-place
-  updates to an already-stored operation refresh the index entry (value and TTL)
-  only when it still points at that operation, via a compare-and-set Redis
-  script. A late update to a superseded attempt therefore cannot steal the
-  pointer back from the latest operation.
+  The package-ID lookup returns the newest operation for that package by
+  insertion order in the PostgreSQL workflow operation store. A late update to
+  a superseded attempt therefore cannot displace the latest operation.
 - `metadataRelease` exposes Git refs (`gitOperationId`, `prUrl`, `commitSha`,
   `desiredRevision`), `targetEnvironment`, linked `deployOperationId` and
   `jobIds`, `evidenceRefs`, the fine-grained `currentStage`, `blockers`,
@@ -249,10 +247,10 @@ Release evidence:
   approval gating, the `409` conflict when the rollback plan's approval-affecting
   classification changes between approval and the write (asserting the stored
   operation is not mutated), and unknown-package `404`.
-  Redis store integration tests cover the package-ID index returning the latest
-  operation while a prior attempt stays addressable by operation ID, the
-  stale-index miss returning null, and a late update to an older retry leaving
-  the latest operation's package-ID index entry in place.
+  `PostgresWorkflowOperationStoreTests` cover the package-ID lookup returning
+  the latest operation after an older attempt is updated, while that prior
+  attempt stays addressable by operation ID, and an unknown package returning
+  null.
 
 ## Staged Activation and Verified Recovery (#4619)
 
@@ -334,14 +332,14 @@ Release evidence:
 
 Run from the repository root with Docker access and the manifest's digest-pinned
 server image already pulled. The harness checks its OCI digest and source label,
-starts isolated PostGIS and persistent Redis containers, and boots that installed
+starts an isolated PostGIS container, and boots that installed
 image with its own migrations. It never builds the server from checkout. It uses
 the existing CNG point fixture and independently specified expected names,
 populations, six longitude/latitude pairs, and EPSG:4326. SQL seeds and observes
 only the isolated fixture; release submission and concurrent service-policy
 updates use the admin API, and functional checks use the public FeatureServer.
 
-Test-owned Redis leases pause the **real polling worker** between durable stages;
+Test-owned rows in `honua.leases` pause the **real polling worker** between durable stages;
 the harness never writes an operation record or replaces a runtime component.
 A SIGKILL/restart with the candidate staged must preserve the operation and leave
 the prior graph active. The existing non-production fault injection fails only
