@@ -495,3 +495,22 @@ autoscaling ceiling is above one.
 - **OGC alignment** — sidecar shapes for `service` map onto Metadata v2
   publication types; future iterations should track Metadata v2 enum changes
   through shared reuse rather than duplicating shapes.
+
+## Environment access roles
+
+`/api/v1/console/access/{environmentId}/roles` and `/members` return
+`environmentId` and `environmentName`. The role matrix advertises the scopes
+`environment`, `content`, `layer`, and `dataset-field`: Environment-wide role
+assignment, actual content, a Dataset exposed through a Service, and field-level
+Dataset policy respectively. A Folder groups Services; it is not an access scope.
+
+Role writes and role audit use the same Environment identifier. Existing identifier
+values, role IDs and names, memberships, audit actions, and audit resource keys
+remain stable. The database migration replaces the reserved Console role-ownership
+operation with `environment-membership`, merging an existing canonical grant
+without duplicating it. Unrelated grants remain intact. Generic role-permission
+replacement preserves this ownership grant.
+
+Deploy the matching Console client. Retired JSON properties and scope values have
+no aliases. Review changes to the access models, scopes and reserved ownership
+grant together; keep the canonical wire-contract and migration tests passing.
