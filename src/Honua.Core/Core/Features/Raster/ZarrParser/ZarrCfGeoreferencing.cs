@@ -26,22 +26,46 @@ internal sealed record ZarrCfScan(ICloudRangeReader Reader, string Bucket, strin
 internal static partial class ZarrCfGeoreferencing
 {
     private const int GeographicSrid = 4326;
+    private const double RegularGridTolerance = 1e-6;
 
+    // Best effort: a coordinate array the subset reader cannot decode (blosc, big-endian, too many
+    // chunks) leaves the store as it registered before, ungeoreferenced, rather than failing refresh.
     public static async Task<ZarrStoreMetadata> ApplyAsync(ZarrCfScan location, ZarrStoreMetadata metadata, CancellationToken cancellationToken)
     {
-        if (ResolvePrimary(metadata) is not { } primary)
+        var scan = location with { Metadata = metadata };
+        try
+        {
+            return await GeoreferenceAsync(scan, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or ArgumentException
+            or OverflowException or NotSupportedException)
         {
             return metadata;
         }
+    }
 
-        var scan = location with { Metadata = metadata };
-        var axes = await ReadAxesAsync(scan, primary, cancellationToken).ConfigureAwait(false);
-        var described = metadata with { PrimaryVariable = primary.Name };
-        if (axes.X is not { } x || axes.Y is not { } y)
+    private static async Task<ZarrStoreMetadata> GeoreferenceAsync(ZarrCfScan scan, CancellationToken cancellationToken)
+    {
+        var metadata = scan.Metadata;
+        foreach (var candidate in PrimaryCandidates(metadata))
         {
-            return described;
+            var axes = await ReadAxesAsync(scan, candidate, cancellationToken).ConfigureAwait(false);
+            if (axes is { X: not null, Y: not null })
+            {
+                return await GeoreferenceGridAsync(scan, axes, cancellationToken).ConfigureAwait(false);
+            }
         }
 
+        return PrimaryCandidates(metadata).FirstOrDefault() is { } fallback
+            ? metadata with { PrimaryVariable = fallback.Name }
+            : metadata;
+    }
+
+    private static async Task<ZarrStoreMetadata> GeoreferenceGridAsync(
+        ZarrCfScan scan, CfAxes axes, CancellationToken cancellationToken)
+    {
+        var (primary, x, y) = (axes.Primary, axes.X!, axes.Y!);
+        var described = scan.Metadata with { PrimaryVariable = primary.Name };
         var xValues = await ReadValuesAsync(scan, x.Array, cancellationToken).ConfigureAwait(false);
         var yValues = await ReadValuesAsync(scan, y.Array, cancellationToken).ConfigureAwait(false);
         var srid = ResolveSrid(await ReadAttributesAsync(scan, primary.Name, cancellationToken).ConfigureAwait(false), x, y);
@@ -65,7 +89,7 @@ internal static partial class ZarrCfGeoreferencing
     private static async Task<CfAxes> ReadAxesAsync(
         ZarrCfScan scan, ZarrArrayMetadata primary, CancellationToken cancellationToken)
     {
-        var axes = new CfAxes();
+        var axes = new CfAxes { Primary = primary };
         foreach (var dimension in primary.DimensionNames)
         {
             if (scan.Metadata.Arrays.FirstOrDefault(array => IsCoordinate(array) && array.Name == dimension) is not { } array)
@@ -91,7 +115,7 @@ internal static partial class ZarrCfGeoreferencing
     {
         var values = await ReadValuesAsync(scan, time.Array, cancellationToken).ConfigureAwait(false);
         if (values.Length == 0 || time.Units is not { } units
-            || !GdalInfoCoverageEnricher.TryDecodeCfTime(units, values[0], values[^1], out var start, out var end))
+            || !GdalInfoCoverageEnricher.TryDecodeCfTime(units, values.Min(), values.Max(), out var start, out var end))
         {
             return null;
         }
@@ -113,7 +137,8 @@ internal static partial class ZarrCfGeoreferencing
     }
 
     // Coordinates are cell centres; the extent is their outer cell edges. A single cell has no
-    // spacing to derive its size from, and a non-monotonic axis is not a regular grid.
+    // spacing to derive its size from, and every reader assumes uniform cells, so an irregular
+    // axis (a Gaussian latitude grid, a gap) is not georeferenced.
     private static CfEdges? CellEdges(double[] centres)
     {
         if (centres.Length < 2)
@@ -122,8 +147,9 @@ internal static partial class ZarrCfGeoreferencing
         }
 
         var step = (centres[^1] - centres[0]) / (centres.Length - 1);
-        var monotonic = centres.Zip(centres.Skip(1), (previous, next) => next - previous).All(delta => delta * step > 0);
-        if (!monotonic || !double.IsFinite(step))
+        var regular = centres.Zip(centres.Skip(1), (previous, next) => next - previous)
+            .All(delta => Math.Abs(delta - step) <= Math.Abs(step) * RegularGridTolerance);
+        if (!(Math.Abs(step) > 0) || !regular || !double.IsFinite(step))
         {
             return null;
         }
@@ -163,14 +189,13 @@ internal static partial class ZarrCfGeoreferencing
         return document?.RootElement.Clone();
     }
 
-    // Keep a declared multi-dimensional primary; otherwise take the first data variable.
-    private static ZarrArrayMetadata? ResolvePrimary(ZarrStoreMetadata metadata)
-    {
-        var declared = metadata.Arrays.FirstOrDefault(array => array.Name == metadata.PrimaryVariable);
-        return declared is { Shape.Length: >= 2 } && !IsCoordinate(declared)
-            ? declared
-            : metadata.Arrays.FirstOrDefault(array => array.Shape.Length >= 2 && !IsCoordinate(array));
-    }
+    // A declared multi-dimensional primary first, then every other data variable in store order;
+    // the first whose dimensions resolve to both horizontal axes wins, so CF bounds variables
+    // (lat_bnds with dims lat, bnds) are passed over.
+    private static IEnumerable<ZarrArrayMetadata> PrimaryCandidates(ZarrStoreMetadata metadata)
+        => metadata.Arrays
+            .Where(array => array.Shape.Length >= 2 && !IsCoordinate(array))
+            .OrderBy(array => array.Name == metadata.PrimaryVariable ? 0 : 1);
 
     private static bool IsCoordinate(ZarrArrayMetadata array)
         => array.Shape.Length == 1 && array.DimensionNames.Length == 1 && array.DimensionNames[0] == array.Name;
@@ -178,7 +203,10 @@ internal static partial class ZarrCfGeoreferencing
     [GeneratedRegex(@"/EPSG/0/(\d+)$", RegexOptions.CultureInvariant)]
     private static partial Regex EpsgUrl();
 
-    private sealed record CfAxes(CfCoordinate? X = null, CfCoordinate? Y = null, CfCoordinate? T = null);
+    private sealed record CfAxes(CfCoordinate? X = null, CfCoordinate? Y = null, CfCoordinate? T = null)
+    {
+        public required ZarrArrayMetadata Primary { get; init; }
+    }
 
     private readonly record struct CfEdges(double Min, double Max, double Step)
     {
