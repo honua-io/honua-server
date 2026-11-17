@@ -130,7 +130,9 @@ public sealed partial class ComposeProposalExecutorTests
         client.ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "converge"), Arg.Any<CancellationToken>())
             .Returns(new ComposeExecutorResponse
             {
-                Ok = false, BackupId = "backup-" + new string('c', 32), Code = ComposeExecutorCodes.ContractApprovalRequired
+                Ok = false,
+                BackupId = "backup-" + new string('c', 32),
+                Code = ComposeExecutorCodes.ContractApprovalRequired
             });
 
         var result = await Backend(client, release, "/tmp/honua-compose-unit.sock").StartAsync(Operation(release, "approver"));

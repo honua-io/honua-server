@@ -554,8 +554,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests
         UpdatedAt = now
     };
 
-    private static WorkflowOperationRecord AwaitingLocalRestore(
-        string id, DeployExecutionPayload payload, string proposalId) => new()
+    private static WorkflowOperationRecord AwaitingLocalRestore(string id, DeployExecutionPayload payload, string proposalId) => new()
     {
         OperationId = id,
         Kind = WorkflowOperationKind.PreMigrationRestore,
