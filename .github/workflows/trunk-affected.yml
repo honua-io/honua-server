@@ -78,7 +78,7 @@ jobs:
       # a range already handed to scheduled full CI must not hold back the
       # selective verification of later merges.
       - name: Record coverage deferred to scheduled full CI
-        if: steps.base.outputs.superseded == 'false' && steps.admission.outputs.admitted == 'false'
+        if: steps.base.outputs.superseded == 'false' && steps.admission.outputs.deferred == 'true'
         env:
           HEAD_SHA: ${{ steps.base.outputs.head }}
         run: echo "Merges up to ${HEAD_SHA} are covered by the next scheduled full CI run." >> "$GITHUB_STEP_SUMMARY"

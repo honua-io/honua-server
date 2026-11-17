@@ -192,6 +192,26 @@ class CompletedBaseExecutionTests(unittest.TestCase):
         outputs = self.resolve(runs, runs, [self.affected_run(1, 73, "success")])
         self.assertEqual(outputs["completed_base"], self.heads[2])
 
+    def test_deferral_before_the_completed_base_is_ignored(self):
+        green = self.run_record(1, "success", "2026-11-10T13:00:00Z")
+        outputs = self.resolve([green], [green], [self.affected_run(0, 75, "success")])
+        self.assertEqual(outputs["completed_base"], self.heads[1])
+
+    def test_newest_of_several_deferrals_wins(self):
+        green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
+        deferrals = [self.affected_run(2, 76, "success"), self.affected_run(1, 77, "success")]
+        outputs = self.resolve([green], [green], deferrals)
+        self.assertEqual(outputs["completed_base"], self.heads[2])
+
+    def test_deferral_on_a_side_branch_is_ignored(self):
+        green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
+        self.git("checkout", "-q", "-b", "side", self.heads[0])
+        self.git("commit", "-q", "--allow-empty", "-m", "side")
+        side = dict(self.affected_run(1, 78, "success"), head_sha=self.git("rev-parse", "HEAD"))
+        self.git("checkout", "-q", "trunk")
+        outputs = self.resolve([green], [green], [side])
+        self.assertEqual(outputs["completed_base"], self.heads[0])
+
     def test_unavailable_deferral_history_keeps_the_completed_base(self):
         green = self.run_record(0, "success", "2026-11-10T12:00:00Z")
         missing_jobs = {"id": 74, "head_sha": self.heads[1], "updated_at": "2026-11-10T13:00:00Z"}
@@ -202,7 +222,7 @@ class CompletedBaseExecutionTests(unittest.TestCase):
         steps = workflow("trunk-affected.yml")["jobs"]["dispatch"]["steps"]
         record = next(step for step in steps if step.get("name") == DEFERRED_STEP)
         self.assertEqual(record["if"], "steps.base.outputs.superseded == 'false' "
-                                       "&& steps.admission.outputs.admitted == 'false'")
+                                       "&& steps.admission.outputs.deferred == 'true'")
 
     def test_superseded_push_does_not_dispatch(self):
         self.env["PUSHED_HEAD"] = self.heads[0]

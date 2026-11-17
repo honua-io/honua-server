@@ -221,7 +221,8 @@ Stage 3 details:
   does not defer every later merge. Before this, one infrastructure merge after the
   last successful run deferred all 100 dispatches from 14:02 UTC on 16 Nov to
   16:27 UTC on 17 Nov; replaying the router per push over the same 99 ranges admits
-  34 (30 docs/CI-only, 4 targeted). Unavailable history keeps the completed base.
+  34 (30 docs/CI-only, 4 targeted). Unavailable history keeps the completed base,
+  and a transient selection failure is not recorded, so the next push retries it.
 - The dispatch summary separately lists the culprit range from the latest
   full green ancestor (searched among the newest 100 successful runs,
   excluding affected titles that cannot clear earlier failures). It passes

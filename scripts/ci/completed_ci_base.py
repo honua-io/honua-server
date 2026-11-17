@@ -28,8 +28,8 @@ def runs(workflow, status):
     return sorted(payload["workflow_runs"], key=lambda run: run["updated_at"], reverse=True)
 
 
-def completed_base(head, lower_bound=""):
-    for run in runs("ci.yml", "completed"):
+def completed_base(head, lower_bound="", completed=None):
+    for run in completed if completed is not None else runs("ci.yml", "completed"):
         candidate = run["head_sha"]
         if (run["conclusion"] == "success" and valid_sha(candidate)
                 and ancestor(candidate, head)
@@ -46,7 +46,11 @@ def deferred(run):
 
 
 def deferred_floor(base, head):
-    """Return the newest trunk head whose range was already handed to scheduled full CI."""
+    """Return the newest trunk head whose range was already handed to scheduled full CI.
+
+    Only the newest DEFERRAL_LOOKUPS candidates are read. Missing an older
+    deferral fails safe: the range reaches back further and defers again.
+    """
     candidates = [run for run in runs("trunk-affected.yml", "success")
                   if valid_sha(run["head_sha"]) and run["head_sha"] != base
                   and ancestor(run["head_sha"], head) and (not base or ancestor(base, run["head_sha"]))]
@@ -57,12 +61,13 @@ def deferred_floor(base, head):
 
 
 def execution_base(head):
-    base = completed_base(head)
+    completed = runs("ci.yml", "completed")
+    base = completed_base(head, completed=completed)
     try:
         floor = deferred_floor(base, head)
     except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError, TypeError):
         return base
-    return completed_base(head, floor) if floor else base
+    return completed_base(head, floor, completed) if floor else base
 
 
 if __name__ == "__main__":
