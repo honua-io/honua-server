@@ -82,7 +82,6 @@ class RetiredCacheTests(unittest.TestCase):
     def test_recorded_runs_lambda_preview_and_redaction_pass(self):
         for path in ["eng/ci/fixtures/shard-promotion/reconciliation.json",
                      "scripts/cloud/lambda-certification.py",
-                     "src/Honua.Server/Features/ControlPlane/ControlPlaneLambdaEventEndpoint.cs",
                      "src/Honua.Geoprocessing/Core/Features/Geoprocessing/Diagnostics/GpDiagnosticRedactor.cs"]:
             self.write(path, "Redis\n")
         self.commit()
@@ -90,7 +89,7 @@ class RetiredCacheTests(unittest.TestCase):
 
     def test_neighbours_of_scoped_exemptions_fail(self):
         neighbours = ["eng/ci/fixtures/other/reconciliation.json", "scripts/cloud/ecs-certification.py",
-                      "src/Honua.Server/Features/ControlPlane/ControlPlaneEventEndpoint.cs"]
+                      "src/Honua.Server/Features/ControlPlane/ControlPlaneLambdaEventEndpoint.cs"]
         for path in neighbours:
             self.write(path, "Redis\n")
         self.commit()

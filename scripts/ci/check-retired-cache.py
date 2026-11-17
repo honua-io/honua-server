@@ -29,13 +29,12 @@ ROUTING_DATA_FILES = {
 # Recorded CI runs list the files those runs changed; history is not rewritten.
 RECORDED_RUN_ROOTS = ("eng/ci/fixtures/shard-promotion/",)
 
-# The Lambda preview is outside the ECS-on-Fargate scope of the cache retirement;
-# its certification harness and event endpoint keep their wording until Lambda is retired.
+# The Lambda preview certification harness is outside the ECS-on-Fargate scope of the cache
+# retirement and keeps its wording until it is reworked.
 LAMBDA_PREVIEW_FILES = {
     "scripts/cloud/lambda-certification.md",
     "scripts/cloud/lambda-certification.py",
     "scripts/cloud/test-certify-lambda-preview.py",
-    "src/Honua.Server/Features/ControlPlane/ControlPlaneLambdaEventEndpoint.cs",
 }
 
 # Diagnostic redaction must keep recognising any connection URL a user may paste.
