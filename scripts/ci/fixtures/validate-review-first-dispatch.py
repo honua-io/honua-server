@@ -24,6 +24,16 @@ QUEUED_REVIEW_GATE_JOBS = 2
 QUEUED_REVIEW_BRIDGE_JOBS = 1
 
 
+def require_admission_before_checkout(job_text, label, wait_condition, full_condition, require):
+    wait = job_text.index("- name: Await exact-head review")
+    checkout = job_text.index("- uses: actions/checkout@")
+    if wait >= checkout:
+        raise AssertionError(f"{label} must fail admission before checkout")
+    require(job_text[wait:checkout], wait_condition, f"{label} attempt 1 must fail closed")
+    require(job_text[wait:checkout], "exit 1", f"{label} admission must fail for rerun release")
+    require(job_text[checkout:].split("- name:", 1)[0], full_condition, f"{label} checkout must wait for review")
+
+
 def read_text(path: Path) -> str:
     """Read UTF-8 text, naming the file, byte, and offset on a decode failure.
 
@@ -158,14 +168,7 @@ def main() -> None:
             if not review_gated(step):
                 raise AssertionError(f"{name} must remain behind exact-head review")
     for label in ("fast-tests", "fast-server-tests"):
-        fast_job = job(label)
-        wait = fast_job.index("- name: Await exact-head review")
-        checkout = fast_job.index("- uses: actions/checkout@")
-        if wait >= checkout:
-            raise AssertionError(f"{label} must fail admission before checkout")
-        require(fast_job[wait:checkout], wait_condition, f"{label} attempt 1 must fail closed")
-        require(fast_job[wait:checkout], "exit 1", f"{label} admission must fail for rerun release")
-        require(fast_job[checkout:].split("- name:", 1)[0], full_condition, f"{label} checkout must wait for review")
+        require_admission_before_checkout(job(label), label, wait_condition, full_condition, require)
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
         "'pull_request' && github.run_attempt > 1"

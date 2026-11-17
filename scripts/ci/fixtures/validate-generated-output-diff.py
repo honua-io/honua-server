@@ -20,6 +20,28 @@ POLICY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(POLICY)
 
 
+def product_step(step):
+    return ('dotnet ' in step.get('run', '')
+            or step.get('uses', '').startswith(('./.github/actions/', 'docker/'))
+            or 'scripts/ci/server-boot-smoke.sh' in step.get('run', ''))
+
+
+def assert_generated_only_gates_product_steps(test, gate, evaluate, verdict):
+    for job in ('format', 'fast-tests', 'fast-server-tests', 'pr-gate'):
+        for step in gate['jobs'][job]['steps']:
+            if not product_step(step):
+                continue
+            condition = step.get('if', '')
+            if job == 'fast-server-tests' and 'generated_only' not in condition:
+                test.assertEqual(step.get('name'), 'Restore verified managed test outputs')
+                plan = next(item for item in gate['jobs'][job]['steps']
+                            if item.get('name') == 'Plan server test restore')
+                test.assertIn("steps.generated-only.outputs.generated_only != 'true'", plan['if'])
+                test.assertIn("steps.consumer-plan.outputs.producer == 'server'", condition)
+                continue
+            test.assertEqual(bool(evaluate(condition)), verdict != 'true', step.get('name'))
+
+
 def archive(proof, name='generated-output-proof.json'):
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, 'w') as zipped:
@@ -290,18 +312,7 @@ class WorkflowCompletion(unittest.TestCase):
                     condition = condition.replace(variable, repr(values[variable]))
                 condition = condition.replace('&&', ' and ').replace('||', ' or ')
                 return eval(condition, {'__builtins__': {}}, {})
-            for job in ('format', 'fast-tests', 'fast-server-tests', 'pr-gate'):
-                for step in gate['jobs'][job]['steps']:
-                    if ('dotnet ' in step.get('run', '') or step.get('uses', '').startswith(('./.github/actions/', 'docker/'))
-                            or 'scripts/ci/server-boot-smoke.sh' in step.get('run', '')):
-                        condition = step.get('if', '')
-                        if job == 'fast-server-tests' and 'generated_only' not in condition:
-                            self.assertEqual(step.get('name'), 'Restore verified managed test outputs')
-                            plan = next(item for item in gate['jobs'][job]['steps'] if item.get('name') == 'Plan server test restore')
-                            self.assertIn("steps.generated-only.outputs.generated_only != 'true'", plan['if'])
-                            self.assertIn("steps.consumer-plan.outputs.producer == 'server'", condition)
-                            continue
-                        self.assertEqual(bool(evaluate(condition)), verdict != 'true', step.get('name'))
+            assert_generated_only_gates_product_steps(self, gate, evaluate, verdict)
         selection = gate['jobs']['affected-shards-select']
         self.assertIn('steps.generated-only.outputs.generated_only', selection['outputs']['skip'])
         for name in ('normalize-derived-artifacts',):
