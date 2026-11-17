@@ -1958,7 +1958,7 @@ internal sealed partial class Wcs20Handler
     // the full native grid remains the base (scaling still applies uniformly).
     // A trim wholly outside the coverage selects no cells; WCS 2.0 Core answers it with
     // InvalidSubsetting rather than handing the raster store an empty clip. The extent is
-    // only comparable when the trim is in the coverage's native CRS.
+    // only comparable when the trim is in the coverage's native CRS and the extent is finite.
     private static bool TryRequireCoverageIntersection(
         RasterInfo raster,
         CrsDefinition subsettingCrs,
@@ -1968,6 +1968,8 @@ internal sealed partial class Wcs20Handler
     {
         error = default;
         if (!IsNativeSubsettingCrs(raster, subsettingCrs) || !TryResolveExtent(raster, out var extent) ||
+            !double.IsFinite(extent.XMin) || !double.IsFinite(extent.YMin) ||
+            !double.IsFinite(extent.XMax) || !double.IsFinite(extent.YMax) ||
             (trim.MinX <= extent.XMax && trim.MaxX >= extent.XMin && trim.MinY <= extent.YMax && trim.MaxY >= extent.YMin))
         {
             return true;
