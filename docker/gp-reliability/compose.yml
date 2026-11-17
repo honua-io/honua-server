@@ -104,6 +104,8 @@ services:
     image: ${HONUA_WORKER_IMAGE:?set HONUA_WORKER_IMAGE to a digest-addressed image}
     environment:
       DOTNET_ENVIRONMENT: Development
+      # Since the PostgreSQL job substrate (#7250) a worker claims from the system database's job queue.
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=honua
       ConnectionStrings__Redis: ${HONUA_GP_WORKER_REDIS:-redis:6379}
       GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
       Geoprocessing__OutputStaging__Enabled: "true"
@@ -123,6 +125,8 @@ services:
       HONUA_GP_QUALIFICATION_BARRIER_ROOT: ${HONUA_GP_QUALIFICATION_BARRIER_ROOT:-}
       HONUA_GP_QUALIFICATION_EXECUTOR_MODE: ${HONUA_GP_QUALIFICATION_EXECUTOR_MODE:-}
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
