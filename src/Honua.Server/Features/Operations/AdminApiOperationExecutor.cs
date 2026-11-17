@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 
@@ -154,7 +155,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
                 Status = OperationHandleStatus.Failed,
                 CreatedAt = now,
                 UpdatedAt = now,
-                Reason = $"Admin API returned {(int)response.StatusCode} ({response.ReasonPhrase}).",
+                Reason = GetFailureReason(context, response, payload),
                 Result = new OperationResultSummary { Summary = $"{_definition.Title} failed.", Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), ["response"] = payload } }
             };
         }
@@ -169,6 +170,35 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             ResourceIds = BuildPublishedResourceIds(request, response.StatusCode, payload),
             Result = BuildSuccessResult(response, payload)
         };
+    }
+
+    private string GetFailureReason(OperationPolicyContext context, HttpResponseMessage response, string payload)
+    {
+        var fallback = $"Admin API returned {(int)response.StatusCode} ({response.ReasonPhrase}).";
+        if (string.IsNullOrWhiteSpace(context.ApprovedProposalId) || !FolderOperationCredential.IsFolderMutation(OperationId))
+            return fallback;
+
+        var failure = response.StatusCode switch
+        {
+            HttpStatusCode.PreconditionFailed => FolderMutationFailure.ApprovalSnapshotChanged,
+            HttpStatusCode.Forbidden => FolderMutationFailure.RequesterAuthorizationChanged,
+            _ => null
+        };
+        if (failure is null)
+            return fallback;
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.ValueKind == JsonValueKind.Object &&
+                document.RootElement.TryGetProperty("detail", out var detail) &&
+                detail.ValueKind == JsonValueKind.String && detail.GetString() == failure.Detail
+                ? failure.Detail : fallback;
+        }
+        catch (JsonException)
+        {
+            return fallback;
+        }
     }
 
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)

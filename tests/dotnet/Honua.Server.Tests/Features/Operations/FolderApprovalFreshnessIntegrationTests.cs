@@ -52,7 +52,7 @@ public sealed partial class FolderOperationIntegrationTests
         changed.Etag.Should().NotBe(before.Etag);
 
         await AssertCatalogConflictAsync(pending);
-        (await SnapshotAsync()).Should().BeEquivalentTo(changed);
+        await AssertCatalogUnchangedAsync(changed);
         await AssertRequesterCatalogConflictAsync(operationId, proposalId);
 
         arguments["If-Match"] = changed.Etag;
@@ -151,7 +151,15 @@ public sealed partial class FolderOperationIntegrationTests
         var failed = (await _proposals.GetAsync(proposal.ProposalId))!;
         failed.Status.Should().Be(OperationProposalStatus.Failed);
         failed.ResolutionReason.Should().Be(FolderApprovalAuthorization.FreshProposalRequired);
-        (await SnapshotAsync()).Should().BeEquivalentTo(changed);
+        await AssertCatalogUnchangedAsync(changed);
+    }
+
+    private async Task AssertCatalogUnchangedAsync(MetadataV2GraphSnapshot expected)
+    {
+        var actual = await SnapshotAsync();
+        actual.Etag.Should().Be(expected.Etag);
+        JsonSerializer.Serialize(actual.Graph, MetadataV2JsonContext.Default.MetadataV2Graph).Should().Be(
+            JsonSerializer.Serialize(expected.Graph, MetadataV2JsonContext.Default.MetadataV2Graph));
     }
 
     private async Task ChangeUnrelatedCatalogAsync(string change, string etag)
