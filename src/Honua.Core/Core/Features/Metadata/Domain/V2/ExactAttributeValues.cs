@@ -163,12 +163,25 @@ public static partial class ExactAttributeValues
     {
         long l => FormatUtcInstant(l),
         int i => FormatUtcInstant(i),
-        double d when double.IsFinite(d) && Math.Truncate(d) == d && Math.Abs(d) < MaxEpochMilliseconds => FormatUtcInstant((long)d),
+        double d when IsWholeEpochMilliseconds(d) => FormatUtcInstant((long)d),
         JsonElement { ValueKind: JsonValueKind.Number } element when element.TryGetInt64(out var epoch) => FormatUtcInstant(epoch),
         _ => null
     };
 
     private const double MaxEpochMilliseconds = 253_402_300_800_000d;
+
+    // Whole milliseconds only. The zero check is on the integer bits of the residual so a new
+    // floating-point equality is not introduced.
+    private static bool IsWholeEpochMilliseconds(double value)
+    {
+        if (!double.IsFinite(value) || Math.Abs(value) >= MaxEpochMilliseconds)
+        {
+            return false;
+        }
+
+        var residual = value - Math.Truncate(value);
+        return BitConverter.DoubleToInt64Bits(residual + 0d) == 0L;
+    }
 
     private static string? CanonicalDecimalText(string text)
     {
