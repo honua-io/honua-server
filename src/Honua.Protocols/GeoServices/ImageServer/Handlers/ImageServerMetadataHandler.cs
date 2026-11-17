@@ -80,6 +80,12 @@ internal sealed class ImageServerMetadataHandler
 
             // Get raster information
             var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
+            var servedFromCogs = rasters.Length == 0;
+            if (servedFromCogs)
+            {
+                rasters = await ImageServerCogRasters.ListAsync(context, snapshot, resolved.Publication).ConfigureAwait(false);
+            }
+
             if (rasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
@@ -103,7 +109,8 @@ internal sealed class ImageServerMetadataHandler
             // the whole metadata response instead of just omitting statistics.
             var rasterIds = rasters.Select(r => r.Id).ToArray();
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-            var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+            // Registered COG ids are not raster_data rows; their statistics are not computed yet.
+            RasterStatistics[] statistics = servedFromCogs ? [] : await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
                 ImageServerStatisticsBudget.CreateStatisticsOperationKey(
                     schemaName, layerId, rasterIds, mergeStrategy),
