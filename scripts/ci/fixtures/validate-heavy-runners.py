@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 HEAVY_JOBS = {
     "format", "dotnet-foundation-family-tests", "runtime-proofs",
     "mcp-certification", "mcp-llm-smoke", "postgres-compat",
-    "core-package-compatibility", "docker-build", "quickstart-console-smoke",
+    "docker-build", "quickstart-console-smoke",
 }
 HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "supersede-trailing-runs", "changes", "targeted-shards",
@@ -186,8 +186,10 @@ class HeavyRunnerContractTests(unittest.TestCase):
                 self.assertEqual(self.jobs[name]["runs-on"],
                                  "${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}")
 
-    def test_aot_build_uses_the_fork_guarded_heavy_pool_with_hosted_fallback(self):
-        self.assertEqual(self.jobs["aot-build"]["runs-on"], AOT_RUNNER)
+    def test_full_server_builds_use_the_fork_guarded_heavy_pool_with_hosted_fallback(self):
+        for name in ("aot-build", "core-package-compatibility"):
+            with self.subTest(job=name):
+                self.assertEqual(self.jobs[name]["runs-on"], AOT_RUNNER)
 
     def test_hosted_jobs_stay_on_ubuntu_latest(self):
         for name in HOSTED_JOBS:
@@ -206,7 +208,7 @@ class HeavyRunnerContractTests(unittest.TestCase):
                 self.assertNotIn("runs-on", self.jobs[name])
 
     def test_every_ci_job_has_a_runner_class(self):
-        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | set(REUSABLE_JOBS) | {"build", "aot-build", SHARD_JOBS["ci.yml"][0]})
+        self.assertEqual(set(self.jobs), HEAVY_JOBS | HOSTED_JOBS | PINNED_JOBS | set(REUSABLE_JOBS) | {"build", "aot-build", "core-package-compatibility", SHARD_JOBS["ci.yml"][0]})
 
 
 PR_GATE_SELECTED_JOBS = {"pr-gate", "server-test-producer"}

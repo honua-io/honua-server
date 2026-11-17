@@ -58,8 +58,6 @@ internal sealed partial class RealtimeTailBackgroundService(
         await Task.WhenAll(listening, flushing).ConfigureAwait(false);
     }
 
-    internal TimeSpan CurrentPollInterval() => CurrentPoll().Interval;
-
     // The interval and the wake-up source are chosen together, before the wait, so a listener that
     // reconnects during the wait does not relabel the poll that follows it.
     private (TimeSpan Interval, string Source) CurrentPoll()

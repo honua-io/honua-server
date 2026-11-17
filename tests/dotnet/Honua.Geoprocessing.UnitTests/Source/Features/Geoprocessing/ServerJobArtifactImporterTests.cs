@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Helpers;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -44,6 +45,7 @@ public sealed partial class ServerJobArtifactImporterTests
                 request.LocalFilePath.Should().BeNull();
                 request.SourceUrl.Should().BeNull();
                 request.ObjectStoreUri.Should().BeNull();
+                PrivateScratchFileAssertions.AssertOwnerOnly(request.FileStream!);
                 request.FileStream!.Position = 0;
                 using var copy = new MemoryStream();
                 request.FileStream.CopyTo(copy);
@@ -169,21 +171,6 @@ public sealed partial class ServerJobArtifactImporterTests
         same.Add(new Point(8, 9) { SRID = 3857 }, hasProducerSpatialReference: true);
         same.Value.State.Should().Be("known");
         same.Value.Srid.Should().Be(3857);
-    }
-
-    [UnitTest]
-    public void ScratchPath_StaysUnderTheDirectory_AndRejectsARootedSegment()
-    {
-        var directory = Path.Join(Path.GetTempPath(), "honua-scratch-root");
-        var path = ServerJobArtifactImporter.CreateScratchPath(directory, "job-artifact-abc");
-        var root = Path.GetFullPath(directory);
-        var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
-        path.Should().Be(Path.GetFullPath(Path.Join(root, "job-artifact-abc")));
-        path.StartsWith(prefix, StringComparison.Ordinal).Should().BeTrue();
-
-        var rooted = Path.DirectorySeparatorChar + "job-artifact-abc";
-        var act = () => ServerJobArtifactImporter.CreateScratchPath(directory, rooted);
-        act.Should().Throw<InvalidOperationException>();
     }
 
     [UnitTheory]

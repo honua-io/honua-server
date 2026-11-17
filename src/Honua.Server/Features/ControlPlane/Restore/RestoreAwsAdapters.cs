@@ -5,7 +5,6 @@
 using System.Data.Common;
 using Honua.Cloud.Aws.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Restore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
@@ -111,20 +110,12 @@ internal sealed class AwsSecretHostRetarget(IOptions<RestoreCellOptions> options
     public void Dispose() => _secrets.Dispose();
 }
 
-internal sealed class AwsRestoredConnectionOpener(IServiceProvider services, IOptions<RestoreCellOptions> options) : IRestoredConnectionOpener, IDisposable
+internal sealed class AwsRestoredConnectionOpener(IOptions<RestoreCellOptions> options) : IRestoredConnectionOpener, IDisposable
 {
     private readonly AwsSecretStringClient _secrets = new();
 
-    public async Task<DbConnection?> OpenAsync(string? endpoint, CancellationToken cancellationToken)
+    public async Task<DbConnection?> OpenAsync(string endpoint, CancellationToken cancellationToken)
     {
-        if (endpoint is null)
-        {
-            var dataSource = services.GetService<NpgsqlDataSource>();
-            return dataSource is null
-                ? null
-                : await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        }
-
         var secretId = options.Value.ConnectionSecretId;
         if (string.IsNullOrWhiteSpace(secretId))
         {

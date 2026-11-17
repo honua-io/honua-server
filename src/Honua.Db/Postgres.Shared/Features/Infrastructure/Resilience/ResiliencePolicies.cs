@@ -76,8 +76,6 @@ internal static class ResiliencePolicies
 
     internal static IAsyncPolicy CreateFreshConnectionRetryPolicy() => BuildConnectionRetryPolicy();
 
-    internal static IAsyncPolicy CreateFreshDeadlockRetryPolicy() => BuildDeadlockRetryPolicy();
-
     private static Polly.Wrap.AsyncPolicyWrap BuildConnectionRetryPolicy()
     {
         var builder = Policy

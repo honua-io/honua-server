@@ -38,20 +38,11 @@ internal static partial class Wfs20Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 parameter validation failed: {Error}")]
     public static partial void ParameterValidationFailed(ILogger logger, string error);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 filter parsing failed for operation {Operation}: {Error}")]
-    public static partial void FilterParsingFailed(ILogger logger, string operation, string error);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 feature type not found: {TypeName}")]
-    public static partial void FeatureTypeNotFound(ILogger logger, string typeName);
-
     [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 unsupported operation requested: {Operation}")]
     public static partial void UnsupportedOperationRequested(ILogger logger, string operation);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 unsupported output format requested: {Format}")]
     public static partial void UnsupportedOutputFormatRequested(ILogger logger, string format);
-
-    [LoggerMessage(Level = LogLevel.Error, Message = "WFS 2.0 CRS transformation failed from {SourceCrs} to {TargetCrs}: {Error}")]
-    public static partial void CrsTransformationFailed(ILogger logger, string sourceCrs, string targetCrs, string error);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "WFS 2.0 feature serialization failed for format {Format}: {Error}")]
     public static partial void FeatureSerializationFailed(ILogger logger, string format, string error);
@@ -61,18 +52,6 @@ internal static partial class Wfs20Log
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 transaction rolled back due to error: {Error}")]
     public static partial void TransactionRolledBack(ILogger logger, string error);
-
-    [LoggerMessage(Level = LogLevel.Debug, Message = "WFS 2.0 spatial query completed in {ElapsedMs}ms for {FeatureCount} features")]
-    public static partial void SpatialQueryCompleted(ILogger logger, long elapsedMs, int featureCount);
-
-    [LoggerMessage(Level = LogLevel.Debug, Message = "WFS 2.0 validating feature type schema for: {TypeName}")]
-    public static partial void ValidatingFeatureTypeSchema(ILogger logger, string typeName);
-
-    [LoggerMessage(Level = LogLevel.Debug, Message = "WFS 2.0 feature type schema validation succeeded for: {TypeName}")]
-    public static partial void FeatureTypeSchemaValidated(ILogger logger, string typeName);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 feature type schema validation failed for {TypeName}: {Error}")]
-    public static partial void FeatureTypeSchemaValidationFailed(ILogger logger, string typeName, string error);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "WFS Transaction post-commit side-effects timed out for request {TraceId}; transaction was committed successfully.")]
     public static partial void PostCommitSideEffectsTimedOut(ILogger logger, string traceId);

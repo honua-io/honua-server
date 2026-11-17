@@ -396,15 +396,38 @@ internal static class OperationsEndpoints
     // boundary: a null field list reached the admin approval payload and failed every destructive
     // Admin proposal submitted through this endpoint.
     private static OperationRequest ToRequest(string operationId, OperationInvokeRequest request)
-        => new()
+    {
+        var parameters = request.Parameters ?? new Dictionary<string, string?>(StringComparer.Ordinal);
+        return new()
         {
             OperationId = operationId,
-            Parameters = request.Parameters ?? new Dictionary<string, string?>(StringComparer.Ordinal),
-            ConnectionId = request.ConnectionId,
-            ServiceName = request.ServiceName,
+            Parameters = parameters,
+            ConnectionId = TopLevelValue(request.ConnectionId, parameters, "connectionId"),
+            ServiceName = TopLevelValue(request.ServiceName, parameters, "serviceName"),
             Fields = request.Fields ?? [],
             DryRun = request.DryRun
         };
+    }
+
+    // The operation catalog lists connectionId and serviceName as ordinary inputs, so a caller that
+    // follows the descriptor sends them inside "parameters". Accept either placement for the
+    // top-level value; parameters stay as sent because some operations read serviceName from there.
+    private static string? TopLevelValue(string? topLevel, IReadOnlyDictionary<string, string?> parameters, string name)
+    {
+        if (!parameters.TryGetValue(name, out var nested) || nested is null)
+        {
+            return topLevel;
+        }
+
+        if (string.IsNullOrWhiteSpace(topLevel))
+        {
+            return string.IsNullOrWhiteSpace(nested) ? topLevel : nested;
+        }
+
+        return string.Equals(topLevel, nested, StringComparison.Ordinal)
+            ? topLevel
+            : throw new ArgumentException($"'{name}' is given twice with different values; send it once.", name);
+    }
 
     // An agent's change continues to the dispatcher, whose agent rule files a proposal for a person
     // to approve. Any other operator-gated operation is refused for an agent whatever the

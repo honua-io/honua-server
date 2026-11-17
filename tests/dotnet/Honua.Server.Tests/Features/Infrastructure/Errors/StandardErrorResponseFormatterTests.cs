@@ -19,22 +19,27 @@ namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
-public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
+public sealed class StandardErrorResponseFormatterTests : IClassFixture<StandardErrorResponseFormatterTests.SeededHost>
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
-
-    public async Task InitializeAsync()
+    // One started server for the class. The cases format errors on their own HTTP contexts; the
+    // OData cases read the process-wide OData error formatter that host start-up installs.
+    public sealed class SeededHost : IAsyncLifetime
     {
-        _fixture.UseSeed(Path.Join("tests", "seed", "server.yaml"));
-        await _fixture.InitializeAsync();
-    }
+        private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public async Task InitializeAsync()
+        {
+            _fixture.UseSeed(Path.Join("tests", "seed", "server.yaml"));
+            await _fixture.InitializeAsync();
+        }
+
+        public Task DisposeAsync() => _fixture.DisposeAsync();
+    }
 
     #region OData Error Formatting
 

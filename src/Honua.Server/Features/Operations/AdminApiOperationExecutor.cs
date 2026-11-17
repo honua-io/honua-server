@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 
@@ -41,7 +42,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
     {
         ArgumentNullException.ThrowIfNull(request);
         var descriptor = AdminApiOperationCatalog.Descriptors.Single(item => item.OperationId == OperationId);
-        var missing = GetMissingRouteParameters(request).ToList();
+        var missing = GetRouteParameterErrors(request).ToList();
         foreach (var parameter in descriptor.InputSchema.Where(static parameter => parameter.Required))
         {
             var present = parameter.Name switch
@@ -85,7 +86,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         AdminOperationLoopbackTls.PinServedCertificate(message, current);
         if (request.Parameters.TryGetValue("If-Match", out var expectedEtag))
             message.Headers.TryAddWithoutValidation("If-Match", expectedEtag);
-        OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
+        OperationLineageHeaders.Apply(message, new OperationLoopbackHop(context, current), _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
@@ -154,7 +155,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
                 Status = OperationHandleStatus.Failed,
                 CreatedAt = now,
                 UpdatedAt = now,
-                Reason = $"Admin API returned {(int)response.StatusCode} ({response.ReasonPhrase}).",
+                Reason = GetFailureReason(context, response, payload),
                 Result = new OperationResultSummary { Summary = $"{_definition.Title} failed.", Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), ["response"] = payload } }
             };
         }
@@ -169,6 +170,35 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             ResourceIds = BuildPublishedResourceIds(request, response.StatusCode, payload),
             Result = BuildSuccessResult(response, payload)
         };
+    }
+
+    private string GetFailureReason(OperationPolicyContext context, HttpResponseMessage response, string payload)
+    {
+        var fallback = $"Admin API returned {(int)response.StatusCode} ({response.ReasonPhrase}).";
+        if (string.IsNullOrWhiteSpace(context.ApprovedProposalId) || !FolderOperationCredential.IsFolderMutation(OperationId))
+            return fallback;
+
+        var failure = response.StatusCode switch
+        {
+            HttpStatusCode.PreconditionFailed => FolderMutationFailure.ApprovalSnapshotChanged,
+            HttpStatusCode.Forbidden => FolderMutationFailure.RequesterAuthorizationChanged,
+            _ => null
+        };
+        if (failure is null)
+            return fallback;
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.ValueKind == JsonValueKind.Object &&
+                document.RootElement.TryGetProperty("detail", out var detail) &&
+                detail.ValueKind == JsonValueKind.String && detail.GetString() == failure.Detail
+                ? failure.Detail : fallback;
+        }
+        catch (JsonException)
+        {
+            return fallback;
+        }
     }
 
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
@@ -251,13 +281,39 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         var path = definition.Path;
         foreach (var name in RouteNames(path))
         {
-            var value = name switch { "connectionId" => request.ConnectionId, "serviceName" => request.ServiceName, _ => request.Parameters.GetValueOrDefault(name) };
-            path = path.Replace($"{{{name}}}", Uri.EscapeDataString(value ?? throw new ArgumentException($"Required route parameter '{name}' is missing.")), StringComparison.Ordinal);
+            var value = GetRouteParameterValue(request, name);
+            var error = GetRouteParameterError(name, value);
+            if (error is not null)
+                throw new ArgumentException(error, nameof(request));
+            path = path.Replace($"{{{name}}}", Uri.EscapeDataString(value!), StringComparison.Ordinal);
         }
         return path;
     }
 
-    private string[] GetMissingRouteParameters(OperationRequest request) => RouteNames(_definition.Path).Where(name => string.IsNullOrWhiteSpace(name switch { "connectionId" => request.ConnectionId, "serviceName" => request.ServiceName, _ => request.Parameters.GetValueOrDefault(name) })).Select(name => $"Required route parameter '{name}' is missing.").ToArray();
+    private IEnumerable<string> GetRouteParameterErrors(OperationRequest request)
+    {
+        foreach (var name in RouteNames())
+        {
+            var error = GetRouteParameterError(name, GetRouteParameterValue(request, name));
+            if (error is not null)
+                yield return error;
+        }
+    }
+
+    private static string? GetRouteParameterValue(OperationRequest request, string name) => name switch
+    {
+        "connectionId" => request.ConnectionId,
+        "serviceName" => request.ServiceName,
+        _ => request.Parameters.GetValueOrDefault(name)
+    };
+
+    private static string? GetRouteParameterError(string name, string? value) => value switch
+    {
+        null => $"Required route parameter '{name}' is missing.",
+        _ when string.IsNullOrWhiteSpace(value) => $"Required route parameter '{name}' is missing.",
+        "." or ".." => $"Route parameter '{name}' must not be a dot segment.",
+        _ => null
+    };
     private HashSet<string> RouteNames() => RouteNames(_definition.Path);
     private static HashSet<string> RouteNames(string path) => path.Split('/').Where(static segment => segment.StartsWith('{') && segment.EndsWith('}')).Select(static segment => segment[1..^1]).ToHashSet(StringComparer.Ordinal);
     private static void CopyHeader(HttpContext current, HttpRequestMessage message, string name)

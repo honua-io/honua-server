@@ -644,8 +644,8 @@ These workflows run on schedule and can be dispatched manually:
 | `cross-server-consume-nightly.yml` | Daily 7:00am UTC | Honua-as-client WMS/WFS/WMTS reads against GeoServer and MapServer reference containers |
 | `client-compat-smoke-nightly.yml` | Daily 7:15am UTC | Full CERT-\* matrix certification (18 test cases × 4 protocol lanes) with `.cert.json` envelopes + reusable evidence pack |
 | `pyqgis-client-compat-nightly.yml` | Daily 7:30am UTC | PyQGIS desktop client compatibility (OGC Features + WFS) with per-protocol `.cert.json` envelopes |
-| `sdk-server-compatibility.yml` | Monday 8:35am UTC | Manifest-driven last-3 server refs x last-3 SDK sets compatibility matrix through `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`; manual dispatch can pin `server_current_ref` for release-candidate evidence; copies checked-out SDK refs to `$RUNNER_TEMP/sdk-compat` before smoke execution so server repo build policy does not affect SDK source builds; records SDK versions, server commit/image field, seed profile, exercised surfaces, migration automation surface status, and diagnostics; publishes the `sdk-compatibility-matrix-<run-id>` table artifact and fails on supported-cell regressions |
-| `client-interop-nightly.yml` | Daily 7:00am UTC | Real-client interop matrix via Docker harnesses (`gdal`, `pyqgis`, `openlayers`, `cesium`, `geoservices-rest-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` plus `expected-pairs.json`, refreshes `artifacts/client-interop/gap-report.md`, and fails strict mode on baseline pass regressions, missing current envelopes, missing committed baselines, or new unbaselined failures. Non-blocking until 30 consecutive nightly passes (#806) |
+| `sdk-server-compatibility.yml` | Monday 8:35am UTC | Manifest-driven last-3 server refs x last-3 SDK sets compatibility matrix through `honua-sdk-js`, `honua-sdk-python`, and `honua-sdk-dotnet`; manual dispatch can pin `server_current_ref` for release-candidate evidence; uses Node 22.23.3 (SDK engine minimum 22.12) with a 4 GiB V8 heap for source compilation; copies checked-out SDK refs to `$RUNNER_TEMP/sdk-compat` before smoke execution so server repo build policy does not affect SDK source builds; records SDK versions, server commit/image field, seed profile, exercised surfaces, migration automation surface status, and diagnostics; publishes the `sdk-compatibility-matrix-<run-id>` table artifact and fails on supported-cell regressions |
+| `client-interop-nightly.yml` | Daily 7:00am UTC | Real-client interop matrix via Docker harnesses (`gdal`, `pyqgis`, `openlayers`, `cesium`, `geoservices-rest-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` plus `expected-pairs.json`, refreshes `artifacts/client-interop/gap-report.md`, and fails strict mode on baseline pass regressions, missing current envelopes, missing committed baselines, or new unbaselined failures. Non-blocking until 30 consecutive nightly passes (#806) Protected-style probes resolve the seeded publication ID and independently verify that numeric-layer vector tiles reject anonymous and invalid-key requests. |
 | `gdal-driver-e2e.yml` | Daily 7:45am UTC | GDAL `ogrinfo` + `ogr2ogr` round-trip against honua-server (ADR-0034 stand-in until `honua-gdal` plugin ships) |
 | `load-soak-nightly.yml` | Scheduled | Load and soak testing |
 | `nightly-slow-tier.yml` | Daily 4am UTC | `Tier=Slow&Category=Emulator` .NET tests across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` (`[EmulatorTest]` only). LocalStack and Azurite are provisioned by `EmulatorFixture` (Testcontainers) and Postgres by a service container; the workflow asserts `HONUA_TEST_DB_URL` before dispatch. `[ScaleTest]`, `[ExternalServiceTest]`, `[CloudTest]` need dedicated fixtures and are tracked as separate workflows (ADR-0037) |
@@ -976,6 +976,8 @@ Normalization consumers preserve a producer’s recorded superseded admission ac
 
 ### Router validator execution
 
+Shard ownership lookups reuse parsed filter syntax in a bounded, process-local cache keyed by the complete filter text. Each method name is still evaluated separately; changed filters are parsed separately and malformed filters still raise errors. The affected-shard fixture retains its complete ownership and mutation checks. This changes CPU work within existing jobs, without changing their selection, runner count, or required aggregate.
+
 `validate-ci-router.sh` runs independent fixtures in a bounded pool (four workers by default; `HONUA_ROUTER_WORKERS=1..8`), records each fixture duration and collects every exit code before returning failure. A failed or missing result cannot produce success. The routing assertions retain their exact cases and shard ownership checks. Cancellation sends TERM to owned worker groups, escalates to KILL after a bounded grace period, and reaps workers before deleting results.
 
 `--changed-only` is a local feedback mode: stdin routing cases skip only when their complete input closure (router, shard map, jq wrapper and validator infrastructure) is unchanged against the merge base with `origin/trunk`. Staged, unstaged, renamed and untracked inputs count. Unknown base or an ambiguous path runs everything; undeclared fixture input closures also run. CI and GitHub Actions ignore the optimization and always run every fixture.
@@ -1027,9 +1029,10 @@ name, required aggregate dependency, workflow, or shard definition.
 ### ImageServer endpoint database lifetime
 
 `ImageServerEndpointsTests` retains a `PostgresFixture` reference for the class
-to avoid repeating shared database initialization between cases. Each case owns
-its configured application, isolated schema, and raster substitutes; the class
-fixture releases the infrastructure after the last case. Pure capability XML
+to avoid repeating shared database initialization between cases. Default-store
+read-only cases share the class-owned application and schema; cases with custom
+configuration own their applications, schemas, and raster substitutes. Class
+fixtures release the shared infrastructure after the last case. Pure capability XML
 coverage lives in `ImageServerWmtsCapabilitiesTests` without a database fixture.
 Full trunk runs include every case; PR routing selects affected ImageServer shards.
 
@@ -1114,7 +1117,11 @@ The ready-PR format matrix retains `PR Gate / Analyzers (tests)` and adds `PR Ga
 
 Capability Impact Comparison was retired after being disabled in repository
 settings; its workflow has been removed. Capability Matrix Aggregation and
-OpenAPI Contract Governance retain their generator/contract input filters. The
+OpenAPI Contract Governance retain their generator/contract input filters.
+Aggregation includes `FeatureCatalog.cs`: its licensing constants resolve manifest
+entitlements, so a change to those constants must run the crosswalk check even
+when the registry is unchanged. This admits the existing single aggregation job
+for that input and adds no jobs to unrelated PRs. The
 operation-capability completeness, registry resolution and authored artifact
 checks run in PR Gate's existing architecture job after canonical feature
 catalog regeneration. Capability Matrix Aggregation retains these checks for
@@ -1153,8 +1160,9 @@ Derived Artifact Normalization runs on pull requests only when its own recipe
 can change: the producer workflow, the .NET setup action, the envelope builder,
 every generator input the envelope pins (`GENERATOR_INPUTS` in
 `scripts/ci/normalization-envelope.py`) and the three projections. Its consumer
-is observe-only since feature PRs stopped committing these projections (14 Nov),
-so an envelope for an ordinary source change produced no result anyone used.
+remains observe-only. Source PRs carry their regenerated projections; the required
+architecture job verifies submitted output directly, so an envelope for an
+ordinary source change does not publish or repair its branch.
 That generation still runs: PR Gate's architecture job regenerates the same
 projections and reports drift on every ready PR, ci.yml's foundation job does
 the same on affected trunk and twice-daily full runs, and the nightly
@@ -1639,9 +1647,9 @@ cancel superseded PR runs through their per-PR concurrency groups.
 Normalization consumer admission reads the exact producer attempt before joining
 its per-PR cancellation group. Only a successful envelope-packaging job admits
 validation; late same-SHA metadata or draft skips cannot cancel useful work.
-Publication of generated documents stays with the trunk producer: feature PRs
-keep envelope validation and drift reporting, and the consumer stays in observe
-mode. Trusted admission cancels only consumers of older producer generations
+Generated-only publication stays with the trunk producer. Feature PRs commit
+regeneration with their source changes and retain envelope validation and drift
+reporting; the consumer stays in observe mode. Trusted admission cancels only consumers of older producer generations
 associated with that PR; delayed old completions cannot cancel newer work. Only
 admission has Actions write permission for cancellation. Validation retains
 read-only Actions, Contents and Pull requests permissions, and its existing
@@ -1682,13 +1690,17 @@ hygiene job.
 CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
 `advisory-runner-select.yml` before allocating compute. Same-repository PRs use
 trusted base scripts and the existing OIDC role to read the build-host instance
-and heartbeat. A heartbeat no older than 90 seconds must match the current
+and heartbeat. Scheduled and manually dispatched runs on the repository default
+branch use scripts pinned to the triggering commit. Other dispatch refs remain
+hosted. A heartbeat no older than 90 seconds must match the current
 instance and advertise more than two idle heavy runners: two stay free for
 required PR Gate jobs. Otherwise the job uses its existing
 hosted label. Missing configuration, credentials, read failures and selector
 failure all fall back to hosted compute. This selector never wakes or resizes
-the host; AWS retries and step timeouts are bounded. The current role trusts PR
-subjects only, so scheduled/manual/full-CI callers retain hosted compute.
+the host; AWS retries and step timeouts are bounded. Default-branch selection
+also requires the build-host role trust policy to admit that branch subject;
+until the companion IaC policy is applied, these callers fall back to hosted
+compute. No selector change grants AWS permissions or provisions capacity.
 
 Each consumer also checks the PR's repository before accepting the selected
 runner and falls back to hosted compute for forks, independently of the selector.
@@ -1948,3 +1960,234 @@ in `scripts/ci/native-image-impact.py` for authoritative serving-image verificat
 No required check or nightly/release/deploy verification moved. Content-addressed
 skip promotion still requires an audit of authoritative serving-image run evidence;
 the retired observer cannot supply it.
+
+### OData error-handling and advanced-feature host lifetime
+
+`ODataErrorHandlingTests` and `ODataAdvancedFeaturesTests` build their Pro-licensed,
+`odata.yaml`-seeded application once per class through a `ReadOnlyProHost` class
+fixture, as `ODataEndpointTests` does. Read-only GET cases use that host's client.
+Every case that sends a POST, PATCH or `$batch`, inserts features or reads the
+database still builds, seeds and disposes a private Pro host; cases that already
+built their own host are unchanged. Assertions and case counts are unchanged.
+
+Paired build-host runs of both classes on trunk f0483ffc72 passed the same 109
+cases (53 error-handling, 56 advanced) with no skips. VSTest execution fell from
+30m11s to 4m22s and the TRX interval from 1812.9 to 324.0 seconds on a heavily
+loaded host. Full run 43709972683 spent 336 seconds of per-case fixture time in the
+two classes; about two thirds of their cases now share the host, so the expected CI
+saving is roughly 220 seconds. Full CI job savings are unmeasured.
+All cases remain in their existing OData shards on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### I3S scene server host lifetime
+
+`I3sSceneServerEndpointTests` builds its enterprise and community applications, the
+authenticated client and the two database-backed scene registrations once per class
+through the `SceneHosts` class fixture instead of for every case. Every case only
+reads, and the scene registry rows the cases see are the same rows each case used
+to register after its hosts seeded. Test bodies and assertions are unchanged.
+
+Paired build-host runs of the class on trunk f52d27ce02 passed the same 35 cases with
+no skips. VSTest execution fell from 18m37s to 6s and the TRX interval from 1118.1 to
+77.6 seconds on a heavily loaded host. Full run 43709972683 spent 222 seconds of
+per-case fixture time in this class (6.3 seconds per case), the expected CI saving.
+Full CI job savings are unmeasured.
+All cases remain in the Scene I3S Resources 2 shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### Spatial analytics REST host lifetime
+
+`SpatialAnalyticsRestTests` builds its Pro-licensed application once per class
+through a `ReadOnlyProHost` class fixture. The clusters, density, buffer-aggregate
+and spatial-join query cases only read, so they use that host's client; the three
+cases that seed extra rows still build, seed and dispose a private Pro host.
+Assertions and case counts are unchanged.
+
+Paired build-host runs of the class on trunk 0afc7ba8ba passed the same 47 cases
+with no skips. VSTest execution fell from 4m41s to 20s, saving 261 seconds (4.35
+runner-minutes), and the TRX interval from 302.5 to 41.5 seconds, with one test
+process each. Full run 43709972683 spent 174 seconds of per-case fixture time in
+this class. Full CI job savings are unmeasured.
+All cases remain in their existing Server Features Analytics Studio Export and
+Reporting shard on selected PR runs and twice-daily full trunk runs. This changes no
+runner count, required check name, required aggregate dependency, workflow or shard
+definition.
+
+### Scene gRPC host lifetime
+
+`SceneGrpcIntegrationTests` builds its configured application and four temporary
+scene asset roots once per class through `SharedSceneHost`. Each case still creates
+and disposes its own gRPC channel, registers its extent scene and removes its
+registered extent/inactive scenes afterward. Test bodies and assertions are
+unchanged; the existing database collection keeps cases serialized.
+
+The 52 cases remain in the existing gRPC Protocol and Scene 3–7 shards on
+selected PR runs and twice-daily full trunk runs. Each selected shard process
+creates its own fixture. No runner, required check, aggregate dependency,
+workflow or shard definition changes. Paired build-host runs passed the same 52
+cases without skips: VSTest execution fell from 306 to 4 seconds, and the
+fixture-inclusive TRX interval fell from 318.9 to 28.9 seconds. That saves 302
+execution seconds (5.0 runner-minutes), or 290.0 seconds including fixture lifetime
+(4.8 runner-minutes), with zero added runners. Full CI shard wall-time savings
+remain unmeasured. Historical full run 43709972683 separately recorded 185.7
+seconds of per-case fixture work across this class.
+
+### FeatureServer maintenance host lifetime
+
+`FeatureServerMaintenanceTests` builds its Pro-licensed application, with service
+editing capabilities enabled, once per class through a `ReadOnlyProHost` class
+fixture. The validate-SQL, domain and relationship GET cases only read and use that
+host's client. Every case that POSTs (append, calculate and POST validate-SQL) or
+inserts or reads rows still builds and disposes a private Pro host. Assertions and
+case counts are unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 42 cases
+with no skips. VSTest execution fell from 10m44s to 2m14s and the TRX interval from
+646.7 to 151.8 seconds. Full run 43709972683 spent 139 seconds of per-case fixture
+time in this class; about four sevenths of its cases now share the host. Full CI
+job savings are unmeasured.
+All cases remain in their existing FeatureServer shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### Admin authorization host lifetime
+
+`AdminAuthorizationTests` builds its application (server seed, development
+authentication off, an admin password set) and its unauthenticated client once per
+class through the `AnonymousHost` class fixture. Every case sends an anonymous
+request with no credentials, so the authentication-failure limiter never counts it;
+every write case expects 401, and the anonymous 200 cases only read. Test bodies and
+assertions are unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 58 cases with
+no skips. VSTest execution fell from 6m16s to 3s, saving 373 seconds (6.2
+runner-minutes), and the TRX interval from 395.2 to 21.8 seconds, with one test
+process each. Full run 43709972683 spent 196 seconds of per-case fixture time in this
+class. Full CI job savings are unmeasured.
+All cases remain in their existing Server Features Admin Authorization shards on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow or shard definition.
+
+### Query related records host lifetime
+
+`QueryRelatedRecordsEndpointTests` builds its Pro-licensed application, with service
+editing capabilities enabled, once per class through a `ReadOnlyProHost` class
+fixture. The related-record GET cases use it. The case that inserts and deletes
+features, and the POST, PUT and DELETE cases, first switch to a private Pro host of
+their own. Test bodies and assertions are otherwise unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 35 cases with
+no skips. VSTest execution fell from 3m20s to 46s, saving 154 seconds (2.6
+runner-minutes), and the TRX interval from 214.0 to 74.3 seconds, with one test
+process each. Full run 43709972683 spent 124 seconds of per-case fixture time in this
+class. Full CI job savings are unmeasured.
+All cases remain in their existing shard on selected PR runs and twice-daily full
+trunk runs. This changes no runner count, required check name, required aggregate
+dependency, workflow or shard definition.
+
+## Generated projections alongside source changes
+
+The required generated-file ownership check admits protected outputs alongside
+source inputs that force the architecture gate. It compares the candidate's
+validator, policy, PR workflow, classifiers, fast-test selector, regeneration
+wrapper and architecture action with trusted trunk blobs. Older branches must
+adopt the repair before mixing source and
+output; changing or removing verification remains blocked. Generated-only PRs
+still require the canonical producer's exact commit/tree artifact proof.
+
+Before strict regeneration, the existing architecture job removes submitted
+protected outputs so only freshly produced bytes and modes can pass. Unproduced
+additions cannot survive the checkout, and symlink parents fail closed.
+After regeneration, the job checks every protected
+path submitted by the PR against its committed bytes and executable mode. Added
+and deleted outputs are included, and symlinks fail. The MCP roster retains its
+existing drift contract: its valid source SHA and UTC generation timestamp can
+differ between local and CI generation; every other byte and the file mode must
+match freshly generated output. No other projection receives that normalization.
+It requires the PR merge
+checkout and uses its target parent; unreadable Git state fails closed. Output
+that the PR did not change retains advisory drift reporting. No job, required
+context or aggregate dependency is added or removed.
+
+The repair itself lands without protected generated output because the old
+trusted checker cannot admit its own replacement. Its authored workflow inventory
+template changes here; the existing trunk generator publishes that projection
+afterward. Subsequent source PRs can carry their generated inventory normally.
+
+### Spatial correctness fixture lifetime
+
+`SpatialCorrectnessTests` shares one seeded `WebAppFixture` through xUnit's class
+fixture lifetime. Its eleven endpoint cases only query that private schema, including
+the POST query case; they do not edit features, configuration or registrations.
+The database collection and fixture disposal still belong to xUnit.
+
+The thirteen geographic range and WKB cases live in
+`SpatialCorrectnessUnitTests`. They retain every input and assertion and construct neither an HTTP host nor a
+database fixture. The validation theories express expected validity with an enum;
+the WKB theory accepts its four coordinates as a parameter array to satisfy the
+strict signature rules without changing the coordinates tested. The endpoint cases retain their original methods and assertions too.
+This removes repeated setup rather than dividing the suite across new runners.
+
+The existing Core and Cloud Contracts 1 filter still owns the endpoint cases.
+The existing Core and Cloud Contracts 4 catch-all owns the new geometry-only
+class. All thirteen geometry cases carry Fast-tier unit attributes, so the
+existing foundation Fast filter also executes them. The three moved theory
+signatures are removed from the legacy untiered baseline. Both classes run
+in the current selected PR and full trunk shard mechanisms;
+no shard definition, workflow, required check or aggregate dependency changes.
+The authored workflow inventory template carries this explanation; the canonical
+inventory producer publishes its generated projection.
+
+Paired build-host runs preserve all 24 passing cases with no skips: VSTest
+102 → 21 seconds, fixture-inclusive TRX 114.646 → 29.494 seconds. Test-body
+seconds fall from 25.912 to 4.126 for the endpoint class plus 0.053 for the
+host-free geometry class. Both runs use one process; no runners are added.
+The 81-second execution saving is 1.35 runner-minutes for this focused suite;
+full CI shard wall-time savings remain unmeasured. These measurements use the
+initial fixture change before the equivalent strict-signature parameter adapters.
+
+### OGC Features enhancements host lifetime
+
+`OgcFeaturesEnhancementsTests` shares one Pro-licensed application and its seeded
+WGS84 spatial and temporal metadata through a class fixture for read-only requests.
+The feature creation, null-geometry insertion and schema-field addition cases each
+initialize and dispose a private application with the same seed and metadata.
+The exact geometry identifier assertions therefore retain an unchanged database.
+Every test input, request and assertion is preserved.
+
+The complete class remains in OGC API Features 1 for selected PR runs and the
+existing full trunk runs. No workflow, shard filter, runner count, required check
+name or aggregate dependency changes. Paired build-host timings will distinguish
+test execution from build time; full CI job savings remain unmeasured.
+
+### PrintingTools GPServer service application lifetime
+
+`PrintingToolsGpServerService5546Tests` shares one `WebAppFixture` per class
+instead of creating and seeding one per case. Every case owns and disposes its
+own admin client. REST and SOAP metadata requests are read-only; render and job
+requests use their own generated job IDs. Database collection serialization and
+all test bodies, endpoint attributes and assertions remain unchanged.
+
+The class stays in Server Features Spec Printing and Static Maps 1 on selected
+PR runs and twice-daily full trunk runs. No tests move to a later gate. This
+changes no runner count, required check name, aggregate dependency, workflow or
+shard definition.
+
+### ImageServer default raster fixture lifetime
+
+ImageServerEndpointsTests shares one class-scoped host and seeded schema for the
+62 test methods that use the identical default raster substitute. These cases
+query metadata, render pixels, or compute derived responses without changing
+stored data or substitute behavior; POST requests are read operations too.
+Custom raster stores, authorization/masking, sensor metadata, and elevation
+configurations keep their private hosts and schemas. The existing database
+collection still serializes the class, and xUnit disposes the shared host once.
+All test attributes, request bodies and assertions are retained.
+
+The six existing GeoServices ImageServer filters continue selecting these same
+methods in selected PR and full trunk runs. No workflow, shard definition,
+required check name, timeout, or aggregate dependency changes. This removes
+repeated initialization rather than adding runners. The authored inventory
+template is updated; its generated inventory projection remains producer-owned.

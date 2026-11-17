@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.IO.Pipelines;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
@@ -21,6 +22,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class QueryFormatterTests
 {
+    private static readonly string[] IdGeoJsonProperties = ["id", "name", "distance"];
+    private static readonly string[] DeclaredIdGeoJsonProperties = ["id", "objectid", "name", "distance"];
+
     [UnitTest]
     public void MapGeometryType_OmitsTypesThatAreNotLayerTokens()
     {
@@ -235,6 +239,78 @@ public sealed class QueryFormatterTests
         // the synthetic uppercase OBJECTID alias is intentionally suppressed (#1518).
         geoJson.Features[0].Properties.Should().NotContainKey("OBJECTID");
         geoJson.Features[0].Properties.Should().Contain("name", "alpha");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(false, "objectid", false)]
+    [InlineData(true, "objectid", false)]
+    [InlineData(false, "ObjectId", false)]
+    [InlineData(true, "ObjectId", false)]
+    [InlineData(false, "objectid", true)]
+    [InlineData(true, "objectid", true)]
+    public async Task GeoJson_IdBackedLayer_OnlyIncludesDeclaredObjectIdAttribute(
+        bool streaming, string attributeName, bool declared)
+    {
+        var resource = declared ? CreateStringIdPointLayer() : CreateIdBackedPointLayer();
+        var feature = Feature.Create(42, geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["id"] = declared ? "external-id" : 42L,
+                [attributeName] = 99L,
+                ["name"] = "alpha",
+                ["distance"] = 12.5
+            }.ToImmutableDictionary());
+
+        var json = await SerializeGeoJsonAsync(feature, resource, streaming);
+        using var document = JsonDocument.Parse(json);
+        var result = document.RootElement.GetProperty("features")[0];
+        var properties = result.GetProperty("properties");
+        properties.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
+            declared ? DeclaredIdGeoJsonProperties : IdGeoJsonProperties);
+        properties.GetProperty("name").GetString().Should().Be("alpha");
+        properties.GetProperty("distance").GetDouble().Should().Be(12.5);
+        if (declared)
+        {
+            result.GetProperty("id").GetString().Should().Be("external-id");
+            properties.GetProperty("objectid").GetInt64().Should().Be(99);
+        }
+        else
+        {
+            result.GetProperty("id").GetInt64().Should().Be(42);
+            properties.GetProperty("id").GetInt64().Should().Be(42);
+        }
+    }
+
+    private static async Task<string> SerializeGeoJsonAsync(
+        Feature feature, MetadataV2Object resource, bool streaming)
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        if (streaming)
+        {
+            using var stream = new MemoryStream();
+            var writer = PipeWriter.Create(stream, new StreamPipeWriterOptions(leaveOpen: true));
+            await new StreamingQueryFormatter(limitsOptions).StreamAsGeoJsonAsync(
+                Features(), resource, returnGeometry: false, returnZ: false, returnM: false,
+                geometryPrecision: null, maxAllowableOffset: null, outFields: ["*"],
+                hasMoreResults: false, outputStream: writer);
+            await writer.CompleteAsync();
+            return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+        }
+
+        var formatter = new QueryFormatter(limitsOptions, new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+        var (response, _) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]), resource, format: "geojson",
+            returnGeometry: false, outputSrid: null, returnZ: false, returnM: false,
+            geometryPrecision: null, maxAllowableOffset: null, outFields: ["*"]);
+        return JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.GeoJsonFeatureSet);
+
+        async IAsyncEnumerable<Feature> Features()
+        {
+            yield return feature;
+            await Task.CompletedTask;
+        }
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
