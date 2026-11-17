@@ -168,6 +168,7 @@
     <PackageReference Include="Grpc.AspNetCore.Server.Reflection" />
     <PackageReference Include="Grpc.AspNetCore.Web" />
     <PackageReference Include="Grpc.AspNetCore.HealthChecks" />
+    <PackageReference Include="Honua.Sdk.Field" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
