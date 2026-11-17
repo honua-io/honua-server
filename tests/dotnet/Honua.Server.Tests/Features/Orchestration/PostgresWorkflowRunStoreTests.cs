@@ -8,7 +8,6 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Orchestration;
 
@@ -141,6 +140,5 @@ public sealed class PostgresWorkflowRunStoreTests
     };
 
     private static WebAppFixture CreateHost() => new WebAppFixture()
-        .WithProductionJobSubstrate()
-        .ConfigureWebHost(builder => builder.UseSetting("ConnectionStrings:redis", string.Empty));
+        .WithProductionJobSubstrate();
 }

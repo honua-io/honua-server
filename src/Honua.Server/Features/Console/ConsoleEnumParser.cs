@@ -13,10 +13,11 @@ internal static class ConsoleEnumParser
     {
         ConsoleContentItemType.Service
             or ConsoleContentItemType.Layer
-            or ConsoleContentItemType.SavedMap
+            or ConsoleContentItemType.Map
             or ConsoleContentItemType.Dashboard
             or ConsoleContentItemType.Report
-            or ConsoleContentItemType.GeneratedApp
+            or ConsoleContentItemType.App
+            or ConsoleContentItemType.Dataset
             or ConsoleContentItemType.OpenData => true,
         _ => false,
     };
@@ -81,26 +82,27 @@ internal static class ConsoleEnumParser
     {
         switch (raw)
         {
+            case "dataset":
+            case "Dataset":
+                value = ConsoleContentItemType.Dataset; return true;
             case "service":
             case "Service":
                 value = ConsoleContentItemType.Service; return true;
             case "layer":
             case "Layer":
                 value = ConsoleContentItemType.Layer; return true;
-            case "saved-map":
-            case "SavedMap":
-            case "savedMap":
-                value = ConsoleContentItemType.SavedMap; return true;
+            case "map":
+            case "Map":
+                value = ConsoleContentItemType.Map; return true;
             case "dashboard":
             case "Dashboard":
                 value = ConsoleContentItemType.Dashboard; return true;
             case "report":
             case "Report":
                 value = ConsoleContentItemType.Report; return true;
-            case "generated-app":
-            case "GeneratedApp":
-            case "generatedApp":
-                value = ConsoleContentItemType.GeneratedApp; return true;
+            case "app":
+            case "App":
+                value = ConsoleContentItemType.App; return true;
             case "open-data":
             case "OpenData":
             case "openData":

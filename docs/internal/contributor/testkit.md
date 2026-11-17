@@ -500,7 +500,7 @@ run. If the loader cannot locate a scenario under either root it also raises
 not yet wired (execution engine, publish surface, package composition, deploy
 promotion) report `Skipped` with a reason rather than failing — only `Failed`
 stages break the gate today. `SubmitJob` also degrades to
-`Skipped(redis-unavailable)` when the durable Redis-backed job store is absent,
+`Skipped(job-store-unavailable)` when the durable PostgreSQL job store is absent,
 which keeps local/dev runs honest instead of treating infrastructure gaps as
 contract failures.
 
@@ -572,7 +572,7 @@ pinned to `reportSchemaVersion = "1"` (`EvalReportSchema.Version`) and
 includes:
 
 - `environment` — `corpusSource`, `corpusVersion`, `corpusPath`,
-  `redisAvailable` (derived from observed successful `SubmitJob` stages)
+  `jobStoreAvailable` (derived from observed successful `SubmitJob` stages)
 - `scenarios[]` — id, mode, overall `status`
   (`Passed` / `Failed` / `PassedWithSkips`), per-stage outcomes, protocol parity
   probes, elapsed ms
