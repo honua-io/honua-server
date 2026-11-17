@@ -256,7 +256,13 @@ Stage 3 details:
   successful CI base.
 - Admitted affected runs use two concurrent server shards and run beside PR
   Gate; only a covering full run or their own admission recheck cancels them.
-  Full runs retain width 16.
+  Full runs retain width 16. A selective affected run whose router reason is
+  `no_path_match` does not schedule those default smoke shards: they do not own
+  the diff, and the twice-daily full run keeps them. The same run skips
+  Honua.Core package compatibility when every changed file is docs, a workflow,
+  a `scripts/ci/` file or a test. Any other path, and an empty path list, still runs that heavy job.
+  A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+  Core package or Postgres compatibility job still does.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
@@ -1382,9 +1388,15 @@ router full-coverage escalation, API failure or a larger bound
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
 before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
-Admitted affected runs use two concurrent server shards. All trusted indices
-use the configured `honua-heavy` pool, so a run holds at most two heavy runners;
-side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today. Full server
+Admitted affected runs use two concurrent server shards. A selective run whose
+router reason is `no_path_match` schedules none of those default smoke shards.
+Honua.Core package compatibility, which uses the heavy pool, runs on a selective
+dispatch only when a changed file sits outside docs, workflows, `scripts/ci/` and
+tests. An empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+Core package or Postgres compatibility job still does. All trusted indices
+use the configured `honua-heavy` pool, so a run holds at most two heavy runners
+for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,
+except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full server
 matrices retain their 16-job limit. A single pool prevents admitted hosted shards
 waiting for capacity from exhausting that limit while heavy runners remain idle.
 Full run 43709972683 had 13 waiting hosted shards plus three executing shards at
