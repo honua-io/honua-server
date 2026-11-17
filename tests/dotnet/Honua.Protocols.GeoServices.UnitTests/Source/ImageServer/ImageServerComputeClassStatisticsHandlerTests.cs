@@ -163,7 +163,7 @@ public sealed class ImageServerComputeClassStatisticsHandlerTests
 
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
 
-        // renderingRule is explicitly rejected (NotImplemented). #2795: the GeoServices error body now
+        // renderingRule is explicitly rejected (NotImplemented). The GeoServices error body
         // passes HTTP 501 through as code 501 (distinct from a 500 server fault).
         await AssertGeoServicesErrorAsync(context, result, 501);
     }

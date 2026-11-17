@@ -71,13 +71,13 @@ esac
 
 cases = [
     ("success", ["postgis18", "postgis17", "postgis16", "mysql", "postgres16", "ryuk"], 0, 6),
-    ("retry", ["postgres16"], 0, 2),
-    ("fallback", ["postgis17", "postgres16"], 0, 6),
-    ("exhausted", ["postgres16"], 1, 4),
+    ("retry", ["mysql"], 0, 2),
+    ("fallback", ["postgis17", "mysql"], 0, 6),
+    ("exhausted", ["mysql"], 1, 4),
     ("exhausted", ["ryuk"], 1, 2),
-    ("tag_failure", ["postgres16"], 1, 1),
-    ("inspect_failure", ["postgres16"], 1, 1),
-    ("success", ["postgres16", "unknown"], 2, 0),
+    ("tag_failure", ["mysql"], 1, 1),
+    ("inspect_failure", ["mysql"], 1, 1),
+    ("success", ["mysql", "unknown"], 2, 0),
     ("success", [], 2, 0),
 ]
 with tempfile.TemporaryDirectory(prefix="ci-image-fixtures-") as directory:
@@ -104,7 +104,7 @@ with tempfile.TemporaryDirectory(prefix="ci-image-fixtures-") as directory:
         assert all(line.startswith("timeout 60s docker pull ") for line in calls if line.startswith("timeout "))
         if index == 0:
             assert [line.split()[-1] for line in calls if line.startswith("tag ")] == [
-                "postgis/postgis:18-3.6", "postgis/postgis:17-3.5", "postgis/postgis:16-3.4",
-                "mysql:8.0.36", "postgres:16-alpine"]
+                "postgis/postgis:18-3.6", "postgis/postgis:17-3.5", "postgis/postgis:16-3.4", "mysql:8.0.36",
+                "postgres:16-alpine"]
         print(f"PASS: {mode} {args} (exit {expected}, {pulls} pulls)")
 print("Required-image fixtures: 10 passed, 0 failed")

@@ -143,7 +143,6 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
                 observations.Add(await ObserveLayerAsync(client, baseUrl, postgres, layer));
             }
 
-            // Receipt first: a pre-fix image fails below and must still leave the values it advertised.
             await WriteReceiptAsync(image, observations);
 
             foreach (var observation in observations)

@@ -42,7 +42,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | STAC | `/stac` | STAC browsers, catalog tooling | Catalog discovery and item search with extension metadata |
 | Vector tiles (MVT) + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt`, `/tiles/{layerId}/tile.json` | MapLibre, OpenLayers, Leaflet | Web maps render features client-side |
 | Terrain-RGB + elevation | `/terrain/{datasetId}/…`, `/elevation/{datasetId}/…` | MapLibre `raster-dem`, field apps | Web terrain rendering or numeric elevation lookups |
-| 3D Tiles scenes | `/scenes/{sceneId}/tileset.json` | CesiumJS, 3D Tiles clients | Serving hosted or generated OGC 3D Tiles tilesets |
+| 3D Tiles scenes **(experimental opt-in)** | `/scenes/{sceneId}/tileset.json` | CesiumJS, 3D Tiles clients | Serving hosted or generated OGC 3D Tiles tilesets; enable `Capabilities:Experimental:serve.3d-tiles-scene:Enabled=true` ([all scene switches](../reference/protocols/3d-tiles-and-scenes.md#enable-the-3d-surfaces)) |
 | gRPC (`geospatial.v1`) | port `8081` (h2c), gRPC-Web on `8080` | Honua SDKs, mobile, services | High-throughput programmatic access from SDK clients |
 | MCP | `/mcp` | AI agents | Agents validate, plan, and run geoprocessing via JSON-RPC |
 | PMTiles | `/api/v1/tiles/pmtiles/{artifactId}` | MapLibre, serverless tile hosting | Single-file tile archives served with HTTP range requests |

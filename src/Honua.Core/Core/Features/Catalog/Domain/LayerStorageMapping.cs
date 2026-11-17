@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Catalog.Domain;
@@ -41,6 +42,17 @@ public sealed record LayerStorageMapping(
             return string.Join(".", parts.Where(part => !string.IsNullOrWhiteSpace(part)));
         }
     }
+
+    public FeatureStorageMapping ToFeatureStorageMapping() => new(
+        TableName: TableName,
+        SchemaName: SchemaName,
+        CatalogName: CatalogName,
+        DatabaseName: DatabaseName,
+        PrimaryKeyColumn: PrimaryKeyColumn,
+        GeometryColumn: GeometryColumn,
+        StorageSrid: StorageSrid,
+        TemporalColumn: TemporalColumn,
+        ProviderOptions: ProviderOptions);
 
     public IReadOnlyList<string> Validate()
     {

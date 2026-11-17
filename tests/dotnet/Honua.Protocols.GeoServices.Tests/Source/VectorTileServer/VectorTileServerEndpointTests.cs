@@ -63,7 +63,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         metadata.FullExtent.Should().NotBeNull();
         metadata.InitialExtent.Should().NotBeNull();
 
-        // The extents are in the tiling scheme's spatial reference (#5015). The published
+        // The extents are in the tiling scheme's spatial reference. The published
         // layer's bbox is -123,37 .. -122,38 in EPSG:4326, which is these Web Mercator metres.
         foreach (var extent in new[] { metadata.FullExtent!, metadata.InitialExtent! })
         {
@@ -103,7 +103,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -173,7 +173,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/30/0/0.pbf");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -185,7 +185,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/tile/1/0/0.pbf");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -207,7 +207,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         // Valid Mapbox GL style v8.
         root.GetProperty("version").GetInt32().Should().Be(8);
 
-        // sprite/glyphs are omitted until the sprite/glyph pipeline lands (honua-server#1780).
+        // sprite/glyphs are omitted until the sprite/glyph pipeline lands.
         root.TryGetProperty("sprite", out _).Should().BeFalse();
         root.TryGetProperty("glyphs", out _).Should().BeFalse();
 
@@ -220,7 +220,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         {
             source.Value.GetProperty("type").GetString().Should().Be("vector");
 
-            // The source references the service descriptor (#5534); tiles stay direct.
+            // The source references the service descriptor; tiles stay direct.
             source.Value.GetProperty("url").GetString().Should().EndWith(
                 $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer");
 
@@ -268,7 +268,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
     {
         // Clients discover the layer extent and tile availability from the service descriptor
         // named by the style source's url; a tiles-only source leaves them on the full tiling
-        // scheme extent instead of the dataset fullExtent (#5534).
+        // scheme extent instead of the dataset fullExtent.
         foreach (var stylePath in new[] { "resources/styles", "resources/styles/root.json" })
         {
             var response = await _fixture.Client.GetAsync(
@@ -310,7 +310,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/styles/sprites/sprite.json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -322,7 +322,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/resources/styles");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -434,7 +434,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/2/0/0/4096/4096");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -446,7 +446,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/tilemap/2/0/0/4/4");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -498,7 +498,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/sprites/sprite@3x.png");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -510,7 +510,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/resources/sprites/sprite.json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -535,7 +535,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
     public async Task Issue5535_GlyphRange_ReturnsGlyphsForTheRequestedFontstack()
     {
         // A text symbol labelled "HONUA" requests its fontstack's 0-255 range; the answer must
-        // carry that fontstack and drawable glyphs for every label codepoint (#5535).
+        // carry that fontstack and drawable glyphs for every label codepoint.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/fonts/Arial%20Regular/0-255.pbf");
 
@@ -587,7 +587,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/fonts/No%20Such%20Font%20Regular/0-255.pbf");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -604,7 +604,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/resources/fonts/Honua%20Default/99-1234.pbf");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -616,7 +616,7 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/does-not-exist/VectorTileServer/resources/fonts/Honua%20Default/0-255.pbf");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 

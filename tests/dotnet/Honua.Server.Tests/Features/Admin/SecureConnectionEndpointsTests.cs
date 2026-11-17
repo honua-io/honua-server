@@ -967,7 +967,7 @@ public partial class SecureConnectionEndpointsTests : IClassFixture<SecureConnec
         Assert.False(apiResponse.Success);
     }
 
-    // ---- #354 governance: host allowlist enforcement ----
+    // ---- Governance: host allowlist enforcement ----
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/connections")]
@@ -1126,7 +1126,7 @@ public partial class SecureConnectionEndpointsTests : IClassFixture<SecureConnec
         }
     }
 
-    // ---- #354 governance: connection audit trail ----
+    // ---- Governance: connection audit trail ----
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/connections")]

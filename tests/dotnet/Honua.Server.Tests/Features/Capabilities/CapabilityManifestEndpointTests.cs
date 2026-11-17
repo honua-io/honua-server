@@ -536,10 +536,10 @@ public sealed partial class CapabilityManifestEndpointTests
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_AdvertisesRolledUpContractVersionsForProtocolSurfaces()
     {
-        // honua-release#32 / ADR-0058: the GeoServices/OGC/STAC surfaces must advertise a
-        // real rolled-up wire-contract version (instead of nothing, which the platform
-        // manifest was pinning at v0). The version is owned by the protocol assembly that
-        // owns the surface, projected onto the manifest transport entry.
+        // ADR-0058: the GeoServices/OGC/STAC surfaces must advertise a real rolled-up
+        // wire-contract version (instead of nothing). The version is owned by the
+        // protocol assembly that owns the surface, projected onto the manifest transport
+        // entry.
         using var response = await _anonymousClient.GetAsync("/api/v1/capabilities/manifest");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1115,7 +1115,7 @@ public sealed partial class CapabilityManifestEndpointTests
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_RegistryDerived_MatchesHandCuratedComposition()
     {
-        // #2335 (B3) golden before/after: the registry-derived composition
+        // Golden comparison: the registry-derived composition
         // (Capabilities:ManifestFromRegistry=true) must serialize a byte-identical
         // Capabilities[] and Packages.Families[] to the legacy hand-curated path while
         // every descriptor stays Implemented, proving entitlement/availability

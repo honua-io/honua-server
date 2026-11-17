@@ -44,7 +44,7 @@ public sealed class GeocodeServerParityMatrixTests
         {
             // Structured-capable providers advertise the same canonical structured fields so callers
             // see consistent structured-input fidelity across providers (Azure/Amazon match
-            // Nominatim, #2149).
+            // Nominatim).
             Assert.Equal(GeocodeStructuredFields.All(), capabilities.SupportedStructuredFields);
         }
     }

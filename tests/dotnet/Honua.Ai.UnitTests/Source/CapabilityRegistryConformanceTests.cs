@@ -33,9 +33,9 @@ public sealed class CapabilityRegistryConformanceTests
 {
     private static readonly CapabilityRegistry Registry = new();
 
-    // The #1186 capability roster, sourced from
+    // The capability roster, sourced from
     // CapabilityManifestService.BuildCapabilities (honua.capability_manifest.v1).
-    // The #1186 service cannot be constructed from a unit test (its options
+    // That service cannot be constructed from a unit test (its options
     // snapshot bundles internal option types in Honua.Hosting/Honua.Import that
     // are not visible here), so this roster is pinned here like the taxonomy
     // roster in McpTaxonomyAlignmentTests. Adding a capability to
@@ -149,7 +149,7 @@ public sealed class CapabilityRegistryConformanceTests
             {
                 descriptor.RequiresOptIn.Should().BeTrue(
                     "Internal and all other Preview and Experimental capabilities retain their opt-in gate");
-                // Since the #2346 T10 flip, experimental capabilities resolve disabled in the
+                // Experimental capabilities resolve disabled in the
                 // default context (no experimental flags set) with the dedicated reason code.
                 resolution.Enabled.Should().BeFalse(
                     $"opt-in capability '{descriptor.Id}' is off by default");

@@ -32,7 +32,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime, IClassFixture
     private static readonly long[] AllGeometryBearingIds = [1, 2, 4, 5];
 
     // -122.6,37.4,-122.0,37.9 keeps 1 and 5 and drops 2 (x < -122.6) and
-    // 4 (x > -122.0), so a bbox that is parsed and then ignored fails (#4393).
+    // 4 (x > -122.0), so a bbox that is parsed and then ignored fails.
     private const string ExcludingBbox = "-122.6,37.4,-122.0,37.9";
     private static readonly long[] ExcludingBboxIds = [1, 5];
     private static readonly long[] ExcludedByBboxIds = [2, 4];
@@ -305,8 +305,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime, IClassFixture
 
         itemLinkTypes.Should().Contain("application/geo+json");
         itemLinkTypes.Should().Contain("application/json");
-        // GML 3.2 media type carries the IANA-canonical spaced form ("...; version=3.2")
-        // since #2418 (PA-169); the link type mirrors MediaTypes.Gml.
+        // GML 3.2 media type carries the IANA-canonical spaced form ("...; version=3.2");
+        // the link type mirrors MediaTypes.Gml.
         itemLinkTypes.Should().Contain("application/gml+xml; version=3.2");
         itemLinkTypes.Should().Contain("text/html");
 
@@ -487,7 +487,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime, IClassFixture
 
         // The proof: a bbox that excludes geometry-bearing features by position. The
         // previous worldwide-only assertion passed on a bbox that was parsed and then
-        // discarded (#4393).
+        // discarded.
         using var restricted = await GetItemsAsync($"bbox={ExcludingBbox}");
         var ids = FeatureIds(restricted.RootElement);
         ids.Should().Equal(ExcludingBboxIds);
@@ -529,14 +529,14 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime, IClassFixture
         // Arrange - 3D bbox (minx, miny, minz, maxx, maxy, maxz). A 6-element bbox is
         // spec-legal per OGC API Features Part 1; this 2D feature surface ignores the
         // vertical (minZ/maxZ) component and filters on the horizontal extent instead of
-        // rejecting the request, so 3D-aware OGC/ArcGIS clients are not refused (#1987).
+        // rejecting the request, so 3D-aware OGC/ArcGIS clients are not refused.
         using var worldwide = await GetItemsAsync("bbox=-180,-90,-10,180,90,10");
         worldwide.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
         FeatureIds(worldwide.RootElement).Should().Equal(AllGeometryBearingIds);
 
         // "uses the horizontal extent" is now asserted rather than asserted-by-name:
         // the same horizontal envelope that excludes 2 and 4 in 2D must exclude them
-        // in 6-element form, while the vertical component is ignored (#4393).
+        // in 6-element form, while the vertical component is ignored.
         var parts = ExcludingBbox.Split(',');
         using var restricted = await GetItemsAsync(
             $"bbox={parts[0]},{parts[1]},-10,{parts[2]},{parts[3]},10");
@@ -595,7 +595,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime, IClassFixture
         // Narrow the eastern bound to -122.4 so the wrapped envelope becomes
         // x >= 170 OR x <= -122.4: that keeps 1 (-122.5) and 2 (-122.7) and drops
         // 5 (-122.3) and 4 (-121.9). NotBeEmpty alone did not prove the bound was
-        // applied at all (#4393).
+        // applied at all.
         using var narrow = await GetItemsAsync("bbox=170,-90,-122.4,90");
         FeatureIds(narrow.RootElement).Should().Equal(1L, 2L);
     }
@@ -1237,7 +1237,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime, IClassFixture
 
         // Layer 0 has TimeInfo {start: timestamp, end: event_date}, so the
         // datetime filter applies interval-intersection semantics shared with
-        // GeoServices REST query?time= (see #379 docs/temporal-animation-api.md):
+        // GeoServices REST query?time= (see docs/temporal-animation-api.md):
         // a row matches when its [timestamp, COALESCE(event_date, timestamp)]
         // interval overlaps [2023-01-01, 2023-01-10]. F1 (2023-01-02 → 2024-01-01),
         // F2 (2023-01-05 → 2024-06-15), and F4 (2022-12-31 → 2024-10-15) all
@@ -1285,10 +1285,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime, IClassFixture
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithCql2TextTemporalOnUndefinedField_Returns400()
     {
-        // Regression: T_BEFORE against an undefined queryable (e.g. "updated_at"
-        // on a layer that does not expose it) previously emitted a bare column
-        // reference that failed at the database and surfaced as a 500. It must be
-        // a client error (400) instead, with no parser/syntax detail leaked.
+        // T_BEFORE on an undefined queryable such as updated_at must return 400
+        // without exposing parser or SQL syntax details.
         var filter = Uri.EscapeDataString("T_BEFORE(updated_at, TIMESTAMP('2024-12-31T23:59:59Z'))");
 
         var response = await _fixture.Client.GetAsync(

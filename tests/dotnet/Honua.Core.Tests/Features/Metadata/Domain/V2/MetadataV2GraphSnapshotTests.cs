@@ -550,7 +550,7 @@ public sealed class MetadataV2GraphSnapshotTests
         };
     }
 
-    // ---- Aliased-publication storage handle resolution (SEC-4) -----------
+    // ---- Aliased-publication storage handle resolution -----------
 
     [UnitTest]
     [Operation(Operations.Metadata)]

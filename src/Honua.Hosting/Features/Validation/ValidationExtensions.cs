@@ -7,23 +7,15 @@ namespace Honua.Infrastructure.Validation;
 
 public static class ValidationExtensions
 {
-    internal const string WfsGmlIdentifierAttributeName = "__honua_wfs_gml_identifier";
-    internal const string WfsGmlIdentifierCodeSpaceAttributeName = "__honua_wfs_gml_identifier_codespace";
-    internal const string WfsGmlNameAttributeName = "__honua_wfs_gml_name";
-    internal const string WfsGmlDescriptionAttributeName = "__honua_wfs_gml_description";
+    internal const string WfsGmlIdentifierAttributeName = Honua.Core.Features.Edit.FeatureMutationAttributes.WfsGmlIdentifierAttributeName;
+    internal const string WfsGmlIdentifierCodeSpaceAttributeName = Honua.Core.Features.Edit.FeatureMutationAttributes.WfsGmlIdentifierCodeSpaceAttributeName;
+    internal const string WfsGmlNameAttributeName = Honua.Core.Features.Edit.FeatureMutationAttributes.WfsGmlNameAttributeName;
+    internal const string WfsGmlDescriptionAttributeName = Honua.Core.Features.Edit.FeatureMutationAttributes.WfsGmlDescriptionAttributeName;
 
     public enum AttributeValidationMode
     {
         Strict,
         GeoServices
-    }
-
-    internal static bool IsReservedMutationAttribute(string attributeName)
-    {
-        return attributeName.Equals(WfsGmlIdentifierAttributeName, StringComparison.Ordinal) ||
-               attributeName.Equals(WfsGmlIdentifierCodeSpaceAttributeName, StringComparison.Ordinal) ||
-               attributeName.Equals(WfsGmlNameAttributeName, StringComparison.Ordinal) ||
-               attributeName.Equals(WfsGmlDescriptionAttributeName, StringComparison.Ordinal);
     }
 
     public static ValidationResult<string> ValidateSpatialRelationship(string? spatialRel)

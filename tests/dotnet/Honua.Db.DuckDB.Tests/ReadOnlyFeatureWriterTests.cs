@@ -17,7 +17,7 @@ public class ReadOnlyFeatureWriterTests
         var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty);
         // The writer throws the specific ReadOnlyFeatureWriteException (a NotSupportedException)
         // so FeatureServerEditsHandler can prove a rejected write never partially committed and
-        // release its idempotency reservation. xUnit matches the exact type (#3052).
+        // release its idempotency reservation. xUnit matches the exact type.
         await Assert.ThrowsAsync<ReadOnlyFeatureWriteException>(() =>
             _writer.CreateAsync(0, feature));
     }

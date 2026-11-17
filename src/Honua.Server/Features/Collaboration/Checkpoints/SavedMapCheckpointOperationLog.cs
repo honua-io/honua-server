@@ -18,7 +18,7 @@ internal sealed class SavedMapCheckpointOperationLog
         _topology = topology ?? throw new ArgumentNullException(nameof(topology));
     }
 
-    // A replay is not authoritative when the deployment is multi-replica and the log is process-local; a single instance is authoritative even when Redis is present.
+    // A replay is not authoritative when the deployment is multi-replica and the log is process-local; a single instance is authoritative with its process-local log.
     public bool CanProveReplayContinuity =>
         !_topology.IsMultiReplica || _repository.SupportsReplicaSharedReplay;
 

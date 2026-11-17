@@ -129,7 +129,7 @@ public sealed class CompatCompileBindingAndAccessPolicyTests : IAsyncLifetime
         using var document = JsonDocument.Parse(snapshot);
         var root = document.RootElement;
 
-        // honua-server#1345 — the compiled service for a non-anonymous service must
+        // The compiled service for a non-anonymous service must
         // NOT be anonymous. A regression (drop to allowAnonymous=true) would let an
         // unauthenticated client read a protected service.
         var protectedService = root.GetProperty("services")
@@ -156,7 +156,7 @@ public sealed class CompatCompileBindingAndAccessPolicyTests : IAsyncLifetime
                 .Should().BeFalse("protected layer resources must stay non-anonymous after compile (#1345)");
         }
 
-        // honua-server#1312 — shared-`features` storage bindings must carry the
+        // Shared-`features` storage bindings must carry the
         // discriminator + geometry + attributes columns so reads are constrained
         // to a single layer and geometry resolves.
         var sharedBindings = root.GetProperty("storageBindings")
@@ -175,7 +175,7 @@ public sealed class CompatCompileBindingAndAccessPolicyTests : IAsyncLifetime
             options.GetProperty("attributesColumn").GetString().Should().Be("attributes");
         }
 
-        // honua-server#2638 — the ImageServer sidecar must retain the source layer's
+        // The ImageServer sidecar must retain the source layer's
         // integer storage handle. Without it, service discovery succeeds but ImageServer
         // resolution fails with "ImageServer is not enabled".
         var imageBindings = root.GetProperty("storageBindings")

@@ -1210,7 +1210,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
                 if (binary.Operator is Honua.Core.Queries.Filters.BinaryOperator.Or)
                 {
-                    return false;
+                    return TryCollectAlternativeLayerIds(binary, layerIds);
                 }
 
                 if (binary.Operator is Honua.Core.Queries.Filters.BinaryOperator.Equal)
@@ -1233,6 +1233,23 @@ internal sealed partial class ODataStreamingQueryHandler(
             default:
                 return true;
         }
+    }
+
+    private static bool TryCollectAlternativeLayerIds(
+        Honua.Core.Queries.Filters.BinaryExpression expression,
+        HashSet<int> layerIds)
+    {
+        var leftLayerIds = new HashSet<int>();
+        var rightLayerIds = new HashSet<int>();
+        if (!TryCollectLayerIds(expression.Left, leftLayerIds) ||
+            !TryCollectLayerIds(expression.Right, rightLayerIds) ||
+            !leftLayerIds.SetEquals(rightLayerIds))
+        {
+            return false;
+        }
+
+        layerIds.UnionWith(leftLayerIds);
+        return true;
     }
 
     private static bool TryExtractLayerId(

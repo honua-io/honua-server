@@ -110,7 +110,6 @@ public sealed class PostgresMetadataV2GraphCacheTests(PostgresFixture fixture, I
             // Instance A publishes a new service.
             await storeA.SaveAsync(BuildGraph(revision: 2, serviceCount: 2), expectedEtag: initial.Etag);
 
-            // Without the probe (the pre-fix behaviour) B keeps serving its stale snapshot.
             var unprobed = new CachingMetadataV2GraphProvider(StoreFor(cacheB), cacheB, Environment);
             (await unprobed.GetCurrentAsync()).FindService("Service 1").Should().BeNull();
 

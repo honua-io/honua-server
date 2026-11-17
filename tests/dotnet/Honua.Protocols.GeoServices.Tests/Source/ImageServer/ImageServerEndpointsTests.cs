@@ -252,7 +252,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     private static IRasterStore CreateRpcRasterStoreSubstitute()
     {
         // A raster carrying an offset/scale RPC sensor model so the image-CS transformation warp
-        // (#1881/#2840) has an image<->ground mapping to apply: image (0,0) -> ground (-120, 35).
+        // has an image<->ground mapping to apply: image (0,0) -> ground (-120, 35).
         var store = CreateRasterStoreSubstitute();
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>
@@ -786,10 +786,9 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Endpoint("GET /rest/services/{id}/ImageServer")]
     public async Task ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex()
     {
-        // #4065: the service route resolves the aliased publication (layerIndex 41) to its storage
-        // layer (TestLayerId). A second service publishes a DIFFERENT storage layer under
-        // layerIndex == TestLayerId. Handlers used to re-resolve the storage id as a LayerIndex, so
-        // they either 404'd or answered with the colliding publication's name.
+        // Resolve aliased layerIndex 41 to TestLayerId exactly once. Another service
+        // publishes a different storage layer under layerIndex == TestLayerId to expose
+        // any accidental re-resolution of the storage ID as a publication index.
         const int aliasedLayerIndex = 41;
         const int collidingStorageLayerId = 7;
         const string serviceId = "aliased-image";
@@ -1905,7 +1904,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     public async Task Find_WithOrientationMetadata_RanksByOffNadirAngle()
     {
         // Three overlapping rasters (200/100/300) carry off-nadir angles 30/5/18 degrees. The
-        // most nadir image (id 100, 5 deg) must rank first regardless of footprint distance (#1880).
+        // most nadir image (id 100, 5 deg) must rank first regardless of footprint distance.
         var store = CreateMultiRasterStoreSubstitute();
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>
@@ -2049,8 +2048,8 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Distance)]
     public async Task Measure_DistanceAndAngle_GeographicDegrees_ReturnsGroundMeters()
     {
-        // EPSG:4269 (NAD83) 1° of longitude at 40°N. The pre-fix planar path returned the raw
-        // degree delta (~1.0) as "meters"; the ground distance is ~85 km (#2734).
+        // EPSG:4269 (NAD83) 1° of longitude at 40°N. A planar path would return the raw
+        // degree delta (~1.0) as "meters"; the ground distance is ~85 km.
         var fixture = _defaultHost.Application;
         const string fromGeometry = """{"x":0,"y":40,"spatialReference":{"wkid":4269}}""";
         const string toGeometry = """{"x":1,"y":40,"spatialReference":{"wkid":4269}}""";
@@ -2074,7 +2073,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     {
         // A ~2°x1° polygon straddling the antimeridian (179°E .. -179°E) in WGS 84. Without
         // longitude unwrapping this projects to a ~358°-wide polygon (area ~1e14 m²); unwrapping
-        // keeps it a small finite quadrangle of a few 1e10 m² (#2734).
+        // keeps it a small finite quadrangle of a few 1e10 m².
         var fixture = _defaultHost.Application;
         const string polygon = """{"rings":[[[179,0],[-179,0],[-179,1],[179,1],[179,0]]],"spatialReference":{"wkid":4326}}""";
         var response = await fixture.Client.GetAsync(
@@ -2095,7 +2094,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Distance)]
     public async Task Measure_DistanceAndAngle_WebMercatorAtHighLatitude_ReturnsGroundDistance()
     {
-        // #2734: a 3857 (Web Mercator) segment must be measured as TRUE GROUND distance, not the
+        // A 3857 (Web Mercator) segment must be measured as TRUE GROUND distance, not the
         // planar map-unit length. The two points are lon 0° and lon 1° at lat 60°N, expressed in
         // Web-Mercator meters (y = 8399737.89 is the Mercator ordinate of 60°N; x = 111319.49 is
         // the Mercator abscissa of lon 1°). The WGS84 ellipsoidal ground distance between them is
@@ -2125,7 +2124,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Distance)]
     public async Task Measure_DistanceAndAngle_GeographicAzimuth_UsesEllipsoidalBearing()
     {
-        // #2734: azimuth for geographic inputs must include cos(lat) longitude scaling. From
+        // Azimuth for geographic inputs must include cos(lat) longitude scaling. From
         // (lon 0, lat 60°N) to (lon 1, lat 61°N) the WGS84 initial bearing is 25.819476°
         // (independent PROJ geodesic reference), consistent with the
         // geodesic distance in the same response. The buggy planar atan2(dLon, dLat) reported
@@ -2154,7 +2153,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Distance)]
     public async Task Measure_Centroid_AntimeridianRing_LandsOnCorrectSide()
     {
-        // #2734: the area-weighted centroid of the dateline-straddling [179,181]x[0,1] ring is at
+        // The area-weighted centroid of the dateline-straddling [179,181]x[0,1] ring is at
         // lon ±180°, lat 0.5°. The buggy vertex mean of (179, -179, -179, 179) collapses to lon 0°
         // — the opposite side of the globe.
         var fixture = _defaultHost.Application;
@@ -2196,7 +2195,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     public async Task Measure_HeightOperation_WithDemMetadata_ReturnsDifferencedHeight()
     {
         // The raster carries a DEM source; the elevation service returns 50m at the base point
-        // and 130m at the top point, so the measured height is 80m (#1879).
+        // and 130m at the top point, so the measured height is 80m.
         var store = CreateRasterStoreSubstitute();
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>
@@ -2294,7 +2293,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            // #2795: not-implemented operations now surface body error.code 501 (pass-through) instead
+            // Not-implemented operations now surface body error.code 501 (pass-through) instead
             // of collapsing to 500, so clients can distinguish "unsupported" from a server fault.
             await response.AssertGeoServicesErrorAsync(501);
         }
@@ -2313,7 +2312,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     {
         // The raster models a 45° sun elevation. The two points are ~5 ground-meters apart (a 3-4-5
         // triangle near the Web Mercator origin), so the shadow-height h = shadowLength · tan(45°)
-        // ≈ shadowLength ≈ 5 m. Both shadow operations use the same formula (ADR-0065, #2667).
+        // ≈ shadowLength ≈ 5 m. Both shadow operations use the same formula (ADR-0065).
         var store = CreateRasterStoreSubstitute();
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata>
@@ -2713,9 +2712,9 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task BandIds_ZeroBasedOnStatisticsHistogramsAndExportImage_AddressTheSameBand()
     {
-        // #4068: exportImage bandIds is 0-based (Esri). computeStatisticsHistograms and
-        // computeHistograms used to reject bandIds=0 and read bandIds=1 as a different band. The
-        // same selection must now reach the raster store as the same 1-based band on all three.
+        // ExportImage, computeStatisticsHistograms, and computeHistograms use Esri
+        // zero-based bandIds; the same selection must reach the raster store as
+        // the same one-based band on all three paths.
         var store = CreateRasterStoreSubstitute(bandCount: 3);
         RasterQuery? exportQuery = null;
         store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
@@ -2946,7 +2945,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/getSamples?f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -3178,7 +3177,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Project)]
     public async Task Project_WithImageCoordinateSystemTransformation_AndRpcMetadata_WarpsImageToMap()
     {
-        // A raster carrying RPC metadata supports the image-coordinate-system warp (#1881):
+        // A raster carrying RPC metadata supports the image-coordinate-system warp:
         // image (sample, line) coordinates map to ground (lon/lat) and then to outSR.
         var store = CreateRasterStoreSubstitute();
         store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
@@ -3226,7 +3225,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Project)]
     public async Task Project_WithImageCoordinateSystemTransformation_ComposesWarpWithReprojectionAndDiffersFromNoTransformation()
     {
-        // #2840 round trip: the image-CS warp (image sample/line -> WGS84 ground) is composed with
+        // Round trip: the image-CS warp (image sample/line -> WGS84 ground) is composed with
         // the ground -> outSR reprojection. Requesting the transformation must move the geometry to
         // the warped/reprojected location, which differs from the untransformed reprojection of the
         // same input coordinate.
@@ -3273,7 +3272,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Project)]
     public async Task Project_WithImageCoordinateSystemTransformation_AndUnsupportedDatumTransformation_Returns400()
     {
-        // #2840: when the image-CS warp is composed with an unsupported datumTransformation for the
+        // When the image-CS warp is composed with an unsupported datumTransformation for the
         // ground(4326) -> outSR leg, the request is rejected with a precise 400 rather than silently
         // dropping the requested transformation. WKID 108001 does not connect 4326 -> 3857.
         var store = CreateRpcRasterStoreSubstitute();
@@ -3480,7 +3479,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
         try
         {
-            // Compact Cache V2 / TPKX now negotiates the durable async path (#2707) rather than the
+            // Compact Cache V2 / TPKX now negotiates the durable async path rather than the
             // old "unsupported" rejection: a single-level request is instead rejected by the TPKX
             // validation, which requires at least two zoom levels.
             var query = "f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=compact";
@@ -3623,7 +3622,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         layers.GetArrayLength().Should().BeGreaterThan(0);
     }
 
-    // Regression for #1900: the ArcGIS API for Python ImageryLayer.legend() (and the JS API)
+    // The ArcGIS API for Python ImageryLayer.legend() (and the JS API)
     // POST to /legend. The POST mirror must return the same payload as GET.
     [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/legend")]
@@ -3647,7 +3646,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         layers.GetArrayLength().Should().BeGreaterThan(0);
     }
 
-    // #1900: a renderingRule supplied in the POST body must drive the legend just like the
+    // A renderingRule supplied in the POST body must drive the legend just like the
     // GET query parameter does.
     [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/legend")]
@@ -3836,10 +3835,9 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // Regression coverage for #1445: the /slices route was unmapped and returned 404
-    // (GET and POST) for a hasMultidimensions:true service. The route is now mapped and
-    // returns the Esri slices document; with no enumerable multidimensional coverage it
-    // honestly returns a spec-shaped { "slices": [] } rather than 404.
+    // For a hasMultidimensions:true service the /slices route must be mapped (GET and
+    // POST) and return the Esri slices document, not 404; with no enumerable
+    // multidimensional coverage it honestly returns a spec-shaped { "slices": [] }.
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/slices")]
     [Endpoint("POST /rest/services/{id}/ImageServer/slices")]
@@ -3886,12 +3884,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.GetServiceInfo)]
     public async Task ConfJson_ReturnsServiceDescriptor_InGeoServicesRuntimeCompatibleShape()
     {
-        // Regression for #1456: the ArcGIS Maps SDK for .NET ImageServiceRaster
+        // The ArcGIS Maps SDK for .NET ImageServiceRaster
         // unconditionally fetches conf.json while loading and parses it strictly.
         // conf.json must return the service descriptor (like a real Esri ImageServer),
         // and that descriptor must use the Esri wire shape the native parser accepts:
         // allowedMosaicMethods as a comma-separated STRING (not an array) and no
-        // tile-cache storageInfo for a dynamic service. Any of these tripped
+        // tile-cache storageInfo for a dynamic service. Any of these trips
         // LoadAsync with "could not read configuration data" / "Invalid configuration file".
         var fixture = _defaultHost.Application;
         var response = await fixture.Client.GetAsync(

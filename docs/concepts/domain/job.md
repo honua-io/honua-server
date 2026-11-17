@@ -23,7 +23,7 @@ A job is an execution record for accepted work. It has an identifier and status;
 
 An import job and a geoprocessing job have their own contracts. A [task](task.md) definition can be executed many times, so its name is not a job identifier. A retry attempt is also not permission to create duplicate final outputs.
 
-Durable imports use shared state so their outcome survives an accepting server restart. Availability depends on the actual [deployment](deployment.md), Redis, and compatible runners. A terminal result reference must point to retained [storage](storage.md); an ephemeral worker file is insufficient.
+Durable imports use shared state so their outcome survives an accepting server restart. Availability depends on the actual [deployment](deployment.md), the shared system PostgreSQL database, and compatible runners. A terminal result reference must point to retained [storage](storage.md); an ephemeral worker file is insufficient.
 
 Use [recover a job](../../guides/workflows/recover-job.md). Cancellation requests must be followed to a terminal outcome. Avoid blind resubmission when the previous outcome is unknown.
 

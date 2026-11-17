@@ -90,7 +90,6 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 ComposeFile = "compose.yaml",
                 ServiceName = "honua",
                 PostgresService = "postgres",
-                RedisService = string.Empty,
                 DatabaseName = "honua",
                 DatabaseUser = "honua",
                 BackupDirectory = backupDir,

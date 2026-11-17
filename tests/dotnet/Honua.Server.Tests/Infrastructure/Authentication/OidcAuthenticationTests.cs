@@ -673,16 +673,16 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/version")]
     public async Task AdminEndpoint_MtlsCapabilityDisabled_ValidBearerToken_ReturnsCleanOk()
     {
-        // honua-server#2958: native mTLS/client-certificate authentication is demoted to
+        // Native mTLS/client-certificate authentication is demoted to
         // experimental and gated behind Capabilities:Experimental:security.mtls:Enabled
         // (default off). Even when an operator has configured
         // Authentication:ClientCertificates:Mode (here RequiredForAdmin, which — before
-        // #2958 — made the always-on cert-RBAC layer interpose on every admin request
+        // Made the always-on cert-RBAC layer interpose on every admin request
         // regardless of bearer-token validity) but has NOT opted into the experimental
         // capability, the client-certificate scheme/policy-scheme entry/enforcement
         // middleware must not be registered at all, so a valid bearer-token admin request
         // is authenticated by the bearer scheme alone with a clean 200 — no interposed
-        // cert-RBAC 403 (the concrete failure #2945's OIDC hardening work surfaced).
+        // cert-RBAC 403 (the concrete OIDC hardening failure).
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
         {
             // The ambient "Test" environment (appsettings.Test.json) turns every
@@ -1156,7 +1156,7 @@ public class OidcAuthenticationTests
     [Endpoint("POST /mcp")]
     public async Task AdminEndpoint_OidcEnabled_ReusedBearerToken_IsAdmittedWithinLifetimeButReplaysOnMcpWhenReplayProtectionEnabled()
     {
-        // honua-server#4899: replay protection must not make an ordinary access token
+        // Replay protection must not make an ordinary access token
         // single-use. The token stays reusable on the HTTP API it was first admitted on,
         // and presenting it to another surface (the MCP transport) is still a replay.
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
@@ -1533,7 +1533,7 @@ public class OidcAuthenticationTests
         var logger = new TestLogger<OidcClaimsTransformation>();
         var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
-        // The API-key handler marks the auth_type it mints as framework-owned (SEC-10).
+        // The API-key handler marks the auth_type it mints as framework-owned.
         var claims = new List<Claim>
         {
             new(ClaimTypes.Name, "admin"),
@@ -1970,7 +1970,7 @@ public class OidcAuthenticationTests
 
         // Assert - Should require authentication by default. FeatureServer is a GeoServices
         // REST path, so an auth failure is emitted as the Esri contract: HTTP 200 +
-        // {"error":{"code":401|499}} (#2418, PA-167). The helper still fails on a
+        // {"error":{"code":401|499}}. The helper still fails on a
         // success-shaped body, so it keeps catching a real "unauthenticated read allowed" leak.
         await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
         _output.WriteLine($"FeatureServer response requires auth: {response.StatusCode}");

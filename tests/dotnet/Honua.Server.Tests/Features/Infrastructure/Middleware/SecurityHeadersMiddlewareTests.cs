@@ -143,7 +143,7 @@ public class SecurityHeadersMiddlewareTests
     public async Task UseHonuaSecurityHeaders_IsExposedForIntegration()
     {
         // Arrange - sanity check that the audit-fix extension method is reachable.
-        // The integration agent (#1144) will call this; we assert it compiles and
+        // The integration agent will call this; we assert it compiles and
         // returns the same builder for chaining.
         var services = new ServiceCollection();
         services.AddLogging();

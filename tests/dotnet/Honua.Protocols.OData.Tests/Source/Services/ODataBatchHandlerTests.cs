@@ -290,7 +290,7 @@ public sealed class ODataBatchHandlerTests
         queryCount.Value.Should().Be(0);
     }
 
-    // SEC-5: declared publication edit capabilities are an editing contract on $batch too.
+    // declared publication edit capabilities are an editing contract on $batch too.
     public static TheoryData<string> BatchMutationMethods() => new() { "POST", "PATCH", "DELETE" };
 
     [UnitTheory]

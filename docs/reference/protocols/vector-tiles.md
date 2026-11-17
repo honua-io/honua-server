@@ -59,7 +59,7 @@ to local physical files or independent cloud-provider qualification.
 
 ## Examples
 
-> Open `https://server.example.com/tiles/0/tile.json`, `https://server.example.com/tiles/0/12/655/1586.mvt?where=status%3D` in a browser.
+> Open `https://server.example.com/tiles/0/tile.json`, `https://server.example.com/tiles/0/12/655/1586.mvt?where=status%3D%27open%27` in a browser.
 
 > Open `https://server.example.com/tiles/0/h3/8/40/98.mvt?resolution=7` in a browser.
 
