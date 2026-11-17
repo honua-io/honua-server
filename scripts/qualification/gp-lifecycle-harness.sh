@@ -1136,12 +1136,14 @@ run_disruption() {
 
 run_poison_job() {
   local scenario=poison-job poison="poison-$(date +%s%N)" job terminal digest
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:pending 0 "${poison}" >/dev/null
-  job="$(submit_async)" || { write_receipt "${scenario}" fail "valid submission failed"; return 1; }
+  compose stop worker >/dev/null
+  job="$(submit_async)" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "valid submission failed"; return 1; }
+  insert_poison_job "${poison}" "${job}" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "poison row could not be queued ahead of the valid job" "${job}"; return 1; }
+  compose start worker >/dev/null
   terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: poison blocked queue progress" "${job}"; return 1; }
   digest="$(result_digest "${job}" 2>/dev/null || true)"
   [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: poison affected valid job" "${job}"; return 1; }
-  [[ -z "$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "${poison}")" ]] || { write_receipt "${scenario}" fail "FINDING: poison was not removed" "${job}"; return 1; }
+  [[ -z "$(job_queue_position "${poison}" pending)" ]] || { write_receipt "${scenario}" fail "FINDING: poison was not removed" "${job}"; return 1; }
   write_receipt "${scenario}" pass "" "${job}" successful "${digest}"
 }
 
@@ -1161,7 +1163,7 @@ run_backlog() {
   local scenario=queue-backlog count="${HONUA_GP_BACKLOG_JOBS:-20}" depth job terminal digest; local -a jobs=()
   compose stop worker >/dev/null
   for ((i=0;i<count;i++)); do jobs+=("$(submit_async gdal.ogr2ogr "${native_payload}")") || { compose start worker >/dev/null; return 1; }; done
-  depth="$(compose exec -T redis redis-cli --raw ZCARD controlplane:jobqueue:pending)"; compose start worker >/dev/null
+  depth="$(pending_queue_depth)"; compose start worker >/dev/null
   (( depth >= count )) || { write_receipt "${scenario}" fail "FINDING: expected backlog ${count}, saw ${depth}"; return 1; }
   for job in "${jobs[@]}"; do terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: backlog did not drain" "${job}"; return 1; }; digest="$(result_digest "${job}" 2>/dev/null || true)"; [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: backlog output missing" "${job}"; return 1; }; done
   write_receipt "${scenario}" pass "peak_depth=${depth};submitted=${count}" "${job}" successful "${digest}"
@@ -1170,19 +1172,18 @@ run_backlog() {
 run_ttl_cleanup() {
   local scenario=ttl-cleanup job
   job="$(submit_async)"; wait_terminal "${job}" >/dev/null || return 1; result_digest "${job}" >/dev/null || return 1
-  compose exec -T redis redis-cli PEXPIRE "controlplane:job:${job}" 250 >/dev/null; sleep 1
-  [[ "$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:${job}")" == 0 ]] || { write_receipt "${scenario}" fail "FINDING: expired record remains" "${job}"; return 1; }
+  expire_terminal_job "${job}" || { write_receipt "${scenario}" fail "terminal job could not be expired" "${job}"; return 1; }
+  local deadline=$((SECONDS + 60))
+  while job_row_exists "${job}" && (( SECONDS < deadline )); do sleep 1; done
+  ! job_row_exists "${job}" || { write_receipt "${scenario}" fail "FINDING: expired record remains" "${job}"; return 1; }
   write_receipt "${scenario}" pass "" "${job}" expired
 }
 
 run_retry_exhaustion() {
-  local scenario=retry-exhaustion job record terminal state
+  local scenario=retry-exhaustion job terminal state
   compose stop worker >/dev/null; job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; return 1; }
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:${job}")"
-  record="$(jq -c '.retryPolicy.maxAttempts=1 | .attemptCount=1 | .status="running" | .claimedBy="dead-worker" | .claimedAt="2000-01-01T00:00:00+00:00" | .lastHeartbeatAt="2000-01-01T00:00:00+00:00"' <<<"${record}")"
-  printf '%s' "${record}" | compose exec -T redis redis-cli -x SET "controlplane:job:${job}" KEEPTTL >/dev/null
-  compose exec -T redis redis-cli ZREM controlplane:jobqueue:pending "${job}" >/dev/null
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:claimed 0 "${job}" >/dev/null; compose start worker >/dev/null
+  strand_exhausted_claim "${job}" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "queued job could not be stranded" "${job}"; return 1; }
+  compose start worker >/dev/null
   terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: exhausted retry never terminated" "${job}"; return 1; }
   state="$(jq -r .status <<<"${terminal}")"; [[ "${state}" == failed ]] || { write_receipt "${scenario}" fail "FINDING: exhausted retry executed again" "${job}" "${state}"; return 1; }
   write_receipt "${scenario}" pass "" "${job}" "${state}"

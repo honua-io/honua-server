@@ -36,7 +36,7 @@ run_heartbeat_recovery() {
 }
 
 heartbeat_job_record() {
-  compose exec -T redis redis-cli --raw GET "controlplane:job:$job"
+  job_record "$job"
 }
 
 heartbeat_wait_record() {

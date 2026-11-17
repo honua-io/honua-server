@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HARNESS = ROOT / "scripts/qualification/gp-lifecycle-harness.sh"
 JOB_STORE = ROOT / "scripts/qualification/gp-job-store.sh"
 COMPOSE = ROOT / "docker/gp-reliability/compose.yml"
+JOB_STATUSES = re.search(r"^job_statuses=.*$", JOB_STORE.read_text(encoding="utf-8"), re.M).group(0) + "\n"
 LIFECYCLE_FUNCTIONS = ("cancel_barrier_job", "run_timeout_case", "run_duplicate_delivery")
 
 
@@ -36,6 +37,12 @@ class JobStoreTests(unittest.TestCase):
                 services = set(re.findall(r"compose exec -T (\S+)", harness_function(name)))
                 self.assertLessEqual(services, {"postgres"})
 
+    def test_every_qualification_script_reads_job_state_only_from_the_job_database(self):
+        for script in sorted(HARNESS.parent.glob("gp-*.sh")):
+            with self.subTest(script=script.name):
+                services = set(re.findall(r"compose exec -T (?!--user)(\S+)", script.read_text(encoding="utf-8")))
+                self.assertLessEqual(services, {"postgres"})
+
     def test_job_record_overlays_the_database_columns_on_the_stored_record(self):
         functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe", "job_record"))
         with tempfile.TemporaryDirectory() as directory:
@@ -49,6 +56,57 @@ job_record "gp-1' OR '1'='1" && exit 65
 [[ "$(wc -l < count)" -eq 1 ]] || exit 66
 compose() { :; }
 job_record gp-missing && exit 67
+exit 0
+''', directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_job_record_carries_the_status_ordinal_the_store_serializes(self):
+        functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe", "job_record"))
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash(JOB_STATUSES + functions + r'''
+compose() { printf '%s\n' "$*" >> calls; echo '{}'; }
+job_record gp-1 >/dev/null || exit 61
+grep -q "array_position(ARRAY\['Queued', 'Provisioning', 'Running', 'Succeeded', 'Failed', 'Cancelled'\], status) - 1" calls || exit 62
+grep -q "'nextRetryAt', next_retry_at" calls || exit 63
+grep -q "'currentPhase', current_phase" calls || exit 64
+''', directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_job_store_helpers_refuse_unsafe_ids_without_touching_the_database(self):
+        helpers = ("result_package_record", "result_package_exists", "expire_terminal_job", "job_row_exists",
+                   "strand_exhausted_claim")
+        functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe") + helpers)
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash(functions + "\ncompose() { echo called >> calls; }\n" + "".join(
+                f"{name} \"gp-1' OR '1'='1\" && exit 70\n" for name in helpers)
+                + "insert_poison_job poison-1 \"gp-1'\" && exit 71\n[[ ! -e calls ]] || exit 72\n", directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_stranded_claim_spends_the_only_attempt_on_a_dead_worker(self):
+        functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe", "strand_exhausted_claim"))
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash(functions + r'''
+compose() { printf '%s\n' "$*" >> calls; echo gp-1; }
+strand_exhausted_claim gp-1 || exit 61
+grep -q "jsonb_build_object('maxAttempts', 1)" calls || exit 62
+grep -q "status = 'Running'.*attempt_count = 1, claimed_by = 'dead-worker'" calls || exit 63
+grep -q "queue_visible_at = NULL, queue_priority = NULL" calls || exit 64
+grep -q "WHERE operation_id = 'gp-1' AND status = 'Queued'" calls || exit 65
+compose() { echo other; }
+strand_exhausted_claim gp-1 && exit 66
+exit 0
+''', directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_poison_row_copies_a_queued_job_and_is_placed_ahead_of_it(self):
+        functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe", "insert_poison_job"))
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash(functions + r'''
+compose() { printf '%s\n' "$*" >> calls; echo poison-1; }
+insert_poison_job poison-1 gp-1 || exit 61
+grep -q "queue_visible_at - interval '1 minute'" calls || exit 62
+grep -q "json_build_object('poison', true)" calls || exit 63
+grep -q "WHERE operation_id = 'gp-1' AND queue_visible_at IS NOT NULL" calls || exit 64
 exit 0
 ''', directory)
             self.assertEqual(0, completed.returncode, completed.stderr)
