@@ -103,8 +103,8 @@ public sealed class McpErrorMappingTests
     [UnitTest]
     public void StoreUnavailableException_WithDependencyReceipt_MapsToUnavailableWithMissingDependency()
     {
-        // Redis is optional for a local install, so an absent durable job
-        // store is a deployment fact, not a blip. The envelope must name the missing dependency,
+        // A local install may run without a durable job store, so its absence
+        // is a deployment fact, not a blip. The envelope must name the missing dependency,
         // the capability it disables, and the remediation — and must NOT be marked retryable,
         // because retrying cannot help until an operator changes the install.
         var error = McpErrorMapper.Map(new GeoprocessingStoreUnavailableException());

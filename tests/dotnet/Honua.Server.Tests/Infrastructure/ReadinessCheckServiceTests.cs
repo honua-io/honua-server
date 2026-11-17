@@ -146,7 +146,7 @@ public sealed class ReadinessCheckServiceTests
     [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithFeatureChangeStoreInFallbackMode_StillReturnsReady()
     {
-        // Single-node deployment without Redis: the event store runs in
+        // Single-node deployment without a shared store: the event store runs in
         // explicit in-memory mode and must report healthy-with-degraded-note.
         var logger = new MockLogger<ReadinessCheckService>();
         var migrationState = new MigrationState();

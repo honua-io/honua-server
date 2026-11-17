@@ -606,7 +606,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WithoutDurableJobStore_ReturnsTypedCapabilityUnavailableRefusal()
     {
-        // Redis is optional for a local install (PostGIS is not). The
+        // A durable job store is optional for a local install (PostGIS is not). The
         // WebAppFixture runs without Redis, so no durable job store is composed. Submission
         // must be refused up front with a machine-readable receipt an agent can branch on —
         // never a hang, an untyped 500, or a job accepted into a queue that can never drain.
@@ -1315,7 +1315,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     // -----------------------------------------------------------------------
 
     // Pass the positive effectiveLimit to ListActiveAsync so the store caps active jobs
-    // before materialization. Verify the response shape, or 503 without Redis.
+    // before materialization. Verify the response shape, or 503 without a durable job store.
     [IntegrationTest]
     [Operation(Operations.JobStatus)]
     [Endpoint("GET /ogc/processes/jobs")]

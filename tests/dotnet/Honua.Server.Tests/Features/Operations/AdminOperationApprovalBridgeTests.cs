@@ -71,8 +71,8 @@ public sealed class AdminOperationApprovalBridgeTests
     [UnitTest]
     public async Task CreateProposalAsync_DurableStoreWithoutGateway_ReturnsNonDurableFailure()
     {
-        // A real proposal store with no gateway is a composition defect, not a Redis-off host:
-        // the bridge keeps its fail-closed non-durable result rather than naming Redis.
+        // A real proposal store with no gateway is a composition defect, not a host without a job store:
+        // the bridge keeps its fail-closed non-durable result rather than naming a missing job store.
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IOperationProposalStore>());
         var bridge = CreateBridge(services.BuildServiceProvider());

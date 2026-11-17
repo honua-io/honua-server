@@ -43,7 +43,7 @@ public sealed class ConnectionStringResolutionHelperTests
     }
 
     // ResolveConnectionStringValueAsync is the generalized mechanism ResolveDefaultConnectionStringAsync
-    // now delegates to; Program.cs's bootstrap Redis wiring reuses it directly for
+    // now delegates to; Program.cs's bootstrap connection wiring reuses it directly for
     // ConnectionStrings:redis since it runs before WebApplicationBuilder.Build(), when no DI-registered
     // IConnectionSecretResolver exists yet. These tests exercise the exact same resolution order the
     // Postgres DefaultConnection path uses, with a fake resolver — no real AWS calls.

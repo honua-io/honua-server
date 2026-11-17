@@ -358,8 +358,8 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable()
     {
-        // Redis presence alone must NEVER imply multi-replica: a single instance commonly uses
-        // Redis for cache/jobs and must keep full live co-editing.
+        // A configured shared cache alone must NEVER imply multi-replica: a single instance commonly
+        // uses one for caching and jobs and must keep full live co-editing.
         using var factory = CreateFactory(
             configuration: new Dictionary<string, string?>
             {
