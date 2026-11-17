@@ -161,6 +161,7 @@ compose() { docker compose --project-name "${project_name}" -f "${compose_file}"
 
 # Job-store reads and the native entry hold: see gp-job-store.sh.
 source "${repo_root}/scripts/qualification/gp-job-store.sh"
+source "${repo_root}/scripts/qualification/gp-tenant-tokens.sh"
 
 # The topology file is the single source of truth for the store contract: the
 # provisioner is driven from the same declarations the containers bind, so a
@@ -1135,14 +1136,29 @@ run_disruption() {
 }
 
 run_poison_job() {
-  local scenario=poison-job poison="poison-$(date +%s%N)" job terminal digest
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:pending 0 "${poison}" >/dev/null
-  job="$(submit_async)" || { write_receipt "${scenario}" fail "valid submission failed"; return 1; }
+  local scenario=poison-job poison="poison-$(date +%s%N)" result=0
+  run_poison_job_checks || result=$?
+  # The poison row must not outlive its scenario: later lanes measure the reconciler.
+  delete_job_row "${poison}" || runtime_taint="poison row ${poison} could not be removed"
+  return "${result}"
+}
+
+run_poison_job_checks() {
+  local job terminal digest status deadline
+  compose stop worker >/dev/null
+  # A native job waits in the queue while the worker is stopped; a managed one may not.
+  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "valid submission failed"; return 1; }
+  insert_poison_job "${poison}" "${job}" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "poison row could not be queued ahead of the valid job" "${job}"; return 1; }
+  compose start worker >/dev/null
   terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: poison blocked queue progress" "${job}"; return 1; }
   digest="$(result_digest "${job}" 2>/dev/null || true)"
   [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: poison affected valid job" "${job}"; return 1; }
-  [[ -z "$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "${poison}")" ]] || { write_receipt "${scenario}" fail "FINDING: poison was not removed" "${job}"; return 1; }
-  write_receipt "${scenario}" pass "" "${job}" successful "${digest}"
+  # Leaving the queue is not enough: a claimed poison row that never ends holds a claim forever.
+  deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-180}))
+  while status="$(job_row_status "${poison}")" || { write_receipt "${scenario}" fail "poison row status could not be read" "${job}"; return 1; }
+        [[ "${status}" =~ ^(Queued|Provisioning|Running)$ ]] && (( SECONDS < deadline )); do sleep 2; done
+  [[ ! "${status}" =~ ^(Queued|Provisioning|Running)$ ]] || { write_receipt "${scenario}" fail "FINDING: poison row stranded in ${status}" "${job}"; return 1; }
+  write_receipt "${scenario}" pass "poison_status=${status:-removed}" "${job}" successful "${digest}"
 }
 
 run_stale_lease() {
@@ -1161,7 +1177,7 @@ run_backlog() {
   local scenario=queue-backlog count="${HONUA_GP_BACKLOG_JOBS:-20}" depth job terminal digest; local -a jobs=()
   compose stop worker >/dev/null
   for ((i=0;i<count;i++)); do jobs+=("$(submit_async gdal.ogr2ogr "${native_payload}")") || { compose start worker >/dev/null; return 1; }; done
-  depth="$(compose exec -T redis redis-cli --raw ZCARD controlplane:jobqueue:pending)"; compose start worker >/dev/null
+  depth="$(pending_queue_depth)"; compose start worker >/dev/null
   (( depth >= count )) || { write_receipt "${scenario}" fail "FINDING: expected backlog ${count}, saw ${depth}"; return 1; }
   for job in "${jobs[@]}"; do terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: backlog did not drain" "${job}"; return 1; }; digest="$(result_digest "${job}" 2>/dev/null || true)"; [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: backlog output missing" "${job}"; return 1; }; done
   write_receipt "${scenario}" pass "peak_depth=${depth};submitted=${count}" "${job}" successful "${digest}"
@@ -1170,19 +1186,18 @@ run_backlog() {
 run_ttl_cleanup() {
   local scenario=ttl-cleanup job
   job="$(submit_async)"; wait_terminal "${job}" >/dev/null || return 1; result_digest "${job}" >/dev/null || return 1
-  compose exec -T redis redis-cli PEXPIRE "controlplane:job:${job}" 250 >/dev/null; sleep 1
-  [[ "$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:${job}")" == 0 ]] || { write_receipt "${scenario}" fail "FINDING: expired record remains" "${job}"; return 1; }
+  expire_terminal_job "${job}" || { write_receipt "${scenario}" fail "terminal job could not be expired" "${job}"; return 1; }
+  local deadline=$((SECONDS + 60))
+  while job_row_exists "${job}" && (( SECONDS < deadline )); do sleep 1; done
+  ! job_row_exists "${job}" || { write_receipt "${scenario}" fail "FINDING: expired record remains" "${job}"; return 1; }
   write_receipt "${scenario}" pass "" "${job}" expired
 }
 
 run_retry_exhaustion() {
-  local scenario=retry-exhaustion job record terminal state
+  local scenario=retry-exhaustion job terminal state
   compose stop worker >/dev/null; job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; return 1; }
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:${job}")"
-  record="$(jq -c '.retryPolicy.maxAttempts=1 | .attemptCount=1 | .status="running" | .claimedBy="dead-worker" | .claimedAt="2000-01-01T00:00:00+00:00" | .lastHeartbeatAt="2000-01-01T00:00:00+00:00"' <<<"${record}")"
-  printf '%s' "${record}" | compose exec -T redis redis-cli -x SET "controlplane:job:${job}" KEEPTTL >/dev/null
-  compose exec -T redis redis-cli ZREM controlplane:jobqueue:pending "${job}" >/dev/null
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:claimed 0 "${job}" >/dev/null; compose start worker >/dev/null
+  strand_exhausted_claim "${job}" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "queued job could not be stranded" "${job}"; return 1; }
+  compose start worker >/dev/null
   terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: exhausted retry never terminated" "${job}"; return 1; }
   state="$(jq -r .status <<<"${terminal}")"; [[ "${state}" == failed ]] || { write_receipt "${scenario}" fail "FINDING: exhausted retry executed again" "${job}" "${state}"; return 1; }
   write_receipt "${scenario}" pass "" "${job}" "${state}"
@@ -1206,7 +1221,7 @@ run_tenant_limits() {
   tmp="$(mktemp)"; headers="$(mktemp)"; export HONUA_GP_MAX_CONCURRENT_PARTITION=1 HONUA_GP_MAX_CONCURRENT_GLOBAL=2
   compose up -d --force-recreate server >/dev/null; wait_ready || return 1; compose stop worker >/dev/null
   code="$(tenant_curl "${a}" -o "${tmp}" -w '%{http_code}' -H 'Content-Type: application/json' -H 'Prefer: respond-async' -d "${native_payload}" "${base_url}/ogc/processes/processes/gdal.ogr2ogr/execution")"; job="$(jq -r '.jobID // .jobId // empty' "${tmp}")"
-  [[ "${code}" == 201 && -n "${job}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "tenant A seed failed"; return 1; }
+  [[ "${code}" == 201 && -n "${job}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "tenant A seed failed: HTTP ${code}"; return 1; }
   code="$(tenant_curl "${a}" -D "${headers}" -o "${tmp}" -w '%{http_code}' -H 'Content-Type: application/json' -H 'Prefer: respond-async' -d "${native_payload}" "${base_url}/ogc/processes/processes/gdal.ogr2ogr/execution")"; retry="$(awk 'tolower($1)=="retry-after:" {gsub("\r","");print $2}' "${headers}")"
   [[ "${code}" == 503 && -n "${retry}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "FINDING: quota/concurrency lacked 503 Retry-After" "${job}"; return 1; }
   code="$(tenant_curl "${b}" -o "${tmp}" -w '%{http_code}' "${base_url}/ogc/processes/jobs/${job}")"; body="$(<"${tmp}")"; compose start worker >/dev/null
@@ -1231,9 +1246,7 @@ run_topology() {
   require_digest HONUA_WORKER_IMAGE || { preflight_failure="HONUA_WORKER_IMAGE is not an exact digest"; return 1; }
   [[ "${candidate_source_sha}" =~ ^[0-9a-f]{40}$ ]] || { preflight_failure="HONUA_GP_SOURCE_SHA is not a full source SHA"; return 1; }
   if [[ "${lane}" == resilience ]]; then
-    for name in HONUA_GP_TENANT_A_TOKEN HONUA_GP_TENANT_B_TOKEN HONUA_GP_OIDC_ISSUER HONUA_GP_OIDC_AUDIENCE HONUA_GP_OIDC_SIGNING_KEY; do
-      [[ -n "${!name:-}" ]] || { preflight_failure="${name} is required for resilience qualification"; return 1; }
-    done
+    qualification_tenant_tokens || return 1
     backlog_jobs="${HONUA_GP_BACKLOG_JOBS:-20}"; backlog_cap="${HONUA_GP_BACKLOG_COST_CAP:-20}"
     soak_seconds="${HONUA_GP_SOAK_SECONDS:-900}"; soak_concurrency="${HONUA_GP_SOAK_CONCURRENCY:-8}"
     [[ "${backlog_jobs}" =~ ^[0-9]+$ && "${backlog_cap}" =~ ^[0-9]+$ ]] || {

@@ -35,8 +35,15 @@ run_heartbeat_recovery() {
   write_receipt "$scenario" pass "" "$job" successful "$digest"
 }
 
+# The fenced worker either finds its claim moved when it writes a transition, or its
+# heartbeat finds the execution lease gone and cancels the attempt first.
+heartbeat_saw_stale_ownership() {
+  grep -Fq -e "Skipping state transition for job $job:" -e "Execution lease lost for job $job;" \
+    -e "Execution lease lost for job $job on worker" "$1"
+}
+
 heartbeat_job_record() {
-  compose exec -T redis redis-cli --raw GET "controlplane:job:$job"
+  job_record "$job"
 }
 
 heartbeat_wait_record() {
@@ -163,7 +170,7 @@ run_heartbeat_recovery_case() {
   while (( SECONDS < recovery_deadline )); do
     docker logs --since "$resume_at" "$first_container" > "$original_log" 2>&1 || return 1
     [[ -s "$first_root/$job/output-bytes-written-unpublished.ready.json" ]] && break
-    grep -Fq "Skipping state transition for job $job:" "$original_log" && break
+    heartbeat_saw_stale_ownership "$original_log" && break
     sleep 0.05
   done
   heartbeat_inventory "$receipt_root/$scenario-inventory-resumed-stale.json" || return 1
@@ -173,10 +180,10 @@ run_heartbeat_recovery_case() {
   done
   while (( SECONDS < recovery_deadline )); do
     docker logs --since "$resume_at" "$first_container" > "$original_log" 2>&1 || return 1
-    if grep -Fq "Skipping state transition for job $job:" "$original_log"; then break; fi
+    if heartbeat_saw_stale_ownership "$original_log"; then break; fi
     sleep 0.2
   done
-  grep -Fq "Skipping state transition for job $job:" "$original_log" || {
+  heartbeat_saw_stale_ownership "$original_log" || {
     scenario_fail "resumed original worker did not observe stale ownership"; return 1; }
   [[ "$(docker inspect --format '{{.State.Running}} {{.State.Paused}}' "$first_container")" == 'true false' ]] || return 1
   # Two ordinary 30-second reconciliation windows after stale completion. Also

@@ -39,6 +39,7 @@ services:
       ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=honua
       ConnectionStrings__Redis: redis:6379
       Licensing__DevGrantEdition: Pro
+      Jobs__Store__RetentionSweepInterval: "00:00:02"
       HONUA_ADMIN_PASSWORD: gp-reliability-admin
       Security__ConnectionEncryption__MasterKey: honua-gp-reliability-master-key-0123456789
       Security__ConnectionEncryption__Salt: aG9udWEtZ3AtcmVsaWFiaWxpdHktc2FsdA==
