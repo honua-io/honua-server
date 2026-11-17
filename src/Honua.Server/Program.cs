@@ -745,6 +745,7 @@ builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
+builder.Services.AddSingleton<Honua.Server.Features.HealthCheck.DeepProbe>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
 // Edition guardrail ladder: resolves DirectExecute/RequiresApproval/Blocked
