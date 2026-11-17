@@ -9,6 +9,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Server.Features.Protocols.Zarr;
 using Honua.TestKit;
@@ -157,6 +158,40 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/multidim-coverages")]
+    public async Task Register_ResolvesLayerIdAsStorageHandle_NotServiceLocalIndex()
+    {
+        const int indexOffset = 1000;
+        _fixture.MutateV2Graph(graph => graph with
+        {
+            Publications = graph.Publications
+                .Select(publication => publication with { LayerIndex = publication.LayerIndex + indexOffset })
+                .ToArray(),
+        });
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            snapshot.IsRoutable(candidate) && snapshot.ResolveStorageLayerId(candidate).HasValue);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication)!.Value;
+
+        var byStorageHandle = await _client.PostAsJsonAsync(Route, RegistrationFor(storageLayerId));
+        var byServiceIndex = await _client.PostAsJsonAsync(Route, RegistrationFor(publication.LayerIndex!.Value));
+
+        byStorageHandle.StatusCode.Should().Be(HttpStatusCode.Created);
+        byServiceIndex.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private static object RegistrationFor(int layerId) => new
+    {
+        layerId,
+        name = "storage-handle-multidim",
+        format = "NetCdf4",
+        provider = "AwsS3",
+        bucket = "bucket",
+        objectKey = $"granule-{layerId}.nc4",
+        variables = Array.Empty<string>()
+    };
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/multidim-coverages")]
