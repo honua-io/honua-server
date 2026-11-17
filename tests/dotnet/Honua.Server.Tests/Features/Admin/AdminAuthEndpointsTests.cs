@@ -1255,11 +1255,10 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
-                // Production startup rejects relaxed token validation and symmetric keys.
+                // Production startup rejects relaxed token validation.
                 builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "true");
                 builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "true");
                 builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "true");
-                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", string.Empty);
             });
 
     internal static WebAppFixture ConfigureGenericOidcFixture(WebAppFixture fixture, IHttpClientFactory httpClientFactory)
