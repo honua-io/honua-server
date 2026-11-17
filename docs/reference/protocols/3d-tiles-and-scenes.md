@@ -14,6 +14,8 @@ Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + asset
 
 **Edition and lifecycle:** Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers remain **Community**. Specialised CityGML/BIM and point-cloud ingest and I3S remain **Enterprise**. These 3D surfaces remain **Experimental in 2026.1**; edition does not imply GA or production support. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
+**Enabling:** every route on this page except elevation is off by default and returns `404` until its experimental capability is enabled, per capability (`Capabilities:Experimental:<capability>:Enabled=true`, or `Capabilities__Experimental__<capability>__Enabled=true` as an environment variable) or with the global `Capabilities:Experimental:Enabled=true` switch. `scene.catalog` maps scene discovery, the admin scene registry and the gRPC `SceneService`; `serve.3d-tiles-scene` maps tileset and asset serving, generation and the gRPC `TileService`; `serve.i3s-scene`, `scene.bim-ingest` and `scene.pointcloud-ingest` map the I3S adapter and the two ingest routes. Elevation routes and the gRPC `ElevationService` are always mapped.
+
 ## Scene discovery (public, SDK-compatible)
 
 | Method | Path | Purpose |
@@ -112,6 +114,8 @@ Hosted tilesets follow the OGC 3D Tiles 1.x content format; the serving routes t
 
 The routes stay shipped, but the 2026.1 release claim defers the 3D slice to 2026.2;
 this table records runtime truth without promoting it.
+Every row except `serve.elevation` and `raster.terrain-rgb` returns `404` until its
+experimental capability is enabled (see **Enabling** above); the result column applies once it is.
 
 | Capability key | Edition | Route/surface | Unlicensed result |
 |---|---|---|---|
