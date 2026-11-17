@@ -1412,27 +1412,33 @@ internal sealed partial class Wcs20Handler
         var baseWidth = Math.Max(raster.Width, 1);
         var baseHeight = Math.Max(raster.Height, 1);
 
+        Envelope? spatialTrim = null;
         if (spatialSubsetValues.Count > 0)
         {
-            if (!TryParseSubsetEnvelope(spatialSubsetValues, raster, subsettingCrs, out var envelope, out error))
+            if (!TryParseSubsetEnvelope(spatialSubsetValues, raster, subsettingCrs, out var envelope, out error) ||
+                !TryRequireCoverageIntersection(raster, subsettingCrs, envelope, Wcs20Utilities.Parameters.Subset, out error))
             {
                 return false;
             }
 
-            rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(envelope, subsettingCrs.Srid) };
-            sliceBounds = CreateRasterExtent(envelope, subsettingCrs.Srid);
-            TryRefineBaseGrid(raster, subsettingCrs, envelope, ref baseWidth, ref baseHeight);
+            spatialTrim = envelope;
         }
         else if (!string.IsNullOrWhiteSpace(bbox))
         {
-            if (!TryParseBboxEnvelope(bbox, subsettingCrs, out var envelope, out error))
+            if (!TryParseBboxEnvelope(bbox, subsettingCrs, out var envelope, out error) ||
+                !TryRequireCoverageIntersection(raster, subsettingCrs, envelope, Wcs20Utilities.Parameters.BBox, out error))
             {
                 return false;
             }
 
-            rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(envelope, subsettingCrs.Srid) };
-            sliceBounds = CreateRasterExtent(envelope, subsettingCrs.Srid);
-            TryRefineBaseGrid(raster, subsettingCrs, envelope, ref baseWidth, ref baseHeight);
+            spatialTrim = envelope;
+        }
+
+        if (spatialTrim is not null)
+        {
+            rasterQuery = rasterQuery with { ClipRegion = CreateClipRegion(spatialTrim, subsettingCrs.Srid) };
+            sliceBounds = CreateRasterExtent(spatialTrim, subsettingCrs.Srid);
+            TryRefineBaseGrid(raster, subsettingCrs, spatialTrim, ref baseWidth, ref baseHeight);
         }
 
         if (!TryResolveRangeSubset(query, raster, out var bands, out error))
@@ -2647,6 +2653,52 @@ internal sealed partial class Wcs20Handler
             Wcs20Utilities.Parameters.Subset,
             out envelope,
             out error);
+    }
+
+    // WCS 2.0 Core requires InvalidSubsetting when a spatial trim selects no part of the
+    // coverage. The extent is compared in the subsetting CRS; when no in-memory transform
+    // between the two CRSs exists the request proceeds to the raster read unchanged.
+    private static bool TryRequireCoverageIntersection(
+        RasterInfo raster,
+        CrsDefinition subsettingCrs,
+        Envelope trim,
+        string locator,
+        out WcsParameterError error)
+    {
+        error = default;
+        if (!TryResolveCoverageEnvelope(raster, subsettingCrs.Srid, out var coverage) || coverage.Intersects(trim))
+        {
+            return true;
+        }
+
+        error = new WcsParameterError(
+            Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+            "The requested spatial subset does not intersect the coverage extent.",
+            locator);
+        return false;
+    }
+
+    private static bool TryResolveCoverageEnvelope(RasterInfo raster, int targetSrid, out Envelope coverage)
+    {
+        coverage = default!;
+        if (!TryResolveExtent(raster, out var extent) || (extent.Srid ?? raster.Srid) is not { } nativeSrid)
+        {
+            return false;
+        }
+
+        try
+        {
+            var transformed = CoordinateTransformer.TransformExtent(
+                new RenderExtent(extent.XMin, extent.YMin, extent.XMax, extent.YMax),
+                nativeSrid,
+                targetSrid);
+            coverage = new Envelope(transformed.MinX, transformed.MaxX, transformed.MinY, transformed.MaxY);
+            return true;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
     }
 
     private static bool IsNativeSubsettingCrs(RasterInfo raster, CrsDefinition subsettingCrs)

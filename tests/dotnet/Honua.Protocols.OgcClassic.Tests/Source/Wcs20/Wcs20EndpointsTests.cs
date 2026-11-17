@@ -1071,7 +1071,7 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
         _exportQueries.Should().BeEmpty();
     }
 
-    private static void ConfigureRasterStore(IRasterStore rasterStore, List<RasterQuery> exportQueries)
+    internal static void ConfigureRasterStore(IRasterStore rasterStore, List<RasterQuery> exportQueries)
     {
         var raster = CreateRasterInfo();
 
