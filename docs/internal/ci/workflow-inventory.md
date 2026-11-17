@@ -1401,6 +1401,78 @@ Reporting shard on selected PR runs and twice-daily full trunk runs. This change
 runner count, required check name, required aggregate dependency, workflow or shard
 definition.
 
+### Scene gRPC host lifetime
+
+`SceneGrpcIntegrationTests` builds its configured application and four temporary
+scene asset roots once per class through `SharedSceneHost`. Each case still creates
+and disposes its own gRPC channel, registers its extent scene and removes its
+registered extent/inactive scenes afterward. Test bodies and assertions are
+unchanged; the existing database collection keeps cases serialized.
+
+The 52 cases remain in the existing gRPC Protocol and Scene 3–7 shards on
+selected PR runs and twice-daily full trunk runs. Each selected shard process
+creates its own fixture. No runner, required check, aggregate dependency,
+workflow or shard definition changes. Paired build-host runs passed the same 52
+cases without skips: VSTest execution fell from 306 to 4 seconds, and the
+fixture-inclusive TRX interval fell from 318.9 to 28.9 seconds. That saves 302
+execution seconds (5.0 runner-minutes), or 290.0 seconds including fixture lifetime
+(4.8 runner-minutes), with zero added runners. Full CI shard wall-time savings
+remain unmeasured. Historical full run 43709972683 separately recorded 185.7
+seconds of per-case fixture work across this class.
+
+### FeatureServer maintenance host lifetime
+
+`FeatureServerMaintenanceTests` builds its Pro-licensed application, with service
+editing capabilities enabled, once per class through a `ReadOnlyProHost` class
+fixture. The validate-SQL, domain and relationship GET cases only read and use that
+host's client. Every case that POSTs (append, calculate and POST validate-SQL) or
+inserts or reads rows still builds and disposes a private Pro host. Assertions and
+case counts are unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 42 cases
+with no skips. VSTest execution fell from 10m44s to 2m14s and the TRX interval from
+646.7 to 151.8 seconds. Full run 43709972683 spent 139 seconds of per-case fixture
+time in this class; about four sevenths of its cases now share the host. Full CI
+job savings are unmeasured.
+All cases remain in their existing FeatureServer shard on selected PR runs and
+twice-daily full trunk runs. This changes no runner count, required check name,
+required aggregate dependency, workflow or shard definition.
+
+### Admin authorization host lifetime
+
+`AdminAuthorizationTests` builds its application (server seed, development
+authentication off, an admin password set) and its unauthenticated client once per
+class through the `AnonymousHost` class fixture. Every case sends an anonymous
+request with no credentials, so the authentication-failure limiter never counts it;
+every write case expects 401, and the anonymous 200 cases only read. Test bodies and
+assertions are unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 58 cases with
+no skips. VSTest execution fell from 6m16s to 3s, saving 373 seconds (6.2
+runner-minutes), and the TRX interval from 395.2 to 21.8 seconds, with one test
+process each. Full run 43709972683 spent 196 seconds of per-case fixture time in this
+class. Full CI job savings are unmeasured.
+All cases remain in their existing Server Features Admin Authorization shards on
+selected PR runs and twice-daily full trunk runs. This changes no runner count,
+required check name, required aggregate dependency, workflow or shard definition.
+
+### Query related records host lifetime
+
+`QueryRelatedRecordsEndpointTests` builds its Pro-licensed application, with service
+editing capabilities enabled, once per class through a `ReadOnlyProHost` class
+fixture. The related-record GET cases use it. The case that inserts and deletes
+features, and the POST, PUT and DELETE cases, first switch to a private Pro host of
+their own. Test bodies and assertions are otherwise unchanged.
+
+Paired build-host runs of the class on trunk 8bbd43c0ee passed the same 35 cases with
+no skips. VSTest execution fell from 3m20s to 46s, saving 154 seconds (2.6
+runner-minutes), and the TRX interval from 214.0 to 74.3 seconds, with one test
+process each. Full run 43709972683 spent 124 seconds of per-case fixture time in this
+class. Full CI job savings are unmeasured.
+All cases remain in their existing shard on selected PR runs and twice-daily full
+trunk runs. This changes no runner count, required check name, required aggregate
+dependency, workflow or shard definition.
+
 ## Additional workflows
 
 | Workflow file | Name | Triggers | Notes |
