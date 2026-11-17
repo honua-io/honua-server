@@ -2307,3 +2307,20 @@ selected PR runs and full trunk runs. No workflow, shard filter, required check,
 aggregate dependency or runner count changes. Paired class and existing-partition
 measurements are collected separately; test-body time excludes class-fixture
 startup and disposal, and does not establish complete CI job-wall savings.
+
+### Sharing REST token host lifetime
+
+`SharingRestTokenTests` shares one application with the protected-service graph
+and token settings across every case that used the default token configuration,
+instead of starting one per case. A startup filter stamps the request client
+address; each case now gets its own TEST-NET-3 address, so failed attempts that
+the authentication failure limiter counts per source never carry over between
+cases, and IP-bound tokens still bind to the address of the case that issued
+them. Each case issues, exchanges or revokes only its own tokens and keys. Cases
+that need other settings or a replaced credential verifier keep their own
+applications.
+
+The class stays in Server Features Sharing 1 on selected PR runs and full trunk
+runs. No workflow, shard filter, required check, aggregate dependency or runner
+count changes. Build-host class 45/45 identical passing cases in one job, 297.2
+to 34.7-34.8 seconds (process wall 345 to 62-71 seconds).
