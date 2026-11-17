@@ -172,10 +172,10 @@ class ShardWidthTests(unittest.TestCase):
         self.assertEqual(2, self.affected_width(134))
 
     def test_selective_no_path_match_skips_default_smoke_shards(self):
-        self.assertFalse(TRAILING.schedule_server_shards("no_path_match", True))
-        self.assertTrue(TRAILING.schedule_server_shards("no_path_match", False))
-        self.assertTrue(TRAILING.schedule_server_shards("targeted", True))
-        self.assertTrue(TRAILING.schedule_server_shards("unmapped_source_change", True))
+        self.assertFalse(TRAILING.affected_run_schedules_shards("no_path_match"))
+        self.assertTrue(TRAILING.full_run_schedules_shards("no_path_match"))
+        self.assertTrue(TRAILING.affected_run_schedules_shards("targeted"))
+        self.assertTrue(TRAILING.affected_run_schedules_shards("unmapped_source_change"))
 
     def test_core_package_skips_only_docs_workflow_ci_and_tests(self):
         measured = [

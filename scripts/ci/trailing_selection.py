@@ -25,14 +25,18 @@ def affected_max_parallel(selected_shards: int) -> int:
     return AFFECTED_WIDTH
 
 
-def schedule_server_shards(reason: str, selective: bool) -> bool:
-    """Keep the default smoke shards off selective affected runs.
+def affected_run_schedules_shards(reason: str) -> bool:
+    """Selective affected runs skip the no-path-match smoke shards.
 
     `no_path_match` means no watched source path matched, so the configured
-    default shards do not own the diff. Pull requests and full runs still
-    schedule them.
+    default shards do not own the diff. The scheduled full run keeps them.
     """
-    return not (selective and reason == "no_path_match")
+    return reason != "no_path_match"
+
+
+def full_run_schedules_shards(reason: str) -> bool:
+    """Pull requests and full runs keep every shard the router returned."""
+    return isinstance(reason, str)
 
 
 def core_package_required(paths: list[str]) -> bool:
@@ -56,7 +60,11 @@ def main(argv: list[str] | None = None) -> None:
                 selective = next(tokens) == "true"
             else:
                 raise SystemExit(f"unknown argument {token}")
-        print("true" if schedule_server_shards(reason, selective) else "false")
+        scheduled = (
+            affected_run_schedules_shards(reason)
+            if selective
+            else full_run_schedules_shards(reason))
+        print("true" if scheduled else "false")
         return
     if argv:
         raise SystemExit(f"unknown argument {argv[0]}")
