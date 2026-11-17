@@ -66,3 +66,22 @@ reset. The function checks the sequence configuration. Long transactions,
 including prepared transactions, can conservatively delay the prefix even when
 they do not edit features. Monitor publication lag before activating the horizon;
 staging this function does not establish a latency bound or remove contention.
+
+## Publisher driver
+
+The existing outbox dispatcher calls the publisher before claiming pending events,
+including when the outbox is empty. Publication uses a fresh READ COMMITTED
+transaction that commits before the claim statement, on the same managed connection
+lease. This adds no background service or connection pool. A competing publisher
+does not block the claim; cancellation or publication failure releases the lease.
+
+Snapshot xmin can also be held back by transactions in other databases on the same
+PostgreSQL cluster. This conservatively delays publication; measure that lag under
+the deployed workload before activating the horizon. The driver does not replace
+the reader function or narrow either writer lock.
+
+The driver runs only where the PostgreSQL outbox dispatcher is hosted. Control-plane
+event Lambda hosts omit database polling loops, and providers without transactional
+outbox capability skip dispatch. Before activation, establish a running publisher for
+every database whose readers will use the persisted prefix; a writer-only host does
+not advance it by itself. This stage does not add another publisher for those hosts.

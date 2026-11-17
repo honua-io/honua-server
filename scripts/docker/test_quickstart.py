@@ -17,6 +17,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class QuickstartTests(unittest.TestCase):
+    def test_default_install_declares_stock_postgres_capacity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / '.env'
+            initialize(env_file)
+            environment = self.render(env_file)['honua']['environment']
+
+            self.assertEqual('100', environment.get('Database__MaxConnections'))
+            self.assertNotIn('Limits__Connections__MaxConnectionPoolSize', environment)
+
     def test_materialization_timeout_is_forwarded_from_dotenv(self):
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / '.env'
