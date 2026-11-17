@@ -25,12 +25,14 @@ internal sealed class PostgresFeatureChangeLog(
 
     private static readonly TimeSpan _windowCacheLifetime = TimeSpan.FromSeconds(30);
 
-    private readonly string _changes = database.Table("feature_changes");
-    private readonly string _outbox = database.Table("feature_change_outbox");
+    // The change-tracking trigger writes the change log into the honua schema whatever
+    // Database:Schema names, so these names do not follow the job-store schema.
+    private const string ChangesTable = "honua.feature_changes";
+    private const string OutboxTable = "honua.feature_change_outbox";
 
     // The committed horizon (migration 213). Cursor reads stop at it, so a later release that
     // narrows the writer lock can hold back a generation whose lower neighbour has not committed.
-    private readonly string _horizon = database.Table("feature_change_read_horizon") + "()";
+    private const string ReadHorizon = "honua.feature_change_read_horizon()";
     private readonly Lock _windowGate = new();
     private (long Head, long Oldest, DateTimeOffset ReadAt)? _cachedOldest;
 
@@ -44,7 +46,7 @@ internal sealed class PostgresFeatureChangeLog(
         => database.ExecuteAsync(
             async (connection, _, token) =>
             {
-                await using var command = new NpgsqlCommand($"SELECT {_horizon}", connection);
+                await using var command = new NpgsqlCommand($"SELECT {ReadHorizon}", connection);
                 return (long)(await command.ExecuteScalarAsync(token).ConfigureAwait(false))!;
             },
             StatementRepeat.SafeToRepeat,
@@ -142,10 +144,10 @@ internal sealed class PostgresFeatureChangeLog(
                 await using var command = new NpgsqlCommand(
                     $"""
                     SELECT
-                        (SELECT min(generation) FROM {_changes} WHERE generation <= @head),
-                        (SELECT generation FROM {_changes} WHERE version_id IS NULL AND generation <= @head
+                        (SELECT min(generation) FROM {ChangesTable} WHERE generation <= @head),
+                        (SELECT generation FROM {ChangesTable} WHERE version_id IS NULL AND generation <= @head
                          ORDER BY generation DESC OFFSET @max_events LIMIT 1),
-                        (SELECT max(generation) FROM {_changes}
+                        (SELECT max(generation) FROM {ChangesTable}
                          WHERE version_id IS NULL AND generation <= @head AND changed_at < @since)
                     """,
                     connection);
@@ -190,10 +192,10 @@ internal sealed class PostgresFeatureChangeLog(
                    ST_AsEWKB(CASE WHEN changes.operation = 3 THEN changes.pre_geometry ELSE changes.committed_geometry END),
                    changes.operation = 2
                        AND ST_AsEWKB(changes.pre_geometry) IS DISTINCT FROM ST_AsEWKB(changes.committed_geometry)
-            FROM {_changes} AS changes
+            FROM {ChangesTable} AS changes
             LEFT JOIN LATERAL (
                 SELECT entry.service_id, entry.protocol, entry.request_id, entry.source_id
-                FROM {_outbox} AS entry WHERE entry.event_id = changes.event_id LIMIT 1) AS outbox ON true
+                FROM {OutboxTable} AS entry WHERE entry.event_id = changes.event_id LIMIT 1) AS outbox ON true
             WHERE {BuildFilters(query)}
             ORDER BY changes.generation
             LIMIT @limit
@@ -206,7 +208,7 @@ internal sealed class PostgresFeatureChangeLog(
         if (query.EventId is null)
         {
             // An event-id lookup advances no cursor, so only cursor reads stop at the horizon.
-            filters.Add($"changes.generation <= {_horizon}");
+            filters.Add($"changes.generation <= {ReadHorizon}");
         }
 
         if (query.From is not null)
