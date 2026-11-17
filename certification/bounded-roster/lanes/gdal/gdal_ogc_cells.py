@@ -128,6 +128,12 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
         else:
             expect(bbox_requests and "bbox=-122.4" in bbox_requests[-1] and "EPSG/0/4326" not in bbox_requests[-1],
                    f"GDAL did not send a longitude-first CRS84 bbox: {bbox_requests}")
+            # GDAL chose CRS84, so ask for the same window latitude-first in EPSG:4326 directly.
+            latitude_first, _ = _json_with_headers(
+                OAPIF + "/collections/0/items?bbox=37.715,-122.47,37.745,-122.44"
+                "&bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326")
+            selected = sorted(str(feature.get("id")) for feature in latitude_first.get("features", []))
+            expect(selected == ["3", "4"], f"latitude-first EPSG:4326 bbox returned features {selected}")
         with gdalkit.session() as projected_record:
             dataset = _open_vector(connection, ["PREFERRED_CRS=EPSG:3857"])
             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
