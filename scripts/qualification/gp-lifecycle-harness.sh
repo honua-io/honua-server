@@ -158,7 +158,9 @@ require_digest() {
 
 compose() { docker compose --project-name "${project_name}" -f "${compose_file}" "$@"; }
 
-source "${repo_root}/scripts/qualification/gp-postgres.sh"
+# Job-store reads and the native entry hold: see gp-job-store.sh.
+source "${repo_root}/scripts/qualification/gp-job-store.sh"
+source "${repo_root}/scripts/qualification/gp-tenant-tokens.sh"
 
 # The topology file is the single source of truth for the store contract: the
 # provisioner is driven from the same declarations the containers bind, so a
@@ -381,9 +383,12 @@ cancel_barrier_job() {
   request_at="$(now)"
   job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
 
-  wait_barrier "$job" claimed || return 1
+  # A worker paused at the native entry alone writes no claimed barrier.
+  if ! native_entry_hold_active; then
+    wait_barrier "$job" claimed || return 1
+  fi
   if [[ "$target" != claimed ]]; then
-    release_barrier "$job" claimed
+    native_entry_hold_active || release_barrier "$job" claimed
     wait_barrier "$job" native-process-started || return 1
     process_ready="$(barrier_record "$job" native-process-started)"
     child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
@@ -513,15 +518,9 @@ cancel_barrier_job() {
     }
   fi
 
-  record="$(gp_job_record "$job")"
-  pending="$(gp_sql --set=job="$job" <<'SQL'
-SELECT queue_visible_at FROM honua.execution_jobs WHERE operation_id=:'job';
-SQL
-)"
-  claimed_score="$(gp_sql --set=job="$job" <<'SQL'
-SELECT claimed_by FROM honua.execution_jobs WHERE operation_id=:'job';
-SQL
-)"
+  record="$(job_record "$job")" || { scenario_fail "job record was not readable from the job store"; return 1; }
+  pending="$(job_queue_position "$job" pending || true)"
+  claimed_score="$(job_queue_position "$job" claimed || true)"
   after_objects="$(object_file_count "$job")"
   [[ "$after_objects" == 0 ]] || {
     scenario_fail "cancelled job retained staged objects after retention cleanup"
@@ -539,7 +538,7 @@ SQL
     --argjson record "$record" --arg pending "$pending" --arg claimed "$claimed_score" \
     --argjson objects_after "$after_objects" \
     --argjson transitions "$(jq -s '.' "$scenario_transition_file")" \
-    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,output:$output,terminal_fence:$terminal,artifact_references:($record.artifactReferences // []),timeout_source:null,cancellation_source:$cancel_source,cancellation_responses:{first_http:$response_one,second_http:$response_two,mcp_acknowledgement:$mcp_ack},signal_observed_at:($signal.observedAt // null),child_process:{pid:$observed_child_pid,worker_container:$observed_worker,exit_observed:($child_alive|not)},terminal_history:$transitions,attempt_count:($record.attemptCount // null),queue_membership:{queue_visible_at:(if $pending=="" then null else $pending end),claimed_by:(if $claimed=="" then null else $claimed end)},result_visibility:{after_terminal:$result_code_after,late:$result_code_late},object_inventory:{after_retention_cleanup:$objects_after}}')"
+    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,output:$output,terminal_fence:$terminal,artifact_references:($record.artifactReferences // []),timeout_source:null,cancellation_source:$cancel_source,cancellation_responses:{first_http:$response_one,second_http:$response_two,mcp_acknowledgement:$mcp_ack},signal_observed_at:($signal.observedAt // null),child_process:{pid:$observed_child_pid,worker_container:$observed_worker,exit_observed:($child_alive|not)},terminal_history:$transitions,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},result_visibility:{after_terminal:$result_code_after,late:$result_code_late},object_inventory:{after_retention_cleanup:$objects_after}}')"
   write_receipt "$scenario_name" pass "" "$job" "$state"
 }
 
@@ -888,59 +887,25 @@ run_async_baseline() {
 }
 
 run_duplicate_delivery() {
-  local result=0 cleanup_result=0 job="" state="" digest=""
-  run_duplicate_delivery_case || result=$?
-  compose up -d --force-recreate --scale worker=1 worker >/dev/null || cleanup_result=$?
-  if (( cleanup_result != 0 )); then
-    runtime_taint="duplicate-delivery topology restoration failed"
-    scenario_fail "$runtime_taint"
-    return 1
-  fi
-  (( result == 0 )) || return "$result"
-  write_receipt duplicate-delivery pass "two consumers; running claim remained exclusive; attempt_count=1" "$job" "$state" "$digest"
-}
-
-run_duplicate_delivery_case() {
-  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
-  local terminal record owner deadline boundary process_ready
-  compose up -d --force-recreate --scale worker=2 worker >/dev/null || return 1
-  [[ "$(compose ps --status running -q worker | wc -l | tr -d ' ')" == 2 ]] || {
-    scenario_fail "two running consumers were not observed"; return 1;
-  }
-  job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
-  wait_barrier "$job" claimed || return 1
-  release_barrier "$job" claimed
-  wait_barrier "$job" native-process-started || return 1
-  record="$(gp_job_record "$job")" || return 1
-  owner="$(jq -er '.claimedBy | select(length > 0)' <<<"$record")" || return 1
-  process_ready="$(barrier_record "$job" native-process-started)"
-  jq -e --arg owner "$owner" '.workerId == $owner and (.childProcessId | type == "number" and . > 0)' <<<"$process_ready" >/dev/null || {
-    scenario_fail "native process barrier did not identify the claimed worker and child"; return 1;
-  }
-  # A real running native process holds the row while both consumers poll the queue.
-  deadline=$((SECONDS + 30))
+  local scenario=duplicate-delivery job terminal state digest record attempts deadline
+  # Two consumers are required: re-deliver after the first has claimed and begun executing.
+  compose up -d --scale worker=2 worker >/dev/null
+  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { write_receipt "${scenario}" fail "submission failed"; return 1; }
+  wait_running "${job}" || { write_receipt "${scenario}" fail "job did not reach running before redelivery" "${job}"; return 1; }
+  requeue_claimed_job "${job}" || { write_receipt "${scenario}" fail "running job could not be returned to the queue" "${job}"; return 1; }
+  deadline=$((SECONDS + 30)); attempts=0
   while (( SECONDS < deadline )); do
-    record="$(gp_job_record "$job")" || return 1
-    jq -e --arg owner "$owner" '.status == 2 and .attemptCount == 1 and .claimedBy == $owner' <<<"$record" >/dev/null || {
-      scenario_fail "running job was reclaimed by a competing consumer"; return 1;
-    }
-    record_attempt 1
-    sleep 0.2
+    record="$(job_record "${job}" || printf '{}')"
+    attempts="$(jq -r '.attemptCount // 0' <<<"${record}")"
+    (( attempts >= 2 )) && break
+    sleep 0.1
   done
-  [[ "$(compose ps --status running -q worker | wc -l | tr -d ' ')" == 2 ]] || {
-    scenario_fail "competing consumer did not remain running during exclusivity observation"; return 1;
-  }
-  for boundary in native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
-    wait_barrier "$job" "$boundary" || return 1
-    release_barrier "$job" "$boundary"
-  done
-  terminal="$(wait_terminal "$job")" || return 1
-  state="$(jq -r '.status' <<<"$terminal")"
-  digest="$(result_digest "$job" 2>/dev/null || true)"
-  record="$(gp_job_record "$job")" || return 1
-  [[ "$state" == successful && -n "$digest" ]] && jq -e '.attemptCount == 1' <<<"$record" >/dev/null || {
-    scenario_fail "exclusive delivery produced invalid terminal/output or extra attempts"; return 1;
-  }
+  (( attempts >= 2 )) || { write_receipt "${scenario}" fail "FINDING: redelivery was not claimed" "${job}"; return 1; }
+  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: duplicate delivery lost job" "${job}"; return 1; }
+  state="$(jq -r '.status' <<<"${terminal}")"
+  digest="$(result_digest "${job}" 2>/dev/null || true)"
+  [[ "${state}" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: duplicate delivery produced invalid terminal/output" "${job}" "${state}" "${digest}"; return 1; }
+  write_receipt "${scenario}" pass "" "${job}" "${state}" "${digest}"
 }
 
 run_cancel_barrier() {
@@ -1012,6 +977,7 @@ run_timeout_live() {
   # return (including an assertion failure), recreate the topology using the
   # caller's original values before another scenario can run.
   run_timeout_case "$@" || result=$?
+  (( result == 0 )) || keep_held_worker_logs
   compose up -d --force-recreate server server-peer worker >/dev/null || cleanup_result=$?
   if (( cleanup_result == 0 )); then
     wait_ready && wait_peer_ready || cleanup_result=$?
@@ -1030,9 +996,10 @@ run_timeout_case() {
   local mode="$1" record terminal retry_code result_code failed_terminal_count
   local request_at signal_file object_count_before object_count_after process_ready child_pid worker_container child_alive signal_deadline
   local behavior="native production executor"
-  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification
   local -x HONUA_GP_TIMEOUT_SECONDS=2
   local -x HONUA_GP_QUALIFICATION_EXECUTOR_MODE=""
+  local -x HONUA_GP_QUALIFICATION_PAUSE_AT=native-process-started
   if [[ "$mode" == ignore-cancellation ]]; then
     export HONUA_GP_QUALIFICATION_EXECUTOR_MODE=ignore-cancellation
     behavior="native production executor ignores operator cancellation; timeout remains authoritative"
@@ -1045,13 +1012,11 @@ run_timeout_case() {
   request_at="$(now)"
   job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
   object_count_before="$(object_file_count "$job")"
-  record="$(gp_job_record "$job")"
+  record="$(job_record "$job" || true)"
   jq -e '.timeoutPolicy.maxDuration != null' <<<"$record" >/dev/null || {
     scenario_fail "supported workload timeout was not persisted on the submitted job"
     return 1
   }
-  wait_barrier "$job" claimed || return 1
-  release_barrier "$job" claimed
   wait_barrier "$job" native-process-started || return 1
   process_ready="$(barrier_record "$job" native-process-started)"
   child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
@@ -1119,15 +1084,9 @@ run_timeout_case() {
     scenario_fail "timed-out job retained staged objects after retention cleanup"
     return 1
   }
-  record="$(gp_job_record "$job")"
-  pending="$(gp_sql --set=job="$job" <<'SQL'
-SELECT queue_visible_at FROM honua.execution_jobs WHERE operation_id=:'job';
-SQL
-)"
-  claimed_score="$(gp_sql --set=job="$job" <<'SQL'
-SELECT claimed_by FROM honua.execution_jobs WHERE operation_id=:'job';
-SQL
-)"
+  record="$(job_record "$job")" || { scenario_fail "job record was not readable from the job store"; return 1; }
+  pending="$(job_queue_position "$job" pending || true)"
+  claimed_score="$(job_queue_position "$job" claimed || true)"
   set_scenario_evidence "$(jq -n \
     --arg request_at "$request_at" --arg behavior "$behavior" \
     --arg retry_code "$retry_code" --arg result_code "$result_code" \
@@ -1137,7 +1096,7 @@ SQL
     --arg pending "$pending" --arg claimed "$claimed_score" \
     --argjson before "$object_count_before" --argjson after "$object_count_after" \
     --argjson child_alive "$child_alive" --argjson failed_terminal_count "$failed_terminal_count" \
-    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,artifact_references:($record.artifactReferences // []),timeout_source:"supported workload policy batch.timeout_seconds",cancellation_source:(if $behavior|startswith("native production executor ignores") then "OGC DELETE via peer" else null end),signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,terminal_failure_count:$failed_terminal_count,attempt_count:($record.attemptCount // null),queue_membership:{queue_visible_at:(if $pending=="" then null else $pending end),claimed_by:(if $claimed=="" then null else $claimed end)},retry_race_http:$retry_code,result_visibility:{after_terminal:$result_code},object_inventory:{before:$before,after_retention_cleanup:$after}}')"
+    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,artifact_references:($record.artifactReferences // []),timeout_source:"supported workload policy batch.timeout_seconds",cancellation_source:(if $behavior|startswith("native production executor ignores") then "OGC DELETE via peer" else null end),signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,terminal_failure_count:$failed_terminal_count,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},retry_race_http:$retry_code,result_visibility:{after_terminal:$result_code},object_inventory:{before:$before,after_retention_cleanup:$after}}')"
 }
 
 run_timeout_cooperative() {
@@ -1176,31 +1135,29 @@ run_disruption() {
 }
 
 run_poison_job() {
-  local scenario=poison-job job terminal digest rejection
-  compose stop worker >/dev/null || return 1
-  job="$(submit_async)" || { compose start worker >/dev/null; return 1; }
-  # Native queue membership cannot exist independently of a job. Prove malformed
-  # membership is rejected by the real table constraint, without committing it.
-  rejection="$(gp_sql --set=job="$job" --set=VERBOSITY=verbose 2>&1 <<'SQL'
-BEGIN;
-UPDATE honua.execution_jobs SET queue_visible_at=clock_timestamp(), queue_priority=NULL
-WHERE operation_id=:'job';
-ROLLBACK;
-SQL
-)" && {
-    compose start worker >/dev/null
-    write_receipt "$scenario" fail "FINDING: malformed queue membership was accepted" "$job"; return 1;
-  }
-  compose start worker >/dev/null || return 1
-  [[ "$rejection" == *23514* ]] || {
-    write_receipt "$scenario" fail "FINDING: malformed queue test failed without a CHECK violation" "$job"; return 1;
-  }
-  terminal="$(wait_terminal "$job")" || { write_receipt "$scenario" fail "FINDING: rejected poison blocked queue progress" "$job"; return 1; }
-  digest="$(result_digest "$job" 2>/dev/null || true)"
-  [[ "$(jq -r .status <<<"$terminal")" == successful && -n "$digest" ]] || {
-    write_receipt "$scenario" fail "FINDING: rejected poison affected valid job" "$job"; return 1;
-  }
-  write_receipt "$scenario" pass "malformed membership rejected with SQLSTATE 23514" "$job" successful "$digest"
+  local scenario=poison-job poison="poison-$(date +%s%N)" result=0
+  run_poison_job_checks || result=$?
+  # The poison row must not outlive its scenario: later lanes measure the reconciler.
+  delete_job_row "${poison}" || runtime_taint="poison row ${poison} could not be removed"
+  return "${result}"
+}
+
+run_poison_job_checks() {
+  local job terminal digest status deadline
+  compose stop worker >/dev/null
+  # A native job waits in the queue while the worker is stopped; a managed one may not.
+  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "valid submission failed"; return 1; }
+  insert_poison_job "${poison}" "${job}" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "poison row could not be queued ahead of the valid job" "${job}"; return 1; }
+  compose start worker >/dev/null
+  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: poison blocked queue progress" "${job}"; return 1; }
+  digest="$(result_digest "${job}" 2>/dev/null || true)"
+  [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: poison affected valid job" "${job}"; return 1; }
+  # Leaving the queue is not enough: a claimed poison row that never ends holds a claim forever.
+  deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-180}))
+  while status="$(job_row_status "${poison}")" || { write_receipt "${scenario}" fail "poison row status could not be read" "${job}"; return 1; }
+        [[ "${status}" =~ ^(Queued|Provisioning|Running)$ ]] && (( SECONDS < deadline )); do sleep 2; done
+  [[ ! "${status}" =~ ^(Queued|Provisioning|Running)$ ]] || { write_receipt "${scenario}" fail "FINDING: poison row stranded in ${status}" "${job}"; return 1; }
+  write_receipt "${scenario}" pass "poison_status=${status:-removed}" "${job}" successful "${digest}"
 }
 
 run_stale_lease() {
@@ -1218,56 +1175,30 @@ run_backlog() {
   local scenario=queue-backlog count="${HONUA_GP_BACKLOG_JOBS:-20}" depth job terminal digest; local -a jobs=()
   compose stop worker >/dev/null
   for ((i=0;i<count;i++)); do jobs+=("$(submit_async gdal.ogr2ogr "${native_payload}")") || { compose start worker >/dev/null; return 1; }; done
-  depth="$(gp_sql <<'SQL'
-SELECT count(*) FROM honua.execution_jobs WHERE status='Queued' AND queue_visible_at<=clock_timestamp();
-SQL
-)"; compose start worker >/dev/null
+  depth="$(pending_queue_depth)"; compose start worker >/dev/null
   (( depth >= count )) || { write_receipt "${scenario}" fail "FINDING: expected backlog ${count}, saw ${depth}"; return 1; }
   for job in "${jobs[@]}"; do terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: backlog did not drain" "${job}"; return 1; }; digest="$(result_digest "${job}" 2>/dev/null || true)"; [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: backlog output missing" "${job}"; return 1; }; done
   write_receipt "${scenario}" pass "peak_depth=${depth};submitted=${count}" "${job}" successful "${digest}"
 }
 
 run_ttl_cleanup() {
-  local scenario=ttl-cleanup job remaining deadline
-  job="$(submit_async)" || return 1
-  wait_terminal "$job" >/dev/null || return 1
-  result_digest "$job" >/dev/null || return 1
-  gp_sql --set=job="$job" <<'SQL' >/dev/null || return 1
-UPDATE honua.execution_jobs SET expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=:'job';
-SQL
-  deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-180}))
-  while (( SECONDS < deadline )); do
-    # Read physical membership: an expiry-filtered read would not prove sweeping.
-    remaining="$(gp_sql --set=job="$job" <<'SQL'
-SELECT count(*) FROM honua.execution_jobs WHERE operation_id=:'job';
-SQL
-)" || return 1
-    [[ "$remaining" == 0 ]] && { write_receipt "$scenario" pass "physical row removed by retention sweeper" "$job" expired; return 0; }
-    sleep 1
-  done
-  write_receipt "$scenario" fail "FINDING: expired physical record remains after sweeper deadline" "$job"
-  return 1
+  local scenario=ttl-cleanup job
+  job="$(submit_async)"; wait_terminal "${job}" >/dev/null || return 1; result_digest "${job}" >/dev/null || return 1
+  expire_terminal_job "${job}" || { write_receipt "${scenario}" fail "terminal job could not be expired" "${job}"; return 1; }
+  local deadline=$((SECONDS + 60))
+  while job_row_exists "${job}" && (( SECONDS < deadline )); do sleep 1; done
+  ! job_row_exists "${job}" || { write_receipt "${scenario}" fail "FINDING: expired record remains" "${job}"; return 1; }
+  write_receipt "${scenario}" pass "" "${job}" expired
 }
 
 run_retry_exhaustion() {
   local scenario=retry-exhaustion job terminal state
-  compose stop worker >/dev/null || return 1
-  job="$(submit_async gdal.ogr2ogr "$native_payload")" || { compose start worker >/dev/null; return 1; }
-  gp_sql --set=job="$job" <<'SQL' >/dev/null || { compose start worker >/dev/null; return 1; }
-UPDATE honua.execution_jobs SET version=version+1,
-  record=jsonb_set(record::jsonb, '{retryPolicy,maxAttempts}', '1')::json,
-  attempt_count=1, status='Running', claimed_by='dead-worker',
-  claimed_at='2000-01-01T00:00:00Z', last_heartbeat_at='2000-01-01T00:00:00Z',
-  updated_at=clock_timestamp(), queue_visible_at=NULL, queue_priority=NULL
-WHERE operation_id=:'job';
-SQL
-  compose start worker >/dev/null || return 1
-  terminal="$(wait_terminal "$job")" || { write_receipt "$scenario" fail "FINDING: exhausted retry never terminated" "$job"; return 1; }
-  state="$(jq -r .status <<<"$terminal")"
-  [[ "$state" == failed ]] && jq -e '.attemptCount == 1' <<<"$(gp_job_record "$job")" >/dev/null || {
-    write_receipt "$scenario" fail "FINDING: exhausted retry executed again" "$job" "$state"; return 1;
-  }
-  write_receipt "$scenario" pass "" "$job" "$state"
+  compose stop worker >/dev/null; job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; return 1; }
+  strand_exhausted_claim "${job}" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "queued job could not be stranded" "${job}"; return 1; }
+  compose start worker >/dev/null
+  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: exhausted retry never terminated" "${job}"; return 1; }
+  state="$(jq -r .status <<<"${terminal}")"; [[ "${state}" == failed ]] || { write_receipt "${scenario}" fail "FINDING: exhausted retry executed again" "${job}" "${state}"; return 1; }
+  write_receipt "${scenario}" pass "" "${job}" "${state}"
 }
 
 run_output_size_cap() {
@@ -1288,7 +1219,7 @@ run_tenant_limits() {
   tmp="$(mktemp)"; headers="$(mktemp)"; export HONUA_GP_MAX_CONCURRENT_PARTITION=1 HONUA_GP_MAX_CONCURRENT_GLOBAL=2
   compose up -d --force-recreate server >/dev/null; wait_ready || return 1; compose stop worker >/dev/null
   code="$(tenant_curl "${a}" -o "${tmp}" -w '%{http_code}' -H 'Content-Type: application/json' -H 'Prefer: respond-async' -d "${native_payload}" "${base_url}/ogc/processes/processes/gdal.ogr2ogr/execution")"; job="$(jq -r '.jobID // .jobId // empty' "${tmp}")"
-  [[ "${code}" == 201 && -n "${job}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "tenant A seed failed"; return 1; }
+  [[ "${code}" == 201 && -n "${job}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "tenant A seed failed: HTTP ${code}"; return 1; }
   code="$(tenant_curl "${a}" -D "${headers}" -o "${tmp}" -w '%{http_code}' -H 'Content-Type: application/json' -H 'Prefer: respond-async' -d "${native_payload}" "${base_url}/ogc/processes/processes/gdal.ogr2ogr/execution")"; retry="$(awk 'tolower($1)=="retry-after:" {gsub("\r","");print $2}' "${headers}")"
   [[ "${code}" == 503 && -n "${retry}" ]] || { compose start worker >/dev/null; write_receipt "${scenario}" fail "FINDING: quota/concurrency lacked 503 Retry-After" "${job}"; return 1; }
   code="$(tenant_curl "${b}" -o "${tmp}" -w '%{http_code}' "${base_url}/ogc/processes/jobs/${job}")"; body="$(<"${tmp}")"; compose start worker >/dev/null
@@ -1313,9 +1244,7 @@ run_topology() {
   require_digest HONUA_WORKER_IMAGE || { preflight_failure="HONUA_WORKER_IMAGE is not an exact digest"; return 1; }
   [[ "${candidate_source_sha}" =~ ^[0-9a-f]{40}$ ]] || { preflight_failure="HONUA_GP_SOURCE_SHA is not a full source SHA"; return 1; }
   if [[ "${lane}" == resilience ]]; then
-    for name in HONUA_GP_TENANT_A_TOKEN HONUA_GP_TENANT_B_TOKEN HONUA_GP_OIDC_ISSUER HONUA_GP_OIDC_AUDIENCE HONUA_GP_OIDC_SIGNING_KEY; do
-      [[ -n "${!name:-}" ]] || { preflight_failure="${name} is required for resilience qualification"; return 1; }
-    done
+    qualification_tenant_tokens || return 1
     backlog_jobs="${HONUA_GP_BACKLOG_JOBS:-20}"; backlog_cap="${HONUA_GP_BACKLOG_COST_CAP:-20}"
     soak_seconds="${HONUA_GP_SOAK_SECONDS:-900}"; soak_concurrency="${HONUA_GP_SOAK_CONCURRENCY:-8}"
     [[ "${backlog_jobs}" =~ ^[0-9]+$ && "${backlog_cap}" =~ ^[0-9]+$ ]] || {
@@ -1497,13 +1426,13 @@ else
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       run_scenario sync run_sync || failures=$((failures + 1))
       run_scenario async run_async_baseline || failures=$((failures + 1))
-      export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+      export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification
       compose up -d --force-recreate worker >/dev/null || failures=$((failures + 1))
       run_scenario cancel-claimed run_cancel_barrier claimed || failures=$((failures + 1))
-      run_scenario cancel-native-process-started run_cancel_barrier native-process-started || failures=$((failures + 1))
+      run_scenario cancel-native-process-started with_native_entry_hold run_cancel_barrier native-process-started || failures=$((failures + 1))
       run_scenario cancel-output-bytes-written-unpublished run_cancel_barrier output-bytes-written-unpublished || failures=$((failures + 1))
       run_scenario cancel-artifact-reference-published-terminal-cas-pending run_cancel_barrier artifact-reference-published-terminal-cas-pending || failures=$((failures + 1))
-      run_scenario mcp-cancel-native-process-started run_mcp_cancel_barrier || failures=$((failures + 1))
+      run_scenario mcp-cancel-native-process-started with_native_entry_hold run_mcp_cancel_barrier || failures=$((failures + 1))
       unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
       compose up -d --force-recreate worker >/dev/null || failures=$((failures + 1))
       run_scenario idempotency run_idempotency || failures=$((failures + 1))

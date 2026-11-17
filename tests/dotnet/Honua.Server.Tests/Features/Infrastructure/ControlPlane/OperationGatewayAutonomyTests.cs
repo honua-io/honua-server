@@ -446,7 +446,6 @@ public sealed partial class OperationGatewayAutonomyTests
 
         return new OpsNotificationService(
             new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance),
-            new AllowAllAlertEditionPolicy(),
             new AlertChannelCircuitBreaker(Options.Create(options)),
             Options.Create(options),
             TestTelemetry.CreateAlertPipelineMetrics(),
@@ -680,23 +679,6 @@ public sealed partial class OperationGatewayAutonomyTests
             Events.Add(alertEvent);
             return Task.FromResult<long?>(Events.Count);
         }
-    }
-
-    private sealed class AllowAllAlertEditionPolicy : IAlertEditionPolicy
-    {
-        public bool IsRuleAllowed(AlertRuleDefinition rule) => true;
-
-        public bool IsTriggerAllowed(AlertTriggerType triggerType) => true;
-
-        public bool IsChannelAllowed(AlertChannelType channelType) => true;
-
-        public bool IsChannelConfigured(AlertChannelType channelType) => true;
-
-        public AlertEditionDenialReason GetEntitlementDenialReason(string entitlementKey)
-            => AlertEditionDenialReason.None;
-
-        public AlertEditionDenialReason GetChannelDenialReason(AlertChannelType channelType)
-            => AlertEditionDenialReason.None;
     }
 
     private sealed class RecordingExecutor : IOperationExecutor

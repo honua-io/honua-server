@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using Honua.Core.Features.Infrastructure.Logging;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
@@ -38,6 +40,10 @@ internal sealed class AuthenticationFailureLimiter(
     TimeProvider timeProvider,
     ILogger<AuthenticationFailureLimiter> logger) : IAuthenticationFailureLimiter
 {
+    private static readonly Counter<long> FailedAttempts = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua_authentication_failed_attempts_total",
+        unit: null,
+        description: "Completed failed credential checks across all tracked sources.");
     private static readonly TimeSpan InFlightRetryAfter = TimeSpan.FromSeconds(1);
 
     private readonly AuthenticationFailureLimiterOptions _options = options.Value;
@@ -79,6 +85,11 @@ internal sealed class AuthenticationFailureLimiter(
 
     public void EndAttempt(AuthenticationAttemptKey key, AuthenticationAttemptOutcome outcome)
     {
+        if (outcome == AuthenticationAttemptOutcome.Failed)
+        {
+            FailedAttempts.Add(1);
+        }
+
         var now = timeProvider.GetUtcNow();
         lock (_gate)
         {

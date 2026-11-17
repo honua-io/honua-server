@@ -12,7 +12,6 @@ namespace Honua.Alerts.Ops;
 internal sealed partial class OpsNotificationService
 {
     private readonly AlertDispatchWriter _dispatchWriter;
-    private readonly IAlertEditionPolicy _editionPolicy;
     private readonly AlertChannelCircuitBreaker _circuitBreaker;
     private readonly AlertOptions _options;
     private readonly AlertPipelineMetrics _metrics;
@@ -20,14 +19,12 @@ internal sealed partial class OpsNotificationService
 
     public OpsNotificationService(
         AlertDispatchWriter dispatchWriter,
-        IAlertEditionPolicy editionPolicy,
         AlertChannelCircuitBreaker circuitBreaker,
         IOptions<AlertOptions> options,
         AlertPipelineMetrics metrics,
         ILogger<OpsNotificationService> logger)
     {
         _dispatchWriter = dispatchWriter ?? throw new ArgumentNullException(nameof(dispatchWriter));
-        _editionPolicy = editionPolicy ?? throw new ArgumentNullException(nameof(editionPolicy));
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
@@ -92,6 +89,8 @@ internal sealed partial class OpsNotificationService
         }
     }
 
+    // Ops notices are the deployment's messages to its own operator, not the alerting product, so
+    // alert-product channel entitlements do not apply: Community and Pro installs must reach the operator.
     private ImmutableArray<AlertChannelType> ResolveChannels(IReadOnlyList<string> configured, string source, DateTimeOffset now)
     {
         var builder = ImmutableArray.CreateBuilder<AlertChannelType>();
@@ -101,12 +100,6 @@ internal sealed partial class OpsNotificationService
         {
             if (!AlertChannelNames.TryParse(name, out var channelType) || !seen.Add(channelType))
             {
-                continue;
-            }
-
-            if (!_editionPolicy.IsChannelAllowed(channelType))
-            {
-                LogChannelNotAllowed(_logger, source, channelType, _options.Edition);
                 continue;
             }
 
@@ -170,9 +163,6 @@ internal sealed partial class OpsNotificationService
 
     [LoggerMessage(EventId = 9450, Level = LogLevel.Debug, Message = "Ops notification from {Source} ({Severity}) skipped: below minimum severity {MinSeverity}.")]
     private static partial void LogBelowMinSeverity(ILogger logger, string source, AlertSeverity severity, AlertSeverity minSeverity);
-
-    [LoggerMessage(EventId = 9451, Level = LogLevel.Warning, Message = "Ops notification channel {ChannelType} for {Source} is not allowed by the active alert entitlements (configured edition cap: {Edition}); skipping that channel.")]
-    private static partial void LogChannelNotAllowed(ILogger logger, string source, AlertChannelType channelType, AlertEdition? edition);
 
     [LoggerMessage(EventId = 9453, Level = LogLevel.Warning, Message = "Ops notification channel {ChannelType} for {Source} skipped: the delivery circuit breaker is open (channel is persistently failing).")]
     private static partial void LogChannelCircuitOpen(ILogger logger, string source, AlertChannelType channelType);

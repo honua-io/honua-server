@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
@@ -21,6 +22,37 @@ public sealed class AuthenticationFailureLimiterTests
     private const string OtherSource = "198.51.100.8";
 
     private readonly TransitionClock _clock = new();
+
+    [UnitTest]
+    public void EndAttempt_AggregatesFailuresAcrossSourcesWithoutCredentialOrSourceTags()
+    {
+        var thread = Environment.CurrentManagedThreadId;
+        var measurements = new List<long>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, observer) =>
+        {
+            if (instrument.Name == "honua_authentication_failed_attempts_total")
+            {
+                observer.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            if (Environment.CurrentManagedThreadId == thread)
+            {
+                tags.Length.Should().Be(0);
+                measurements.Add(value);
+            }
+        });
+        listener.Start();
+        var limiter = CreateLimiter();
+
+        Fail(limiter, Source, 1);
+        Fail(limiter, OtherSource, 1);
+        Attempt(limiter, Key(Source, 7), AuthenticationAttemptOutcome.NotCounted);
+
+        measurements.Should().Equal(1L, 1L);
+    }
 
     [UnitTest]
     public void TryBeginAttempt_BelowThreshold_Admits()

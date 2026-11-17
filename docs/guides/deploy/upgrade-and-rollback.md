@@ -324,7 +324,7 @@ If a serving process with `HONUA_SKIP_MIGRATIONS=true` reaches the schema guard 
 docker run --rm \
   -e HONUA_MIGRATE_ONLY=true \
   -e ConnectionStrings__DefaultConnection="$HONUA_DATABASE_CONNECTION" \
-  ghcr.io/honua-io/honua-server:<target-tag>
+  'ghcr.io/honua-io/honua-server:<target-tag>'
 ```
 
 Migrate-only mode works the same way in the native-AOT and JIT images. It:

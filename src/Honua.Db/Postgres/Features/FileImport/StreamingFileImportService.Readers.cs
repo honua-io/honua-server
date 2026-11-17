@@ -141,9 +141,9 @@ internal sealed partial class StreamingFileImportService
             throw new InvalidOperationException("GeoPackage contains table name with unsupported characters.");
         }
 
-        await using var connection = new SqliteConnection($"Data Source={filePath};Mode=ReadOnly;");
-        await connection.OpenAsync(cancellationToken);
+        await using var connection = await OpenGeoPackageReadOnlyAsync(filePath, cancellationToken);
 
+        await RequireGeoPackageTableAsync(connection, layer.TableName, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = $"SELECT * FROM {SqlIdentifier.QuoteIdentifier(layer.TableName)}";
 
@@ -226,8 +226,7 @@ internal sealed partial class StreamingFileImportService
         string filePath,
         CancellationToken cancellationToken)
     {
-        await using var connection = new SqliteConnection($"Data Source={filePath};Mode=ReadOnly;");
-        await connection.OpenAsync(cancellationToken);
+        await using var connection = await OpenGeoPackageReadOnlyAsync(filePath, cancellationToken);
 
         // Resolve the layer's srs_id through gpkg_spatial_ref_sys rather than trusting srs_id to be
         // an EPSG code directly. The GeoPackage spec allows local srs_id numbering: a file
@@ -239,6 +238,8 @@ internal sealed partial class StreamingFileImportService
         // reads the raw srs_id (best effort) rather than failing the whole import. The raw srs_id
         // still passes through ResolveGeoPackageSrid and downstream ValidateImportSridsAsync, which
         // reject nonsense codes.
+        await RequireGeoPackageTableAsync(connection, "gpkg_contents", cancellationToken);
+        await RequireGeoPackageTableAsync(connection, "gpkg_geometry_columns", cancellationToken);
         var hasSpatialRefSys = await GeoPackageSpatialRefSysTableExistsAsync(connection, cancellationToken);
 
         var sql = hasSpatialRefSys
@@ -286,9 +287,15 @@ internal sealed partial class StreamingFileImportService
     {
         await using var probe = connection.CreateCommand();
         probe.CommandText =
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'gpkg_spatial_ref_sys' LIMIT 1";
+            "SELECT 1 FROM sqlite_master WHERE name = 'gpkg_spatial_ref_sys' LIMIT 1";
         var result = await probe.ExecuteScalarAsync(cancellationToken);
-        return result is not null;
+        if (result is null)
+        {
+            return false;
+        }
+
+        await RequireGeoPackageTableAsync(connection, "gpkg_spatial_ref_sys", cancellationToken);
+        return true;
     }
 
     private static int? ResolveGeoPackageSrid(int? srsId, string? organization, int? organizationCoordSysId)

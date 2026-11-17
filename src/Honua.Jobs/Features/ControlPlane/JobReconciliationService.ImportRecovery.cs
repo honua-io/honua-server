@@ -16,10 +16,44 @@ internal sealed partial class JobReconciliationService
             RetryPolicy = (current.RetryPolicy ?? JobRetryPolicy.Default) with { MaxAttempts = current.AttemptCount }
         }, now, cancellationToken);
 
+    private static readonly TimeSpan ImportRecoveryDelay = TimeSpan.FromSeconds(5);
+
     private async Task<bool> RequeueImportRecoveryAsync(
         ExecutionJobRecord current, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var delay = TimeSpan.FromSeconds(5);
+        if (!await TryMarkImportRecoveryAsync(current, now, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        await jobQueue.RequeueAsync(current.OperationId, current.Priority, ImportRecoveryDelay, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    // A heartbeat expiry lost the running attempt: record it as a worker-lost event, as the retry path does.
+    private async Task<bool> RequeueLostImportRecoveryAsync(
+        ExecutionJobRecord current, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (!await TryMarkImportRecoveryAsync(current, now, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        try
+        {
+            await jobQueue.RequeueAsync(current.OperationId, current.Priority, ImportRecoveryDelay, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await RecordLostAttemptAsync(current, now, (current.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts).ConfigureAwait(false);
+        }
+
+        return true;
+    }
+
+    private async Task<bool> TryMarkImportRecoveryAsync(
+        ExecutionJobRecord current, DateTimeOffset now, CancellationToken cancellationToken)
+    {
         var queued = current with
         {
             Status = ExecutionJobStatus.Queued,
@@ -28,7 +62,7 @@ internal sealed partial class JobReconciliationService
             LastHeartbeatAt = null,
             UpdatedAt = now,
             CompletedAt = null,
-            NextRetryAt = now.Add(delay),
+            NextRetryAt = now.Add(ImportRecoveryDelay),
             CurrentPhase = "Recovering committed import outcome"
         };
         if (!await jobStore.TrySetAsync(queued, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -38,7 +72,6 @@ internal sealed partial class JobReconciliationService
 
         ControlPlaneTelemetry.RecordExecutionTransition(current, queued);
         cancellationTokens.Revoke(current.OperationId, current.ClaimedBy!);
-        await jobQueue.RequeueAsync(current.OperationId, current.Priority, delay, cancellationToken).ConfigureAwait(false);
         return true;
     }
 }

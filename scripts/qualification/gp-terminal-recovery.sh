@@ -69,11 +69,11 @@ terminal_assert_public_result() {
 }
 
 terminal_job_record() {
-  gp_job_record "$job"
+  job_record "$job"
 }
 
 terminal_package_record() {
-  gp_package_record "$job"
+  result_package_record "$job"
 }
 
 run_terminal_result_recovery() {
@@ -114,7 +114,7 @@ run_terminal_result_recovery() {
     and all((.[0], $original[0][0]); .Config.Image == $image
       and .Config.Labels["org.opencontainers.image.revision"] == $sha)' "$replacement" >/dev/null || return 1
   record_disruption worker terminal-committed-registration-pending recovered
-  package_before_read="$(gp_package_exists "$job")" || return 1
+  package_before_read="$(result_package_exists "$job")" || return 1
   jq -n --argjson before "$package_before" --argjson before_read "$package_before_read" \
     '{at_crash:$before,after_worker_replacement_before_read:$before_read}' \
     > "$receipt_root/$scenario-package-absence.json" || return 1

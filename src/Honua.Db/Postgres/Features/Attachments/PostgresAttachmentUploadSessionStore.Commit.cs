@@ -18,7 +18,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
     {
         ArgumentNullException.ThrowIfNull(publishContent);
         var publisher = _attachmentStore ?? throw new InvalidOperationException("Attachment publication is not configured.");
-        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionOwner = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionOwner.RequireNpgsqlConnection();
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var database = new SessionDatabase(connection, transaction, cancellationToken);
         var session = (await ReadSessionAsync(database, key, "FOR UPDATE").ConfigureAwait(false)).Session;

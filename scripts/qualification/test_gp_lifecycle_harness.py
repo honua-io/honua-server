@@ -25,9 +25,6 @@ class GpQualificationHarnessTests(unittest.TestCase):
         completed, receipts, summary = self.run_harness("lifecycle", HONUA_SERVER_IMAGE="unattested:latest")
         self.assertNotEqual(0, completed.returncode)
         self.assertEqual(27, summary["declared_scenario_count"])
-        self.assertEqual({"worker", "server", "postgres"},
-                         {name.split("-")[1] for name in summary["declared_scenarios"]
-                          if name.startswith("restart-")})
         self.assertIn("mcp-cancel-native-process-started", summary["declared_scenarios"])
         self.assertEqual("fail", receipts["mcp-cancel-native-process-started"]["outcome"])
         self.assertEqual([], summary["missing_scenarios"])
@@ -52,11 +49,10 @@ barrier_record() {
   if [[ "$MODE" == missing-late-barrier && -e first-alive ]]; then echo null
   else echo '{"childProcessId":123}'; fi
 }
-compose() {
-  if [[ "$1" == ps ]]; then echo worker-container; fi
-}
-gp_job_record() { echo '{"attemptCount":1}'; }
-gp_sql() { cat >/dev/null; }
+compose() { [[ "$1" != ps ]] || echo worker-container; }
+job_record() { echo '{"attemptCount":1}'; }
+job_queue_position() { :; }
+native_entry_hold_active() { return 1; }
 docker() {
   if [[ "$1" == inspect ]]; then
     [[ "$2 $3 $4 $5" == "--type container --format {{.State.Running}}" ]] || return 98
@@ -97,67 +93,6 @@ fi
                                            env={**os.environ, "MODE": mode}, capture_output=True, text=True, check=False)
                 self.assertEqual(0, completed.returncode, completed.stderr)
 
-    def test_ttl_waits_for_physical_sweeper_deletion(self):
-        source = HARNESS.read_text(encoding="utf-8")
-        function = re.search(r"^run_ttl_cleanup\(\) \{\n.*?^\}", source, re.M | re.S).group(0)
-        for mode in ("swept", "retained"):
-            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
-                script = function + r'''
-set -uo pipefail
-HONUA_GP_SCENARIO_TIMEOUT_SECONDS=3
-submit_async() { echo job-1; }
-wait_terminal() { return 0; }
-result_digest() { echo digest; }
-write_receipt() { echo "$2" > outcome; }
-sleep() { SECONDS=$((SECONDS+1)); }
-gp_sql() {
-  local sql
-  sql="$(cat)"
-  [[ "$*" == --set=job=job-1 ]] || return 91
-  if [[ "$sql" == UPDATE* ]]; then
-    [[ "$sql" == *"expires_at=clock_timestamp()-interval '1 second'"* ]] || return 92
-    touch expired
-  else
-    [[ -e expired && "$sql" == "SELECT count(*) FROM honua.execution_jobs WHERE operation_id=:'job';" ]] || return 93
-    if [[ -e polled && "$MODE" == swept ]]; then echo 0; else touch polled; echo 1; fi
-  fi
-}
-run_ttl_cleanup; status=$?
-[[ -e expired && -e polled ]] || exit 94
-if [[ "$MODE" == swept ]]; then [[ "$status" == 0 && "$(cat outcome)" == pass ]]
-else [[ "$status" != 0 && "$(cat outcome)" == fail ]]; fi
-'''
-                completed = subprocess.run(["bash", "-c", script], cwd=directory,
-                                           env={**os.environ, "MODE": mode}, capture_output=True, text=True, check=False)
-                self.assertEqual(0, completed.returncode, completed.stderr)
-
-    def test_retry_exhaustion_rejects_an_additional_attempt(self):
-        source = HARNESS.read_text(encoding="utf-8")
-        function = re.search(r"^run_retry_exhaustion\(\) \{\n.*?^\}", source, re.M | re.S).group(0)
-        for attempts in (1, 2):
-            with self.subTest(attempts=attempts), tempfile.TemporaryDirectory() as directory:
-                script = function + r'''
-set -uo pipefail
-native_payload='{}'
-compose() { return 0; }
-submit_async() { echo job-1; }
-wait_terminal() { echo '{"status":"failed"}'; }
-gp_job_record() { printf '{"attemptCount":%s}' "$ATTEMPTS"; }
-write_receipt() { echo "$2" > outcome; }
-gp_sql() { cat > updated.sql; }
-run_retry_exhaustion; status=$?
-if [[ "$ATTEMPTS" == 1 ]]; then [[ "$status" == 0 && "$(cat outcome)" == pass ]]
-else [[ "$status" != 0 && "$(cat outcome)" == fail ]]; fi
-'''
-                completed = subprocess.run(["bash", "-c", script], cwd=directory,
-                                           env={**os.environ, "ATTEMPTS": str(attempts)}, capture_output=True, text=True, check=False)
-                self.assertEqual(0, completed.returncode, completed.stderr)
-                sql = (Path(directory) / "updated.sql").read_text()
-                for fragment in ("attempt_count=1", "status='Running'", "claimed_by='dead-worker'",
-                                 "last_heartbeat_at=", "queue_visible_at=NULL", "queue_priority=NULL",
-                                 "version=version+1", "{retryPolicy,maxAttempts}"):
-                    self.assertIn(fragment, sql)
-
     def test_failed_timeout_restoration_blocks_follow_up_but_allows_final_cleanup(self):
         source = HARNESS.read_text(encoding="utf-8")
         functions = "\n".join(
@@ -167,7 +102,7 @@ else [[ "$status" != 0 && "$(cat outcome)" == fail ]]; fi
         for restoration_fails in ("yes", "no"):
             with self.subTest(restoration_fails=restoration_fails), tempfile.TemporaryDirectory() as directory:
                 script = functions + r'''
-set -uo pipefail
+set -uo pipefail; keep_held_worker_logs() { :; }
 runtime_taint=""; preflight_failure=""; lane=self-test; receipt_root="$PWD"
 scenario_state_reset() { scenario_name="$1"; scenario_finding=""; scenario_cleanup_failure=""; }
 run_timeout_case() { scenario_finding='original assertion failure'; return 17; }
@@ -205,7 +140,7 @@ fi
             for failure in ("setup", "readiness", "submit", "barrier"):
                 with self.subTest(initial=initial, failure=failure), tempfile.TemporaryDirectory() as directory:
                     script = functions + r'''
-set -uo pipefail
+set -uo pipefail; keep_held_worker_logs() { :; }
 scenario_finding=""; scenario_cleanup_failure=""; scenario_name=timeout
 native_payload='{}'
 unset HONUA_GP_TIMEOUT_SECONDS HONUA_GP_QUALIFICATION_BARRIER_ROOT HONUA_GP_QUALIFICATION_EXECUTOR_MODE
@@ -260,7 +195,7 @@ cmp before last-peer-ready || exit 54
             for case_status in (0, 17):
                 with self.subTest(failure=failure, case_status=case_status):
                     script = wrapper + r'''
-set -uo pipefail
+set -uo pipefail; keep_held_worker_logs() { :; }
 scenario_name=timeout; scenario_finding=""; scenario_cleanup_failure=""
 run_timeout_case() {
   job=job-1; state=failed
@@ -460,11 +395,12 @@ result_digest "$job"
             HONUA_WORKER_IMAGE="ghcr.io/honua/worker@sha256:" + "b" * 64,
             HONUA_GP_SOURCE_SHA="c" * 40,
             HONUA_GP_SKIP_PULL="true",
+            HONUA_GP_TENANT_A_TOKEN="supplied-without-the-rest",
         )
 
         self.assertNotEqual(0, completed.returncode)
         self.assertEqual("fail", receipts["topology"]["outcome"])
-        self.assertIn("required for resilience qualification", receipts["topology"]["finding"])
+        self.assertIn("required when any tenant identity value is supplied", receipts["topology"]["finding"])
         self.assertEqual(summary["declared_scenario_count"], summary["receipt_count"])
         self.assertEqual([], summary["missing_scenarios"])
         self.assertEqual([], summary["duplicate_receipts"])

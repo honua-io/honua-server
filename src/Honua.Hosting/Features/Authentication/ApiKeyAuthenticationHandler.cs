@@ -115,7 +115,7 @@ internal sealed class ApiKeyAuthenticationHandler(
                 Context.Items[SourceRefusedRetryAfterKey] = validation.RetryAfter;
                 return AuthenticateResult.Fail(SourceRefusedMessage);
             case ApiKeyRejection.RequestNotPermitted:
-                // Refusal already logged by ValidateApiKeyAsync with the key id and restriction.
+                // Refusal already logged by ResolveStoredKey with the key id and restriction.
                 Context.Items[AuthFailureMessageKey] = RequestNotPermittedMessage;
                 return AuthenticateResult.Fail(RequestNotPermittedMessage);
             default:
@@ -603,7 +603,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             }
         }
 
-        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, dependencies.Options.EnvironmentName);
+        AdminPasswordValidation.ValidateForEnvironment(resolvedPassword, dependencies.Options.EnvironmentName);
         return resolvedPassword;
     }
 
