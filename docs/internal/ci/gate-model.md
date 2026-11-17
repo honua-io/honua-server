@@ -214,6 +214,15 @@ Stage 3 details:
   The newest 100 completed runs are ordered by completion update time.
   Failed and cancelled runs cannot advance the base, including deferred runs whose
   cancellation request fails. With no eligible ancestor, defer to scheduled full CI.
+- A dispatcher that defers runs `Record coverage deferred to scheduled full CI`.
+  Later pushes start from the newest such ancestor head after the completed base
+  (`scripts/ci/completed_ci_base.py` reads the step from the newest 100 successful
+  dispatcher runs, at most 20 job lookups), so a range already owed to the full run
+  does not defer every later merge. Before this, one infrastructure merge after the
+  last successful run deferred all 100 dispatches from 14:02 UTC on 16 Nov to
+  16:27 UTC on 17 Nov; replaying the router per push over the same 99 ranges admits
+  34 (30 docs/CI-only, 4 targeted). Unavailable history keeps the completed base,
+  and a transient selection failure is not recorded, so the next push retries it.
 - The dispatch summary separately lists the culprit range from the latest
   full green ancestor (searched among the newest 100 successful runs,
   excluding affected titles that cannot clear earlier failures). It passes
