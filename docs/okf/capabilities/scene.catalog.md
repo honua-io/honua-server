@@ -18,7 +18,7 @@ Discover published 3D scene layers through the scene catalog surface.
 | Edition | Community |
 | Surface maturity | 3 deferred |
 | Registry entries | 3 |
-| Proving tests | 4 |
+| Proving tests | 15 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

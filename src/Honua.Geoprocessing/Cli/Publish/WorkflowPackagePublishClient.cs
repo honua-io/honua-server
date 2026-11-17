@@ -236,7 +236,4 @@ internal sealed class WorkflowPackagePublishClient
         var collapsed = value.Trim();
         return collapsed.Length <= 400 ? collapsed : collapsed[..397] + "...";
     }
-
-    internal static bool IsAuthFailure(HttpStatusCode status)
-        => status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
 }

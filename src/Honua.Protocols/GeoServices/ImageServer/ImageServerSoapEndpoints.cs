@@ -352,7 +352,7 @@ internal static partial class ImageServerSoapEndpoints
             return service.ErrorResult;
         }
 
-        // GetServiceInfo describes a registered coverage's grid (#6493), so the
+        // GetServiceInfo describes a registered coverage's grid, so the
         // catalog geometry must carry that same CRS rather than the base mosaic's.
         var coverageGrid = await ReadCoverageGridAsync(
             request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
@@ -710,7 +710,7 @@ internal static partial class ImageServerSoapEndpoints
 
         var raster = referenceRaster.Value;
         // Pro draws with Compression=LERC (and ExportImage's esriImageLERC). That is a LERC2
-        // block, not the uncompressed 8-bit BIP pixel block (#6563).
+        // block, not the uncompressed 8-bit BIP pixel block.
         var lercDraw = IsLercDraw(request);
         if (!lercDraw)
         {
@@ -1078,7 +1078,7 @@ internal static partial class ImageServerSoapEndpoints
             return true;
         }
 
-        // SOAP accepts every method the service advertises in AllowedMosaicMethods (#4063), as
+        // SOAP accepts every method the service advertises in AllowedMosaicMethods, as
         // either the advertised token or its esriMosaic* enum name, and forwards it to the shared
         // REST mosaic-rule parser.
         var requested = FindDescendantValue(element, "MosaicMethod");

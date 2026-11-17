@@ -29,7 +29,7 @@ using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
-// Behavior reference: Replication durability (#383)
+// Behavior reference: Replication durability
 // Uses IChangeTracker for monotonic generation counters and incremental delta extraction
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -174,7 +174,7 @@ internal static partial class FeatureServerEndpoints
             .ToHashSet();
 
         // Serve /replicas from the live registry (IReplicaStore) rather than a lagging cached snapshot, so
-        // the enumeration reflects createReplica / unRegisterReplica immediately (#1775).
+        // the enumeration reflects createReplica / unRegisterReplica immediately.
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
         var replicas = await replicaStore.ListByServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
 
@@ -254,7 +254,7 @@ internal static partial class FeatureServerEndpoints
             return syncCapabilityError;
         }
 
-        // An array, not a JSON-encoded string: clients index layerServerGens[i].serverGen (#4020).
+        // An array, not a JSON-encoded string: clients index layerServerGens[i].serverGen.
         var layerServerGens = replicaRecord.SyncModel.Equals("perLayer", StringComparison.OrdinalIgnoreCase)
             ? replicaRecord.LayerIds
                 .Distinct()
@@ -387,7 +387,7 @@ internal static partial class FeatureServerEndpoints
             return createRbacError;
         }
 
-        // The response carries the replica data (#4018), so write access alone is not enough: every
+        // The response carries the replica data, so write access alone is not enough: every
         // selected layer also needs Query access, the gate extractChanges applies. A write-only credential
         // must not bulk-read a layer it may not query.
         var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
@@ -401,9 +401,9 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        // Every createReplica parameter is honored or rejected; none is silently dropped (#4018).
-        // syncModel is validated instead of stored verbatim: an arbitrary value used to be persisted and
-        // made the replica info resource omit both replicaServerGen and layerServerGens.
+        // Every createReplica parameter is honored or rejected; none is silently dropped.
+        // syncModel is validated instead of stored verbatim: an arbitrary persisted value would make the
+        // replica info resource omit both replicaServerGen and layerServerGens.
         if (!TryNormalizeReplicaSyncModel(GetValueString(values, "syncModel"), out var syncModel))
         {
             return StandardErrorHelpers.CreateBadRequest(
@@ -466,7 +466,7 @@ internal static partial class FeatureServerEndpoints
         // The replica data is the scoped change log from generation 0 through the registered generation
         // (every current row as an add), bounded per layer by Limits:Replica:MaxChangesPerLayer. A larger
         // scope is not rejected: the replica cursor is set to the generation the data reached and the
-        // remainder arrives through synchronizeReplica downloads (#4019).
+        // remainder arrives through synchronizeReplica downloads.
         ReplicaDelivery? delivery;
         IResult? deliveryError;
         try
@@ -643,7 +643,7 @@ internal static partial class FeatureServerEndpoints
         var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
 
         // The replica's recorded cursor is the default lower bound. serverGens / layerServerGens override
-        // it so a client can page a large backlog by generation window (#4017, #4019); the change feed
+        // it so a client can page a large backlog by generation window; the change feed
         // excludes the replica's own uploads either way, and the replica's stored scope always applies.
         if (!TryResolveExtractWindow(
                 values,
@@ -708,7 +708,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         // With a scope or a visibility policy the delivery depends on whether the client could hold the row
-        // before the change. The change log's pre-change image answers that (#4879): the scope and the
+        // before the change. The change log's pre-change image answers that: the scope and the
         // caller's current row visibility are evaluated against it through the same reader seam, so a
         // deleted row is re-authorised instead of withheld, and a row updated into the scope is an add.
         var preImageReader = featureReader as IPreChangeImageReader;
@@ -1048,7 +1048,7 @@ internal static partial class FeatureServerEndpoints
             || string.Equals(syncDirection, "bidirectional", StringComparison.OrdinalIgnoreCase);
 
         // A download returns feature data, so it needs Query access on every replica layer, as extractChanges
-        // and createReplica do; write access alone must not read the layers (#4018).
+        // and createReplica do; write access alone must not read the layers.
         if (isDownloadDirection)
         {
             var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
@@ -1087,8 +1087,8 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Esri sync parameter: rollbackOnFailure=true applies each layer's uploaded edits atomically so
-        // a single failing row rolls back that layer's whole batch, leaving the server state unchanged
-        // (#2136). Defaults to true, the Esri Synchronize Replica default (#4031): a client that omits
+        // a single failing row rolls back that layer's whole batch, leaving the server state unchanged.
+        // Defaults to true, the Esri Synchronize Replica default: a client that omits
         // the parameter must never get a partially applied upload. Best-effort per-row apply is opt-in
         // with an explicit rollbackOnFailure=false.
         var rollbackOnFailureSupplied = TryGetValue(values, "rollbackOnFailure", out var rollbackOnFailureRaw)
@@ -1101,7 +1101,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Esri sync parameter: returnIdsForAdds=true returns the object ids and global ids the server
-        // assigned to uploaded adds, so the client can map its local rows to the created rows (#4016).
+        // assigned to uploaded adds, so the client can map its local rows to the created rows.
         if (!TryParseBoolValue(values, "returnIdsForAdds", false, out var returnIdsForAdds, out var returnIdsForAddsError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -1109,7 +1109,7 @@ internal static partial class FeatureServerEndpoints
                 [returnIdsForAddsError ?? "returnIdsForAdds must be a boolean value."]);
         }
 
-        // Honua extension parameter (#2430): conflictHandling selects what happens to an uploaded edit
+        // Honua extension parameter: conflictHandling selects what happens to an uploaded edit
         // that collides with a concurrent server edit. `lastWriteWins` (the default, and the historical
         // behavior) still commits the client edit and records the conflict as advisory review evidence;
         // `manualReview` withholds the conflicting edit so the durable conflict record is the only
@@ -1133,7 +1133,7 @@ internal static partial class FeatureServerEndpoints
         // Upload/bidirectional sync with edits is applied through the canonical replica-sync
         // pipeline: it detects server-side conflicts against the replica's base generation, applies
         // non-conflicting edits via the shared edit pipeline, and writes durable conflict records
-        // when supported. Download-only syncs and empty uploads skip the pipeline entirely (#1272).
+        // when supported. Download-only syncs and empty uploads skip the pipeline entirely.
         long uploadServerGen = 0;
         var didUpload = false;
         var uploadReplayed = false;
@@ -1144,7 +1144,7 @@ internal static partial class FeatureServerEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid edits parameter", [parseError!]);
             }
 
-            // Retry safety (#4026): a field client that times out re-sends the identical upload, and the
+            // Retry safety: a field client that times out re-sends the identical upload, and the
             // retry passes the cursor compare-and-set below because it reads the cursor the first attempt
             // committed, so its adds were inserted a second time. Each applied upload is recorded under
             // the client's key (Idempotency-Key header or Esri editsUploadID) or, without one, under a
@@ -1265,8 +1265,7 @@ internal static partial class FeatureServerEndpoints
                 // The server side of each conflict is snapshotted by the canonical sync service through
                 // the capturer below — after detection, before the edits apply. Capturing here, ahead of
                 // the whole pipeline, meant a server edit landing in between was flagged as the conflict
-                // yet missing from the snapshot, so a later keep-server resolution silently discarded it
-                // (#2430).
+                // yet missing from the snapshot, so a later keep-server resolution silently discarded it.
                 var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
                 var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
                 var resourcesByPublicLayerId = replicaLayers
@@ -1302,9 +1301,9 @@ internal static partial class FeatureServerEndpoints
 
                 // Attach the client (uploaded) and pre-apply server state snapshots to the durable
                 // conflict records the sync service wrote, so the operator conflict-review API can
-                // render the field/geometry comparison (#1287).
+                // render the field/geometry comparison.
                 //
-                // This runs BEFORE the batch-failure return (#2430). With rollbackOnFailure=false an
+                // This runs BEFORE the batch-failure return. With rollbackOnFailure=false an
                 // unrelated row can fail while a conflicting edit commits, and under manualReview the
                 // conflicting edit is withheld deliberately — in both cases report.Success can be false
                 // while durable conflicts exist. Returning first left those records with no envelopes,
@@ -1317,18 +1316,18 @@ internal static partial class FeatureServerEndpoints
                     // manualReview the record is the ONLY copy of the withheld client edit. A client
                     // disconnect here left the record with no client-state envelope, so after the
                     // settle window acceptClient had nothing to apply and the edit was permanently
-                    // unresolvable (#2430).
+                    // unresolvable.
                     var refinedTypes = await AttachConflictStatesAsync(
                         conflictRepository, report.Conflicts, layerEdits, serverConflictStates, CancellationToken.None);
 
                     // Mirror the refined classification onto the transient synchronize response so the
-                    // wire hint matches the durable conflict record the review API returns (#1287).
+                    // wire hint matches the durable conflict record the review API returns.
                     if (conflicts is not null && refinedTypes.Count > 0)
                     {
                         // Keyed by request slot: several occurrences of the same object can refine
                         // differently (one geometry-only, another attribute-changing), and collapsing
                         // them by object id gave every wire conflict one type while the durable records
-                        // were refined individually (#2430).
+                        // were refined individually.
                         foreach (var wireConflict in conflicts.Where(
                             c => refinedTypes.ContainsKey((c.LayerId, c.EditIndex))))
                         {
@@ -1341,7 +1340,7 @@ internal static partial class FeatureServerEndpoints
                 {
                     // A failed upload that provably committed nothing frees its key so the retry re-attempts
                     // it. One that committed, or may have committed, rows records the failure instead, so a
-                    // retry replays this error rather than applying the rows that landed again (#4026).
+                    // retry replays this error rather than applying the rows that landed again.
                     if (report.AppliedAdds + report.AppliedUpdates + report.AppliedDeletes == 0 &&
                         (report.LayerResults.IsDefaultOrEmpty ||
                          report.LayerResults.All(static result => result.IndeterminateEditIndexes.IsDefaultOrEmpty)))
@@ -1368,7 +1367,7 @@ internal static partial class FeatureServerEndpoints
 
                 // Record the applied upload before the cursor compare-and-set below: the edits are
                 // committed whether or not this request's cursor update wins, so a retry must replay them
-                // rather than apply them again (#4026). Uncancellable for the same reason.
+                // rather than apply them again. Uncancellable for the same reason.
                 var uploadRecord = new ReplicaUploadRecord
                 {
                     Fingerprint = uploadFingerprint!,
@@ -1411,13 +1410,13 @@ internal static partial class FeatureServerEndpoints
             : await changeTracker.GetCurrentGenerationAsync(cancellationToken);
 
         // Download / bidirectional sync: assemble the server-to-client delta and deliver it in the
-        // response. This is the core of the #1775 fix — previously the download direction returned
-        // success with no edits and never advanced the serverGen, so server-side changes committed after
-        // createReplica were never delivered. The delta is assembled with the same change-tracking engine
-        // extractChanges uses. The "since" cursor is the generation the client says it already holds
-        // (replicaServerGen, the serverGen from its preceding extractChanges/createReplica) when supplied,
-        // otherwise the replica's recorded last-sync generation. Durable upload provenance excludes
-        // changes already known to this replica without skipping other clients' intervening changes.
+        // response. Without it the download direction would return success with no edits and never advance
+        // the serverGen, so server-side changes committed after createReplica would never be delivered.
+        // The delta is assembled with the same change-tracking engine extractChanges uses. The "since"
+        // cursor is the generation the client says it already holds (replicaServerGen, the serverGen from
+        // its preceding extractChanges/createReplica) when supplied, otherwise the replica's recorded
+        // last-sync generation. Durable upload provenance excludes changes already known to this replica
+        // without skipping other clients' intervening changes.
         LayerChanges[]? downloadEdits = null;
         ReplicaInfoLayerServerGeneration[]? downloadLayerServerGens = null;
         var downloadThroughGen = currentGen;
@@ -1440,7 +1439,7 @@ internal static partial class FeatureServerEndpoints
             // A backlog larger than Limits:Replica:MaxChangesPerLayer is delivered in consecutive
             // generation windows: the cursor advances to the generation this delivery reached and the
             // response sets exceededTransferLimit, so a busy replica always makes progress instead of
-            // failing every download (#4019).
+            // failing every download.
             var (delivery, deltaError) = await AssembleReplicaDeliveryAsync(
                 context,
                 replicaId,
@@ -1663,7 +1662,7 @@ internal static partial class FeatureServerEndpoints
             // Keyed by request slot, not by object id: a payload may carry several updates for the same
             // object, and keying by id left every one of that object's records holding the LAST
             // envelope — so accepting an earlier conflict wrote the later edit instead of the client
-            // intent the operator reviewed (#2430).
+            // intent the operator reviewed.
             clientStates.TryGetValue((conflict.PublicLayerId, conflict.EditIndex), out var clientState);
             serverStates.TryGetValue(key, out var serverState);
             if (clientState is null && serverState is null)
@@ -1678,7 +1677,7 @@ internal static partial class FeatureServerEndpoints
             }
 
             // Refine the sync service's operation-only classification now that the geometry/attribute
-            // values are available: attributes-agree + geometry-differs is a geometry conflict (#1287).
+            // values are available: attributes-agree + geometry-differs is a geometry conflict.
             var refinedType = ReplicaConflictClassifier.Refine(existing.ConflictType, clientState, serverState);
             if (refinedType != existing.ConflictType)
             {
@@ -1687,7 +1686,7 @@ internal static partial class FeatureServerEndpoints
 
             // Guarded, column-scoped update rather than a whole-record upsert: an operator can resolve
             // this conflict the moment it is listed, while this post-processing is still running, and
-            // writing the record back from the read above would reopen that resolution (#2430).
+            // writing the record back from the read above would reopen that resolution.
             await conflictRepository.TryUpdateDetectionStateAsync(
                 new ReplicaConflictDetectionUpdate(
                     conflictId,
@@ -1709,7 +1708,7 @@ internal static partial class FeatureServerEndpoints
         {
             var edits = layer.Edits.IsDefault ? ImmutableArray<ReplicaUploadEdit>.Empty : layer.Edits;
             // Keyed by request slot so several operations on the same object each keep their own
-            // envelope (#2430).
+            // envelope.
             foreach (var edit in edits
                          .Select((edit, slot) => (
                              Slot: slot,
@@ -1808,7 +1807,7 @@ internal static partial class FeatureServerEndpoints
             // and conflicts are keyed by (layerId, slot) for client-state attachment. A repeated layer
             // id would therefore collide two entries' slots and attach both conflicts to the later
             // payload, so a resolution could write the wrong client state. The Esri per-layer edits
-            // shape has no meaning for a repeated layer either, so reject it (#2430).
+            // shape has no meaning for a repeated layer either, so reject it.
             var seenLayerIds = new HashSet<int>();
 
             foreach (var entry in perLayer)

@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260829T205535Z",
-  "run_date": "2026-08-29T20:55:35.537961+00:00",
-  "server_version": "1.0.0+e358ef1b50961de6fe6e4fae172e544418b7fe0c",
-  "server_commit": "e358ef1b50961de6fe6e4fae172e544418b7fe0c",
-  "fixture_revision": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
-  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
+  "run_id": "20261116T165908Z",
+  "run_date": "2026-11-16T16:59:08.963573+00:00",
+  "server_version": "2026.1.1",
+  "server_commit": "95de72df386e4cb9ed9e656c017a0e66292614f3",
+  "fixture_revision": "sha256:756fa0c93bb1cdadb82e54f5c5f5d2b50e346125dcad86877c1bb8bc429e1d90",
+  "server_config_revision": "sha256:b40198620fbb9561d6f2230073c449caa41c2cec452ab70e6e12fc0d47273496",
   "client_lane": "py-owslib",
   "client_version": "0.36.0",
   "protocol": "wmts",
@@ -28,8 +28,8 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Transport verified as plain http on the compose client-compat network, which terminates no TLS. TLS handshake behaviour is exercised in the release tier, where the same lane runs against the HTTPS candidate.",
-      "evidence_ref": "http://honua:5000",
+      "notes": "OWSLib well-formed capabilities request returned HTTP 200 with redirects disabled; client and 6 advertised endpoints match the configured http origin. Configured HTTP has no TLS handshake; this is not TLS proof.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS",
       "protocol_version": null
     },
     {
@@ -38,19 +38,21 @@
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Anonymous GET /api/v1/admin/services -> 401, WWW-Authenticate: ApiKey realm=\"Honua Admin\", header=\"X-API-Key\". The WMTS surface is anonymous in this fixture, so the control plane substantiates the AUTH facets.",
-      "evidence_ref": "/api/v1/admin/services",
-      "protocol_version": null
+      "notes": "Actual OWSLib kvp protected GetTile with anonymous: HTTP401, ApiKey challenge and OWS AccessDenied; no image bytes. Admin probes earn no WMTS credit.",
+      "evidence_ref": "http://honua:5000/rest/services/cert_auth_raster/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=2010&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=5&TILEROW=12&TILECOL=5&FORMAT=image%2Fpng",
+      "protocol_version": "1.0.0",
+      "client_identity": "OWSLib"
     },
     {
       "test_case_id": "CERT-AUTH-02",
       "status": "pass",
       "duration_ms": null,
-      "measured_count": null,
+      "measured_count": 66,
       "measured_delta": null,
-      "notes": "Accepted scheme x-api-key -> 200; ladder: x-api-key=200",
-      "evidence_ref": "/api/v1/admin/services",
-      "protocol_version": null
+      "notes": "Actual OWSLib kvp protected GetTile with api-key: 66 authored point/style pixels at independently expected grid positions.",
+      "evidence_ref": "http://honua:5000/rest/services/cert_auth_raster/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=2010&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=5&TILEROW=12&TILECOL=5&FORMAT=image%2Fpng",
+      "protocol_version": "1.0.0",
+      "client_identity": "OWSLib"
     },
     {
       "test_case_id": "CERT-DISC-01",
@@ -145,7 +147,7 @@
     {
       "test_case_id": "CERT-GEOM-02",
       "status": "pass",
-      "duration_ms": 18,
+      "duration_ms": 43,
       "measured_count": null,
       "measured_delta": null,
       "notes": "TILEMATRIXSET=WebMercatorQuad (SupportedCRS urn:ogc:def:crs:EPSG:6.18:3:3857) is carried verbatim in the request OWSLib builds and served at the declared tile size; a column index that is only valid in the WorldCRS84Quad grid is rejected as TileOutOfRange, so the requested grid geometry really is the one being applied.",
@@ -155,7 +157,7 @@
     {
       "test_case_id": "CERT-ERRH-01",
       "status": "pass",
-      "duration_ms": 4,
+      "duration_ms": 3,
       "measured_count": null,
       "measured_delta": null,
       "notes": "An unknown LAYER produced an ows:ExceptionReport with a machine-readable exceptionCode, which OWSLib surfaces as owslib.util.ServiceException rather than handing the caller a broken image.",
@@ -175,7 +177,7 @@
     {
       "test_case_id": "CERT-RNDR-01",
       "status": "pass",
-      "duration_ms": 39,
+      "duration_ms": 37,
       "measured_count": 546,
       "measured_delta": null,
       "notes": "GetTile(WebMercatorQuad/5/12/5) contained 66 authored-style pixels at independent positions in a decodable 256x256 PNG (546 bytes) whose dimensions match the TileWidth/TileHeight the capabilities declare. This is server-rendered imagery accepted and decoded by the client, not client-side drawing: OWSLib has no drawing surface.",
@@ -255,10 +257,10 @@
   ],
   "summary": {
     "total": 24,
-    "passed": 9,
+    "passed": 8,
     "failed": 0,
     "skipped": 0,
-    "not_applicable": 15
+    "not_applicable": 16
   },
   "cite_results": null,
   "extensions": [
@@ -294,12 +296,12 @@
     },
     {
       "test_case_id": "NB-OWS-WMTS-CAP-04",
-      "status": "fail",
+      "status": "pass",
       "duration_ms": null,
-      "measured_count": null,
+      "measured_count": 3,
       "measured_delta": null,
-      "notes": "tests/python/owslib_client/test_wmts.py:343: in test_ext_resource_url_templates\n    resolved = wmts.buildTileResource(\n/usr/local/lib/python3.12/site-packages/owslib/wmts.py:378: in buildTileResource\n    return resurl.format(\nE   KeyError: 'style'",
-      "evidence_ref": "",
+      "notes": "3 ResourceURL entries (['FeatureInfo', 'tile']); OWSLib's own buildTileResource substituted the tile template to http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/5/12/5.png with no variables left over, and that URL returned a 256x256 PNG.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/5/12/5.png",
       "protocol_version": null
     },
     {
@@ -324,12 +326,12 @@
     },
     {
       "test_case_id": "NB-OWS-WMTS-TILE-03",
-      "status": "fail",
+      "status": "pass",
       "duration_ms": null,
-      "measured_count": null,
+      "measured_count": 546,
       "measured_delta": null,
-      "notes": "tests/python/owslib_client/test_wmts.py:471: in test_ext_rest_matches_kvp\n    rest_url = wmts.buildTileResource(\n/usr/local/lib/python3.12/site-packages/owslib/wmts.py:378: in buildTileResource\n    return resurl.format(\nE   KeyError: 'style'",
-      "evidence_ref": "",
+      "notes": "The advertised RESTful ResourceURL (http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/5/12/5.png) and the KVP GetTile binding return byte-identical 546-byte tiles, so the two encodings are genuinely the same resource rather than two code paths.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/5/12/5.png",
       "protocol_version": null
     },
     {
@@ -349,7 +351,7 @@
       "measured_count": 995,
       "measured_delta": null,
       "notes": "The default style's LegendURL returned a decodable 135x32 PNG matching the declared LegendURL width/height None.",
-      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=2000&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER=2000&STYLE=default&FORMAT=image/png",
       "protocol_version": null
     },
     {

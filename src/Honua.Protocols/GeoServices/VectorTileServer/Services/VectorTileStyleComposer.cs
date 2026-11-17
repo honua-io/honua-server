@@ -2,13 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
 // Composes the Mapbox GL v8 style document served by the GeoServices VectorTileServer
-// resources/styles/root.json endpoint (honua-server#1779, epic #1776). Given the canonical
+// resources/styles/root.json endpoint. Given the canonical
 // MapLibre/Mapbox style stored for the service's primary layer (or none), it produces a
-// GL v8 document whose vector source's url names this service's descriptor (#5534) and whose
+// GL v8 document whose vector source's url names this service's descriptor and whose
 // tile template resolves to this service's tile/{z}/{y}/{x}.pbf route.
 //
-// Sprite/glyphs references are scoped (honua-server#1780, epic decision): Honua serves a stub
-// sprite sheet and one bundled glyph face (#5535), so emitting sprite/glyphs is useful ONLY for
+// Sprite/glyphs references are deliberately scoped: Honua serves a stub
+// sprite sheet and one bundled glyph face, so emitting sprite/glyphs is useful ONLY for
 // styles that actually consume them — i.e. styles with at least one `symbol` layer. When the
 // composed style has a symbol layer, the composer points sprite/glyphs at THIS service's
 // resources routes (absolute); otherwise it omits them. Any stale sprite/glyphs already present
@@ -107,7 +107,7 @@ internal static class VectorTileStyleComposer
     {
         source["type"] = "vector";
         // The url names this service's descriptor, from which clients read the fullExtent and
-        // tile map (#5534); the direct tile template stays for clients that fetch tiles from
+        // tile map; the direct tile template stays for clients that fetch tiles from
         // the style alone. A stored url never survives: it may name a service we do not serve.
         if (string.IsNullOrWhiteSpace(serviceUrl))
         {

@@ -155,12 +155,12 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                 $"{HandledProcessId} failed: import/publishing services are not configured for the active provider.");
         }
 
-        // Step 2 + 3 — validate+chunk and import. The size guard (#1626) runs
+        // Step 2 + 3 — validate+chunk and import. The size guard runs
         // inside the streaming importer per feature; the executor does not
         // duplicate that logic.
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(15, "Validating and importing source", cancellationToken).ConfigureAwait(false);
-        // Fence before the overwrite import commits into the target table (#6154).
+        // Fence before the overwrite import commits into the target table.
         await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
         ImportResult importResult;
@@ -203,10 +203,10 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
 
         // Step 4 — publish. PublishLayerAsync introspects the imported table and publishes
         // it as a layer. Typed columns promoted from source attributes are included with
-        // id and properties (honua-server#6640). The same call rebuilds the MVT materialization (#1628).
+        // id and properties. The same call rebuilds the MVT materialization.
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(55, "Publishing imported layer", cancellationToken).ConfigureAwait(false);
-        // Fence again immediately before publish; a lost claim must not overwrite the layer (#6154).
+        // Fence again immediately before publish; a lost claim must not overwrite the layer.
         await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
         // The streaming importer is the single source of truth for the physical staging

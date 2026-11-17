@@ -23,9 +23,6 @@ public static class ModelConversions
     public static SpatialReference GetSpatialReference(this FeatureExtent extent)
         => SpatialReference.Create(extent.SpatialReference);
 
-    public static int ToNumericErrorCode(this ServiceError error)
-        => error.GetNumericCode() ?? 500;
-
     public static ServiceError ToServiceError(this Exception exception)
         => ServiceError.Create("500", GetSafeExceptionMessage(exception));
 
@@ -37,12 +34,6 @@ public static class ModelConversions
 
     public static ServiceError CreateNotFoundError(string resource)
         => ServiceError.Create("404", ErrorMessages.NotFound.FormatResource(resource));
-
-    public static ServiceError CreateUnauthorizedError(string operation)
-        => ServiceError.Create("401", ErrorMessages.Security.FormatUnauthorized(operation));
-
-    public static ServiceError CreateForbiddenError(string operation)
-        => ServiceError.Create("403", ErrorMessages.Security.FormatForbidden(operation));
 
     private static string GetSafeExceptionMessage(Exception exception)
     {

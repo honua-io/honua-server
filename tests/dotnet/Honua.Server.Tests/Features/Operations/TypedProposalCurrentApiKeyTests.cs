@@ -28,69 +28,106 @@ using CanonicalExecutor = Honua.Core.Features.Operations.Abstractions.IOperation
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-[Collection(RedisFixture.CollectionName)]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsyncLifetime
+public sealed class TypedProposalCurrentApiKeyTests(TypedProposalCurrentApiKeyTests.TypedProposalHost host)
+    : IClassFixture<TypedProposalCurrentApiKeyTests.TypedProposalHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
-    private HumanApprovalHttpClient _human = null!;
-    private readonly CountingPublishExecutor _executor = new();
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HumanApprovalHttpClient _human = host.Human;
+    private readonly CountingPublishExecutor _executor = host.Executor;
     private readonly List<HttpClient> _clients = [];
-    private IAdminApiKeyStore _keys = null!;
-    private LookupSwitchStore _lookup = null!;
-    private readonly ConcurrentQueue<string> _audit = new();
-    private readonly RecordingLogs _logs = new();
-    private string _denialAuditMode = "ok";
+    private readonly IAdminApiKeyStore _keys = host.Keys;
+    private readonly LookupSwitchStore _lookup = host.Lookup;
+    private readonly ConcurrentQueue<string> _audit = host.Audit;
+    private readonly RecordingLogs _logs = host.Logs;
     private const string Canary = "synthetic-private-store-error-canary";
-    private IOperationProposalStore _proposals = null!;
+    private readonly IOperationProposalStore _proposals = host.Proposals;
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        HumanApprovalHttpClient.Configure(_fixture, _identityProvider).ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
-            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                new Dictionary<string, string?>
-                {
-                    ["Operations:Policy:Enabled"] = "true",
-                    ["Operations:Policy:Rules:0:OperationId"] = "service.publish",
-                    ["Operations:Policy:Rules:0:Decision"] = "RequireApproval",
-                    ["Operations:Policy:Rules:0:Reason"] = "test-separate-review"
-                }));
-        }).ConfigureServices(services =>
-        {
-            // The real descriptor, policy, mapper, dispatcher, durable stores, gateway,
-            // authentication and approval routes remain composed. Never publish a cloud asset.
-            var keyDescriptor = services.Last(descriptor => descriptor.ServiceType == typeof(IAdminApiKeyStore));
-            services.RemoveAll<IAdminApiKeyStore>();
-            services.AddSingleton<IAdminApiKeyStore>(provider => _lookup = new LookupSwitchStore(
-                ResolveDescriptor<IAdminApiKeyStore>(provider, keyDescriptor)));
-            var auditDescriptor = services.Last(descriptor => descriptor.ServiceType == typeof(IAuditLog));
-            services.RemoveAll<IAuditLog>();
-            services.AddScoped<IAuditLog>(provider => new CapturingAudit(
-                ResolveDescriptor<IAuditLog>(provider, auditDescriptor), _audit, () => _denialAuditMode));
-            services.AddLogging(logging => logging.AddProvider(_logs));
-            services.RemoveAll<CanonicalExecutor>();
-            services.AddSingleton<CanonicalExecutor>(_executor);
-        });
-        await _fixture.InitializeAsync();
-        _keys = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
-        _proposals = _fixture.Services.GetRequiredService<IOperationProposalStore>();
-        _human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, "typed-proposal-reviewer");
+        host.Reset();
+        return Task.CompletedTask;
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
     {
         foreach (HttpClient client in _clients) client.Dispose();
-        _human?.Dispose();
-        using var identityProvider = _identityProvider;
-        await _fixture.DisposeAsync();
+        return Task.CompletedTask;
+    }
+
+    // One host per class. Each case starts with no executor calls, no lookup interception,
+    // empty audit and log captures and a working denial audit.
+    public sealed class TypedProposalHost : IAsyncLifetime
+    {
+        private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
+        private LookupSwitchStore? _lookup;
+
+        internal WebAppFixture Fixture { get; } = new WebAppFixture().WithProductionJobSubstrate();
+        internal CountingPublishExecutor Executor { get; } = new();
+        internal ConcurrentQueue<string> Audit { get; } = new();
+        internal RecordingLogs Logs { get; } = new();
+        internal string DenialAuditMode { get; set; } = "ok";
+        internal LookupSwitchStore Lookup => _lookup ?? throw new InvalidOperationException("The API key store was not resolved.");
+        internal HumanApprovalHttpClient Human { get; private set; } = null!;
+        internal IAdminApiKeyStore Keys { get; private set; } = null!;
+        internal IOperationProposalStore Proposals { get; private set; } = null!;
+
+        public async Task InitializeAsync()
+        {
+            HumanApprovalHttpClient.Configure(Fixture, _identityProvider).ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+                builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["Operations:Policy:Enabled"] = "true",
+                        ["Operations:Policy:Rules:0:OperationId"] = "service.publish",
+                        ["Operations:Policy:Rules:0:Decision"] = "RequireApproval",
+                        ["Operations:Policy:Rules:0:Reason"] = "test-separate-review"
+                    }));
+            }).ConfigureServices(services =>
+            {
+                // The real descriptor, policy, mapper, dispatcher, durable stores, gateway,
+                // authentication and approval routes remain composed. Never publish a cloud asset.
+                var keyDescriptor = services.Last(descriptor => descriptor.ServiceType == typeof(IAdminApiKeyStore));
+                services.RemoveAll<IAdminApiKeyStore>();
+                services.AddSingleton<IAdminApiKeyStore>(provider => _lookup = new LookupSwitchStore(
+                    ResolveDescriptor<IAdminApiKeyStore>(provider, keyDescriptor)));
+                var auditDescriptor = services.Last(descriptor => descriptor.ServiceType == typeof(IAuditLog));
+                services.RemoveAll<IAuditLog>();
+                services.AddScoped<IAuditLog>(provider => new CapturingAudit(
+                    ResolveDescriptor<IAuditLog>(provider, auditDescriptor), Audit, () => DenialAuditMode));
+                services.AddLogging(logging => logging.AddProvider(Logs));
+                services.RemoveAll<CanonicalExecutor>();
+                services.AddSingleton<CanonicalExecutor>(Executor);
+            });
+            await Fixture.InitializeAsync();
+            await Fixture.Postgres.DataSource.ClearJobSubstrateAsync();
+            Keys = Fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+            Proposals = Fixture.Services.GetRequiredService<IOperationProposalStore>();
+            Human = await HumanApprovalHttpClient.AuthenticateAsync(Fixture, _identityProvider, "typed-proposal-reviewer");
+        }
+
+        internal void Reset()
+        {
+            Executor.Reset();
+            Lookup.Reset();
+            Audit.Clear();
+            Logs.Messages.Clear();
+            DenialAuditMode = "ok";
+        }
+
+        public async Task DisposeAsync()
+        {
+            Human?.Dispose();
+            using var identityProvider = _identityProvider;
+            await Fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -265,7 +302,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         var proposer = await CreateKeyAsync("audit-unavailable-proposer");
         var proposal = await SubmitAsync(proposer);
         await _keys.RevokeAsync(proposer.Record.Id, CancellationToken.None);
-        _denialAuditMode = mode;
+        host.DenialAuditMode = mode;
         using var response = await _human.ApproveAsync(proposal.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
         (await response.Content.ReadAsStringAsync()).Should().NotContain(Canary);
@@ -323,12 +360,19 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         => descriptor.ImplementationInstance as T ?? descriptor.ImplementationFactory?.Invoke(provider) as T
             ?? (T)ActivatorUtilities.CreateInstance(provider, descriptor.ImplementationType!);
 
-    private sealed class LookupSwitchStore(IAdminApiKeyStore inner) : IAdminApiKeyStore
+    internal sealed class LookupSwitchStore(IAdminApiKeyStore inner) : IAdminApiKeyStore
     {
         internal Guid Target { get; set; }
         internal int Reads { get; private set; }
         internal Func<int, CancellationToken, Task>? OnRead { get; set; }
         internal Func<AdminApiKeyRecord?, AdminApiKeyRecord?>? Transform { get; set; }
+        internal void Reset()
+        {
+            Target = Guid.Empty;
+            Reads = 0;
+            OnRead = null;
+            Transform = null;
+        }
         public async Task<AdminApiKeyRecord?> GetAsync(Guid id, CancellationToken token)
         {
             if (id != Target) return await inner.GetAsync(id, token);
@@ -365,7 +409,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         }
     }
 
-    private sealed class RecordingLogs : ILoggerProvider
+    internal sealed class RecordingLogs : ILoggerProvider
     {
         internal ConcurrentQueue<string> Messages { get; } = new();
         public ILogger CreateLogger(string categoryName) => new Recorder(Messages);
@@ -379,12 +423,17 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         }
     }
 
-    private sealed class CountingPublishExecutor : CanonicalExecutor
+    internal sealed class CountingPublishExecutor : CanonicalExecutor
     {
         private int _calls;
         public string OperationId => "service.publish";
         internal int Calls => Volatile.Read(ref _calls);
         internal string? LastPrincipal { get; private set; }
+        internal void Reset()
+        {
+            Volatile.Write(ref _calls, 0);
+            LastPrincipal = null;
+        }
         public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
             => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
         public Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,

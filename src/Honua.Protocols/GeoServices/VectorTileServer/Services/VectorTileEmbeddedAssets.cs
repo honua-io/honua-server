@@ -1,11 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// Embedded sprite/glyph assets served by the GeoServices VectorTileServer resources surface
-// (honua-server#1780, epic #1776). Per the epic decision the sprite pipeline is scoped-minimal:
+// Embedded sprite/glyph assets served by the GeoServices VectorTileServer resources surface.
+// By design the sprite pipeline is scoped-minimal:
 // Honua does not author per-service sprite sheets, so the sprite bytes are deterministic
 // in-process stubs. Glyph ranges are real signed-distance-field glyphs rendered from one
-// bundled sans-serif face (Resources/Glyphs, #5535): a requested fontstack is answered with
+// bundled sans-serif face (Resources/Glyphs): a requested fontstack is answered with
 // that face when any of its fonts names a family the face substitutes for, and with the
 // protocol's not-found answer otherwise — never with an empty glyph stack.
 

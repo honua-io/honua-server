@@ -17,9 +17,13 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
 
     private readonly ILogger<PostgresDatabaseCompatibilityChecker> _logger;
 
-    public PostgresDatabaseCompatibilityChecker(ILogger<PostgresDatabaseCompatibilityChecker> logger)
+    private readonly Func<string, CancellationToken, ValueTask<NpgsqlConnection>>? _connectionFactory;
+
+    public PostgresDatabaseCompatibilityChecker(ILogger<PostgresDatabaseCompatibilityChecker> logger,
+        Func<string, CancellationToken, ValueTask<NpgsqlConnection>>? connectionFactory = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _connectionFactory = connectionFactory;
     }
 
     public async Task<DatabaseCompatibilityResult> CheckCompatibilityAsync(
@@ -41,7 +45,8 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
 
         try
         {
-            await using var connection = new NpgsqlConnection(connectionString);
+            await using var connection = await CreateConnectionAsync(connectionString, cancellationToken)
+                .ConfigureAwait(false);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             // 1. Get engine version
@@ -140,6 +145,17 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
             LogCompatibilityCheckFailed(_logger, ex.Message, ex);
             return DatabaseCompatibilityResult.Incompatible(errorMessage, error: ex);
         }
+    }
+
+    private async ValueTask<NpgsqlConnection> CreateConnectionAsync(
+        string connectionString, CancellationToken cancellationToken)
+    {
+        if (_connectionFactory is null)
+        {
+            return new NpgsqlConnection(connectionString);
+        }
+
+        return await _connectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> TryCreatePostGisExtensionAsync(

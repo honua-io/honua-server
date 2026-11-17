@@ -354,7 +354,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
             case GeoprocessingValidationException validationEx:
                 return new RpcException(new Status(StatusCode.InvalidArgument, validationEx.Message));
 
-            // honua-release#202: carry the capability-unavailable receipt in trailing metadata so a
+            // Carry the capability-unavailable receipt in trailing metadata so a
             // gRPC client can branch on the same fields the HTTP surfaces expose, instead of
             // string-matching the status detail. Mirrors the admission-trailer pattern below.
             case GeoprocessingStoreUnavailableException storeEx:

@@ -38,7 +38,7 @@ concurrency:
 
 env:
   DOTNET_VERSION: '11.0.x'
-  NODE_VERSION: '20'
+  NODE_VERSION: '22.23.3'
   PYTHON_VERSION: '3.11'
   HONUA_SERVER_BASE_URL: 'http://localhost:5000'
   HONUA_ADMIN_API_KEY: 'ci-admin-password'
@@ -192,12 +192,18 @@ jobs:
         if: matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current'
         run: python -m pip install 'pyyaml>=6,<7'
 
+      - name: Pin historical server toolchain
+        if: matrix.server_label != 'current'
+        shell: bash
+        run: |
+          printf '%s\n' '{"sdk":{"version":"10.0.100","rollForward":"latestFeature"}}' > global.json
+
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
         with:
           server-image: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && inputs.server_current_image || '' }}
           build-source-fixtures: ${{ matrix.migration_automation_required }}
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          dotnet-version: ${{ matrix.server_label == 'current' && env.DOTNET_VERSION || '10.0.x' }}
           base-seed-path: tests/seed/base-schema.sql
           # PortalCompat is additive and exists only in the current SDK/server
           # pair. Preserve the historical compatibility cells by applying the
@@ -305,6 +311,8 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
+          # SDK artifact compilation exceeded the default ~2 GiB V8 heap.
+          NODE_OPTIONS: --max-old-space-size=4096
           HONUA_SDK_PORTAL_COMPAT_ENABLED: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' }}
           HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED: ${{ matrix.migration_automation_required }}
           HONUA_SDK_MIGRATION_SERVER_IMAGE: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && inputs.server_current_image || '' }}

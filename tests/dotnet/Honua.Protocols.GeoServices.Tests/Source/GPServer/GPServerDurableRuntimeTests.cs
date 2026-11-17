@@ -42,7 +42,7 @@ public sealed partial class GPServerDurableRuntimeTests
     {
         var fixture = CreateDurableFixture(new SuccessfulGpServerJobExecutor());
 
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -111,7 +111,7 @@ public sealed partial class GPServerDurableRuntimeTests
                 services.RemoveAll<IWorkspaceLifecycleService>();
                 services.Configure<WorkspaceOptions>(options => options.EnableAutomaticCleanup = false);
             });
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -163,7 +163,7 @@ public sealed partial class GPServerDurableRuntimeTests
     {
         var fixture = CreateDurableFixture()
             .ConfigureServices(services => services.Configure<WorkspaceOptions>(options => options.EnableAutomaticCleanup = false));
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         string? workspaceId = null;
         var migrationApplied = false;
         var label = "workspace-proof-" + Guid.NewGuid().ToString("N");
@@ -196,7 +196,7 @@ public sealed partial class GPServerDurableRuntimeTests
             AssertArea(original.Uri!, 12);
 
             await fixture.RestartHostAsync();
-            NoRedisJobHost.AssertJobsRunWithoutRedis(fixture);
+            PostgresJobHost.AssertPostgresJobs(fixture);
             var reopened = await fixture.GetService<IWorkspaceStore>().GetAsync(workspaceId);
             reopened.Should().NotBeNull();
             reopened!.Label.Should().Be(label);
@@ -330,7 +330,7 @@ public sealed partial class GPServerDurableRuntimeTests
     public async Task SoapArea_WithProductionExecutor_ReturnsIndependentRectangleAreaAndMetadata(string operation)
     {
         var fixture = CreateDurableFixture();
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -399,7 +399,7 @@ public sealed partial class GPServerDurableRuntimeTests
     public async Task SoapBuffer_WithProductionExecutor_ReturnsRecordSetBoundedByTheIndependentBufferGeometry()
     {
         var fixture = CreateDurableFixture();
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -442,7 +442,7 @@ public sealed partial class GPServerDurableRuntimeTests
     public async Task SoapUnion_WithMultiValueInput_ReturnsTheIndependentlyComputedRectangle()
     {
         var fixture = CreateDurableFixture();
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var client = fixture.CreateAdminClient();
@@ -509,7 +509,7 @@ public sealed partial class GPServerDurableRuntimeTests
                     });
                 });
             });
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var owner = fixture.CreateClient(client =>
@@ -588,7 +588,7 @@ public sealed partial class GPServerDurableRuntimeTests
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             });
-        await NoRedisJobHost.StartAsync(fixture);
+        await PostgresJobHost.StartAsync(fixture);
         try
         {
             using var owner = fixture.CreateAdminClient();
@@ -727,12 +727,12 @@ public sealed partial class GPServerDurableRuntimeTests
         return await client.PostAsync($"/services/{ServiceId}/GPServer", content);
     }
 
-    private static WebAppFixture CreateDurableFixture() => NoRedisJobHost.Create();
+    private static WebAppFixture CreateDurableFixture() => PostgresJobHost.Create();
 
     // Replacing the production executors exercises the GPServer protocol projection
     // independently of the geometry implementations.
     private static WebAppFixture CreateDurableFixture(IJobExecutor replacementExecutor)
-        => NoRedisJobHost.Create().ConfigureServices(services =>
+        => PostgresJobHost.Create().ConfigureServices(services =>
         {
             services.RemoveAll<IJobExecutor>();
             services.AddSingleton(replacementExecutor);

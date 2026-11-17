@@ -181,7 +181,7 @@ internal sealed partial class DeployWorkflowService
             };
         }
 
-        // Validate the telemetry and promotion gates before any mutation (#4617): an invalid,
+        // Validate the telemetry and promotion gates before any mutation: an invalid,
         // silently-ignored or unresolvable gate configuration blocks submission here instead of
         // being discovered by the reconciler after the candidate is already receiving traffic.
         foreach (var gateBlock in new[] { DescribeTelemetryGateBlock(spec), DeployPromotionPolicy.Validate(spec) }.OfType<string>())
@@ -288,7 +288,7 @@ internal sealed partial class DeployWorkflowService
         }
 
         // CloudWatch and Azure Monitor query a fixed 300-second window and never read a sample's observation
-        // time, so an explicit staleness bound on them would be silently ignored (#4617).
+        // time, so an explicit staleness bound on them would be silently ignored.
         if (spec.Parameters.TryGetValue(MaxStalenessParameterKey, out var staleness) &&
             !string.IsNullOrWhiteSpace(staleness) &&
             FixedWindowTelemetryProviders.Contains(connection.Provider?.Trim() ?? string.Empty))
@@ -299,7 +299,7 @@ internal sealed partial class DeployWorkflowService
         }
 
         // Only the fixed-window cloud providers read an error-count numerator and report a series that
-        // matched nothing (honua-server#6474). Elsewhere the numerator would never be read and the gate
+        // matched nothing. Elsewhere the numerator would never be read and the gate
         // would hold until the evidence grace expired; Prometheus expresses the same intent with
         // "or vector(0)" in telemetry.error_rate.query, as the built-in presets do.
         if (!string.IsNullOrWhiteSpace(policy.ErrorCountQuery) &&
@@ -441,7 +441,7 @@ internal sealed partial class DeployWorkflowService
             {
                 RequestedBy = requestedBy,
                 ApprovedBy = planningResult.Target.TargetKind == DeployTargetKind.LocalCompose ? approvedBy : null,
-                // honua-server#4958: the tenant binding is captured from the validated identity here,
+                // The tenant binding is captured from the validated identity here,
                 // so the protection window sealed at activation can bind recovery to the same pair.
                 TenantId = Honua.Server.Features.Admin.PlatformDeployAuthority.ResolveTenantId(principal, _tenantOptions?.Value),
                 Reason = reason,
@@ -610,7 +610,7 @@ internal sealed partial class DeployWorkflowService
 
         // The persisted blocking reasons describe the connections as they were at plan time. A reload or
         // restart can remove a connection or change its provider before submission, so check the gate again
-        // against the current configuration before anything is claimed or mutated (#4617).
+        // against the current configuration before anything is claimed or mutated.
         if (DescribeTelemetryGateBlock(operation.Deploy) is { } gateBlock)
         {
             throw new ResourceConflictException(
@@ -618,7 +618,7 @@ internal sealed partial class DeployWorkflowService
         }
 
         // A probe host can resolve differently at submit time than it did at plan time (for example
-        // after an approval wait), so the probe destination rule is re-applied before any mutation (#4988).
+        // after an approval wait), so the probe destination rule is re-applied before any mutation.
         var (probeBlocks, _) = await DescribeProbeUrlFindingsAsync(operation.Deploy, cancellationToken).ConfigureAwait(false);
         if (probeBlocks.Count > 0)
         {
@@ -890,7 +890,7 @@ internal sealed partial class DeployWorkflowService
             Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
         };
 
-        // honua-server#4618: a manual promote bypasses the reconcile loop (it drives the backend
+        // A manual promote bypasses the reconcile loop (it drives the backend
         // directly, above), so it must open the same post-activation observation window the reconciler
         // opens for an automatic promotion — otherwise a forced cutover would skip straight to a
         // terminal Succeeded with no recovery window at all.
@@ -1069,7 +1069,7 @@ internal sealed partial class DeployWorkflowService
                     await MarkRollbackSubmissionRetryableAsync(rollbackClaim, ex).ConfigureAwait(false);
                     throw;
                 }
-                // honua-server#4618: an out-of-band rollback (manual, or coordinated-release-driven via
+                // An out-of-band rollback (manual, or coordinated-release-driven via
                 // CoordinatedContainerStepExecutor) bypasses the reconciler's own rollback signaling, so
                 // it must keep Deploy.Protection's phase consistent with reality itself — otherwise a
                 // record promoted into an observation window would show "observing" forever even after

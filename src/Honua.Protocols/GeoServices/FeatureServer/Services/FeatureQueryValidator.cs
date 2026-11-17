@@ -13,7 +13,7 @@ internal sealed class FeatureQueryValidator
 
     // ArcGIS silently caps an over-maximum resultRecordCount to maxRecordCount and
     // returns the capped page with exceededTransferLimit:true rather than rejecting the
-    // request with a 400 (honua-server#1825). Clients commonly pass a large "give me
+    // request with a 400. Clients commonly pass a large "give me
     // everything" resultRecordCount, so clamp to the limit instead of failing. The
     // executor still detects the overflow (it probes one extra row) and emits
     // exceededTransferLimit:true, so the response stays spec-correct.
@@ -26,9 +26,9 @@ internal sealed class FeatureQueryValidator
     // queryRelatedRecords keeps the stricter contract: an over-maximum resultRecordCount
     // is rejected with a 400 ("Query parameters exceed configured limits") rather than
     // silently clamped. The clamp above is intentionally scoped to the primary feature
-    // query operation (honua-server#1825). An omitted resultRecordCount stays null here
+    // query operation. An omitted resultRecordCount stays null here
     // so the related-records query can use maxRecordCount and exceededTransferLimit
-    // instead of the default page size (honua-server#6147).
+    // instead of the default page size.
     private static readonly PaginationValidationOptions _relatedRecordsPagination =
         new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "resultOffset", LimitParameterName: "resultRecordCount");
 

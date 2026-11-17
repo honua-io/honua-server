@@ -9,7 +9,7 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> IdentityProvisioningEndpoints =>
     [
-        // SCIM 2.0 provisioning endpoints (#510)
+        // SCIM 2.0 provisioning endpoints
         new("GET", "/scim/v2/Users"),
         new("POST", "/scim/v2/Users"),
         new("GET", "/scim/v2/Users/{id}"),
@@ -23,14 +23,14 @@ public static partial class EndpointRegistry
         new("PATCH", "/scim/v2/Groups/{id}"),
         new("DELETE", "/scim/v2/Groups/{id}"),
 
-        // SCIM 2.0 discovery documents (#2154, RFC 7643 §5-7)
+        // SCIM 2.0 discovery documents (RFC 7643 §5-7)
         new("GET", "/scim/v2/ServiceProviderConfig"),
         new("GET", "/scim/v2/ResourceTypes"),
         new("GET", "/scim/v2/ResourceTypes/{id}"),
         new("GET", "/scim/v2/Schemas"),
         new("GET", "/scim/v2/Schemas/{id}"),
 
-        // SAML 2.0 Service Provider endpoints (#508; SLO #2154)
+        // SAML 2.0 Service Provider endpoints, including single logout
         new("GET", "/saml/metadata"),
         new("POST", "/saml/acs"),
         new("POST", "/saml/slo"),

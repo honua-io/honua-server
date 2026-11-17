@@ -8,7 +8,7 @@ This guide gets you from zero to a running Honua Server with a working developme
 - **Git**
 
 For building from source outside Docker you also need:
-- **.NET 10.0 SDK** or later
+- **.NET 11 SDK** matching the version and roll-forward policy in [`global.json`](../../../../global.json)
 - **PostgreSQL 14+** with the PostGIS extension
 
 ## 1. Clone and start
@@ -105,20 +105,20 @@ If you prefer running PostgreSQL directly instead of through Docker:
 
 ### Install dependencies
 
+Install the .NET 11 SDK selected by [`global.json`](../../../../global.json)
+using the [Microsoft .NET installation guide](https://learn.microsoft.com/en-us/dotnet/core/install/)
+for your operating system. The runtime alone cannot build the server. Run
+`dotnet --version` from the repository root to confirm SDK selection before building.
+
 **Ubuntu/Debian:**
 ```bash
-# .NET 10
-wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
-sudo dpkg -i packages-microsoft-prod.deb
-sudo apt update && sudo apt install -y dotnet-sdk-10.0
-
 # PostgreSQL + PostGIS
 sudo apt install -y postgresql-14 postgresql-14-postgis-3
 ```
 
 **macOS:**
 ```bash
-brew install dotnet postgresql@14 postgis
+brew install postgresql@14 postgis
 brew services start postgresql@14
 ```
 
@@ -207,6 +207,6 @@ dotnet nuget locals all --clear && dotnet restore --force
 
 ## Next steps
 
-- [Contributing](contributing.md) — code style, architecture rules, PR process
+- [Development guide](contributing.md) — code style, architecture rules, PR process
 - [Architecture](../ARCHITECTURE.md) — system design and component interaction
 - [ADRs](../adr/README.md) — rationale behind key design decisions

@@ -1,12 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Raster;
@@ -106,7 +104,8 @@ internal static partial class SceneAnalysisEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Request body is required.");
         }
 
-        if (!TryResolveCoordinate(request.ObserverLon, request.ObserverLat, out var observerLon, out var observerLat))
+        var (observerLonValid, observerLon, observerLat) = ElevationAnalysisValidation.ResolveCoordinate(request.ObserverLon, request.ObserverLat);
+        if (!observerLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -120,7 +119,8 @@ internal static partial class SceneAnalysisEndpoints
                 "'timestamp' is required and must be an ISO 8601 date/time.");
         }
 
-        if (!TryResolveHeight(request.ObserverHeight, out var observerHeight))
+        var (observerHeightValid, observerHeight) = ElevationAnalysisValidation.ResolveHeight(request.ObserverHeight);
+        if (!observerHeightValid)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
@@ -156,7 +156,7 @@ internal static partial class SceneAnalysisEndpoints
             }
         }
 
-        var validation = await ValidateDatasetAsync(context, datasetId, cancellationToken);
+        var validation = await ElevationAnalysisValidation.ValidateDatasetAsync(context, datasetId, cancellationToken);
         if (!validation.IsValid)
         {
             return validation.ErrorResult!;
@@ -239,14 +239,16 @@ internal static partial class SceneAnalysisEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Request body is required.");
         }
 
-        if (!TryResolveCoordinate(request.StartLon, request.StartLat, out var startLon, out var startLat))
+        var (startLonValid, startLon, startLat) = ElevationAnalysisValidation.ResolveCoordinate(request.StartLon, request.StartLat);
+        if (!startLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "Slice 'startLon' and 'startLat' are required and must be finite WGS 84 coordinates within longitude [-180, 180] and latitude [-90, 90].");
         }
 
-        if (!TryResolveCoordinate(request.EndLon, request.EndLat, out var endLon, out var endLat))
+        var (endLonValid, endLon, endLat) = ElevationAnalysisValidation.ResolveCoordinate(request.EndLon, request.EndLat);
+        if (!endLonValid)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -282,7 +284,7 @@ internal static partial class SceneAnalysisEndpoints
                 "Slice plane start and end must be distinct coordinates.");
         }
 
-        var validation = await ValidateDatasetAsync(context, datasetId, cancellationToken);
+        var validation = await ElevationAnalysisValidation.ValidateDatasetAsync(context, datasetId, cancellationToken);
         if (!validation.IsValid)
         {
             return validation.ErrorResult!;
@@ -324,71 +326,6 @@ internal static partial class SceneAnalysisEndpoints
             HonuaTelemetry.RecordException(activity, ex);
             return MapElevationException(context, ex);
         }
-    }
-
-    private static bool TryResolveCoordinate(double? lon, double? lat, out double resolvedLon, out double resolvedLat)
-    {
-        resolvedLon = 0;
-        resolvedLat = 0;
-        if (lon is not { } x || lat is not { } y)
-        {
-            return false;
-        }
-
-        if (!double.IsFinite(x) || !double.IsFinite(y))
-        {
-            return false;
-        }
-
-        if (x < -180 || x > 180 || y < -90 || y > 90)
-        {
-            return false;
-        }
-
-        resolvedLon = x;
-        resolvedLat = y;
-        return true;
-    }
-
-    private static bool TryResolveHeight(double? height, out double resolvedHeight)
-    {
-        resolvedHeight = 0;
-        if (height is not { } value)
-        {
-            return true;
-        }
-
-        if (!double.IsFinite(value) || value < 0)
-        {
-            return false;
-        }
-
-        resolvedHeight = value;
-        return true;
-    }
-
-    private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
-        HttpContext context,
-        string datasetId,
-        CancellationToken cancellationToken)
-    {
-        if (int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-        {
-            return LayerValidationHelpers.ValidateLayerWithAccessV2Async(
-                context,
-                layerId,
-                LayerValidationHelpers.ValidationProtocol.OgcFeatures,
-                AccessScope.Read,
-                Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols.Elevation,
-                cancellationToken);
-        }
-
-        return LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-            context,
-            datasetId,
-            AccessScope.Read,
-            Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols.Elevation,
-            cancellationToken: cancellationToken);
     }
 
     private static IResult MapElevationException(HttpContext context, ElevationQueryException exception)

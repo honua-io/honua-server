@@ -38,7 +38,7 @@ internal static class AdminInfoEndpoints
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<AdminVersionResponse>>();
 
-        // Anonymous by design (#1633): this is the SDK compatibility handshake
+        // Anonymous by design: this is the SDK compatibility handshake
         // (checkCompatibility/getCompatibility) that browser consumers run before they
         // have credentials. The payload is constant, non-sensitive build metadata —
         // server version, release channel, control-plane API major/base path, metadata
@@ -105,9 +105,9 @@ internal static class AdminInfoEndpoints
                 [
                     new AdminMetadataSchema { Version = MetadataV2Constants.ApiVersion, Deprecated = false }
                 ],
-                // These SDK flags describe the legacy /admin/manifest workflow removed in #1035.
+                // These SDK flags describe the retired /admin/manifest workflow.
                 // Package GitOps export has a different route and payload; its availability cannot
-                // advertise support for GET /admin/manifest (#4009).
+                // advertise support for GET /admin/manifest.
                 Features = new AdminCompatibilityFeatures
                 {
                     MetadataResources = true,

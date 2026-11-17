@@ -79,7 +79,7 @@ internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOpt
         await context.ReportProgressAsync(70, "Encoding source artifact", cancellationToken).ConfigureAwait(false);
 
         // Publish through the spillable publisher: small results stay inline (back-compat),
-        // large results spill to an NDJSON stream so the legacy 50 MiB cap no longer applies.
+        // large results spill to an NDJSON stream so the 50 MiB inline cap does not apply.
         var published = await FeatureStreamPublisher.PublishAsync(
             ToAsync(features, cancellationToken),
             HandledProcessId,
@@ -220,7 +220,7 @@ internal sealed class CsvSourceExecutor(IOptionsMonitor<GeoprocessingExecutorOpt
     }
 
     // Minimal RFC-4180-style record parse: handles quoted fields and embedded
-    // delimiters/quotes. Single-line records only (the #1185 inline contract does not
+    // delimiters/quotes. Single-line records only (the inline contract does not
     // carry multi-line quoted values; that is a streaming-source concern).
     private static List<string> ParseRecord(string record, char delimiter)
     {

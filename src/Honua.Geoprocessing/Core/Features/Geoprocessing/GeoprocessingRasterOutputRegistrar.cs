@@ -65,7 +65,7 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
             if (target.StartsWith(PostgisTargetPrefix, StringComparison.Ordinal))
             {
                 // Fail closed: PostGIS materialization of staged outputs requires the
-                // durable staged large-raster ingest contract (#3098). Never silently
+                // durable staged large-raster ingest contract. Never silently
                 // drop a requested registration.
                 throw new GeoprocessingValidationException(
                     $"Output registration for '{outputName}' requested the PostGIS raster store, which is "
@@ -94,7 +94,7 @@ internal sealed partial class GeoprocessingRasterOutputRegistrar(
 
             if (RasterOutputDescriptorValidator.LooksLikeZarr(staged.Content.MediaType, staged.ObjectKey))
             {
-                // Defense in depth: publication already rejects Zarr fail-closed (#3103);
+                // Defense in depth: publication already rejects Zarr fail-closed;
                 // a Zarr row must never reach cloud_raster_catalog.
                 throw new GeoprocessingValidationException(
                     $"Output registration for '{outputName}' names a Zarr hierarchy, which cannot be "
