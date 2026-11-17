@@ -229,7 +229,7 @@ def test_receipt_marks_the_post_window_fault_period():
 
 
 def test_a_failed_drill_cannot_claim_completion():
-    result, _ = emit(post_window_drill(observations(), passed=False))
+    result, _ = emit(post_window_drill(observations(), stuck_job_ids=["gp-1"]))
     assert result["status"] == "incomplete"
     assert result["faultDrill"]["gpJobs"]["stuckJobIds"] == ["gp-1"]
 

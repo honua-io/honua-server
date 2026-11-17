@@ -75,19 +75,21 @@ def intact_layers():
                 expectedPayloadSha256=payload, payloadIntact=True, passed=True)
 
 
-def post_window_drill(source, passed=True):
-    """Move the fixture's recoveries after the window and attach drill evidence."""
-    end = emitter.timestamp(source["window"]["endedAt"])
-    source["recoveries"] = [dict(event, injectedAt=collector_module.iso(end+timedelta(seconds=10*i+1)),
-                                 detectedAt=collector_module.iso(end+timedelta(seconds=10*i+2)),
-                                 recoveredAt=collector_module.iso(end+timedelta(seconds=10*i+5)))
-                            for i, event in enumerate(source["recoveries"])]
-    source["faultDrill"] = dict(window=dict(startedAt=collector_module.iso(end+timedelta(seconds=1)),
-                                            endedAt=collector_module.iso(end+timedelta(seconds=40))),
-                                excludedFromMeasuredWindow=True, recoveries=source["recoveries"], recovered=True,
-                                dataIntegrity=intact_layers(), gpJobs=dict(stuckJobIds=[] if passed else ["gp-1"], passed=passed),
-                                failures=[], passed=passed)
-    return source
+def post_window_drill(source, stuck_job_ids=()):
+    """Return the fixture with recoveries after the window and post-window drill evidence."""
+    drilled = copy.deepcopy(source)
+    end = emitter.timestamp(drilled["window"]["endedAt"])
+    drilled["recoveries"] = [dict(event, injectedAt=collector_module.iso(end+timedelta(seconds=10*i+1)),
+                                  detectedAt=collector_module.iso(end+timedelta(seconds=10*i+2)),
+                                  recoveredAt=collector_module.iso(end+timedelta(seconds=10*i+5)))
+                             for i, event in enumerate(drilled["recoveries"])]
+    passed = not stuck_job_ids
+    drilled["faultDrill"] = dict(window=dict(startedAt=collector_module.iso(end+timedelta(seconds=1)),
+                                             endedAt=collector_module.iso(end+timedelta(seconds=40))),
+                                 excludedFromMeasuredWindow=True, recoveries=drilled["recoveries"], recovered=True,
+                                 dataIntegrity=intact_layers(), gpJobs=dict(stuckJobIds=list(stuck_job_ids), passed=passed),
+                                 failures=[], passed=passed)
+    return drilled
 
 
 def emit(source=None):
@@ -517,7 +519,7 @@ def verify_release_contract(tools_path: Path, output: Path):
     sys.path.insert(0, str(tools_path))
     import check_capacity_soak as gate
     from extract_capacity_evidence import extract
-    # The frozen lock requires the post-window fault drill (founder ruling 2026-10-27).
+    # The frozen lock requires a post-window fault drill.
     result, payload = emit(post_window_drill(observations()))
     bundle = output / "capacity-evidence.zip"
     emitter.write_bundle(bundle, result, payload)
