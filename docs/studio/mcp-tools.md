@@ -39,7 +39,7 @@ repeat it with `params.cursor` set to each `nextCursor` until none is returned.
 | `honua_studio_save_version` | Save the draft as an immutable version. `versionId` and `contentHash` stay nested under `version`. |
 | `honua_studio_get_version` | Read a saved version by `itemId` and `versionId`. Returns top-level `versionId` and `contentHash`. A missing version is `not_found`. Does not advance the draft generation. |
 | `honua_studio_reopen_version` | Branch a new draft from a saved version. |
-| `honua_studio_propose_publication` | Publish the current saved version directly for an authorized admin, or return an approval proposal for another caller. Bind the exact item, version, hash, route, and visibility. |
+| `honua_studio_propose_publication` | Return an approval proposal for the current saved version; every MCP caller, administrators included, waits for approval in Console. Bind the exact item, version, hash, route (a path starting with `/`), and visibility. A retry with the same arguments, or the same optional `idempotencyKey`, returns the original proposal and its current status instead of filing another. |
 
 Every mutation that accepts `generation` uses optimistic concurrency. A stale
 generation returns `failed_precondition` with the owner-authorized snapshot's
@@ -53,9 +53,15 @@ Publication is not a canvas mutation. Save the draft as an immutable version, th
 back with `honua_studio_get_version` when a capture needs the top-level `versionId` and
 `contentHash`. Pass the saved version's `itemId`, `versionId`, and `contentHash` together
 with the requested `route` and `visibility` to `honua_studio_propose_publication`.
-The configure prompts tell an admin to finish that call in the same session and to
-read the share URL from the result. A caller who is not an admin receives a proposal
-and does not get a share URL.
+Every caller receives a proposal and no share URL; the route is served once the
+proposal is approved in Console (see
+[Approve agent changes](../guides/secure/approve-agent-changes.md)). Calling again
+with the same arguments (or the same optional `idempotencyKey`) reports the original
+proposal's status instead of filing another: `AwaitingApproval`, `Published`,
+`Rejected` or `Denied`. Send a new `idempotencyKey` to propose again after a
+rejection. Without a key, a proposal that failed, was cancelled or expired is
+replaced by a fresh one; with your own key the call says to send a new key. Reusing
+a key for different arguments is refused.
 
 ## Layer identity and observed rendering
 
@@ -87,7 +93,7 @@ every design turn. Respect the actual operation outcome and report the mismatch.
 Do not change deployment policy as an implicit part of a creative edit.
 
 Publication always waits for a person. Every MCP caller is an agent,
-administrators included, so the tool returns `AwaitingApproval`,
+administrators included, so a new proposal returns `AwaitingApproval`,
 `humanConfirmationRequired: true`, and the proposal identity with no share URL.
 A person approves or rejects the proposal in Console; an agent credential cannot
 decide it. The publication does not change the requested audience implicitly.
