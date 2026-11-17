@@ -94,7 +94,10 @@ internal static class ApprovalContinuation
                 .GetAsync(operationInstanceId, cancellationToken).ConfigureAwait(false)
             : null;
         var execution = OperationProposalExecutionView.From(proposal, operation);
-        return McpToolHelpers.SuccessResult(Project(proposal, execution), McpJsonContext.Default.McpOperationToolOutput);
+        var output = Project(proposal, execution);
+        var result = McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
+        result.IsError = output.Status == OperationHandleStatus.Failed.ToString();
+        return result;
     }
 
     internal static OperationHandleStatus Map(OperationProposalStatus status) => status switch

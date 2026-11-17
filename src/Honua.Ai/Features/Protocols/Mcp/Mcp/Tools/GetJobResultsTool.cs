@@ -37,7 +37,7 @@ internal sealed class GetJobResultsTool : IMcpTool
             "resultPackageId": { "type": "string" },
             "status": { "type": "string" },
             "summary": { "type": "object", "required": ["title"], "properties": { "title": { "type": "string" }, "description": { "type": ["string", "null"] } } },
-            "artifacts": { "type": "array", "items": { "type": "object", "required": ["artifactId", "kind", "label"], "properties": { "artifactId": { "type": "string" }, "kind": { "type": "string" }, "label": { "type": "string" }, "uri": { "type": ["string", "null"] }, "contentType": { "type": ["string", "null"] } } } },
+            "artifacts": { "type": "array", "items": { "type": "object", "required": ["artifactId", "kind", "label"], "properties": { "artifactId": { "type": "string" }, "kind": { "type": "string" }, "label": { "type": "string" }, "uri": { "type": ["string", "null"] }, "referenceSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of the exact UTF-8 uri reference, lowercase hex. Pass with a supported feature artifact to staged import; this checksum does not establish importability." }, "contentType": { "type": ["string", "null"] } } } },
             "totalArtifactCount": { "type": "integer" },
             "artifactsTruncated": { "type": "boolean" },
             "workspaceRefs": { "type": "array", "items": { "type": "object", "required": ["workspaceId", "kind", "label"], "properties": { "workspaceId": { "type": "string" }, "kind": { "type": "string" }, "label": { "type": "string" }, "resourceUri": { "type": ["string", "null"] } } } },
