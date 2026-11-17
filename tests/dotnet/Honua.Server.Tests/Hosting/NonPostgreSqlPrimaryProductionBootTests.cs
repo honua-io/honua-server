@@ -149,7 +149,7 @@ public sealed class NonPostgreSqlPrimaryProductionBootTests
             ["Security__ConnectionEncryption__MasterKey"] = "duckdb-primary-boot-connection-encryption-key",
             ["Security__ConnectionEncryption__Salt"] = "ZHVja2RiLXByaW1hcnktc2FsdA==",
         };
-        return ServerProcessLaunch.CreateProductionStartInfo(InheritedKeysToRemove, environment);
+        return RefusedBootRun.ProductionServer(InheritedKeysToRemove, environment);
     }
 
     private sealed record BootRun(TimeSpan? LiveAfter, string Output);
