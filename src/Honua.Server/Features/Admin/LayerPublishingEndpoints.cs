@@ -697,6 +697,10 @@ internal static class LayerPublishingEndpoints
                 result.ServiceName,
                 [result.StorageLayerId],
                 logger).ConfigureAwait(false);
+            await LayerPublishCatalogNotifications.BroadcastAsync(
+                context.RequestServices,
+                exception => LayerPublishingLog.LayerStateNotificationFailed(logger, exception))
+                .ConfigureAwait(false);
 
             return TypedResults.Ok(ApiResponse<PublishedLayerSummary>.CreateSuccess(result));
         }
@@ -778,6 +782,10 @@ internal static class LayerPublishingEndpoints
                 cacheServiceName,
                 result.Select(layer => layer.StorageLayerId),
                 logger).ConfigureAwait(false);
+            await LayerPublishCatalogNotifications.BroadcastAsync(
+                context.RequestServices,
+                exception => LayerPublishingLog.LayerStateNotificationFailed(logger, exception))
+                .ConfigureAwait(false);
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(result));
         }

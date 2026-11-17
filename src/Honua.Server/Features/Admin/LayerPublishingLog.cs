@@ -114,4 +114,7 @@ internal static partial class LayerPublishingLog
 
     [LoggerMessage(EventId = 9658, Level = LogLevel.Warning, Message = "Layer {StorageLayerId} published but the MCP catalog notification failed")]
     public static partial void LayerPublishNotificationFailed(ILogger logger, int storageLayerId, Exception exception);
+
+    [LoggerMessage(EventId = 9659, Level = LogLevel.Warning, Message = "Layer state changed but the MCP catalog notification failed")]
+    public static partial void LayerStateNotificationFailed(ILogger logger, Exception exception);
 }
