@@ -915,7 +915,7 @@
     {
       "name": "Core and Cloud Contracts 2",
       "shard_name": "Core and Cloud Contracts 2",
-      "dispatch_rank": 6.3,
+      "dispatch_rank": 6.4,
       "artifact_suffix": "core-cloud-contracts-2",
       "log_name": "server-tests-core-cloud-contracts-2",
       "_comment": "Conservative serial spans plus at least four minutes job overhead. Final child also owns future tests; contract proves exact method ownership.",
@@ -1455,7 +1455,7 @@
     {
       "name": "File and Raster Import 1",
       "shard_name": "File and Raster Import 1",
-      "dispatch_rank": 8.1,
+      "dispatch_rank": 8.0,
       "artifact_suffix": "file-and-raster-import-1",
       "log_name": "server-tests-file-and-raster-import-1",
       "timeout_minutes": 38,
@@ -2604,7 +2604,7 @@
     {
       "name": "OData Pagination and Spatial",
       "shard_name": "OData Pagination and Spatial",
-      "dispatch_rank": 13.2,
+      "dispatch_rank": 12.7,
       "artifact_suffix": "odata-pagination-spatial",
       "log_name": "server-tests-odata-pagination-spatial",
       "timeout_minutes": 32,
@@ -2787,7 +2787,7 @@
     {
       "name": "OGC API Maps Rendering and Records 1",
       "shard_name": "OGC API Maps Rendering and Records 1",
-      "dispatch_rank": 6.7,
+      "dispatch_rank": 6.6,
       "artifact_suffix": "ogc-api-maps-rendering-records-1",
       "log_name": "server-tests-ogc-api-maps-rendering-records-1",
       "timeout_minutes": 32,
@@ -3030,7 +3030,7 @@
     {
       "name": "OGC Classic WMTS 1",
       "shard_name": "OGC Classic WMTS 1",
-      "dispatch_rank": 5.5,
+      "dispatch_rank": 5.6,
       "artifact_suffix": "ogc-classic-wmts-1",
       "log_name": "server-tests-ogc-classic-wmts-1",
       "timeout_minutes": 30,
@@ -3070,7 +3070,7 @@
     {
       "name": "GeoServices MapServer",
       "shard_name": "GeoServices MapServer",
-      "dispatch_rank": 8.7,
+      "dispatch_rank": 8.6,
       "artifact_suffix": "geoservices-mapserver",
       "log_name": "server-tests-geoservices-mapserver",
       "timeout_minutes": 39,
@@ -4183,7 +4183,7 @@
     {
       "name": "Operator Eval Harness 1",
       "shard_name": "Operator Eval Harness 1",
-      "dispatch_rank": 9.1,
+      "dispatch_rank": 8.1,
       "artifact_suffix": "operator-eval-1",
       "log_name": "server-tests-operator-eval-1",
       "timeout_minutes": 30,
@@ -4823,7 +4823,7 @@
     {
       "name": "Geocoding 2",
       "shard_name": "Geocoding 2",
-      "dispatch_rank": 4.5,
+      "dispatch_rank": 4.4,
       "artifact_suffix": "geocoding-2",
       "log_name": "server-tests-geocoding-2",
       "timeout_minutes": 25,
@@ -5401,7 +5401,7 @@
     {
       "name": "Server Features Admin Authorization Matrix",
       "shard_name": "Server Features Admin Authorization Matrix",
-      "dispatch_rank": 11.7,
+      "dispatch_rank": 11.6,
       "artifact_suffix": "server-features-admin-authorization-matrix",
       "log_name": "server-tests-server-features-admin-authorization-matrix",
       "timeout_minutes": 32,
@@ -5753,7 +5753,7 @@
     {
       "name": "Server Features Console Sessions and Access 1",
       "shard_name": "Server Features Console Sessions and Access 1",
-      "dispatch_rank": 6.5,
+      "dispatch_rank": 6.4,
       "artifact_suffix": "server-features-console-sessions-access-1",
       "log_name": "server-tests-server-features-console-sessions-access-1",
       "timeout_minutes": 32,
@@ -6651,7 +6651,7 @@
     {
       "name": "Server Features Sharing OAuth and Portal",
       "shard_name": "Server Features Sharing OAuth and Portal",
-      "dispatch_rank": 10.1,
+      "dispatch_rank": 10.0,
       "artifact_suffix": "server-features-sharing-oauth-portal",
       "log_name": "server-tests-server-features-sharing-oauth-portal",
       "timeout_minutes": 32,
@@ -8916,7 +8916,7 @@
     {
       "name": "GeoServices ImageServer Rendering and Support 2",
       "shard_name": "GeoServices ImageServer Rendering and Support 2",
-      "dispatch_rank": 7.7,
+      "dispatch_rank": 7.6,
       "artifact_suffix": "geoservices-imageserver-rendering-and-support-2",
       "log_name": "server-tests-geoservices-imageserver-rendering-and-support-2",
       "timeout_minutes": 40,
@@ -9157,7 +9157,7 @@
     {
       "name": "Core Spatial Query and Streaming",
       "shard_name": "Core Spatial Query and Streaming",
-      "dispatch_rank": 3.5,
+      "dispatch_rank": 3.4,
       "artifact_suffix": "core-spatial-query-and-streaming",
       "log_name": "server-tests-core-spatial-query-and-streaming",
       "timeout_minutes": 25,
@@ -9408,7 +9408,7 @@
     {
       "name": "Provider and AI Units",
       "shard_name": "Provider and AI Units",
-      "dispatch_rank": 5.7,
+      "dispatch_rank": 5.6,
       "artifact_suffix": "provider-ai-units",
       "log_name": "server-tests-provider-ai-units",
       "timeout_minutes": 30,

@@ -816,12 +816,13 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the median passing
-job duration over twelve full trunk runs, counting a sample only when its filter
+Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the exact median
+passing job duration, rounded half-to-even to 0.1 minute, over the nine full trunk
+runs that started server test children, counting a sample only when its filter
 and project selection match the current definition (gate-model.md, "Measured
 ranks"). Full run 44013566836 passed all 225 children and gives every current
 definition at least one matching measurement, so no split-child estimate
-remains. Ranks sum to 1,524.6 runner-minutes, previously 1,581.4; 202 children
+remains. Ranks sum to 1,522.3 runner-minutes, previously 1,581.4; 203 children
 fit the unchanged 10-minute PR shard budget, previously 196. These are
 scheduling estimates, not runtime savings.
 Temporal's explicit source override uses `prioritize: true` as a tie-breaker
