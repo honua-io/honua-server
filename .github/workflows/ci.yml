@@ -2998,7 +2998,7 @@ jobs:
     # set; fork code never does.
     runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: [build, changes, core-package-compatibility, postgres-compat]
-    # Single-threaded ILC avoids the compiler OOM (#8139); the full-store
+    # Single-threaded ILC avoids compiler memory exhaustion; the full-store
     # verification publish takes about 55 minutes, as in the AOT image build.
     timeout-minutes: 90
     steps:
