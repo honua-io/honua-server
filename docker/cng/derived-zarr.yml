@@ -11,6 +11,7 @@ services:
     image: ${HONUA_CNG_WORKER_IMAGE:?explicit rehearsal requires an immutable worker image}
     environment:
       DOTNET_ENVIRONMENT: Test
+      ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_cng;User Id=postgres;Password=cng_password;
       GdalWorker__ScratchRoot: /tmp/honua-cng-zarr
       GdalWorker__ToolTimeout: 00:03:00
       FileStorage__Provider: AwsS3
@@ -22,6 +23,8 @@ services:
       FileStorage__AwsS3__SecretAccessKey: test
       FileStorage__AwsS3__EnableServerSideEncryption: "false"
     depends_on:
+      postgres:
+        condition: service_healthy
       localstack:
         condition: service_healthy
     networks: [cng-network]
