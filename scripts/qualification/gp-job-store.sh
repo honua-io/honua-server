@@ -78,6 +78,16 @@ expire_terminal_job() {
       RETURNING operation_id")" == "$1" ]]
 }
 
+job_row_status() {
+  job_id_is_safe "$1" || return 1
+  job_sql "SELECT status FROM honua.execution_jobs WHERE operation_id = '$1'"
+}
+
+delete_job_row() {
+  job_id_is_safe "$1" || return 1
+  job_sql "DELETE FROM honua.execution_jobs WHERE operation_id = '$1'" >/dev/null
+}
+
 job_row_exists() {
   job_id_is_safe "$1" || return 1
   [[ "$(job_sql "SELECT count(*) FROM honua.execution_jobs WHERE operation_id = '$1'")" == 1 ]]

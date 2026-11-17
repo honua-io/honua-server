@@ -1135,7 +1135,15 @@ run_disruption() {
 }
 
 run_poison_job() {
-  local scenario=poison-job poison="poison-$(date +%s%N)" job terminal digest
+  local scenario=poison-job poison="poison-$(date +%s%N)" result=0
+  run_poison_job_checks || result=$?
+  # The poison row must not outlive its scenario: later lanes measure the reconciler.
+  delete_job_row "${poison}" || runtime_taint="poison row ${poison} could not be removed"
+  return "${result}"
+}
+
+run_poison_job_checks() {
+  local job terminal digest status deadline
   compose stop worker >/dev/null
   # A native job waits in the queue while the worker is stopped; a managed one may not.
   job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; write_receipt "${scenario}" fail "valid submission failed"; return 1; }
@@ -1144,8 +1152,11 @@ run_poison_job() {
   terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: poison blocked queue progress" "${job}"; return 1; }
   digest="$(result_digest "${job}" 2>/dev/null || true)"
   [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: poison affected valid job" "${job}"; return 1; }
-  [[ -z "$(job_queue_position "${poison}" pending)" ]] || { write_receipt "${scenario}" fail "FINDING: poison was not removed" "${job}"; return 1; }
-  write_receipt "${scenario}" pass "" "${job}" successful "${digest}"
+  # Leaving the queue is not enough: a claimed poison row that never ends holds a claim forever.
+  deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-180}))
+  while status="$(job_row_status "${poison}")" && [[ "${status}" =~ ^(Queued|Provisioning|Running)$ ]] && (( SECONDS < deadline )); do sleep 2; done
+  [[ ! "${status}" =~ ^(Queued|Provisioning|Running)$ ]] || { write_receipt "${scenario}" fail "FINDING: poison row stranded in ${status}" "${job}"; return 1; }
+  write_receipt "${scenario}" pass "poison_status=${status:-removed}" "${job}" successful "${digest}"
 }
 
 run_stale_lease() {

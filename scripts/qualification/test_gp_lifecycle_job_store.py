@@ -78,7 +78,7 @@ grep -q "'currentPhase', current_phase" calls || exit 64
 
     def test_job_store_helpers_refuse_unsafe_ids_without_touching_the_database(self):
         helpers = ("result_package_record", "result_package_exists", "expire_terminal_job", "job_row_exists",
-                   "strand_exhausted_claim")
+                   "strand_exhausted_claim", "job_row_status", "delete_job_row")
         functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe") + helpers)
         with tempfile.TemporaryDirectory() as directory:
             completed = run_bash(functions + "\ncompose() { echo called >> calls; }\n" + "".join(
@@ -159,6 +159,17 @@ echo "warn: Execution lease lost for job gp-2 on worker w-1" > other.log
 heartbeat_saw_stale_ownership lease.log || exit 61
 heartbeat_saw_stale_ownership skip.log || exit 62
 heartbeat_saw_stale_ownership other.log && exit 63
+exit 0
+''', directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_poison_row_is_removed_even_when_the_poison_checks_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash(harness_function("run_poison_job") + r'''
+run_poison_job_checks() { echo "$poison" > checked; return 1; }
+delete_job_row() { echo "$1" > deleted; }
+run_poison_job && exit 61
+[[ "$(cat deleted)" == "$(cat checked)" && "$(cat deleted)" == poison-* ]] || exit 62
 exit 0
 ''', directory)
             self.assertEqual(0, completed.returncode, completed.stderr)
