@@ -4,10 +4,8 @@
 using Honua.Core.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using NetTopologySuite.Noding;
 using NetTopologySuite.Operation.Buffer;
 
 namespace Honua.Protocols.GeoServices.GeometryService.Services;
@@ -71,40 +69,18 @@ internal sealed class GeometryServiceOverlayBudget
     }
 
     // A buffer nodes the offset curves it draws around its input, not the input, and those curves
-    // can cross each other far more often than the input does. The curves are counted when the
-    // buffer is about to node them, and the buffer is refused past the budget.
+    // can cross each other far more often than the input does. The same curves the buffer engine
+    // nodes are drawn and counted first, and the buffer is refused past the budget.
     public Geometry Buffer(Geometry geometry, double distance, BufferParameters bufferParameters)
     {
         ArgumentNullException.ThrowIfNull(geometry);
-        var builder = new BufferBuilder(bufferParameters) { Noder = new BudgetedNoder(PerOperation) };
-        try
+        var curveBuilder = new OffsetCurveBuilder(geometry.PrecisionModel, bufferParameters);
+        var curves = new OffsetCurveSetBuilder(geometry, distance, curveBuilder).GetCurves();
+        if (OverlayCandidatePairs.CountLines(curves.Select(static curve => curve.Coordinates), PerOperation) > PerOperation)
         {
-            return builder.Buffer(geometry, distance);
-        }
-        catch (Exception ex) when (ex is not GeometryServiceLimitException and not OutOfMemoryException)
-        {
-            // The full buffer retries with snapped coordinates when floating-point noding fails, as
-            // it would have without the budget. Its first pass nodes the curves just counted; the
-            // snapped retries are not counted.
-            return BufferOp.Buffer(geometry, distance, bufferParameters);
-        }
-    }
-
-    private sealed class BudgetedNoder(long limit) : INoder
-    {
-        private readonly MCIndexNoder _noder = new(new IntersectionAdder(new RobustLineIntersector()));
-
-        public void ComputeNodes(IList<ISegmentString> segStrings)
-        {
-            ArgumentNullException.ThrowIfNull(segStrings);
-            if (OverlayCandidatePairs.CountLines(segStrings.Select(static curve => curve.Coordinates), limit) > limit)
-            {
-                throw new GeometryServiceLimitException(RefusalMessage);
-            }
-
-            _noder.ComputeNodes(segStrings);
+            throw new GeometryServiceLimitException(RefusalMessage);
         }
 
-        public IList<ISegmentString> GetNodedSubstrings() => _noder.GetNodedSubstrings();
+        return BufferOp.Buffer(geometry, distance, bufferParameters);
     }
 }
