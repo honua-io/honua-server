@@ -395,11 +395,12 @@ result_digest "$job"
             HONUA_WORKER_IMAGE="ghcr.io/honua/worker@sha256:" + "b" * 64,
             HONUA_GP_SOURCE_SHA="c" * 40,
             HONUA_GP_SKIP_PULL="true",
+            HONUA_GP_TENANT_A_TOKEN="supplied-without-the-rest",
         )
 
         self.assertNotEqual(0, completed.returncode)
         self.assertEqual("fail", receipts["topology"]["outcome"])
-        self.assertIn("required for resilience qualification", receipts["topology"]["finding"])
+        self.assertIn("required when any tenant identity value is supplied", receipts["topology"]["finding"])
         self.assertEqual(summary["declared_scenario_count"], summary["receipt_count"])
         self.assertEqual([], summary["missing_scenarios"])
         self.assertEqual([], summary["duplicate_receipts"])
