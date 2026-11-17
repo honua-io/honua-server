@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Sourced by gp-lifecycle-harness.sh; uses its compose, scenario_fail and runtime_taint.
 
-# A job and its queue position are one row of honua.execution_jobs (ADR-0081); Redis holds
-# no job state. The database-stamped attempt columns override their JSON copies, as the
+# A job and its queue position are one row of honua.execution_jobs (ADR-0081); the cache
+# container holds no job state. The database-stamped attempt columns override their JSON copies, as the
 # store does when it reads a row.
 job_sql() {
   compose exec -T postgres psql -U honua -d honua -v ON_ERROR_STOP=1 -qAtX -c "$1"

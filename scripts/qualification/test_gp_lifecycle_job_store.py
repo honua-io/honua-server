@@ -30,10 +30,11 @@ def run_bash(script, directory):
 
 
 class JobStoreTests(unittest.TestCase):
-    def test_lifecycle_scenarios_read_no_job_state_from_redis(self):
-        for name in LIFECYCLE_FUNCTIONS:
+    def test_lifecycle_scenarios_exec_only_into_the_job_database(self):
+        for name in LIFECYCLE_FUNCTIONS + ("job_sql",):
             with self.subTest(function=name):
-                self.assertNotIn("redis-cli", harness_function(name))
+                services = set(re.findall(r"compose exec -T (\S+)", harness_function(name)))
+                self.assertLessEqual(services, {"postgres"})
 
     def test_job_record_overlays_the_database_columns_on_the_stored_record(self):
         functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe", "job_record"))
