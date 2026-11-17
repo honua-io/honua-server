@@ -1012,11 +1012,12 @@ The check names stay `PR Gate / Fast and architecture (server-fast)` and `PR Gat
 Fail-fast is false on both matrices, so one server group does not cancel the other, and a fast-server failure does not cancel architecture or unit-fast.
 The job timeout stays 45 minutes.
 The runner expression matches `fast-tests`.
-It uses `HONUA_HEAVY_RUNNER` when `start_heavy` contains that test group and the event is a same-repository pull request or workflow run.
-A fork, or a missing `HONUA_HEAVY_RUNNER`, stays on `ubuntu-latest`.
-The job expression does not special-case drafts. Runner select decides whether the group is listed in `start_heavy`.
+It uses `HONUA_HEAVY_RUNNER` when `start_heavy` contains that test group, unless the event comes from a fork.
+A missing `HONUA_HEAVY_RUNNER` stays on `ubuntu-latest`.
+`workflow_dispatch` follows the same expression. This workflow has no `workflow_run` trigger.
+On a draft, `runner-select` is skipped, and `fast-server-tests` is skipped with it because the job has no `always()` condition.
 
-On every producer build that review-first has released, and that is neither docs-only nor generated-only, the producer publishes `tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj`.
+On every producer build that review-first has released, and that is neither docs-only nor generated-only, the producer publishes `tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj` unless `HONUA_MANAGED_TEST_ARTIFACTS` is `false`.
 When the selected-shard project list does not already contain that project, the plan step appends it before publish.
 A pull request that selects no Server.Tests shard still leaves a build for the fast server groups.
 Other managed projects stay published only when a selected shard consumes them.
