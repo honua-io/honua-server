@@ -256,7 +256,13 @@ Stage 3 details:
   successful CI base.
 - Admitted affected runs use two concurrent server shards and run beside PR
   Gate; only a covering full run or their own admission recheck cancels them.
-  Full runs retain width 16.
+  Full runs retain width 16. A selective affected run whose router reason is
+  `no_path_match` does not schedule those default smoke shards: they do not own
+  the diff, and the twice-daily full run keeps them. The same run skips
+  Honua.Core package compatibility when every changed file is docs, a workflow,
+  a `scripts/ci/` file or a test. Any other path, and an empty path list, still runs that heavy job.
+  A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+  Core package or Postgres compatibility job still does.
 - Stage 3 is not a required check and changes no ruleset.
 
 ## PR Lane (Required Checks)
@@ -1128,7 +1134,7 @@ tests do not establish a test speedup or resolve the comparable-run evidence gap
 output caching remains opt-in; no cross-phase promotion is authorized by the
 observational sample.
 
-Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. Managed consumers also install the target framework’s .NET and ASP.NET shared runtimes into that private SDK root using the supported runtime bootstrap. The target channel comes from `HonuaTargetFramework`; non-versioned host files are preserved and exact producer SDK identity is verified afterward. This allows a newer producer SDK to execute older target artifacts without major runtime roll-forward or artifact changes. It adds no jobs and changes no required checks. The 12 November baseline aborted net10.0 tests and projection regeneration before execution when only the SDK 11 runtimes were present; recovery timing awaits a fresh eligible gate. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
+Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. Managed consumers also install the target framework’s .NET and ASP.NET shared runtimes into that private SDK root using the supported runtime bootstrap. The target channel comes from `HonuaTargetFramework`; non-versioned host files are preserved and exact producer SDK identity is verified afterward. This allows a newer producer SDK to execute older target artifacts without major runtime roll-forward or artifact changes. It adds no jobs and changes no required checks. The 12 November baseline aborted net10.0 tests and projection regeneration before execution when only the SDK 11 runtimes were present; recovery timing awaits a fresh eligible gate. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. A shard whose whole closure is Honua.Server.Tests starts when the parallel producer finishes. Other closures wait for the main producer in Build and tests. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
 
 ### Test analyzer compilation roots
 
@@ -1382,9 +1388,15 @@ router full-coverage escalation, API failure or a larger bound
 leaves coverage to the unchanged twice-daily full runs. A deferred dispatcher does
 not launch CI. A previously queued execution rechecks admission and cancels itself
 before publishing change outputs; neither cancellation nor a failed cancellation request can advance the successful CI base.
-Admitted affected runs use two concurrent server shards. All trusted indices
-use the configured `honua-heavy` pool, so a run holds at most two heavy runners;
-side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today. Full server
+Admitted affected runs use two concurrent server shards. A selective run whose
+router reason is `no_path_match` schedules none of those default smoke shards.
+Honua.Core package compatibility, which uses the heavy pool, runs on a selective
+dispatch only when a changed file sits outside docs, workflows, `scripts/ci/` and
+tests. An empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+Core package or Postgres compatibility job still does. All trusted indices
+use the configured `honua-heavy` pool, so a run holds at most two heavy runners
+for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,
+except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full server
 matrices retain their 16-job limit. A single pool prevents admitted hosted shards
 waiting for capacity from exhausting that limit while heavy runners remain idle.
 Full run 43709972683 had 13 waiting hosted shards plus three executing shards at

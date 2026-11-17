@@ -1,7 +1,6 @@
 # Same-project interfaces with one implementation that no test names (SingleImplementationInterfaceRatchetTests).
 # Each line is declaring file|interface. Delete a line when the interface is gone, gains an
 # implementation or is named by a test; never add one.
-src/Honua.Core/Core/Features/Infrastructure/Monitoring/DatabaseQueryPerformanceMonitor.cs|IQueryExecutionContext
 src/Honua.Core/Core/Features/Raster/Multidimensional/Abstractions/IMultidimensionalCoverageMetadataReader.cs|IMultidimensionalCoverageMetadataReader
 src/Honua.Routing/Features/Routing/Abstractions/INetworkTopologyEditStore.cs|INetworkTopologyEditStore
 src/Honua.Routing/Features/Routing/Abstractions/INetworkTopologyGenerationStore.cs|INetworkTopologyGenerationStore

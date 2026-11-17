@@ -146,7 +146,7 @@ public static class DescriptiveMetadataResolver
             return metadata.Contacts.OfType<MetadataV2ResponsibleParty>().ToArray();
         }
         return metadata.ContactPoint is { } point && (Text(point.Name) ?? Text(point.Email) ?? Text(point.Url)) is not null
-            ? [new MetadataV2ResponsibleParty { Name = Text(point.Name), Email = Text(point.Email), Url = Text(point.Url) }]
+            ? [new MetadataV2ResponsibleParty { Name = Text(point.Name), Email = Text(point.Email), Url = Text(point.Url), Phone = Text(point.Phone) }]
             : [];
     }
 
