@@ -43,17 +43,36 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     [UnitTest]
     public void BuildLinkedLayerMetadataV2Graph_RelinkOfLegacySecondPrimary_DemotesLinkedPublication()
     {
-        var once = LinkIntoService(CreateLinkPrimaryGraph(MetadataV2LayerType.EsriFeatureLayer), "beta");
-        var legacy = once with
-        {
-            Publications = once.Publications.Select(p => p with { IsPrimary = true }).ToArray()
-        };
-
-        var repaired = LinkIntoService(legacy, "beta");
+        var repaired = LinkIntoService(CreateLegacyDoublePrimaryGraph(), "beta");
 
         LinkedPublication(repaired, "beta").IsPrimary.Should().BeFalse();
         repaired.Publications.Single(publication => publication.Metadata.Id == "pub-alpha-101")
             .IsPrimary.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void BuildLinkedLayerMetadataV2Graph_RelinkIntoOriginalService_KeepsOriginalPrimary()
+    {
+        var relinked = LinkIntoService(CreateLegacyDoublePrimaryGraph(), "alpha");
+
+        relinked.Publications.Single(publication => publication.Metadata.Id == "pub-alpha-101")
+            .IsPrimary.Should().BeTrue();
+    }
+
+    // The original publication is older than the later link, so it is the canonical survivor.
+    private static MetadataV2Graph CreateLegacyDoublePrimaryGraph()
+    {
+        var once = LinkIntoService(CreateLinkPrimaryGraph(MetadataV2LayerType.EsriFeatureLayer), "beta");
+        return once with
+        {
+            Publications = once.Publications.Select(publication => publication with
+            {
+                IsPrimary = true,
+                Metadata = publication.Metadata.Id == "pub-alpha-101"
+                    ? publication.Metadata with { CreatedAt = _linkTime.AddDays(-30) }
+                    : publication.Metadata
+            }).ToArray()
+        };
     }
 
     [UnitTest]
