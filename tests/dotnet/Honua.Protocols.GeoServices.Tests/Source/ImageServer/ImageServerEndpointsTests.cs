@@ -1050,8 +1050,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     public async Task ExportImage_WithUnknownRenderingRule_ReturnsBadRequest()
     {
         var fixture = _defaultHost.Application;
-        // Hillshade/Slope/Aspect are now implemented terrain functions (#1803); use a name that
-        // is genuinely not a known raster function so the unknown-chain -> 400 path is exercised.
+        // Use an unknown raster function to exercise the unknown-chain 400 response.
         var renderingRule = Uri.EscapeDataString("""{"rasterFunction":"NonExistentRasterFunction"}""");
         var response = await fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=image&bbox=-180,-90,180,90&renderingRule={renderingRule}");
@@ -2187,8 +2186,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         var response = await fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-        // #2795: not-implemented operations now surface body error.code 501 (pass-through) instead
-        // of collapsing to 500, so clients can distinguish "unsupported" from a server fault.
+        // Unsupported operations surface error.code 501 so clients can distinguish a server fault.
         await response.AssertGeoServicesErrorAsync(501);
     }
 
@@ -3111,7 +3109,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     {
         var fixture = _defaultHost.Application;
         // WKID 108001 (NAD_1983_To_WGS_1984_1) is the catalog default for NAD83 (4269)
-        // -> WGS84 (4326); supplying it must be honored (no longer rejected) and yield
+        // -> WGS84 (4326); supplying it must be honored and yield
         // coordinates within datum tolerance of the input.
         const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":-100.0,"y":40.0,"spatialReference":{"wkid":4269}}]}""";
         var encoded = Uri.EscapeDataString(geometries);
@@ -3770,8 +3768,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             $"&renderingRule={Uri.EscapeDataString(renderingRule)}");
 
         // Class signatures are computed on source pixels; a renderingRule is explicitly rejected.
-        // #2795: not-implemented operations now surface body error.code 501 (pass-through) instead
-        // of collapsing to 500, so clients can distinguish "unsupported" from a server fault.
+        // Unsupported operations surface error.code 501 so clients can distinguish a server fault.
         await response.AssertGeoServicesErrorAsync(501);
     }
 
