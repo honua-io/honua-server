@@ -159,6 +159,9 @@ require_digest() {
 
 compose() { docker compose --project-name "${project_name}" -f "${compose_file}" "$@"; }
 
+# Job-store reads and the native entry hold: see gp-job-store.sh.
+source "${repo_root}/scripts/qualification/gp-job-store.sh"
+
 # The topology file is the single source of truth for the store contract: the
 # provisioner is driven from the same declarations the containers bind, so a
 # marker can never be written for a contract no host actually resolves.
@@ -380,9 +383,12 @@ cancel_barrier_job() {
   request_at="$(now)"
   job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
 
-  wait_barrier "$job" claimed || return 1
+  # A worker paused at the native entry alone writes no claimed barrier.
+  if ! native_entry_hold_active; then
+    wait_barrier "$job" claimed || return 1
+  fi
   if [[ "$target" != claimed ]]; then
-    release_barrier "$job" claimed
+    native_entry_hold_active || release_barrier "$job" claimed
     wait_barrier "$job" native-process-started || return 1
     process_ready="$(barrier_record "$job" native-process-started)"
     child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
@@ -512,9 +518,9 @@ cancel_barrier_job() {
     }
   fi
 
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
-  pending="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "$job" || true)"
-  claimed_score="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:claimed "$job" || true)"
+  record="$(job_record "$job")" || { scenario_fail "job record was not readable from the job store"; return 1; }
+  pending="$(job_queue_position "$job" pending || true)"
+  claimed_score="$(job_queue_position "$job" claimed || true)"
   after_objects="$(object_file_count "$job")"
   [[ "$after_objects" == 0 ]] || {
     scenario_fail "cancelled job retained staged objects after retention cleanup"
@@ -881,16 +887,15 @@ run_async_baseline() {
 }
 
 run_duplicate_delivery() {
-  local scenario=duplicate-delivery job score terminal state digest record attempts deadline
+  local scenario=duplicate-delivery job terminal state digest record attempts deadline
   # Two consumers are required: re-deliver after the first has claimed and begun executing.
   compose up -d --scale worker=2 worker >/dev/null
   job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { write_receipt "${scenario}" fail "submission failed"; return 1; }
   wait_running "${job}" || { write_receipt "${scenario}" fail "job did not reach running before redelivery" "${job}"; return 1; }
-  score="$(date +%s%3N)"
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:pending "${score}" "${job}" >/dev/null
+  requeue_claimed_job "${job}" || { write_receipt "${scenario}" fail "running job could not be returned to the queue" "${job}"; return 1; }
   deadline=$((SECONDS + 30)); attempts=0
   while (( SECONDS < deadline )); do
-    record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:${job}")"
+    record="$(job_record "${job}" || printf '{}')"
     attempts="$(jq -r '.attemptCount // 0' <<<"${record}")"
     (( attempts >= 2 )) && break
     sleep 0.1
@@ -972,6 +977,7 @@ run_timeout_live() {
   # return (including an assertion failure), recreate the topology using the
   # caller's original values before another scenario can run.
   run_timeout_case "$@" || result=$?
+  (( result == 0 )) || keep_held_worker_logs
   compose up -d --force-recreate server server-peer worker >/dev/null || cleanup_result=$?
   if (( cleanup_result == 0 )); then
     wait_ready && wait_peer_ready || cleanup_result=$?
@@ -990,9 +996,10 @@ run_timeout_case() {
   local mode="$1" record terminal retry_code result_code failed_terminal_count
   local request_at signal_file object_count_before object_count_after process_ready child_pid worker_container child_alive signal_deadline
   local behavior="native production executor"
-  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification
   local -x HONUA_GP_TIMEOUT_SECONDS=2
   local -x HONUA_GP_QUALIFICATION_EXECUTOR_MODE=""
+  local -x HONUA_GP_QUALIFICATION_PAUSE_AT=native-process-started
   if [[ "$mode" == ignore-cancellation ]]; then
     export HONUA_GP_QUALIFICATION_EXECUTOR_MODE=ignore-cancellation
     behavior="native production executor ignores operator cancellation; timeout remains authoritative"
@@ -1005,13 +1012,11 @@ run_timeout_case() {
   request_at="$(now)"
   job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
   object_count_before="$(object_file_count "$job")"
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
+  record="$(job_record "$job" || true)"
   jq -e '.timeoutPolicy.maxDuration != null' <<<"$record" >/dev/null || {
     scenario_fail "supported workload timeout was not persisted on the submitted job"
     return 1
   }
-  wait_barrier "$job" claimed || return 1
-  release_barrier "$job" claimed
   wait_barrier "$job" native-process-started || return 1
   process_ready="$(barrier_record "$job" native-process-started)"
   child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
@@ -1079,9 +1084,9 @@ run_timeout_case() {
     scenario_fail "timed-out job retained staged objects after retention cleanup"
     return 1
   }
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
-  pending="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "$job" || true)"
-  claimed_score="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:claimed "$job" || true)"
+  record="$(job_record "$job")" || { scenario_fail "job record was not readable from the job store"; return 1; }
+  pending="$(job_queue_position "$job" pending || true)"
+  claimed_score="$(job_queue_position "$job" claimed || true)"
   set_scenario_evidence "$(jq -n \
     --arg request_at "$request_at" --arg behavior "$behavior" \
     --arg retry_code "$retry_code" --arg result_code "$result_code" \
@@ -1410,13 +1415,13 @@ else
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       run_scenario sync run_sync || failures=$((failures + 1))
       run_scenario async run_async_baseline || failures=$((failures + 1))
-      export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+      export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification
       compose up -d --force-recreate worker >/dev/null || failures=$((failures + 1))
       run_scenario cancel-claimed run_cancel_barrier claimed || failures=$((failures + 1))
-      run_scenario cancel-native-process-started run_cancel_barrier native-process-started || failures=$((failures + 1))
+      run_scenario cancel-native-process-started with_native_entry_hold run_cancel_barrier native-process-started || failures=$((failures + 1))
       run_scenario cancel-output-bytes-written-unpublished run_cancel_barrier output-bytes-written-unpublished || failures=$((failures + 1))
       run_scenario cancel-artifact-reference-published-terminal-cas-pending run_cancel_barrier artifact-reference-published-terminal-cas-pending || failures=$((failures + 1))
-      run_scenario mcp-cancel-native-process-started run_mcp_cancel_barrier || failures=$((failures + 1))
+      run_scenario mcp-cancel-native-process-started with_native_entry_hold run_mcp_cancel_barrier || failures=$((failures + 1))
       unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
       compose up -d --force-recreate worker >/dev/null || failures=$((failures + 1))
       run_scenario idempotency run_idempotency || failures=$((failures + 1))
