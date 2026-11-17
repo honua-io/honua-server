@@ -244,6 +244,10 @@ public sealed class Cql2Lexer
             {
                 if (PeekNext() == '\'') // Escaped quote
                 {
+                    if (value.Length >= FilterParserGuard.MaxStringLiteralLength)
+                    {
+                        FilterParserGuard.EnsureStringLiteralLength(value.Length + 1, "CQL2 string literal");
+                    }
                     value.Append('\'');
                     _position += 2;
                 }

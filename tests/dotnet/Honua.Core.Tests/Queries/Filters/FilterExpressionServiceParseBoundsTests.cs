@@ -76,6 +76,41 @@ public sealed class FilterExpressionServiceParseBoundsTests
         result.ErrorMessage.Should().Contain("maximum string literal length");
     }
 
+    [UnitTheory]
+    [InlineData(FilterLanguage.Cql2Text, false)]
+    [InlineData(FilterLanguage.Cql2Text, true)]
+    [InlineData(FilterLanguage.OData, false)]
+    [InlineData(FilterLanguage.OData, true)]
+    [InlineData(FilterLanguage.GeoServicesSql, false)]
+    [InlineData(FilterLanguage.GeoServicesSql, true)]
+    public void Parse_EscapedStringLiteralAtLimit_ReturnsExpression(FilterLanguage language, bool mixed)
+    {
+        var filter = EscapedStringFilter(language, mixed, FilterParserGuard.MaxStringLiteralLength);
+
+        var result = _service.Parse(language, filter);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Expression.Should().NotBeNull();
+    }
+
+    [UnitTheory]
+    [InlineData(FilterLanguage.Cql2Text, false)]
+    [InlineData(FilterLanguage.Cql2Text, true)]
+    [InlineData(FilterLanguage.OData, false)]
+    [InlineData(FilterLanguage.OData, true)]
+    [InlineData(FilterLanguage.GeoServicesSql, false)]
+    [InlineData(FilterLanguage.GeoServicesSql, true)]
+    public void Parse_EscapedStringLiteralBeyondLimit_ReturnsFailure(FilterLanguage language, bool mixed)
+    {
+        var filter = EscapedStringFilter(language, mixed, FilterParserGuard.MaxStringLiteralLength + 1);
+
+        var result = _service.Parse(language, filter);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Expression.Should().BeNull();
+        result.ErrorMessage.Should().Contain("maximum string literal length");
+    }
+
     public static TheoryData<FilterLanguage, string> IdentifiersBeyondLimit => new()
     {
         { FilterLanguage.Cql2Text, $"{NameBeyondLimit} = 'a'" },
@@ -163,6 +198,14 @@ public sealed class FilterExpressionServiceParseBoundsTests
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         result.Expression.Should().NotBeNull();
+    }
+
+    private static string EscapedStringFilter(FilterLanguage language, bool mixed, int length)
+    {
+        var value = mixed ? new string('a', length - 1) + "'" : new string('\'', length);
+        var literal = value.Replace("'", "''", StringComparison.Ordinal);
+        var comparison = language == FilterLanguage.OData ? "eq" : "=";
+        return $"name {comparison} '{literal}'";
     }
 
     private static string Values(int count) => string.Join(",", Enumerable.Repeat("1", count));

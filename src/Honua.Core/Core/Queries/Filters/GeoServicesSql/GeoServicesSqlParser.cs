@@ -1160,6 +1160,10 @@ public sealed class GeoServicesSqlParser
                     Advance();
                     if (Peek() == '\'')
                     {
+                        if (builder.Length >= FilterParserGuard.MaxStringLiteralLength)
+                        {
+                            FilterParserGuard.EnsureStringLiteralLength(builder.Length + 1, "GeoServicesSQL string literal");
+                        }
                         Advance();
                         builder.Append('\'');
                         continue;
