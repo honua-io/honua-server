@@ -4,6 +4,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,12 +14,17 @@ recovery = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(recovery)
 
 
+@dataclass
 class FakeDocker:
     """Answers the drill's docker calls for one postgres volume and one bound output store."""
 
-    def __init__(self, test, project, root, backup, failure):
-        self.test, self.project, self.root, self.backup, self.failure = test, project, root, backup, failure
-        self.calls, self.restored = [], set()
+    test: unittest.TestCase
+    project: str
+    root: Path
+    backup: Path
+    failure: str | None
+    calls: list = field(default_factory=list)
+    restored: set = field(default_factory=set)
 
     def run(self, *args, **kwargs):
         self.calls.append(args)
@@ -82,7 +88,7 @@ class RecoveryTests(unittest.TestCase):
             root.mkdir()
             (root / ".honua-gp-store.json").write_text(json.dumps({"StoreReference": "qualification"}))
             backup = Path(temp) / "backup"
-            docker = FakeDocker(self, project, root, backup, failure)
+            docker = FakeDocker(test=self, project=project, root=root, backup=backup, failure=failure)
             with patch.object(recovery, "run", side_effect=docker.run), \
                     patch.object(recovery.subprocess, "run", side_effect=docker.inspect_destroyed):
                 result = recovery.recover(Path("compose.yaml"), project, root, backup)
