@@ -188,7 +188,7 @@ public sealed partial class JobReconciliationServiceTests
         // The fresh record must ALSO look heartbeat-expired. With a live heartbeat the sweep
         // skips on the heartbeat re-validation instead, and the ownership guard this test is
         // named for is never reached — a mutation removing the claim-equality clause from
-        // IsStaleSnapshot left the test green (honua-server#4403). Expiring both makes the
+        // IsStaleSnapshot left the test green. Expiring both makes the
         // changed owner the only remaining reason not to act.
         var reclaimedByOther = snapshot with
         {

@@ -128,7 +128,7 @@ internal static partial class ConfigurationSourceModel
             // Partially-qualified reference, e.g. `Core.Features.Import.Domain.ImportLimits` written
             // from a file in namespace `Honua.Db.Postgres`. C# completes such a name from an
             // enclosing namespace or a `using`, and so must the walk — treating it as unresolvable
-            // is how the Import:Limits parser stayed invisible to the guards (#3315).
+            // is how the Import:Limits parser stayed invisible to the guards.
             var suffix = "." + candidateName;
             var qualifyingPrefixes = EnclosingNamespaces(preferredNamespace)
                 .Concat(usingNamespaces)

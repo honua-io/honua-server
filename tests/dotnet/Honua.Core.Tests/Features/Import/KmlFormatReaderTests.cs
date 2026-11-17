@@ -50,7 +50,7 @@ public sealed class KmlFormatReaderTests
         result.Geometry.Should().BeOfType<GeometryCollection>();
         result.Geometry!.NumGeometries.Should().Be(2);
         var point = result.Geometry.GetGeometryN(0).Should().BeOfType<Point>().Subject;
-        // honua-server#4406/#4419: this test asserted only Z, so a reader that swapped longitude
+        // This test asserted only Z, so a reader that swapped longitude
         // and latitude passed it. KML is lon,lat[,alt] while most XML geo formats are lat-first,
         // which makes transposition the characteristic silent-wrong-data failure for this format.
         point.X.Should().Be(-122.1);

@@ -322,7 +322,7 @@ public sealed class GeoServicesTileCachePackageReaderTests
     [Fact]
     public async Task ReadTiles_AliasedCompactV2Index_ThrowsBeforeExceedingDecompressedBudget()
     {
-        // #6176: every index slot points at the same 16 MB payload. Copying each
+        // Every index slot points at the same 16 MB payload. Copying each
         // slot would write about 256 GiB. The reader must fail before that.
         const int tileSize = 0xFFFFFF;
         const int dataStart = CompactV2HeaderSize + CompactV2IndexSize;

@@ -111,7 +111,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_PostValidRequest_ReturnsGeometry()
     {
-        // Regression for #1443: clip clips each input geometry to the Esri `envelope`
+        // Clip clips each input geometry to the Esri `envelope`
         // parameter (not a `geometry` operand). A request that omits envelope must fail,
         // and a request supplying envelope must succeed.
         var body = """
@@ -147,7 +147,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_WithEnvelope_ClipsToEnvelopeBounds()
     {
-        // Regression for #1443. The target polygon is (0,0)-(4,4); the clip envelope is
+        // The target polygon is (0,0)-(4,4); the clip envelope is
         // (1,1)-(3,3). The clipped result is the (1,1)-(3,3) window, which differs from the
         // unclipped target, proving the envelope parameter is honored.
         var body = """
@@ -198,7 +198,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/clip")]
     public async Task Clip_MissingEnvelope_Returns400()
     {
-        // Regression for #1443: clip requires the `envelope` parameter, not `geometry`.
+        // Clip requires the `envelope` parameter, not `geometry`.
         var body = """
         {
             "geometries": {
@@ -269,7 +269,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
         await response.AssertGeoServicesErrorAsync(400);
     }
 
-    // #1308: ArcGIS clients wrap the single operating geometry as
+    // ArcGIS clients wrap the single operating geometry as
     // {"geometryType":"...","geometry":{...}}. The parser must unwrap it.
 
     [IntegrationTest]
@@ -779,7 +779,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
         // Point-vs-polygon is a legal Esri intersect input combination (the "geometry" operand's
         // dimension must be >= the "geometries" elements' dimension), and this point is disjoint
         // from the polygon, so the result is an empty point of the request type — Esri serializes
-        // empty points with null ordinates ({"x":null,"y":null}) — not a 400 (#2742).
+        // empty points with null ordinates ({"x":null,"y":null}) — not a 400.
         var body = """
         {
             "geometries": {
@@ -1147,7 +1147,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
         result.Error.Details!.Should().Contain(detail => detail.Contains("calculationType", StringComparison.Ordinal));
     }
 
-    // --- Empty results (#2742): disjoint intersect / full difference must be 200 + empty geometry ---
+    // --- Empty results: disjoint intersect / full difference must be 200 + empty geometry ---
 
     [IntegrationTest]
     [Operation(Operations.Intersect)]
@@ -1221,7 +1221,7 @@ public sealed class GeometryServiceAdvancedOperationsTests
         rings.GetArrayLength().Should().Be(0);
     }
 
-    // --- Unknown unit token (#2742): must be 400, not silently defaulted to a meters multiplier ---
+    // --- Unknown unit token: must be 400, not silently defaulted to a meters multiplier ---
 
     [IntegrationTest]
     [Operation(Operations.Densify)]

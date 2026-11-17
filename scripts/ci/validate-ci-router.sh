@@ -54,6 +54,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture generated-file-ownership "${PYTHON_BIN}" scripts/ci/check-generated-file-ownership.test.py
   run_fixture workflow-inventory "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.test.py
   run_fixture disabled-workflows "${PYTHON_BIN}" scripts/ci/check-disabled-workflows.test.py
+  run_fixture export-portolan "${PYTHON_BIN}" scripts/ci/check-export-portolan.test.py
   run_fixture shard-identities-tests "${PYTHON_BIN}" scripts/ci/check-shard-identities.test.py
   run_fixture shard-identities "${PYTHON_BIN}" scripts/ci/check-shard-identities.py
   run_fixture publish-authorization-tests "${PYTHON_BIN}" scripts/ci/check-publish-authorization.test.py
@@ -162,6 +163,7 @@ jq -e '
         .[]
         | (.prefix | type == "string" and length > 0)
           and (.reason | type == "string" and length > 0)
+          and ((has("prioritize") | not) or (.prioritize | type == "boolean"))
           and (.shards | type == "array" and length > 0)
       ] | all)
     )
@@ -169,6 +171,9 @@ jq -e '
 ' .github/ci-shards.json >/dev/null
 }
 run_fixture shard-structure validate_shard_structure
+if [[ -n "${PYTHON_BIN}" ]]; then
+  run_fixture shard-structure-controls "${PYTHON_BIN}" scripts/ci/fixtures/test-shard-structure.py
+fi
 
 # #2721: the artifact registry must cover the exact unique shard-project set, and
 # its package/restore contract must fail closed on RID leakage, tampering and limits.

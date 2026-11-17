@@ -80,7 +80,7 @@ public sealed class GdalWorkerExecutorTests
         dispatcher.AcceptedRuntimeProfiles.Should().NotContain(RuntimeProfiles.Managed);
         dispatcher.SupportedProcessIds.Should().Contain(new[] { "gdal.ogr2ogr", "gdal.gdalwarp" });
 
-        // The raster analysis & terrain GP tool packs (#2141, #2239, #2240) must all be
+        // The raster analysis & terrain GP tool packs must all be
         // routable by the worker dispatcher, including the ids served by a custom worker
         // step rather than a stock GDAL CLI (interpolate-kriging's own solver,
         // euclidean-allocation's Python step).
@@ -295,7 +295,7 @@ public sealed class GdalWorkerExecutorTests
             new GdalRasterZonalStatisticsJobExecutor(runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             new GdalMultidimCoverageMetadataJobExecutor(runner, options, NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance),
             new PdalPointCloudConvertJobExecutor(runner, options, NullLogger<PdalPointCloudConvertJobExecutor>.Instance),
-            // Raster analysis & terrain GP tool packs (#2141, #2239, #2240).
+            // Raster analysis & terrain GP tool packs.
             new GdalRasterResampleJobExecutor(runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
             new GdalRasterInterpolateJobExecutor(runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             new GdalRasterMosaicJobExecutor(runner, options, NullLogger<GdalRasterMosaicJobExecutor>.Instance),

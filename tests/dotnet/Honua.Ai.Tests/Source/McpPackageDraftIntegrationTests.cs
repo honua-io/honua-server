@@ -159,8 +159,8 @@ public sealed class McpPackageDraftIntegrationTests : IAsyncLifetime
     public async Task ResourcesRead_MapPackageDraftUri_ResolvesWithoutADeployment()
     {
         // ADR-0076 promises the returned identifier is addressable at its URI. Creating
-        // without persisting passes the create half of that promise and fails this half
-        // (honua-server#3262), so both halves are asserted in one call sequence.
+        // without persisting passes the create half of that promise and fails this half,
+        // so both halves are asserted in one call sequence.
         var resourceUri = await CreateAndReadUriAsync("""
             {"jsonrpc":"2.0","id":"map-persist","method":"tools/call","params":{
                 "name":"honua_create_map_package",

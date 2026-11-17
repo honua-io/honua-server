@@ -52,7 +52,7 @@ public sealed partial class StudioAiProxyServiceTests
     [UnitTest]
     public async Task GetCapabilitiesAsync_AnthropicProviderWithoutApiKeyOrEnvFallback_ReportsUnconfigured()
     {
-        // honua-server#3010 review: exercises the REAL AnthropicStudioAiProxyAdapter (not the fake)
+        // Exercises the REAL AnthropicStudioAiProxyAdapter (not the fake)
         // so this proves the service + adapter together, not just a mocked contract.
         var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
         config.Providers["claude"].ApiKey = string.Empty;

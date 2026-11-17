@@ -23,7 +23,7 @@ public sealed class AdminReplicaManagementDriftBackingTests : IAsyncLifetime
     public AdminReplicaManagementDriftBackingTests()
     {
         // Pro licence: the replica/conflict-review surface enforces the fieldops.offline-sync
-        // entitlement in its own right, which admin authorization does not imply (#2430).
+        // entitlement in its own right, which admin authorization does not imply.
         _fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
             .UseSeed("tests/seed/server.yaml")

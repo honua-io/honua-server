@@ -79,7 +79,7 @@ public sealed class EvalHarnessFixture : IAsyncLifetime
                 CorpusVersion = FixtureSource.CorpusVersion,
                 CorpusSource = FixtureSource.Id,
                 CorpusPath = FixtureSource.CorpusPath,
-                RedisAvailable = EvalHarnessSupport.DetermineRedisAvailability(snapshot)
+                JobStoreAvailable = EvalHarnessSupport.DetermineJobStoreAvailability(snapshot)
             },
             Scenarios = snapshot,
             Rollup = new EvalReportRollup

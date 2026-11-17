@@ -66,7 +66,7 @@ internal static class SavedMapOperationEndpoints
         // replicas would each run an independent per-map cursor sequence — both could accept
         // "cursor 1" and broadcast conflicting committed operations that can never be
         // reconciled. Reject the edit honestly instead of accepting state the deployment cannot
-        // make authoritative. A single instance (even one using Redis for cache/jobs) is
+        // make authoritative. A single instance is
         // authoritative over its own log and is unaffected.
         if (!coordinator.CanAcceptEdits)
         {

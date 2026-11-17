@@ -267,7 +267,7 @@
       "displayName": "Cache State Backup",
       "category": "DisasterRecovery",
       "edition": "Enterprise",
-      "description": "Enterprise automation for Redis warm-cache recovery during regional failover. Recovery of enabled durable Redis job/workflow state remains a baseline obligation in every edition."
+      "description": "Enterprise automation for warm-cache recovery during regional failover. Recovery of enabled durable PostgreSQL job/workflow state remains a baseline obligation in every edition."
     },
     {
       "key": "dr.failover",
@@ -309,7 +309,7 @@
       "displayName": "Field Collection Forms",
       "category": "FieldOps",
       "edition": "Community",
-      "description": "Read and submit online form packages. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."
+      "description": "Read and submit online Forms. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."
     },
     {
       "key": "fieldops.offline-sync",

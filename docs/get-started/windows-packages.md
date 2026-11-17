@@ -18,8 +18,7 @@ and TLS, use [production deployment](../guides/deploy/docker-compose.md).
 No repository checkout, compiler, Bash, Git, developer helper, or GitHub Packages
 credential is needed. The server image and the two PyPI clients below are public.
 The 2026.1 release runs with licensing disabled, so there is no licence or
-edition-selection step. Redis is installed for Production operation secrets;
-this journey uses a small synchronous import and does not require durable jobs.
+edition-selection step. This journey uses a small synchronous import.
 
 ## Artifact identity and qualification
 
@@ -45,10 +44,10 @@ is not required.
 Choose unused loopback ports if `18080` (HTTP) or `18081` (native gRPC) is occupied.
 Set `HONUA_GRPC_PORT` in `.env` to override the gRPC default. Keep this PowerShell
 session open through verification. Each new installation gets its own Compose
-project, network, three volumes, and directory. Do not regenerate credentials
+project, network, two volumes, and directory. Do not regenerate credentials
 for an existing database.
 
-Production stores operation secrets in Redis and will not start until an RSA PKCS#12
+Production stores operation secrets in PostgreSQL and will not start until an RSA PKCS#12
 encrypts that key ring. The block writes `secrets\keyring.pfx` and mounts it read-only.
 The container runs as a different user, so the file grants read to Everyone; the password
 still encrypts it.
@@ -92,7 +91,7 @@ function dc {
 ```
 
 Save the following customer configuration verbatim. Honua's HTTP and native gRPC ports are
-published on loopback; PostgreSQL and Redis are reachable only on this project's
+published on loopback; PostgreSQL is reachable only on this project's
 network. The inline SQL initializes a fresh database before the final postmaster
 becomes healthy. An existing incompatible database still fails server preflight.
 
@@ -111,7 +110,6 @@ services:
       AllowedHosts: "localhost;127.0.0.1"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_HTTP_PORT}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Required}"
-      ConnectionStrings__Redis: redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
       Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
@@ -123,14 +121,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - storage:/var/lib/honua/storage
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
@@ -151,20 +147,8 @@ services:
       timeout: 5s
       retries: 30
     restart: unless-stopped
-  redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
-    volumes:
-      - redis:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
 volumes:
   postgres:
-  redis:
   storage:
 configs:
   postgis_init:
@@ -363,16 +347,16 @@ variable-loading and readiness blocks. Run
 `journey.py --verify-only` afterward. A restart or container recreation is not a
 backup restore; follow [backup and recovery](../guides/deploy/backup-and-restore.md)
 before storing irreplaceable data. Retain the private `.env`, `secrets\keyring.pfx`,
-database, Redis, file-storage backup, and exact image identity together. The
+database, file-storage backup, and exact image identity together. The
 certificate password is `HONUA_KEYRING_PASSWORD` in `.env`. A new certificate cannot
-decrypt operation secrets already stored in Redis. Never delete volumes, the
+decrypt operation secrets already stored in the database. Never delete volumes, the
 certificate, or regenerate `.env` to bypass a migration or credential failure.
 
 ## Diagnostics and scoped teardown
 
 ```powershell
 dc ps
-dc logs --no-color --tail 150 honua postgres redis
+dc logs --no-color --tail 150 honua postgres
 docker image inspect $values['HONUA_IMAGE'] --format '{{json .RepoDigests}}'
 & $Python -m pip freeze
 ```

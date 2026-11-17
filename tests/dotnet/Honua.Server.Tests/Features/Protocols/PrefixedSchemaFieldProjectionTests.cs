@@ -99,9 +99,7 @@ public sealed class PrefixedSchemaFieldProjectionTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/ogc/features/collections/{CollectionId}/items?limit=1&properties={EncodedPrefixedFieldName}");
 
-        // Explicitly asserted: before the fix this token was rejected outright as
-        // "Invalid properties field", and relaxing only the protocol-side guard would
-        // have turned it into an unhandled provider ArgumentException (HTTP 500).
+        // The prefixed field must pass both protocol validation and provider projection.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var properties = await ReadFirstFeaturePropertiesAsync(response);

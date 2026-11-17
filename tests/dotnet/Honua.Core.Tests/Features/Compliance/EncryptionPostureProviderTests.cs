@@ -140,7 +140,7 @@ public sealed class EncryptionPostureProviderTests
     [Fact]
     public async Task Rotate_WhenAuditWriteFails_StillSucceedsButReportsAuditNotRecorded()
     {
-        // PA-032: the in-memory posture must still advance (Succeeded = true) even when the
+        // the in-memory posture must still advance (Succeeded = true) even when the
         // audit trail write fails, but the outcome must distinguish "rotated" from "rotated
         // AND auditable" instead of unconditionally claiming the audit event was recorded.
         var audit = new ThrowingAuditLog();

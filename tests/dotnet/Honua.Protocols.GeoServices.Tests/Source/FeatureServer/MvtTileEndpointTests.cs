@@ -82,7 +82,7 @@ public class MvtTileEndpointTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync("/tiles/99999/1/0/0.mvt");
 
         // Assert
-        // honua-server#2945: /tiles is not an Esri protocol surface; layer-not-found is
+        // /tiles is not an Esri protocol surface; layer-not-found is
         // a real HTTP 404 + problem+json, not the GeoServices 200-envelope.
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

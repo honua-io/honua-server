@@ -124,7 +124,7 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestLayerId}/ImageServer?f=xml");
 
         // Assert
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -583,13 +583,13 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
             [
                 new("f", "json")
             ]),
-            // #1344: the service-level POST keyProperties route (added in #1338)
-            // needs integration coverage for the ApiSurfaceCoverage arch test.
+            // The service-level POST keyProperties route needs integration
+            // coverage for the ApiSurfaceCoverage arch test.
             ($"/rest/services/{serviceId}/ImageServer/keyProperties",
             [
                 new("f", "json")
             ]),
-            // #1900: the service-level POST legend route needs integration coverage for the
+            // The service-level POST legend route needs integration coverage for the
             // ApiSurfaceCoverage arch test.
             ($"/rest/services/{serviceId}/ImageServer/legend",
             [
@@ -668,7 +668,7 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync($"/rest/services/{nonExistentLayerId}/ImageServer?f=json");
 
         // Assert
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 

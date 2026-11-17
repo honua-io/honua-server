@@ -377,7 +377,7 @@ remains single-pathed.
 [Per-request usage producer]
         │
         ▼
-MarketplaceMeteringQueue (durable buffer, in-memory + Redis)
+MarketplaceMeteringQueue (durable buffer, in-memory + PostgreSQL)
         │
         ▼
 AwsMeteringWorker (BackgroundService, PeriodicTimer)
@@ -408,7 +408,7 @@ do not surface a pending operation. The Honua webhook handler is
 intentionally narrow — JWT verify, payload capture, durable queue
 write, ACK — so the inline ACK stays at < 1 s p99 and the 10-second
 SLA is unconditional. The queue write must land in the durable
-backing (Redis) before 200; the volatile in-memory implementation is
+backing (PostgreSQL) before 200; the volatile in-memory implementation is
 not a webhook-side fallback, because losing an event between ACK and
 reconciler drain would break the at-least-once contract Microsoft
 expects. If the durable substrate is unavailable, the handler
@@ -447,7 +447,7 @@ POST /api/v1/marketplace/azure/webhook
         │      planId?, quantity?); reject bodies above
         │      Azure:Marketplace:Webhook:MaxBodyKiB before parsing
         │   3. durably persist event to MarketplaceWebhookQueue
-        │      (Redis-backed); on durable-write failure return 5xx
+        │      (PostgreSQL-backed); on durable-write failure return 5xx
         │      so Azure retries — never ACK on volatile fallback
         │   4. ACK 200  (target < 1 s p99, hard SLA 10 s)
         ▼
@@ -583,7 +583,7 @@ edge configuration alongside the mint host's public ingress.
 
 ## 5. Caching and Invalidation Matrix
 
-#338 does not write the license snapshot to `ICacheService` or Redis. The active
+#338 does not write the license snapshot to `ICacheService` or any shared cache. The active
 snapshot is in process and replaced on startup load or successful admin upload.
 
 Follow-on file-watch, marketplace, and key-inspection work should use

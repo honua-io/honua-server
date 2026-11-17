@@ -202,7 +202,7 @@ public sealed class McpLocationToolTests
         structured.GetProperty("message").GetString().Should().Contain(entitlementKey);
     }
 
-    // #2981: forward geocoding moved to Community — the demo/adoption showcase path — so the
+    // Forward geocoding moved to Community — the demo/adoption showcase path — so the
     // tool must succeed even when no license/entitlement service reports it active. This is the
     // MCP-side mirror of the HTTP GeocodingEntitlementGateTests forward/reverse assertions;
     // together they prove the HTTP and MCP surfaces agree on the re-tiered keys.
@@ -250,7 +250,7 @@ public sealed class McpLocationToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_GeocodeAddress_InvalidArguments_ReturnsSchemaValidToolError()
     {
-        // #2578 error-shape contract: an invalid geocode call must surface a
+        // Error-shape contract: an invalid geocode call must surface a
         // structured tool error (isError=true) whose envelope still validates
         // against the advertised outputSchema (the oneOf error branch), not a
         // bare protocol error.
@@ -285,7 +285,7 @@ public sealed class McpLocationToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_GeocodeAddress_ProviderFailure_ReturnsSchemaValidToolError()
     {
-        // #2578 round-trip contract: when no provider produces a result the tool
+        // Round-trip contract: when no provider produces a result the tool
         // surfaces a structured, retryable tool error whose envelope validates
         // against the advertised outputSchema.
         var coordinator = Substitute.For<IGeocodeCoordinatorService>();

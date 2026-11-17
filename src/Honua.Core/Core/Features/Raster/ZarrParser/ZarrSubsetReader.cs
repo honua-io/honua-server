@@ -73,8 +73,7 @@ public sealed class ZarrSubsetReader
         var arrayPath = JoinKey(rootPath, array.RelativePath);
 
         // Enumerate every required chunk index upfront, then dispatch the cloud reads with
-        // bounded parallelism instead of one chunk at a time: a subset spanning many chunks
-        // previously made up to MaxChunksPerRequest (4096) serial cloud round trips. Each
+        // bounded parallelism. Each
         // chunk's copy targets a disjoint region of the grid, so concurrent writes into
         // `output` never overlap and require no synchronization.
         var chunkIndices = new List<int[]>();

@@ -66,8 +66,8 @@ for session lifecycle and CSRF requirements.
 | `FeatureService` | `DescribeService`, `DescribeLayer`, `QueryFeatures`, `QueryFeaturesStream` (server streaming), `ApplyEdits`, `ListAttachments`, `GetAttachmentUrl`, `UploadAttachment`, `BeginAttachmentUpload`, `UploadAttachmentChunk`, `CommitAttachmentUpload`, `AbortAttachmentUpload`, `DeleteAttachment` | Feature query and edits; respects per-service protocol enablement and access policy. |
 | `ProcessService` | `ValidatePlan`, `DryRunPlan`, `ExecutePlan`, `ExecutePlanStream` (server streaming), `SubmitJob`, `GetJob`, `GetJobResult`, `CancelJob` | Canonical geoprocessing runtime (same backend as GPServer and OGC API Processes). |
 | `SpecService` | `PlanSpec`, `ApplySpec` (server streaming), `CancelApply` | Spec plan/apply engine. |
-| `SceneService` | `ListScenes`, `GetScene` | Scene dataset discovery. Served only when experimental capability `scene.catalog` is enabled; otherwise native gRPC calls return `UNIMPLEMENTED`. |
-| `TileService` | `GetTile`, `StreamTiles` (server streaming) | Tile retrieval. Served only when experimental capability `serve.3d-tiles-scene` is enabled; otherwise native gRPC calls return `UNIMPLEMENTED`. |
+| `SceneService` | `ListScenes`, `GetScene` | Scene dataset discovery. Experimental: registered only when `Capabilities__Experimental__scene.catalog__Enabled=true`; otherwise `UNIMPLEMENTED`. |
+| `TileService` | `GetTile`, `StreamTiles` (server streaming) | Tile retrieval. Experimental: registered only when `Capabilities__Experimental__serve.3d-tiles-scene__Enabled=true`; otherwise `UNIMPLEMENTED`. See [enable the 3D surfaces](3d-tiles-and-scenes.md#enable-the-3d-surfaces). |
 | `ElevationService` | `GetElevation`, `GetElevationProfile` | Elevation point and profile queries. |
 
 ```bash

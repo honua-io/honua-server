@@ -26,12 +26,12 @@ digest is `server.image` in the release's `customer-install-manifest.json`.
 
 Choose unused loopback ports if 18080 (HTTP) or 18081 (native gRPC) is occupied.
 Set `HONUA_GRPC_PORT` in `.env` to override the gRPC default. A new directory, Compose
-project, network and three volumes isolate this installation. Keep `.env` and
+project, network and two volumes isolate this installation. Keep `.env` and
 `secrets/keyring.pfx` private and retain both with the volumes. Recreating `.env`
 does not rotate database passwords, and a new certificate cannot decrypt operation
-secrets already stored in Redis.
+secrets already stored in the database.
 
-Production stores operation secrets in Redis and will not start until an RSA PKCS#12
+Production stores operation secrets in PostgreSQL and will not start until an RSA PKCS#12
 encrypts that key ring. The block writes `secrets/keyring.pfx` and mounts it read-only.
 The container runs as a different user, so the file is world-readable; the password
 still encrypts it.
@@ -72,7 +72,6 @@ services:
       AllowedHosts: "localhost;127.0.0.1"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_HTTP_PORT}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Required}"
-      ConnectionStrings__Redis: redis:6379
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Required}
       Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY:?Required}
       Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
@@ -84,14 +83,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - storage:/var/lib/honua/storage
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
@@ -112,20 +109,8 @@ services:
       timeout: 5s
       retries: 30
     restart: unless-stopped
-  redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
-    volumes:
-      - redis:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
 volumes:
   postgres:
-  redis:
   storage:
 configs:
   postgis_init:
@@ -322,7 +307,7 @@ Define `wait_honua_ready` again from the startup block, call it, then run the
 readback above. Preserve the original `.env`, `secrets/keyring.pfx`, and volumes.
 The certificate password is `HONUA_KEYRING_PASSWORD` in that `.env`. A new
 certificate, even with the same password, cannot decrypt operation secrets already
-stored in Redis. See the
+stored in the database. See the
 [production guide](../guides/deploy/docker-compose.md) for backup and restore;
 container recreation alone is not a backup.
 
@@ -330,7 +315,7 @@ container recreation alone is not a backup.
 
 ```bash
 dc ps
-dc logs --no-color --tail 150 honua postgres redis
+dc logs --no-color --tail 150 honua postgres
 docker image inspect "$HONUA_IMAGE" --format '{{json .RepoDigests}}'
 python3 -m pip --python "$Python" freeze
 ```
@@ -352,7 +337,7 @@ Stop only this installation, retaining its volumes:
 dc down
 ```
 
-When you deliberately want to delete this installation's database, Redis and
+When you deliberately want to delete this installation's database and
 file-storage volumes, run this from its saved directory:
 
 ```bash

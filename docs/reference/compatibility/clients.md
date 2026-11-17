@@ -108,10 +108,7 @@ return not found without rebinding the request to another publication.
 Managed API-key expiry rejects the credential while retaining its registry
 metadata for administrative list, effective-permissions and revoke operations.
 An expired or revoked record does not authorize a desktop request. Internal
-approval replay credentials still expire from Redis. Older registry entries
-need a successful validation, rotation or revocation before their original Redis
-expiry to adopt the new retention behavior; already removed records cannot be
-restored. See the [managed-key lifecycle guide](../../guides/secure/authentication.md).
+approval replay credentials are removed at their expiry. See the [managed-key lifecycle guide](../../guides/secure/authentication.md).
 
 The default local admin bridge for `/sharing/rest/generateToken` accepts bootstrap
 admin credentials and managed keys with full administrative authority. Scoped
@@ -224,7 +221,7 @@ Current gaps, stated as fact. Protocol-level GeoServices REST parity detail live
   synchronously when it advertises `sync-execute`; `Prefer: respond-async` requests a
   durable job. Document-mode JSON is the default, while synchronous single-output
   values may request raw mode. All execution modes currently submit through the durable
-  job pipeline, so a Redis-backed job store is required for synchronous, asynchronous,
+  job pipeline, so the durable job store in the system database is required for synchronous, asynchronous,
   and job routes.
 - **OGC API Maps does not claim the styled-map conformance class**, and temporal
   raster mosaics use newest-batch semantics — layers with mixed-date scenes can show

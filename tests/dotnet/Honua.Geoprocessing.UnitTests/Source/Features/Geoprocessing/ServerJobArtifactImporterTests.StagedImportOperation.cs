@@ -11,6 +11,7 @@ using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -67,6 +68,29 @@ public sealed partial class ServerJobArtifactImporterTests
         harness.Recording.Request.TableName.Should().Be(StagedImportOperation.DestinationTable("tenant-a", "actor-1", "intent-buffer"));
         duplicate.Result!.Details["stagingTable"].Should().Be(first.Result!.Details["stagingTable"]);
         await harness.Recording.Service.Received(1).ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task StageImport_SchemaRemovedAfterPreview_RefusesProposalBeforeReadingArtifact()
+    {
+        var harness = await OperationHarnessAsync();
+        var preview = await harness.Preview.SubmitAsync(
+            harness.Request(StagedImportOperation.PreviewOperationId), harness.Context(), CancellationToken.None);
+        var fingerprint = preview.Result!.Details[StagedImportOperation.PreviewFingerprintParameter];
+        var configuration = harness.Services.GetRequiredService<IConfiguration>();
+        // The preview destination is absent from the current operational-schema configuration.
+        configuration[ImportTargetSchemaPolicy.DefaultOperationalSchemaConfigurationKey] = "replacement_data";
+        harness.Jobs.ClearReceivedCalls();
+        var request = harness.Request(StagedImportOperation.ImportOperationId,
+            (StagedImportOperation.PreviewFingerprintParameter, fingerprint));
+
+        var act = () => harness.Import.PrepareAsync(request, harness.Context(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage(ImportTargetSchemaPolicy.NotOperationalSchemaMessage);
+        await harness.Jobs.DidNotReceive().GetJobAsync(harness.Reference.JobId,
+            Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
+        harness.Recording.Request.Should().BeNull();
     }
 
     [UnitTest]
@@ -246,6 +270,7 @@ public sealed partial class ServerJobArtifactImporterTests
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
             .Returns(AuthorizationResult.Success());
         var services = new ServiceCollection()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection().Build())
             .AddSingleton(jobs)
             .AddSingleton(recording.Service)
             .AddSingleton<IServerJobArtifactImportLedger>(new MemoryServerJobArtifactImportLedger())

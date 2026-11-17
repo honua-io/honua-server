@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Core.Features.Edit.Receipts;
 using FluentAssertions;
 using Honua.Infrastructure.Security;
 using Honua.Server.Tests.Infrastructure;
@@ -41,7 +42,7 @@ public sealed class PostgresIdempotencyReservationStoreTests(DatabaseFixtureAdap
         var scopeKey = NewScopeKey();
         var reservation = await store.TryReserveAsync(scopeKey, _reservationWindow, CancellationToken.None);
 
-        (await store.CompleteAsync(reservation!.Value, _receipt, _receiptRetention, CancellationToken.None)).Should().BeTrue();
+        (await store.CompleteAsync(new IdempotencyReceiptWrite(reservation!.Value, _receipt), _receiptRetention, CancellationToken.None)).Should().BeTrue();
 
         var otherNode = harness.CreateIdempotencyReservationStore();
         (await otherNode.FindReceiptAsync(scopeKey, CancellationToken.None)).Should().Equal(_receipt);
@@ -58,8 +59,8 @@ public sealed class PostgresIdempotencyReservationStoreTests(DatabaseFixtureAdap
         await harness.ExecuteAsync($"UPDATE {harness.Table("idempotency_reservations")} SET expires_at = now() - interval '1 second'");
         var current = await store.TryReserveAsync(scopeKey, _reservationWindow, CancellationToken.None);
 
-        (await store.CompleteAsync(lapsed!.Value, _receipt, _receiptRetention, CancellationToken.None)).Should().BeFalse();
-        (await store.CompleteAsync(current!.Value, _receipt, _receiptRetention, CancellationToken.None)).Should().BeTrue();
+        (await store.CompleteAsync(new IdempotencyReceiptWrite(lapsed!.Value, _receipt), _receiptRetention, CancellationToken.None)).Should().BeFalse();
+        (await store.CompleteAsync(new IdempotencyReceiptWrite(current!.Value, _receipt), _receiptRetention, CancellationToken.None)).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -72,7 +73,7 @@ public sealed class PostgresIdempotencyReservationStoreTests(DatabaseFixtureAdap
 
         await store.ReleaseAsync(abandoned!.Value, CancellationToken.None);
         var completed = (await store.TryReserveAsync(scopeKey, _reservationWindow, CancellationToken.None))!.Value;
-        await store.CompleteAsync(completed, _receipt, _receiptRetention, CancellationToken.None);
+        await store.CompleteAsync(new IdempotencyReceiptWrite(completed, _receipt), _receiptRetention, CancellationToken.None);
         await store.ReleaseAsync(completed, CancellationToken.None);
 
         (await store.FindReceiptAsync(scopeKey, CancellationToken.None)).Should().Equal(_receipt);

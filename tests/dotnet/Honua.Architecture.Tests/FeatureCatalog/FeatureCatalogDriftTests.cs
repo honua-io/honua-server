@@ -77,10 +77,10 @@ public sealed class FeatureCatalogDriftTests
         catalog.Entries.Select(entry => entry.Id)
             .Should().OnlyHaveUniqueItems("the catalog id is the canonical per-entry key");
 
-        // T10 (#2346): the built-experimental route groups are flipped to the
+        // T10: the built-experimental route groups are flipped to the
         // `experimental` tier; every other test-backed route stays `implemented` —
-        // UNLESS a reviewed capability-maturity-overrides.v1.json row demotes it
-        // (honua-release#100). Any other tier is unexplained and fails here.
+        // UNLESS a reviewed capability-maturity-overrides.v1.json row demotes it.
+        // Any other tier is unexplained and fails here.
         var overriddenCapabilities = CapabilityMaturityOverrides.Load().Overrides
             .ToDictionary(row => row.Capability, row => row.Maturity, StringComparer.Ordinal);
 
@@ -109,7 +109,7 @@ public sealed class FeatureCatalogDriftTests
         // endpoint gate 404s (the WithCapabilityGate route groups), no more and no
         // less — the route → descriptor map is the single source both project from.
         // A capability carrying a reviewed capability-maturity-overrides.v1.json row
-        // (honua-release#100) is re-derived the same way the generator does: the LOWER
+        // is re-derived the same way the generator does: the LOWER
         // of the gate-derived tier and the override tier, so an override can shift an
         // entry off `implemented` but can never move a gated route ONTO it.
         var overrides = CapabilityMaturityOverrides.Load();
@@ -158,18 +158,18 @@ public sealed class FeatureCatalogDriftTests
             .Select(entry => entry.Route)
             .ToArray();
 
-        // /api/v1/temporal/* was promoted to GA and intentionally remains absent from this set.
+        // /api/v1/temporal/* is GA and intentionally remains absent from this set.
         // /api/v1/admin/alerts/* is opt-in Preview and is therefore not part of the default
         // advertised surface even though its maturity is preview rather than experimental.
-        // /api/v1/admin/security/client-certificates/* was promoted to GA in #2431 but DEMOTED
-        // back to experimental in #2958, so it IS a flipped experimental route group today.
+        // /api/v1/admin/security/client-certificates/* is experimental, so it IS a flipped
+        // experimental route group.
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase));
         // /api/v1/admin/services/{serviceId}/replicas* is not part of the FeatureServer sync
         // route family; the gated FeatureServer routes are covered by the preview set below.
         // The feature-stream routes are opt-in Experimental.
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
-        // Branch versioning (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        // Branch versioning (VMS REST surface) is gated Preview.
 
         var previewRoutes = catalog.Entries
             .Where(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview)

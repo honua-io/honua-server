@@ -125,13 +125,13 @@ public sealed class McpRegistryCompositionTests
     [UnitTest]
     public async Task StartupCheck_ProductionOperationsComposition_WithPublishOperationsEnabled_StartsCleanly()
     {
-        // honua-server#3428 (remainder recorded by #4738): the documented
-        // Mcp:PublishOperations:Enabled=true switch composed the canonical operation
-        // catalog into tools/list, and the default-on registry binding check then
-        // rejected every catalog-published honua_op_* / honua_admin_* tool, so the
-        // server failed to start. Compose the operations toolset the way Program.cs
-        // does (durable proposal store registered first, so the admin API and
-        // connect/import families join) and run the real startup check over it.
+        // The documented Mcp:PublishOperations:Enabled=true switch composes the
+        // canonical operation catalog into tools/list. The default-on registry
+        // binding check must accept every catalog-published honua_op_* /
+        // honua_admin_* tool, or the server fails to start. Compose the operations
+        // toolset the way Program.cs does (durable proposal store registered first,
+        // so the admin API and connect/import families join) and run the real
+        // startup check over it.
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -245,7 +245,7 @@ public sealed class McpRegistryCompositionTests
         published.Should().NotContain("honua_admin_connections_test_draft",
             "connection draft tests accept connection credentials and are an audited secret-input exclusion");
 
-        // #3813/#3819: publication does not restore default full enumeration — no
+        // Publication does not restore default full enumeration — no
         // published Admin tool joins the bounded default view.
         published.Should().OnlyContain(
             name => Honua.Ai.Protocols.Mcp.Views.McpWorkflowViewCatalog.Default.FindStageIndex(name) < 0);
@@ -261,7 +261,7 @@ public sealed class McpRegistryCompositionTests
     [UnitTest]
     public async Task ProductionOperationsComposition_WithFullCatalogOptIn_PublishesEveryNonExcludedOperation()
     {
-        // The explicit full-catalog opt-in keeps its pre-#3363 meaning: every eligible
+        // The explicit full-catalog opt-in publishes every eligible
         // descriptor publishes except the audited exclusions and hand-authored duplicates.
         const int ExpectedCatalogAdminOperations = 125;
         const int ExpectedExclusionsInCatalog = 11;
@@ -283,11 +283,11 @@ public sealed class McpRegistryCompositionTests
             .Where(operationId => operationId.StartsWith("admin.", StringComparison.Ordinal))
             .ToArray();
 
-        // #6246 adds the governed object-store import to the eligible admin catalog.
+        // The governed object-store import is in the eligible admin catalog.
         catalogAdminOperationIds.Should().Contain("admin.import.upload-object");
         publishedAdminTools.Should().Contain(PublishedOperationTool.ProjectName("admin.import.upload-object"));
 
-        // #6597 adds the four AI admission controls to the admin catalog. They are the kill
+        // The four AI admission controls are in the admin catalog. They are the kill
         // switch and budget for model invocations: an AI agent must never be able to change or
         // switch off its own admission policy, so they are excluded from MCP and stay on the
         // admin API and Console only.
@@ -332,10 +332,10 @@ public sealed class McpRegistryCompositionTests
     [UnitTest]
     public async Task ProductionOperationsComposition_NeverPublishesAnyAiAdmissionControl()
     {
-        // Kill-switch rule (founder decision on #6670): an AI agent must never be able to
-        // change or switch off its own admission policy. No admin.ai.admission.* operation may
-        // publish over MCP in any composition, including the explicit full-catalog opt-in, and
-        // the rule must cover admission operations added after this test was written.
+        // Kill-switch rule: an AI agent must never be able to change or switch off its own
+        // admission policy. No admin.ai.admission.* operation may publish over MCP in any
+        // composition, including the explicit full-catalog opt-in, and the rule must cover
+        // admission operations added after this test was written.
         foreach (var options in new[]
                  {
                      new Dictionary<string, string?>(),
@@ -366,7 +366,7 @@ public sealed class McpRegistryCompositionTests
     [UnitTest]
     public async Task ProductionOperationsComposition_WithFullCatalogOptIn_PublishesNoSecretLikeInputs()
     {
-        // honua-server#4880: the full-catalog opt-in must not publish a tool whose input schema
+        // The full-catalog opt-in must not publish a tool whose input schema
         // accepts secret material. Secret references (names ending in "Reference") are allowed.
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {
@@ -420,7 +420,7 @@ public sealed class McpRegistryCompositionTests
     [UnitTest]
     public async Task ProductionOperationsComposition_WithAdminProjectionDisabled_PublishesNoOperationTools()
     {
-        // The operator opt-out stays honored after #3363 turned the audited projection on by default.
+        // The operator opt-out is honored even though the audited projection is on by default.
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {
             ["Mcp:PublishOperations:AdminProjection"] = "false",

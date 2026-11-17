@@ -324,8 +324,7 @@ internal static class CsvFormatReader
             if (!string.IsNullOrWhiteSpace(wktValue))
             {
                 // Handles plain WKT, EWKT (SRID=<n>; prefix — the standard PostGIS export
-                // form) and WKB/EWKB hex. This is what previously fell into a bare catch{}
-                // and silently produced a NULL geometry.
+                // form) and WKB/EWKB hex.
                 var geometry = GeometryValueParser.TryParse(wktValue, wktReader, wkbReader);
                 if (geometry != null)
                 {

@@ -169,7 +169,7 @@ public class ImageServerTileHandlerTests
                 serviceLocalId: "primary",
                 publicationType: MetadataV2LayerType.EsriImageLayer)
             .BuildProvider();
-        // #3366: drive the resolver through the production ResourceValidator rather than a
+        // Drive the resolver through the production ResourceValidator rather than a
         // substitute. The resolver reaches IResourceValidator via the protocol-scoped
         // ValidateServiceV2Async(serviceId, protocol, ct) overload; a substitute stubbed against
         // the sibling ValidateServiceV2Async(serviceId, ct) overload leaves the real call

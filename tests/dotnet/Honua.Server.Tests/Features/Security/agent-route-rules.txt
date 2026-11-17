@@ -8,7 +8,7 @@ DELETE /api/v{version:apiVersion}/admin/field-mask-policies/{id:guid} | Its own 
 DELETE /api/v{version:apiVersion}/admin/oauth-scopes/{scope} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 DELETE /api/v{version:apiVersion}/admin/rls-policies/{id:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 DELETE /api/v{version:apiVersion}/admin/roles/{id:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
-DELETE /api/v{version:apiVersion}/console/access/{workspaceId}/roles/{roleId:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+DELETE /api/v{version:apiVersion}/console/access/{environmentId}/roles/{roleId:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 PATCH /api/v{version:apiVersion}/console/content/{id} | Its own agent rule decides (AgentApprovalFilter.ContentVisibility).
 PATCH /api/v{version:apiVersion}/console/publications/{publicationId}/policy | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/connections/encryption/validate | Changes nothing.
@@ -21,7 +21,7 @@ POST /api/v{version:apiVersion}/admin/connections/{id}/tables/validate | Changes
 POST /api/v{version:apiVersion}/admin/embed/keys/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/embed/keys/{id:guid}/rotate | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/field-mask-policies/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
-POST /api/v{version:apiVersion}/admin/forms/packages/{formId}/versions/{packageVersion:int}/publish | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/admin/forms/{formId}/versions/{formVersion:int}/publish | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/gp/process-releases/ | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/gp/process-releases/bindings/{process}/activate | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/admin/import/geoserver/discover | Reads a source service and changes nothing.
@@ -40,7 +40,7 @@ POST /api/v{version:apiVersion}/admin/scenes/ingest/pointcloud | Its own agent r
 POST /api/v{version:apiVersion}/admin/security/client-certificates/validate | Changes nothing.
 POST /api/v{version:apiVersion}/analysis/content/items/{itemId}/versions/{contentVersion:int}/estimate | Changes nothing.
 POST /api/v{version:apiVersion}/analysis/content/items/{itemId}/versions/{contentVersion:int}/preview | Changes nothing.
-POST /api/v{version:apiVersion}/console/access/{workspaceId}/roles | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+POST /api/v{version:apiVersion}/console/access/{environmentId}/roles | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 POST /api/v{version:apiVersion}/console/actions/check | Evaluates permissions and changes nothing.
 POST /api/v{version:apiVersion}/console/content/ | Its own agent rule decides (AgentApprovalFilter.ContentVisibility).
 POST /api/v{version:apiVersion}/console/content/{id}/open-data/stac/publish | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
@@ -69,7 +69,7 @@ PUT /api/v{version:apiVersion}/admin/scenes/{id:guid} | Its own agent rule decid
 PUT /api/v{version:apiVersion}/admin/services/{serviceName}/access-policy | Its own agent rule decides (AgentApprovalFilter.AccessPolicy).
 PUT /api/v{version:apiVersion}/admin/services/{serviceName}/layers/{serviceLayerIndex:int}/metadata | Its own agent rule decides (AgentApprovalFilter.LayerMetadataAccessPolicy).
 PUT /api/v{version:apiVersion}/admin/services/{serviceName}/protocols | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
-PUT /api/v{version:apiVersion}/console/access/{workspaceId}/roles/{roleId:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
+PUT /api/v{version:apiVersion}/console/access/{environmentId}/roles/{roleId:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 PUT /api/v{version:apiVersion}/console/content/{id} | Its own agent rule decides (AgentApprovalFilter.ContentVisibility).
 PUT /api/v{version:apiVersion}/console/content/{id}/share/access | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 PUT /api/v{version:apiVersion}/console/content/{id}/share/embed | Its own agent rule decides (AgentApprovalFilter.AccessGrants).

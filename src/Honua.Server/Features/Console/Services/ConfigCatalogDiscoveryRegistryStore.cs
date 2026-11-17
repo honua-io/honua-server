@@ -8,15 +8,15 @@ namespace Honua.Server.Features.Console.Services;
 
 public sealed class ConfigCatalogDiscoveryRegistryStore : ICatalogDiscoveryRegistryStore
 {
-    private readonly ConcurrentDictionary<string, CatalogDiscoveryRegistry> _registriesByWorkspace;
-    private readonly ConcurrentDictionary<(string Workspace, string Endpoint), CatalogEndpointDetail> _details;
-    private readonly ConcurrentDictionary<(string Workspace, string Endpoint, string Item), CatalogItem> _items;
+    private readonly ConcurrentDictionary<string, CatalogDiscoveryRegistry> _registriesByEnvironment;
+    private readonly ConcurrentDictionary<(string Environment, string Endpoint), CatalogEndpointDetail> _details;
+    private readonly ConcurrentDictionary<(string Environment, string Endpoint, string Item), CatalogItem> _items;
 
-    public ConfigCatalogDiscoveryRegistryStore(IEnumerable<CatalogDiscoveryWorkspaceSeed>? seeds = null)
+    public ConfigCatalogDiscoveryRegistryStore(IEnumerable<CatalogDiscoveryEnvironmentSeed>? seeds = null)
     {
-        _registriesByWorkspace = new ConcurrentDictionary<string, CatalogDiscoveryRegistry>(StringComparer.OrdinalIgnoreCase);
-        _details = new ConcurrentDictionary<(string, string), CatalogEndpointDetail>(WorkspaceEndpointComparer.Instance);
-        _items = new ConcurrentDictionary<(string, string, string), CatalogItem>(WorkspaceEndpointItemComparer.Instance);
+        _registriesByEnvironment = new ConcurrentDictionary<string, CatalogDiscoveryRegistry>(StringComparer.OrdinalIgnoreCase);
+        _details = new ConcurrentDictionary<(string, string), CatalogEndpointDetail>(EnvironmentEndpointComparer.Instance);
+        _items = new ConcurrentDictionary<(string, string, string), CatalogItem>(EnvironmentEndpointItemComparer.Instance);
 
         if (seeds is null)
         {
@@ -29,51 +29,51 @@ public sealed class ConfigCatalogDiscoveryRegistryStore : ICatalogDiscoveryRegis
         }
     }
 
-    public Task<CatalogDiscoveryRegistry?> GetRegistryAsync(string workspaceId, CancellationToken cancellationToken = default)
+    public Task<CatalogDiscoveryRegistry?> GetRegistryAsync(string environmentId, CancellationToken cancellationToken = default)
     {
-        _registriesByWorkspace.TryGetValue(workspaceId, out var registry);
+        _registriesByEnvironment.TryGetValue(environmentId, out var registry);
         return Task.FromResult(registry);
     }
 
-    public Task<CatalogEndpointDetail?> GetEndpointAsync(string workspaceId, string endpointKey, CancellationToken cancellationToken = default)
+    public Task<CatalogEndpointDetail?> GetEndpointAsync(string environmentId, string endpointKey, CancellationToken cancellationToken = default)
     {
-        if (!_registriesByWorkspace.ContainsKey(workspaceId))
+        if (!_registriesByEnvironment.ContainsKey(environmentId))
         {
             return Task.FromResult<CatalogEndpointDetail?>(null);
         }
 
-        _details.TryGetValue((workspaceId, endpointKey), out var detail);
+        _details.TryGetValue((environmentId, endpointKey), out var detail);
         return Task.FromResult(detail);
     }
 
-    public Task<CatalogItem?> GetItemAsync(string workspaceId, string endpointKey, string itemId, CancellationToken cancellationToken = default)
+    public Task<CatalogItem?> GetItemAsync(string environmentId, string endpointKey, string itemId, CancellationToken cancellationToken = default)
     {
-        if (!_details.ContainsKey((workspaceId, endpointKey)))
+        if (!_details.ContainsKey((environmentId, endpointKey)))
         {
             return Task.FromResult<CatalogItem?>(null);
         }
 
-        _items.TryGetValue((workspaceId, endpointKey, itemId), out var item);
+        _items.TryGetValue((environmentId, endpointKey, itemId), out var item);
         return Task.FromResult(item);
     }
 
-    private void Ingest(CatalogDiscoveryWorkspaceSeed seed)
+    private void Ingest(CatalogDiscoveryEnvironmentSeed seed)
     {
         var endpoints = seed.Endpoints.Select(e => e.Endpoint).ToList();
         var registry = new CatalogDiscoveryRegistry
         {
-            WorkspaceId = seed.WorkspaceId,
-            WorkspaceName = seed.WorkspaceName,
+            EnvironmentId = seed.EnvironmentId,
+            EnvironmentName = seed.EnvironmentName,
             PublicHost = seed.PublicHost,
             Endpoints = endpoints,
             AutoDefaultCount = endpoints.Count(e => e.AutoDefault),
             OptInCount = endpoints.Count(e => !e.AutoDefault),
         };
-        _registriesByWorkspace[seed.WorkspaceId] = registry;
+        _registriesByEnvironment[seed.EnvironmentId] = registry;
 
         foreach (var endpoint in seed.Endpoints)
         {
-            _details[(seed.WorkspaceId, endpoint.Endpoint.Key)] = new CatalogEndpointDetail
+            _details[(seed.EnvironmentId, endpoint.Endpoint.Key)] = new CatalogEndpointDetail
             {
                 Endpoint = endpoint.Endpoint,
                 LastRebuild = endpoint.LastRebuild,
@@ -83,47 +83,47 @@ public sealed class ConfigCatalogDiscoveryRegistryStore : ICatalogDiscoveryRegis
 
             foreach (var item in endpoint.Items)
             {
-                _items[(seed.WorkspaceId, endpoint.Endpoint.Key, item.Row.Id)] = item.Detail;
+                _items[(seed.EnvironmentId, endpoint.Endpoint.Key, item.Row.Id)] = item.Detail;
             }
         }
     }
 
-    private sealed class WorkspaceEndpointComparer : IEqualityComparer<(string Workspace, string Endpoint)>
+    private sealed class EnvironmentEndpointComparer : IEqualityComparer<(string Environment, string Endpoint)>
     {
-        public static readonly WorkspaceEndpointComparer Instance = new();
+        public static readonly EnvironmentEndpointComparer Instance = new();
 
-        public bool Equals((string Workspace, string Endpoint) x, (string Workspace, string Endpoint) y)
-            => string.Equals(x.Workspace, y.Workspace, StringComparison.OrdinalIgnoreCase)
+        public bool Equals((string Environment, string Endpoint) x, (string Environment, string Endpoint) y)
+            => string.Equals(x.Environment, y.Environment, StringComparison.OrdinalIgnoreCase)
                && string.Equals(x.Endpoint, y.Endpoint, StringComparison.OrdinalIgnoreCase);
 
-        public int GetHashCode((string Workspace, string Endpoint) obj)
+        public int GetHashCode((string Environment, string Endpoint) obj)
             => HashCode.Combine(
-                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Workspace),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Environment),
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Endpoint));
     }
 
-    private sealed class WorkspaceEndpointItemComparer : IEqualityComparer<(string Workspace, string Endpoint, string Item)>
+    private sealed class EnvironmentEndpointItemComparer : IEqualityComparer<(string Environment, string Endpoint, string Item)>
     {
-        public static readonly WorkspaceEndpointItemComparer Instance = new();
+        public static readonly EnvironmentEndpointItemComparer Instance = new();
 
-        public bool Equals((string Workspace, string Endpoint, string Item) x, (string Workspace, string Endpoint, string Item) y)
-            => string.Equals(x.Workspace, y.Workspace, StringComparison.OrdinalIgnoreCase)
+        public bool Equals((string Environment, string Endpoint, string Item) x, (string Environment, string Endpoint, string Item) y)
+            => string.Equals(x.Environment, y.Environment, StringComparison.OrdinalIgnoreCase)
                && string.Equals(x.Endpoint, y.Endpoint, StringComparison.OrdinalIgnoreCase)
                && string.Equals(x.Item, y.Item, StringComparison.Ordinal);
 
-        public int GetHashCode((string Workspace, string Endpoint, string Item) obj)
+        public int GetHashCode((string Environment, string Endpoint, string Item) obj)
             => HashCode.Combine(
-                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Workspace),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Environment),
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Endpoint),
                 StringComparer.Ordinal.GetHashCode(obj.Item));
     }
 }
 
-public sealed record CatalogDiscoveryWorkspaceSeed
+public sealed record CatalogDiscoveryEnvironmentSeed
 {
-    public required string WorkspaceId { get; init; }
+    public required string EnvironmentId { get; init; }
 
-    public string? WorkspaceName { get; init; }
+    public string? EnvironmentName { get; init; }
 
     public string? PublicHost { get; init; }
 
