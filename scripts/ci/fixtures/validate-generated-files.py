@@ -445,6 +445,30 @@ class GeneratedFilesContracts(unittest.TestCase):
         first = run('bash', 'scripts/ci/publish-generated-files.sh')
         self.assertNotIn('Updated existing', first.stdout)
 
+        self.assert_initial_publication_identity(run, fixture)
+
+        # A second publish with the same drift (e.g. the automation PR's
+        # own eventual merge re-triggering the workflow with byte-identical
+        # output) finds the already-open PR and updates the branch instead
+        # of creating a duplicate.
+        gh_calls.unlink()
+        # Simulate the next run's fresh `actions/checkout` of trunk, which
+        # never moved: the previous publish advanced only the local branch
+        # this checkout happened to be on, not remote trunk.
+        run('git', 'reset', '--hard', trunk_before)
+        (repo / paths[0]).write_text('{"fresh": true}\n')
+        second = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertIn('Updated existing generated-files PR #42', second.stdout)
+        self.assertNotIn('--method POST', gh_calls.read_text())
+        self.assertEqual(
+            run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
+            trunk_before,
+        )
+
+
+    def assert_initial_publication_identity(self, run, fixture):
+        remote, paths = fixture.remote, fixture.paths
+        gh_calls, trunk_before = fixture.gh_calls, fixture.trunk_before
         # The branch push landed, trunk did not move.
         branch_sha = run('git', '--git-dir', str(remote), 'rev-parse',
                           'refs/heads/automation/regenerate-generated-files').stdout.strip()
@@ -470,24 +494,6 @@ class GeneratedFilesContracts(unittest.TestCase):
 
         self.assertIn(f'Generated-From: {trunk_before}',
                       run('git', 'log', '-1', '--format=%B', branch_sha).stdout)
-
-        # A second publish with the same drift (e.g. the automation PR's
-        # own eventual merge re-triggering the workflow with byte-identical
-        # output) finds the already-open PR and updates the branch instead
-        # of creating a duplicate.
-        gh_calls.unlink()
-        # Simulate the next run's fresh `actions/checkout` of trunk, which
-        # never moved: the previous publish advanced only the local branch
-        # this checkout happened to be on, not remote trunk.
-        run('git', 'reset', '--hard', trunk_before)
-        (repo / paths[0]).write_text('{"fresh": true}\n')
-        second = run('bash', 'scripts/ci/publish-generated-files.sh')
-        self.assertIn('Updated existing generated-files PR #42', second.stdout)
-        self.assertNotIn('--method POST', gh_calls.read_text())
-        self.assertEqual(
-            run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
-            trunk_before,
-        )
 
 
     def assert_stale_publication_attempts(self, run, fixture):
@@ -520,8 +526,15 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertEqual(branch_before, branch_head())
         self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
 
-        self.assert_local_and_feature_attempts(run, fixture, branch_before, branch_head, output)
+        fixture.branch_before, fixture.branch_head, fixture.output = branch_before, branch_head, output
+        self.assert_local_and_feature_attempts(run, fixture)
 
+        return self.assert_first_attempt_behind_trunk(run, fixture)
+
+    def assert_first_attempt_behind_trunk(self, run, fixture):
+        repo, remote, paths = fixture.repo, fixture.remote, fixture.paths
+        env, gh_calls, trunk_before = fixture.env, fixture.gh_calls, fixture.trunk_before
+        branch_before, branch_head, output = fixture.branch_before, fixture.branch_head, fixture.output
         # A clean first attempt on trunk behind a moved trunk publishes nothing.
         env['GITHUB_REF'] = 'refs/heads/trunk'
         run('git', 'reset', '--hard', trunk_before)
@@ -549,8 +562,9 @@ class GeneratedFilesContracts(unittest.TestCase):
 
         return output, branch_head, behind_sha
 
-    def assert_local_and_feature_attempts(self, run, fixture, branch_before, branch_head, output):
+    def assert_local_and_feature_attempts(self, run, fixture):
         env, gh_calls = fixture.env, fixture.gh_calls
+        branch_before, branch_head, output = fixture.branch_before, fixture.branch_head, fixture.output
         # A local run (no attempt number) with drift refuses the same way.
         env.pop('GITHUB_RUN_ATTEMPT')
         local = run('bash', 'scripts/ci/publish-generated-files.sh')
