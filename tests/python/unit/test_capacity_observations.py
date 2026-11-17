@@ -30,8 +30,12 @@ IMAGE = "sha256:" + "b" * 64
 ARTIFACT = "https://github.com/honua-io/honua-server/actions/runs/123/artifacts/456"
 
 
+# The soak must start after the lock's threshold freeze.
+SOAK_START = datetime(2026, 11, 17, 2, tzinfo=timezone.utc)
+
+
 def observations():
-    start = datetime(2026, 9, 29, 2, tzinfo=timezone.utc)
+    start = SOAK_START
     window = dict(startedAt=collector_module.iso(start), endedAt=collector_module.iso(start+timedelta(hours=1)))
     ledger = []
     for minute in range(60):
@@ -60,6 +64,30 @@ def observations():
                                  injectedAt=collector_module.iso(start+timedelta(minutes=30)), detectedAt=collector_module.iso(start+timedelta(minutes=30, seconds=1)),
                                  recoveredAt=collector_module.iso(start+timedelta(minutes=30, seconds=seconds)))
                             for name, seconds in (("worker", 2), ("database", 3))])
+
+
+def intact_layers():
+    """Data-integrity evidence in the producer's shape: full layers and an unchanged payload."""
+    envelope = LOCK["supportedEnvelope"]
+    payload = emitter.digest(b"maximum-payload")
+    return dict(layerCounts=[envelope["featuresPerLayer"]] * envelope["layersPerService"],
+                expectedFeaturesPerLayer=envelope["featuresPerLayer"], payloadSha256=payload,
+                expectedPayloadSha256=payload, payloadIntact=True, passed=True)
+
+
+def post_window_drill(source, passed=True):
+    """Move the fixture's recoveries after the window and attach drill evidence."""
+    end = emitter.timestamp(source["window"]["endedAt"])
+    source["recoveries"] = [dict(event, injectedAt=collector_module.iso(end+timedelta(seconds=10*i+1)),
+                                 detectedAt=collector_module.iso(end+timedelta(seconds=10*i+2)),
+                                 recoveredAt=collector_module.iso(end+timedelta(seconds=10*i+5)))
+                            for i, event in enumerate(source["recoveries"])]
+    source["faultDrill"] = dict(window=dict(startedAt=collector_module.iso(end+timedelta(seconds=1)),
+                                            endedAt=collector_module.iso(end+timedelta(seconds=40))),
+                                excludedFromMeasuredWindow=True, recoveries=source["recoveries"], recovered=True,
+                                dataIntegrity=intact_layers(), gpJobs=dict(stuckJobIds=[] if passed else ["gp-1"], passed=passed),
+                                failures=[], passed=passed)
+    return source
 
 
 def emit(source=None):
@@ -489,7 +517,8 @@ def verify_release_contract(tools_path: Path, output: Path):
     sys.path.insert(0, str(tools_path))
     import check_capacity_soak as gate
     from extract_capacity_evidence import extract
-    result, payload = emit()
+    # The frozen lock requires the post-window fault drill (founder ruling 2026-10-27).
+    result, payload = emit(post_window_drill(observations()))
     bundle = output / "capacity-evidence.zip"
     emitter.write_bundle(bundle, result, payload)
     extract(bundle, output / "extracted")
