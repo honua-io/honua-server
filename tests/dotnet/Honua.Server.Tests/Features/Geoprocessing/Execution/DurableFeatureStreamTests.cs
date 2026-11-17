@@ -324,8 +324,10 @@ public sealed class DurableFeatureStreamTests : IDisposable
     private async Task<List<IFeature>> Read(string reference, ExecutionJobRecord authorized, IGeoprocessingOutputObjectStore store, IServiceScopeFactory? workspaceScopes = null)
     {
         var features = new List<IFeature>();
+        var existingScratch = PrivateScratchFileAssertions.Snapshot("honua-feature-stream-");
         await foreach (var feature in DurableFeatureStream.ReadAsync(reference, authorized, _jobs, store, _staging, workspaceScopes: workspaceScopes))
         {
+            PrivateScratchFileAssertions.AssertOwnerOnly("honua-feature-stream-", existingScratch);
             features.Add(feature);
         }
         return features;

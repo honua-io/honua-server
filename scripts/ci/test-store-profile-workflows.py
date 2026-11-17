@@ -65,6 +65,11 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn(':latest-jit', text)
         self.assertNotIn('${channel}-aot', text)
 
+    def test_release_bundle_reports_rc_budget(self):
+        steps = workflow('release-bundle.yml')['jobs']['rc-image']['steps']
+        verify = next(step for step in steps if step.get('name') == 'Verify RC JIT candidate before registry publication')
+        self.assertIn('--release-stage rc', verify['run'])
+
     def test_release_inventory_registers_resolved_platform_manifest(self):
         jobs = workflow('release-security-assets.yml')['jobs']
         assets = jobs['assets']

@@ -843,24 +843,14 @@ internal sealed class StudioDraftMutationRuntime(
             SchemaName = context.SchemaName,
             CorrelationId = context.CorrelationId,
             IdempotencyKey = ScopeIdempotencyKey(context),
+            IdempotencyRequestHash = context.IdempotencyRequestHash,
             AuthorizationOutcome = context.AuthorizationOutcome,
             Roles = context.Roles,
             ScopeGoverned = context.ScopeGoverned,
             RecognizedScopes = context.RecognizedScopes,
         }, cancellationToken).ConfigureAwait(false);
 
-        // Scope refusal happens before the dispatcher accepts or persists an operation.
-        // Only this explicit unpersisted outcome may bypass durable readback; every
-        // accepted operation, including persisted policy denials, must still be readable.
-        if (handle is
-            {
-                Status: OperationHandleStatus.Denied,
-                PolicyDecision: PolicyDecisionKind.Deny,
-                AuthorizationOutcome: OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance,
-                Version: 0,
-                AuditId: null,
-                ProposalId: null,
-            })
+        if (IsScopeRefusalBeforeAcceptance(handle) || IsRetryConflict(handle))
         {
             return new StudioDraftMutationReceipt<TResult> { Operation = handle };
         }
@@ -908,6 +898,28 @@ internal sealed class StudioDraftMutationRuntime(
         };
         return (TPayload)bound;
     }
+
+    // Scope refusal happens before the dispatcher accepts or persists an operation.
+    // Only this explicit unpersisted outcome may bypass durable readback; every
+    // accepted operation, including persisted policy denials, must still be readable.
+    private static bool IsScopeRefusalBeforeAcceptance(OperationHandle handle) => handle is
+    {
+        Status: OperationHandleStatus.Denied,
+        PolicyDecision: PolicyDecisionKind.Deny,
+        AuthorizationOutcome: OperationAuthorizationOutcomes.ScopeDeniedBeforeAcceptance,
+        Version: 0,
+        AuditId: null,
+        ProposalId: null,
+    };
+
+    // A bound retry that conflicts (same key, different content, or still in flight) is
+    // reported as such; reading the stored instance would hand back the other request.
+    // Only the idempotency projection carries statusCode 409; a stored validation failure
+    // such as a claimed route does not, and is read back like any other outcome.
+    private static bool IsRetryConflict(OperationHandle handle)
+        => handle.Status == OperationHandleStatus.Failed
+            && handle.Result?.Details.TryGetValue("statusCode", out var statusCode) == true
+            && string.Equals(statusCode, "409", StringComparison.Ordinal);
 
     private static Guid PublicationRequestId(StudioDraftMutationContext context)
     {

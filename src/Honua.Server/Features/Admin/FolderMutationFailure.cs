@@ -11,6 +11,8 @@ internal sealed record FolderMutationFailure(int Status, string Detail)
 {
     internal static readonly FolderMutationFailure ReadOnlyCatalog = new(503, "Folder mutations are unavailable on this read-only metadata catalog.");
     internal static readonly FolderMutationFailure SnapshotChanged = new(412, "The metadata snapshot has changed. Refresh and retry.");
+    internal static readonly FolderMutationFailure ApprovalSnapshotChanged = new(412, "The catalog changed after this folder proposal was submitted. Refresh the catalog and submit a fresh proposal.");
+    internal static readonly FolderMutationFailure RequesterAuthorizationChanged = new(403, FolderApprovalAuthorization.FreshProposalRequired);
     internal static readonly FolderMutationFailure MissingPrecondition = new(428, "The current snapshot ETag is required in If-Match.");
 
     internal static bool Handles(Exception exception)

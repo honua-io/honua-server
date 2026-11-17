@@ -6,35 +6,22 @@ using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.OData.Models;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
-using Honua.Core.Features.Licensing.Domain;
-using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
-public sealed class StandardErrorHelpersTests : IAsyncLifetime
+public sealed class StandardErrorHelpersTests : IClassFixture<StandardErrorResponseFormatterTests.SeededHost>
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
-
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
-
-    public async Task InitializeAsync()
-    {
-        _fixture.UseSeed(Path.Join("tests", "seed", "server.yaml"));
-        await _fixture.InitializeAsync();
-    }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     #region Standard Error Creation Tests
 

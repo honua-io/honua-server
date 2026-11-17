@@ -33,7 +33,7 @@ internal sealed class AlertDispatchHealthCheck : IHealthCheck
         if (!_dispatcherHealth.IsDispatcherEnabled)
         {
             return HealthCheckResult.Healthy(
-                "Alert dispatcher is disabled (Alerts:Enabled=false); no delivery backlog to report.");
+                "Alert dispatcher is disabled (Alerts:Enabled and Alerts:Ops:Enabled are false); no delivery backlog to report.");
         }
 
         var data = new Dictionary<string, object>(StringComparer.Ordinal)

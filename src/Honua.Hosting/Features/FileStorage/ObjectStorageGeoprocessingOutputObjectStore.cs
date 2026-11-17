@@ -10,6 +10,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;
@@ -218,14 +219,13 @@ internal sealed class ObjectStorageGeoprocessingOutputObjectStore : IGeoprocessi
 
     private static FileStream CreateSpool()
         => new(
-            Path.Join(Path.GetTempPath(), $"honua-gp-output-{Guid.NewGuid():N}.spool"),
-            new FileStreamOptions
+            PrivateTempFile.NewPath("honua-gp-output-", ".spool"),
+            PrivateTempFile.ApplyPrivateCreateNew(new FileStreamOptions
             {
-                Mode = FileMode.CreateNew,
                 Access = FileAccess.ReadWrite,
                 Share = FileShare.None,
                 Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose
-            });
+            }));
 
     private static async Task<string> SpoolAsync(Stream content, FileStream spool, CancellationToken cancellationToken)
     {

@@ -22,6 +22,7 @@ public sealed class FederationSourceConfig
 
     public FederatedSourceKind Kind { get; set; }
 
+    // Resolved HTTP source addresses must be public; redirects and environment proxies are disabled.
     [Required]
     public string Endpoint { get; set; } = string.Empty;
 

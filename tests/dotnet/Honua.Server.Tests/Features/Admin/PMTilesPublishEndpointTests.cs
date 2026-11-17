@@ -13,7 +13,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
-using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -27,28 +26,38 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
-public sealed class PMTilesPublishEndpointTests(DatabaseFixtureAdapter database) : IAsyncLifetime
+public sealed class PMTilesPublishEndpointTests(PMTilesPublishEndpointTests.TileHost host) : IClassFixture<PMTilesPublishEndpointTests.TileHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Client;
 
-    public async Task InitializeAsync()
+    // One host per class: every case starts its own jobs and reads them back by id, and the job
+    // lists are only checked for the case's own jobs, so cases share the host and its job substrate.
+    public sealed class TileHost : IAsyncLifetime
     {
-        await database.DataSource.ClearJobSubstrateAsync();
-        // The shared test host otherwise authenticates every caller as an admin API key,
-        // which hides a restricted source-layer denial.
-        _fixture.ConfigureWebHost(builder =>
+        internal WebAppFixture Fixture { get; } = new WebAppFixture().WithProductionJobSubstrate();
+
+        internal HttpClient Client { get; private set; } = null!;
+
+        public async Task InitializeAsync()
         {
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        });
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
-    }
+            // The shared test host otherwise authenticates every caller as an admin API key,
+            // which hides a restricted source-layer denial.
+            Fixture.ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            });
+            await Fixture.InitializeAsync();
+            await Fixture.Postgres.DataSource.ClearJobSubstrateAsync();
+            Client = Fixture.CreateAdminClient();
+        }
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
+        public async Task DisposeAsync()
+        {
+            Client?.Dispose();
+            await Fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

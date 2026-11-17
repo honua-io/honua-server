@@ -83,6 +83,13 @@ shared record before clearing the cookie, including for other replicas.
 
 ## SCIM 2.0 provisioning
 
+`Scim:BearerToken` must contain at least 32 characters; use a randomly generated secret.
+SCIM authentication shares the `Authentication:FailedAttempts` source limit. A blocked
+source receives HTTP 429 with `Retry-After`, including on discovery endpoints.
+Hosted IdPs provision from egress addresses shared by many tenants, so wrong tokens
+sent from one tenant could block your provisioning. Add your IdP's published egress
+ranges to `Authentication:FailedAttempts:ExemptNetworks`; the token check still applies.
+
 `Scim:OidcIssuer` is required whenever `Scim:BearerToken` enables provisioning and must
 match the exact OIDC `iss` value for the IdP connected to this SCIM endpoint. Honua
 persists that trusted configuration with each SCIM `externalId`, forming an

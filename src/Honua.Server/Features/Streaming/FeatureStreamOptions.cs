@@ -13,7 +13,14 @@ public sealed class FeatureStreamOptions
 
     public int MaxBufferPerConnection { get; set; } = 256;
 
+    // Per tenant or principal; all anonymous clients together share one allowance of this size.
     public int MaxConcurrentSessions { get; set; } = 256;
+
+    // One anonymous client address (an IPv6 /64) may hold only this many sessions, never more than MaxConcurrentSessions.
+    public int MaxAnonymousSessionsPerClient { get; set; } = 64;
+
+    // Every partition together on one node, never less than MaxConcurrentSessions.
+    public int MaxNodeSessions { get; set; } = 2048;
 
     public int ReplayBatchSize { get; set; } = 200;
 
@@ -57,10 +64,7 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
             failures.Add("FeatureStreaming:MaxBufferPerConnection must be a positive integer.");
         }
 
-        if (options.MaxConcurrentSessions <= 0)
-        {
-            failures.Add("FeatureStreaming:MaxConcurrentSessions must be a positive integer.");
-        }
+        ValidateSessionLimits(options, failures);
 
         if (options.ReplayBatchSize <= 0)
         {
@@ -115,5 +119,21 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;
+    }
+
+    private static void ValidateSessionLimits(FeatureStreamOptions options, List<string> failures)
+    {
+        foreach (var (name, value) in new[]
+        {
+            (nameof(FeatureStreamOptions.MaxConcurrentSessions), options.MaxConcurrentSessions),
+            (nameof(FeatureStreamOptions.MaxAnonymousSessionsPerClient), options.MaxAnonymousSessionsPerClient),
+            (nameof(FeatureStreamOptions.MaxNodeSessions), options.MaxNodeSessions),
+        })
+        {
+            if (value <= 0)
+            {
+                failures.Add($"FeatureStreaming:{name} must be a positive integer.");
+            }
+        }
     }
 }

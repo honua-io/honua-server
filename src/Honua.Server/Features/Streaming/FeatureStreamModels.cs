@@ -51,6 +51,9 @@ internal sealed record FeatureStreamEnvelope
 
     public Dictionary<string, System.Text.Json.JsonElement>? Attributes { get; init; }
 
+    [JsonIgnore]
+    internal IReadOnlyDictionary<string, JsonElement>? AuthorizationAttributes { get; init; }
+
     // Null when the originating protocol has no attribute-change tracking, or on a delete.
     public Dictionary<string, object?>? ChangedAttributes { get; init; }
 
