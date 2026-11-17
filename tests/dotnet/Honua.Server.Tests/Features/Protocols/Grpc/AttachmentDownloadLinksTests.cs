@@ -67,7 +67,18 @@ public sealed class AttachmentDownloadLinksTests
         _links.CreateUrl(Request("https", "http://maps.example.test"), Target, expires).Should().BeNull();
     }
 
-    private static DefaultHttpContext Request(string scheme, string publicBaseUrl)
+    [UnitTest]
+    public void CreateUrl_WithoutConfiguredBaseUrl_UsesTheOriginTheCallerCalled()
+    {
+        var expires = DateTimeOffset.UtcNow.AddMinutes(5);
+
+        _links.CreateUrl(Request("http", null), Target, expires)
+            .Should().StartWith("http://maps.example.test:8080/api/v1/attachments/downloads/");
+        _links.CreateUrl(Request("https", null), Target, expires)
+            .Should().StartWith("https://maps.example.test:8080/api/v1/attachments/downloads/");
+    }
+
+    private static DefaultHttpContext Request(string scheme, string? publicBaseUrl)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Public:BaseUrl"] = publicBaseUrl })
@@ -77,7 +88,7 @@ public sealed class AttachmentDownloadLinksTests
             RequestServices = new ServiceCollection().AddSingleton<IConfiguration>(configuration).BuildServiceProvider()
         };
         context.Request.Scheme = scheme;
-        context.Request.Host = new HostString("maps.example.test");
+        context.Request.Host = new HostString("maps.example.test", 8080);
         return context;
     }
 }

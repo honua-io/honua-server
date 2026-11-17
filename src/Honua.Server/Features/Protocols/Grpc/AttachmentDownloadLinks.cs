@@ -10,7 +10,8 @@ using Microsoft.AspNetCore.DataProtection;
 namespace Honua.Server.Features.Protocols.Grpc;
 
 // Short-lived signed download links for attachments kept in local file storage, which has no
-// presigned URLs of its own. The caller's read access is checked when the link is issued.
+// presigned URLs of its own. The caller's read access is checked when the link is issued; like a
+// cloud presigned URL, an issued link keeps working until it expires.
 internal sealed class AttachmentDownloadLinks(IDataProtectionProvider protection)
 {
     internal const string RoutePrefix = "/api/v1/attachments/downloads/";
@@ -19,13 +20,18 @@ internal sealed class AttachmentDownloadLinks(IDataProtectionProvider protection
         .CreateProtector("Honua.AttachmentDownloadLinks.v1")
         .ToTimeLimitedDataProtector();
 
-    // Builds an absolute link on the server's public base URL, or returns null when no
-    // acceptable base URL is known. Plain HTTP is used only for a request that arrived over HTTP.
+    // Builds an absolute link on the configured public base URL, or else on the origin this request
+    // called (the link goes back only to this caller, so its own Host is safe to echo). Returns null
+    // when no acceptable origin is known. Plain HTTP is used only for a request that arrived over HTTP.
     public string? CreateUrl(HttpContext context, AttachmentDownloadTarget target, DateTimeOffset expires)
     {
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        var request = context.Request;
+        var baseUrl = BaseUrlResolver.TryGetConfiguredBaseUrl(
+            context.RequestServices.GetRequiredService<IConfiguration>(), out var configured)
+            ? configured
+            : $"{request.Scheme}://{request.Host.Value}{request.PathBase.Value}";
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var origin) ||
-            !(origin.Scheme == Uri.UriSchemeHttps || (origin.Scheme == Uri.UriSchemeHttp && !context.Request.IsHttps)))
+            !(origin.Scheme == Uri.UriSchemeHttps || (origin.Scheme == Uri.UriSchemeHttp && !request.IsHttps)))
         {
             return null;
         }
@@ -118,8 +124,10 @@ internal static class AttachmentDownloadEndpoints
             }
             return TypedResults.NotFound();
         }
-        // The stored content type is client-supplied; forbid sniffing and force a download.
+        // The stored content type is client-supplied; forbid sniffing and force a download. The link
+        // is a short-lived credential, so no shared cache may keep the bytes past its expiry.
         context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers.CacheControl = "private, no-store";
         return Results.File(found.Content, found.Attachment.ContentType, found.Attachment.Filename, enableRangeProcessing: true);
     }
 }
