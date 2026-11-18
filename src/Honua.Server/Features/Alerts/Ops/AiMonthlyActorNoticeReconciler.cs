@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Runtime.ExceptionServices;
 using Honua.Core.Features.Security.Admission;
 using Honua.Server.Features.Alerts;
 
@@ -17,19 +18,47 @@ internal sealed partial class AiMonthlyActorNoticeReconciler(
         new OutboxReconciliationRunner(timeProvider, Interval).RunAsync(
             ReconcileOnceAsync, exception => LogPassFailed(logger, exception), stoppingToken);
 
+    // Each notice family is published on its own, so a failing monthly publish cannot hold back
+    // incident notices (or the reverse). The first failure is rethrown after both have run.
     internal async Task<int> ReconcileOnceAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        if (scope.ServiceProvider.GetService<IAiMonthlyActorNoticeStore>() is null)
+        var services = scope.ServiceProvider;
+        Exception? failure = null;
+        var queued = 0;
+        if (services.GetService<IAiMonthlyActorNoticeStore>() is not null)
         {
-            return 0;
+            (queued, failure) = await PublishAsync(
+                () => services.GetRequiredService<AiMonthlyActorNoticePublisher>().PublishPendingAsync(cancellationToken),
+                queued, failure).ConfigureAwait(false);
         }
+        if (services.GetService<IAiIncidentNoticeStore>() is not null)
+        {
+            (queued, failure) = await PublishAsync(
+                () => services.GetRequiredService<AiIncidentNoticePublisher>().PublishPendingAsync(cancellationToken),
+                queued, failure).ConfigureAwait(false);
+        }
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Throw(failure);
+        }
+        return queued;
+    }
 
-        return await scope.ServiceProvider.GetRequiredService<AiMonthlyActorNoticePublisher>()
-            .PublishPendingAsync(cancellationToken).ConfigureAwait(false);
+    private static async Task<(int Queued, Exception? Failure)> PublishAsync(
+        Func<Task<int>> publish, int queued, Exception? failure)
+    {
+        try
+        {
+            return (queued + await publish().ConfigureAwait(false), failure);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return (queued, failure ?? exception);
+        }
     }
 
     [LoggerMessage(9470, LogLevel.Error,
-        "Monthly agent spend notice reconciliation failed; pending notices will be retried")]
+        "Agent spend notice reconciliation failed; pending notices will be retried")]
     private static partial void LogPassFailed(ILogger logger, Exception exception);
 }
