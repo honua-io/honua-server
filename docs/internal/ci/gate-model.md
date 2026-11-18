@@ -1510,10 +1510,13 @@ starts no managed build or integration lane on any `ci.yml` run: affected run
 44254098776 spent a 30-minute producer build plus Format, GDAL and Core package
 jobs on a range whose only build input was `.github/codeql/pr-paths.txt`. An
 empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
-Core package or Postgres compatibility job still does. All trusted indices
-use the configured `honua-heavy` pool, so a run holds at most two heavy runners
+Core package or Postgres compatibility job still does. All trusted affected
+indices use the configured `honua-heavy` pool, so a run holds at most two heavy runners
 for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,
-except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full server
+except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full runs
+(the `run-name` rule) put every server-test index on free standard
+`ubuntu-latest` runners: run 44271438677 finished all 225 shards in a 78-minute
+server phase there, against 193-327 minutes on the six heavy runners. Full server
 matrices retain their 16-job limit. A single pool prevents admitted hosted shards
 waiting for capacity from exhausting that limit while heavy runners remain idle.
 Full run 43709972683 had 13 waiting hosted shards plus three executing shards at
@@ -1724,6 +1727,8 @@ trusted trunk code and revalidates the source run before requesting one failed-j
 rerun. Only attempt 1 qualifies, and every failed non-summary job must have the
 `honua-heavy` label and the canonical runner shutdown message in its logs.
 Successful jobs remain completed; failed jobs and their dependents run once more.
+Full-run server shards run on hosted runners, so in a full run this covers
+the heavy Core package and Native AOT jobs.
 Manual cancellations, selective runs, mixed product failures, unreadable logs and
 second interruptions do not retry. Summary failures qualify only in known dependent-verdict steps; independent foundation/artifact failures remain failures. Required job names and dependency contracts
 are unchanged. Manual full trunk runs use the `CI full` title prefix and selective trunk runs retain `CI affected`, so a dispatch nonce cannot change the mode; merge-train
