@@ -2959,3 +2959,28 @@ the three classes took 461.2 s of case time.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Per-case hosts in secure-connection, persisted-export and OIDC admission tests
+
+`SecureConnectionEndpointsTests` built a new host for each of the 25 rows of its
+port-contract theory, although every row uses the same allowlist, secret resolver
+and capturing driver and creates its connection under a unique name. The rows now
+borrow one lazily started class host, and the capturing driver is reset on every
+borrow so a row sees only its own probe. `PersistedExportProgressTests` created a
+schema harness for every case and a host for six of them; a class fixture now owns
+the database adapter, one harness and one lazily started host, and every case
+still seeds and asserts on its own record ids. `PostgresOidcProviderAdmissionTests`
+seeds its unreadable provider once and starts one host per edition (two instead of
+four); every case is refused before anything is written. Every assertion is
+unchanged.
+
+Measured on the build host (Release, the same 68 cases): `SecureConnectionEndpointsTests`
+216.9 to 67.9 s and `PostgresOidcProviderAdmissionTests` 29.8 to 17.1 s of case
+time. `PersistedExportProgressTests` stayed at 12.7 s there because a host boots in
+about 1.5 s on that machine; on hosted full run 44271438677 its host cases took
+11.5 to 18.8 s each (92.8 s for the class), which is the time the shared host
+removes. On that run the three classes took 354.5 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
