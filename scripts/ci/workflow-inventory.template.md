@@ -998,13 +998,11 @@ that run supplies the after-change timing and memory evidence.
 
 ### Full-CI producer routing
 
-Only `Build & Format Check` consumes the hosted `CI producer / Runner select`
-output. Its opt-in `HONUA_CI_PRODUCER_RUNNER=honua-build` requires the separate
-read-only OIDC role `HONUA_CI_PRODUCER_READ_ROLE_ARN`, current-instance heartbeat
-age <=90 seconds, and at least two idle gate runners. Missing/stale/busy proof or
-setup failure selects `ubuntu-latest`, without wake, wait, polling or retries.
-The existing global heavy selector does not control this producer. Light jobs
-stay hosted. The producer uses a private writable SDK directory, skips sudo
+Only `Build & Format Check` consumes `CI producer / Runner select`, a call of the
+shared advisory selector. Trunk schedules and dispatches take an idle
+`honua-heavy` runner while more than two heavy runners stay idle; missing,
+stale or busy proof and setup failure select `ubuntu-latest`, without wake,
+wait, polling or retries. Light jobs stay hosted. The producer uses a private writable SDK directory, skips sudo
 cleanup off hosted runners and bounds all nested build workers to four.
 Selective dispatches build that graph with `RunAnalyzers=false`; scheduled
 and `full_ci` runs, and the protocol-profile builds, keep analyzers.
@@ -1102,12 +1100,14 @@ dependency, workflow or shard definition.
 
 | Workflow file | Trigger | Compute policy |
 |---|---|---|
-| `advisory-runner-select.yml` | `workflow_call` from CodeQL, Store Image Size and Serving Image Boundary | Light bootstrap; same-repository PRs read existing instance/heartbeat with trusted base scripts; heavy pool while more than two of its runners are idle (two stay free for required PR Gate jobs), else the original hosted label. |
+| `advisory-runner-select.yml` | `workflow_call` from CodeQL, Store Image Size, Serving Image Boundary and the full-CI producer | Hosted bootstrap (honua-light has only the snap AWS CLI, which cannot start in the runner sandbox); same-repository PRs read existing instance/heartbeat with trusted base scripts; heavy pool while more than two of its runners are idle (two stay free for required PR Gate jobs), else the original hosted label. |
 
 The selector is read-only: it never wakes or resizes capacity. Its 90-second
 heartbeat proof binds the current instance and available heavy worker. Forks,
-non-PR callers, missing configuration/credentials, busy/stale hosts and health
-read errors use hosted compute. The existing OIDC trust is PR-only. Selection
+dispatches from non-default refs, missing configuration/credentials, busy/stale
+hosts and health read errors use hosted compute. The OIDC trust admits
+same-repository PRs and the trunk ref (role assumption succeeded on trunk
+dispatch 44309947920). Selection
 errors also preserve hosted execution through caller fallback expressions.
 Each consumer independently checks repository trust before accepting the
 selected runner and uses hosted compute for forks;

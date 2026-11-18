@@ -734,46 +734,21 @@ jobs:
           python3 scripts/ci/check-doc-links.test.py
           python3 scripts/ci/check-doc-links.py
 
+  # Trunk dispatches and schedules build on an idle honua-heavy runner (8 vCPU)
+  # when the build-host heartbeat leaves two heavy runners free for PR Gate;
+  # otherwise, and for every read failure, the producer stays hosted.
   producer-runner:
     name: CI producer / Runner select
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
     needs: changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    uses: ./.github/workflows/advisory-runner-select.yml
     permissions:
       contents: read
       id-token: write
-    outputs:
-      runner: ${{ steps.select.outputs.runner || 'ubuntu-latest' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)
-        continue-on-error: true
-        timeout-minutes: 1
-        with:
-          sparse-checkout: |
-            scripts/ci/select-ci-producer-runner.sh
-            scripts/ci/gate-runner-heartbeat.sh
-          sparse-checkout-cone-mode: false
-      - name: Assume producer readiness read role
-        if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)
-        continue-on-error: true
-        timeout-minutes: 1
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
-        with:
-          role-to-assume: ${{ secrets.HONUA_CI_PRODUCER_READ_ROLE_ARN }}
-          aws-region: ${{ vars.HONUA_PR_GATE_RUNNER_REGION }}
-          mask-aws-account-id: true
-          retry-max-attempts: 1
-      - name: Select producer compute without waking or waiting
-        id: select
-        if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)
-        continue-on-error: true
-        timeout-minutes: 1
-        env:
-          HONUA_CI_PRODUCER_RUNNER: ${{ vars.HONUA_CI_PRODUCER_RUNNER }}
-          HONUA_CI_PRODUCER_TRUSTED: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) }}
-        run: bash scripts/ci/select-ci-producer-runner.sh
+    with:
+      hosted-runner: ubuntu-latest
+    secrets:
+      wake-role: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
 
   build:
     name: Build & Format Check
@@ -782,7 +757,7 @@ jobs:
     outputs:
       producer_attempt: ${{ steps.managed-publish.outputs.producer-attempt }}
       managed_sdk_version: ${{ steps.managed-sdk.outputs.dotnet-sdk-version }}
-    runs-on: ${{ needs.producer-runner.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ fromJSON(needs.producer-runner.outputs.runner || '"ubuntu-latest"') }}
     timeout-minutes: 60
     env:
       DOTNET_PROCESSOR_COUNT: '4'

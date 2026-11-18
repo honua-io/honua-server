@@ -523,23 +523,19 @@ This changes no job count, test selection, required context or runner routing.
 
 ## Full-CI producer admission
 
-`Build & Format Check` has separate, producer-only admission. The hosted
-`CI producer / Runner select` job defaults to `ubuntu-latest`. MAIN can enable
-`HONUA_CI_PRODUCER_RUNNER=honua-build` only after compatible-pool preflight.
-Same-repository events can assume `HONUA_CI_PRODUCER_READ_ROLE_ARN` via OIDC,
-using `HONUA_PR_GATE_RUNNER_REGION`. That role needs only
-`autoscaling:DescribeAutoScalingGroups` and `ssm:GetParameter` for
-`/honua-lane-build-host/gate-runner/heartbeat`; its trust must cover the intended
-trunk schedule/dispatch events. It must have no wake or host-mutation rights.
-Fork events never request credentials or self-hosted admission.
-
-The selector makes one current InService instance read and one heartbeat read.
-It requires the same instance, an integer timestamp no more than 90 seconds old
-and not in the future, and integer gate `idle >= 2`. Heavy-pool idle counts do
-not qualify. Missing configuration, credentials, checkout, API access, malformed
-proof, stale proof, or busy/stopped capacity falls back hosted. There is no
-wake, wait, polling or retry loop. A snapshot is admission evidence, not a
-capacity reservation; a later queue remains possible.
+`Build & Format Check` runs where `CI producer / Runner select` says, and that
+job calls the shared `advisory-runner-select.yml`. On trunk schedules and
+dispatches it picks an idle `honua-heavy` runner (an 8-vCPU slice) while more
+than two heavy runners stay idle for PR Gate. Otherwise, and for any read
+failure, it stays on `ubuntu-latest`. The selector reads the build-host heartbeat
+with the existing `HONUA_PR_GATE_WAKE_ROLE_ARN` OIDC role and never wakes,
+waits or retries. A snapshot is admission evidence, not a reservation, so a
+later queue remains possible: if heavy runners go away after selection (spot
+replacement, or other advisory callers taking the slack), this critical-path
+job waits in the self-hosted queue. Before this the producer was hosted on every trunk
+run: Build steps took 12-30 min and the job 21-46 min (13-18 Nov). The earlier
+opt-in `HONUA_CI_PRODUCER_RUNNER=honua-build` route was removed, because its
+read role was never provisioned.
 
 Selective (affected) dispatches build the producer graph with
 `RunAnalyzers=false`; scheduled and `full_ci` runs keep the analyzer build.
@@ -1855,8 +1851,11 @@ hygiene job.
 
 ### Advisory image and CodeQL runner selection
 
-CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
-`advisory-runner-select.yml` before allocating compute. Same-repository PRs use
+CodeQL C# analysis, Store Image Size, Serving Image Boundary and the full-CI
+producer call the shared `advisory-runner-select.yml` before allocating
+compute. The selector job itself runs on `ubuntu-latest`: honua-light hosts
+offer only the snap AWS CLI, which snap-confine refuses inside the runner
+sandbox, so every selection there fell back as "host unreadable". Same-repository PRs use
 trusted base scripts and the existing OIDC role to read the build-host instance
 and heartbeat. Scheduled and manually dispatched runs on the repository default
 branch use scripts pinned to the triggering commit. Other dispatch refs remain

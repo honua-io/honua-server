@@ -20,14 +20,16 @@ HEAVY_JOBS = {
 }
 HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "supersede-trailing-runs", "changes", "targeted-shards",
-    "producer-runner", "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
+    "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
     "merge-queue-gate", "ci-gate",
 }
 REUSABLE_JOBS = {
     "store-image-proofs": "./.github/workflows/store-image-size.yml",
     "geoparquet-interop": "./.github/workflows/geoparquet-interop.yml",
     "geoarrow-interop": "./.github/workflows/geoarrow-interop-fixture.yml",
+    "producer-runner": "./.github/workflows/advisory-runner-select.yml",
 }
+PRODUCER_RUNNER = "${{ fromJSON(needs.producer-runner.outputs.runner || '\"ubuntu-latest\"') }}"
 PINNED_JOBS = {
     "worker-gdal-tests", "python-integration-tests", "js-integration-tests",
     "esri-leaflet-browser-tests", "maplibre-compat",
@@ -470,7 +472,7 @@ def heartbeat(idle, instance="i-current", age=0):
 
 class GateRunnerSelectionTests(unittest.TestCase):
     def test_sparse_selector_checkouts_include_shared_heartbeat_validator(self):
-        for workflow, job in (("ci.yml", "producer-runner"), ("pr-gate.yml", "runner-select")):
+        for workflow, job in (("pr-gate.yml", "runner-select"), ("advisory-runner-select.yml", "select")):
             jobs = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"]
             checkout = next(step for step in jobs[job]["steps"] if "sparse-checkout" in step.get("with", {}))
             self.assertIn("scripts/ci/gate-runner-heartbeat.sh", checkout["with"]["sparse-checkout"].splitlines())
@@ -629,86 +631,25 @@ class GateRunnerSelectionTests(unittest.TestCase):
         self.assertEqual(self.selected_runner(HostScenario(), FAILING_AWS), "runner=ubuntu-latest")
 
 
-class CiProducerSelectionTests(unittest.TestCase):
-    def selection(self, payload, environment=None):
-        with tempfile.TemporaryDirectory() as scratch:
-            scratch = Path(scratch)
-            stub = scratch / "aws"
-            stub.write_text(AWS_STUB)
-            stub.chmod(0o755)
-            log = scratch / "calls"
-            log.touch()
-            output = scratch / "output"
-            env = {key: value for key, value in os.environ.items() if not key.startswith("AWS_")}
-            env.update({"PATH": f"{scratch}{os.pathsep}{os.environ['PATH']}",
-                        "GITHUB_OUTPUT": str(output), "AWS_STUB_LOG": str(log),
-                        "AWS_STUB_INSTANCE": "i-current", "AWS_STUB_HEARTBEAT": payload,
-                        "AWS_ACCESS_KEY_ID": "fixture", "HONUA_CI_PRODUCER_RUNNER": "honua-build",
-                        "HONUA_CI_PRODUCER_TRUSTED": "true", **(environment or {})})
-            subprocess.run(["bash", str(ROOT / "scripts/ci/select-ci-producer-runner.sh")],
-                           env=env, check=True, capture_output=True, timeout=5)
-            return output.read_text().strip(), log.read_text().splitlines()
-
-    def test_current_idle_gate_pool_uses_only_two_read_calls(self):
-        output, calls = self.selection(heartbeat(idle=2))
-        self.assertEqual(output, "runner=honua-build")
-        self.assertEqual(len(calls), 2)
-        self.assertTrue(calls[0].startswith("autoscaling describe-auto-scaling-groups "))
-        self.assertTrue(calls[1].startswith("ssm get-parameter "))
-        self.assertIn("/gate-runner/heartbeat", calls[1])
-
-    def test_disabled_untrusted_or_uncredentialed_events_never_call_aws(self):
-        for environment in ({"HONUA_CI_PRODUCER_RUNNER": ""},
-                            {"HONUA_CI_PRODUCER_RUNNER": "honua-heavy"},
-                            {"HONUA_CI_PRODUCER_TRUSTED": "false"}, {"AWS_ACCESS_KEY_ID": ""}):
-            with self.subTest(environment=environment):
-                self.assertEqual(self.selection(heartbeat(idle=2), environment),
-                                 ("runner=ubuntu-latest", []))
-
-    def test_invalid_busy_stale_and_wrong_instance_proofs_fail_closed(self):
-        fresh = json.loads(heartbeat(idle=2))
-        overrides = [{"idle": value} for value in (0, 1, -1, 2.5, "2", True, None)]
-        overrides += [{"at": value} for value in (0, int(time.time()) + 600, "1", True, None)]
-        overrides += [{"instance": "i-old"}, {"at": int(time.time()) - 100}]
-        payloads = [json.dumps({**fresh, **values}) for values in overrides]
-        payloads += ["{", "null", "[]", "{}", "true", '"text"',
-                     json.dumps({**fresh, "idle": 0, "heavy": {"version": 1, "idle": 8}})]
-        for payload in payloads:
-            with self.subTest(payload=payload):
-                output, calls = self.selection(payload)
-                self.assertEqual(output, "runner=ubuntu-latest")
-                self.assertEqual(len(calls), 2)
-
-    def test_unavailable_instance_and_aws_failure_never_wake_or_retry(self):
-        for environment in ({"AWS_STUB_INSTANCE": "None"}, {"AWS_STUB_FAIL": "1"}):
-            with self.subTest(environment=environment):
-                output, calls = self.selection(heartbeat(idle=2), environment)
-                self.assertEqual(output, "runner=ubuntu-latest")
-                self.assertEqual(len(calls), 1)
-                self.assertTrue(calls[0].startswith("autoscaling describe-auto-scaling-groups "))
-
-    def test_multiple_heartbeat_documents_fail_closed_in_either_order(self):
-        fresh = heartbeat(idle=2)
-        for payload in ("{}\n" + fresh, fresh + "\n{}", fresh + "\n" + fresh, ""):
-            with self.subTest(payload=payload):
-                output, calls = self.selection(payload)
-                self.assertEqual(output, "runner=ubuntu-latest")
-                self.assertEqual(len(calls), 2)
-
-    def test_workflow_isolates_producer_and_contains_setup_failure(self):
+class CiProducerRoutingTests(unittest.TestCase):
+    def test_producer_uses_the_shared_advisory_selector(self):
         jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
         selector, build = jobs["producer-runner"], jobs["build"]
-        self.assertEqual(build["runs-on"], "${{ needs.producer-runner.outputs.runner || 'ubuntu-latest' }}")
-        self.assertEqual(build["if"], selector["if"])
+        self.assertEqual(build["runs-on"], PRODUCER_RUNNER)
+        self.assertEqual(selector["if"], build["if"])
         self.assertIn("producer-runner", build["needs"])
-        self.assertEqual(selector["outputs"]["runner"], "${{ steps.select.outputs.runner || 'ubuntu-latest' }}")
+        self.assertEqual(selector["with"], {"hosted-runner": "ubuntu-latest"})
+        self.assertEqual(selector["secrets"], {"wake-role": "${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}"})
         self.assertEqual(selector["permissions"], {"contents": "read", "id-token": "write"})
-        for step in selector["steps"]:
-            self.assertTrue(step["continue-on-error"])
-            self.assertEqual(step["timeout-minutes"], 1)
-            self.assertIn("HONUA_CI_PRODUCER_RUNNER == 'honua-build'", step["if"])
-            self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", step["if"])
-            self.assertIn("github.event.workflow_run.head_repository.full_name == github.repository", step["if"])
+
+    def test_producer_takes_the_selected_heavy_pool_else_hosted(self):
+        heavy = {"group": "honua-heavy", "labels": ["honua-heavy"]}
+        for selected, expected in ((json.dumps(heavy), heavy), ('"ubuntu-latest"', "ubuntu-latest"), ("", "ubuntu-latest")):
+            with self.subTest(selected=selected):
+                self.assertEqual(evaluate_producer_runner(selected), expected)
+
+    def test_producer_bounds_workers_and_contains_setup_failure(self):
+        build = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]["build"]
         self.assertEqual(build["env"]["DOTNET_PROCESSOR_COUNT"], "4")
         self.assertEqual(build["env"]["DOTNET_CLI_USE_MSBUILD_SERVER"], "false")
         self.assertEqual(build["env"]["MSBUILDDISABLENODEREUSE"], "1")
@@ -722,6 +663,20 @@ class CiProducerSelectionTests(unittest.TestCase):
                 self.assertEqual(step["if"], "runner.environment == 'github-hosted'")
             if step.get("run", "").startswith(("dotnet build ", "scripts/ci/dotnet-restore-retry.sh ")):
                 self.assertIn("-maxcpucount:4", step["run"])
+
+
+def evaluate_producer_runner(selected):
+    """Evaluates the Build & Format runs-on expression for one selector output."""
+    expression = PRODUCER_RUNNER.removeprefix("${{").removesuffix("}}").strip()
+    expression = expression.replace("needs.producer-runner", "needs['producer-runner']")
+    probe = ("const {expression, selected} = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+             "const needs = {'producer-runner': {outputs: {runner: selected}}};"
+             "process.stdout.write(JSON.stringify(new Function('needs', 'fromJSON',"
+             " `return (${expression});`)(needs, JSON.parse)));")
+    context = json.dumps({"expression": expression, "selected": selected})
+    result = subprocess.run(["node", "-e", probe], input=context, text=True, capture_output=True, check=True)
+    return json.loads(result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
