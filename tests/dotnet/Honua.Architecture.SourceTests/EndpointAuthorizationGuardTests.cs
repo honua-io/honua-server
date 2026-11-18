@@ -20,8 +20,9 @@ public sealed partial class EndpointAuthorizationGuardTests
     private static readonly string[] BaselinedVerbs = ["MapGet", "MapMethods"];
 
     // Mutation routes that are reachable without credentials on purpose and authorize inside the
-    // handler. The MCP dispatcher admits the anonymous protocol handshake and checks each tool's
-    // scope and approval rules per call. Add an entry only with that kind of in-handler check.
+    // handler. The MCP POST dispatcher admits only the anonymous handshake, discovery and listing,
+    // and rejects anonymous tools/call and resources/read; the MCP DELETE checks that the session
+    // belongs to the caller. Add an entry only with that kind of in-handler check.
     private static readonly string[] ReviewedAnonymousMutationRoutes =
     [
         "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpEndpointExtensions.cs MapDelete RoutePath",
