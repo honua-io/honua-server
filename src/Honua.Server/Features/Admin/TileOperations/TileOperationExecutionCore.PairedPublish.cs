@@ -4,12 +4,13 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Progress;
 using Honua.Infrastructure.Services;
 using Honua.Server.Features.Admin.PairedPublications;
@@ -102,7 +103,10 @@ internal sealed partial class TileOperationExecutionCore
         {
             var checks = await StoreAndCheckAsync(context, artifacts, current.JobId, graphProvider, cancellationToken).ConfigureAwait(false);
             var descriptor = Validated(context, capture, Describe(context, artifacts, build), checks);
-            return await ActivateAsync(current, context, descriptor, build, cancellationToken).ConfigureAwait(false);
+            var layer = await LayerFactsAsync(context, services, cancellationToken).ConfigureAwait(false);
+            var companions = new ExportCompanionInput(descriptor, layer);
+            companions = companions with { Thumbnail = TryRenderThumbnail(context, capture, companions) };
+            return await ActivateAsync(current, context, companions, build, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not PairedActivationUnknownException)
         {
@@ -279,23 +283,71 @@ internal sealed partial class TileOperationExecutionCore
         return draft with { Validation = draft.Validation with { Checks = checks } };
     }
 
+    // The companion files describe the layer's public metadata and stored style as they are at publish time.
+    private async Task<ExportLayerFacts> LayerFactsAsync(
+        PairedPublishContext context, IServiceProvider services, CancellationToken cancellationToken)
+    {
+        var service = context.Source.Published.Service.Metadata;
+        var style = await TryReadStoredStyleAsync(context, services, cancellationToken).ConfigureAwait(false);
+        var host = new[] { service.Publisher, service.Title, service.Name }.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))?.Trim()
+            ?? service.Id;
+        return new ExportLayerFacts(
+            context.Source.Resource.Metadata.WithServiceGovernanceFallbacks(service), host, style);
+    }
+
+    // The companion files are a convenience: a style catalog outage falls back to default paints
+    // rather than failing a publish whose artifacts are already stored.
+    private async Task<string?> TryReadStoredStyleAsync(
+        PairedPublishContext context, IServiceProvider services, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return services.GetService<ILayerStyleCatalog>() is { } catalog
+                ? (await catalog.GetLayerStyleAsync(context.Source.StorageLayerId, cancellationToken).ConfigureAwait(false))?.MapLibreStyleJson
+                : null;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && ex is not OutOfMemoryException)
+        {
+            TileOperationLog.ExportStoredStyleSkipped(_logger, VersionLabel(context.Run), ex);
+            return null;
+        }
+    }
+
+    // A server image without the native renderer, or a style the renderer rejects, publishes without a thumbnail.
+    private byte[]? TryRenderThumbnail(
+        PairedPublishContext context, PairedPublicationCapture capture, ExportCompanionInput companions)
+    {
+        try
+        {
+            var style = ExportStyleAsset.PublicStoredStyle(
+                companions.StoredMapLibreStyle, [.. companions.PublicFields.Select(field => field.Name)]);
+            return ExportThumbnail.Render(
+                new ExportThumbnailSource(capture.Features.Items, capture.Bounds, context.Source.Resource.ReadGeometryType()), style);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            TileOperationLog.ExportThumbnailSkipped(_logger, VersionLabel(context.Run), ex);
+            return null;
+        }
+    }
+
+    private static string VersionLabel(PairedPublicationRun run) => $"{run.PublicationId}/{run.Version}";
+
     private async Task<TileOperationProgress> ActivateAsync(
         TileOperationProgress current,
         PairedPublishContext context,
-        PublicationDescriptor validated,
+        ExportCompanionInput validated,
         PMTilesBuildResult build,
         CancellationToken cancellationToken)
     {
         var run = context.Run;
-        var descriptor = validated with { PublishedAt = DateTimeOffset.UtcNow };
+        var companions = validated with { Descriptor = validated.Descriptor with { PublishedAt = DateTimeOffset.UtcNow } };
         var descriptorKey = context.Store.VersionKey(run.Version, PairedPublicationDescriptorFactory.DescriptorFileName);
-        await context.Store.PutJsonOnceAsync(descriptorKey, descriptor,
+        await PutCompanionFilesAsync(context, companions, cancellationToken).ConfigureAwait(false);
+        await context.Store.PutJsonOnceAsync(descriptorKey, companions.Descriptor,
             PublicationDescriptorJsonContext.Default.PublicationDescriptor, cancellationToken).ConfigureAwait(false);
-        using (var item = new MemoryStream(Encoding.UTF8.GetBytes(PairedPublicationDescriptorFactory.StacItem(descriptor).ToJsonString())))
-        {
-            await context.Store.PutOnceAsync(context.Store.VersionKey(run.Version, PairedPublicationDescriptorFactory.StacItemFileName),
-                item, "application/geo+json", ImmutableDictionary<string, string>.Empty, cancellationToken).ConfigureAwait(false);
-        }
+        await PutTextOnceAsync(context, ExportCompanionFile.Text(PairedPublicationDescriptorFactory.StacItemFileName, "application/geo+json",
+            PairedPublicationDescriptorFactory.StacItem(companions).ToJsonString()), cancellationToken).ConfigureAwait(false);
 
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
         TileOperationLog.PairedPublishActivated(_logger, current.JobId, run.PublicationId, run.Version);
@@ -308,6 +360,22 @@ internal sealed partial class TileOperationExecutionCore
             ErrorMessage = null,
             CurrentPhase = "Paired publish completed"
         };
+    }
+
+    private static async Task PutCompanionFilesAsync(
+        PairedPublishContext context, ExportCompanionInput companions, CancellationToken cancellationToken)
+    {
+        foreach (var file in ExportCompanionFiles.Render(companions))
+        {
+            await PutTextOnceAsync(context, file, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task PutTextOnceAsync(PairedPublishContext context, ExportCompanionFile file, CancellationToken cancellationToken)
+    {
+        using var body = new MemoryStream(file.Content, writable: false);
+        await context.Store.PutOnceAsync(context.Store.VersionKey(context.Run.Version, file.FileName), body, file.MediaType,
+            ImmutableDictionary<string, string>.Empty, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<PublicationValidationCheck> StoredCopyCheckAsync(
@@ -345,7 +413,7 @@ internal sealed partial class TileOperationExecutionCore
                      PairedPublicationDescriptorFactory.GeoparquetFileName(run),
                      PairedPublicationDescriptorFactory.DescriptorFileName,
                      PairedPublicationDescriptorFactory.StacItemFileName
-                 })
+                 }.Concat(ExportCompanionFiles.FileNames))
         {
             await TryDeletePublishArtifactAsync(storage, context.Store.VersionKey(run.Version, file), jobId, CancellationToken.None).ConfigureAwait(false);
         }

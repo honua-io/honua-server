@@ -30,7 +30,7 @@ namespace Honua.Server.Tests.Features.Security;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
+public sealed class ApiKeyTokenParameterTests : IClassFixture<ApiKeyTokenParameterTests.TokenParameterHost>
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string PortalSelfPath = "/sharing/rest/portals/self";
@@ -65,13 +65,38 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
     private static readonly string ProtectedQueryPath =
         $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{ProtectedLayerId}/query";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureWebHost(builder =>
+    private readonly WebAppFixture _fixture;
+
+    public ApiKeyTokenParameterTests(TokenParameterHost host)
+    {
+        _fixture = host.Fixture;
+    }
+
+    // One application serves every case. Each case creates only its own keys and never
+    // revokes or lists shared ones.
+    // The in-process transport leaves RemoteIpAddress unset, so the authentication failure
+    // limiter does not count these requests (it ignores a missing client address). Key names
+    // are not unique in the store; lookup is by key material.
+    public sealed class TokenParameterHost : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+
+        public async Task InitializeAsync()
         {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-        });
+            await Fixture.InitializeAsync();
+            Fixture.UpdateV2ResourceMetadata(
+                ProtectedLayerId,
+                accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [AdminOnlyRole] });
+        }
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     public static TheoryData<string, string> KeyTransportMatrix()
     {
@@ -95,16 +120,6 @@ public sealed class ApiKeyTokenParameterTests : IAsyncLifetime
 
     private static IReadOnlyList<string> PermissionsFor(string transport)
         => transport == QueryTransport ? [ReadTestServiceGrant] : ["admin:*"];
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _fixture.UpdateV2ResourceMetadata(
-            ProtectedLayerId,
-            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [AdminOnlyRole] });
-    }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
     [InlineData(ManagedKey, QueryTransport)]

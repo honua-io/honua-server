@@ -22,7 +22,6 @@ namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 // is supplied, that cross-node leases need the PostgreSQL store, and that the GeoServices applyEdits surface honours
 // no client-supplied version token. Both composition paths are covered (the hand-curated roster and the
 // registry-derived projection), because the two must stay wire-identical.
-[Collection("Database")]
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Metadata)]
 public sealed class FeatureLockCapabilityManifestTests

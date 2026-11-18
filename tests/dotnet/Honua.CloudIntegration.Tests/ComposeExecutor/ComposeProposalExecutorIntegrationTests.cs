@@ -17,6 +17,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Hosting.ComposeExecutor;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -139,12 +140,11 @@ public sealed class ComposeProposalExecutorIntegrationTests
 
             var backend = new ComposeDeployBackend(client, Options.Create(options), NullLogger<ComposeDeployBackend>.Instance);
             var store = new MemoryWorkflows();
+            using var reviewHost = new OperationHumanApprovalTestHost();
             var service = new DeployWorkflowService(
-                new MemoryTargets(Target(candidateId)),
-                [store],
-                [backend],
-                new NotRequiredApproval(),
-                NullLogger<DeployWorkflowService>.Instance);
+                new MemoryTargets(Target(candidateId)), [store], [backend], new NotRequiredApproval(),
+                NullLogger<DeployWorkflowService>.Instance, humanApprovalAuthority: reviewHost.Authority);
+            var submissions = await new ReviewedSubmissions(service, reviewHost, store).WithHumansAsync().ConfigureAwait(false);
 
             var created = await service.CreateAsync(
                 "compose-local",
@@ -156,18 +156,19 @@ public sealed class ComposeProposalExecutorIntegrationTests
                 "corr",
                 OperationPriority.Normal,
                 submitImmediately: true,
-                parameterOverrides: null).ConfigureAwait(false);
+                parameterOverrides: null,
+                principal: submissions.Requester.Principal).ConfigureAwait(false);
             Assert.NotNull(created);
             Assert.Equal(WorkflowOperationStatus.AwaitingApproval, created.Status);
             Assert.Empty(created.BlockingReasons);
             Assert.Equal(honuaId, await ServiceContainerIdAsync(projectDir, projectName, "honua").ConfigureAwait(false));
 
             var same = await Assert.ThrowsAsync<ResourceConflictException>(() =>
-                service.SubmitAsync(created.OperationId, "agent", "self")).ConfigureAwait(false);
+                submissions.SubmitAsRequesterAsync(created.OperationId)).ConfigureAwait(false);
             Assert.Contains("Separation of duties", same.Message, StringComparison.Ordinal);
             Assert.Equal(rc1Id, (await DockerAsync(["inspect", "--format", "{{.Image}}", honuaId]).ConfigureAwait(false)).Trim());
 
-            var converged = await service.SubmitAsync(created.OperationId, "approver", "approved").ConfigureAwait(false);
+            var converged = await submissions.SubmitAsApproverAsync(created.OperationId).ConfigureAwait(false);
             Assert.NotNull(converged);
             if (converged.Status != WorkflowOperationStatus.Reconciling)
             {
@@ -233,14 +234,14 @@ public sealed class ComposeProposalExecutorIntegrationTests
             }).ConfigureAwait(false);
             Assert.False(badPreview.Ok);
             Assert.Equal(PreMigrationRestoreCodes.BackupChecksumMismatch, badPreview.Code);
-            var bad = await SubmitRollbackAsync(service, rc1Id, candidateId, "compose-it-bad-backup").ConfigureAwait(false);
+            var bad = await SubmitRollbackAsync(submissions, rc1Id, candidateId, "compose-it-bad-backup").ConfigureAwait(false);
             Assert.Equal(WorkflowOperationStatus.Failed, bad.Status);
             Assert.Contains(PreMigrationRestoreCodes.BackupChecksumMismatch, bad.CurrentPhase, StringComparison.Ordinal);
             Assert.Equal(restartedId, await ServiceContainerIdAsync(projectDir, projectName, "honua").ConfigureAwait(false));
             Assert.Equal("142", (await PsqlAsync(projectDir, projectName, SchemaSql).ConfigureAwait(false)).Trim());
 
             await File.WriteAllTextAsync(manifestPath, manifestText).ConfigureAwait(false);
-            var rolled = await SubmitRollbackAsync(service, rc1Id, candidateId, "compose-it-rollback").ConfigureAwait(false);
+            var rolled = await SubmitRollbackAsync(submissions, rc1Id, candidateId, "compose-it-rollback").ConfigureAwait(false);
             if (rolled.Status != WorkflowOperationStatus.Reconciling)
             {
                 await DumpAsync(projectDir, projectName).ConfigureAwait(false);
@@ -304,13 +305,13 @@ public sealed class ComposeProposalExecutorIntegrationTests
         }
     }
 
-    private async Task<WorkflowOperationRecord> SubmitRollbackAsync(
-        DeployWorkflowService service,
+    private static async Task<WorkflowOperationRecord> SubmitRollbackAsync(
+        ReviewedSubmissions submissions,
         string priorImage,
         string candidateImage,
         string idempotencyKey)
     {
-        var created = await service.CreateAsync(
+        var created = await submissions.Service.CreateAsync(
             "compose-local",
             priorImage,
             candidateImage,
@@ -320,10 +321,11 @@ public sealed class ComposeProposalExecutorIntegrationTests
             "corr",
             OperationPriority.Normal,
             submitImmediately: true,
-            parameterOverrides: null).ConfigureAwait(false);
+            parameterOverrides: null,
+            principal: submissions.Requester.Principal).ConfigureAwait(false);
         Assert.NotNull(created);
         Assert.Equal(WorkflowOperationStatus.AwaitingApproval, created.Status);
-        var submitted = await service.SubmitAsync(created.OperationId, "approver", "approved").ConfigureAwait(false);
+        var submitted = await submissions.SubmitAsApproverAsync(created.OperationId).ConfigureAwait(false);
         Assert.NotNull(submitted);
         return submitted;
     }
@@ -730,6 +732,38 @@ public sealed class ComposeProposalExecutorIntegrationTests
             (script_name, declaration_format, classification, script_sha256, min_reader_schema, script_text)
         VALUES ('Honua.Server.Migrations.140_CreateAiExecutionAdmission.sql', 1, 'expand', repeat('cd', 32), 140, 'fixture');
         """;
+
+    // Every Compose submission carries the submitting person's own current review of the plan.
+    private sealed class ReviewedSubmissions(
+        DeployWorkflowService service, OperationHumanApprovalTestHost host, MemoryWorkflows store)
+    {
+        private ApprovalTestHuman _approver = null!;
+
+        public DeployWorkflowService Service { get; } = service;
+
+        public ApprovalTestHuman Requester { get; private set; } = null!;
+
+        public async Task<ReviewedSubmissions> WithHumansAsync()
+        {
+            Requester = await host.CreateHumanAsync("compose-requester").ConfigureAwait(false);
+            _approver = await host.CreateHumanAsync("compose-approver").ConfigureAwait(false);
+            return this;
+        }
+
+        public Task<WorkflowOperationRecord?> SubmitAsRequesterAsync(string operationId) => SubmitAsync(Requester, operationId);
+
+        public Task<WorkflowOperationRecord?> SubmitAsApproverAsync(string operationId) => SubmitAsync(_approver, operationId);
+
+        private async Task<WorkflowOperationRecord?> SubmitAsync(ApprovalTestHuman human, string operationId)
+        {
+            var operation = (await store.GetAsync(operationId).ConfigureAwait(false))!;
+            host.DeployReviewRequest(human, operation, "submit");
+            var review = await host.Authority.OpenDeployReviewAsync(operation, "submit", host.Context).ConfigureAwait(false);
+            host.DeployApproveRequest(human, operation, "submit", review);
+            return await Service.SubmitAsync(
+                operationId, OperationHumanApprovalTestHost.Approval(human).ApprovedBy, "reviewed").ConfigureAwait(false);
+        }
+    }
 
     private sealed class NotRequiredApproval : IOperatorApprovalEvaluator
     {

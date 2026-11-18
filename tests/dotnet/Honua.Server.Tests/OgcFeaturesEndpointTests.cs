@@ -16,17 +16,38 @@ namespace Honua.Server.Tests;
 
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Collection("Database.CoreEndpoints")]
-public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
+public sealed class OgcFeaturesEndpointTests(OgcFeaturesEndpointTests.FeaturesHost host)
+    : IClassFixture<OgcFeaturesEndpointTests.FeaturesHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+    private readonly WebAppFixture _fixture = host.Fixture;
 
-    public async Task InitializeAsync()
+    // One host per class for the cases that only read. Cases that retire a layer or rewrite catalog
+    // rows run on a dedicated host (WithDedicatedHostAsync) so later cases still see the seeded catalog.
+    public sealed class FeaturesHost : IAsyncLifetime
     {
-        await _fixture.InitializeAsync();
+        internal WebAppFixture Fixture { get; } = CreateFixture();
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    private static WebAppFixture CreateFixture()
+        => new WebAppFixture().ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+
+    private static async Task WithDedicatedHostAsync(Func<WebAppFixture, Task> testBody)
+    {
+        var fixture = CreateFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            await testBody(fixture);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -211,61 +232,63 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/features/collections")]
-    public async Task GetCollections_RetiredPublication_IsNotListedOrDirectlyAddressable()
-    {
-        _fixture.SetV2LayerEnabled(WebAppFixture.TestLayerId, enabled: false);
+    public Task GetCollections_RetiredPublication_IsNotListedOrDirectlyAddressable()
+        => WithDedicatedHostAsync(async fixture =>
+        {
+            fixture.SetV2LayerEnabled(WebAppFixture.TestLayerId, enabled: false);
 
-        var listResponse = await _fixture.Client.GetAsync("/ogc/features/collections");
-        var directResponse = await _fixture.Client.GetAsync(
-            $"/ogc/features/collections/{WebAppFixture.TestLayerId}");
-        var collections = await listResponse.Content.ReadFromJsonAsync<Collections>();
+            var listResponse = await fixture.Client.GetAsync("/ogc/features/collections");
+            var directResponse = await fixture.Client.GetAsync(
+                $"/ogc/features/collections/{WebAppFixture.TestLayerId}");
+            var collections = await listResponse.Content.ReadFromJsonAsync<Collections>();
 
-        listResponse.Be200Ok();
-        collections.Should().NotBeNull();
-        collections!.CollectionList.Should().NotContain(collection =>
-            string.Equals(
-                collection.Id,
-                WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture),
-                StringComparison.OrdinalIgnoreCase));
-        directResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
+            listResponse.Be200Ok();
+            collections.Should().NotBeNull();
+            collections!.CollectionList.Should().NotContain(collection =>
+                string.Equals(
+                    collection.Id,
+                    WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture),
+                    StringComparison.OrdinalIgnoreCase));
+            directResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        });
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/features/collections")]
-    public async Task GetCollections_UsesServiceAccessPolicyWhenLayerPolicyIsMissing()
-    {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        // Route the literal honua.layers/honua.services UPDATE through the shared
-        // schema-mutation advisory lock so it serializes with parallel-collection seeders
-        // instead of racing the catalog and deadlocking (40P01).
-        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
-            """
-            UPDATE honua.layers
-            SET metadata = NULL
-            WHERE layer_id = @layerId;
+    public Task GetCollections_UsesServiceAccessPolicyWhenLayerPolicyIsMissing()
+        => WithDedicatedHostAsync(async fixture =>
+        {
+            var schema = fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+            // Route the literal honua.layers/honua.services UPDATE through the shared
+            // schema-mutation advisory lock so it serializes with parallel-collection seeders
+            // instead of racing the catalog and deadlocking (40P01).
+            await fixture.Postgres.ApplyGlobalSeedSqlAsync(
+                """
+                UPDATE honua.layers
+                SET metadata = NULL
+                WHERE layer_id = @layerId;
 
-            UPDATE honua.services
-            SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
-            WHERE service_name IN (
-                SELECT service_name
-                FROM honua.service_layers
-                WHERE layer_id = @layerId
-            );
-            """,
-            command => command.Parameters.AddWithValue("@layerId", WebAppFixture.TestLayerId),
-            schema);
+                UPDATE honua.services
+                SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+                WHERE service_name IN (
+                    SELECT service_name
+                    FROM honua.service_layers
+                    WHERE layer_id = @layerId
+                );
+                """,
+                command => command.Parameters.AddWithValue("@layerId", WebAppFixture.TestLayerId),
+                schema);
 
-        var response = await _fixture.Client.GetAsync("/ogc/features/collections");
+            var response = await fixture.Client.GetAsync("/ogc/features/collections");
 
-        response.Be200Ok();
+            response.Be200Ok();
 
-        var collections = await response.Content.ReadFromJsonAsync<Collections>();
-        collections.Should().NotBeNull();
-        collections!.CollectionList.Select(collection => collection.Id)
-            .Should()
-            .Contain(WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture));
-    }
+            var collections = await response.Content.ReadFromJsonAsync<Collections>();
+            collections.Should().NotBeNull();
+            collections!.CollectionList.Select(collection => collection.Id)
+                .Should()
+                .Contain(WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture));
+        });
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]

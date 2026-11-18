@@ -26,9 +26,28 @@ namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Streaming)]
-public sealed class CollaborationLiveCoEditingTests
+public sealed class CollaborationLiveCoEditingTests(CollaborationLiveCoEditingTests.SharedHosts hosts)
+    : IClassFixture<CollaborationLiveCoEditingTests.SharedHosts>
 {
     private const string AdminPassword = "collaboration-coedit-test-key";
+
+    // Cases with the default settings, with or without the restart-durable operation log, share
+    // one application each. Every case creates its own draft, and session, log and checkpoint
+    // state is keyed by map, so a case never reads another case's map. Cases that change
+    // settings, decorate the log or supply a Studio store keep their own application.
+    // Each application starts on first use.
+    public sealed class SharedHosts : IDisposable
+    {
+        public WebApplicationFactory<Program> Durable { get; } = CreateFactory(restartDurableOperationLog: true);
+
+        public WebApplicationFactory<Program> Default { get; } = CreateFactory();
+
+        public void Dispose()
+        {
+            Durable.Dispose();
+            Default.Dispose();
+        }
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
@@ -36,7 +55,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task CoEdit_TwoClientsConverge_AndCheckpointProducesStudioVersion()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -139,7 +158,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
     public async Task Stream_LateJoinerAndStaleResume_GetSnapshotTailAndResyncRequired()
     {
-        using var factory = CreateFactory();
+        var factory = hosts.Default;
         using var client = CreateAdminClient(factory);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -271,7 +290,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_MixedMapIdFormsAndClientCursor_UsesCanonicalServerState()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
 
@@ -357,7 +376,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_MalformedPayloadForCheckpointableKind_IsRejectedAndMapStaysCheckpointable()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -397,7 +416,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Join_NonCompositionDraftFamily_IsRejectedBeforeOperationsEnterTheLog()
     {
-        using var factory = CreateFactory();
+        var factory = hosts.Default;
         using var client = CreateAdminClient(factory);
 
         // Only Map/App drafts are composition-eligible, so only they can be checkpointed.
@@ -428,7 +447,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Append_KindTheCheckpointApplierCannotApply_IsRejected()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -458,7 +477,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_AfterPriorCheckpoint_ReplaysOnlyPendingOperations()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -640,7 +659,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_UnresolvableMapId_ReturnsNotFound()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
 
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
@@ -717,7 +736,7 @@ public sealed class CollaborationLiveCoEditingTests
         // ...so a checkpoint cannot prove the immutable version it would mint contains every
         // accepted edit: after a restart an empty replay is indistinguishable from a session
         // that never appended anything, and the version would silently omit those edits.
-        using var factory = CreateFactory();
+        var factory = hosts.Default;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -746,7 +765,7 @@ public sealed class CollaborationLiveCoEditingTests
         join.GetProperty("capabilities").GetProperty("checkpoints").GetBoolean().Should().BeFalse();
 
         // A restart-durable log satisfies the contract and the same checkpoint succeeds.
-        using var durableFactory = CreateFactory(restartDurableOperationLog: true);
+        var durableFactory = hosts.Durable;
         using var durableClient = CreateAdminClient(durableFactory);
         var durableDraft = await CreateMapDraftAsync(durableClient);
         var durableMapId = durableDraft.DraftId.ToString("D");
@@ -828,7 +847,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_PatchStyleWithNonStringStyleRef_IsRejectedAndStyleSurvives()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -873,7 +892,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_ReorderReferencingUnknownLayer_SurfacesStateConflict()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -904,7 +923,7 @@ public sealed class CollaborationLiveCoEditingTests
         text.Should().NotContain("Exception");
 
         // A reorder whose ids all exist still applies.
-        using var freshFactory = CreateFactory(restartDurableOperationLog: true);
+        var freshFactory = hosts.Durable;
         using var freshClient = CreateAdminClient(freshFactory);
         var freshDraft = await CreateTwoLayerMapDraftAsync(freshClient);
         var freshMapId = freshDraft.DraftId.ToString("D");
@@ -927,7 +946,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_ReplaceRemovesScalarTarget_ExplicitSupersessionUnwedgesMap()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -1131,7 +1150,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_WhitespaceOnlyLayerId_IsRejectedAndMapStaysCheckpointable()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -1270,7 +1289,7 @@ public sealed class CollaborationLiveCoEditingTests
     [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_ViewportOutsideSharedBounds_IsRejectedAndMapStaysCheckpointable()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");

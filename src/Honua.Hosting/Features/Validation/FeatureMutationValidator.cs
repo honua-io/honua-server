@@ -367,7 +367,11 @@ internal static class MetadataV2AttributeValidation
         var options = new AttributeValidationOptions(
             mode == ValidationExtensions.AttributeValidationMode.GeoServices
                 ? AttributeValidationProfile.GeoServices : AttributeValidationProfile.Strict,
-            isUpdate ? AttributeMutationOperation.Update : AttributeMutationOperation.Insert);
+            isUpdate ? AttributeMutationOperation.Update : AttributeMutationOperation.Insert,
+            // JSON and GeoServices clients have no exact wire type. gRPC stays strict.
+            mode == ValidationExtensions.AttributeValidationMode.Strict
+                ? ExactValueCoercion.None
+                : ExactValueCoercion.CanonicalText);
         return FeatureAttributeValidator.Validate(resource, attributes, options);
     }
 }

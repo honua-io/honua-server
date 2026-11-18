@@ -24,6 +24,7 @@ internal static class LocationToolSchemas
     private const string GeocodeArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["address"],
           "properties": {
             "address": {
@@ -58,6 +59,7 @@ internal static class LocationToolSchemas
     private const string GeocodeAddressesArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["addresses"],
           "properties": {
             "addresses": {
@@ -90,6 +92,7 @@ internal static class LocationToolSchemas
     private const string RouteArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["stops"],
           "properties": {
             "stops": {

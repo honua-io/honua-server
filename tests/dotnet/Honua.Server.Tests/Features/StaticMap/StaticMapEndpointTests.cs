@@ -15,13 +15,10 @@ namespace Honua.Server.Tests.Features.StaticMap;
 
 [Collection("Database")]
 [Protocol(TestProtocols.StaticMap)]
-public sealed class StaticMapEndpointTests : IAsyncLifetime
+public sealed class StaticMapEndpointTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    // One default host per class: its cases only render. Cases that replace services build their own.
+    private readonly WebAppFixture _fixture = fixture;
 
     // --- Center+Zoom endpoint ---
 

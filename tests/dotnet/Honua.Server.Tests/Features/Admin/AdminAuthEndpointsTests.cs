@@ -24,7 +24,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
@@ -40,30 +39,13 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     private static readonly RsaSecurityKey _oidcSigningKey = CreateOidcSigningKey();
     private static readonly SigningCredentials _oidcSigningCredentials = new(_oidcSigningKey, SecurityAlgorithms.RsaSha256);
 
-    private readonly WebAppFixture _fixture;
-    private HttpClient? _client;
-
-    public AdminAuthEndpointsTests()
-    {
-        _fixture = CreateBaseFixture();
-    }
+    private readonly LazyBaseHost _baseHost = new();
 
     public Task InitializeAsync() => Task.CompletedTask;
 
-    // Configured OIDC and certificate cases own their app; boot the default app only when used.
-    private async Task<HttpClient> GetClientAsync()
-    {
-        if (_client is not null)
-        {
-            return _client;
-        }
+    public Task DisposeAsync() => _baseHost.DisposeAsync();
 
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateClient();
-        return _client;
-    }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    private Task<HttpClient> GetClientAsync() => _baseHost.GetClientAsync();
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/auth/config")]

@@ -504,15 +504,18 @@ jobs:
               echo "non_test_changes=true" >> $GITHUB_OUTPUT
             fi
 
+            # Repository metadata that no build, test or package reads;
+            # scripts/ci/trailing_selection.py REPO_METADATA keeps the same list.
+            REPO_METADATA='\.github/(codeql/|ISSUE_TEMPLATE/|CODEOWNERS$|actionlint\.yaml$|dependabot\.yml$|hygiene\.json$|pull_request_template\.md$)'
             BUILD_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/)' \
+                | grep -Ev -e '^($|docs/|README\.md$|\.github/(workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/)' -e "^${REPO_METADATA}" \
                 | sed '/^$/d' || true
             )
 
             INTEGRATION_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | grep -Ev -e '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' -e "^${REPO_METADATA}" \
                 | sed '/^$/d' || true
             )
 
@@ -785,6 +788,12 @@ jobs:
       DOTNET_PROCESSOR_COUNT: '4'
       DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
       MSBUILDDISABLENODEREUSE: '1'
+      # Selective (affected) dispatches compile without analyzers: PR Gate's
+      # analyzer partitions proved each landed PR and Format Check below still
+      # runs dotnet format. Scheduled and full runs keep the analyzer build.
+      # Protocol-profile builds keep analyzers for the projects they recompile
+      # (Honua.Server); referenced projects are reused from the producer build.
+      PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}
     steps:
       - name: Place the producer SDK in the runner temp directory
         run: echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/honua-ci-producer-sdk" >> "$GITHUB_ENV"
@@ -878,12 +887,12 @@ jobs:
       - name: Restore producer build graph
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers="${PRODUCER_RUN_ANALYZERS}" -p:UseSharedCompilation=false
 
       - name: Build (warnings as errors)
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers="${PRODUCER_RUN_ANALYZERS}" -p:UseSharedCompilation=false
 
       - name: Build selected standalone tooling projects
         run: >-
@@ -2532,6 +2541,10 @@ jobs:
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
     env:
+      # Full run 44183857476 died in the pinned SDK TypeScript build at Node's
+      # default ~2 GB heap. This job pins Node 22.23.3; that default still applies.
+      # Hosted runners have 16 GB.
+      NODE_OPTIONS: --max-old-space-size=4096
       HONUA_MCP_CERT_TARGET: standalone
       HONUA_BASE_URL: http://localhost:5000
       HONUA_TRANSPORT: ${{ matrix.transport }}
@@ -2899,7 +2912,7 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.core_package == 'true' }}
     runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
-    # Packing both frameworks and cold-building the full server exceeded 10 minutes.
+    # Packing the plug-in contracts and cold-building the full server exceeded 10 minutes.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2938,7 +2951,7 @@ jobs:
       - name: Test package integration
         run: |
           package_version="0.0.0-ci.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
-          for framework in net10.0 net11.0; do
+          framework="$(scripts/ci/honua-target-framework.sh)"
           consumer_dir="$(mktemp -d)"
           cat > "${consumer_dir}/PackageConsumer.csproj" <<EOF
           <Project Sdk="Microsoft.NET.Sdk">
@@ -3006,7 +3019,6 @@ jobs:
           dotnet build --configuration Release
           popd >/dev/null
           rm -rf "${consumer_dir}"
-          done
 
       - name: Validate server compatibility
         run: |

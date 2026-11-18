@@ -23,9 +23,11 @@ internal static class GeoServicesFieldConventions
             MetadataV2FieldType.Integer => "sqlTypeInteger",
             MetadataV2FieldType.BigInteger => "sqlTypeOther",
             MetadataV2FieldType.Double => "sqlTypeFloat",
+            MetadataV2FieldType.Decimal => "sqlTypeNumeric",
             MetadataV2FieldType.Float => "sqlTypeFloat",
             MetadataV2FieldType.Boolean => "sqlTypeOther",
             MetadataV2FieldType.DateTime => "sqlTypeOther",
+            MetadataV2FieldType.TimestampOffset => "sqlTypeOther",
             MetadataV2FieldType.Date => "sqlTypeOther",
             MetadataV2FieldType.Time => "sqlTypeNVarchar",
             MetadataV2FieldType.Json => "sqlTypeNVarchar",
@@ -43,9 +45,11 @@ internal static class GeoServicesFieldConventions
             MetadataV2FieldType.Integer => "esriFieldTypeInteger",
             MetadataV2FieldType.BigInteger => "esriFieldTypeBigInteger",
             MetadataV2FieldType.Double => "esriFieldTypeDouble",
+            MetadataV2FieldType.Decimal => "esriFieldTypeDouble",
             MetadataV2FieldType.Float => "esriFieldTypeSingle",
             MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
             MetadataV2FieldType.DateTime => "esriFieldTypeDate",
+            MetadataV2FieldType.TimestampOffset => "esriFieldTypeDate",
             MetadataV2FieldType.Date => "esriFieldTypeDateOnly",
             MetadataV2FieldType.Time => "esriFieldTypeString",
             MetadataV2FieldType.Json => "esriFieldTypeString",
@@ -156,15 +160,23 @@ internal static class GeoServicesFieldConventions
         return false;
     }
 
+    // Also carries exact Decimal fields: Esri JSON has no exact decimal, so their text becomes a double.
     internal static Dictionary<string, MetadataV2FieldType> ResolveTemporalFieldTypes(MetadataV2Object resource)
         => resource.SchemaFields
-            .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
+            .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date
+                or MetadataV2FieldType.TimestampOffset or MetadataV2FieldType.Decimal)
             .ToDictionary(static field => field.Name, static field => field.Type, StringComparer.OrdinalIgnoreCase);
 
     internal static bool TryConvertTemporalValue(object value, MetadataV2FieldType fieldType, out object? converted)
     {
         converted = null;
-        if (fieldType == MetadataV2FieldType.DateTime && TryConvertToEpochMilliseconds(value, out var epoch))
+        if (fieldType == MetadataV2FieldType.Decimal && ExactAttributeValues.ToFiniteDouble(value) is { } number)
+        {
+            converted = number;
+            return true;
+        }
+        if (fieldType is MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset
+            && TryConvertToEpochMilliseconds(value, out var epoch))
         {
             converted = epoch;
             return true;

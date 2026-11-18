@@ -26975,6 +26975,11 @@
             "default": false,
             "description": "Declares attachment support for the published resource. Does not enable editing."
           },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt in to exact decimal and offset-timestamp field types. The primary key and temporal column stay on the default mapping."
+          },
           "folderId": {
             "type": "string",
             "nullable": true
@@ -50518,6 +50523,11 @@
               "type": "string"
             },
             "description": "Attribute fields to publish. Empty means all discovered columns."
+          },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Preview the exact decimal and offset-timestamp field types."
           }
         }
       },
@@ -50944,6 +50954,20 @@
             ],
             "description": "Normalized comparison applied between the attribute and the claim value(s)."
           },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
+          },
           "description": {
             "type": "string",
             "nullable": true
@@ -51001,6 +51025,20 @@
             "nullable": true,
             "maxLength": 16,
             "description": "Accepts `in` (default when omitted or blank), `equals`, `eq`, or `=`. Any other value returns 400."
+          },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
           },
           "description": {
             "type": "string",
@@ -51788,6 +51826,7 @@
       "MetadataV2EditingPatch": {
         "type": "object",
         "nullable": true,
+        "additionalProperties": false,
         "properties": {
           "globalIdField": {
             "type": "string",
@@ -51813,6 +51852,26 @@
             "type": "boolean",
             "nullable": true,
             "description": "Delete policy for the selected publication; null preserves it."
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the creating user; null preserves it and an empty string clears it."
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the creation time; null preserves it and an empty string clears it."
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the last editing user; null preserves it and an empty string clears it."
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the last edit time; null preserves it and an empty string clears it."
           }
         }
       },

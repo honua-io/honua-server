@@ -132,19 +132,13 @@ internal sealed partial class FeatureQueryBuilder
         string fieldExpr,
         MetadataV2FieldType? fieldType = null)
     {
-        if (fieldType is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset
-            && statisticType != StatisticType.Count)
-        {
-            throw new NotSupportedException("Aggregates on exact decimal and offset timestamp fields require a lossless result contract.");
-        }
-
         var numericExpr = $"({fieldExpr})::numeric";
         var orderedExpr = IsNumericFieldType(fieldType)
             ? numericExpr
             : IsTemporalFieldType(fieldType)
                 ? BuildEpochAwareTemporalExpression(fieldExpr, fieldType!.Value)
                 : fieldExpr;
-        return statisticType switch
+        var aggregate = statisticType switch
         {
             StatisticType.Count => $"COUNT({fieldExpr})",
             StatisticType.Sum => $"SUM({numericExpr})",
@@ -155,6 +149,10 @@ internal sealed partial class FeatureQueryBuilder
             StatisticType.Var => $"VAR_SAMP({numericExpr})",
             _ => throw new ArgumentOutOfRangeException(nameof(statisticType), statisticType, "Unsupported statistic type")
         };
+        // Statistics responses carry doubles; gRPC, the lossless exact-value surface, has no aggregates.
+        return fieldType == MetadataV2FieldType.Decimal && statisticType != StatisticType.Count
+            ? $"({aggregate})::double precision"
+            : aggregate;
     }
 
     private static bool IsNumericFieldType(MetadataV2FieldType? fieldType)
@@ -162,11 +160,13 @@ internal sealed partial class FeatureQueryBuilder
         return fieldType is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Float
-            or MetadataV2FieldType.Double;
+            or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Decimal;
     }
 
     private static bool IsTemporalFieldType(MetadataV2FieldType? fieldType)
         => fieldType is MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.TimestampOffset
             or MetadataV2FieldType.Date
             or MetadataV2FieldType.Time;
 
@@ -180,7 +180,7 @@ internal sealed partial class FeatureQueryBuilder
                         $"ELSE {nullSafe}::timestamptz END";
         return fieldType switch
         {
-            MetadataV2FieldType.DateTime => timestamp,
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => timestamp,
             MetadataV2FieldType.Date => $"({timestamp})::date",
             MetadataV2FieldType.Time => $"{nullSafe}::time",
             _ => fieldExpression

@@ -117,6 +117,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/deploy/operations"),
         new("POST", "/api/v1/admin/deploy/operations"),
         new("GET", "/api/v1/admin/deploy/operations/{operationId}"),
+        new("GET", "/api/v1/admin/deploy/operations/{operationId}/approval-review/{action}"),
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/submit"),
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/promote"),
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/rollback"),

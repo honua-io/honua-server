@@ -81,7 +81,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 "Primary key must be an integer column.");
         }
 
-        var fields = BuildLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains);
+        var exactLayerDateTimeFields = await ReadExactLayerDateTimeFieldsAsync(connectionString, layerId, cancellationToken)
+            .ConfigureAwait(false);
+        var fields = WithExactFieldTypes(
+            BuildLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains),
+            selectedColumns,
+            PublishFieldTypePolicy.ForRewrite(request, exactLayerDateTimeFields, primaryKeyColumn.Name));
         var schemaFields = fields
             .Select(field => MapLayerFieldToMetadataV2(field, primaryKeyColumn.Name, geometryColumn))
             .ToArray();
@@ -380,6 +385,30 @@ internal sealed partial class PostgreSqlLayerPublishingService
             reader.GetInt32(7),
             reader.GetBoolean(8));
     }
+
+    // Null when the layer has no exact fields; otherwise the fields it kept as DateTime.
+    private static async Task<string[]?> ReadExactLayerDateTimeFieldsAsync(
+        string connectionString,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(RewriteFieldTypePolicySql, connection);
+        command.Parameters.AddWithValue("@layerId", layerId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) && !reader.IsDBNull(0) && reader.GetBoolean(0)
+            ? reader.GetFieldValue<string[]>(1)
+            : null;
+    }
+
+    internal const string RewriteFieldTypePolicySql = """
+        SELECT
+            bool_or(field_type IN ('Decimal', 'TimestampOffset')),
+            COALESCE(array_agg(field_name::text) FILTER (WHERE field_type = 'DateTime'), ARRAY[]::text[])
+        FROM honua.layer_fields
+        WHERE layer_id = @layerId;
+        """;
 
     private static string? ResolveReplacementGlobalId(
         IReadOnlyList<MetadataV2Field> fields,

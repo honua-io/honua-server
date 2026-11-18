@@ -40,7 +40,7 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.192_CreateWfsStoredQueries.sql",
         "Honua.Server.Migrations.201_CreateEmbedKeyUsage.sql",
         "Honua.Server.Migrations.212_CreateConfigurationDocumentRevisions.sql",
-        "Honua.Server.Migrations.220_CreateProposalEvidenceConsumptions.sql"
+        "Honua.Server.Migrations.221_CreateProposalEvidenceConsumptions.sql"
     ];
 
     // These tables stay in the honua schema in production; the test installs them in its own schema.

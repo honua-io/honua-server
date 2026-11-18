@@ -71,6 +71,33 @@ public sealed class GpCustomProjectTests
     }
 
     [Fact]
+    public void DotnetScaffold_UsesNet11ForBuildAndLaunchPaths()
+    {
+        var directory = Directory.CreateTempSubdirectory("gp-net11-");
+        try
+        {
+            var plan = GpCustomProjectScaffolder.Plan(GpProjectLanguage.Dotnet, "parcel-summary", null);
+            GpCustomProjectScaffolder.Apply(directory.FullName, plan);
+            var manifest = GpProjectManifest.Load(Path.Join(directory.FullName, GpProjectManifest.FileName));
+
+            manifest.AssemblyDir.Should().Be("process/bin/Debug/net11.0");
+            manifest.HarnessDll.Should().Be("tests/SummaryTool.Tests/bin/Debug/net11.0/Honua.CustomCode.Harness.dll");
+            foreach (var project in Directory.EnumerateFiles(directory.FullName, "*.csproj", SearchOption.AllDirectories))
+            {
+                var xml = System.Xml.Linq.XDocument.Load(project);
+                xml.Descendants("TargetFramework").Single().Value.Should().Be("net11.0");
+            }
+
+            var launch = File.ReadAllText(Path.Join(directory.FullName, ".vscode", "launch.json"));
+            launch.Should().Contain(manifest.AssemblyDir).And.Contain(manifest.HarnessDll);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void FlatYaml_ParsesScalarsNestedMapsQuotesAndComments()
     {
         var map = GpFlatYaml.Parse("# comment\nschema: honua.gp.project/v0\nname: \"parcel-summary\"\nfixtures:\n  params: fixtures/params.json  # trailing\n  inputs:\n    features: fixtures/input.geojson\nexpected: expected\n");
