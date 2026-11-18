@@ -1769,6 +1769,19 @@ Both manual rollback and MCP lifecycle startup share the service-state allowlist
 GitHub-managed Code Quality is switched off for this repository, so there is no
 managed analysis to supersede and no helper workflow for it; `codeql.yml` is the
 only CodeQL analysis of C# (Roslyn analyzers still run as errors in the build).
+Pull requests run that analysis only for the paths in `.github/codeql/pr-paths.txt`
+(auth, admin endpoints, connections and secrets, import and object storage, SQL
+building, operation approval, the MCP and Studio AI surface, outbound HTTP
+proxies, sharing, sessions, exports, and workflows; s-sec-server reviewed it).
+Trunk push still scans `src/**`, and the Monday schedule
+remains the full instrumented scan. Serving Image Boundary builds the PostGIS
+image on a pull request and leaves Lambda native-AOT to nightly and deploy.
+Review Gate Attestation stays two jobs: identity resolution has to finish before
+the attestation can serialize on the pull request number. Attempt 1 of PR Gate
+still attests, because that completion is what review-first uses to observe or
+release the admission run. A later PR Gate attempt does not attest again when
+the newest Review Gate status for that head is already success. A later review
+event still re-attests through the bridge.
 CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
 cancel superseded PR runs through their per-PR concurrency groups.
 
