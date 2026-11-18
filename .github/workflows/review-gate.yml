@@ -113,6 +113,17 @@ jobs:
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; no admission can consume its Review Gate status`);
             }
+            // PR Gate completion does not change review evidence. One successful
+            // Review Gate status per head is the record; a later review event
+            // still arrives through the bridge and re-attests.
+            if (context.payload.workflow_run?.name === 'PR Gate') {
+              const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+                ...context.repo, ref: pull.head.sha, per_page: 100,
+              });
+              if (statuses.some(status => status.context === 'Review Gate' && status.state === 'success')) {
+                return shed(`PR #${prNumber} head already has Review Gate success; PR Gate completion is not a new head`);
+              }
+            }
             // Events are unordered: an old-head event can run after a newer one.
             // Always reconcile the live head instead of trusting the event head.
             // Live drafts also reach the attest concurrency group, queue behind

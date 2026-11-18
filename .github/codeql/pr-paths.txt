@@ -1,0 +1,51 @@
+# Canonical pull_request path filter for .github/workflows/codeql.yml.
+# scripts/ci/codeql-pr-paths.test.py requires that workflow's pull_request.paths
+# to match these globs, in order. Trunk push and the Monday schedule stay broad.
+# s-sec-server reviews this list. It covers auth, admin endpoints, connections
+# and secrets, import and object storage, SQL building, and workflows.
+src/Honua.Hosting/Features/Authentication/**
+src/Honua.Server/Features/Infrastructure/Authentication/**
+src/Honua.Server/Features/Mobile/Auth/**
+src/Honua.Core/Core/Features/Authorization/**
+src/Honua.Db/Postgres/Features/Authorization/**
+src/Honua.Db/Postgres/Features/Security/**
+src/Honua.Db/MySql/Features/Security/**
+src/Honua.Db/SqlServer/Features/Security/**
+src/Honua.Server/Features/Admin/**
+src/Honua.Core/Core/Features/Admin/**
+src/Honua.Db/Postgres/Features/Admin/**
+src/Honua.Db/MySql/Features/Infrastructure/**
+src/Honua.Db/Postgres/Features/Infrastructure/**
+src/Honua.Db/Postgres.Shared/Features/Infrastructure/**
+src/Honua.Db/SqlServer/Features/Infrastructure/**
+src/Honua.Core/Core/Features/Import/**
+src/Honua.Core/Core/Features/FileImport/**
+src/Honua.Import/**
+src/Honua.Server/Features/Import/**
+src/Honua.Server/Features/FileStorage/**
+src/Honua.Server/Features/Infrastructure/FileStorage/**
+src/Honua.Hosting/Features/FileStorage/**
+src/Honua.Io/Features/FileStorage/**
+src/Honua.Cloud/**
+src/Honua.Geometry/Features/FileImport/**
+src/Honua.Db/Postgres/Features/FileImport/**
+src/Honua.Core/Abstractions/Queries/**
+src/Honua.Core/Core/Features/Infrastructure/Sql/**
+src/Honua.Core/Core/Queries/**
+src/Honua.Db/Databricks/Queries/**
+src/Honua.Db/DuckDB/Queries/**
+src/Honua.Db/DuckDB/Features/Infrastructure/**
+src/Honua.Db/MySql/Queries/**
+src/Honua.Db/Oracle/Queries/**
+src/Honua.Db/Postgres/Queries/**
+src/Honua.Db/Postgres/Features/FeatureStore/**
+src/Honua.Db/Postgres/Features/Raster/**
+src/Honua.Db/Redshift/Queries/**
+src/Honua.Db/Snowflake/Queries/**
+src/Honua.Db/SqlServer/Queries/**
+src/Honua.Db/SqlServer/Features/FeatureStore/**
+src/Honua.Db/MySql/Features/FeatureStore/**
+src/Honua.Protocols/OData/**
+.github/workflows/**
+.github/actions/**
+.github/codeql/**

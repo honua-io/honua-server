@@ -43,7 +43,7 @@ const BRIDGE_SHED = extractStepScript('review-event-bridge.yml', 'Shed supersede
 const ATTEST_SHED = extractStepScript('review-gate.yml', 'Shed superseded review subject');
 
 // Minimal stand-ins for the github-script globals the shed touches.
-const runShed = async (script, { payload = {}, env = {}, pull, associated = [] }) => {
+const runShed = async (script, { payload = {}, env = {}, pull, associated = [], statuses = [] }) => {
   const outputs = {};
   const notices = [];
   const summaryLines = [];
@@ -76,6 +76,10 @@ const runShed = async (script, { payload = {}, env = {}, pull, associated = [] }
           calls.listAssociated += 1;
           return { data: associated };
         },
+        async listCommitStatusesForRef() {
+          calls.listStatuses = (calls.listStatuses || 0) + 1;
+          return { data: statuses };
+        },
       },
     },
   };
@@ -105,6 +109,27 @@ test('late old-head workflow_run still reconciles the current head after cancell
   const result = await runShed(GATE_SHED, {
     payload: { workflow_run: { head_sha: 'b'.repeat(40), pull_requests: [{ number: 42 }] } },
     pull: OPEN_PR,
+  });
+  assert.equal(result.superseded, false);
+  assert.equal(result.failure, null);
+});
+
+test('a PR Gate completion does not re-attest a head that already succeeded', async () => {
+  const result = await runShed(GATE_SHED, {
+    payload: { workflow_run: { name: 'PR Gate', head_sha: 'a'.repeat(40), pull_requests: [{ number: 42 }] } },
+    pull: OPEN_PR,
+    statuses: [{ context: 'Review Gate', state: 'success' }],
+  });
+  assert.equal(result.superseded, true);
+  assert.equal(result.failure, null);
+  assert.match(result.notices.join('\n'), /already has Review Gate success/);
+});
+
+test('a PR Gate completion still attests when Review Gate has not succeeded', async () => {
+  const result = await runShed(GATE_SHED, {
+    payload: { workflow_run: { name: 'PR Gate', head_sha: 'a'.repeat(40), pull_requests: [{ number: 42 }] } },
+    pull: OPEN_PR,
+    statuses: [{ context: 'Review Gate', state: 'failure' }],
   });
   assert.equal(result.superseded, false);
   assert.equal(result.failure, null);

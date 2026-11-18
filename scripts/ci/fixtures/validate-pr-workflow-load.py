@@ -394,6 +394,13 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertFalse(evaluate(condition, event, {"needs": needs}))
         needs["detect"]["outputs"]["selected"] = '["fixture"]'
         self.assertFalse(evaluate(condition, event, {"needs": needs, "cancelled": True}))
+        self.assertFalse(evaluate(
+            condition, event, {"needs": needs, "matrix": {"variant": "lambda"}}))
+        self.assertTrue(evaluate(
+            condition, event, {"needs": needs, "matrix": {"variant": "generic"}}))
+        dispatch = {"event_name": "workflow_dispatch", "event": {}}
+        self.assertTrue(evaluate(
+            condition, dispatch, {"needs": needs, "matrix": {"variant": "lambda"}}))
 
     def test_auto_merge_control_admits_draft_cleanup_only(self):
         condition = workflow("auto-merge-ready.yml")["jobs"]["enable"]["if"]

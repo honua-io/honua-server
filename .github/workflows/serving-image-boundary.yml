@@ -5,6 +5,11 @@ name: Serving Image Boundary
 # final-rootfs boundary; this path-filtered PR workflow supplies earlier image
 # feedback without lengthening the required merge-train floor.
 #
+# Pull requests build the PostGIS serving image only. rc.2 certifies ECS, so
+# the Lambda native-AOT image is not built here on pull_request. A manual
+# dispatch still builds both. nightly-container-build.yml and
+# deploy-platform-images.yml keep the Lambda image.
+#
 # ROUTING CONTRACT (#3204). The `pull_request` trigger below is deliberately
 # limited to inputs that DEFINE the image: the production serving Dockerfiles,
 # the build context filter, the in-image restore helper, the boundary verifier,
@@ -142,7 +147,11 @@ jobs:
 
           chosen=()
           if [[ "$generic" == "true" ]]; then chosen+=(generic); fi
-          if [[ "$lambda" == "true" ]]; then chosen+=(lambda); fi
+          # The case arms above stay the policy source for both variants.
+          # Pull requests drop Lambda after that decision: rc.2 certifies ECS.
+          if [[ "$lambda" == "true" && "${{ github.event_name }}" != "pull_request" ]]; then
+            chosen+=(lambda)
+          fi
           emit ${chosen[@]+"${chosen[@]}"}
 
       # This is the v3 content address introduced by #3331: exact selected Git
@@ -167,7 +176,7 @@ jobs:
   build-and-verify:
     name: Build and verify ${{ matrix.description }}
     needs: [detect, runner-select]
-    if: ${{ always() && !cancelled() && needs.detect.result == 'success' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.detect.outputs.selected != '[]') }}
+    if: ${{ always() && !cancelled() && needs.detect.result == 'success' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.detect.outputs.selected != '[]') && (github.event_name != 'pull_request' || matrix.variant != 'lambda') }}
     runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '"ubuntu-latest"') || 'ubuntu-latest' }}
     # Still 180, even though a leg now builds ONE variant instead of all in
     # series. A cold native-AOT build of a single variant has been observed not
