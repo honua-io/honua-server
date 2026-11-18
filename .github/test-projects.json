@@ -60,9 +60,7 @@
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
-      "resources": [
-        "redis"
-      ],
+      "resources": [],
       "isolated": false,
       "coverageRequired": true,
       "shardRouted": true
@@ -139,7 +137,6 @@
       ],
       "resources": [
         "docker",
-        "redis",
         "native-gdal"
       ],
       "isolated": false,
@@ -220,8 +217,7 @@
       ],
       "resources": [
         "docker",
-        "postgres",
-        "redis"
+        "postgres"
       ],
       "isolated": false,
       "coverageRequired": false,
@@ -335,8 +331,7 @@
       ],
       "resources": [
         "docker",
-        "postgres",
-        "redis"
+        "postgres"
       ],
       "isolated": false,
       "coverageRequired": false,
@@ -436,8 +431,7 @@
       ],
       "resources": [
         "docker",
-        "postgres",
-        "redis"
+        "postgres"
       ],
       "isolated": false,
       "coverageRequired": false,
@@ -588,9 +582,7 @@
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
         "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
       ],
-      "resources": [
-        "redis"
-      ],
+      "resources": [],
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
@@ -835,8 +827,7 @@
       ],
       "resources": [
         "docker",
-        "postgres",
-        "redis"
+        "postgres"
       ],
       "isolated": false,
       "coverageRequired": true,
@@ -1011,8 +1002,7 @@
         "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
       ],
       "resources": [
-        "docker",
-        "redis"
+        "docker"
       ],
       "isolated": false,
       "coverageRequired": true,
@@ -1101,9 +1091,7 @@
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
-      "resources": [
-        "redis"
-      ],
+      "resources": [],
       "isolated": false,
       "coverageRequired": true,
       "shardRouted": true
@@ -1266,8 +1254,7 @@
       ],
       "resources": [
         "docker",
-        "postgres",
-        "redis"
+        "postgres"
       ],
       "isolated": false,
       "coverageRequired": true,
@@ -1493,8 +1480,7 @@
       ],
       "resources": [
         "docker",
-        "postgres",
-        "redis"
+        "postgres"
       ],
       "isolated": false,
       "coverageRequired": true,
@@ -1548,9 +1534,7 @@
         "src/Honua.Routing/Honua.Routing.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
-      "resources": [
-        "redis"
-      ],
+      "resources": [],
       "isolated": false,
       "coverageRequired": false,
       "shardRouted": false
@@ -1660,8 +1644,7 @@
       ],
       "resources": [
         "docker",
-        "postgres",
-        "redis"
+        "postgres"
       ],
       "isolated": false,
       "coverageRequired": false,
@@ -1710,7 +1693,6 @@
       ],
       "resources": [
         "docker",
-        "redis",
         "native-gdal"
       ],
       "isolated": false,

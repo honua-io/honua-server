@@ -577,7 +577,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
           "test": "Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof/plane-hole.tif",
-          "assertion": "Full CI submits through OGC API with real Redis and the production job loop, polls to successful, and reads the result. Independent analytical slope values, all nodata/mask cells, CRS and affine ordinates are checked after native GDAL execution.",
+          "assertion": "Full CI submits through OGC API with the PostgreSQL job store and the production job loop, polls to successful, and reads the result. Independent analytical slope values, all nodata/mask cells, CRS and affine ordinates are checked after native GDAL execution.",
           "bodyDigest": "sha256:afa97c21ffaa160d611325ffaef32aaf1e8401db18c7a86a4c882dfd9477565e"
         }
       ]
