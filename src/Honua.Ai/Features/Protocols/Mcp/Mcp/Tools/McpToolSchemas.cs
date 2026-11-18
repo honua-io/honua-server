@@ -56,7 +56,7 @@ internal static class McpToolSchemas
           "properties": {
             "connectionId": {
               "type": "string",
-              "description": "Connection ID from honua_admin_connections_list."
+              "description": "Connection id from honua_admin_connections_list."
             },
             "schema": {
               "type": "string",
@@ -71,45 +71,45 @@ internal static class McpToolSchemas
             "layerName": {
               "type": "string",
               "minLength": 1,
-              "description": "Caller-supplied layer display name."
+              "description": "Layer display name."
             },
             "serviceName": {
               "type": "string",
-              "description": "Target service; omitted: canonical default service."
+              "description": "Target service. Omit for the default."
             },
             "namespace": {
               "type": "string",
-              "description": "Resolved tenant; omit: unscoped."
+              "description": "Tenant. Omit when unscoped."
             },
             "folderId": {
               "type": ["string", "null"],
               "minLength": 1,
-              "description": "Null: Root. Omit: preserve membership."
+              "description": "Null is root. Omit to keep membership."
             },
             "publicName": {
               "type": "string",
               "minLength": 1,
-              "description": "Immutable public leaf; distinct from ID/title."
+              "description": "Immutable public name."
             },
             "description": {
               "type": "string",
-              "description": "Optional layer description."
+              "description": "Layer description."
             },
             "geometryColumn": {
               "type": "string",
-              "description": "Geometry column to publish if multiple exist."
+              "description": "Geometry column."
             },
             "geometryType": {
               "type": "string",
-              "description": "Geometry type override (e.g. Point, Polygon) if not inferable."
+              "description": "Geometry type, such as Point or Polygon."
             },
             "srid": {
               "type": "integer",
-              "description": "Published layer spatial reference ID."
+              "description": "Spatial reference id."
             },
             "primaryKey": {
               "type": "string",
-              "description": "Primary key column if none detected."
+              "description": "Primary key column."
             },
             "exactTypes": {
               "type": "boolean",
@@ -118,7 +118,7 @@ internal static class McpToolSchemas
             "fields": {
               "type": "array",
               "items": { "type": "string" },
-              "description": "Attribute columns to publish; omitted: all."
+              "description": "Columns to publish. Omit for all."
             }
           }
         }
