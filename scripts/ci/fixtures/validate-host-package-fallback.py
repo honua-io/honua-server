@@ -100,6 +100,17 @@ class HostFallbackWiringTests(unittest.TestCase):
         self.assertIn("steps.setup-dotnet.outputs.host-package-fallback-used == 'true'", build)
         self.assertIn('managed-test-build.py fallback', build)
 
+    def test_cached_shard_binaries_recheck_package_imports_on_the_fallback(self):
+        shard = job('server-tests')
+        recheck = shard.split('      - name: Re-check package imports of cached shard binaries\n', 1)[1].split('      - name:', 1)[0]
+        self.assertIn("steps.setup-dotnet.outputs.host-package-fallback-used == 'true'", recheck)
+        self.assertIn("steps.shard-cache-materialize.outputs.restored == 'true'", recheck)
+        restored_everything = ('--projects-file "${RUNNER_TEMP}/shard-projects.json" '
+                               '--restored-file "${RUNNER_TEMP}/shard-projects.json"')
+        self.assertIn('managed-test-build.py fallback ' + restored_everything, recheck)
+        self.assertLess(shard.index('Verify and unpack exact-head shard cache'), shard.index('Re-check package imports'))
+        self.assertLess(shard.index('Re-check package imports'), shard.index('      - name: Run server test shard'))
+
     def test_only_managed_output_consumers_opt_in(self):
         self.assertIn("host-package-fallback: 'true'", job('server-tests'))
         self.assertEqual(WORKFLOW.count('host-package-fallback:'), 1)

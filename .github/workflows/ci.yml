@@ -1458,6 +1458,13 @@ jobs:
           RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
         run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
+      # An exact-head cache payload carries the obj of the job that wrote it, which may name a
+      # package folder this runner lacks; re-check its imports the same way (restore only).
+      - name: Re-check package imports of cached shard binaries
+        if: steps.setup-dotnet.outputs.host-package-fallback-used == 'true' && steps.shard-cache-materialize.outputs.restored == 'true'
+        timeout-minutes: 10
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RUNNER_TEMP}/shard-projects.json"
+
       - name: Package shard-local cache payload
         id: shard-cache-package
         # `package_enabled` is the plan step's single decision point; the

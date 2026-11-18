@@ -594,7 +594,9 @@ shards opt in, whereas a producer must keep its static web asset roots under the
 package folder it packages. A consumed `obj` folder names the producer's
 `~/.nuget/packages`, which the fallback leaves mostly empty, so on the fallback
 even a fully consumed shard runs `managed-test-build.py fallback`: it restores
-only projects whose package imports are missing and compiles nothing. Measured
+only projects whose package imports are missing and compiles nothing. A shard
+restored from the exact-head shard cache gets the same restore-only check,
+because that payload's `obj` came from whichever job wrote the cache. Measured
 18 Nov 2026: Setup .NET took 77-86 s on build-host runners against 31 s hosted,
 about 50 s of it the archive.
 
