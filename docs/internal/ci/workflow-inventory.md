@@ -282,8 +282,9 @@ the changed paths on stdin.
 
 The analyzer build step disables persistent MSBuild servers and node reuse;
 all compiler, analyzer and timeout failures still fail the check.
-Both test-analyzer rows always use `ubuntu-latest`, including manual light-pool
-qualification. Format and source Analyzers stay on `ubuntu-latest` as well,
+Test-analyzer rows never use the light pool, including manual light-pool
+qualification; they stay on `ubuntu-latest` unless runner-select planned them
+onto the heavy pool. Format and source Analyzers stay on `ubuntu-latest` as well,
 except when a trunk dispatch sets `qualify_light`.
 Only the formatter matrix row performs the preliminary whole-solution restore.
 Analyzer rows restore their selected Release graph inside the shared format

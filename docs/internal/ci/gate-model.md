@@ -627,7 +627,7 @@ and events keep these jobs on `ubuntu-latest`. Qualification is an operator-run
 health check; the input does not enable normal routing or change repository
 settings.
 
-Draft Format and the admission/control jobs follow that same rule.
+Draft Format and the admission/control jobs stay on `ubuntu-latest` on a pull request.
 Runner select, the format/analyzer
 matrix, affected-shard selection, the affected-shard aggregate, CI router validation
 and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
