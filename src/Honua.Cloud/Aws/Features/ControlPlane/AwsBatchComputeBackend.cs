@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -218,6 +219,13 @@ internal sealed partial class AwsBatchComputeBackend(
 
     internal const string PendingSubmissionMarkerPrefix = "aws-batch-pending:";
 
+    // The capability stays in the stored record only. AWS Batch shows container overrides to any
+    // principal allowed batch:DescribeJobs, so the job receives a single-use code instead and
+    // exchanges it for the capability when it starts.
+    internal const string JobTokenParameter = "env.HONUA_JOB_TOKEN";
+
+    internal const string RedemptionCodeParameter = "env.HONUA_JOB_REDEMPTION_CODE";
+
     internal static TimeSpan PendingDiscoveryGracePeriod => TimeSpan.FromMinutes(2);
 
     internal AwsBatchComputeBackend(
@@ -353,7 +361,8 @@ internal sealed partial class AwsBatchComputeBackend(
         { Attempt = attempt }, cancellationToken).ConfigureAwait(false);
         var prepared = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["env.HONUA_JOB_TOKEN"] = issuance.Token,
+            [JobTokenParameter] = issuance.Token,
+            [RedemptionCodeParameter] = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32)),
             ["env.HONUA_JOB_ID"] = job.OperationId,
             ["env.HONUA_JOB_ATTEMPT"] = attempt.ToString(CultureInfo.InvariantCulture),
             ["env.HONUA_JOB_START_DEADLINE"] = startDeadline.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
@@ -380,8 +389,8 @@ internal sealed partial class AwsBatchComputeBackend(
     public async Task OnPreparationCommittedAsync(ExecutionJobRecord previous, ExecutionJobRecord prepared, CancellationToken cancellationToken)
     {
         if (previous.Audit.CustomCodeOwnerScope is not null && scopedTokenIssuer is not null &&
-            previous.Spec.Parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var oldToken) &&
-            prepared.Spec.Parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var newToken) &&
+            previous.Spec.Parameters.TryGetValue(JobTokenParameter, out var oldToken) &&
+            prepared.Spec.Parameters.TryGetValue(JobTokenParameter, out var newToken) &&
             !string.Equals(oldToken, newToken, StringComparison.Ordinal))
         {
             // Never revoke before the preparation CAS: a stale dispatcher must not revoke
@@ -423,7 +432,8 @@ internal sealed partial class AwsBatchComputeBackend(
         if (job.Audit.CustomCodeOwnerScope is not null)
         {
             var expectedAttempt = checked(job.AttemptCount + 1).ToString(CultureInfo.InvariantCulture);
-            if (!parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var token) || string.IsNullOrWhiteSpace(token) ||
+            if (!parameters.TryGetValue(JobTokenParameter, out var token) || string.IsNullOrWhiteSpace(token) ||
+                !parameters.TryGetValue(RedemptionCodeParameter, out var code) || string.IsNullOrWhiteSpace(code) ||
                 !parameters.TryGetValue("env.HONUA_JOB_ATTEMPT", out var attempt) || attempt != expectedAttempt ||
                 !parameters.TryGetValue("env.HONUA_JOB_ID", out var jobId) || jobId != job.OperationId)
             {
@@ -431,7 +441,7 @@ internal sealed partial class AwsBatchComputeBackend(
             }
             resolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["env.HONUA_JOB_TOKEN"] = token,
+                [JobTokenParameter] = token,
                 ["env.HONUA_JOB_ID"] = jobId,
                 ["env.HONUA_JOB_ATTEMPT"] = attempt
             };
@@ -473,7 +483,7 @@ internal sealed partial class AwsBatchComputeBackend(
         {
             if (resolvedParameters is not null && scopedTokenIssuer is not null)
             {
-                await scopedTokenIssuer.RevokeAsync(resolvedParameters["env.HONUA_JOB_TOKEN"], CancellationToken.None).ConfigureAwait(false);
+                await scopedTokenIssuer.RevokeAsync(resolvedParameters[JobTokenParameter], CancellationToken.None).ConfigureAwait(false);
             }
             return new BatchComputeSubmissionResult
             {
@@ -999,7 +1009,8 @@ internal sealed partial class AwsBatchComputeBackend(
         foreach (var entry in job.Spec.Parameters)
         {
             if (entry.Key.StartsWith("batch.", StringComparison.Ordinal)
-                || !entry.Key.StartsWith("env.", StringComparison.Ordinal))
+                || !entry.Key.StartsWith("env.", StringComparison.Ordinal)
+                || string.Equals(entry.Key, JobTokenParameter, StringComparison.Ordinal))
             {
                 continue;
             }

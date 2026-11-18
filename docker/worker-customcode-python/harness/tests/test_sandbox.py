@@ -175,3 +175,9 @@ def test_production_sdk_never_replays_operation_or_restarts_readiness(
             assert len(paths) == 2
             assert paths[0] == "/healthz/live"
             assert paths[1] != "/healthz/live"
+
+
+def test_strip_removes_redemption_code() -> None:
+    env = {"HONUA_JOB_REDEMPTION_CODE": "c" * 64}
+    assert "HONUA_JOB_REDEMPTION_CODE" in strip_credential_env(env)
+    assert env == {}

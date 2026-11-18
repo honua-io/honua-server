@@ -126,7 +126,9 @@ public sealed class JobSpec
     public string BaseUrl { get; }
 
     /// <summary>The scoped, job-bound bearer token (from <c>HONUA_JOB_TOKEN</c>).</summary>
-    public string JobToken { get; }
+    public string JobToken { get; private set; }
+
+    internal string? RedemptionCode { get; private set; }
 
     /// <summary>The job-contract version the submitting server used (from <c>HONUA_CONTRACT_VERSION</c>).</summary>
     public int ContractVersion { get; }
@@ -171,6 +173,7 @@ public sealed class JobSpec
         // The auth spine is ALWAYS env-only — never sourced from the spec file.
         var baseUrl = TryGet(env, "HONUA_BASE_URL");
         var jobToken = TryGet(env, "HONUA_JOB_TOKEN");
+        var redemptionCode = TryGet(env, "HONUA_JOB_REDEMPTION_CODE");
 
         // Serving↔worker job-contract gate (ADR-0060 #3b), env-only like the auth spine. Absent
         // means a pre-versioning server (version 1). Fail closed if the server used a newer
@@ -183,7 +186,7 @@ public sealed class JobSpec
         Require(depsManifest, "deps_manifest / CUSTOMCODE_DEPS_MANIFEST");
         Require(outputPrefix, "output_prefix / CUSTOMCODE_OUTPUT_PREFIX");
         Require(baseUrl, "HONUA_BASE_URL");
-        Require(jobToken, "HONUA_JOB_TOKEN");
+        Require(jobToken ?? redemptionCode, "HONUA_JOB_REDEMPTION_CODE (or HONUA_JOB_TOKEN for local runs)");
 
         if (!IsValidGitSha(gitRef))
         {
@@ -225,8 +228,17 @@ public sealed class JobSpec
             CoerceScope(field("declared_scope")),
             CoerceMaxBytes(field("output_max_bytes")),
             baseUrl!,
-            jobToken!,
-            contractVersion);
+            jobToken ?? string.Empty,
+            contractVersion)
+        {
+            RedemptionCode = redemptionCode,
+        };
+    }
+
+    internal void AcceptCapability(string capability)
+    {
+        JobToken = capability;
+        RedemptionCode = null;
     }
 
     private static int CoerceContractVersion(string? raw)

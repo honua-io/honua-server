@@ -90,6 +90,27 @@ public sealed class Harness
         _ => "setupFailed",
     };
 
+    private bool TryRedeemCapability(JobSpec spec, Func<string, string?> readEnvironment, IGpLogger log)
+    {
+        if (spec.RedemptionCode is not { } code)
+        {
+            return true;
+        }
+
+        try
+        {
+            var redeem = _options.CapabilityRedeemer ?? ((target, value) => CapabilityRedemption.Redeem(target, value));
+            var target = new RedemptionTarget(spec.BaseUrl, readEnvironment("HONUA_JOB_ID"), readEnvironment("HONUA_JOB_ATTEMPT"));
+            spec.AcceptCapability(redeem(target, code));
+            return true;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            log.Warn($"job capability redemption failed: {ex.Message}");
+            return false;
+        }
+    }
+
     /// <summary>Publish required diagnostics; preserve an original process failure if transport also fails.</summary>
     private static bool UploadEvents(EventJournal journal, ArtifactUploader? uploader)
     {
@@ -137,12 +158,17 @@ public sealed class Harness
             return ExitHarnessError;
         }
 
+        string? ReadEnvironment(string name) => env is null
+            ? Environment.GetEnvironmentVariable(name)
+            : env.GetValueOrDefault(name);
+        if (!TryRedeemCapability(spec, ReadEnvironment, log))
+        {
+            return ExitHarnessError;
+        }
+
         // Establish evidence transport before any source, dependency or user-code phase.
         try
         {
-            string? ReadEnvironment(string name) => env is null
-                ? Environment.GetEnvironmentVariable(name)
-                : env.GetValueOrDefault(name);
             state.Uploader = _options.UploaderFactory is { } factory
                 ? factory(spec.OutputPrefix)
                 : ArtifactUploader.CreateBroker(spec.BaseUrl, spec.JobToken,
@@ -340,6 +366,8 @@ public sealed class HarnessOptions
 
     /// <summary>An optional uploader factory override (tests inject a fake).</summary>
     public Func<string, ArtifactUploader>? UploaderFactory { get; set; }
+
+    internal Func<RedemptionTarget, string, string>? CapabilityRedeemer { get; set; }
 
     /// <summary>An optional logger override.</summary>
     public IGpLogger? Logger { get; set; }
