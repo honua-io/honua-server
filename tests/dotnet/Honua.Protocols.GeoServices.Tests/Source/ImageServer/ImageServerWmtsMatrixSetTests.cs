@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -29,31 +30,27 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
 
     // One host per matrix-set configuration; each case borrows one with its own raster store.
     // Database isolation does not isolate the file-backed tile cache, so each host owns a storage
-    // directory that is emptied before every borrow: an earlier case's tile never satisfies a
-    // later case's first rendering request.
+    // directory, and every borrow deletes the stored files: an earlier case's tile never
+    // satisfies a later case's first rendering request.
     public sealed class MatrixSetHosts : IAsyncLifetime
     {
         private readonly DirectoryInfo _storageRoot = Directory.CreateTempSubdirectory("honua-wmts-matrix-");
 
         public MatrixSetHosts()
         {
-            DefaultStorage = _storageRoot.CreateSubdirectory("default");
-            WorldCrs84QuadStorage = _storageRoot.CreateSubdirectory("world-crs84-quad");
+            var defaultStorage = _storageRoot.CreateSubdirectory("default");
+            var worldCrs84QuadStorage = _storageRoot.CreateSubdirectory("world-crs84-quad");
             Default = new SwitchedServiceHost<IRasterStore>(
                 CreateRasterStoreSubstitute(),
-                services => UseStorage(services, DefaultStorage));
+                services => UseStorage(services, defaultStorage));
             WorldCrs84QuadEnabled = new SwitchedServiceHost<IRasterStore>(
                 CreateRasterStoreSubstitute(),
                 services =>
                 {
-                    UseStorage(services, WorldCrs84QuadStorage);
+                    UseStorage(services, worldCrs84QuadStorage);
                     services.Configure<ImageServerTileMatrixSetOptions>(options => options.Enabled.Add(WorldCrs84Quad));
                 });
         }
-
-        public DirectoryInfo DefaultStorage { get; }
-
-        public DirectoryInfo WorldCrs84QuadStorage { get; }
 
         public SwitchedServiceHost<IRasterStore> Default { get; }
 
@@ -121,28 +118,20 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
         return store;
     }
 
-    private Task<SwitchedServiceLease> CreateFixtureAsync(IRasterStore rasterStore, bool enableWorldCrs84Quad)
+    private async Task<SwitchedServiceLease> CreateFixtureAsync(IRasterStore rasterStore, bool enableWorldCrs84Quad)
     {
-        var (host, storage) = enableWorldCrs84Quad
-            ? (_hosts.WorldCrs84QuadEnabled, _hosts.WorldCrs84QuadStorage)
-            : (_hosts.Default, _hosts.DefaultStorage);
-        foreach (var entry in storage.EnumerateFileSystemInfos())
+        var host = enableWorldCrs84Quad ? _hosts.WorldCrs84QuadEnabled : _hosts.Default;
+        var fixture = await host.BorrowAsync(rasterStore);
+
+        // Delete through the storage service: it indexes stored files in memory, so removing
+        // files from disk alone would leave index entries that suppress the next tile write.
+        var storage = fixture.GetService<ICloudFileStorage>();
+        foreach (var file in await storage.ListFilesAsync(maxResults: int.MaxValue))
         {
-            DeleteEntry(entry);
+            await storage.DeleteAsync(file.FileId);
         }
 
-        return host.BorrowAsync(rasterStore);
-    }
-
-    private static void DeleteEntry(FileSystemInfo entry)
-    {
-        if (entry is DirectoryInfo directory)
-        {
-            directory.Delete(recursive: true);
-            return;
-        }
-
-        entry.Delete();
+        return fixture;
     }
 
     [IntegrationTest]
