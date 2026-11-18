@@ -2459,3 +2459,34 @@ runs and full trunk runs. No workflow, shard filter, required check, aggregate
 dependency or runner count changes. One build-host job, 24/24 identical passing
 cases, zero skipped: class span 163.3 to 3.9-4.0 seconds (process wall 186 to
 63 and 29 seconds). Whole-job shard savings were not measured.
+
+### Patch concurrency host lifetime
+
+`PatchConcurrencyTests` shares two Pro applications with the OData seed across
+the class instead of one per case. One keeps the product field-mask source,
+because only that source takes the combined row and field read path; the other
+registers the test's mutable mask. Each case inserts and edits only its own
+feature, and starts by installing a fresh write barrier and clearing the test
+mask. `OgcPatch_PublicIdentifierAndMaskedField_UsesCompleteSnapshot` changes
+the layer schema and keeps its own application.
+
+The class stays in Core Mutation Concurrency on selected PR runs and full
+trunk runs. No workflow, shard filter, required check, aggregate dependency or
+runner count changes. One build-host job, 43/43 passing cases, zero skipped:
+class span 199.8 to 15.2-15.6 seconds (process wall 212 to 38-43 seconds).
+
+### GPServer SOAP job host lifetime
+
+`GPServerSoapEndpointsTests` built one application per job case to inject a
+fresh job-service substitute. The class fixture now holds one job-service
+substitute and one terminal-service substitute, registered as singletons so
+every consumer, including the real singleton terminal service, sees the same
+object, and two lazily started applications: one with the job substitute and
+the real terminal service, one with both substitutes. Each case clears the
+substitutes it uses (returns, callbacks and received calls) and configures
+them again, so every assertion is unchanged.
+
+The class stays split across GeoServices GPServer SOAP and SOAP Progress on
+selected PR runs and full trunk runs. No workflow, shard filter, required check, aggregate dependency or runner
+count changes. One build-host job, 81/81 passing cases, zero skipped: class
+span 243.7 to 23.0-24.2 seconds (process wall 248 to 27-28 seconds).
