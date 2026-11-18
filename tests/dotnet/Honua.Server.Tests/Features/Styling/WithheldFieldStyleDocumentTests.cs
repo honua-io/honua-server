@@ -152,9 +152,14 @@ public sealed class WithheldFieldStyleDocumentFixture : IAsyncLifetime
             new StyleLayerDescriptor(WebAppFixture.TestLayerId, "Test Layer", MetadataV2GeometryType.Point)))!.AsObject();
         var layers = style["layers"]!.AsArray();
         var template = layers[0]!.AsObject();
-        layers.Add(StyleLayer(template, ClassLayerId, filter: null, color: JsonNode.Parse(
-            """["match",["get","notes"],"Confidential","#d7191c","#2c7bb6"]""")!));
-        layers.Add(StyleLayer(template, FilterLayerId, filter: JsonNode.Parse("""["==",["get","notes"],"Restricted"]""")!, color: "#000000"));
+        layers.Add(WithSource(template, """
+            {"id":"notes-classes","type":"circle","paint":{"circle-radius":4,
+              "circle-color":["match",["get","notes"],"Confidential","#d7191c","#2c7bb6"]}}
+            """));
+        layers.Add(WithSource(template, """
+            {"id":"notes-restricted","type":"circle","filter":["==",["get","notes"],"Restricted"],
+              "paint":{"circle-color":"#000000"}}
+            """));
 
         using var content = JsonContent.Create(new { mapLibreStyle = style });
         using var response = await App.CreateAdminClient().PutAsync(
@@ -162,23 +167,13 @@ public sealed class WithheldFieldStyleDocumentFixture : IAsyncLifetime
         response.EnsureSuccessStatusCode();
     }
 
-    private static JsonObject StyleLayer(JsonObject template, string id, JsonNode? filter, JsonNode color)
+    private static JsonObject WithSource(JsonObject template, string layerJson)
     {
-        var layer = new JsonObject
-        {
-            ["id"] = id,
-            ["type"] = "circle",
-            ["source"] = template["source"]?.DeepClone(),
-            ["paint"] = new JsonObject { ["circle-radius"] = 4, ["circle-color"] = color },
-        };
+        var layer = JsonNode.Parse(layerJson)!.AsObject();
+        layer["source"] = template["source"]?.DeepClone();
         if (template["source-layer"] is { } sourceLayer)
         {
             layer["source-layer"] = sourceLayer.DeepClone();
-        }
-
-        if (filter is not null)
-        {
-            layer["filter"] = filter;
         }
 
         return layer;

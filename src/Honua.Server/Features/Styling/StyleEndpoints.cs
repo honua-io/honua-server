@@ -77,7 +77,7 @@ internal static class StyleEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Style for publication '{publicationId}' not found.");
         }
 
-        var visibleStyle = await VisibleStyleAsync(context, layerValidation.Resource, styleElement.Value, cancellationToken);
+        var visibleStyle = await VisibleStyleAsync(context, layerValidation.Resource, styleElement.Value);
 
         if (themeProfile == ThemeProfile.Default)
         {
@@ -109,10 +109,9 @@ internal static class StyleEndpoints
     }
 
     // The style without layers or properties that read a field withheld from this caller.
-    private static async Task<JsonElement> VisibleStyleAsync(
-        HttpContext context, MetadataV2Object resource, JsonElement style, CancellationToken cancellationToken)
+    private static async Task<JsonElement> VisibleStyleAsync(HttpContext context, MetadataV2Object resource, JsonElement style)
     {
-        var withheld = await StyleDocumentWithheldFields.ResolveAsync(context, resource, cancellationToken);
+        var withheld = await StyleDocumentWithheldFields.ResolveAsync(context, resource, context.RequestAborted);
         return JsonElement.Parse(StyleDocumentWithheldFields.WithoutWithheldMapLibre(style.GetRawText(), withheld));
     }
 

@@ -256,8 +256,7 @@ public static class OgcStylesEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
         }
 
-        var visibleContent = await WithoutWithheldFieldsAsync(
-            context, styleId, stylesheet, graphProvider, cancellationToken).ConfigureAwait(false);
+        var visibleContent = await WithoutWithheldFieldsAsync(context, styleId, stylesheet).ConfigureAwait(false);
 
         // MapLibre sources/sprite/glyphs must be absolute (TileJSON 3.0.0 §3.2);
         // the derived SLD and drawingInfo encodings carry no endpoint URLs.
@@ -342,14 +341,11 @@ public static class OgcStylesEndpoints
         => await AuthorizeStyleAsync(context, styleId, graphProvider, cancellationToken).ConfigureAwait(false) is null;
 
     // A layer's stylesheet must not name a field withheld from this caller or list that field's class values.
-    private static async Task<string> WithoutWithheldFieldsAsync(
-        HttpContext context,
-        string styleId,
-        OgcStylesheet stylesheet,
-        IMetadataV2GraphProvider graphProvider,
-        CancellationToken cancellationToken)
+    private static async Task<string> WithoutWithheldFieldsAsync(HttpContext context, string styleId, OgcStylesheet stylesheet)
     {
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var cancellationToken = context.RequestAborted;
+        var snapshot = await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
+            .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         if (ResolveStyleResource(snapshot, styleId) is not { } resource)
         {
             return stylesheet.Content;
