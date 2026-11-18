@@ -308,7 +308,7 @@ public class SnowflakeProviderResolutionTests
             Options.Create(new SnowflakeOptions()),
             NullLogger<SnowflakeFeatureDataAccess>.Instance);
 
-        return new SnowflakeFeatureStore(dataAccess, readSecurity);
+        return new SnowflakeFeatureStore(dataAccess, readSecurity ?? new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private sealed class ThrowingConnectionFactory : ISnowflakeConnectionFactory

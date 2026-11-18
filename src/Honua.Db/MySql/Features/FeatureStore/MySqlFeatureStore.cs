@@ -26,15 +26,15 @@ internal sealed class MySqlFeatureStore :
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
-    private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly LayerReadSecurityResolver _readSecurity;
     private readonly FeatureProviderBinding? _binding;
 
     public MySqlFeatureStore(
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
+        LayerReadSecurityResolver readSecurity,
         IMetadataV2GraphProvider? v2Provider = null,
-        IFilterExpressionService? filterExpressionService = null,
-        LayerReadSecurityResolver? readSecurity = null)
+        IFilterExpressionService? filterExpressionService = null)
         : this(queryBuilder, dataAccess, v2Provider, filterExpressionService, readSecurity, binding: null)
     {
     }
@@ -44,14 +44,14 @@ internal sealed class MySqlFeatureStore :
         IFeatureDataAccess dataAccess,
         IMetadataV2GraphProvider? v2Provider,
         IFilterExpressionService? filterExpressionService,
-        LayerReadSecurityResolver? readSecurity,
+        LayerReadSecurityResolver readSecurity,
         FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
-        _readSecurity = readSecurity;
+        _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
         _binding = binding;
     }
 
@@ -302,9 +302,7 @@ internal sealed class MySqlFeatureStore :
             "Streaming GML features is not supported by the MySQL/MariaDB provider in this slice.");
 
     private Task EnsureRowAndFieldPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
-        => _readSecurity is null
-            ? Task.CompletedTask
-            : _readSecurity.EnsureNoUnenforcedPolicyAsync(
+        => _readSecurity.EnsureNoUnenforcedPolicyAsync(
                 "MySQL/MariaDB", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken);
 
     private async Task<FeatureQuery> ApplyPermanentFilterAsync(

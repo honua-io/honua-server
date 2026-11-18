@@ -44,12 +44,12 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
     private readonly IGeoServicesRestFeatureClient _client;
     private readonly ILogger<GeoServicesRestFeatureStore> _logger;
     private readonly FeatureProviderBinding? _binding;
-    private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly LayerReadSecurityResolver _readSecurity;
 
     public GeoServicesRestFeatureStore(
         IGeoServicesRestFeatureClient client,
         ILogger<GeoServicesRestFeatureStore> logger,
-        LayerReadSecurityResolver? readSecurity = null)
+        LayerReadSecurityResolver readSecurity)
         : this(client, logger, readSecurity, binding: null)
     {
     }
@@ -57,10 +57,10 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
     private GeoServicesRestFeatureStore(
         IGeoServicesRestFeatureClient client,
         ILogger<GeoServicesRestFeatureStore> logger,
-        LayerReadSecurityResolver? readSecurity,
+        LayerReadSecurityResolver readSecurity,
         FeatureProviderBinding? binding)
     {
-        _readSecurity = readSecurity;
+        _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _binding = binding;
@@ -354,12 +354,9 @@ internal sealed class GeoServicesRestFeatureStore : IFeatureDataProvider, IFeatu
     private async Task<ResolvedBinding> ResolveBindingAsync(int layerId, CancellationToken cancellationToken)
     {
         var resolved = ResolveBinding(layerId);
-        if (_readSecurity is not null)
-        {
-            await _readSecurity
-                .EnsureNoUnenforcedPolicyAsync("ArcGIS REST", layerId, resolved.Resource, rejectPermanentFilter: true, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await _readSecurity
+            .EnsureNoUnenforcedPolicyAsync("ArcGIS REST", layerId, resolved.Resource, rejectPermanentFilter: true, cancellationToken)
+            .ConfigureAwait(false);
 
         return resolved;
     }
