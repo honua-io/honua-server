@@ -4,6 +4,7 @@
   "title": "validate_plan inputSchema",
   "description": "Argument shape for the validate_plan tool (Analyze, Publish Data, Build App; also shared by the dry_run_plan preview tool in the reference implementation). Reference advertised name: honua_validate_plan. Accepts a partial AnalysisPlan so the validator can report EMPTY_PLAN_ID / EMPTY_STEPS as structured violations rather than rejecting at ingest — planId and steps are therefore NOT required here (contrast execute_plan). See planning.md §5.1.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["plan"],
   "properties": {
     "plan": { "$ref": "#/$defs/analysisPlan" }

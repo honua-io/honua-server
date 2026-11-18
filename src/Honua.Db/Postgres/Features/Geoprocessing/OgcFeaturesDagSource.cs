@@ -84,9 +84,25 @@ internal sealed partial class OgcFeaturesDagSource : IDagFeatureSource
 
             nextUri = string.IsNullOrWhiteSpace(fetched.NextLink)
                 ? null
-                : new Uri(nextUri, fetched.NextLink);
+                : SameOriginNextPage(nextUri, fetched.NextLink);
         }
     }
+
+    // Paging stays on the origin of the page that linked it (and so on the service URL's origin), so
+    // configured credentials are never sent to another host or over a downgraded scheme.
+    private static Uri SameOriginNextPage(Uri current, string nextLink)
+    {
+        var next = new Uri(current, nextLink);
+        if (Uri.Compare(current, next, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) != 0)
+        {
+            throw new InvalidOperationException(
+                $"source.ogc-features stopped paging: the next link is on a different origin ({Origin(next)}) than the page that returned it ({Origin(current)}). Set serviceUrl to the origin the service links to.");
+        }
+
+        return next;
+    }
+
+    private static string Origin(Uri uri) => uri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped);
 
     private static Uri BuildItemsUri(DagSourceRequest request)
     {

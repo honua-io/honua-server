@@ -5,6 +5,7 @@
   "description": "Argument shape for the map-render tool (advertised name honua_render_map). Renders an image of ordered layers over an extent. This is the reference implementation's read-only map preview surface, distinct from the semantic map-composition family (create_map_package, etc.). x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "required": ["layers", "bbox"],
   "properties": {
     "layers": {

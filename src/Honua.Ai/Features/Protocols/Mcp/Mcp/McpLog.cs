@@ -97,6 +97,9 @@ internal static partial class McpLog
 
     [LoggerMessage(8191, LogLevel.Information, "MCP batch refused: Length={Length}, MaxBatchSize={MaxBatchSize}")]
     public static partial void BatchTooLarge(ILogger logger, int length, int maxBatchSize);
+    [LoggerMessage(8175, LogLevel.Warning, "MCP access audit record failed: Action={Action}, Target={Target}")]
+    public static partial void AccessAuditFailed(ILogger logger, string action, string target, Exception exception);
+
     [LoggerMessage(EventId = 7750, Level = LogLevel.Warning, Message = "MCP workflow notification publication failed")]
     public static partial void WorkflowNotificationFailed(ILogger logger, Exception exception);
 }

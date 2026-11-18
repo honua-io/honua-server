@@ -19,7 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
 public sealed class AdminLogoutDependencyLossTests

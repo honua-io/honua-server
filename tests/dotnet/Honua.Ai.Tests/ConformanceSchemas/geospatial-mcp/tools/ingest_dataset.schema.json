@@ -5,6 +5,7 @@
   "description": "Argument shape for the Publish Data ingest tool (advertised name honua_ingest_dataset). Loads a small inline dataset (CSV with a header row, or a GeoJSON FeatureCollection; 4 MB cap) into the reference implementation's catalog database as a table, returning the {connectionId, schema, table} triple plus row count and per-row errors so the result chains directly into publish_service. CSV point geometry comes from longitude/latitude columns (auto-detected or explicit), a WKT column, or a server-geocoded address column; coordinate order is lon/lat and the CRS defaults to EPSG:4326. x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "required": ["format", "data", "datasetName"],
   "properties": {
     "format": {

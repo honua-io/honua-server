@@ -376,6 +376,23 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual([self.unit], result['selectedProjects'])
         self.assertEqual('.github/ci-shards.json', result['shardRoutingAuthority'])
 
+    def test_markdown_under_scripts_ci_does_not_select_every_unit(self):
+        markdown = catalog.plan(self.root, self.entries, [
+            'scripts/ci/workflow-inventory.template.md', 'docs/internal/ci/gate-model.md'])
+        self.assertEqual([], markdown['selectedProjects'])
+        self.assertEqual([], markdown['selectionReasons'])
+        executable = catalog.plan(self.root, self.entries, ['scripts/ci/test-projects.py'])
+        self.assertEqual([self.unit], executable['selectedProjects'])
+        still_broad = catalog.plan(self.root, self.entries, [
+            'scripts/ci/workflow-inventory.template.md', 'scripts/ci/test-projects.py'])
+        self.assertEqual([self.unit], still_broad['selectedProjects'])
+        github = catalog.plan(self.root, self.entries, ['.github/workflows/ci.yml'])
+        self.assertEqual([self.unit], github['selectedProjects'])
+        for path in ('Directory.Build.targets', 'Directory.Packages.props', 'global.json',
+                     'NuGet.config', 'Honua.sln', '.github/pull_request_template.md'):
+            selected = catalog.plan(self.root, self.entries, [path])['selectedProjects']
+            self.assertEqual([self.unit], selected, path)
+
 
 if __name__ == '__main__':
     unittest.main()
