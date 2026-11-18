@@ -62,8 +62,14 @@ python3 "${repo_root}/scripts/docker/quickstart.py" --init-only
 layer_id=$(cat "${run_dir}/.quickstart-layer-id")
 python3 "${owned_server}" wait --container "$("${compose[@]}" ps -q honua)" --container-port 8080 \
   --url "${base_url}/healthz/ready" --body Ready --timeout 90
-"${compose[@]}" ps --format json | jq -s -e '
-  length == 3 and all(.[]; .State == "running" and .Health == "healthy")'
+# Long-running services must be up and healthy; the one-shot storage-init
+# service must have exited cleanly. Counting containers broke when a cache
+# service left the stack, so match services by name.
+"${compose[@]}" ps --all --format json | jq -s -e '
+  (map(select(.Service == "honua" or .Service == "postgres"))
+    | length == 2 and all(.[]; .State == "running" and .Health == "healthy"))
+  and (map(select(.Service == "storage-init"))
+    | length == 1 and all(.[]; .State == "exited" and .ExitCode == 0))'
 curl --fail --silent --show-error \
   -H 'X-API-Key: quickstart-admin-password' \
   "${base_url}/rest/services/quickstart/FeatureServer/${layer_id}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true" \
