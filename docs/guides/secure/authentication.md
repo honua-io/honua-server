@@ -456,7 +456,9 @@ When `Oidc:TokenValidation:EnableTokenReplayProtection` is enabled, replay regis
 
 Existing cached registrations keep their original expiration. Renew access tokens after upgrading all replay-tracking nodes to obtain the full retention window for new admissions.
 
-The system PostgreSQL database shares replay registrations across nodes. Without a system database data source, registrations use per-node memory; independent replicas need the same system database for cross-node isolation. If the selected replay store is unavailable or faults, the default is to admit the token without recording a replay registration. Set `Oidc:TokenValidation:ReplayProtectionFailClosed=true` to refuse that admission. A PostgreSQL failure does not switch replay tracking to per-node memory.
+The system PostgreSQL database shares replay registrations across nodes. Without a system database data source, registrations use per-node memory; independent replicas need the same system database for cross-node isolation. If the selected replay store is unavailable or faults, the token is refused with 401 by default (`Oidc:TokenValidation:ReplayProtectionFailClosed=true`). Setting it to `false` admits the token without a replay registration during the outage, trading single-use for availability. A PostgreSQL failure does not switch replay tracking to per-node memory.
+
+The ArcGIS-compatible `generateToken` OIDC bridge, including the OAuth sign-in callback, records the presented provider token in the same store as an ordinary HTTP API admission. Exchanging the same token again, or presenting it as an HTTP bearer, is accepted. A token already admitted on MCP or another surface is refused, an exchanged token cannot then open an MCP session, and a store outage follows the fail-closed setting. A provider token whose validity exceeds `TokenReplayCacheDuration` is still exchanged and is recorded for that maximum.
 
 #### Human operation approval
 
