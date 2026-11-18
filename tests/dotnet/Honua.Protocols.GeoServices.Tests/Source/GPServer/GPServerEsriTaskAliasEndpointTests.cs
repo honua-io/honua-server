@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
+public sealed class GPServerEsriTaskAliasEndpointTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
@@ -33,19 +33,10 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         "return", "try", "while", "with", "yield", "gis", "future", "estimate"
     ];
 
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+    // One default host per class: its cases only read the catalog or expect a 404. Cases that
+    // replace services build fixtures of their own.
+    private readonly WebAppFixture _fixture = fixture;
+    private readonly HttpClient _client = fixture.Client;
 
     // -----------------------------------------------------------------------
     // Task list (service info)
