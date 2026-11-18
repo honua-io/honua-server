@@ -2916,7 +2916,11 @@ every case booted a new host: 132 such classes on trunk, 1357 cases and about
 a 30-second idle grace and the next acquire cancels it, so consecutive cases and
 classes reuse one host. Cases stay isolated by the schema each fixture creates
 on initialization and drops on disposal, which is how parallel classes already
-share the host. The process-exit handler disposes a host still in its grace.
+share the host. Process-wide singleton state now also carries from one serial
+case to the next, as it already did whenever a parallel class held the host; a
+reused host clears any graph swap a case armed for its next read. The
+process-exit handler disposes a host still in its grace on a best-effort basis
+(10-second limit; Testcontainers' reaper removes a container left behind).
 
 `SharedHostCleanupTests` release an idle host explicitly before their cold-start
 and reference-count assertions, assert that a caller inside the grace reuses the

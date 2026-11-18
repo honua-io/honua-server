@@ -1,10 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.TestKit.Mixins;
 
@@ -38,7 +40,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
         await _sharedLock.WaitAsync();
         try
         {
-            CancelPendingRelease();
+            ReclaimIdleHost();
             if (!_sharedInitialized)
             {
                 try
@@ -129,6 +131,11 @@ internal static class WebAppFixtureSharedBootstrapMixin
                 await DisposeIfIdleAsync();
             }
         }
+        catch (Exception exception)
+        {
+            // No test awaits this release; report a disposal failure instead of dropping it.
+            await Console.Error.WriteLineAsync($"Shared test host idle release failed: {exception}");
+        }
         finally
         {
             _sharedLock.Release();
@@ -142,6 +149,17 @@ internal static class WebAppFixtureSharedBootstrapMixin
         if (_sharedRefCount == 0 && _sharedInitialized)
         {
             await DisposeSharedResourcesAsync();
+        }
+    }
+
+    // A host reused after its last release must look like the fresh host each case used to get:
+    // a graph swap a failed case armed for its next read must not fire in the next case.
+    private static void ReclaimIdleHost()
+    {
+        CancelPendingRelease();
+        if (_sharedInitialized && _sharedRefCount == 0)
+        {
+            _sharedFactory?.Services.GetService<TestMetadataV2GraphProvider>()?.ClearPendingActivation();
         }
     }
 
