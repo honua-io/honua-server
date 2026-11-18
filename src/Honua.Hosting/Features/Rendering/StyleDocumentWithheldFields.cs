@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -22,7 +23,9 @@ internal static partial class StyleDocumentWithheldFields
     // A field name that equals a layout keyword ("none") must not flip a hidden layer visible.
     private const string MapLibreVisibilityProperty = "visibility";
 
-    private const string EmptyMapLibreStyle = """{"version":8,"sources":{},"layers":[]}""";
+    private const string MirroredLayerStylePrefix = "style-layer-";
+
+    internal const string EmptyMapLibreStyle = """{"version":8,"sources":{},"layers":[]}""";
 
     private static readonly HashSet<string> FieldReferenceProperties = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -65,8 +68,7 @@ internal static partial class StyleDocumentWithheldFields
         }
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var resource = snapshot.Graph.Resources.FirstOrDefault(candidate =>
-            string.Equals(candidate.Metadata.Name, styleId, StringComparison.Ordinal));
+        var resource = ResolveStyledResource(snapshot, styleId);
         if (resource is null)
         {
             return stylesheet.Content;
@@ -79,6 +81,20 @@ internal static partial class StyleDocumentWithheldFields
             OgcStyleEncoding.GeoServicesDrawingInfo => WithoutWithheldDrawingInfo(stylesheet.Content, withheld),
             _ => WithoutWithheldSld(stylesheet.Content, withheld),
         };
+    }
+
+    // A layer's own style is catalogued under its name, or mirrored as "style-layer-{storage layer id}".
+    private static MetadataV2Object? ResolveStyledResource(MetadataV2GraphSnapshot snapshot, string styleId)
+    {
+        if (styleId.StartsWith(MirroredLayerStylePrefix, StringComparison.Ordinal)
+            && int.TryParse(styleId.AsSpan(MirroredLayerStylePrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var layerId)
+            && snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var mirrored))
+        {
+            return mirrored;
+        }
+
+        return snapshot.Graph.Resources.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Name, styleId, StringComparison.Ordinal));
     }
 
     // A style layer filtered on a withheld field is dropped (its features carry no such attribute for this caller);
@@ -94,6 +110,16 @@ internal static partial class StyleDocumentWithheldFields
         if (TryParse(styleJson) is not JsonObject style)
         {
             return null;
+        }
+
+        foreach (var source in (style["sources"] as JsonObject)?.Select(entry => entry.Value).OfType<JsonObject>() ?? [])
+        {
+            RemoveReferencing(source, withheld);
+        }
+
+        if (StyleReferences(style["metadata"], withheld))
+        {
+            style.Remove("metadata");
         }
 
         if (style["layers"] is JsonArray layers)
@@ -211,17 +237,22 @@ internal static partial class StyleDocumentWithheldFields
     {
         foreach (var styled in MapLibreStyledProperties.Select(name => layer[name]).OfType<JsonObject>())
         {
-            var referencing = styled
-                .Where(property => property.Key != MapLibreVisibilityProperty && StyleReferences(property.Value, withheld))
-                .Select(property => property.Key)
-                .ToArray();
-            foreach (var name in referencing)
-            {
-                styled.Remove(name);
-            }
+            RemoveReferencing(styled, withheld);
         }
 
         return layer;
+    }
+
+    private static void RemoveReferencing(JsonObject properties, IReadOnlySet<string> withheld)
+    {
+        var referencing = properties
+            .Where(property => property.Key != MapLibreVisibilityProperty && StyleReferences(property.Value, withheld))
+            .Select(property => property.Key)
+            .ToArray();
+        foreach (var name in referencing)
+        {
+            properties.Remove(name);
+        }
     }
 
     private static bool StyleReferences(JsonNode? node, IReadOnlySet<string> withheld, string? propertyName = null) => node switch

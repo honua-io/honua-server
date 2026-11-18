@@ -85,4 +85,17 @@ public class StyleDocumentWithheldFieldsTests
         StyleDocumentWithheldFields.WithoutWithheldMapLibre(style, withheldNone).Should().Contain("\"visibility\":\"none\"");
         StyleDocumentWithheldFields.WithoutWithheldMapLibre("not json", Withheld).Should().BeNull();
     }
+
+    [UnitTest]
+    public void MapLibre_DropsSourcePropertiesAndMetadataNamingAWithheldField()
+    {
+        const string style = """
+            {"version":8,"metadata":{"legendField":"notes"},
+             "sources":{"parcels":{"type":"vector","url":"/tiles.json","promoteId":"notes"}},"layers":[]}
+            """;
+
+        var result = StyleDocumentWithheldFields.WithoutWithheldMapLibre(style, Withheld)!;
+
+        result.Should().NotContain("notes").And.Contain("\"url\":\"/tiles.json\"");
+    }
 }

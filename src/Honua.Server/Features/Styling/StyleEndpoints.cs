@@ -112,8 +112,8 @@ internal static class StyleEndpoints
     private static async Task<JsonElement> VisibleStyleAsync(HttpContext context, MetadataV2Object resource, JsonElement style)
     {
         var withheld = await StyleDocumentWithheldFields.ResolveAsync(context, resource, context.RequestAborted);
-        var raw = style.GetRawText();
-        return JsonElement.Parse(StyleDocumentWithheldFields.WithoutWithheldMapLibre(raw, withheld) ?? raw);
+        return JsonElement.Parse(StyleDocumentWithheldFields.WithoutWithheldMapLibre(style.GetRawText(), withheld)
+            ?? StyleDocumentWithheldFields.EmptyMapLibreStyle);
     }
 
     internal static bool TryParseTheme(string? raw, out ThemeProfile theme)
