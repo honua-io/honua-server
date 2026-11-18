@@ -23,7 +23,7 @@ public class StyleDocumentWithheldFieldsTests
               {"id":"plain","type":"circle","paint":{"circle-color":"#123456"}}]}
             """;
 
-        var result = JsonNode.Parse(StyleDocumentWithheldFields.WithoutWithheldMapLibre(style, Withheld))!;
+        var result = JsonNode.Parse(StyleDocumentWithheldFields.WithoutWithheldMapLibre(style, Withheld)!)!;
 
         var layers = result["layers"]!.AsArray().Select(layer => layer!["id"]!.GetValue<string>());
         layers.Should().Equal("classes", "labels", "plain");
