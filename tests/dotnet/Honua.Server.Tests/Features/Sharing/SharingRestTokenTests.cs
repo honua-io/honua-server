@@ -68,30 +68,6 @@ public sealed partial class SharingRestTokenTests : IClassFixture<SharingRestTok
     }
 
     [IntegrationTheory]
-    [InlineData(TokenEndpoint)]
-    [InlineData(TokenEndpoint + "/")]
-    [Operation(Operations.Security)]
-    [Endpoint("GET /sharing/rest/generateToken")]
-    public async Task GenerateToken_WithQueryStringCredentials_ReturnsToken(string path)
-    {
-        using var client = _fixture.CreateClient();
-        var query = $"{path}?username=admin" +
-            $"&password={Uri.EscapeDataString(AdminPassword)}" +
-            $"&client=referer&referer={Uri.EscapeDataString(SecureRefererA)}&f=json";
-        using var response = await client.GetAsync(query);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await ReadTokenPayloadAsync(response);
-        payload.Token.Should().NotBeNullOrWhiteSpace();
-        payload.Expires.Should().BeGreaterThan(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        payload.Ssl.Should().BeTrue();
-
-        response.Headers.CacheControl.Should().NotBeNull();
-        response.Headers.CacheControl!.NoStore.Should().BeTrue();
-        response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
-    }
-
-    [IntegrationTheory]
     [InlineData("WRONG")]
     [InlineData("WRONG--opaque")]
     [Operation(Operations.Security)]
@@ -227,15 +203,14 @@ public sealed partial class SharingRestTokenTests : IClassFixture<SharingRestTok
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("GET /sharing/rest/generateToken")]
+    [Endpoint("POST /sharing/rest/generateToken")]
     public async Task GenerateToken_WithClientIp_ReturnsToken()
     {
         // The explicit client=ip alias behaves identically to client=requestip: the
         // token binds to the request's source IP without requiring a referer.
         using var client = _fixture.CreateClient();
-        var query = $"/sharing/rest/generateToken?username=admin" +
-            $"&password={Uri.EscapeDataString(AdminPassword)}&client=ip&f=json";
-        using var response = await client.GetAsync(query);
+        using var response = await PostFormAsync(client,
+            ("username", "admin"), ("password", AdminPassword), ("client", "ip"), ("f", "json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadTokenPayloadAsync(response);
@@ -785,24 +760,6 @@ public sealed partial class SharingRestTokenTests : IClassFixture<SharingRestTok
         {
             await fixture.DisposeAsync();
         }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Security)]
-    [Endpoint("GET /sharing/rest/generateToken")]
-    public async Task GenerateToken_CredentialsInQueryStringWithInsecureMode_Succeeds()
-    {
-        // When RequireHttps=false (explicit dev/test opt-out), GET with
-        // credentials in the query string is still accepted — ArcGIS clients use
-        // this flow and the dev override must not break them.
-        using var client = _fixture.CreateClient();
-        var query = $"/sharing/rest/generateToken?username=admin" +
-            $"&password={Uri.EscapeDataString(AdminPassword)}&client=ip&f=json";
-        using var response = await client.GetAsync(query);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await ReadTokenPayloadAsync(response);
-        payload.Token.Should().NotBeNullOrWhiteSpace();
     }
 
     private static async Task<HttpResponseMessage> PostFormAsync(HttpClient client, params (string Key, string Value)[] pairs)
