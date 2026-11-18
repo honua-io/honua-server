@@ -1309,13 +1309,15 @@ public sealed partial class DeployWorkflowServiceTests
     private static DeployWorkflowService CreateService(
         TestWorkflowOperationStore store,
         IDeployBackend backend,
-        IOperatorApprovalEvaluator? approvalEvaluator = null)
+        IOperatorApprovalEvaluator? approvalEvaluator = null,
+        OperationHumanApprovalAuthority? humanApprovalAuthority = null)
         => new(
             new TestDeployTargetRegistry(),
             [store],
             [backend],
             approvalEvaluator ?? new StubApprovalEvaluator(),
-            NullLogger<DeployWorkflowService>.Instance);
+            NullLogger<DeployWorkflowService>.Instance,
+            humanApprovalAuthority: humanApprovalAuthority);
 
     private static DeployWorkflowReconciler CreateReconciler(
         TestWorkflowOperationStore store,
@@ -1939,6 +1941,8 @@ public sealed partial class DeployWorkflowServiceTests
     {
         public int PromoteCount { get; private set; }
 
+        public Func<WorkflowOperationRecord, Task>? PromotionObserved { get; init; }
+
         public string BackendName => "honua-gitops-kubernetes";
 
         public DeployTargetKind TargetKind => DeployTargetKind.Kubernetes;
@@ -1977,16 +1981,18 @@ public sealed partial class DeployWorkflowServiceTests
                 Message = "Canary is stable and ready for promotion."
             });
 
-        public Task<DeployObservation> PromoteAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        public async Task<DeployObservation> PromoteAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {
             PromoteCount++;
-            return Task.FromResult(new DeployObservation
+            if (PromotionObserved is not null)
+                await PromotionObserved(operation);
+            return new DeployObservation
             {
                 Status = WorkflowOperationStatus.Succeeded,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = operation.Deploy?.DesiredRevision,
                 Message = "Canary promoted to full traffic."
-            });
+            };
         }
 
         public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)

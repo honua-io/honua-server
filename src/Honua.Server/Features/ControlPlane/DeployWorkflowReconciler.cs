@@ -184,6 +184,12 @@ internal sealed partial class DeployWorkflowReconciler(
             }
             else
             {
+                if (operation.Deploy.ManualPromotionPending && operation.Status != WorkflowOperationStatus.RollbackRequested)
+                {
+                    await ObserveManualPromotionAsync(operation, backend, reconciliationCancellation.Token).ConfigureAwait(false);
+                    return;
+                }
+
                 if (backend is ICheckpointedDeployBackend checkpointed &&
                     checkpointed.RequiresCheckpoint(operation) &&
                     operation.Status != WorkflowOperationStatus.RollbackRequested &&

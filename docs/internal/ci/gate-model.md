@@ -2712,6 +2712,34 @@ on hosted full trunk run 44183857476, the moved classes summed 137 seconds of th
 Identity, and 97 of 515 seconds in Admin Integrations and Automation 4, each run
 one class at a time. The parallel saving is not yet measured.
 
+### More isolated-host classes leave the serial database collection
+
+Six more classes drop `[Collection("Database")]`: `FeatureLockCapabilityManifestTests`
+and `MobileAuthAndDiagnosticsEndpointsTests` (Collaboration Mobile Identity 1),
+`AlertEntitlementGateTests`, `PublishedRouteEndpointsTests` and
+`CatalogDiscoveryEndpointsTests` (Console Alerts 2), and `EndpointRegistryDriftTests`
+(STAC API Governance 2). None injects the collection fixture. The first five build
+isolated hosts and either only read, use in-memory stores, or write shared alert
+rules under per-test service ids that no case counts. `EndpointRegistryDriftTests`
+only reads endpoint data sources and source files from the shared host. Only the
+attribute is removed; cases, fixtures and assertions are unchanged.
+
+These stay serial: `FieldCollectionSyncEndpointsTests` (asserts the global maximum
+field-collection generation and bumps the shared `sync_generation` sequence),
+`ApiSurfaceComplianceTests` (5-second per-query timing assertion), the two feature
+stream snapshot and conformance classes (they assert the first change and exact
+sequence on layer 0 of the shared `honua.feature_changes` table), and the import
+classes that run import DDL in the shared `honua_data` schema or write fixed
+`honua.tile_caches` ids.
+
+Shard filters select by class or method name, so every case stays in the same
+shards on selected PR runs and twice-daily full trunk runs. No workflow, shard
+definition, required check, aggregate dependency or runner count changes. Before,
+on hosted full trunk run 44183857476, the moved classes summed 127 of 415 seconds
+in Collaboration Mobile Identity 1, 85 of 456 seconds in Console Alerts 2, and 180
+of 320 seconds in STAC API Governance 2, each run one class at a time. The
+parallel saving is not yet measured.
+
 ### Feature stream cases share one host per repeated configuration
 
 `FeatureStreamEndpointsTests` cases on the class's shared Pro host take about 0

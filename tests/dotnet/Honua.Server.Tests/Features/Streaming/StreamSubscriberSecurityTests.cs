@@ -396,6 +396,73 @@ public sealed class StreamSubscriberSecurityTests
         filter.FindMaskedFilterField().Should().Be("SECRET");
     }
 
+    [UnitTest]
+    public void Broadcast_UnsupportedPolicyExpression_DeniesDelivery()
+    {
+        AssertOnlyRestrictedSubscriberDenied(UnsupportedPolicy());
+    }
+
+    [UnitTest]
+    public async Task Refresh_UnsupportedPolicyExpression_DeniesLiveAndStoredEvents()
+    {
+        using var manager = CreateManager();
+        var security = CreateUnrestrictedSecurity();
+        var policy = new StreamLayerReadPolicy([UnsupportedPolicy()], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        security.EnableRefresh(_ => Task.FromResult(new StreamSubscriberSecurity(
+            new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
+            new Dictionary<(string, int), StreamLayerReadPolicy>())));
+        var filter = new StreamSubscriptionFilter(subscriberSecurity: security);
+        using var session = manager.CreateSession("SSE", null, filter);
+
+        await manager.RefreshSubscriberSecurityAsync();
+
+        manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope("west")));
+        session.Reader.TryRead(out _).Should().BeFalse();
+        filter.Matches(CreateEnvelope("west"), null, PropertiesJson).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Broadcast_PolicyBeyondStreamingDepth_DeniesDelivery()
+    {
+        FilterExpression predicate = new Literal(false, LiteralType.Boolean);
+        for (var depth = 0; depth <= InMemoryFilterEvaluator.MaxStreamingDepth; depth++)
+            predicate = new UnaryExpression(UnaryOperator.Not, predicate);
+
+        AssertOnlyRestrictedSubscriberDenied(predicate);
+    }
+
+    [UnitTheory]
+    [InlineData("OBJECTID")]
+    [InlineData("geometry")]
+    [InlineData("optional_value")]
+    public void Broadcast_PolicyRequiresUnavailableField_DeniesDelivery(string field)
+    {
+        AssertOnlyRestrictedSubscriberDenied(new UnaryExpression(UnaryOperator.IsNull, new PropertyReference(field)));
+    }
+
+    [UnitTest]
+    public void Allows_PolicyReadsExplicitNull_PreservesNullSemantics()
+    {
+        var policy = new StreamLayerReadPolicy(
+            [new UnaryExpression(UnaryOperator.IsNull, new PropertyReference("region"))],
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var security = new StreamSubscriberSecurity(new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
+            new Dictionary<(string, int), StreamLayerReadPolicy>());
+        var envelope = CreateEnvelope("west") with
+        {
+            Attributes = new Dictionary<string, JsonElement> { ["region"] = JsonSerializer.SerializeToElement<string?>(null) }
+        };
+
+        security.Allows(envelope).Should().BeTrue();
+    }
+
+    private static UnaryExpression UnsupportedPolicy()
+        => new UnaryExpression(UnaryOperator.Not,
+            new SpatialPredicate(SpatialOperator.Intersects, new PropertyReference("geometry"),
+                new GeometryLiteral([1, 2], 4326, "WKB")));
+
     private static void AssertOnlyRestrictedSubscriberDenied(FilterExpression predicate)
     {
         var policy = new StreamLayerReadPolicy([predicate], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
