@@ -29,7 +29,7 @@ internal static class CrossServerConsumeTestSupport
     }
 
     internal static string BuildHonuaProxyUrl(string sourceUrl)
-        => BuildUrl("/__test/cross-server-consume/proxy", ("url", sourceUrl));
+        => BuildUrl(CrossServerConsumeProbe.Path, ("url", sourceUrl));
 
     internal static async Task<XDocument> GetXmlAsync(HttpClient httpClient, string url)
     {
@@ -178,7 +178,7 @@ internal static class CrossServerConsumeTestSupport
 public sealed class CrossServerConsumeGeoServerFixture : IAsyncLifetime
 {
     private readonly GeoServerFixture _geoServer = new(seedCuratedData: true);
-    private readonly WebAppFixture _honua = new();
+    private readonly WebAppFixture _honua = new WebAppFixture().ConfigureServices(CrossServerConsumeProbe.Register);
 
     public string BaseUrl => _geoServer.BaseUrl;
 
@@ -230,7 +230,7 @@ public sealed class CrossServerConsumeGeoServerFixture : IAsyncLifetime
 public sealed class CrossServerConsumeMapServerFixture : IAsyncLifetime
 {
     private readonly MapServerFixture _mapServer = new();
-    private readonly WebAppFixture _honua = new();
+    private readonly WebAppFixture _honua = new WebAppFixture().ConfigureServices(CrossServerConsumeProbe.Register);
 
     public string EndpointUrl => _mapServer.EndpointUrl;
 

@@ -165,11 +165,11 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
 ```
 
 The probe endpoint (`GET /__test/cross-server-consume/proxy?url=<sourceUrl>`)
-is mounted only when `ASPNETCORE_ENVIRONMENT=Test`. It accepts loopback
-`http`/`https` URLs without embedded credentials, forwards the request,
-and maps upstream failures to `502 Bad Gateway`; requests exceeding the
-two-minute timeout return `504 Gateway Timeout`. Invalid URLs return
-`400 Bad Request`.
+is not part of the server: the consume fixtures add it to their test host
+through `CrossServerConsumeProbe` in
+`tests/dotnet/Honua.Server.Tests/Features/CrossServerConsume/`. It accepts
+loopback `http`/`https` URLs only, returns the upstream status, content type
+and body, and answers `400 Bad Request` for anything else.
 
 The nightly `cross-server-consume-nightly.yml` workflow runs the same
 suite, generates the gap report from the TRX and uploads both as workflow

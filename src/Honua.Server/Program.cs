@@ -2019,11 +2019,6 @@ app.MapOgcTileCacheExportEndpoints();
 // Configure Esri tile/vector-tile cache package import + serving endpoints
 app.MapTileCachePackageEndpoints();
 
-if (isTestEnvironment)
-{
-    app.MapCrossServerConsumeProbeEndpoints();
-}
-
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();
 

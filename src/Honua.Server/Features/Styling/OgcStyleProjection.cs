@@ -3,7 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
-using System.Xml.Linq;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
@@ -1067,7 +1067,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     {
         try
         {
-            var document = XDocument.Parse(sldXml);
+            var document = RemoteXmlDocumentParser.Parse(sldXml);
             document.Root?.SetAttributeValue("version", version);
             return document.Declaration + Environment.NewLine + document;
         }
