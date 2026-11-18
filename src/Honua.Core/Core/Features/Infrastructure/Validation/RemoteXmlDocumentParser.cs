@@ -6,13 +6,8 @@ using System.Xml.Linq;
 
 namespace Honua.Core.Features.Infrastructure.Validation;
 
-/// <summary>
-/// Parses XML that came from a server or a document Honua does not control (capabilities,
-/// schemas, coverage descriptions, styles). A DOCTYPE is skipped rather than refused, because
-/// WMS 1.1.1 capabilities routinely carry one; no entity it declares is expanded and no
-/// external resource is resolved. Malformed input, including a reference to an entity the
-/// skipped DOCTYPE declared, throws <see cref="XmlException"/> exactly as XDocument.Parse does.
-/// </summary>
+// XML from servers or documents Honua does not control. A DOCTYPE is skipped rather than
+// refused (WMS 1.1.1 capabilities carry one); nothing it declares is expanded or resolved.
 public static class RemoteXmlDocumentParser
 {
     public static XDocument Parse(string xml, LoadOptions loadOptions = LoadOptions.None)
