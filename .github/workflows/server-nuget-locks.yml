@@ -1,0 +1,69 @@
+name: Server NuGet Locks
+
+# Shipped server images restore in NuGet locked mode from eng/nuget-locks
+# (eng/Honua.ServerLockFiles.props). A package-graph change without a lock refresh goes red on its
+# own PR here, instead of in the nightly Lambda and arm64 image builds. Restore only, no build.
+on:
+  pull_request:
+    branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - 'src/**/*.csproj'
+      - 'Directory.*.props'
+      - 'Directory.*.targets'
+      - 'NuGet.config'
+      - 'global.json'
+      - 'eng/**'
+      - 'Dockerfile'
+      - 'docker/Dockerfile.aot'
+      - 'docker/Dockerfile.lambda'
+      - 'docker/Dockerfile.lambda.aot'
+      - 'scripts/ci/regenerate-server-lock-files.sh'
+      - 'scripts/docker/server-lock-args.sh'
+      - '.github/workflows/server-nuget-locks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Geospatial.Grpc and Honua.Core resolve from the authenticated github-honua feed.
+  packages: read
+
+concurrency:
+  group: server-nuget-locks-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  server-locks:
+    name: Server NuGet locks are current
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The locks pin SDK-implied packages, so the check runs on exactly the SDK the server images
+      # use (their DOTNET_SDK_IMAGE tag), in a job-private root without newer preinstalled SDKs.
+      - name: Read the server image SDK version
+        id: sdk
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's|^ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:\([0-9.]*\)-.*|\1|p' Dockerfile)"
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Cannot read the SDK tag from Dockerfile" >&2; exit 1; }
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/honua-lock-sdk
+        with:
+          dotnet-version: ${{ steps.sdk.outputs.version }}
+      - name: Check every locked variant restores in locked mode
+        env:
+          GH_PACKAGES_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          config="${RUNNER_TEMP}/honua-locks.NuGet.config"
+          install -m 600 NuGet.config "${config}"
+          dotnet nuget update source github-honua --configfile "${config}" \
+            --username "${GITHUB_ACTOR}" --password "${GH_PACKAGES_TOKEN}" --store-password-in-clear-text
+          HONUA_NUGET_CONFIG="${config}" bash scripts/ci/regenerate-server-lock-files.sh --check
+

@@ -9,10 +9,6 @@ on:
       - 'docker/Dockerfile.aot'
       - 'docker/runtime/**'
       - 'eng/Honua.BuildProfiles.props'
-      - 'eng/Honua.ServerLockFiles.props'
-      - 'eng/nuget-locks/**'
-      - 'scripts/ci/regenerate-server-lock-files.sh'
-      - 'scripts/docker/server-lock-args.sh'
       - 'src/**/*.csproj'
       - 'Directory.*.props'
       - 'Directory.*.targets'
@@ -64,42 +60,6 @@ jobs:
       hosted-runner: ubuntu-24.04
     secrets:
       wake-role: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
-
-  # Shipped server images restore in locked mode from eng/nuget-locks; a package-graph change
-  # without a lock refresh goes red here instead of in the nightly Lambda/arm64 image builds.
-  server-locks:
-    name: Server NuGet locks are current
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # The locks pin SDK-implied packages, so the check runs on exactly the SDK the server images
-      # use (their DOTNET_SDK_IMAGE tag), in a job-private root without newer preinstalled SDKs.
-      - name: Read the server image SDK version
-        id: sdk
-        run: |
-          set -euo pipefail
-          version="$(sed -n 's|^ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:\([0-9.]*\)-.*|\1|p' Dockerfile)"
-          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Cannot read the SDK tag from Dockerfile" >&2; exit 1; }
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
-        env:
-          DOTNET_INSTALL_DIR: ${{ runner.temp }}/honua-lock-sdk
-        with:
-          dotnet-version: ${{ steps.sdk.outputs.version }}
-      - name: Check every locked variant restores in locked mode
-        env:
-          GH_PACKAGES_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          config="${RUNNER_TEMP}/honua-locks.NuGet.config"
-          install -m 600 NuGet.config "${config}"
-          dotnet nuget update source github-honua --configfile "${config}" \
-            --username "${GITHUB_ACTOR}" --password "${GH_PACKAGES_TOKEN}" --store-password-in-clear-text
-          HONUA_NUGET_CONFIG="${config}" bash scripts/ci/regenerate-server-lock-files.sh --check
 
   measure:
     needs: runner-select
