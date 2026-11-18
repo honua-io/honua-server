@@ -269,6 +269,14 @@ Stage 3 details:
 
 These workflows are merge-blocking for all PRs to trunk:
 
+Every other `pull_request` or `pull_request_target` workflow is optional and
+path-filtered, apart from the required Clean code check and three cheap
+control workflows that run on every event: Review Gate Attestation, auto-merge
+ready pull requests, and Close external pull requests. Runner label lint reads only
+`.github/workflows`, so it runs only when a pull request or trunk push changes
+that directory. A new optional pull request workflow needs a `paths` filter
+naming what can change its result.
+
 | Workflow | What it validates | Path filter |
 |---|---|---|
 | `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; selected shard consumers run the affected tests that fit the `pr_time_budget` in `.github/ci-shards.json` (shards over 10 measured minutes, or past 45 runner-minutes in total, are deferred to the next trunk run and named in the verdict). Independent Fast/architecture jobs remain required, one per test group: `architecture` and `unit-fast` compile their own roots, and `server-fast` and `server-governance` restore the producer Server.Tests output and compile it only when that restore is empty. Format, analyzer and CI-router jobs remain required. `required.needs` includes `pr-gate`, `fast-tests`, `fast-server-tests`, `format`, `ci-router-validation`, `affected-shards`, and `server-test-producer`. The affected-shard aggregate enforces every selected timing/TRX result before `PR Gate` succeeds. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |

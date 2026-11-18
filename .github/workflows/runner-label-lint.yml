@@ -6,11 +6,16 @@ name: Runner label lint
 # pull_request_target keeps this caller on the base branch's version; the
 # shared workflow checks out only the PR's .github/workflows (merge ref, else head), without
 # credentials, and reads it as data.
+# The lint reads only .github/workflows, so other changes cannot alter its result.
 on:
   push:
     branches: [trunk]
+    paths:
+      - '.github/workflows/**'
   pull_request_target:
     types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/**'
 
 permissions:
   contents: read
