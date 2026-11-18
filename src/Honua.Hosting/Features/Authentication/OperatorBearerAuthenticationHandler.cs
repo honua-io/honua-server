@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
@@ -37,12 +38,22 @@ internal sealed class OperatorBearerAuthenticationHandler(
         }
 
         var token = header[BearerPrefix.Length..].Trim();
-        var claims = await _tokenService.TryValidateAsync(token).ConfigureAwait(false);
-        if (claims is null)
+        var validation = await _tokenService.TryValidateAsync(token).ConfigureAwait(false);
+        if (validation is null)
         {
             return AuthenticateResult.Fail("The operator bearer is invalid or expired.");
         }
 
+        if (validation.SessionBinding is { } binding && !await IsSessionLiveAsync(binding).ConfigureAwait(false))
+        {
+            return AuthenticateResult.Fail("The operator bearer's session has ended.");
+        }
+
+        return CreateResult(validation.Claims);
+    }
+
+    private AuthenticateResult CreateResult(IReadOnlyList<AdminAuthSessionClaim> claims)
+    {
         try
         {
             var principal = AdminAuthClaimsProjector.CreatePrincipal(claims, Scheme.Name, "operator-bearer");
@@ -61,6 +72,14 @@ internal sealed class OperatorBearerAuthenticationHandler(
         {
             return AuthenticateResult.Fail("The operator bearer is invalid.");
         }
+    }
+
+    // Fails closed: a session-bound bearer is refused when no session store can confirm the session.
+    private async Task<bool> IsSessionLiveAsync(string binding)
+    {
+        var sessions = Context.RequestServices.GetService<AdminAuthSessionStore>();
+        return sessions is not null
+            && await sessions.IsOperatorBearerBindingLiveAsync(binding, Context.RequestAborted).ConfigureAwait(false);
     }
 
     // Challenge and forbidden handlers guard HasStarted because ASP.NET challenges each scheme in turn and a preceding scheme may already have written the response.

@@ -254,6 +254,8 @@ internal static partial class FeatureServerEndpoints
                 "queryTopFeatures is not supported by the configured feature provider for this layer.");
         }
 
+        var schemaResource = await HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
+
         // returnIdsOnly: return the objectId-set payload, mirroring the normal query
         // operation. pbf returns the ObjectIdsResult arm; JSON returns
         // { objectIdFieldName, objectIds }.
@@ -303,7 +305,7 @@ internal static partial class FeatureServerEndpoints
         {
             var pbfFormatter = context.RequestServices.GetRequiredService<PbfQueryFormatter>();
             var topSrid = outputSrid ?? resource.ReadSrid();
-            var (pbfPayload, _) = pbfFormatter.FormatAsPbfStream(result, resource, new PbfStreamEncodingOptions
+            var (pbfPayload, _) = pbfFormatter.FormatAsPbfStream(result, schemaResource, new PbfStreamEncodingOptions
             {
                 ReturnGeometry = returnGeometry,
                 OutputSrid = topSrid,
@@ -319,7 +321,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         return CreateTopFeaturesJsonResult(
-            BuildTopFeaturesJsonResponse(result, resource, returnGeometry, outputSrid), topFeaturesIsPretty);
+            BuildTopFeaturesJsonResponse(result, schemaResource, returnGeometry, outputSrid), topFeaturesIsPretty);
     }
 
     internal static QueryResponse BuildTopFeaturesJsonResponse(

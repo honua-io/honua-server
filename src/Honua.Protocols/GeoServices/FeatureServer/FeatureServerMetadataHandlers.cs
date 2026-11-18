@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -130,7 +131,7 @@ internal static partial class FeatureServerEndpoints
                 "sync.offline");
             FeatureServerResponse response = MapServiceToResponseV2(
                 service,
-                publications,
+                await HideMaskedFieldsAsync(context, publications, cancellationToken).ConfigureAwait(false),
                 snapshot,
                 limits,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
@@ -294,12 +295,13 @@ internal static partial class FeatureServerEndpoints
             var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
                 context.RequestServices.GetRequiredService<IConfiguration>(),
                 "sync.offline");
-            var timeInfo = await BuildTimeInfoV2Async(
+            var schemaResource = await HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
+            var timeInfo = OmitWithheldTimeFields(schemaResource, await BuildTimeInfoV2Async(
                 resource,
                 publication,
                 snapshot,
                 featureReader,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false));
 
             var drawingInfo = ResolveDrawingInfoV2(resource, snapshot);
             var popupInfo = ResolvePopupInfoV2(resource);
@@ -320,7 +322,7 @@ internal static partial class FeatureServerEndpoints
             var accessibleResources = FilterAccessibleLayersV2(access, snapshot, allPairs)
                 .Select(pair => pair.Resource.Metadata.Id)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var metadataResource = resource with
+            var metadataResource = schemaResource with
             {
                 Relationships = [.. resource.Relationships.Where(relationship =>
                     accessibleResources.Contains(relationship.RelatedResourceId))]
@@ -328,7 +330,7 @@ internal static partial class FeatureServerEndpoints
 
             LayerResponse response = MapLayerToResponseV2(
                 service,
-                resource,
+                metadataResource,
                 publication,
                 snapshot,
                 limits,
@@ -361,6 +363,42 @@ internal static partial class FeatureServerEndpoints
                 context,
                 "Layer metadata retrieval failed");
         }
+    }
+
+    // Field names the caller's masks withhold are left out of schema listings, as hidden fields are.
+    private static async Task<MetadataV2Object> HideMaskedFieldsAsync(
+        HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
+    {
+        if (context.RequestServices.GetService<IFieldMaskSource>() is not { } masks)
+        {
+            return resource;
+        }
+
+        var masked = await masks.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
+        return resource.WithSchemaFieldsHidden(masked);
+    }
+
+    // A time extent over a withheld field would disclose that field's values.
+    private static FeatureServerTimeInfo? OmitWithheldTimeFields(MetadataV2Object schemaResource, FeatureServerTimeInfo? timeInfo)
+        => timeInfo is not null
+           && (schemaResource.IsHiddenSchemaField(timeInfo.StartTimeField)
+               || schemaResource.IsHiddenSchemaField(timeInfo.EndTimeField)
+               || schemaResource.IsHiddenSchemaField(timeInfo.TrackIdField))
+            ? null
+            : timeInfo;
+
+    private static async Task<IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)>> HideMaskedFieldsAsync(
+        HttpContext context,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications,
+        CancellationToken cancellationToken)
+    {
+        var visible = new List<(MetadataV2Layer Publication, MetadataV2Object Resource)>(publications.Count);
+        foreach (var (publication, resource) in publications)
+        {
+            visible.Add((publication, await HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false)));
+        }
+
+        return visible;
     }
 
     private static IReadOnlyList<string> ValidateExtrusionInfoV2(
