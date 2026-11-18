@@ -10,6 +10,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Honua.Tests.ParquetUnitSupport;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -209,7 +210,7 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
     private static async Task<DecodedParquet> DecodeAsync(byte[] payload)
     {
         using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
 
         var wkbReader = new WKBReader();
         var rows = new List<DecodedRow>();

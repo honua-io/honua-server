@@ -108,5 +108,6 @@
     <Compile Include="../Shared/ProtocolUnits/Ai/McpTestFactory.cs" Link="Shared/McpTestFactory.cs" />
     <Compile Include="../Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs" Link="Shared/SpecGroundingTestSupport.cs" />
     <Compile Include="../Shared/MetadataReleaseSupport/MetadataReleaseParcelsGraph.cs" Link="Shared/MetadataReleaseParcelsGraph.cs" />
+    <Compile Include="../Shared/ParquetUnitSupport/ArrowParquetTestReader.cs" Link="Shared/ArrowParquetTestReader.cs" />
   </ItemGroup>
 </Project>
