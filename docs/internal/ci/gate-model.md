@@ -535,12 +535,14 @@ capacity reservation; a later queue remains possible.
 
 Selective (affected) dispatches build the producer graph with
 `RunAnalyzers=false`; scheduled and `full_ci` runs keep the analyzer build.
-PR Gate's analyzer partitions already proved each landed PR on its merge ref,
-and ci.yml's `Format Check` still runs `dotnet format` in the same affected
-run. Warnings-as-errors still applies to compiler diagnostics, source
-generators still run, and the published managed outputs are the same
-assemblies the PR Gate producer already publishes without analyzers. The
-selected protocol profiles keep analyzers, because PR Gate never builds them.
+PR Gate's analyzer partitions already checked each landed PR's affected
+projects on its merge ref, and ci.yml's `Format Check` still runs
+`dotnet format` in the same affected run. Warnings-as-errors still applies to
+compiler diagnostics and source generators still run; the PR Gate producer
+already publishes its managed outputs from this no-analyzer build mode under
+the same build-properties label. An analyzer finding that only appears when
+several landed PRs combine is left to the scheduled full run. The selected
+protocol profiles keep analyzers, because PR Gate never builds them.
 
 The producer skips hosted sudo cleanup on self-hosted runners and installs its
 SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,
