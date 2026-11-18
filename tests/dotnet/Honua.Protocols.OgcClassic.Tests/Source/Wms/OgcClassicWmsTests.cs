@@ -23,13 +23,33 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
-public sealed class OgcClassicWmsTests : IAsyncLifetime
+public sealed class OgcClassicWmsTests(OgcClassicWmsTests.WmsHost host)
+    : IClassFixture<OgcClassicWmsTests.WmsHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private WebAppFixture _fixture = host.Fixture;
+    private WebAppFixture? _dedicatedHost;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    // One host per class for the cases that only read. Cases that change service, layer, style or
+    // feature rows call UseDedicatedHostAsync first so later cases still see the seeded catalog.
+    public sealed class WmsHost : IAsyncLifetime
+    {
+        internal WebAppFixture Fixture { get; } = new();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync() => _dedicatedHost?.DisposeAsync() ?? Task.CompletedTask;
+
+    private async Task UseDedicatedHostAsync()
+    {
+        _dedicatedHost = new WebAppFixture();
+        await _dedicatedHost.InitializeAsync();
+        _fixture = _dedicatedHost;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
@@ -76,6 +96,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_GetCapabilities_WithWmsEnabledAndMapServerDisabled_ReturnsXml()
     {
+        await UseDedicatedHostAsync();
+
         // Protocol gating reads MetadataV2Service.Protocols.
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
@@ -197,6 +219,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms111_GetCapabilities_UsesDtdCompatibleServiceAndDimensionElements()
     {
+        await UseDedicatedHostAsync();
+
         await SeedWms111DimensionsAndContactAsync();
 
         var response = await _fixture.Client.GetAsync(
@@ -252,6 +276,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms111_GetCapabilities_ElevationDimensionUsesEpsgVerticalDatum()
     {
+        await UseDedicatedHostAsync();
+
         _fixture.SetV2ResourceExtension(WebAppFixture.TestLayerId, "wms", DeclaredDimensionJson.WmsElevation);
 
         var response = await _fixture.Client.GetAsync(
@@ -280,6 +306,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetCapabilities_ServiceExtentInWebMercator_ReprojectsGeographicBounds()
     {
+        await UseDedicatedHostAsync();
+
         // V2 cutover: capabilities reads its bbox off MetadataV2Object.Spatial.Bbox
         // (V2 has no service-level extent). Set Web Mercator bounds on the layer the
         // test service publishes so the OgcExtentTransformer reproject branch fires.
@@ -742,6 +770,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_OgcRoute_GetFeatureInfo_WithGmlFormat_CitesSchemaOnSameMountAndVersion()
     {
+        await UseDedicatedHostAsync();
+
         // The GML schema location must name the endpoint and WMS version that
         // answered the request. With MapServer disabled the OGC mount is the only WMS endpoint, so
         // a schema location pinned to the MapServer mount at 1.1.1 cannot even be dereferenced.
@@ -839,6 +869,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetFeatureInfo_FiltersInternalAttributes()
     {
+        await UseDedicatedHostAsync();
+
         await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
         {
             await using var command = connection.CreateCommand();
@@ -1251,6 +1283,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_OgcRoute_GetFeatureInfo_WithWmsEnabledAndMapServerDisabled_ReturnsSeededFeature()
     {
+        await UseDedicatedHostAsync();
+
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
@@ -1279,6 +1313,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_OgcRoute_GetMap_InvalidLayer_ReturnsXmlServiceException()
     {
+        await UseDedicatedHostAsync();
+
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
