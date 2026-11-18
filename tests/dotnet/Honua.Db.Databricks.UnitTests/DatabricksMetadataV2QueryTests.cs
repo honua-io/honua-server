@@ -133,7 +133,8 @@ public class DatabricksMetadataV2QueryTests
         var client = new DatabricksStatementClient(httpClient, options);
         return new DatabricksFeatureStore(
             new DatabricksLayerMappingRegistry([]),
-            new DatabricksFeatureDataAccess(client));
+            new DatabricksFeatureDataAccess(client),
+            new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private static FeatureProviderBinding CreateBinding(string providerAlias, Guid connectionId)
@@ -147,7 +148,8 @@ public class DatabricksMetadataV2QueryTests
                     Host = "https://example.cloud.databricks.com",
                     WarehouseId = "wh-123",
                     Token = "dapi-test"
-                }))));
+                })))),
+            new LayerReadSecurityResolver(null, null, null, null));
         return Layer0.CreateBinding(
             store,
             new DataConnection

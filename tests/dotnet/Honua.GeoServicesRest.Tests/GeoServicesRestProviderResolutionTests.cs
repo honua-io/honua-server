@@ -103,7 +103,10 @@ public class GeoServicesRestProviderResolutionTests
         {
             CountResponse = new GeoServicesRestCountResponse { Count = 42 }
         };
-        var provider = new GeoServicesRestFeatureStore(client, NullLogger<GeoServicesRestFeatureStore>.Instance);
+        var provider = new GeoServicesRestFeatureStore(
+            client,
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
 
         var reader = ((IBindableFeatureDataProvider)provider)
             .CreateReaderForBinding(CreateBinding(provider, connection));
@@ -144,7 +147,10 @@ public class GeoServicesRestProviderResolutionTests
             }
         };
 
-        var provider = new GeoServicesRestFeatureStore(client, NullLogger<GeoServicesRestFeatureStore>.Instance);
+        var provider = new GeoServicesRestFeatureStore(
+            client,
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
         var reader = ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(CreateBinding(provider, connection));
 
         var result = await reader.QueryAsync(LayerId, new FeatureQuery { Limit = 2, OutputSrid = 3857 });
@@ -180,7 +186,10 @@ public class GeoServicesRestProviderResolutionTests
                 }
             }
         };
-        var provider = new GeoServicesRestFeatureStore(client, NullLogger<GeoServicesRestFeatureStore>.Instance);
+        var provider = new GeoServicesRestFeatureStore(
+            client,
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
         var reader = ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(CreateBinding(provider, connection));
 
         var extent = await reader.GetExtentAsync(LayerId);
@@ -204,7 +213,10 @@ public class GeoServicesRestProviderResolutionTests
                 Error = new GeoServicesRestError { Code = 400, Message = "Invalid where clause" }
             }
         };
-        var provider = new GeoServicesRestFeatureStore(client, NullLogger<GeoServicesRestFeatureStore>.Instance);
+        var provider = new GeoServicesRestFeatureStore(
+            client,
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
         var reader = ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(CreateBinding(provider, connection));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -223,7 +235,10 @@ public class GeoServicesRestProviderResolutionTests
         {
             CountResponse = new GeoServicesRestCountResponse { Count = 5 }
         };
-        var provider = new GeoServicesRestFeatureStore(client, NullLogger<GeoServicesRestFeatureStore>.Instance);
+        var provider = new GeoServicesRestFeatureStore(
+            client,
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
         var providerRegistry = new FeatureDataProviderRegistry([provider]);
         var router = new FeatureProviderQueryRouter(
             new FakeSecureConnectionRegistry(connection),
@@ -291,10 +306,10 @@ public class GeoServicesRestProviderResolutionTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public async Task BoundReader_WithNoPolicyResolved_SendsSameUpstreamRequestAsWithoutResolver()
+    public async Task BoundReader_WithNoPolicyResolved_SendsSameUpstreamRequestAsEmptyResolver()
     {
         var baseline = new RecordingGeoServicesRestFeatureClient();
-        await CreateBoundReader(baseline, readSecurity: null, permanentFilterExpression: null)
+        await CreateBoundReader(baseline, new LayerReadSecurityResolver(null, null, null, null), permanentFilterExpression: null)
             .CountAsync(LayerId, FeatureQuery.WithWhere("STATE = 'WA'"));
 
         var withResolver = new RecordingGeoServicesRestFeatureClient();
@@ -312,7 +327,7 @@ public class GeoServicesRestProviderResolutionTests
 
     private static IFeatureReader CreateBoundReader(
         IGeoServicesRestFeatureClient client,
-        LayerReadSecurityResolver? readSecurity,
+        LayerReadSecurityResolver readSecurity,
         string? permanentFilterExpression)
     {
         var provider = new GeoServicesRestFeatureStore(client, NullLogger<GeoServicesRestFeatureStore>.Instance, readSecurity);
@@ -347,7 +362,10 @@ public class GeoServicesRestProviderResolutionTests
     };
 
     private static GeoServicesRestFeatureStore CreateProvider()
-        => new(new RecordingGeoServicesRestFeatureClient(), NullLogger<GeoServicesRestFeatureStore>.Instance);
+        => new(
+            new RecordingGeoServicesRestFeatureClient(),
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
 
     private static DataConnection CreateConnection()
         => new()

@@ -36,18 +36,13 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
     private readonly IMetadataV2GraphProvider? _v2Provider;
-    private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly LayerReadSecurityResolver _readSecurity;
     private readonly IFilterExpressionService? _filterExpressions;
-
-    public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess)
-        : this(dataAccess, v2Provider: null, readSecurity: null, binding: null, filterExpressions: null)
-    {
-    }
 
     public SqlServerFeatureStore(
         SqlServerFeatureDataAccess dataAccess,
         IMetadataV2GraphProvider? v2Provider,
-        LayerReadSecurityResolver? readSecurity = null,
+        LayerReadSecurityResolver readSecurity,
         IFilterExpressionService? filterExpressions = null)
         : this(dataAccess, v2Provider, readSecurity, binding: null, filterExpressions)
     {
@@ -56,13 +51,13 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     private SqlServerFeatureStore(
         SqlServerFeatureDataAccess dataAccess,
         IMetadataV2GraphProvider? v2Provider,
-        LayerReadSecurityResolver? readSecurity,
+        LayerReadSecurityResolver readSecurity,
         FeatureProviderBinding? binding,
         IFilterExpressionService? filterExpressions)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _v2Provider = v2Provider;
-        _readSecurity = readSecurity;
+        _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
         _filterExpressions = filterExpressions;
         _binding = binding;
         _boundConnection = binding?.Connection;
@@ -214,12 +209,9 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     private async Task EnsureReadPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
     {
         await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (_readSecurity is not null)
-        {
-            await _readSecurity
-                .EnsureNoUnenforcedPolicyAsync("SQL Server", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await _readSecurity
+            .EnsureNoUnenforcedPolicyAsync("SQL Server", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task EnsureNoPermanentFilterAsync(int layerId, CancellationToken cancellationToken)
