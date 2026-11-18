@@ -1926,9 +1926,10 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         queryLimits.RowsPerRowGroup.Should().BeNull();
         queryLimits.MaxArtifactBytes.Should().BeNull();
 
+        // East is first in source order and last on the Hilbert curve, so a sort would fail this.
         var features = ImmutableArray.Create(
-            Feature.Create(1, FormatterTestResources.CreatePointWkb(-120, 35), ImmutableDictionary<string, object?>.Empty),
-            Feature.Create(2, FormatterTestResources.CreatePointWkb(10, 50), ImmutableDictionary<string, object?>.Empty));
+            Feature.Create(1, FormatterTestResources.CreatePointWkb(10, 50), ImmutableDictionary<string, object?>.Empty),
+            Feature.Create(2, FormatterTestResources.CreatePointWkb(-120, 35), ImmutableDictionary<string, object?>.Empty));
         var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
             QueryResult<Feature>.Create(2, features), CreateResource(), true, 4326, false, false, new GeometryLimits(),
             encodingLimits: queryLimits);
@@ -1937,7 +1938,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
         using var batches = reader.GetRecordBatchReader();
         using var batch = await batches.ReadNextRecordBatchAsync();
         var point = (Point)new WKBReader().Read(((BinaryArray)batch!.Column("geometry")).GetBytes(0).ToArray());
-        point.X.Should().Be(-120);
+        point.X.Should().Be(10);
         using var group = reader.ParquetReader.RowGroup(0);
         using var chunk = group.MetaData.GetColumnChunkMetaData(0);
         chunk.Compression.Should().NotBe(ParquetSharp.Compression.Zstd);
@@ -1977,7 +1978,10 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
     {
         var junk = new byte[4_000];
         var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
-            QueryResult<Feature>.Create(1, [Feature.Create(1, junk, ImmutableDictionary<string, object?>.Empty)]),
+            QueryResult<Feature>.Create(2, [
+                Feature.Create(1, junk, ImmutableDictionary<string, object?>.Empty),
+                Feature.Create(2, junk, ImmutableDictionary<string, object?>.Empty),
+            ]),
             CreateResource(), true, 4326, false, false, new GeometryLimits(),
             encodingLimits: new GeoParquetLimits
             {

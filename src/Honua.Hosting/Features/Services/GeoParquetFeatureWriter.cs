@@ -128,8 +128,8 @@ public static partial class GeoParquetFeatureWriter
         EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoParquet");
 
         // Admit the page before Hilbert decoding so an over-budget result is refused as a limit,
-        // including when its WKB would not decode.
-        var batches = PlanBatches(features, encodingLimits);
+        // including when its WKB would not decode. Windows are planned again after the sort.
+        _ = PlanBatches(features, encodingLimits);
         if (encodingLimits.OrderByBboxHilbert && includeGeometry && features.Length > 1)
         {
             features = OrderByBboxCenterHilbert(features, srid, geometryLimits, returnZ, returnM, logger);
@@ -140,7 +140,7 @@ public static partial class GeoParquetFeatureWriter
         }
 
         var runtimeFields = DetectRuntimeFields(features, resource);
-        batches = PlanBatches(features, encodingLimits, resource.SchemaFields.Count + runtimeFields.Count + 6);
+        var batches = PlanBatches(features, encodingLimits, resource.SchemaFields.Count + runtimeFields.Count + 6);
         // A small type set is all the metadata pass retains. Encoding each batch later keeps
         // Arrow buffers bounded while still describing types found in the final batch.
         var geometryTypes = new HashSet<string>(StringComparer.Ordinal);
@@ -226,20 +226,13 @@ public static partial class GeoParquetFeatureWriter
             throw new ServiceUnavailableException(ScratchFullClientMessage, ScratchFullRetryAfterSeconds);
         }
 
-        return WriteArrowParquet(schema, writeBatches, stream, limits);
+        return WriteEncoded(schema, writeBatches, stream, limits);
     }
 
     // Encodes into a caller-supplied spool. A refused budget becomes 413, a full scratch
     // volume becomes a retryable 503, and the spool is disposed on every failure.
     internal static BoundedParquetStream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, BoundedParquetStream stream)
         => WriteEncoded(schema, writeBatches, stream, limits: null);
-
-    private static BoundedParquetStream WriteArrowParquet(
-        Schema schema,
-        Action<FileWriter>? writeBatches,
-        BoundedParquetStream stream,
-        GeoParquetLimits limits)
-        => WriteEncoded(schema, writeBatches, stream, limits);
 
     private static BoundedParquetStream WriteEncoded(
         Schema schema,

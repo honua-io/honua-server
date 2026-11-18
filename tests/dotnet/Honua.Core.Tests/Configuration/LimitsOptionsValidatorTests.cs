@@ -89,6 +89,21 @@ public class LimitsOptionsValidatorTests
     }
 
     [UnitTest]
+    public void ForArtifact_ClampsAnUnsetCapToWhatAByteArrayCanHold()
+    {
+        var artifact = GeoParquetLimits.ForArtifact(new GeoParquetLimits { MaxResponseBytes = int.MaxValue });
+        Assert.Equal(Array.MaxLength, artifact.MaxArtifactBytes);
+        Assert.Equal(int.MaxValue, artifact.MaxResponseBytes);
+
+        var explicitCap = GeoParquetLimits.ForArtifact(new GeoParquetLimits
+        {
+            MaxResponseBytes = int.MaxValue,
+            MaxArtifactBytes = 1024,
+        });
+        Assert.Equal(1024, explicitCap.MaxArtifactBytes);
+    }
+
+    [UnitTest]
     public void Validate_ReplicaMaxChangesPerLayerOutOfRange_ReturnsFail()
     {
         // The Replica section carries [Range(100, 1000000)]; it must be validated like every other section.

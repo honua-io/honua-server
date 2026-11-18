@@ -57,7 +57,9 @@ public sealed class GeoParquetLimits
             MaxEstimatedInputBytes = configured.MaxEstimatedInputBytes,
             MaxResponseBytes = configured.MaxResponseBytes,
             RowsPerRowGroup = configured.RowsPerRowGroup ?? DefaultArtifactRowsPerRowGroup,
-            MaxArtifactBytes = configured.MaxArtifactBytes ?? configured.MaxResponseBytes,
+            // MaxResponseBytes may be int.MaxValue. The artifact is materialized as a byte[],
+            // so the copied cap stops at Array.MaxLength instead of failing the capture.
+            MaxArtifactBytes = configured.MaxArtifactBytes ?? Math.Min(configured.MaxResponseBytes, Array.MaxLength),
             OrderByBboxHilbert = true,
             CompressWithZstd = true,
         };
