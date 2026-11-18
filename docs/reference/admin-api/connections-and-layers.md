@@ -95,9 +95,8 @@ In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/
 |---|---|---|
 | GET | `/api/v1/admin/connections/{id}/tables` | Discover PostGIS tables on a connection (`id` is GUID or name) |
 | POST | `/api/v1/admin/connections/{id}/tables/validate` | Validate a table before publishing |
-| GET | `/api/v1/admin/connections/tables` | Discover tables across all connections |
 
-Run `GET /api/v1/admin/connections/primary-db/tables` in the explorer.
+Run `GET /api/v1/admin/connections/primary-db/tables` in the explorer. Table discovery requires a connection GUID or name. To inspect several connections, list them with `GET /api/v1/admin/connections`, then discover tables on each connection. `GET /api/v1/admin/connections/tables` returns `400` because the connection ID is missing.
 
 ## Layer publishing
 
