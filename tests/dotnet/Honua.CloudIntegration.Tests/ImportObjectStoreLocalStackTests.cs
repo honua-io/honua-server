@@ -1,10 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using Amazon.IdentityManagement;
 using Amazon.IdentityManagement.Model;
+using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.SecurityToken;
@@ -192,15 +194,22 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
             },
             CancellationToken.None);
 
+    // The lease created from this client disposes it. The analyzer cannot see that hand-off.
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "AwsObjectStoreLease.Owned disposes the session client when the caller finishes the request.")]
+    private AmazonS3Client CreateSessionClient(AWSCredentials credentials)
+        => new AmazonS3Client(credentials, _fixture.S3Config());
+
     private AwsObjectStoreClientFactory CreateFactory(EmulatorClients clients)
         => new(new AwsObjectStoreClientSeams
         {
             HostClient = clients.S3,
             Sts = clients.Sts,
-            SessionClient = credentials => new AmazonS3Client(credentials, _fixture.S3Config()),
+            SessionClient = CreateSessionClient,
             Options = new ImportObjectStoreOptions { ServiceUrl = _fixture.ServiceUrl, Region = "us-east-1" },
         });
 
+    // A factory built from test seams owns no clients, so its Dispose is a no-op and the reader may keep it.
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "A seam-built AwsObjectStoreClientFactory owns no clients; the fixture disposes them.")]
     private AwsImportObjectStoreReader CreateReader(EmulatorClients clients) => new(CreateFactory(clients));
 
     private static ObjectStorageConnection HostConnection(string bucket)

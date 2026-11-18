@@ -32,9 +32,11 @@ internal static class ObjectStorageConnectionEndpoints
             .WithTags("Admin", "Secure Connections")
             .RequireAdminAuthorization();
 
+        // Each call mints a new external id, so a cached GET would hand the same id out twice.
         group.MapGet("/object-storage/setup", HandleSetupAsync)
             .WithName("GetObjectStorageConnectionSetup")
             .WithDisplayName("Get Object Storage Connection Setup")
+            .CacheOutput(policy => policy.NoCache())
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapGet("/{id:guid}/objects", HandleBrowseAsync)
@@ -49,6 +51,7 @@ internal static class ObjectStorageConnectionEndpoints
         [FromQuery] string? prefix,
         HttpContext context)
     {
+        context.Response.Headers.CacheControl = "no-store";
         var normalized = ObjectStoragePolicy.NormalizePrefix(prefix);
         if (!ObjectStoragePolicy.IsValidBucketName(bucket) || normalized is null)
         {

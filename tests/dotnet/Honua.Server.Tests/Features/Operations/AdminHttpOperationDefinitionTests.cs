@@ -54,7 +54,6 @@ public sealed class AdminHttpOperationDefinitionTests
     }
 
     [UnitTheory]
-    [InlineData("admin.connections.create")]
     [InlineData("admin.import.upload-url")]
     [InlineData("admin.import.upload-object")]
     public void Definition_DirectOperatorJourney_PreservesApprovalException(string operationId)
@@ -64,6 +63,19 @@ public sealed class AdminHttpOperationDefinitionTests
 
         definition.SideEffect.Should().NotBe(OperationSideEffectClass.ReadOnly);
         definition.ApprovalModel.Should().Be(OperationApprovalModel.None);
+    }
+
+    [UnitTheory]
+    [InlineData("admin.connections.create")]
+    [InlineData("admin.connections.update")]
+    [InlineData("admin.connections.delete")]
+    public void Definition_ConnectionChanges_RequireOperatorApproval(string operationId)
+    {
+        var item = AdminConnectImportOperationCatalog.Definitions.Single(value => value.OperationId == operationId);
+        var definition = ((object)item).Should().BeAssignableTo<IAdminHttpOperationDefinition>().Subject;
+
+        definition.SideEffect.Should().NotBe(OperationSideEffectClass.ReadOnly);
+        definition.ApprovalModel.Should().Be(OperationApprovalModel.OperatorGate);
     }
 
     [UnitTheory]
