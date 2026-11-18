@@ -52,10 +52,12 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         "Honua.Server.Migrations.216_AdvanceConfigurationGenerationOnSceneAndPolicyChanges.sql"
     ];
 
+    private readonly IDatabaseFixture _fixture;
     private readonly PostgresJobSubstrateHarness _jobs;
 
-    private ControlPlaneStateHarness(PostgresJobSubstrateHarness jobs)
+    private ControlPlaneStateHarness(IDatabaseFixture fixture, PostgresJobSubstrateHarness jobs)
     {
+        _fixture = fixture;
         _jobs = jobs;
         Leases = new PostgresLeaseStore(jobs.JobStore);
     }
@@ -72,6 +74,11 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public static async Task<ControlPlaneStateHarness> CreateAsync(IDatabaseFixture fixture, string testClassName)
     {
+        if (await ControlPlaneSchemaPool.TakeAsync(fixture) is { } pooled)
+        {
+            return new ControlPlaneStateHarness(fixture, PostgresJobSubstrateHarness.Adopt(fixture, pooled));
+        }
+
         var jobs = await PostgresJobSubstrateHarness.CreateAsync(fixture, testClassName);
         foreach (var migration in _migrationResourceNames)
         {
@@ -79,7 +86,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
                 ReadMigration(migration).Replace("$HonuaSchema$", $"\"{jobs.Schema}\"", StringComparison.Ordinal));
         }
 
-        return new ControlPlaneStateHarness(jobs);
+        await ControlPlaneSchemaPool.RecordMigratedAsync(fixture, jobs.Schema);
+        return new ControlPlaneStateHarness(fixture, jobs);
     }
 
     public Task ReplayConfigurationMigrationAsync()
@@ -171,7 +179,13 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         return new StoredTextScan(reader.GetInt64(0), reader.GetInt64(1));
     }
 
-    public ValueTask DisposeAsync() => _jobs.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        if (!await ControlPlaneSchemaPool.TryReturnAsync(_fixture, _jobs.Schema))
+        {
+            await _jobs.DisposeAsync();
+        }
+    }
 
     private static string ReadMigration(string resourceName)
     {
