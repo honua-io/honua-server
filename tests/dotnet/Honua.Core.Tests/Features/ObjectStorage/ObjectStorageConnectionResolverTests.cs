@@ -98,6 +98,11 @@ public sealed class ObjectStorageConnectionResolverTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public void BuiltIns_AreOffWhenAConfiguredServerFolderCannotBeCompared()
+        => ObjectStorageBuiltInConnections.From(Storage(), EnabledBuiltIns("logs"), ["logs/a$b"]).Should().BeEmpty();
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void BuiltIns_AreOffForEndpointOverridesStaticKeysAndOtherProviders()
     {
         var builtIn = EnabledBuiltIns("drop");

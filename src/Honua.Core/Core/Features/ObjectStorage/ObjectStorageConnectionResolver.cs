@@ -136,10 +136,18 @@ public static class ObjectStorageBuiltInConnections
             return [];
         }
 
-        var template = Template(storage.AwsS3, builtIn.ExpectedBucketOwner!);
-        var reserved = ServerFolders.Concat(configuredServerFolders).Append(storage.PMTilesPublish.KeyPrefix)
+        var normalized = ServerFolders.Concat(configuredServerFolders).Append(storage.PMTilesPublish.KeyPrefix)
             .Select(ObjectStoragePolicy.NormalizePrefix)
-            .Where(folder => !string.IsNullOrEmpty(folder))
+            .ToList();
+        if (normalized.Contains(null))
+        {
+            // A server prefix that cannot be compared safely turns built-ins off rather than leaving it uncovered.
+            return [];
+        }
+
+        var template = Template(storage.AwsS3, builtIn.ExpectedBucketOwner!);
+        var reserved = normalized
+            .Where(folder => folder!.Length > 0)
             .SelectMany(folder => new[] { root + folder, folder! })
             .ToList();
         var connections = builtIn.DataPrefixes
