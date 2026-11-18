@@ -29,11 +29,11 @@ Both encodings parse to the same expression tree; everything below is available 
 | Null test | `IS NULL` / `IS NOT NULL` | `"isNull"` |
 | Logic | `AND`, `OR`, `NOT` | `"and"`, `"or"`, `"not"` |
 | Arithmetic | `+`, `-`, `*`, `/`, `DIV` | `"+"`, `"-"`, `"*"`, `"/"`, `"%"`, `"div"`, `"^"` |
-| String case/accent | `CASEI(...)`, `ACCENTI(...)` | text encoding only |
+| String case/accent | `CASEI(...)`, `ACCENTI(...)` | `"casei"`, `"accenti"` |
 
 ### Spatial predicates
 
-`S_INTERSECTS` (alias `INTERSECTS`), `S_CONTAINS`, `S_WITHIN`, `S_CROSSES`, `S_TOUCHES`, `S_OVERLAPS`, `S_DISJOINT`, `S_EQUALS`, plus the distance predicates `S_DWITHIN` and `S_BEYOND`. JSON uses the lowercase forms (`"s_intersects"`, ...).
+`S_INTERSECTS`, `S_CONTAINS`, `S_WITHIN`, `S_CROSSES`, `S_TOUCHES`, `S_OVERLAPS`, `S_DISJOINT`, `S_EQUALS`, plus the distance predicates `S_DWITHIN` and `S_BEYOND`. JSON uses the lowercase forms (`"s_intersects"`, ...). Bare `INTERSECTS` is not a spatial predicate and is rejected; the temporal predicate `T_INTERSECTS` is unchanged.
 
 Geometry operands are WKT literals (`POINT`, `LINESTRING`, `POLYGON`, `MULTIPOINT`, `MULTILINESTRING`, `MULTIPOLYGON`, `GEOMETRYCOLLECTION`) or `BBOX(minx, miny, maxx, maxy)` in text, and GeoJSON geometry or `bbox` objects in JSON.
 
@@ -70,10 +70,10 @@ Full parameter list, statistics, and pagination: [GeoServices REST reference](pr
 | String functions | `contains`, `startswith`, `endswith`, `substring`, `tolower`, `toupper`, `length`, `trim`, `indexof`, `replace`, `concat` |
 | Numeric functions | `round`, `floor`, `ceiling`, `abs` |
 | Date functions | `now`, `year`, `month`, `day`, `hour`, `minute`, `second` |
-| Spatial functions | `geo.distance(geometry, geography'...')`, `geo.intersects(geometry, geography'...')` |
+| Spatial functions | `geo.distance(geometry, geography'...')`, `geo.intersects(geometry, geography'...')`, `geo.length(geometry)` |
 | Literals | numbers, strings, `true`/`false`, `null` |
 
-`geo.length` is **not** implemented; unsupported functions return HTTP 400 with `Unsupported function '...'`. `$filter` must be a boolean expression — a bare property or literal is rejected. See the [OData reference](protocols/odata.md) for `$select`, `$orderby`, `$top`/`$skip`, and `$count`.
+`geo.length(geometry)` returns geodesic length in meters. Unsupported functions return HTTP 400 with `Unsupported function '...'`. `$filter` must be a boolean expression — a bare property or literal is rejected. See the [OData reference](protocols/odata.md) for `$select`, `$orderby`, `$top`/`$skip`, and `$count`.
 
 ## The same query in all three languages
 
@@ -107,7 +107,7 @@ CQL2 JSON (same endpoint, `filter-lang=cql2-json`):
 GeoServices (FeatureServer query; `{layerId}` is an id from the `layers` list of `FeatureServer?f=json`):
 
 ```
-GET /rest/services/hydrants/FeatureServer/{layerIndex}/query?where=status='active'
+GET /rest/services/hydrants/FeatureServer/{layerId}/query?where=status='active'
   &geometry={"rings":[[[-122.5,47.5],[-122.5,47.7],[-122.2,47.7],[-122.2,47.5],[-122.5,47.5]]]}
   &geometryType=esriGeometryPolygon&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&f=geojson
 ```
