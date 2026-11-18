@@ -15,6 +15,9 @@ internal sealed record McpSessionRecord(
     int SchemaVersion = McpSessionRecord.CurrentSchemaVersion)
 {
     public const int CurrentSchemaVersion = 1;
+
+    // Minimum notifications/message level from logging/setLevel; null means the server default.
+    public string? LogLevel { get; init; }
 }
 
 // The session record every node shares. A node learns that a session or request it holds work for
@@ -30,6 +33,8 @@ internal interface IMcpSessionStore : IMcpRequestStore
     Task<bool> ExistsAsync(string sessionId, CancellationToken cancellationToken);
 
     Task RemoveAsync(string sessionId, CancellationToken cancellationToken);
+
+    Task<bool> SetLogLevelAsync(string sessionId, string level, CancellationToken cancellationToken);
 
     Task<McpPollResult> PollAsync(McpPollRequest request, CancellationToken cancellationToken);
 }
