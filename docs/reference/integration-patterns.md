@@ -31,7 +31,7 @@ Fetch `GET /api/v1/capabilities/manifest` before rendering feature-specific cont
 
 ## Pagination and result completeness
 
-- Query endpoints apply `maxRecordCount` (`Limits__Query__MaxRecordCount`, default 10 000; the Development settings use 2 000); page with `resultOffset`/`resultRecordCount` (GeoServices) or `limit` + `next` links (OGC API Features).
+- Query endpoints apply `maxRecordCount` (`Limits__Query__MaxRecordCount`, code default 10 000; the shipped `.env` templates set 2 000 or 5 000); page with `resultOffset`/`resultRecordCount` (GeoServices) or `limit` + `next` links (OGC API Features).
 - JSON responses set `exceededTransferLimit` when truncated; **binary formats (GeoParquet, Arrow, FlatGeobuf) carry no truncation flag** — compare the returned row count against `maxRecordCount`, or call `returnCountOnly=true` first.
 - For full-table exports prefer the async export job surface (`.../layers/{layerId}/export`) or paged `f=parquet` pulls.
 
@@ -44,7 +44,7 @@ Fetch `GET /api/v1/capabilities/manifest` before rendering feature-specific cont
 | Variable | Purpose |
 | --- | --- |
 | `FeatureChangeEvents__Webhook__Enabled` | Enable delivery. |
-| `FeatureChangeEvents__Webhook__Url` | Absolute HTTPS URL on a public address; private, loopback and credential-bearing URLs are rejected at startup. |
+| `FeatureChangeEvents__Webhook__Url` | Absolute HTTPS URL on a public address. Non-HTTPS URLs, embedded credentials, loopback names and private IP literals fail startup; a hostname that resolves to a private address is refused at delivery. |
 | `FeatureChangeEvents__Webhook__Secret` | Shared HMAC secret — verify the signature on every delivery. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | Delivery attempts per event (default 5, exponential backoff). |
 
