@@ -158,7 +158,8 @@ internal static partial class FeatureStreamEndpoints
             : await eventStore.GetCurrentCursorAsync(context.RequestAborted).ConfigureAwait(false);
 
         context.Response.ContentType = "text/event-stream";
-        context.Response.Headers.CacheControl = "no-cache";
+        context.Response.Headers.CacheControl = "no-store, no-transform";
+        context.Response.Headers["X-Accel-Buffering"] = "no";
 
         if (!await WriteSseHandshakeAsync(
             new(context, session, subscriptionFilter, requested, initialLiveCursor),
