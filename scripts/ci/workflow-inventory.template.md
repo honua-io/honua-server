@@ -1666,7 +1666,8 @@ job: wall 633 to 419-438 seconds; DeploymentCapabilityProfileIntegrationTests
 ### API key token parameter host lifetime
 
 `ApiKeyTokenParameterTests` shares one application across the class. Each case
-creates and revokes only its own keys. Key names are not unique in the store;
+creates only its own keys and never revokes or lists shared ones. Key names are
+not unique in the store;
 lookup is by key material. The in-process transport leaves the client address
 unset, and the authentication failure limiter ignores a request with no client
 address, so the expected invalid-token responses do not lock later cases out.
@@ -1706,6 +1707,7 @@ substitutes it uses (returns, callbacks and received calls) and configures
 them again, so every assertion is unchanged.
 
 The class stays split across GeoServices GPServer SOAP and SOAP Progress on
-selected PR runs and full trunk runs. No workflow, shard filter, required check, aggregate dependency or runner
-count changes. One build-host job, 81/81 passing cases, zero skipped: class
-span 243.7 to 23.0-24.2 seconds (process wall 248 to 27-28 seconds).
+selected PR runs and full trunk runs. No workflow, shard filter, required
+check, aggregate dependency or runner count changes. One build-host job, 81/81
+passing cases, zero skipped: class span 243.7 to 23.0-24.2 seconds (process
+wall 248 to 27-28 seconds).

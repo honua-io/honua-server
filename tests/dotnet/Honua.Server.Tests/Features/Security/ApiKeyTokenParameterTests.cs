@@ -72,7 +72,8 @@ public sealed class ApiKeyTokenParameterTests : IClassFixture<ApiKeyTokenParamet
         _fixture = host.Fixture;
     }
 
-    // One application serves every case. Each case creates and revokes only its own keys.
+    // One application serves every case. Each case creates only its own keys and never
+    // revokes or lists shared ones.
     // The in-process transport leaves RemoteIpAddress unset, so the authentication failure
     // limiter does not count these requests (it ignores a missing client address). Key names
     // are not unique in the store; lookup is by key material.
