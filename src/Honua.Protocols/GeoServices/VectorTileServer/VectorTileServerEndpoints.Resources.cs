@@ -23,6 +23,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
 using Honua.Protocols.GeoServices.VectorTileServer.Services;
 using Honua.ServiceDefaults;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
@@ -135,12 +136,11 @@ internal static partial class VectorTileServerEndpoints
             }
 
             var resource = primary.Resource;
-            var styleId = resource.Metadata.Name;
             var geometryType = resource.ReadGeometryType();
 
-            var storedMapLibreJson = await ResolveStoredMapLibreStyleAsync(
+            var storedMapLibreJson = await ResolveVisibleStoredStyleAsync(
                 context,
-                styleId,
+                resource,
                 cancellationToken).ConfigureAwait(false);
 
             var tileUrl = BuildTileTemplateUrl(context, service.Metadata.Name);
@@ -260,6 +260,18 @@ internal static partial class VectorTileServerEndpoints
         var candidateIndex = candidate.LayerIndex ?? int.MaxValue;
         var currentIndex = current.LayerIndex ?? int.MaxValue;
         return candidateIndex < currentIndex;
+    }
+
+    // The stored style without layers or properties that read a field withheld from this caller.
+    private static async Task<string?> ResolveVisibleStoredStyleAsync(
+        HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
+    {
+        var stored = await ResolveStoredMapLibreStyleAsync(context, resource.Metadata.Name, cancellationToken).ConfigureAwait(false);
+        return stored is null
+            ? null
+            : StyleDocumentWithheldFields.WithoutWithheldMapLibre(
+                stored,
+                await StyleDocumentWithheldFields.ResolveAsync(context, resource, cancellationToken).ConfigureAwait(false));
     }
 
     private static async Task<string?> ResolveStoredMapLibreStyleAsync(
