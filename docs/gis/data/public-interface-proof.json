@@ -3807,6 +3807,34 @@
       ]
     },
     {
+      "surfaceId": "attachment-signed-downloads",
+      "displayName": "Signed attachment download links",
+      "surfaceKind": "http-route-family",
+      "protocol": "HTTP",
+      "canonicalIdentifier": "/api/v1/attachments/downloads/{token}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/attachments/downloads/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus gRPC-Web GetAttachmentUrl integration test that downloads through the signed link for local file storage, and token unit tests (expiry, tampering, foreign key ring)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/GrpcIntegrationTests.Attachments.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/AttachmentDownloadLinksTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented"
+        }
+      ]
+    },
+    {
       "surfaceId": "cog-range-proxy",
       "displayName": "Published Cloud Optimized GeoTIFF range proxy",
       "surfaceKind": "http-route-family",

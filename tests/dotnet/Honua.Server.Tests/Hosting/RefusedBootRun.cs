@@ -15,6 +15,17 @@ internal sealed record RefusedBootRun(bool Exited, int ExitCode, string Output)
 
     // The cached test payload's server in Production against the given database; callers add the setting under test.
     public static ProcessStartInfo ProductionServer(string connectionString, IEnumerable<string> inheritedKeysToRemove)
+        => ProductionServer(inheritedKeysToRemove, new Dictionary<string, string>
+        {
+            ["ConnectionStrings__DefaultConnection"] = connectionString,
+            ["DataSource__Provider"] = "postgis",
+        });
+
+    // The cached test payload's server in Production with inherited settings removed, so the given environment
+    // alone decides the composition. Also used for boots that are expected to succeed.
+    public static ProcessStartInfo ProductionServer(
+        IEnumerable<string> inheritedKeysToRemove,
+        IReadOnlyDictionary<string, string> environment)
     {
         var serverDirectory = AppContext.BaseDirectory;
         var serverAssembly = Path.Join(serverDirectory, "Honua.Server.dll");
@@ -36,8 +47,11 @@ internal sealed record RefusedBootRun(bool Exited, int ExitCode, string Output)
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
         start.Environment["DOTNET_ENVIRONMENT"] = "Production";
         start.Environment["ASPNETCORE_URLS"] = "http://127.0.0.1:0";
-        start.Environment["ConnectionStrings__DefaultConnection"] = connectionString;
-        start.Environment["DataSource__Provider"] = "postgis";
+        foreach (var (key, value) in environment)
+        {
+            start.Environment[key] = value;
+        }
+
         return start;
     }
 

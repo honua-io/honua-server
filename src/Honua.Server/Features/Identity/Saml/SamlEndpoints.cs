@@ -348,7 +348,7 @@ internal static partial class SamlEndpoints
                 HttpOnly = true,
                 IsEssential = true,
                 SameSite = SameSiteMode.Lax,
-                Secure = context.Request.IsHttps,
+                Secure = AdminAuthEndpoints.UseSecureSessionCookie(context),
                 Path = "/",
             });
         return null;
@@ -477,7 +477,7 @@ internal static partial class SamlEndpoints
                 HttpOnly = true,
                 IsEssential = true,
                 SameSite = SameSiteMode.Lax, // Lax: the IdP POSTs cross-site to the ACS.
-                Secure = context.Request.IsHttps,
+                Secure = AdminAuthEndpoints.UseSecureSessionCookie(context),
                 MaxAge = lifetime,
                 Path = "/",
             });

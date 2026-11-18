@@ -565,14 +565,18 @@ wake/wait orchestration. Both sparse checkouts include the shared validator.
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
 `server-test-producer` run, and which start jobs move to idle heavy runners. The
-selector itself, Format and source Analyzers use the fork-guarded
-`HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback. Both
+selector, Format and source Analyzers, affected-shard selection, the
+affected-shard aggregate, CI router validation and the required aggregate stay
+on `ubuntu-latest` for every pull request. `HONUA_LIGHT_RUNNER` does not place
+them. That pool also runs hygiene, review and the other light workflows, and a
+selector waiting on it leaves idle `honua-build` runners unused. Both
 test-analyzer rows and the four Fast/architecture matrix jobs use `ubuntu-latest`
 unless the selector planned them onto the heavy pool (below); test analyzers never
 use the light pool, even during light-pool qualification. All eight keep their
-existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
-availability switch: keep it unset while the light pool is unhealthy; new jobs
-then fall back to hosted runners. Forks always use hosted runners. Routing does
+existing check names and coverage. `HONUA_LIGHT_RUNNER` remains the operator
+switch for those non-gate light workflows: keep it unset while the light pool
+is unhealthy and they fall back to hosted runners. Forks always use hosted
+runners. Routing does
 not move an already queued job when pool health changes. With the repository variable
 `HONUA_PR_GATE_RUNNER` unset, its steps skip and the two producers stay on
 `ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
@@ -612,17 +616,22 @@ host and read its heartbeat, nothing else) and runs
   which carries no job condition.
 
 A manual PR Gate dispatch on `trunk` can set the boolean `qualify_light` input
-(default `false`) to qualify the light pool while `HONUA_LIGHT_RUNNER` stays unset.
+(default `false`) to place the PR Gate control jobs on the light pool.
 Only `workflow_dispatch` on `refs/heads/trunk` honors this override. It pins the
-`honua-light` runner group and label for the six existing light jobs; it accepts
-no runner label input. Both test-analyzer rows remain hosted; producer,
-heavy-shard and Fast/architecture routing stays unchanged. Other refs and events retain the normal variable and fork
-guards. Qualification is an operator-run health check; the input does not enable
-normal routing or change repository settings. Record ten consecutive green runs
-and their actual runner assignments before restoring the availability variable.
+`honua-light` runner group and label; it accepts no runner label input. Shard
+selection and the affected-shard aggregate run only on pull requests, so a
+dispatch qualifies runner select, Format and source Analyzers, CI router
+validation and the required aggregate. Both test-analyzer rows remain hosted;
+producer, heavy-shard and Fast/architecture routing stays unchanged. Other refs
+and events keep these jobs on `ubuntu-latest`. Qualification is an operator-run
+health check; the input does not enable normal routing or change repository
+settings. The authored inventory template records this placement. A pull
+request that edits `pr-gate.yml` cannot also submit the generated inventory
+page, because that workflow is a generated-file verification input; the trunk
+generator publishes the page.
 
-Draft Format and admission/control jobs also use the fork-guarded light selector;
-with `HONUA_LIGHT_RUNNER` unset they stay hosted. Runner select, the format/analyzer
+Draft Format and the admission/control jobs stay on `ubuntu-latest` on a pull request.
+Runner select, the format/analyzer
 matrix, affected-shard selection, the affected-shard aggregate, CI router validation
 and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
 `RUNNER_TEMP` before any other step. Verdict fixtures select the named verdict
@@ -1778,10 +1787,11 @@ Image measurement exports stay outside the Docker build context: `.dockerignore`
 
 ## Lightweight workflow routing and compatibility
 
-The lightweight workflow callers use the same fork-guarded `HONUA_LIGHT_RUNNER`
-JSON selector and `ubuntu-latest` fallback as PR Gate control jobs. This includes
-Repository hygiene, Clean code, Runner label lint, Review Gate Attestation,
-Review Event Bridge and OpenAPI drift/governance.
+The lightweight workflow callers (Repository hygiene, Clean code, Runner label
+lint, Review Gate Attestation, Review Event Bridge and OpenAPI drift/governance)
+use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector and `ubuntu-latest`
+fallback. PR Gate control jobs do not: they stay on `ubuntu-latest` except for
+a trunk `qualify_light` dispatch.
 Reusable workflow pins must include the shared selector support. Each local
 shell job exports `TMPDIR`, `TEMP` and `TMP` from `RUNNER_TEMP` before checkout.
 The variable remains an operator availability switch for newly admitted jobs.
