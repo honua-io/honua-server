@@ -399,7 +399,10 @@ producer so these checks do not wait for artifact publication. The required
 boot/migration smoke remains on the producer after pristine artifact publication.
 Full CI owns remote-source, raster, layer, geometry/calculate-field, imagery,
 GDAL/PDAL and import/export fidelity proofs, including the existing receipt
-tripwires. Protocol-profile compilation also runs in full CI.
+tripwires. Protocol-profile compilation also runs in full CI: full and scheduled
+runs select every profile with `protocol-profile-selection.py --all`. A range
+selection compares trunk with itself there and would build only `all`, which
+is what full run 44309947920 did.
 
 ### Import-fidelity gates: correctness and performance
 
@@ -546,9 +549,13 @@ compiler diagnostics and source generators still run; the PR Gate producer
 already publishes its managed outputs from this no-analyzer build mode under
 the same build-properties label. An analyzer finding that only appears when
 several landed PRs combine is left to the scheduled full run. Selected
-protocol-profile builds keep analyzers for the projects they recompile
-(Honua.Server, whose profile constants change); referenced projects are reused
-from the no-analyzer producer build, and PR Gate analyzed them on each PR.
+protocol-profile builds keep analyzers for Honua.Server, whose profile
+constants change. Referenced projects are first resolved in the producer's
+no-analyzer mode and then reused with `BuildProjectReferences=false`; PR Gate
+analyzed them on each PR. A single `RunAnalyzers=true` profile build would
+recompile all 29 referenced projects: affected run 44379685745 spent 10.2 of
+16.3 profile minutes on that (6.4-7.0 min before the producer dropped
+analyzers).
 
 The producer skips hosted sudo cleanup on self-hosted runners and installs its
 SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,

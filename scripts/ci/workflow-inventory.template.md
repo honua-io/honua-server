@@ -1012,7 +1012,9 @@ stale or busy proof and setup failure select `ubuntu-latest`, without wake,
 wait, polling or retries. Light jobs stay hosted. The producer uses a private writable SDK directory, skips sudo
 cleanup off hosted runners and bounds all nested build workers to four.
 Selective dispatches build that graph with `RunAnalyzers=false`; scheduled
-and `full_ci` runs, and the protocol-profile builds, keep analyzers.
+and `full_ci` runs keep analyzers. Protocol-profile builds analyze Honua.Server
+and, after a no-analyzer producer, reuse its referenced projects
+(`BuildProjectReferences=false` after a no-analyzer `ResolveProjectReferences`).
 See [producer admission and MAIN-owned preflight](gate-model.md#full-ci-producer-admission)
 before enabling the source contract; merging it does not activate any pool.
 
