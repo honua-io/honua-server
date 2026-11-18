@@ -2762,3 +2762,30 @@ runs and twice-daily full trunk runs. No workflow, shard definition, required
 check, aggregate dependency or runner count changes. Before, on hosted full trunk
 run 44183857476, the class took 599 seconds in Server Features Streaming
 Transports and 101, 170 and 232 seconds in Streaming Endpoints 1, 2 and 4.
+
+### Retry-failure cases check the backoff instead of sleeping through it
+
+On hosted full trunk run 44250783964 the three
+`RoutingAsyncWebToolTests.SubmitJob_ProviderException_FailsDurablyWithoutPartialResults`
+cases took 91 to 102 seconds each, 284 of the 292-second class span in GeoServices
+GPServer and NAServer 1. Almost all of it was the default retry policy's 30- and
+60-second backoff. `RoutingPgRoutingQueuedJobTests.ProviderFailure_FailsDurablyWithoutPartialResults`
+on the routing nightly waits the same 90 seconds for each of its three tasks.
+Both now use `ScheduledRetryExpediter` (Honua.TestKit). After each failed attempt
+it asserts that the requeued job's stored `next_retry_at` equals the policy's
+`ComputeDelay(attempt + 1)`, a check these tests did not make before. It then
+makes that one retry due now, the state the backoff would reach on its own. The
+real worker still claims, runs and fails every attempt, and the terminal status,
+attempt count, error and empty artifacts are asserted as before.
+
+`EndpointRegistryDriftTests.AllEndpointRegistryEntries_AreBackedByHttpRequests`
+took 86 seconds in STAC API Governance 2. It built a path regex for every
+(registry endpoint, test method body) pair through `Regex.IsMatch`, whose static
+cache holds 15 patterns, so every pattern was parsed again for every body. Each
+endpoint's pattern and each verb's call-site patterns are now built once, and
+the verb result is shared per body. The matching rules are byte-identical. The
+class's read-only host is now one class fixture instead of one host per case.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs, twice-daily full trunk runs and the routing nightly. No workflow, shard
+definition, required check name or aggregate `needs` changed.

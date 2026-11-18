@@ -409,8 +409,11 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
         await host.InitializeAsync();
         using var client = Client(host);
         client.Timeout = TimeSpan.FromMinutes(5);
+        // The default policy retries after 30 s and 60 s; each stored backoff is checked against it
+        // and the retry is then made due instead of sleeping through it.
         var retry = JobRetryPolicy.Default;
-        var budget = SuccessBudget + retry.ComputeDelay(2) + retry.ComputeDelay(3);
+        var jobStore = host.GetService<IExecutionJobStore>();
+        var retries = new ScheduledRetryExpediter(isolatedJobs.DataSource, jobStore, isolatedJobs.Schema);
         var cases = new (string Task, string First, string Second, string Output)[]
         {
             ("FindClosestFacilities", "Incidents", "Facilities", "Output_Routes"),
@@ -432,11 +435,12 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
             }
 
             var jobId = await SubmitAsync(client, failure.Task, inputs);
-            using var terminal = await UntilTerminalAsync(client, failure.Task, jobId, "GPServer", budget);
+            await retries.ExpediteAsync(jobId, retry, SuccessBudget);
+            using var terminal = await UntilTerminalAsync(client, failure.Task, jobId, "GPServer", SuccessBudget);
             var body = terminal.RootElement.GetRawText();
             terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed", body);
             AssertNoProviderLeak(body);
-            var durable = (await host.GetService<IExecutionJobStore>().GetAsync(jobId))!;
+            var durable = (await jobStore.GetAsync(jobId))!;
             durable.Status.Should().Be(ExecutionJobStatus.Failed);
             durable.AttemptCount.Should().Be(retry.MaxAttempts);
             durable.ErrorMessage.Should().Be("Job execution failed.");

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -13,8 +14,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.API;
 
-public sealed class EndpointRegistryDriftTests : IAsyncLifetime
+// The host is only read (its endpoint data sources), so one host serves the whole class.
+public sealed class EndpointRegistryDriftTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
+    private const RegexOptions SourceMatchOptions = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+
     private static readonly Regex _routeConstraintRegex =
         new(@"\{([^{}:]+):[^{}]+\}", RegexOptions.Compiled);
     private static readonly Regex _integrationTestAttributeRegex =
@@ -24,11 +28,8 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
     private static readonly Regex _endpointAttributeRegex =
         new(@"\[Endpoint\(""([^""]+)""\)\]", RegexOptions.Compiled);
 
-    private readonly WebAppFixture _fixture = new();
-
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    // HTTP-verb call-site patterns per method, shared by every method body scan.
+    private static readonly ConcurrentDictionary<string, Regex[]> _verbInvocationPatterns = new(StringComparer.Ordinal);
 
     private static readonly HashSet<string> _excludedExactPatterns = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -94,7 +95,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
     [Trait("Category", "Architecture")]
     public void AllDeployedEndpoints_AreTrackedInRegistry()
     {
-        var endpointSources = _fixture.Services.GetServices<EndpointDataSource>();
+        var endpointSources = fixture.Services.GetServices<EndpointDataSource>();
         var deployedEndpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var source in endpointSources)
@@ -199,7 +200,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
     [Trait("Category", "Architecture")]
     public void AllDeployedGrpcMethods_AreTrackedInOperationRegistry()
     {
-        var endpointSources = _fixture.Services.GetServices<EndpointDataSource>();
+        var endpointSources = fixture.Services.GetServices<EndpointDataSource>();
         var deployedGrpcMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var source in endpointSources)
@@ -391,8 +392,13 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         IEnumerable<string> targetEndpointKeys,
         string? sourcePath = null)
     {
-        var targets = targetEndpointKeys
+        // Each endpoint's source-path pattern is built once. Regex's static cache holds 15 patterns,
+        // so building one per (endpoint, method body) pair re-parsed every pattern for every body.
+        var matchers = targetEndpointKeys
             .Select(NormalizeEndpointKey)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(EndpointSourceMatcher.TryCreate)
+            .OfType<EndpointSourceMatcher>()
             .ToArray();
         var endpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var sourceFiles = sourcePath is null
@@ -402,16 +408,12 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
         foreach (var block in EnumerateIntegrationTestMethodBodies(sourceFiles))
         {
-            foreach (var endpoint in targets)
+            var verbsInBody = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (var matcher in matchers.Where(matcher => !endpoints.Contains(matcher.Key)))
             {
-                if (endpoints.Contains(endpoint))
+                if (matcher.IsExercisedBy(block.Body, verbsInBody))
                 {
-                    continue;
-                }
-
-                if (EndpointIsExercisedByMethodBody(endpoint, block.Body))
-                {
-                    endpoints.Add(endpoint);
+                    endpoints.Add(matcher.Key);
                 }
             }
         }
@@ -465,24 +467,14 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         }
     }
 
-    private static bool EndpointIsExercisedByMethodBody(string endpointKey, string methodBody)
-    {
-        var separatorIndex = endpointKey.IndexOf(' ');
-        if (separatorIndex < 1 || separatorIndex == endpointKey.Length - 1)
-        {
-            return false;
-        }
-
-        var method = endpointKey[..separatorIndex];
-        var path = endpointKey[(separatorIndex + 1)..];
-
-        return HasHttpVerbInvocation(methodBody, method) &&
-            Regex.IsMatch(methodBody, BuildSourcePathRegex(path), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    }
-
     private static bool HasHttpVerbInvocation(string methodBody, string method)
+        => _verbInvocationPatterns
+            .GetOrAdd(method, BuildVerbInvocationPatterns)
+            .Any(pattern => pattern.IsMatch(methodBody));
+
+    private static Regex[] BuildVerbInvocationPatterns(string method)
     {
-        var pattern = method.ToUpperInvariant() switch
+        var pattern = method switch
         {
             // The optional (?:<[^()]*>)? segment lets the verb match generic
             // typed-deserialization helpers such as GetFromJsonAsync<T>(...) where a
@@ -502,28 +494,20 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
             _ => null
         };
 
-        if (pattern is not null &&
-            Regex.IsMatch(methodBody, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
-        {
-            return true;
-        }
-
+        var literal = Regex.Escape(method);
         var literalHttpMethodPattern =
-            $@"new\s+HttpRequestMessage\s*\(\s*new\s+HttpMethod\s*\(\s*""{Regex.Escape(method.ToUpperInvariant())}""\s*\)\s*,";
-        if (Regex.IsMatch(
-                methodBody,
-                literalHttpMethodPattern,
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            $@"new\s+HttpRequestMessage\s*\(\s*new\s+HttpMethod\s*\(\s*""{literal}""\s*\)\s*,";
+        var dynamicHttpMethodPattern =
+            $@"new\s+HttpMethod\s*\(\s*\w+\s*\).*""{literal}""|""{literal}"".*new\s+HttpMethod\s*\(\s*\w+\s*\)";
+        var patterns = new List<Regex>(3);
+        if (pattern is not null)
         {
-            return true;
+            patterns.Add(new Regex(pattern, SourceMatchOptions | RegexOptions.Compiled));
         }
 
-        var dynamicHttpMethodPattern =
-            $@"new\s+HttpMethod\s*\(\s*\w+\s*\).*""{Regex.Escape(method.ToUpperInvariant())}""|""{Regex.Escape(method.ToUpperInvariant())}"".*new\s+HttpMethod\s*\(\s*\w+\s*\)";
-        return Regex.IsMatch(
-            methodBody,
-            dynamicHttpMethodPattern,
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
+        patterns.Add(new Regex(literalHttpMethodPattern, SourceMatchOptions | RegexOptions.Compiled));
+        patterns.Add(new Regex(dynamicHttpMethodPattern, SourceMatchOptions | RegexOptions.Compiled | RegexOptions.Singleline));
+        return patterns.ToArray();
     }
 
     private static string BuildSourcePathRegex(string routePath)
@@ -625,4 +609,41 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
     }
 
     private sealed record TestSourceBlock(string Body);
+
+    // One registry endpoint and its source-path pattern. A method body exercises the endpoint when it
+    // makes a same-method HTTP call and names the route; the verb result is shared per body.
+    private sealed class EndpointSourceMatcher
+    {
+        private readonly string _method;
+        private readonly Regex _path;
+
+        private EndpointSourceMatcher(string key, string method, string path)
+        {
+            Key = key;
+            _method = method;
+            _path = new Regex(BuildSourcePathRegex(path), SourceMatchOptions);
+        }
+
+        public string Key { get; }
+
+        public static EndpointSourceMatcher? TryCreate(string endpointKey)
+        {
+            var separatorIndex = endpointKey.IndexOf(' ');
+            return separatorIndex < 1 || separatorIndex == endpointKey.Length - 1
+                ? null
+                : new EndpointSourceMatcher(
+                    endpointKey, endpointKey[..separatorIndex].ToUpperInvariant(), endpointKey[(separatorIndex + 1)..]);
+        }
+
+        public bool IsExercisedBy(string methodBody, Dictionary<string, bool> verbsInBody)
+        {
+            if (!verbsInBody.TryGetValue(_method, out var hasVerb))
+            {
+                hasVerb = HasHttpVerbInvocation(methodBody, _method);
+                verbsInBody[_method] = hasVerb;
+            }
+
+            return hasVerb && _path.IsMatch(methodBody);
+        }
+    }
 }
