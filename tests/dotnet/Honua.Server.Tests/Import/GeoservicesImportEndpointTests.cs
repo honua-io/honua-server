@@ -41,18 +41,28 @@ namespace Honua.Server.Tests.Import;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
-public class GeoservicesImportEndpointTests : IAsyncLifetime
+public class GeoservicesImportEndpointTests(GeoservicesImportEndpointTests.ImportHost host)
+    : IClassFixture<GeoservicesImportEndpointTests.ImportHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Enterprise);
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Client;
 
-    public async Task InitializeAsync()
+    // One host per class for the cases that use the default host. Cases that replace the import
+    // service build fixtures of their own, as before.
+    public sealed class ImportHost : IAsyncLifetime
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
+        internal WebAppFixture Fixture { get; } = new WebAppFixture().WithProductionJobSubstrate().WithTestLicense(HonuaEdition.Enterprise);
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        internal HttpClient Client { get; private set; } = null!;
+
+        public async Task InitializeAsync()
+        {
+            await Fixture.InitializeAsync();
+            Client = Fixture.Client;
+        }
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     #region POST /api/v1/admin/import/geoservices/discover
 
@@ -600,12 +610,13 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
             {
                 ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
                 LayerId = 0,
-                TableName = "test_degraded_import"
+                TableName = "test_degraded_import",
+                AutoPublish = false
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("durable background job storage");
+        content.Should().Contain("Durable import storage is unavailable");
     }
 
     [IntegrationTest]

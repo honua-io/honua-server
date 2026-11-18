@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Operations;
 
 namespace Honua.Server.Features.Admin;
 
@@ -19,11 +20,16 @@ internal static class FolderEndpoints
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
             .AddEndpointFilter<FolderReplayAuthorizationFilter>()
             .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Services").RequireAdminAuthorization();
-        group.MapGet("/folders", (Delegate)List);
-        group.MapPost("/folders", Create);
-        group.MapPatch("/folders/{id}", Update);
-        group.MapDelete("/folders/{id}", Delete);
-        group.MapPut("/services/{serviceName}/folder", Move);
+        var list = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.list");
+        group.MapMethods(list.Path, [list.Method.Method], (Delegate)List).WithAdminOperation(list);
+        var create = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.create");
+        group.MapMethods(create.Path, [create.Method.Method], Create).WithAdminOperation(create);
+        var update = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.update");
+        group.MapMethods(update.Path, [update.Method.Method], Update).WithAdminOperation(update);
+        var delete = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "folder.delete");
+        group.MapMethods(delete.Path, [delete.Method.Method], Delete).WithAdminOperation(delete);
+        var move = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "service.move");
+        group.MapMethods(move.Path, [move.Method.Method], Move).WithAdminOperation(move);
     }
 
     private static async Task<IResult> List(HttpContext context)
@@ -42,54 +48,43 @@ internal static class FolderEndpoints
     }
 
     private static Task<IResult> Create(FolderRequest request, HttpContext context)
-        => Mutate(context, graph => FolderMutation.Create(graph, request, Tenant(context)));
+        => Mutate(context, new FolderMutationCommand.Create(request.Name,
+            request.TitleSpecified ? new FolderTitleChange(request.Title) : default));
 
     private static Task<IResult> Update(string id, FolderRequest request, HttpContext context)
-        => Mutate(context, graph => FolderMutation.Update(graph, id, request, Tenant(context)));
+        => Mutate(context, new FolderMutationCommand.Update(id, request.Name,
+            request.TitleSpecified ? new FolderTitleChange(request.Title) : default));
 
     private static Task<IResult> Delete(string id, HttpContext context)
-        => Mutate(context, graph => FolderMutation.Delete(graph, id, Tenant(context)));
+        => Mutate(context, new FolderMutationCommand.Delete(id));
 
     private static Task<IResult> Move(string serviceName, MoveServiceRequest request, HttpContext context)
-        => Mutate(context, graph => FolderMutation.Move(graph, serviceName, request.FolderId, Tenant(context)));
+        => Mutate(context, new FolderMutationCommand.Move(serviceName, request.FolderId));
 
-    private static async Task<IResult> Mutate(HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation)
+    private static async Task<IResult> Mutate(HttpContext context, FolderMutationCommand command)
     {
         var scopeError = ValidateScope(context);
         if (scopeError is not null) return scopeError;
-        var denied = await AuthorizeMutation(context).ConfigureAwait(false);
-        if (denied is not null) return denied;
-        if (context.Request.Headers.IfMatch.Count != 1 || string.IsNullOrWhiteSpace(context.Request.Headers.IfMatch))
-            return FolderMutationFailure.MissingPrecondition.ToResult();
-        var store = context.RequestServices.GetService<IMetadataV2GraphStore>();
-        if (store is null)
-            return FolderMutationFailure.ReadOnlyCatalog.ToResult();
-        try
+        var operation = context.GetEndpoint()?.Metadata.GetMetadata<AdminApiOperationCatalog.Definition>()
+            ?? throw new InvalidOperationException("Folder mutation is missing its operation definition.");
+        if (operation.OperationId != command.OperationId)
+            throw new InvalidOperationException("Folder mutation does not match its operation definition.");
+        var replay = context.Features.Get<FolderReplayServicePrincipal>();
+        var execution = await FolderMutationService.ExecuteAsync(new FolderMutationExecution
         {
-            return await CommitMutationAsync(context, mutation, store).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (FolderMutationFailure.Handles(exception))
-        {
-            return FolderMutationFailure.From(exception).ToResult();
-        }
-    }
-
-    private static async Task<IResult> CommitMutationAsync(
-        HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation, IMetadataV2GraphStore store)
-    {
-        if (context.Features.Get<FolderReplayServicePrincipal>() is { } replay &&
-            !await FolderApprovalAuthorization.IsCurrentAsync(replay.Proposal, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
-            return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: FolderApprovalAuthorization.FreshProposalRequired);
-        var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
-            return FolderMutationFailure.SnapshotChanged.ToResult();
-        var changed = mutation(snapshot.Graph);
-        var denial = await AuthorizeAffectedServices(context, snapshot.Graph, changed).ConfigureAwait(false);
-        if (denial is not null) return denial;
-        var saved = await store.SaveAsync(changed.Graph, snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
+            Services = context.RequestServices,
+            Principal = replay?.Admission?.Principal ?? context.User,
+            Command = command,
+            ExpectedEtag = context.Request.Headers.IfMatch.Count == 1 ? context.Request.Headers.IfMatch.ToString() : null,
+            Namespace = context.Request.Query.ContainsKey("namespace") ? context.Request.Query["namespace"].ToString() : null,
+            Replay = replay?.Admission,
+            RequestCache = replay is null ? context.Items : null
+        }, context.RequestAborted).ConfigureAwait(false);
+        if (execution.Failure is not null) return MapFailure(context, execution.Failure);
+        var saved = execution.Saved ?? throw new InvalidOperationException("Folder mutation did not return a saved snapshot.");
+        var changed = execution.Mutation ?? throw new InvalidOperationException("Folder mutation did not return its result.");
+        if (execution.Authorization is not null) MapServiceAuthorization(context, execution.Authorization);
         context.Response.Headers.ETag = saved.Etag;
-        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("FolderMutations");
-        FolderAuditLog.Mutated(logger, context.Request.Method, saved.Graph.Revision);
         if (changed.Status == 204) return Results.NoContent();
         var folder = saved.Graph.Folders.Single(f => f.Metadata.Id == changed.Folder!.Metadata.Id);
         if (changed.Status == 201) context.Response.Headers.Location = $"{context.Request.PathBase}/api/v1/admin/folders/{folder.Metadata.Id}";
@@ -97,53 +92,56 @@ internal static class FolderEndpoints
             FolderJsonContext.Default.ApiResponseMetadataV2Folder, statusCode: changed.Status);
     }
 
-    private static async Task<IResult?> AuthorizeMutation(HttpContext context)
+    private static IResult MapFailure(HttpContext context, FolderExecutionFailure failure) => failure switch
     {
-        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var denied = await gate.EvaluateAuthorizationAsync(context, OperatorResourceType.Catalog, OperatorOperation.Publish).ConfigureAwait(false);
-        return denied ?? gate.EvaluateApproval(context, OperatorResourceType.Catalog, OperatorOperation.Publish);
-    }
+        FolderExecutionFailure.Replay => Results.Problem(statusCode: 403, detail: FolderApprovalAuthorization.FreshProposalRequired),
+        FolderExecutionFailure.Mutation mutation => mutation.Refusal.ToResult(),
+        FolderExecutionFailure.Authorization authorization => OperatorApprovalGate.CreateAuthorizationDeniedResult(context, authorization.Decision)!,
+        FolderExecutionFailure.Approval approval => context.RequestServices.GetRequiredService<OperatorApprovalGate>()
+            .CreateApprovalDeniedResult(context, new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Catalog,
+                Operation = OperatorOperation.Publish
+            }, approval.Requirement)!,
+        FolderExecutionFailure.AffectedServices affected => MapServiceAuthorization(context, affected.Result)!,
+        _ => throw new InvalidOperationException("Unknown folder execution failure.")
+    };
 
-    internal static async Task<IResult?> AuthorizeAffectedServices(HttpContext context, MetadataV2Graph original, FolderMutation mutation)
+    private static IResult? MapServiceAuthorization(HttpContext context, FolderAuthorizationResult authorization)
     {
-        var affected = mutation.AffectedServices(original)
-            .GroupBy(service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase);
-        foreach (var services in affected)
+        foreach (var evaluation in authorization.RequesterEvaluations)
         {
-            var denied = await AuthorizeLogicalService(context, services).ConfigureAwait(false);
+            var denied = AccessPolicyHelpers.CreateServiceAccessDeniedResult(context, evaluation);
             if (denied is not null) return denied;
         }
-        return null;
-    }
-
-    private static async Task<IResult?> AuthorizeLogicalService(HttpContext context, IGrouping<string, MetadataV2Service> services)
-    {
-        if (services.Any(service => !MetadataV2ServicePaths.SameTenant(service.Metadata.Tenant, Tenant(context)))) return Results.NotFound();
-        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var denied = await gate.EvaluateAuthorizationAsync(context, OperatorResourceType.PublishedService,
-            OperatorOperation.Update, services.Key).ConfigureAwait(false);
-        if (denied is not null) return denied;
-        foreach (var service in services)
+        return authorization.Failure switch
         {
-            denied = await RequireServiceAccessAsync(context, service).ConfigureAwait(false);
-            if (denied is not null) return denied;
-        }
-        return null;
+            null => null,
+            FolderAuthorizationFailure.Tenant => Results.NotFound(),
+            FolderAuthorizationFailure.Operator denied => OperatorApprovalGate.CreateAuthorizationDeniedResult(context, denied.Decision),
+            FolderAuthorizationFailure.Requester denied => AccessPolicyHelpers.CreateServiceAccessDeniedResult(context, denied.Evaluation),
+            _ => throw new InvalidOperationException("Unknown folder authorization failure.")
+        };
     }
 
     internal static async Task<IResult?> RequireServiceAccessAsync(HttpContext context, MetadataV2Service service)
     {
-        var operatorPrincipal = context.User;
-        context.User = context.Features.Get<FolderReplayServicePrincipal>()?.Principal ?? operatorPrincipal;
-        try
+        var decision = await AccessPolicyHelpers.EvaluateServiceAccessCoreAsync(ServiceAccess(context), service,
+            context.RequestAborted).ConfigureAwait(false);
+        return AccessPolicyHelpers.CreateServiceAccessDeniedResult(context, decision);
+    }
+
+    private static ServiceAccessContext ServiceAccess(HttpContext context)
+    {
+        var replay = context.Features.Get<FolderReplayServicePrincipal>();
+        return new ServiceAccessContext
         {
-            return await AccessPolicyHelpers.RequireServiceAccessAsync(context, service, AuthorizationOperation.Admin,
-                context.RequestAborted).ConfigureAwait(false);
-        }
-        finally
-        {
-            context.User = operatorPrincipal;
-        }
+            Services = context.RequestServices,
+            Principal = replay?.Principal ?? context.User,
+            TenantId = TenantScopeHelpers.ResolveRequestTenantId(context),
+            Operation = AuthorizationOperation.Admin,
+            RequestCache = replay is null ? context.Items : null
+        };
     }
 
     private static IResult? ValidateScope(HttpContext context)
@@ -186,6 +184,6 @@ internal sealed partial class FolderJsonContext : JsonSerializerContext;
 internal static partial class FolderAuditLog
 {
     [Microsoft.Extensions.Logging.LoggerMessage(EventId = 9460, Level = LogLevel.Information,
-        Message = "Folder catalog mutation {Method} committed metadata revision {Revision}")]
-    public static partial void Mutated(ILogger logger, string method, long revision);
+        Message = "Folder catalog mutation {OperationId} committed metadata revision {Revision}")]
+    public static partial void Mutated(ILogger logger, string operationId, long revision);
 }

@@ -151,8 +151,7 @@ public sealed class MetadataV2GraphIndex
         var publicationsByService = graph.Publications.ToLookup(p => p.ServiceId, StringComparer.Ordinal);
         var publicationsByResource = graph.Publications.ToLookup(p => p.ResourceId, StringComparer.Ordinal);
 
-        // Security sources previously scanned PublicationsById for every read. Resolve
-        // these immutable names once, retaining first-wins duplicate IDs and all scopes.
+        // Resolve immutable security source names once, retaining first-wins duplicate IDs and all scopes.
         var serviceNameSets = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         foreach (var publication in publicationsById.Values)
         {

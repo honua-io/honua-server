@@ -54,7 +54,7 @@ public sealed class TierTraitEnforcementTests
     {
         // PR Gate checks out refs/pull/N/merge with fetch-depth 2. Its first parent is the
         // trusted trunk tip, even when the PR adds a bare [Fact] and its baseline line together.
-        // The first PR introducing this file has no parent baseline and is allowed to seed it.
+        // An absent parent baseline permits the initial baseline to be seeded.
         var prior = TierTraitBaseline.ReadFromFirstParent(ArchitectureTestHelpers.ResolveRepositoryRoot());
         if (prior is null)
         {

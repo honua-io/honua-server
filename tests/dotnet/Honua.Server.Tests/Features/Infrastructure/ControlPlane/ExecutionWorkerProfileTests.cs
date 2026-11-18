@@ -20,7 +20,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -143,7 +142,7 @@ public sealed class ExecutionWorkerProfileTests
         var services = builder.Services;
         ComposeServingControlPlane(services, builder.Configuration, builder.Environment);
 
-        // The serving composition the worker used to inherit: proves the assertions below bite.
+        // Serving composition is the negative fixture for the worker-profile assertions.
         HostedImplementations(services).Should().Contain(
         [
             typeof(ExecutionJobReconcilerBackgroundService),
@@ -623,10 +622,9 @@ public sealed class ExecutionWorkerProfileTests
         IConfiguration configuration,
         IHostEnvironment environment)
     {
-        // Mirrors the serving composition of Program.cs on a host with a system database and an
-        // entitled Redis, with the real registration extensions where they exist. Nothing here
-        // opens a connection: no hosted service is started.
-        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
+        // Mirrors the serving composition of Program.cs on a host with a system database, with
+        // the real registration extensions where they exist. Nothing here opens a connection: no
+        // hosted service is started.
         services.AddSingleton(_ => NpgsqlDataSource.Create("Host=localhost;Database=unused"));
         services.TryAddPostgresExecutionJobStore(configuration).Should().BeTrue();
         services.AddSingleton(Substitute.For<IUniversalProgressStore>());

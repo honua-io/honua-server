@@ -292,12 +292,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/token",
                 "https://auth.example.com/logout"));
 
-        var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .UseEnvironment("Production")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
-            });
+        var oidcFixture = CreateProductionGenericOidcFixture(stubFactory);
 
         var initialized = false;
         try
@@ -334,12 +329,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/token",
                 "https://auth.example.com/logout"));
 
-        var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .UseEnvironment("Production")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
-            });
+        var oidcFixture = CreateProductionGenericOidcFixture(stubFactory);
 
         var initialized = false;
         try
@@ -374,12 +364,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/token",
                 "https://auth.example.com/logout"));
 
-        var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .UseEnvironment("Production")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
-            });
+        var oidcFixture = CreateProductionGenericOidcFixture(stubFactory);
 
         var initialized = false;
         try
@@ -646,6 +631,9 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
         {
             await oidcFixture.InitializeAsync();
             var oidcClient = oidcFixture.CreateClient();
+            // The public base URL is https, so the pending sign-in cookie is Secure and the
+            // browser reaches the server over https.
+            oidcClient.BaseAddress = new Uri("https://localhost");
 
             var authorizeResponse = await oidcClient.PostAsJsonAsync(
                 "/api/v1/admin/auth/providers/oidc/authorize-url",
@@ -1263,6 +1251,18 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
 
     private static WebAppFixture CreateGenericOidcFixture(IHttpClientFactory httpClientFactory) =>
         ConfigureGenericOidcFixture(CreateBaseFixture(), httpClientFactory);
+
+    private static WebAppFixture CreateProductionGenericOidcFixture(IHttpClientFactory httpClientFactory) =>
+        CreateGenericOidcFixture(httpClientFactory)
+            .UseEnvironment("Production")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
+                // Production startup rejects relaxed token validation.
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "true");
+            });
 
     internal static WebAppFixture ConfigureGenericOidcFixture(WebAppFixture fixture, IHttpClientFactory httpClientFactory)
     {

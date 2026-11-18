@@ -123,7 +123,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
         limits.MaxArchiveEntryBytes.Should().Be(10000);
         limits.MaxArchiveExtractedBytes.Should().Be(20000);
         limits.MaxArchiveCompressionRatio.Should().Be(75.5);
-        // GeometryValidityMode is parsed case-insensitively from the section (#2743).
+        // GeometryValidityMode is parsed case-insensitively from the section.
         limits.GeometryValidityMode.Should().Be(Honua.Core.Configuration.ValidationMode.Strict);
     }
 

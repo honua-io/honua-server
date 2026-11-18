@@ -65,6 +65,11 @@ internal sealed partial class ConsoleJobService
             steps[i] = MapStep(job, entries[i], isLast ? null : entries[i + 1], ordinalOffset + i, workspace, artifactSummary, isLast, nextTimestamp);
         }
 
+        if (!await IsOperatorViewAsync(context.User, job, cancellationToken).ConfigureAwait(false))
+        {
+            steps = WithholdLostAttemptWorker(steps);
+        }
+
         return new ConsoleJobStepsResponse
         {
             JobId = job.OperationId,

@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location('affected_ci_lanes', ROOT / 'scripts/ci/affected-ci-lanes.py')
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+TRAILING_SPEC = importlib.util.spec_from_file_location(
+    'trailing_selection', ROOT / 'scripts/ci/trailing_selection.py')
+TRAILING = importlib.util.module_from_spec(TRAILING_SPEC)
+TRAILING_SPEC.loader.exec_module(TRAILING)
 
 
 class AffectedLaneTests(unittest.TestCase):
@@ -129,6 +133,19 @@ class AffectedLaneTests(unittest.TestCase):
                          'Full coverage must not expand an affected run beyond its runner budget')
         compute = next(step for step in jobs['targeted-shards']['steps'] if step.get('id') == 'compute')
         self.assertIn('python3 scripts/ci/trailing_selection.py)" >> "$GITHUB_OUTPUT"', compute['run'])
+        self.assertIn('--schedule-shards', compute['run'])
+        self.assertEqual(
+            "${{ steps.compute.outputs.schedule_shards }}",
+            jobs['targeted-shards']['outputs']['schedule_shards'])
+        self.assertIn(
+            "needs.targeted-shards.outputs.schedule_shards != 'false'",
+            jobs['server-tests']['if'])
+        self.assertEqual(
+            "${{ steps.filter.outputs.core_package }}",
+            jobs['changes']['outputs']['core_package'])
+        self.assertIn(
+            "needs.changes.outputs.core_package == 'true'",
+            jobs['core-package-compatibility']['if'])
         step = next(step for step in jobs['changes']['steps'] if step.get('id') == 'specialized')
         self.assertIn("trailing_selective == 'true'", step['env']['SELECTIVE'])
         self.assertIn("full_ci != 'true'", step['env']['SELECTIVE'])
@@ -136,6 +153,20 @@ class AffectedLaneTests(unittest.TestCase):
                     'docker-build', 'python-integration-tests', 'mcp-certification', 'quickstart-console-smoke']:
             self.assertIn('inputs.selective_base &&', jobs[job]['if'])
             self.assertIn("full_ci == 'true'", jobs[job]['if'])
+
+    def test_selective_smoke_skip_is_proved_and_selected_lanes_still_run(self):
+        jobs = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)['jobs']
+        summary = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Check required test job results')
+        receipts = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Verify server shard execution receipts')
+        receipt_download = next(step for step in jobs['test-all']['steps'] if step.get('name') == 'Download server shard receipts')
+        self.assertIn("schedule_shards != 'false'", receipt_download['if'])
+        self.assertIn('no_shards_selected', receipts['env']['SELECT_REASON'])
+        compute = next(step for step in jobs['targeted-shards']['steps'] if step.get('id') == 'compute')
+        self.assertIn('needs.changes.outputs.full_ci', compute['run'])
+        self.assertIn('SCHEDULE_SHARDS', summary['run'])
+        self.assertIn('!= skipped', summary['run'])
+        self.assertIn('!cancelled() && !failure()', jobs['aot-build']['if'])
+        self.assertIn('!cancelled() && !failure()', jobs['mcp-certification']['if'])
 
 
 class ShardWidthTests(unittest.TestCase):
@@ -153,6 +184,27 @@ class ShardWidthTests(unittest.TestCase):
     def test_broad_affected_runs_double_width_without_reaching_full(self):
         self.assertEqual(2, self.affected_width(31))
         self.assertEqual(2, self.affected_width(134))
+
+    def test_selective_no_path_match_skips_default_smoke_shards(self):
+        self.assertFalse(TRAILING.affected_run_schedules_shards("no_path_match"))
+        self.assertTrue(TRAILING.affected_run_schedules_shards("targeted"))
+        self.assertTrue(TRAILING.affected_run_schedules_shards("unmapped_source_change"))
+
+    def test_core_package_skips_only_docs_workflow_ci_and_tests(self):
+        measured = [
+            ".github/workflows/compose-release-lifecycle.yml",
+            ".github/workflows/nightly-container-build.yml",
+            "docs/guides/deploy/choose-serving-image.md",
+            "docs/guides/deploy/cloud-deployments.md",
+            "scripts/ci/test-store-profile-workflows.py",
+            "scripts/ci/test_immutable_container_tags.py",
+            "tests/dotnet/Honua.Architecture.Tests/NightlyImageCertificationTests.cs",
+        ]
+        self.assertTrue(TRAILING.core_package_required([]))
+        self.assertFalse(TRAILING.core_package_required(measured))
+        self.assertTrue(TRAILING.core_package_required(measured + ["src/Honua.Core/Core/Honua.Core.csproj"]))
+        self.assertTrue(TRAILING.core_package_required(["Directory.Build.props"]))
+        self.assertTrue(TRAILING.core_package_required([".github/ci-shards.json"]))
 
 
 if __name__ == '__main__':

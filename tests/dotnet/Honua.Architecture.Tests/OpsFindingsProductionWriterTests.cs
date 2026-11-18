@@ -59,9 +59,8 @@ public sealed class OpsFindingsProductionWriterTests
     [Fact]
     public void ConnectionPoolMetricsWriters_AreWiredIntoTheConnectionProvider()
     {
-        // The previously-dead ConnectionPoolMetrics counters are now written by the connection provider so
-        // the database health check reports real utilization/timeouts. Assert the wiring exists (the provider
-        // takes ConnectionPoolMetrics) so the counters cannot silently return to being unwritten.
+        // The connection provider writes ConnectionPoolMetrics so database health reports
+        // real utilization and timeouts. Assert that the provider receives the metrics writer.
         var gateAssembly = Assembly.Load("Honua.Postgres.Shared");
         var providerType = gateAssembly.GetType(ConnectionProviderTypeName);
         providerType.Should().NotBeNull();

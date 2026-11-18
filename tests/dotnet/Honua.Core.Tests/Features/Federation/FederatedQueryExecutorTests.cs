@@ -81,7 +81,7 @@ public sealed class FederatedQueryExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_EmitsSpanTaggedWithSourceIdAndKind()
     {
-        // PA-017: remote federated source calls had metrics and structured logging but no
+        // remote federated source calls had metrics and structured logging but no
         // distributed tracing span.
         var rows = ImmutableArray.Create(Feature(1));
         var executor = BuildExecutor(new StubConnector(FederatedSourceKind.HonuaGrpc, rows));

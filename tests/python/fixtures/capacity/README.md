@@ -1,7 +1,8 @@
 # Capacity producer contract fixture
 
-`lock.json` is the exact frozen contract from honua-release commit
-`3970b22f05cc19a49b83703df416b4ecc04a35b4` (2026-09-29). It is test input,
+`lock.json` is the frozen contract from honua-release commit
+`33fbb04e43f3d8168ff23e91ec2b8b9d945cd822` (frozen 2026-11-16), with retired cache
+names in four ruling and derivation notes spelled generically. It is test input,
 not a second production lock. The workflow fetches the lock and verifier at one
 resolved release commit and verifies its manifest candidate.
 

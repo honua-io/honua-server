@@ -568,7 +568,7 @@ public sealed class FilterPlanCompilerTests
     [Operation(Operations.SpatialQuery)]
     public void Compile_SpatialOnNon4326Layer_GeoJsonDefaultsTo4326()
     {
-        // Regression: untagged GeoJSON must default to EPSG:4326 per RFC 7946,
+        // Untagged GeoJSON must default to EPSG:4326 per RFC 7946,
         // not the layer SRID, so the downstream pipeline can ST_Transform correctly.
         var webMercatorResource = CreateResource(
             "mercator_layer",
@@ -606,7 +606,7 @@ public sealed class FilterPlanCompilerTests
     public void Deserialize_WithNullClauses_CoalescesToEmptyArrayInsteadOfNull()
     {
         // STJ overwrites the [] default with null for a literal "clauses": null, so
-        // plan.Clauses.Length would NRE out of the provider's parse path (#1986).
+        // plan.Clauses.Length would NRE out of the provider's parse path.
         var plan = Deserialize("""{ "combinator": "and", "clauses": null }""");
 
         plan.Clauses.Should().NotBeNull();

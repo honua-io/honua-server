@@ -552,7 +552,7 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("continue-on-error: true", Exactly.Twice(),
             "optional marker cache transport must fail open for restore and save");
 
-        // #3204 routing contract. The pull_request trigger carries the inputs
+        // Routing contract. The pull_request trigger carries the inputs
         // that DEFINE the image and nothing else. Managed-source inputs are
         // deliberately absent: they invalidate every variant on nearly
         // every pull request, which is what made this workflow a ~140-minute
@@ -719,7 +719,14 @@ public sealed class ServingImageBoundaryTests
         dockerfile.Should().Contain("sha256sum -c -");
         dockerfile.Should().NotContain("ubuntugis");
         dockerfile.Should().NotContain(" noble main");
-        dockerfile.Should().Contain("--version \"${DOTNET_RUNTIME_VERSION}\" --runtime aspnetcore");
+        dockerfile.Should().MatchRegex(
+            @"ARG DOTNET_ASPNET_IMAGE=mcr\.microsoft\.com/dotnet/aspnet:11\.0\.0-[^@\s]+@sha256:[0-9a-f]{64}\n");
+        dockerfile.Should().Contain("FROM ${DOTNET_ASPNET_IMAGE} AS aspnet-runtime");
+        dockerfile.Should().Contain("COPY --from=aspnet-runtime /usr/share/dotnet /usr/share/dotnet");
+        dockerfile.Should().NotContain("https://dot.net/v1/dotnet-install.sh");
+        dockerfile.Should().Contain("dotnet --list-runtimes | grep -F \"Microsoft.AspNetCore.App ${DOTNET_RUNTIME_VERSION}\"");
+        dockerfile.Should().Contain("COPY src/Honua.Worker.Gdal/packages.lock.json src/Honua.Worker.Gdal/");
+        dockerfile.Should().Contain("src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj --locked-mode");
         dockerfile.Should().Contain("gdalinfo --version | grep -F \"GDAL ${GDAL_VERSION}\"");
         dockerfile.Should().Contain("pdal --version | grep -F \"pdal ${PDAL_VERSION}\"");
         dockerfile.Should().Contain("ldd \"$(command -v pdal)\"");

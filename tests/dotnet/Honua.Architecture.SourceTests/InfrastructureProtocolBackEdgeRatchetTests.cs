@@ -44,9 +44,8 @@ public sealed class InfrastructureProtocolBackEdgeRatchetTests
         {
             if (!Directory.Exists(subAreaDir))
             {
-                // The sub-area may have been extracted to a new assembly /
-                // location by a follow-up PR; that case is checked by a
-                // sibling test, not this one. Skip silently.
+                // A sibling test checks extracted sub-areas at their new assembly
+                // locations; this scan covers sub-areas remaining in this root.
                 continue;
             }
 

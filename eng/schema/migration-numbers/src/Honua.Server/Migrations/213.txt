@@ -1,1 +1,1 @@
-src/Honua.Server/Migrations/213_AddPolicyRestrictions.sql
+src/Honua.Server/Migrations/213_CreateFeatureChangeReadHorizon.sql

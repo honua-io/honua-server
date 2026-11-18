@@ -897,7 +897,8 @@ internal static partial class OgcResponseFormatter
         }
     }
 
-    public static string BuildCsvResponse(IEnumerable<GeoJsonFeature> features, string[] fieldNames)
+    public static string BuildCsvResponse(
+        IEnumerable<GeoJsonFeature> features, string[] fieldNames, string? identifierFieldName = null)
     {
         var builder = new StringBuilder();
 
@@ -906,7 +907,7 @@ internal static partial class OgcResponseFormatter
         // Data rows
         foreach (var feature in features)
         {
-            builder.AppendLine(BuildCsvRow(feature, fieldNames));
+            builder.AppendLine(BuildCsvRow(feature, fieldNames, identifierFieldName));
         }
 
         return builder.ToString();

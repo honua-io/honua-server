@@ -417,7 +417,7 @@ public class LimitsOptionsValidatorTests
     [UnitTest]
     public void Validate_AnalyticsMaxInputBytesBelowRange_ReturnsFail()
     {
-        // MaxInputBytes must be >= 1 per the trim-safe Range attribute on AnalyticsLimits (#4629).
+        // MaxInputBytes must be >= 1 per the trim-safe Range attribute on AnalyticsLimits.
         var options = new LimitsOptions
         {
             Analytics = new AnalyticsLimits
@@ -450,5 +450,37 @@ public class LimitsOptionsValidatorTests
         var result = _validator.Validate(null, options);
 
         Assert.True(result.Succeeded, string.Join("; ", result.Failures ?? Array.Empty<string>()));
+    }
+
+    [UnitTest]
+    public void Validate_MaxOverlayCandidatePairsBelowRange_ReturnsFail()
+    {
+        var options = new LimitsOptions
+        {
+            Geometry = new GeometryLimits { MaxOverlayCandidatePairs = 999 }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("MaxOverlayCandidatePairs", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_MaxOverlayCandidatePairsAboveInt32Max_ReturnsFailWithoutThrowing()
+    {
+        var options = new LimitsOptions
+        {
+            Geometry = new GeometryLimits { MaxOverlayCandidatePairs = long.MaxValue }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("MaxOverlayCandidatePairs", StringComparison.Ordinal));
     }
 }

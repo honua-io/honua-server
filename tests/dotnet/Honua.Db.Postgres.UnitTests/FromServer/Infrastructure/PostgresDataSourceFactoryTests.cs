@@ -350,15 +350,6 @@ public sealed class PostgresDataSourceFactoryTests
     [Operation(Operations.TestInfrastructure)]
     public void Create_ExposedConnectionString_RetainsPasswordForReconnectPaths()
     {
-        // Regression guard for the FileImport-shard SASL failure (honua-server#1628 follow-up):
-        // the post-import canonical-snapshot refresh and layer-publish materialize paths call
-        // IDatabaseConnectionProvider.GetConnectionString() (which returns
-        // NpgsqlDataSource.ConnectionString) and open a *fresh* NpgsqlConnection from it. Npgsql
-        // strips the password by default (Persist Security Info=false), which made those fresh
-        // connections fail SCRAM authentication with "No password has been provided but the
-        // backend requires one (in SASL/SCRAM-SHA-256)". The factory sets PersistSecurityInfo so
-        // the exposed string stays usable — the backend still requires the password (auth is not
-        // weakened), it is simply no longer redacted from the string handed back to reconnect.
         const string withPassword = "Host=localhost;Database=honua;Username=honua;Password=s3cr3t";
 
         using var dataSource = PostgresDataSourceFactory.Create(
@@ -392,7 +383,7 @@ public sealed class PostgresDataSourceFactoryTests
     [Operation(Operations.TestInfrastructure)]
     public void Configure_RoleDefaultsMode_EmitsNoSessionSettingsStartupOptions(string multiplexing, bool schemaHeaders)
     {
-        // role-defaults (honua-server#5870): no SET initializer and no options startup
+        // role-defaults: no SET initializer and no options startup
         // parameter in any mode; the database role's defaults apply instead.
         var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
         var limits = new ConnectionLimits { Multiplexing = multiplexing };

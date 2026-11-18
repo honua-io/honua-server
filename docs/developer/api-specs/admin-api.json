@@ -160,7 +160,7 @@
     },
     {
       "name": "Forms",
-      "description": "Server-owned form package authoring lifecycle: draft, validate, publish, reopen, and AI-assisted generation."
+      "description": "Form authoring lifecycle: Draft, validate, go live with a Released Version, reopen, and AI-assisted generation."
     },
     {
       "name": "Field Workflows",
@@ -272,6 +272,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -311,6 +314,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -354,6 +360,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -397,6 +406,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -453,6 +465,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -496,6 +511,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -552,6 +570,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -584,6 +605,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -631,6 +655,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -670,6 +697,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -709,6 +739,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -752,6 +785,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -806,6 +842,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -847,6 +886,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -896,6 +938,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -935,6 +980,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -976,6 +1024,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1019,6 +1070,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -1073,6 +1127,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -1114,6 +1171,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1170,6 +1230,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1213,6 +1276,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1241,6 +1307,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1298,6 +1367,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -1337,6 +1409,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1380,6 +1455,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -1434,6 +1512,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -1478,6 +1559,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1523,6 +1607,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1564,6 +1651,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1654,6 +1744,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -1738,6 +1831,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1813,6 +1909,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1841,6 +1940,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1869,6 +1971,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1909,6 +2014,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1955,6 +2063,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1986,6 +2097,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2017,6 +2131,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2082,6 +2199,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2126,6 +2246,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -2181,6 +2304,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2255,6 +2381,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2326,6 +2455,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2379,6 +2511,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2425,6 +2560,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2486,6 +2624,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2537,6 +2678,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2591,6 +2735,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2672,6 +2819,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2766,6 +2916,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2829,6 +2982,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2879,6 +3035,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2934,6 +3093,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3000,6 +3162,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3029,6 +3194,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3079,6 +3247,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3153,6 +3324,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3219,6 +3393,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3360,6 +3537,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3462,6 +3642,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3591,6 +3774,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3632,6 +3818,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3686,6 +3875,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3740,6 +3932,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3794,6 +3989,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3848,6 +4046,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3913,6 +4114,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -3968,6 +4172,9 @@
           },
           "409": {
             "description": "The service has no FeatureServer publication, or the layer index resolves to multiple resources."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -3996,6 +4203,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4212,6 +4422,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4266,6 +4479,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4331,6 +4547,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4396,6 +4615,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4442,6 +4664,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4491,6 +4716,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4540,6 +4768,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4568,6 +4799,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -4615,6 +4849,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4643,6 +4880,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4671,6 +4911,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4699,6 +4942,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4748,6 +4994,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4776,6 +5025,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4824,6 +5076,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4872,6 +5127,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -4939,6 +5197,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5025,6 +5286,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5066,6 +5330,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5113,6 +5380,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -5200,6 +5470,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5244,6 +5517,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5289,6 +5565,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5334,6 +5613,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5385,6 +5667,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5429,6 +5714,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5476,6 +5764,12 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable."
           }
         }
       },
@@ -5570,6 +5864,9 @@
           },
           "503": {
             "description": "Deploy control is temporarily unavailable (no durable control-plane store configured)."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5612,6 +5909,12 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable."
           }
         }
       }
@@ -5667,6 +5970,12 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable."
           }
         }
       }
@@ -5711,6 +6020,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -5722,6 +6034,18 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "description": "The request body declares a recovery grant whose notAfter has passed (problem code recovery_fence_expired). An expired grant preauthorizes nothing; the operation is left unchanged."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "502": {
+            "description": "The rollback operation failed in the deployment backend."
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable or the rollback outcome is indeterminate."
           }
         }
       }
@@ -5750,6 +6074,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5801,6 +6128,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -5840,6 +6170,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -5880,6 +6213,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -5928,6 +6264,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -5967,6 +6306,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6007,6 +6349,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -6058,6 +6403,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6119,6 +6467,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -6165,6 +6516,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6205,6 +6559,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -6257,6 +6614,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6305,6 +6665,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6346,6 +6709,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6374,6 +6740,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6431,6 +6800,9 @@
           },
           "406": {
             "description": "Requested format parses but no renderer is registered for it."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6472,6 +6844,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6500,6 +6875,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6582,6 +6960,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6627,6 +7008,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -6677,6 +7061,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6722,6 +7109,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -6775,6 +7165,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6836,6 +7229,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6907,6 +7303,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6935,6 +7334,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -6990,6 +7392,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7048,6 +7453,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7119,6 +7527,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7210,6 +7621,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7238,6 +7652,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7283,6 +7700,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7331,6 +7751,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7402,6 +7825,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7447,6 +7873,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7552,6 +7981,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7613,6 +8045,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7674,6 +8109,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7745,6 +8183,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7806,6 +8247,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7872,6 +8316,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7900,6 +8347,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -7936,6 +8386,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -7997,6 +8450,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8100,6 +8556,9 @@
           },
           "413": {
             "description": "The uploaded package reached the 2 GiB request-body cap. The response has no body."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8138,6 +8597,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8193,6 +8655,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8248,6 +8713,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8389,6 +8857,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8433,6 +8904,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8500,6 +8974,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8567,6 +9044,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8634,6 +9114,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8779,6 +9262,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8890,6 +9376,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8918,6 +9407,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -8965,6 +9457,9 @@
           },
           "503": {
             "description": "The audit store did not accept the declaration row."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9003,6 +9498,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9059,6 +9557,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -9120,6 +9621,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9158,6 +9662,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -9207,6 +9714,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9380,6 +9890,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9408,6 +9921,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9473,6 +9989,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9501,6 +10020,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9529,6 +10051,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9592,6 +10117,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9620,6 +10148,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9674,6 +10205,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9728,6 +10262,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9770,6 +10307,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9846,6 +10386,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9894,6 +10437,9 @@
           },
           "503": {
             "description": "Coordinated release control is temporarily unavailable (no durable control-plane store configured)."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -9967,6 +10513,9 @@
           },
           "503": {
             "description": "Approval authority or durable control-plane storage is temporarily unavailable."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "security": [
@@ -10026,6 +10575,18 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "502": {
+            "description": "The rollback operation failed in the deployment backend."
+          },
+          "503": {
+            "description": "The rollback outcome is indeterminate."
           }
         }
       }
@@ -10075,6 +10636,9 @@
           },
           "503": {
             "description": "Coordinated release control is temporarily unavailable (no durable control-plane store configured)."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10123,6 +10687,9 @@
           },
           "503": {
             "description": "Metadata release control is temporarily unavailable (no durable control-plane store configured)."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10162,6 +10729,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -10210,6 +10780,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10249,6 +10822,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -10297,6 +10873,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10336,6 +10915,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -10386,6 +10968,9 @@
           },
           "409": {
             "description": "Concurrent catalog mutations exhausted the bounded retry; retry against the current catalog."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10425,6 +11010,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -10472,6 +11060,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10511,6 +11102,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -10558,6 +11152,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10597,6 +11194,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10655,6 +11255,9 @@
           },
           "503": {
             "description": "Deploy control is temporarily unavailable (no durable control-plane store configured)."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10730,6 +11333,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Durable proposal storage or the required control plane is unavailable (problem type `capability-unavailable`, code `dependency-unavailable`)."
           }
         }
       }
@@ -10766,6 +11375,12 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Durable proposal storage or the required control plane is unavailable (problem type `capability-unavailable`, code `dependency-unavailable`)."
           }
         }
       }
@@ -10811,6 +11426,9 @@
           },
           "422": {
             "description": "No operation executor is registered for the proposal's operation (problem code `operation-executor-unavailable`). The proposal is not approved and its state is unchanged."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "security": [
@@ -10869,6 +11487,12 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Durable proposal storage or the required control plane is unavailable (problem type `capability-unavailable`, code `dependency-unavailable`)."
           }
         }
       }
@@ -10916,6 +11540,9 @@
           },
           "503": {
             "description": "Execution job store is unavailable."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -10959,6 +11586,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -11001,6 +11631,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11043,6 +11676,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -11096,6 +11732,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -11129,6 +11768,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11171,6 +11813,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -11211,6 +11856,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11306,6 +11954,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11376,6 +12027,9 @@
           },
           "503": {
             "description": "Rebuild capacity or the durable job runtime is unavailable; retry later."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11438,6 +12092,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11506,6 +12163,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11574,6 +12234,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11616,6 +12279,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11644,6 +12310,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11672,6 +12341,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11713,6 +12385,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11741,6 +12416,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11769,6 +12447,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11797,6 +12478,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11832,6 +12516,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11875,6 +12562,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11917,6 +12607,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -11959,6 +12652,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12001,6 +12697,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12052,6 +12751,9 @@
           },
           "503": {
             "description": "The orchestration engine is not available to process the cancellation."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12090,6 +12792,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12128,6 +12833,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12180,6 +12888,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12218,6 +12929,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12269,6 +12983,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12307,6 +13024,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12345,6 +13065,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12412,6 +13135,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12450,6 +13176,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12488,6 +13217,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12548,6 +13280,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12586,6 +13321,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12614,6 +13352,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12665,6 +13406,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12693,6 +13437,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12743,6 +13490,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12787,6 +13537,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12870,6 +13623,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -12991,6 +13747,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -13051,6 +13810,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13103,6 +13865,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -13166,6 +13931,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -13209,6 +13977,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13261,6 +14032,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13313,6 +14087,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13375,6 +14152,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13452,6 +14232,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13513,6 +14296,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13576,6 +14362,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13651,6 +14440,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13679,6 +14471,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -13726,6 +14521,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13769,6 +14567,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13812,6 +14613,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13855,6 +14659,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -13967,6 +14774,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14022,6 +14832,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14086,6 +14899,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14174,6 +14990,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14257,6 +15076,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14373,6 +15195,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14517,6 +15342,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14608,6 +15436,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14711,6 +15542,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14742,6 +15576,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14805,6 +15642,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14850,6 +15690,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -14930,6 +15773,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -14969,6 +15815,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -15014,6 +15863,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -15069,6 +15921,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -15127,6 +15982,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -15194,6 +16052,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -15259,6 +16120,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -15312,21 +16176,24 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     },
-    "/forms/packages": {
+    "/forms": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "List Form Packages",
-        "description": "Lists every server-owned form package family with its current draft and current published version numbers. Responses are marked `no-store`.",
-        "operationId": "listFormPackages",
+        "summary": "List Forms",
+        "description": "Lists every server-owned Form with its current Draft and Released version numbers. Responses are marked `no-store`.",
+        "operationId": "listForms",
         "responses": {
           "200": {
-            "description": "Form package summaries.",
+            "description": "Form summaries.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15343,6 +16210,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -15350,9 +16220,9 @@
         "tags": [
           "Forms"
         ],
-        "summary": "Create Form Package Draft",
-        "description": "Creates a new draft form package version from the supplied package document. The server assigns `formId` when the document omits it and returns the persisted version with an `ETag` for subsequent optimistic-concurrency updates. The action is audited as `forms.package.save_draft`.",
-        "operationId": "createFormPackageDraft",
+        "summary": "Create Form Draft",
+        "description": "Creates a new Form Draft from the supplied Form document. The server assigns `formId` when the document omits it and returns the persisted version with an `ETag` for subsequent optimistic-concurrency updates. The action is audited as `forms.package.save_draft`.",
+        "operationId": "createFormDraft",
         "requestBody": {
           "required": true,
           "content": {
@@ -15365,7 +16235,7 @@
         },
         "responses": {
           "201": {
-            "description": "Draft package version created.",
+            "description": "Form Draft created.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the created draft version.",
@@ -15390,24 +16260,27 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     },
-    "/forms/packages/{formId}": {
+    "/forms/{formId}": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "Get Current Form Package",
-        "description": "Returns the current draft version of a form package, falling back to the current published version when no draft exists. Returns `404` when neither exists.",
-        "operationId": "getCurrentFormPackage",
+        "summary": "Get Current Form",
+        "description": "Returns the current Form Draft, falling back to the Released version when no Draft exists. Returns `404` when neither exists.",
+        "operationId": "getCurrentForm",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -15415,7 +16288,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The current draft or published package version.",
+            "description": "The current Form Draft or Released version.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the returned version.",
@@ -15440,24 +16313,27 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     },
-    "/forms/packages/{formId}/versions": {
+    "/forms/{formId}/versions": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "List Form Package Versions",
-        "description": "Lists every persisted version of a form package family. Returns an empty array for an unknown `formId`.",
-        "operationId": "listFormPackageVersions",
+        "summary": "List Form Versions",
+        "description": "Lists every persisted Form Version. Returns an empty array for an unknown `formId`.",
+        "operationId": "listFormVersions",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -15465,7 +16341,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Package versions.",
+            "description": "Form Versions.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15482,33 +16358,36 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}": {
+    "/forms/{formId}/versions/{formVersion}": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "Get Form Package Version",
-        "description": "Returns a single form package version (draft, published, or archived) by version number.",
-        "operationId": "getFormPackageVersion",
+        "summary": "Get Form Version",
+        "description": "Returns a single Form Version (Draft, Released, or archived) by version number.",
+        "operationId": "getFormVersion",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Monotonic package version number.",
+            "description": "Monotonic Form Version number.",
             "schema": {
               "type": "integer"
             }
@@ -15516,7 +16395,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The requested package version.",
+            "description": "The requested Form Version.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the returned version.",
@@ -15541,6 +16420,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -15548,21 +16430,21 @@
         "tags": [
           "Forms"
         ],
-        "summary": "Update Form Package Draft",
-        "description": "Replaces the package document of an existing draft version. An `If-Match` header carrying the draft's current ETag is required; omitting it returns `428 Precondition Required`. A missing draft, a non-editable version, or a stale ETag all return `409 Conflict`. The action is audited as `forms.package.update_draft`.",
-        "operationId": "updateFormPackageDraft",
+        "summary": "Update Form Draft",
+        "description": "Replaces the Form document of an existing Draft. An `If-Match` header carrying the draft's current ETag is required; omitting it returns `428 Precondition Required`. A missing draft, a non-editable version, or a stale ETag all return `409 Conflict`. The action is audited as `forms.package.update_draft`.",
+        "operationId": "updateFormDraft",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
             "description": "Draft version number to update.",
@@ -15630,33 +16512,36 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}/validate": {
+    "/forms/{formId}/versions/{formVersion}/validate": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Validate Form Package Version",
-        "description": "Validates a package version against the target layer schema and package policy, returning the validation result. When the version is a draft, the result is also stored on the draft. This route always returns `200` with the validation result, even when the package is invalid.",
-        "operationId": "validateFormPackageVersion",
+        "summary": "Validate Form Draft",
+        "description": "Validates a Form Version against the target Layer schema and Form policy, returning the validation result. When the version is a draft, the result is also stored on the draft. This route always returns `200` with the validation result, even when the Form is invalid.",
+        "operationId": "validateFormDraft",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Package version number to validate.",
+            "description": "Form Version number to validate.",
             "schema": {
               "type": "integer"
             }
@@ -15664,7 +16549,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Validation result for the package version.",
+            "description": "Validation result for the Form Version.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15681,30 +16566,33 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}/publish": {
+    "/forms/{formId}/versions/{formVersion}/publish": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Publish Form Package Version",
-        "description": "Validates and publishes a draft package version as an immutable published version. When validation fails, the stored validation result is returned with `400` and the failure is audited. Publishing a version that is not a draft returns `409 Conflict`. The action is audited as `forms.package.publish`.",
-        "operationId": "publishFormPackageVersion",
+        "summary": "Publish Form Draft",
+        "description": "Validates a Form Draft and makes it the immutable Released version. When validation fails, the stored validation result is returned with `400` and the failure is audited. Publishing a version that is not a draft returns `409 Conflict`. The action is audited as `forms.package.publish`.",
+        "operationId": "goLiveFormDraft",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
             "description": "Draft version number to publish.",
@@ -15715,7 +16603,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The published package version.",
+            "description": "The Released Form Version.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the published version.",
@@ -15733,7 +16621,7 @@
             }
           },
           "400": {
-            "description": "The package failed publish validation. The body is the validation result that blocked publishing.",
+            "description": "The Form failed publish validation. The body is the validation result that blocked publishing.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15753,33 +16641,36 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}/reopen": {
+    "/forms/{formId}/versions/{formVersion}/reopen": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Reopen Form Package Version",
-        "description": "Creates a new editable draft version from an existing published package version. The new draft records the version it was reopened from. Returns `404` when the published version does not exist. The action is audited as `forms.package.reopen`.",
-        "operationId": "reopenFormPackageVersion",
+        "summary": "Reopen Form Version",
+        "description": "Creates a new editable Form Draft from an existing Released version. The new draft records the version it was reopened from. Returns `404` when the Released version does not exist. The action is audited as `forms.package.reopen`.",
+        "operationId": "reopenFormVersion",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Published version number to reopen.",
+            "description": "Released Version number to reopen.",
             "schema": {
               "type": "integer"
             }
@@ -15812,6 +16703,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -15964,6 +16858,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16007,6 +16904,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16063,6 +16963,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16139,6 +17042,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16195,6 +17101,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16248,6 +17157,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -16316,6 +17228,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16359,6 +17274,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -16401,6 +17319,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16451,6 +17372,9 @@
           },
           "503": {
             "description": "Scene generation is temporarily unavailable; retry later (problem+json)."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16533,6 +17457,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16633,6 +17560,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16676,6 +17606,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -16733,6 +17666,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -16767,6 +17703,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16810,6 +17749,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16894,6 +17836,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -16933,6 +17878,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -16975,6 +17923,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -17028,6 +17979,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17083,6 +18037,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17135,6 +18092,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17190,6 +18150,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17242,6 +18205,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17288,6 +18254,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -17333,6 +18302,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17381,6 +18353,9 @@
           },
           "503": {
             "description": "The execution-job substrate is not configured, so scan-job status cannot be read (problem+json)."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17424,6 +18399,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -17458,6 +18436,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17507,6 +18488,9 @@
           },
           "503": {
             "description": "The execution-job substrate is not configured, so the scan cannot be dispatched (problem+json)."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17553,6 +18537,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -17598,6 +18585,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17641,6 +18631,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -17675,6 +18668,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17721,6 +18717,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17767,6 +18766,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -17812,6 +18814,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17855,6 +18860,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -17889,6 +18897,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17935,6 +18946,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -17963,6 +18977,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -18010,6 +19027,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18053,6 +19073,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -18104,6 +19127,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -18152,6 +19178,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18195,6 +19224,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -18246,6 +19278,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18326,6 +19361,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18368,6 +19406,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -18408,6 +19449,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18460,6 +19504,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18502,6 +19549,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18530,6 +19580,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -18580,6 +19633,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18608,6 +19664,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18650,6 +19709,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -18696,6 +19758,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18744,6 +19809,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18792,6 +19860,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18820,6 +19891,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -18867,6 +19941,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -18910,6 +19987,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -18961,6 +20041,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -19002,6 +20085,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19045,6 +20131,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19073,6 +20162,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19112,6 +20204,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19140,6 +20235,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -19187,6 +20285,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19230,6 +20331,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -19271,6 +20375,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19299,6 +20406,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -19338,6 +20448,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19380,6 +20493,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19863,6 +20979,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19894,6 +21013,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19925,6 +21047,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19953,6 +21078,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -19981,6 +21109,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20009,6 +21140,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20037,6 +21171,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -20084,6 +21221,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20129,6 +21269,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20172,6 +21315,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -20226,6 +21372,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -20267,6 +21416,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20307,6 +21459,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -20356,6 +21511,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20398,6 +21556,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20443,6 +21604,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20485,6 +21649,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20540,6 +21707,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20595,6 +21765,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20650,6 +21823,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20678,6 +21854,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -20725,6 +21904,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20768,6 +21950,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -20809,6 +21994,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20837,6 +22025,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -20884,6 +22075,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20927,6 +22121,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -20968,6 +22165,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -20999,6 +22199,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21070,6 +22273,9 @@
           },
           "404": {
             "description": "No federated source is configured with the supplied id. The response body is empty."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21098,6 +22304,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21171,6 +22380,9 @@
           },
           "503": {
             "description": "The geocoder reference store is unavailable or incompatible; the import was not applied."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21215,6 +22427,9 @@
           },
           "502": {
             "description": "The external service could not be reached, timed out, or returned an unsupported/error response."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21269,6 +22484,9 @@
           },
           "503": {
             "description": "Deploy control is unavailable because durable control-plane storage is not configured."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21307,6 +22525,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21351,6 +22572,9 @@
           },
           "409": {
             "description": "Concurrent catalog mutations exhausted the bounded retry; retry against the current catalog."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21405,6 +22629,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21456,6 +22683,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21527,6 +22757,9 @@
           },
           "400": {
             "description": "Invalid job identifier or event limit."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21567,6 +22800,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "requestBody": {
@@ -21602,6 +22838,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "parameters": [
@@ -21641,6 +22880,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "parameters": [
@@ -21678,6 +22920,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -21705,6 +22950,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "parameters": [
@@ -21755,6 +23003,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "parameters": [
@@ -21841,7 +23092,7 @@
             "description": "Idempotency key already belongs to different inputs."
           },
           "429": {
-            "description": "Admission throttled; Retry-After may be present."
+            "$ref": "#/components/responses/TooManyRequests"
           },
           "503": {
             "description": "Durable jobs or the selected execution backend is unavailable."
@@ -21899,6 +23150,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -21981,6 +23235,9 @@
           },
           "503": {
             "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "requestBody": {
@@ -22090,6 +23347,9 @@
           },
           "503": {
             "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "requestBody": {
@@ -22169,6 +23429,9 @@
           },
           "503": {
             "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -22240,6 +23503,9 @@
           },
           "503": {
             "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "requestBody": {
@@ -22292,6 +23558,9 @@
           },
           "404": {
             "description": "Target not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -22338,6 +23607,9 @@
           },
           "409": {
             "description": "Metadata changed; reload before saving"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "requestBody": {
@@ -22389,6 +23661,9 @@
           },
           "404": {
             "description": "Target not found"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -22434,6 +23709,9 @@
           },
           "409": {
             "description": "Metadata changed; reload before saving"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "requestBody": {
@@ -22484,6 +23762,9 @@
           },
           "409": {
             "description": "The layer index resolves to more than one feature or table resource."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "summary": "Get Layer Display",
@@ -22524,6 +23805,9 @@
           },
           "409": {
             "description": "The layer index resolves to more than one feature or table resource."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "summary": "Update Layer Display",
@@ -22576,6 +23860,9 @@
           },
           "409": {
             "description": "The layer index resolves to more than one feature or table resource."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "summary": "Get Layer Spatial",
@@ -22616,6 +23903,9 @@
           },
           "409": {
             "description": "The layer index resolves to more than one feature or table resource."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         },
         "summary": "Update Layer Spatial",
@@ -22700,6 +23990,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -22752,6 +24045,9 @@
           },
           "403": {
             "description": "Administrator authorization or live-stream access denied."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -22832,6 +24128,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -22878,6 +24177,9 @@
           },
           "409": {
             "description": "History is unavailable for process-memory settings."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -22934,6 +24236,9 @@
           },
           "409": {
             "description": "History requires PostgreSQL-backed settings. Undo also conflicts when the observed revision is superseded, nothing can be undone, or recreation is refused."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -22980,6 +24285,9 @@
           },
           "409": {
             "description": "History is unavailable for process-memory settings."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -23036,6 +24344,9 @@
           },
           "409": {
             "description": "History requires PostgreSQL-backed settings. Undo also conflicts when the observed revision is superseded, nothing can be undone, or recreation is refused."
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -23159,6 +24470,25 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Too many failed authentication attempts from this source, or request admission throttled. Retry after the indicated delay.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds to wait before retrying authentication or the throttled operation.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
             }
           }
         }
@@ -24933,6 +26263,8 @@
             "type": "string",
             "enum": [
               "execution_failed",
+              "worker_lost",
+              "timeout",
               "cancelled"
             ]
           }
@@ -25021,7 +26353,7 @@
           "disabledReason": {
             "type": "string",
             "nullable": true,
-            "description": "Operator-facing reason when the advertised action is currently disabled, such as execute permission required, job queue unavailable, job backend unavailable, job backend retry capability unavailable, job backend does not support retry, retry budget exhausted, or not retryable."
+            "description": "Operator-facing reason when the advertised action is currently disabled, such as execute permission required, cancellation requested; waiting for the worker to stop, job queue unavailable, job backend unavailable, job backend retry capability unavailable, job backend does not support retry, retry budget exhausted, or not retryable."
           },
           "requiresApproval": {
             "type": "boolean"

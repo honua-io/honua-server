@@ -348,6 +348,13 @@ internal static class StacFilterHelpers
             if (offsetStart > fractionalSeparator)
             {
                 var fractionalLength = offsetStart - fractionalSeparator - 1;
+                if (fractionalLength == 0 ||
+                    normalized.AsSpan(fractionalSeparator + 1, fractionalLength).IndexOfAnyExceptInRange('0', '9') >= 0)
+                {
+                    timestamp = default;
+                    return false;
+                }
+
                 if (fractionalLength > 7)
                 {
                     normalized = normalized[..(fractionalSeparator + 8)] + normalized[offsetStart..];

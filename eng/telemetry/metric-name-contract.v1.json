@@ -30,6 +30,15 @@
   ],
   "instruments": [
     {
+      "instrument": "honua_authentication_failed_attempts_total",
+      "kind": "Counter",
+      "unit": null,
+      "series": [
+        "honua_authentication_failed_attempts_total"
+      ],
+      "source": "src/Honua.Hosting/Features/Authentication/AuthenticationFailureLimiter.cs"
+    },
+    {
       "instrument": "honua_shared_cache_output_requests_total",
       "kind": "Counter",
       "unit": null,

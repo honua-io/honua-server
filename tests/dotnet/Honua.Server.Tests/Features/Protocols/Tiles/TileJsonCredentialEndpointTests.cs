@@ -65,7 +65,7 @@ public sealed class TileJsonCredentialEndpointTests : IAsyncLifetime
         var secondToken = await IssueTokenAsync(client);
         secondToken.Should().NotBe(firstToken);
         // The existing API-key-as-token contract uses the same URL carrier. Keys with
-        // administrative authority are refused in the URL (#6610), so the API-key case uses
+        // administrative authority are refused in the URL, so the API-key case uses
         // a read-scoped managed key; the admin-key refusal is asserted below.
         var readKey = await CreateReadScopedApiKeyAsync();
         foreach (var token in new[] { firstToken, secondToken, readKey })

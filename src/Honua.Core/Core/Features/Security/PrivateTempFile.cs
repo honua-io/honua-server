@@ -29,7 +29,9 @@ public static class PrivateTempFile
             throw new ArgumentException("The extension must not contain path separators.", nameof(extension));
         }
 
-        return Path.Join(Path.GetTempPath(), $"{prefix}{Guid.NewGuid():N}{extension}");
+        var directory = Path.GetTempPath();
+        CreateDirectory(directory);
+        return Path.Join(directory, $"{prefix}{Guid.NewGuid():N}{extension}");
     }
 
     public static FileStreamOptions ApplyPrivateCreateNew(FileStreamOptions options)
@@ -51,6 +53,17 @@ public static class PrivateTempFile
             Share = FileShare.None,
             BufferSize = bufferSize,
             Options = fileOptions,
+        }));
+
+    // A read-write scratch file directly under the temp path, created exclusively and owner-only,
+    // and deleted when the stream closes.
+    public static FileStream CreateScratch(string prefix, string? extension, int bufferSize)
+        => new(NewPath(prefix, extension), ApplyPrivateCreateNew(new FileStreamOptions
+        {
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None,
+            BufferSize = bufferSize,
+            Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose,
         }));
 
     // A newly created leaf directory is owner-only on Unix; missing parents get the default mode

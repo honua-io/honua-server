@@ -49,7 +49,7 @@ disabled because the provider call has no idempotency token. A cancelled provide
 request without controller cancellation (for example, a request deadline) also
 has an uncertain outcome: submission enters name-based discovery, while observation
 and cancellation retain the last durable status for the replacement controller.
-It does not prove that the Batch job failed or stopped. Keep the durable Redis
+It does not prove that the Batch job failed or stopped. Keep the durable job
 store and worker definitions available across both directions of a switch.
 
 **2026.1-rc.2 is the supported rollback floor.** Any supported release from rc.2
@@ -104,7 +104,7 @@ or rollback, wait for that same job afterward, and verify the decoded output and
 its metadata, one execution, one terminal transition, no remaining queue claim,
 and the original Batch provider ID where applicable. Exercise an incompatible
 reader separately and record `schema_reader_incompatible` as a startup refusal,
-never as successful serving. Local handoff tests use real Redis and the geometry
+never as successful serving. Local handoff tests use real PostgreSQL and the geometry
 executor with substituted AWS transport; they do not replace the two-candidate
 ECS and Lambda + Batch journey receipts.
 Qualify the actual rollback image: it must itself contain the drain and schema-reader
@@ -324,14 +324,14 @@ If a serving process with `HONUA_SKIP_MIGRATIONS=true` reaches the schema guard 
 docker run --rm \
   -e HONUA_MIGRATE_ONLY=true \
   -e ConnectionStrings__DefaultConnection="$HONUA_DATABASE_CONNECTION" \
-  ghcr.io/honua-io/honua-server:<target-tag>
+  'ghcr.io/honua-io/honua-server:<target-tag>'
 ```
 
 Migrate-only mode works the same way in the native-AOT and JIT images. It:
 
 - resolves `ConnectionStrings__DefaultConnection` exactly as serving startup does, including `aws:secretsmanager:`, `azure:keyvault:` and `env:` references and `HONUA_SETTINGS_DOCUMENT`;
 - runs the PostGIS preflight, then applies migrations through the same runner, with every `Database__MigrationSafety__*` gate in force: unannotated contract scripts are refused (`Enforce`), reviewed contract scripts on an existing database need their one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce (`ContractApplyPolicy=Gate`), and `BackupCommand` runs before them;
-- starts no HTTP listener, hosted or background service, worker, scheduler or alert dispatcher, and needs no Redis, licence, admin password or encryption key;
+- starts no HTTP listener, hosted or background service, worker, scheduler or alert dispatcher, and needs no licence, admin password or encryption key;
 - ignores `HONUA_SKIP_MIGRATIONS`, so it can share the serving replicas' environment;
 - refuses to run inside AWS Lambda, where a failed init is retried. Run it as a container task or Job.
 
@@ -589,9 +589,13 @@ The selector validates the catalog and all retained checksums before returning
 the absolute Compose path and `rollbackMode: manual`. Use that path with explicit
 `docker compose --project-directory <existing-install> -p <existing-project> -f
 <retained-compose>` arguments. Keep the project name and volumes unchanged. Do
-not run the historical dependency services over the current installation: stop
-only `honua`, restore the verified database dump through the existing Postgres
-service, and start only `honua` with `up -d --no-deps` under the retained file.
+not recreate dependency services the current installation also runs: stop only
+`honua` and restore the verified database dump through the existing Postgres
+service. Then start, under the retained file, each service its `honua` depends on
+that the current file does not define, such as rc.1's cache service after the
+upgrade removed it (`up -d --wait <service>`; compare the `depends_on` list in
+`config --format json` for both files). Start only `honua` last, with
+`up -d --no-deps` under the retained file.
 Never restore while a serving process can write to the database.
 
 The retained rc.1 file reads `POSTGRES_PASSWORD`, `HONUA_ADMIN_PASSWORD`,

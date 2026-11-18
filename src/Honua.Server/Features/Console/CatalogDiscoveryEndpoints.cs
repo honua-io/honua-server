@@ -22,34 +22,34 @@ internal static class CatalogDiscoveryEndpoints
             .WithTags("Console")
             .RequireAdminAuthorization();
 
-        group.MapGet("/{workspaceId}", HandleGetRegistry)
+        group.MapGet("/{environmentId}", HandleGetRegistry)
             .WithDisplayName("Get Catalog Discovery Registry")
-            .WithSummary("Returns the workspace's catalog discovery-endpoints registry: the set of discovery dialects the server publishes, each endpoint's on/off and auto-default-vs-opt-in state, feeders, and aggregate counts.")
+            .WithSummary("Returns the environment's catalog discovery-endpoints registry: the set of discovery dialects the server publishes, each endpoint's on/off and auto-default-vs-opt-in state, feeders, and aggregate counts.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        group.MapGet("/{workspaceId}/{endpointKey}", HandleGetEndpoint)
+        group.MapGet("/{environmentId}/{endpointKey}", HandleGetEndpoint)
             .WithDisplayName("Get Catalog Discovery Endpoint Detail")
             .WithSummary("Returns one discovery endpoint with its header facts and mirrored items table.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        group.MapGet("/{workspaceId}/{endpointKey}/items/{itemId}", HandleGetItem)
+        group.MapGet("/{environmentId}/{endpointKey}/items/{itemId}", HandleGetItem)
             .WithDisplayName("Get Catalog Discovery Item")
             .WithSummary("Returns one catalog item with its identity, catalog-presentation, service-binding, and standards-mapping field groups.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
     private static async Task<Results<Ok<ApiResponse<CatalogDiscoveryRegistry>>, NotFound<ApiResponse<object>>, ProblemHttpResult>> HandleGetRegistry(
-        string workspaceId,
+        string environmentId,
         [FromServices] ICatalogDiscoveryRegistryStore store,
         [FromServices] ILogger<CatalogDiscoveryEndpointsLog> logger,
         HttpContext context)
     {
         try
         {
-            var registry = await store.GetRegistryAsync(workspaceId, context.RequestAborted).ConfigureAwait(false);
+            var registry = await store.GetRegistryAsync(environmentId, context.RequestAborted).ConfigureAwait(false);
             if (registry is null)
             {
-                return TypedResults.NotFound(ApiResponse<object>.Failure("Catalog discovery registry not found for workspace."));
+                return TypedResults.NotFound(ApiResponse<object>.Failure("Catalog discovery registry not found for environment."));
             }
 
             return TypedResults.Ok(ApiResponse<CatalogDiscoveryRegistry>.CreateSuccess(registry));
@@ -71,7 +71,7 @@ internal static class CatalogDiscoveryEndpoints
     }
 
     private static async Task<Results<Ok<ApiResponse<CatalogEndpointDetail>>, NotFound<ApiResponse<object>>, ProblemHttpResult>> HandleGetEndpoint(
-        string workspaceId,
+        string environmentId,
         string endpointKey,
         [FromServices] ICatalogDiscoveryRegistryStore store,
         [FromServices] ILogger<CatalogDiscoveryEndpointsLog> logger,
@@ -79,7 +79,7 @@ internal static class CatalogDiscoveryEndpoints
     {
         try
         {
-            var detail = await store.GetEndpointAsync(workspaceId, endpointKey, context.RequestAborted).ConfigureAwait(false);
+            var detail = await store.GetEndpointAsync(environmentId, endpointKey, context.RequestAborted).ConfigureAwait(false);
             if (detail is null)
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Catalog discovery endpoint not found."));
@@ -104,7 +104,7 @@ internal static class CatalogDiscoveryEndpoints
     }
 
     private static async Task<Results<Ok<ApiResponse<CatalogItem>>, NotFound<ApiResponse<object>>, ProblemHttpResult>> HandleGetItem(
-        string workspaceId,
+        string environmentId,
         string endpointKey,
         string itemId,
         [FromServices] ICatalogDiscoveryRegistryStore store,
@@ -113,7 +113,7 @@ internal static class CatalogDiscoveryEndpoints
     {
         try
         {
-            var item = await store.GetItemAsync(workspaceId, endpointKey, itemId, context.RequestAborted).ConfigureAwait(false);
+            var item = await store.GetItemAsync(environmentId, endpointKey, itemId, context.RequestAborted).ConfigureAwait(false);
             if (item is null)
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Catalog discovery item not found."));

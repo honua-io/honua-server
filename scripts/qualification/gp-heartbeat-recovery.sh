@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sourced by gp-lifecycle-harness.sh. Redis access is observational only.
+# Sourced by gp-lifecycle-harness.sh. PostgreSQL access is observational only.
 run_heartbeat_recovery() {
   local result=0 cleanup_result=0 job="" digest="" first_container="" second_container="" paused=0
   local scenario="${scenario_name:-stale-lease}"
@@ -35,8 +35,15 @@ run_heartbeat_recovery() {
   write_receipt "$scenario" pass "" "$job" successful "$digest"
 }
 
+# The fenced worker either finds its claim moved when it writes a transition, or its
+# heartbeat finds the execution lease gone and cancels the attempt first.
+heartbeat_saw_stale_ownership() {
+  grep -Fq -e "Skipping state transition for job $job:" -e "Execution lease lost for job $job;" \
+    -e "Execution lease lost for job $job on worker" "$1"
+}
+
 heartbeat_job_record() {
-  compose exec -T redis redis-cli --raw GET "controlplane:job:$job"
+  job_record "$job"
 }
 
 heartbeat_wait_record() {
@@ -87,8 +94,7 @@ PY
 }
 
 run_heartbeat_recovery_case() {
-  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification/heartbeat-original
-  local -x HONUA_GP_WORKER_REDIS=redis:6379
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification/heartbeat-original
   local recovery_deadline=$((SECONDS + ${HONUA_GP_SCENARIO_TIMEOUT_SECONDS:-900}))
   local original_record winner_record original_worker recovery_worker barrier before_bytes after_bytes
   local peer_name="${project_name}-heartbeat-peer" resume_at stable_until record original_log
@@ -99,7 +105,7 @@ run_heartbeat_recovery_case() {
   job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
   jq -n --arg job "$job" '{submitted_job:$job,scope:"natural heartbeat expiry; not exclusive partition lease"}' > "$scenario_evidence_file"
   heartbeat_barrier "$first_root" wait claimed || return 1
-  docker exec --user 0 "$first_container" chmod 777 "/var/run/honua/qualification/heartbeat-original/$job" || return 1
+  docker exec --user 0 "$first_container" chmod 777 "/run/honua/qualification/heartbeat-original/$job" || return 1
   heartbeat_barrier "$first_root" release claimed || return 1
   heartbeat_barrier "$first_root" wait native-process-started || return 1
   original_record="$(heartbeat_job_record)" || return 1
@@ -113,7 +119,7 @@ run_heartbeat_recovery_case() {
   paused=1
   record_disruption worker native-process-started pause-heartbeat
   second_container="$(compose run -d --no-deps --name "$peer_name" \
-    -e HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification/heartbeat-recovery worker)" || return 1
+    -e HONUA_GP_QUALIFICATION_BARRIER_ROOT=/run/honua/qualification/heartbeat-recovery worker)" || return 1
   # Both live containers must resolve the same actual image, not just equal supplied tags.
   docker inspect "$first_container" "$second_container" > "$receipt_root/$scenario-worker-identities.json" || return 1
   jq -e --arg image "$HONUA_WORKER_IMAGE" --arg sha "$candidate_source_sha" '
@@ -130,7 +136,7 @@ run_heartbeat_recovery_case() {
   recovery_worker="$(jq -r .claimedBy "$receipt_root/$scenario-reclaimed-record.json")"
   heartbeat_barrier "$second_root" wait claimed || return 1
   [[ "$(jq -r .workerId "$second_root/$job/claimed.ready.json")" == "$recovery_worker" ]] || return 1
-  docker exec --user 0 "$second_container" chmod 777 "/var/run/honua/qualification/heartbeat-recovery/$job" || return 1
+  docker exec --user 0 "$second_container" chmod 777 "/run/honua/qualification/heartbeat-recovery/$job" || return 1
   for barrier in claimed native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending; do
     heartbeat_barrier "$second_root" wait "$barrier" || return 1
     heartbeat_barrier "$second_root" release "$barrier" || return 1
@@ -163,7 +169,7 @@ run_heartbeat_recovery_case() {
   while (( SECONDS < recovery_deadline )); do
     docker logs --since "$resume_at" "$first_container" > "$original_log" 2>&1 || return 1
     [[ -s "$first_root/$job/output-bytes-written-unpublished.ready.json" ]] && break
-    grep -Fq "Skipping state transition for job $job:" "$original_log" && break
+    heartbeat_saw_stale_ownership "$original_log" && break
     sleep 0.05
   done
   heartbeat_inventory "$receipt_root/$scenario-inventory-resumed-stale.json" || return 1
@@ -173,10 +179,10 @@ run_heartbeat_recovery_case() {
   done
   while (( SECONDS < recovery_deadline )); do
     docker logs --since "$resume_at" "$first_container" > "$original_log" 2>&1 || return 1
-    if grep -Fq "Skipping state transition for job $job:" "$original_log"; then break; fi
+    if heartbeat_saw_stale_ownership "$original_log"; then break; fi
     sleep 0.2
   done
-  grep -Fq "Skipping state transition for job $job:" "$original_log" || {
+  heartbeat_saw_stale_ownership "$original_log" || {
     scenario_fail "resumed original worker did not observe stale ownership"; return 1; }
   [[ "$(docker inspect --format '{{.State.Running}} {{.State.Paused}}' "$first_container")" == 'true false' ]] || return 1
   # Two ordinary 30-second reconciliation windows after stale completion. Also

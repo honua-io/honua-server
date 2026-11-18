@@ -146,8 +146,7 @@ public sealed class DisabledLicenseTests
             ["Licensing:LicenseContent"] = poisonedSources ? "not a signed license" : null,
             ["Licensing:LicenseContentSecretRef"] = poisonedSources ? "aws:secretsmanager:synthetic-unreachable-license" : null,
             ["Licensing:TrustedKeys:synthetic"] = "not a signing key",
-            ["Licensing:AllowAdminUpload"] = "true",
-            ["ConnectionStrings:redis"] = "localhost:6379"
+            ["Licensing:AllowAdminUpload"] = "true"
         }).Build();
 
     private sealed class RejectTimerTimeProvider : TimeProvider

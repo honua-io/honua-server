@@ -1,0 +1,7 @@
+{
+  "comment": "The one place the Portolan specification version is pinned for the advisory Export check. Bump all three together: rashid prints them with --version.",
+  "validator": "rashid",
+  "validator_version": "0.4.0",
+  "profile": "v0.3.0",
+  "spec_commit": "f758c6e5ec05e411a19a276251bbbe3b8ba53916"
+}

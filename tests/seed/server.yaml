@@ -2104,6 +2104,15 @@ sql:
       $$ LANGUAGE plpgsql;
   - "DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;"
   - "CREATE TRIGGER trigger_track_feature_changes AFTER INSERT OR UPDATE OR DELETE ON features FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();"
+  # Committed change-feed horizon from migration 213_CreateFeatureChangeReadHorizon.sql.
+  - |
+      CREATE OR REPLACE FUNCTION honua.feature_change_read_horizon()
+      RETURNS BIGINT
+      LANGUAGE sql
+      STABLE
+      AS $$
+          SELECT COALESCE(MAX(generation), 0)::BIGINT FROM honua.feature_changes
+      $$;
   # Branch-versioning overlay (#1272 Track B, ADR-0051 / migration 049_CreateVersionEdits.sql):
   # branch row values overlaid onto DEFAULT; inert for the DEFAULT path.
   - |

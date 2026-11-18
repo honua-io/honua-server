@@ -18,7 +18,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.Internal;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Startup;
 

@@ -307,6 +307,8 @@ public sealed class ConfigurationDocumentationService
                     "Maximum geometry size in bytes", FileSizeConstants.TenMB, opts.MaxGeometrySize, "Range: 1MB-100MB"),
                 BuildPropertyWithCurrent("Limits:Geometry:MaxCoordinatePrecision", "Limits__Geometry__MaxCoordinatePrecision", "integer",
                     "Maximum coordinate decimal places", 8, opts.MaxCoordinatePrecision, "Range: 1-15"),
+                BuildPropertyWithCurrent("Limits:Geometry:MaxOverlayCandidatePairs", "Limits__Geometry__MaxOverlayCandidatePairs", "integer",
+                    "Maximum segment pairs that could cross in one Geometry Service overlay (a quarter when not signed in)", 2000000, opts.MaxOverlayCandidatePairs, "Range: 1000-50000000"),
                 BuildPropertyWithCurrent("Limits:Geometry:SimplifyTolerance", "Limits__Geometry__SimplifyTolerance", "number",
                     "Auto-simplification tolerance in meters (null = disabled)", null, opts.SimplifyTolerance, "Range: 0-1000")
             ]
@@ -499,7 +501,7 @@ public sealed class ConfigurationDocumentationService
         return new ConfigurationSection
         {
             Name = "TemporaryFiles",
-            Description = "Temporary export and artifact file storage configuration. Shared cloud-backed temporary files require Redis coordination so quotas remain correct across replicas.",
+            Description = "Temporary export and artifact file storage configuration. Shared cloud-backed temporary files require durable database coordination so quotas remain correct across replicas.",
             Properties =
             [
                 // Path.Combine is safe here: the second segment is a fixed relative literal,
@@ -549,7 +551,11 @@ public sealed class ConfigurationDocumentationService
                 BuildProperty("FeatureStreaming:MaxBufferPerConnection", "FeatureStreaming__MaxBufferPerConnection", "integer",
                     "Maximum queued messages per connection before a slow consumer is disconnected", 256),
                 BuildProperty("FeatureStreaming:MaxConcurrentSessions", "FeatureStreaming__MaxConcurrentSessions", "integer",
-                    "Maximum concurrent feature-stream sessions per tenant, or per principal when tenancy is off", 256),
+                    "Maximum concurrent feature-stream sessions per tenant, or per principal when tenancy is off; all anonymous clients together share one allowance of this size", 256),
+                BuildProperty("FeatureStreaming:MaxAnonymousSessionsPerClient", "FeatureStreaming__MaxAnonymousSessionsPerClient", "integer",
+                    "Maximum concurrent feature-stream sessions for one anonymous client address (an IPv6 /64), never more than MaxConcurrentSessions", 64),
+                BuildProperty("FeatureStreaming:MaxNodeSessions", "FeatureStreaming__MaxNodeSessions", "integer",
+                    "Maximum concurrent feature-stream sessions on one node across every partition, never less than MaxConcurrentSessions", 2048),
                 BuildProperty("FeatureStreaming:ReplayBatchSize", "FeatureStreaming__ReplayBatchSize", "integer",
                     "Number of events fetched per batch during cursor replay", 200),
                 BuildProperty("FeatureStreaming:CrossNodeSyncInterval", "FeatureStreaming__CrossNodeSyncInterval", "timespan",

@@ -129,7 +129,9 @@ internal sealed partial class ComposeDeployBackend(
             {
                 // Once a backup was taken, cutover may have exposed a failing candidate.
                 // Let the reconciler observe the failure and invoke verified recovery.
-                Status = ready || (op == "converge" && response.Code != ComposeExecutorCodes.AuditUnrecorded && !string.IsNullOrWhiteSpace(response.BackupId))
+                // A contract-gate refusal applied nothing and restarted the prior, so there is nothing to recover.
+                Status = ready || (op == "converge" && response.Code is not (ComposeExecutorCodes.AuditUnrecorded or ComposeExecutorCodes.ContractApprovalRequired)
+                    && !string.IsNullOrWhiteSpace(response.BackupId))
                     ? WorkflowOperationStatus.Reconciling : WorkflowOperationStatus.Failed,
                 ProviderOperationId = operation.OperationId,
                 // Keep the prior revision. The workflow copies ObservedRevision onto CurrentRevision.

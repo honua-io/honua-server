@@ -17,6 +17,86 @@ namespace Honua.Server.Tests.Features.Streaming;
 public sealed class StreamSubscriberSecurityTests
 {
     [UnitTest]
+    public async Task Delivery_FilterFieldBecomesMasked_DropsQueuedMatch()
+    {
+        var security = CreateUnrestrictedSecurity();
+        security.EnableRefresh(_ => Task.FromResult(CreateSecurity()));
+        var filter = new StreamSubscriptionFilter(attributeFilter: IsNotNull("SECRET"), subscriberSecurity: security);
+        var envelope = CreateEnvelope("west");
+        filter.Matches(envelope, null, PropertiesJson).Should().BeTrue();
+        var queued = filter.Project(envelope);
+
+        await security.RefreshAsync(CancellationToken.None);
+
+        filter.PrepareDelivery(queued).Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData(BinaryOperator.Like)]
+    [InlineData(BinaryOperator.NotLike)]
+    public async Task Delivery_RefreshedUnevaluableRowPredicate_DropsQueuedFrame(BinaryOperator operation)
+    {
+        var security = CreateUnrestrictedSecurity();
+        var predicate = new BinaryExpression(new PropertyReference("region"), operation,
+            new Literal(new string('%', 33), LiteralType.Text));
+        var policy = new StreamLayerReadPolicy([predicate], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        security.EnableRefresh(_ => Task.FromResult(new StreamSubscriberSecurity(
+            new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
+            new Dictionary<(string, int), StreamLayerReadPolicy>())));
+        var queued = security.Project(CreateEnvelope("west"));
+
+        await security.RefreshAsync(CancellationToken.None);
+
+        security.PrepareDelivery(queued, []).Should().BeNull();
+    }
+
+    [UnitTest]
+    public void Delivery_RowPredicateOnMaskedField_UsesPrivateAuthorizationImage()
+    {
+        var policy = new StreamLayerReadPolicy(
+            [new BinaryExpression(new PropertyReference("region"), BinaryOperator.Equal, new Literal("west", LiteralType.Text))],
+            new HashSet<string>(["region"], StringComparer.OrdinalIgnoreCase));
+        var security = new StreamSubscriberSecurity(
+            new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
+            new Dictionary<(string, int), StreamLayerReadPolicy>());
+        var projected = security.Project(CreateEnvelope("west"));
+
+        var delivered = security.PrepareDelivery(projected, []);
+
+        delivered.Should().NotBeNull();
+        delivered!.Attributes!.Should().NotContainKey("region");
+        var json = JsonSerializer.Serialize(delivered, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
+        json.Should().NotContain("AuthorizationAttributes").And.NotContain("authorizationAttributes").And.NotContain("west");
+    }
+
+    [UnitTest]
+    public async Task Delivery_QueuedFramesUseRefreshedPolicyWithoutSequenceGaps()
+    {
+        using var manager = CreateManager();
+        var security = CreateUnrestrictedSecurity();
+        security.EnableRefresh(_ => Task.FromResult(CreateSecurity()));
+        using var session = manager.CreateSession("SSE", null, new StreamSubscriptionFilter(subscriberSecurity: security));
+        manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope("east")));
+        manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope("west") with { EventId = "second", Cursor = 2 }));
+        session.Reader.TryRead(out var hidden).Should().BeTrue();
+        session.Reader.TryRead(out var visible).Should().BeTrue();
+
+        await manager.RefreshSubscriberSecurityAsync();
+
+        manager.PrepareSubscriptionDelivery(session.SessionId, FeatureStreamSessionManager.DefaultSubscriptionId, 0, hidden.Envelope)
+            .Should().BeNull();
+        var delivered = manager.PrepareSubscriptionDelivery(
+            session.SessionId, FeatureStreamSessionManager.DefaultSubscriptionId, 0, visible.Envelope);
+        delivered.Should().NotBeNull();
+        delivered!.Sequence.Should().Be(0);
+        delivered.Attributes!.Keys.Should().Equal("region");
+        delivered.ChangedAttributes!.Keys.Should().Equal("region");
+        visible.Envelope.Attributes!.Should().ContainKey("SECRET");
+    }
+
+    [UnitTest]
     public void Project_RemovesMaskedValuesWithoutChangingOtherSubscribersEvent()
     {
         var security = CreateSecurity();
@@ -289,6 +369,10 @@ public sealed class StreamSubscriberSecurityTests
 
         filter.Matches(CreateEnvelope("west") with { Operation = "delete" }, null, PropertiesJson).Should().BeTrue();
         filter.Matches(CreateEnvelope("east") with { Operation = "delete" }, null, PropertiesJson).Should().BeFalse();
+        var delivered = filter.PrepareDelivery(filter.Project(CreateEnvelope("west") with { Operation = "delete" }));
+        delivered.Should().NotBeNull();
+        delivered!.Attributes!.Should().NotContainKey("SECRET");
+        filter.PrepareDelivery(CreateEnvelope("east") with { Operation = "delete" }).Should().BeNull();
     }
 
     [UnitTest]

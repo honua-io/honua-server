@@ -10,16 +10,16 @@ using Honua.TestKit.Extensions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Server.Tests.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClassFixture<RedisFixture>
+public sealed class GpJobWorkerCompositionRootTests(DatabaseFixtureAdapter database)
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
@@ -32,30 +32,19 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClass
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
     public async Task SubmitJob_WithProductionWiredWorker_DrainsQueueToTerminalSuccess()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await database.DataSource.ClearJobSubstrateAsync();
 
         var fixture = new WebAppFixture().WithProductionJobSubstrate()
             .ConfigureWebHost(builder =>
             {
-                // Set via UseSetting (host configuration) rather than ConfigureAppConfiguration
-                // so these values are visible on builder.Configuration during Program's
-                // pre-Build startup — that is when IsRedisCacheEntitledAsync runs and decides
-                // whether to wire IConnectionMultiplexer. A deferred ConfigureAppConfiguration
-                // source would be applied too late for that gate. The connection string + Pro
-                // dev grant make the production composition root wire the multiplexer, the
-                // durable job store/queue, and — per the #1841 fix — the in-process worker (it
-                // self-gates on IJobQueue, which AddJobOrchestration only registers when the
-                // multiplexer is present). This is the documented DevGrant=Pro topology from
-                // #1827/#1787.
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
+                // Host configuration is visible to Program's pre-Build startup.
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             })
             .ConfigureServices(services =>
             {
-                // With the DevGrant=Pro + Redis host settings above, the production
-                // composition root already wires the durable IConnectionMultiplexer, the job
-                // store/result-package store/queue, AND (per the #1841 fix) the worker. The
-                // only substitution this test makes is the executor: replace the production
+                // The production composition root wires the PostgreSQL job store,
+                // result-package store, queue and worker. The only substitution this test
+                // makes is the executor: replace the production
                 // geometry.buffer executor with a deterministic fixture so the test exercises
                 // the worker wiring and the GPServer protocol projection independently of the
                 // buffer implementation. The worker resolves IEnumerable<IJobExecutor> lazily
@@ -73,7 +62,7 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClass
         {
             // The in-process job worker must be registered by the production composition
             // root (FeatureRegistrationExtensions), not by this test. This is the direct
-            // assertion of the #1841 fix; if AddJobWorker were dead code again, this fails
+            // assertion of that wiring; if AddJobWorker were dead code, this fails
             // before the (slower) end-to-end poll below.
             var workerHostedServices = fixture.Services
                 .GetServices<Microsoft.Extensions.Hosting.IHostedService>()
@@ -134,7 +123,7 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClass
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await database.DataSource.ClearJobSubstrateAsync();
         }
     }
 
@@ -165,29 +154,6 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis) : IClass
             $"Timed out waiting for GPServer job '{jobId}' to succeed. " +
             "This reproduces honua-server#1841: the in-process job worker was never wired, " +
             "so queued jobs are accepted but never drained.");
-    }
-
-    private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
-    {
-        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
-        var database = multiplexer.GetDatabase();
-        var server = GetServer(multiplexer);
-        var keys = server.Keys(pattern: "controlplane:*").ToArray();
-        if (keys.Length > 0)
-        {
-            await database.KeyDeleteAsync(keys);
-        }
-    }
-
-    private static IServer GetServer(ConnectionMultiplexer multiplexer)
-    {
-        var endpoints = multiplexer.GetEndPoints();
-        if (endpoints.Length == 0)
-        {
-            throw new InvalidOperationException("Redis connection string did not provide any endpoints.");
-        }
-
-        return multiplexer.GetServer(endpoints[0]);
     }
 
     private sealed class SuccessfulGpServerJobExecutor : IJobExecutor

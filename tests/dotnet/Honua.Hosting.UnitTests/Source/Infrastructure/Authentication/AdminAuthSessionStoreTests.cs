@@ -155,7 +155,7 @@ public sealed class AdminAuthSessionStoreTests
         session.Should().BeNull();
     }
 
-    // ─── Session claim projection (SEC-10) ──────────────────────────────────────
+    // ─── Session claim projection ──────────────────────────────────────
 
     [UnitTest]
     public void TryProjectValidatedClaims_DropsAuthorityClaimsFromTheValidatedToken()

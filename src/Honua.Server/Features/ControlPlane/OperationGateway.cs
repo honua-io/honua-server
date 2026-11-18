@@ -29,7 +29,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane;
 
-internal sealed partial class OperationGateway : IOperationGateway
+internal sealed partial class OperationGateway : IOperationGateway, IOpsRemediationGateway
 {
     private static readonly TimeSpan CompletionPersistenceTimeout = TimeSpan.FromSeconds(10);
     private readonly IGuardrailLadder _ladder;
@@ -64,9 +64,44 @@ internal sealed partial class OperationGateway : IOperationGateway
         _initiationResolver = initiationResolver;
     }
 
-    public async Task<OperationGatewayResult> RouteAsync(
+    private enum InvocationOrigin
+    {
+        Caller,
+        BackgroundRemediation,
+    }
+
+    public Task<OperationGatewayResult> RouteRemediationAsync(
         OperationGatewayRequest request,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        using var scope = _scopeFactory.CreateScope();
+        var httpContext = scope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
+        // HTTP callers cannot acquire background authority, even through accidental reuse
+        // of this internal entry point. The ordinary route resolves their authenticated actor.
+        if (httpContext is not null)
+        {
+            return RouteAsync(request, cancellationToken);
+        }
+
+        // This identity is assigned by the server call boundary, never recognized from a
+        // request value. Existing proposal/envelope records retain it through audit/replay.
+        return RouteCoreAsync(request with
+        {
+            RequestedBy = "service:ops-findings",
+            RequestedByAgent = null,
+        }, InvocationOrigin.BackgroundRemediation, cancellationToken);
+    }
+
+    public Task<OperationGatewayResult> RouteAsync(
+        OperationGatewayRequest request,
+        CancellationToken cancellationToken = default)
+        => RouteCoreAsync(request, InvocationOrigin.Caller, cancellationToken);
+
+    private async Task<OperationGatewayResult> RouteCoreAsync(
+        OperationGatewayRequest request,
+        InvocationOrigin origin,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         request = ResolveRequestIdentity(request);
@@ -79,7 +114,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             return await RouteAutonomyCompatibilityAsync(
                     canonicalRequest,
-                    actionDiscriminator,
+                    origin,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -144,15 +179,16 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     private async Task<OperationGatewayResult> RouteAutonomyCompatibilityAsync(
         OperationGatewayRequest request,
-        string? actionDiscriminator,
+        InvocationOrigin origin,
         CancellationToken cancellationToken)
     {
+        var actionDiscriminator = request.ActionDiscriminator;
         var decision = actionDiscriminator is null
             ? _ladder.Resolve(request.Kind)
             : _ladder.Resolve(request.Kind, actionDiscriminator);
         Log.OperationRouted(_logger, request.Kind.ToString(), decision.Tier.ToString(), decision.Source);
 
-        if (decision.Tier == GuardrailTier.RequiresApproval)
+        if (origin == InvocationOrigin.BackgroundRemediation && decision.Tier == GuardrailTier.RequiresApproval && request.RequestedByAgent is null)
         {
             var autonomy = await EvaluateAutonomyAsync(
                     request,
@@ -341,9 +377,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                 // Recheck after claim/scope/replay preparation, immediately before canonical dispatch.
                 await ValidateCurrentProposerAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
                 if (FolderOperationCredential.IsFolderMutation(proposal.OperationId ?? string.Empty) &&
-                    !await FolderApprovalAuthorization.IsCurrentAsync(proposal, scope.ServiceProvider, cancellationToken).ConfigureAwait(false))
+                    await FolderApprovalAuthorization.ValidateCurrentAsync(proposal, scope.ServiceProvider, cancellationToken).ConfigureAwait(false) is { } folderFailure)
                 {
-                    failureMessage = FolderApprovalAuthorization.FreshProposalRequired;
+                    failureMessage = folderFailure.Detail;
                 }
                 else
                 {
@@ -593,6 +629,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                     TenantId = request.TenantId,
                     PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
                     Roles = request.RequestedByAgent is null ? [] : ["agent"],
+                    OperationInstanceId = request.OperationInstanceId,
+                    IdempotencyKey = request.IdempotencyKey,
                     AuthorizationOutcome = "autonomy-authorized",
                     RootProvisioningOperationId = request.RootProvisioningOperationId,
                 },
@@ -645,7 +683,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             var context = authorizationScope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
             try
             {
-                plan = await FolderApprovalAuthorization.PrepareAsync(request, plan, context, cancellationToken).ConfigureAwait(false);
+                plan = await FolderApprovalAuthorization.PrepareAsync(new(request, plan, context), cancellationToken).ConfigureAwait(false);
             }
             catch (FolderProposalRefusal refusal)
             {

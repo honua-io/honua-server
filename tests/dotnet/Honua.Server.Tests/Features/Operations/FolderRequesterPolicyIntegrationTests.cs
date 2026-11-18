@@ -347,56 +347,46 @@ public sealed partial class FolderOperationIntegrationTests
         public AuthenticateResult? AuthenticateResult { get; set; }
     }
 
-    private sealed class FolderRequesterLicense : ILicenseEntitlementService
+    internal sealed class FolderRequesterLicense : ILicenseEntitlementService
     {
         public TestLicenseEntitlementService Current { get; set; } = new(HonuaEdition.Pro);
+        public void Reset() => Current = new(HonuaEdition.Pro);
         public LicenseSnapshot GetSnapshot() => Current.GetSnapshot();
         public LicenseEntitlementDecision CheckEntitlement(string entitlementKey) => Current.CheckEntitlement(entitlementKey);
     }
 
-    private sealed class FolderRequesterMembership : IPrincipalMembershipSource
+    internal sealed class FolderRequesterMembership : IPrincipalMembershipSource
     {
         public PrincipalMembership? Current { get; set; } = new(true, ["admin", "original-membership"]);
         public int? ReadsBeforeOutage { get; set; }
+        public int ReadsBeforeCatalogChange { get; set; }
+        public Func<Task>? ChangeCatalog { get; set; }
 
-        public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
+        public void Reset()
+        {
+            Current = new(true, ["admin", "original-membership"]);
+            ReadsBeforeOutage = null;
+            ReadsBeforeCatalogChange = 0;
+            ChangeCatalog = null;
+        }
+
+        public async Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
         {
             if (principalId != "folder-requester")
-                return Task.FromResult<PrincipalMembership?>(null);
+                return null;
             if (ReadsBeforeOutage is { } remaining)
             {
-                if (remaining == 0) return Task.FromException<PrincipalMembership?>(new ServiceUnavailableException("Membership service unavailable."));
+                if (remaining == 0) throw new ServiceUnavailableException("Membership service unavailable.");
                 ReadsBeforeOutage = remaining - 1;
             }
-            return Task.FromResult(Current);
+            if (ChangeCatalog is { } change && ReadsBeforeCatalogChange-- == 0)
+            {
+                ChangeCatalog = null;
+                await change();
+            }
+            return Current;
         }
     }
 
-    private async Task<MetadataV2GraphSnapshot> RestrictLastServiceFacetAsync()
-    {
-        using var scope = _fixture.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
-        var before = await store.GetCurrentAsync();
-        var facet = before.Graph.Services.Last(service => service.Metadata.Name == "test");
-        var restricted = before.Graph with
-        {
-            Services = before.Graph.Services.Select(service => service.Metadata.Id == facet.Metadata.Id
-                ? service with { AccessPolicy = new AccessPolicy { AllowedRoles = ["service-owner"], AllowedWriteRoles = ["service-owner"] } }
-                : service).ToArray()
-        };
-        var saved = await store.SaveAsync(restricted, before.Etag);
-        saved.Etag.Should().NotBe(before.Etag);
-        var policyContext = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
-        policyContext.Request.Method = HttpMethods.Put;
-        policyContext.Request.Path = "/api/v1/admin/services/test/folder";
-        policyContext.Request.Headers["X-API-Key"] = _proposer.DefaultRequestHeaders.GetValues("X-API-Key").Single();
-        var authenticated = await policyContext.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme);
-        authenticated.Succeeded.Should().BeTrue();
-        policyContext.User = authenticated.Principal!;
-        var deniedFacet = saved.Graph.Services.Single(service => service.Metadata.Id == facet.Metadata.Id);
-        MetadataV2TenantVisibility.IsVisibleToTenant(deniedFacet, null).Should().BeTrue();
-        (await FolderEndpoints.RequireServiceAccessAsync(policyContext, deniedFacet)).Should().NotBeNull(
-            "the real authenticated requester must fail the shared service-policy check before testing proposal admission");
-        return saved;
-    }
+
 }

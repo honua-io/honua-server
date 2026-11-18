@@ -25,8 +25,6 @@ public sealed class SchemaFloorRefusalExitTests
         "HONUA_REGISTER_TEST_INFRASTRUCTURE",
         "HONUA_TEST_SCHEMA_HEADERS",
         "HONUA_DB_DEGRADED_START",
-        "ConnectionStrings__redis",
-        "ConnectionStrings__Redis",
         "AWS_LAMBDA_FUNCTION_NAME"
     ];
 

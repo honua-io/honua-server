@@ -24,6 +24,11 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 internal sealed class QueryFormatter
 {
+    private static readonly HashSet<string> UndeclaredObjectIdProperties = new(StringComparer.OrdinalIgnoreCase)
+    {
+        FieldNames.ObjectId
+    };
+
     private readonly GeometryLimits _geometryLimits;
     private readonly GeoParquetLimits _geoParquetLimits;
     private readonly PbfQueryFormatter _pbfFormatter;
@@ -451,12 +456,14 @@ internal sealed class QueryFormatter
         => GeoJsonFeatureBaseBuilder.PrepareOptions(resource, new(
             ProjectedProperties: projectedProperties,
             IncludeObjectIdProperty: true,
-            // GeoJSON properties must mirror the f=json attributes, which carry only the
-            // lowercase objectid field. Suppress the synthetic uppercase OBJECTID alias so the
-            // two formats stay faithful (the OID is also exposed via the feature `id`).
+            // FeatureServer exposes the declared OID without a synthetic uppercase alias.
             IncludeObjectIdAlias: false,
             IncludeAdditionalAttributes: true,
-            ResolveIdFromProperties: true));
+            ResolveIdFromProperties: true,
+            ExcludedAdditionalProperties: resource.SchemaFields.Any(field =>
+                !IsGeometryField(field) && field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+                ? null
+                : UndeclaredObjectIdProperties));
 
     internal static GeoServicesFieldInfo[] BuildQueryFields(
         MetadataV2Object resource,

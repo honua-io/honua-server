@@ -94,7 +94,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             // The default host registers the Postgres-backed IReplicaRepository (which needs a real
             // IAdoNetDatabaseConnectionProvider). This fixture has no real database, so substitute a
             // persistence-capable in-memory repository. Without it, the replica write endpoints'
-            // RequireReplicaPersistenceSupport check (#2136) fails to resolve IReplicaRepository and
+            // RequireReplicaPersistenceSupport check fails to resolve IReplicaRepository and
             // surfaces a 500 instead of exercising RBAC/sync behavior.
             services.AddSingleton<IReplicaRepository, InMemoryReplicaRepository>();
             services.AddScoped<ISecureConnectionRegistry, NullSecureConnectionRegistry>();

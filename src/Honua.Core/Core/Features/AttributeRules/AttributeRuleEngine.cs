@@ -28,6 +28,8 @@ public readonly record struct AttributeRuleApplicationResult(
     IReadOnlyList<AttributeRuleViolation> Violations)
 {
     public bool IsValid => Violations.Count == 0;
+
+    public IReadOnlyList<string> CalculatedFields { get; init; } = [];
 }
 
 public static class AttributeRuleEngine
@@ -50,6 +52,7 @@ public static class AttributeRuleEngine
 
         Dictionary<string, object?>? working = null;
         List<AttributeRuleViolation>? violations = null;
+        List<string>? calculatedFields = null;
 
         // The evaluation snapshot a rule reads from. Calculation rules can feed later
         // rules, so we read from the working copy once one exists.
@@ -59,9 +62,7 @@ public static class AttributeRuleEngine
         {
             // Batch rules are deferred to the explicit batch pass; immediate rules run inline.
             // A rule whose triggering event does not match the current edit operation is skipped.
-            if (!rule.IsEnabled ||
-                rule.Batch != (pass == AttributeRulePass.Batch) ||
-                !AppliesTo(rule, editEvent))
+            if (!ShouldApply(rule, pass, editEvent))
             {
                 continue;
             }
@@ -75,6 +76,12 @@ public static class AttributeRuleEngine
                             continue;
                         }
 
+                        if (IdentityCalculationViolation(resource, rule) is { } identityViolation)
+                        {
+                            (violations ??= []).Add(identityViolation);
+                            break;
+                        }
+
                         var result = AttributeRuleExpression.Evaluate(rule.ScriptExpression, Current(), expectBoolean: false);
                         if (result.Status == AttributeRuleExpressionStatus.Unsupported)
                         {
@@ -84,6 +91,7 @@ public static class AttributeRuleEngine
 
                         working ??= new Dictionary<string, object?>(attributes, StringComparer.OrdinalIgnoreCase);
                         working[rule.FieldName] = result.Value;
+                        (calculatedFields ??= []).Add(rule.FieldName);
                         break;
                     }
 
@@ -137,8 +145,22 @@ public static class AttributeRuleEngine
 
         return new AttributeRuleApplicationResult(
             working ?? attributes,
-            (IReadOnlyList<AttributeRuleViolation>?)violations ?? Array.Empty<AttributeRuleViolation>());
+            (IReadOnlyList<AttributeRuleViolation>?)violations ?? Array.Empty<AttributeRuleViolation>())
+        {
+            CalculatedFields = (IReadOnlyList<string>?)calculatedFields ?? [],
+        };
     }
+
+    private static bool ShouldApply(
+        MetadataV2AttributeRule rule, AttributeRulePass pass, AttributeRuleEditEvent editEvent)
+        => rule.IsEnabled && rule.Batch == (pass == AttributeRulePass.Batch) && AppliesTo(rule, editEvent);
+
+    private static AttributeRuleViolation? IdentityCalculationViolation(
+        MetadataV2Object resource, MetadataV2AttributeRule rule)
+        // Identity must match the response and durable replay receipt on every edit event.
+        => rule.FieldName!.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase)
+            ? new(rule.Name, "Calculation rules cannot write the global ID field.")
+            : null;
 
     private static void AddViolation(ref List<AttributeRuleViolation>? violations, MetadataV2AttributeRule rule)
     {

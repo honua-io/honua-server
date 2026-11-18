@@ -21,7 +21,8 @@ public static class CapabilityUnavailableCodes
 
     public const string SystemDatabaseRemediation =
         "Set ConnectionStrings__DefaultConnection to the PostgreSQL system database and restart the " +
-        "server. Durable jobs, the job queue and governed proposals are tables in it.";
+        "server. Durable jobs, the job queue and governed proposals are tables in it. Only a PostgreSQL/PostGIS " +
+        "primary data source has a system database; a DuckDB or MySQL primary does not.";
 
     public const string SystemDatabaseRemediationRef =
         "https://honua.io/docs/guides/deploy/troubleshooting/#database-connections";
@@ -71,7 +72,7 @@ public static class CapabilityUnavailableCodes
         "only on that data source.";
 
     public const string WorkflowDefinitionStoreRemediationRef =
-        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";
+        "https://honua.io/docs/guides/deploy/docker-compose/#durable-administration-requires-the-system-database";
 
     public const string DurableWorkflowPublicationDetail =
         "Publishing a workflow package to a Schedule target requires the durable workflow " +

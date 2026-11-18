@@ -296,7 +296,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
     {
         Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
 
-        // One-shot proof (#2812): a nonce minted for the FIRST contract migration must not approve a
+        // One-shot proof: a nonce minted for the FIRST contract migration must not approve a
         // LATER, different contract migration — the "HONUA_APPROVE_CONTRACT_MIGRATIONS is never cleared"
         // failure mode. We reuse the exact token that approved script 002 and show it is inert for 004.
         var connectionString = await _postgres.CreateFreshDatabaseAsync();
@@ -559,7 +559,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
     {
         Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
 
-        // #6477: a reader built at baseline N (001-002) starts against a journal at N+2 whose extra
+        // A reader built at baseline N (001-002) starts against a journal at N+2 whose extra
         // scripts are expand-only and were declared by the newer server that applied them.
         var connectionString = await _postgres.CreateFreshDatabaseAsync();
         var runner = CreateEnforcingRunner();

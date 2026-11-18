@@ -158,7 +158,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/config")]
     public async Task GetConfiguration_FeatureStreamingSection_ContainsAllOptionsKnobs()
     {
-        // Regression: the FeatureStreaming options class exposes safety knobs
+        // The FeatureStreaming options class exposes safety knobs
         // (MaxControlFrameBytes, MaxSubscriptionsPerSession, MaxSubscriptionIdLength,
         // MaxSnapshotBytes)
         // alongside the original interval settings. The admin configuration doc
@@ -176,6 +176,8 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         propertyPaths.Should().Contain("FeatureStreaming:HeartbeatInterval");
         propertyPaths.Should().Contain("FeatureStreaming:MaxBufferPerConnection");
         propertyPaths.Should().Contain("FeatureStreaming:MaxConcurrentSessions");
+        propertyPaths.Should().Contain("FeatureStreaming:MaxAnonymousSessionsPerClient");
+        propertyPaths.Should().Contain("FeatureStreaming:MaxNodeSessions");
         propertyPaths.Should().Contain("FeatureStreaming:ReplayBatchSize");
         propertyPaths.Should().Contain("FeatureStreaming:CrossNodeSyncInterval");
         propertyPaths.Should().Contain("FeatureStreaming:MaxControlFrameBytes");

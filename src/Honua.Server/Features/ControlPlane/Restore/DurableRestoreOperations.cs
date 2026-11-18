@@ -359,7 +359,10 @@ internal sealed partial class DurableRestoreWorker(
         }
         if (workflow.Status is not (WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
         {
-            await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
+            // A contract-gate refusal applied nothing and restarted the prior, so report the gate itself.
+            var code = workflow is { Status: WorkflowOperationStatus.Failed, CurrentPhase: ComposeExecutorCodes.ContractApprovalRequired }
+                ? ComposeExecutorCodes.ContractApprovalRequired : PreMigrationRestoreCodes.RestoreIncomplete;
+            await FailAsync(record, code, cancellationToken).ConfigureAwait(false);
             return;
         }
         if (workflow.Status != WorkflowOperationStatus.Succeeded) return;
@@ -398,7 +401,7 @@ internal sealed partial class DurableRestoreWorker(
             await FailAsync(latest, completion.Code ?? PreMigrationRestoreCodes.RestoreIncomplete, cancellationToken).ConfigureAwait(false);
     }
 
-    // A short Redis lease serializes updates to the durable owner record. The owner survives
+    // A short operation-store lease serializes updates to the durable owner record. The owner survives
     // process replacement and remains held until the full deploy and readback have succeeded.
     // Terminal owners are reclaimable only after any child deployment is also terminal.
     internal async Task<bool> ClaimCellAsync(string id, CancellationToken cancellationToken)

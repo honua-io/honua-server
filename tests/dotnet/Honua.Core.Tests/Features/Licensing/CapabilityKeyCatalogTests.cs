@@ -24,7 +24,7 @@ public sealed class CapabilityKeyCatalogTests
     [Fact]
     public void CommunityKeys_AllCarryCommunityEdition()
     {
-        // Deliverable 1 (#2893): Community capability keys are modeled with
+        // Deliverable 1: Community capability keys are modeled with
         // edition=Community and must never be entitlement-gated.
         CapabilityKeyCatalog.CommunityKeys.Should().OnlyContain(
             capability => capability.Edition == HonuaEdition.Community);
@@ -157,7 +157,7 @@ public sealed class CapabilityKeyCatalogTests
     [Fact]
     public void All_DoesNotMutateFeatureCatalog()
     {
-        // Deliverable 1 (#2893): this layer must not touch entitlement
+        // Deliverable 1: this layer must not touch entitlement
         // enforcement — FeatureCatalog.All is consumed, never modified.
         var beforeCount = FeatureCatalog.All.Count;
         _ = CapabilityKeyCatalog.All;

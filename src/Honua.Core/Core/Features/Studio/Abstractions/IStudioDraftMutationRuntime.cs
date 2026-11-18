@@ -79,6 +79,10 @@ public sealed record StudioDraftMutationContext
     public string? SchemaName { get; init; }
     public string? CorrelationId { get; init; }
     public string? IdempotencyKey { get; init; }
+
+    // Binds IdempotencyKey to the request content: a retry with the same key and different
+    // content is a conflict, and an in-flight retry is refused instead of re-dispatched.
+    public string? IdempotencyRequestHash { get; init; }
     public string AuthorizationOutcome { get; init; } = "authorized";
     public IReadOnlyList<string> Roles { get; init; } = [];
     public bool ScopeGoverned { get; init; }

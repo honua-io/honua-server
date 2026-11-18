@@ -106,7 +106,7 @@ public sealed class DeployControlPlatformAuthorityTests
     {
         var harness = McpHarness.Create(scenario);
 
-        // A tenant-bound key must learn platform_admin_required, never the declared release (#5654).
+        // A tenant-bound key must learn platform_admin_required, never the declared release.
         var act = () => harness.InvokeAsync(
             ProposePlatformReleaseConvergenceTool.ToolName, """{"targetVersion":"1999.1-rc.1"}""");
 
@@ -199,7 +199,7 @@ public sealed class DeployControlPlatformAuthorityTests
         [TenantAdmin, ApprovedTenantCredential]);
 
     // /api/v1/operations/{id}/submit, MCP and approval replay reach the rollback executors
-    // without the REST wrappers' platform check, so the executor must enforce it (#5625).
+    // without the REST wrappers' platform check, so the executor must enforce it.
     [Theory]
     [MemberData(nameof(CanonicalRollbackDeniedCases))]
     public async Task CanonicalRollbackExecutor_TenantBoundAdmin_IsDeniedBeforeWorkflowAccess(

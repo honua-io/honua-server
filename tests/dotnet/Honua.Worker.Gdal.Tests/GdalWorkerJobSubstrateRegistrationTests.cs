@@ -9,7 +9,6 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
@@ -18,10 +17,9 @@ namespace Honua.Worker.Gdal.Tests;
 public sealed class GdalWorkerJobSubstrateRegistrationTests
 {
     [UnitTest]
-    public void AddGdalWorker_WithSystemDatabaseAndNoRedis_ResolvesTheJobSubstrateFromPostgres()
+    public void AddGdalWorker_WithSystemDatabase_ResolvesTheJobSubstrateFromPostgres()
     {
         var services = ComposeWorker();
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer));
         using var provider = services.BuildServiceProvider();
 
         AssertStoreClockAndCandidateSourceAreTheJobStore(provider);
@@ -61,7 +59,7 @@ public sealed class GdalWorkerJobSubstrateRegistrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        var register = () => services.AddGdalWorker(Configuration(connectionString, redis: "localhost:6379"));
+        var register = () => services.AddGdalWorker(Configuration(connectionString));
 
         register.Should().Throw<InvalidOperationException>()
             .WithMessage("*ConnectionStrings:DefaultConnection*");
@@ -86,15 +84,14 @@ public sealed class GdalWorkerJobSubstrateRegistrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddGdalWorker(Configuration("Host=localhost;Database=unused", redis: null));
+        services.AddGdalWorker(Configuration("Host=localhost;Database=unused"));
         return services;
     }
 
-    private static IConfiguration Configuration(string? systemConnectionString, string? redis)
+    private static IConfiguration Configuration(string? systemConnectionString)
         => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ConnectionStrings:DefaultConnection"] = systemConnectionString,
-            ["ConnectionStrings:redis"] = redis,
             ["Licensing:Mode"] = "Disabled",
         }).Build();
 

@@ -88,7 +88,7 @@ public sealed class DeployHealthProbeTests
     [Fact]
     public async Task ProbeGoldenQueryAsync_HealthyStatusButCorruptBody_DoesNotMatch()
     {
-        // The heart of #2811: status 200 but a wrong/garbled body must be a mismatch (correctness gate).
+        // Status 200 but a wrong/garbled body must be a mismatch (correctness gate).
         using var factory = BodyFactory(HttpStatusCode.OK, "<html>error page</html>");
         var probe = new HttpDeployHealthProbe(factory);
 
@@ -135,7 +135,7 @@ public sealed class DeployHealthProbeTests
         sendCount.Should().Be(0, "a rejected URL must never hit the network");
     }
 
-    // ---- HTTP-200 error envelopes and wrong-result markers (#4617) ----------
+    // ---- HTTP-200 error envelopes and wrong-result markers ----------
 
     [Theory]
     [InlineData("{\"error\":{\"code\":500,\"message\":\"Unable to complete operation.\",\"details\":[]},\"marker\":\"GOLDEN-OK\"}", "JSON error envelope")]

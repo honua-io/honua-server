@@ -129,6 +129,10 @@ public sealed partial class AdminAuthEndpointsTests
         client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
         var rejected = await client.PostAsync("/api/v1/admin/auth/logout", null);
         rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var rejectedGeoServices = await client.PostAsync("/rest/services/any/FeatureServer/0/applyEdits", null);
+        rejectedGeoServices.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var rejectedWms = await client.PostAsync("/rest/services/any/MapServer/wms", null);
+        rejectedWms.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await BrowserCsrf.SetHeaderAsync(client);
         var logout = await client.PostAsync("/api/v1/admin/auth/logout", null);
         logout.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -241,6 +245,7 @@ public sealed partial class AdminAuthEndpointsTests
         client.DefaultRequestHeaders.Add("X-Honua-CSRF", "invalid-token");
         var response = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("antiforgery cookie").And.Contain("X-Honua-CSRF");
     }
 
     [IntegrationTheory]
@@ -307,6 +312,9 @@ public sealed partial class AdminAuthEndpointsTests
         browser.BaseAddress = new Uri("https://localhost");
         using var response = await browser.GetAsync("/admin/auth/callback?code=code-123&state=untrusted");
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+        var page = await response.Content.ReadAsStringAsync();
+        page.Should().Contain("expired").And.Contain("href=\"/console/auth/signin\"");
     }
 
     [IntegrationTheory]

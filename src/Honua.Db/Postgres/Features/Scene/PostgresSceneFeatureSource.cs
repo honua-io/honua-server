@@ -57,12 +57,8 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         var qualifiedTable = DatabaseSchema.GetFeaturesTableName();
         var attributeFields = ResolveAttributeFields(resource, includeAttributes);
 
-        // ST_Force3D was previously wrapped around the geometry to ensure the
-        // GLB writer always saw a Z component, but it masked the documented
-        // "no Z and no extrusion" warning by promoting 2D rows to Z=0
-        // silently. The WKB reader respects the geometry's hasZ flag, and the
-        // GLB writer treats null vertex.Height as 0, so dropping the wrapper
-        // preserves dimensionality without losing the writer's contract.
+        // Preserve dimensionality for the "no Z and no extrusion" warning.
+        // The WKB reader respects hasZ, and the GLB writer treats null vertex.Height as 0.
         var selectColumns = new StringBuilder();
         selectColumns.Append(DatabaseSchema.ObjectIdColumn).Append(" AS pk, ");
         selectColumns.Append("ST_AsBinary(")
@@ -324,11 +320,6 @@ internal static class WkbGeometryReader
         //    along on layers declared with those dimensions.
         //  * ISO SQL/MM (OGC) uses the higher type ranges:
         //      1xxx = XYZ, 2xxx = XYM, 3xxx = XYZM.
-        //
-        // Previously the reader detected hasZ for both encodings but skipped
-        // hasM entirely, so a LineStringM or PolygonZM stream left the M
-        // ordinate in the buffer and the next vertex's "X" silently read M
-        // from the prior vertex — corrupting the geometry without warning.
         var hasZ = (type & 0x80000000u) != 0;
         var hasM = (type & 0x40000000u) != 0;
         var baseType = type & 0xFFFFu;

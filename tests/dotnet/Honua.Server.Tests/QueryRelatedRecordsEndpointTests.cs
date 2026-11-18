@@ -16,22 +16,45 @@ namespace Honua.Server.Tests;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
-public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
+public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelatedRecordsEndpointTests.ReadOnlyProHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    // The class host by default; a case that writes switches to its own private host.
+    private WebAppFixture _fixture;
+    private WebAppFixture? _mutableFixture;
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const int TestRelationshipId = 1;
     private const int MaxRequestAttempts = 3;
     private static readonly TimeSpan _requestTimeout = TimeSpan.FromMinutes(5);
 
-    public async Task InitializeAsync()
+    public QueryRelatedRecordsEndpointTests(ReadOnlyProHost host) => _fixture = host.Fixture;
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync() => _mutableFixture?.DisposeAsync() ?? Task.CompletedTask;
+
+    private static async Task StartEditableProFixtureAsync(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
+        await fixture.InitializeAsync();
+        fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    private async Task UseMutableFixtureAsync()
+    {
+        _mutableFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await StartEditableProFixtureAsync(_mutableFixture);
+        _fixture = _mutableFixture;
+    }
+
+    // Related-record GET queries only read, so they share one Pro host per class.
+    public sealed class ReadOnlyProHost : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+
+        public Task InitializeAsync() => StartEditableProFixtureAsync(Fixture);
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     #region Success Cases
 
@@ -59,7 +82,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse!.RelatedRecordGroups.Should().NotBeNull();
         queryResponse.RelatedRecordGroups.Should().HaveCount(2); // Two object IDs requested
 
-        // Esri queryRelatedRecords contract (#1452): field/geometry metadata is at the
+        // Esri queryRelatedRecords contract: field/geometry metadata is at the
         // response top level, and each group's relatedRecords is a flat array.
         queryResponse.Fields.Should().NotBeNull();
         queryResponse.Fields.Should().Contain(f => f.Name == "objectid");
@@ -86,7 +109,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_RelatedRecordsIsFlatArrayPerEsriSpec()
     {
-        // Regression for #1452: relatedRecords must be a FLAT array of records (the
+        // The relatedRecords member must be a FLAT array of records (the
         // ArcGIS Maps SDK for JavaScript reads relatedRecords.length), not a nested
         // FeatureSet object. Assert the raw JSON shape rather than the typed model.
         var response = await GetWithRetryAsync(
@@ -127,7 +150,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithHighObjectId_ResolvesRelatedRecords()
     {
-        // Regression (#1465): queryRelatedRecords must resolve related records for ANY
+        await UseMutableFixtureAsync();
+        // queryRelatedRecords must resolve related records for ANY
         // origin object-id magnitude, not just the low seeded ids. Build the fixture in
         // the arrange step against the unmodified shared seed: insert a NEW origin feature
         // into the editable layer 0 (the server assigns a high auto-incremented object id),
@@ -395,7 +419,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithReturnCountOnly_ReturnsCountsWithoutRecords()
     {
-        // #1396: returnCountOnly returns a per-source-object count instead of the
+        // ReturnCountOnly returns a per-source-object count instead of the
         // related-record attributes/geometry.
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2&relationshipId={TestRelationshipId}&returnCountOnly=true");
@@ -425,7 +449,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithOrderByFields_ReturnsSortedRecords()
     {
-        // #1396: orderByFields sorts the related records of each source object.
+        // OrderByFields sorts the related records of each source object.
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields={Uri.EscapeDataString("name DESC")}");
 
@@ -454,7 +478,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithUnknownOrderByField_Returns400()
     {
-        // #1396: orderByFields is validated against the related layer schema.
+        // OrderByFields is validated against the related layer schema.
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields=does_not_exist");
 
@@ -469,6 +493,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithPostRequest_ReturnsRelatedFeatures()
     {
+        await UseMutableFixtureAsync();
         // Arrange
         var requestBody = JsonSerializer.Serialize(new
         {
@@ -500,6 +525,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        await UseMutableFixtureAsync();
         var requestBody = JsonSerializer.Serialize(new
         {
             objectIds = "1,2",
@@ -912,7 +938,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_EmptyGroupAlwaysEmitsRelatedRecordsArray()
     {
-        // Regression: the @arcgis/core JS SDK reads group.relatedRecords.length
+        // The @arcgis/core JS SDK reads group.relatedRecords.length
         // unconditionally and throws "Cannot read properties of undefined (reading
         // 'length')" when the key is absent. Every group (including objectIds with no
         // related rows) must carry relatedRecords as an array. Mix an object with
@@ -995,6 +1021,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("PUT /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithWrongHttpMethod_Returns405()
     {
+        await UseMutableFixtureAsync();
         // Act
         var response = await _fixture.Client.PutAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords", null);
@@ -1008,6 +1035,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("DELETE /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithDeleteMethod_Returns405()
     {
+        await UseMutableFixtureAsync();
         // Act
         var response = await _fixture.Client.DeleteAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords");

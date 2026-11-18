@@ -86,7 +86,7 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
     {
         // The limit is applied over a pinned candidate set (the three seeded
         // category=test rows), so the page is exactly 2 of 3 known ids rather than
-        // "at most 2", which an empty result would also satisfy (#4393).
+        // "at most 2", which an empty result would also satisfy.
         using var page = await GetItemsAsync(
             $"filter={Uri.EscapeDataString("category = 'test'")}&limit=2");
 
@@ -152,7 +152,7 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         // Pin the candidate set to the three seeded category=test rows, then assert
         // that offset=1 drops exactly the first row of the unoffset page. An ignored
         // offset returns all three and fails; the previous shape-only assertion did
-        // not (#4393).
+        // not.
         const string filter = "category = 'test'";
         using var all = await GetItemsAsync($"filter={Uri.EscapeDataString(filter)}");
         var firstPageOrder = all.RootElement.GetProperty("features").EnumerateArray()
@@ -187,7 +187,7 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
     {
         // `name = 'Test Feature'` matches seeded objectid 1 and nothing else, so the
         // matched id set is asserted exactly. The previous foreach body proved only
-        // the absence of false positives and passed on zero features (#4393).
+        // the absence of false positives and passed on zero features.
         using var json = await GetItemsAsync(
             $"filter={Uri.EscapeDataString("name = 'Test Feature'")}");
 
@@ -259,7 +259,7 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         // Both conjuncts are load-bearing and asserted as exact id sets: `category =
         // 'test'` alone matches {1,3,5} and `name = 'Test Feature'` alone matches {1},
         // so the conjunction must be {1}. The previous shape-only assertion passed
-        // whether the filter returned everything or nothing (#4393).
+        // whether the filter returned everything or nothing.
         using var conjunction = await GetItemsAsync(
             $"filter={Uri.EscapeDataString("name = 'Test Feature' AND category = 'test'")}");
         conjunction.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
@@ -291,7 +291,7 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
 
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
         // Exact id set, not just NotBeEmpty: an over-restrictive filter that returned
-        // only objectid 1 passed the previous per-row re-check (#4393).
+        // only objectid 1 passed the previous per-row re-check.
         FeatureIds(json.RootElement).Should().Equal(SeededCategoryTestIds);
         json.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(SeededCategoryTestIds.Length);
 
@@ -339,7 +339,7 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         // Walk the whole filtered set one page at a time: each page must hold exactly
         // one feature, the pages must be distinct, and their union must be exactly
         // {1,3,5}. The previous BeLessThanOrEqualTo(1) assertions passed on zero
-        // features and never checked the filter component at all (#4393).
+        // features and never checked the filter component at all.
         const string filter = "category = 'test'";
         var paged = new List<long>();
         for (var offset = 0; offset < SeededCategoryTestIds.Length; offset++)

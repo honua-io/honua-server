@@ -918,7 +918,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void Validate_WithServicesSharingDisplayName_ReturnsValid()
     {
-        // honua-server#1395: a single logical service is projected across multiple
+        // A single logical service is projected across multiple
         // protocol facets (feature/map/image/ogc/stac) that intentionally share one
         // display name but carry distinct service ids. Service identity is the id, not the
         // name, so a graph with same-named services must validate. The metadata_v2

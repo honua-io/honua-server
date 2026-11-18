@@ -26,7 +26,6 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
 {
-    private readonly RedisFixture _redis = new();
 
     // The Test host adds its real Postgres catalog after the production MCP
     // composition gate runs. Advertise the same concrete style tools once the
@@ -46,10 +45,8 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         _fixture.ConfigureWebHost(builder =>
         {
-            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Public:BaseUrl", "http://localhost");
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
         });
@@ -59,7 +56,6 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -179,9 +175,8 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task AppliedSolidRedPreset_IsTheStyleRenderMapDraws_AndApplyReturnsOperationHandle()
     {
-        // Terminal promise journey stage 4: apply a solid-red preset to a published layer whose
-        // stored default style is blue, render it, and decode the centre pixel. Before the fix
-        // render_map named the preset but drew the stored default (rgba(45,105,165)).
+        // Apply a solid-red preset to a published layer with a blue stored default,
+        // render it, and decode the centre pixel to verify the selected preset is drawn.
         using var client = await HumanApprovedOperation.CreateProposerClientAsync(_fixture);
         await SeedTestLayerStyleAsync(client);
         using var scope = _fixture.Services.CreateScope();

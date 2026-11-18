@@ -12,7 +12,7 @@ public sealed partial class HandParsedConfigurationSectionTests
 {
     private static readonly string[] AuditedHandParsedTypeNames =
     [
-        // The #3315 parser: src/Honua.Db/Postgres/ServiceCollectionExtensions.cs.
+        // The Postgres import-limits parser: src/Honua.Db/Postgres/ServiceCollectionExtensions.cs.
         "Honua.Core.Features.Import.Domain.ImportLimits",
         // A second, independently written parser the shape-driven scan finds on its own
         // (src/Honua.Server/Features/FileStorage/FileStorageServiceCollectionExtensions.cs) —

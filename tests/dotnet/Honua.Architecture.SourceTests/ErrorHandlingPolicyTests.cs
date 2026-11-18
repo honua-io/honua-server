@@ -49,6 +49,8 @@ public sealed class ErrorHandlingPolicyTests
         // Cancellation helpers delegate error shaping to TryReconcileDurableCancelAsync
         // in the main partial; this file only bridges successful results.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "OperationsProgressEndpoints.CancellationResults.cs"),
+        // Admission partition resolution only: no handler; the session-limit refusal is shaped in FeatureStreamEndpoints.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Streaming", "FeatureStreamEndpoints.Admission.cs"),
         // Error shaping uses the alert-admin surface's ApiResponse failure envelope
         // (Results.Json + 400), which the marker scan does not recognize; failures
         // beyond request validation are handled by the global exception middleware.
@@ -195,8 +197,7 @@ public sealed class ErrorHandlingPolicyTests
         // exception type in parens at all — valid C#, and functionally
         // identical to `catch (Exception) { }`) is just as silent but does not
         // match the typed-catch alternative, so it is matched as a second
-        // alternative below (PA-068 slipped past this test in exactly this
-        // form before it was hardened).
+        // alternative below.
         var pattern = new Regex(
             @"catch\s*\(\s*Exception(?:\s+\w+)?\s*\)\s*(?:when\s*\([^)]*\)\s*)?\{\s*\}|catch\s*\{\s*\}",
             RegexOptions.CultureInvariant);

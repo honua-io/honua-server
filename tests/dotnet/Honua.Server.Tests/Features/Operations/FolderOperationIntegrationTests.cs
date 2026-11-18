@@ -1,6 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Security;
+using Honua.Core.Features.Guardrails.Domain;
+using Microsoft.AspNetCore.Http;
+using Honua.Server.Features.Admin;
 using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -19,6 +23,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Tests.Features.Admin;
+using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -28,55 +33,233 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-[Collection(RedisFixture.CollectionName)]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) : IAsyncLifetime
+public sealed partial class FolderOperationIntegrationTests(FolderOperationIntegrationTests.FolderHost host)
+    : IClassFixture<FolderOperationIntegrationTests.FolderHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private ReplayServiceAuthorization _authorization = null!;
-    private readonly FolderRequesterMembership _memberships = new();
-    private readonly FolderRequesterLicense _licensing = new();
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly ReplayServiceAuthorization _authorization = host.Authorization;
+    private readonly FolderRequesterMembership _memberships = host.Memberships;
+    private readonly FolderRequesterLicense _licensing = host.Licensing;
     private HttpClient _proposer = null!;
-    private HumanApprovalHttpClient _approver = null!;
-    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = AdminAuthEndpointsTests.CreateStubFactory();
-    private IOperationProposalStore _proposals = null!;
+    private readonly HumanApprovalHttpClient _approver = host.Approver;
+    private readonly IOperationProposalStore _proposals = host.Proposals;
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ServiceMove_ApprovedReplay_RevalidatesCurrentRequesterServiceRoles()
+    {
+        var initial = await SnapshotAsync();
+        await ApplyAsync("folder.create", new() { ["name"] = "Destination", ["If-Match"] = initial.Etag });
+        var before = await RestrictServiceToCurrentRequesterRoleAsync();
+        var destination = before.Graph.Folders.Single().Metadata.Id;
+        var payload = new AdminApiOperationApprovalPayload
+        {
+            OperationId = "service.move",
+            TenantId = "public",
+            SchemaName = _fixture.CurrentSchema,
+            ServiceName = "test",
+            Parameters = new() { ["folderId"] = destination, ["If-Match"] = before.Etag }
+        };
+        await WithRequesterContextAsync(payload, async context =>
+        {
+            var accepted = await CreateRequesterProposalAsync(context, new()
+            {
+                OperationId = payload.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId,
+                RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
+                Plan = new OperationProposalPlan
+                {
+                    Summary = "Move service using current requester membership",
+                    ExecutionPayload = JsonSerializer.Serialize(payload, AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+                }
+            });
+            accepted.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, accepted.Message);
+            await ApproveAsync(accepted.ProposalId!);
+            var completed = (await _proposals.GetAsync(accepted.ProposalId!))!;
+            completed.Status.Should().Be(OperationProposalStatus.Succeeded, completed.ResolutionReason);
+        }, "folder-requester");
+        (await SnapshotAsync()).Graph.Services.Where(service => service.Metadata.Name == "test")
+            .Should().OnlyContain(service => service.FolderId == destination);
+    }
+
+    private async Task<MetadataV2GraphSnapshot> RestrictServiceToCurrentRequesterRoleAsync()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var current = await store.GetCurrentAsync();
+        return await store.SaveAsync(current.Graph with
+        {
+            Services = current.Graph.Services.Select(service => service.Metadata.Name == "test"
+                ? service with
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowedRoles = ["original-membership"],
+                        AllowedWriteRoles = ["original-membership"]
+                    }
+                } : service).ToArray()
+        }, current.Etag);
+    }
+
+    private async Task<MetadataV2GraphSnapshot> RestrictLastServiceFacetAsync()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var before = await store.GetCurrentAsync();
+        var facet = before.Graph.Services.Last(service => service.Metadata.Name == "test");
+        var restricted = before.Graph with
+        {
+            Services = before.Graph.Services.Select(service => service.Metadata.Id == facet.Metadata.Id
+                ? service with { AccessPolicy = new AccessPolicy { AllowedRoles = ["service-owner"], AllowedWriteRoles = ["service-owner"] } }
+                : service).ToArray()
+        };
+        var saved = await store.SaveAsync(restricted, before.Etag);
+        saved.Etag.Should().NotBe(before.Etag);
+        var policyContext = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        policyContext.Request.Method = HttpMethods.Put;
+        policyContext.Request.Path = "/api/v1/admin/services/test/folder";
+        policyContext.Request.Headers["X-API-Key"] = _proposer.DefaultRequestHeaders.GetValues("X-API-Key").Single();
+        var authenticated = await policyContext.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme);
+        authenticated.Succeeded.Should().BeTrue();
+        policyContext.User = authenticated.Principal!;
+        var deniedFacet = saved.Graph.Services.Single(service => service.Metadata.Id == facet.Metadata.Id);
+        MetadataV2TenantVisibility.IsVisibleToTenant(deniedFacet, null).Should().BeTrue();
+        (await FolderEndpoints.RequireServiceAccessAsync(policyContext, deniedFacet)).Should().NotBeNull(
+            "the real authenticated requester must fail the shared service-policy check before testing proposal admission");
+        return saved;
+    }
 
     public async Task InitializeAsync()
     {
-        HumanApprovalHttpClient.ConfigureKestrel(_fixture, _identity).ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
-            builder.ConfigureAppConfiguration((_, configuration) =>
-                configuration.AddInMemoryCollection(ApprovalPolicy()));
-        }).ConfigureServices(services =>
-        {
-            FolderPostgresTestHost.Configure(services, () => _fixture.CurrentSchema);
-            services.AddSingleton<IPrincipalMembershipSource>(_memberships);
-            services.AddSingleton<ILicenseEntitlementService>(_licensing);
-            services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
-                RlsClaimsTestAuthHandler.SchemeName, _ => { });
-            services.AddSingleton<IOperatorAuthorizationEvaluator>(provider =>
-                _authorization = new ReplayServiceAuthorization(ActivatorUtilities.CreateInstance<OperatorAuthorizationEvaluator>(provider)));
-        });
-        await _fixture.InitializeAsync();
-        await FolderPostgresTestHost.InstallSchemaAsync(_fixture);
+        await host.ResetAsync();
         _proposer = await CreateClientAsync("proposer", ["admin:*"]);
-        _approver = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity, tenantId: "public");
-        _proposals = _fixture.Services.GetRequiredService<IOperationProposalStore>();
     }
 
     public async Task DisposeAsync()
     {
         await DeletePublishConnectionAsync();
         _proposer.Dispose();
-        _approver.Dispose();
-        using var identity = _identity;
-        await _fixture.DisposeAsync();
+    }
+
+    // One host per class. Each case starts from the metadata graph the host had after its
+    // schema install, with the requester membership, license and service denial restored, and
+    // issues its own proposer key because cases revoke or restrict it.
+    public sealed class FolderHost : IAsyncLifetime
+    {
+        private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = AdminAuthEndpointsTests.CreateStubFactory();
+        private ReplayServiceAuthorization? _authorization;
+        private string _baselineSchema = null!;
+
+        internal WebAppFixture Fixture { get; } = new WebAppFixture().WithProductionJobSubstrate();
+        internal FolderRequesterMembership Memberships { get; } = new();
+        internal FolderRequesterLicense Licensing { get; } = new();
+        internal ReplayServiceAuthorization Authorization =>
+            _authorization ?? throw new InvalidOperationException("The operator authorization evaluator was not resolved.");
+        internal HumanApprovalHttpClient Approver { get; private set; } = null!;
+        internal IOperationProposalStore Proposals { get; private set; } = null!;
+
+        public async Task InitializeAsync()
+        {
+            HumanApprovalHttpClient.ConfigureKestrel(Fixture, _identity).ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(ApprovalPolicy()));
+            }).ConfigureServices(services =>
+            {
+                FolderPostgresTestHost.Configure(services, () => Fixture.CurrentSchema);
+                services.AddHttpClient(AdminApiOperationExecutor.HttpClientName)
+                    .AddHttpMessageHandler(() => new RejectFolderMutationLoopbackHandler());
+                services.AddSingleton<IPrincipalMembershipSource>(Memberships);
+                services.AddSingleton<ILicenseEntitlementService>(Licensing);
+                services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
+                    RlsClaimsTestAuthHandler.SchemeName, _ => { });
+                services.AddSingleton<IOperatorAuthorizationEvaluator>(provider =>
+                    _authorization = new ReplayServiceAuthorization(ActivatorUtilities.CreateInstance<OperatorAuthorizationEvaluator>(provider)));
+            });
+            await Fixture.InitializeAsync();
+            await Fixture.Postgres.DataSource.ClearJobSubstrateAsync();
+            await FolderPostgresTestHost.InstallSchemaAsync(Fixture);
+            _baselineSchema = $"graph_baseline_{Guid.NewGuid():N}";
+            await Fixture.Postgres.ExecuteDdlUnderLockAsync(SaveGraphTables(Fixture.CurrentSchema!, _baselineSchema));
+            Approver = await HumanApprovalHttpClient.AuthenticateAsync(Fixture, _identity, tenantId: "public");
+            Proposals = Fixture.Services.GetRequiredService<IOperationProposalStore>();
+            _ = Fixture.Services.GetRequiredService<IOperatorAuthorizationEvaluator>();
+        }
+
+        internal async Task ResetAsync()
+        {
+            Memberships.Reset();
+            Licensing.Reset();
+            Authorization.DeniedService = null;
+            Authorization.BeforeServiceAuthorization = null;
+            await Fixture.Postgres.ExecuteDdlUnderLockAsync(RestoreGraphTables(_baselineSchema, Fixture.CurrentSchema!));
+            Fixture.Services.GetService<IMetadataV2GraphCacheInvalidator>()?.InvalidateAll();
+        }
+
+        public async Task DisposeAsync()
+        {
+            Approver?.Dispose();
+            using var identity = _identity;
+            if (_baselineSchema is not null)
+            {
+                await Fixture.Postgres.DropSchemaAsync(_baselineSchema);
+            }
+
+            await Fixture.DisposeAsync();
+        }
+
+        // Keeps a copy of every metadata_v2 table of the host schema.
+        private static string SaveGraphTables(string source, string baseline) => $"""
+            DO $save$
+            DECLARE
+                graph_table text;
+            BEGIN
+                EXECUTE format('CREATE SCHEMA %I', '{baseline}');
+                FOR graph_table IN SELECT tablename FROM pg_tables
+                    WHERE schemaname = '{source}' AND tablename LIKE 'metadata\_v2\_%'
+                LOOP
+                    EXECUTE format('CREATE TABLE %I.%I AS TABLE %I.%I', '{baseline}', graph_table, '{source}', graph_table);
+                END LOOP;
+            END
+            $save$;
+            """;
+
+        // Truncates the graph tables in one statement, then copies the saved rows back as a
+        // replication session so neither foreign keys nor triggers depend on the copy order.
+        // Generated columns are left to the database.
+        private static string RestoreGraphTables(string baseline, string target) => $"""
+            DO $restore$
+            DECLARE
+                graph_table text;
+                graph_tables text;
+                graph_columns text;
+            BEGIN
+                SELECT string_agg(format('%I.%I', '{target}', tablename), ', ') INTO graph_tables
+                    FROM pg_tables WHERE schemaname = '{baseline}';
+                IF graph_tables IS NULL THEN
+                    RETURN;
+                END IF;
+                PERFORM set_config('session_replication_role', 'replica', true);
+                EXECUTE 'TRUNCATE ' || graph_tables;
+                FOR graph_table IN SELECT tablename FROM pg_tables WHERE schemaname = '{baseline}' LOOP
+                    SELECT string_agg(format('%I', column_name), ', ' ORDER BY ordinal_position) INTO graph_columns
+                        FROM information_schema.columns
+                        WHERE table_schema = '{target}' AND table_name = graph_table AND is_generated = 'NEVER';
+                    EXECUTE format('INSERT INTO %I.%I (%s) OVERRIDING SYSTEM VALUE SELECT %s FROM %I.%I',
+                        '{target}', graph_table, graph_columns, graph_columns, '{baseline}', graph_table);
+                END LOOP;
+            END
+            $restore$;
+            """;
     }
 
     [IntegrationTest]
@@ -201,15 +384,38 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
             .Should().OnlyContain(service => service.FolderId == null);
     }
 
-    private sealed class ReplayServiceAuthorization(IOperatorAuthorizationEvaluator evaluator) : IOperatorAuthorizationEvaluator
+    private sealed class RejectFolderMutationLoopbackHandler : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            var isFolderMutation = request.Method != HttpMethod.Get &&
+                (path.StartsWith("/api/v1/admin/folders", StringComparison.Ordinal) ||
+                 path.StartsWith("/api/v1/admin/services/", StringComparison.Ordinal) && path.EndsWith("/folder", StringComparison.Ordinal));
+            if (isFolderMutation)
+                throw new InvalidOperationException("Folder operations must use the shared mutation service.");
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
+
+    internal sealed class ReplayServiceAuthorization(IOperatorAuthorizationEvaluator evaluator) : IOperatorAuthorizationEvaluator
     {
         public string? DeniedService { get; set; }
 
-        public Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, OperatorAuthorizationRequest request,
+        public Func<Task>? BeforeServiceAuthorization { get; set; }
+
+        public async Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, OperatorAuthorizationRequest request,
             CancellationToken cancellationToken = default)
-            => request.ResourceType == OperatorResourceType.PublishedService && request.ResourceId == DeniedService
-                ? Task.FromResult(AccessDecision.Forbidden("Service access denied."))
-                : evaluator.EvaluateAsync(principal, request, cancellationToken);
+        {
+            if (request.ResourceType == OperatorResourceType.PublishedService && BeforeServiceAuthorization is { } before)
+            {
+                BeforeServiceAuthorization = null;
+                await before();
+            }
+            return request.ResourceType == OperatorResourceType.PublishedService && request.ResourceId == DeniedService
+                ? AccessDecision.Forbidden("Service access denied.")
+                : await evaluator.EvaluateAsync(principal, request, cancellationToken);
+        }
     }
 
     private async Task ApplyAsync(string operationId, Dictionary<string, string?> parameters)

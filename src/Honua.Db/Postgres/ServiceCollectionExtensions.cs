@@ -126,7 +126,7 @@ internal static partial class ServiceCollectionExtensions
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(
             sp => sp.GetRequiredService<QueryConcurrencyGate>());
 
-        // Singleton cache that resolves the connection string / secret exactly once (PA-077).
+        // Singleton cache that resolves the connection string / secret exactly once.
         // Scoped factories must await ResolvedConnectionStringTask instead of calling the
         // blocking ResolveConnectionString helper so that thread-pool threads are never
         // blocked on a cloud secret call (AWS Secrets Manager / Azure Key Vault).
@@ -141,13 +141,11 @@ internal static partial class ServiceCollectionExtensions
             return new PostgresConnectionStringCache(rawConnectionString, resolver);
         });
 
-        // Register NpgsqlDataSource as specified in Issue #3
         services.TryAddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
             // The NpgsqlDataSource singleton is created at startup (before requests).
             // Block here is acceptable: this is a one-time startup cost on the
-            // dedicated startup thread, not the request thread pool. The singleton
-            // path is noted as lower-priority in PA-077.
+            // dedicated startup thread, not the request thread pool.
             var connectionString = serviceProvider.GetRequiredService<PostgresConnectionStringCache>()
                 .ResolvedConnectionStringTask
                 .GetAwaiter()
@@ -239,12 +237,14 @@ internal static partial class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
             new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider)),
             serviceProvider.GetRequiredService<IChangeTracker>()));
-        // One scoped store serves admission and the monthly notice outbox.
+        // One scoped store serves admission and the spend notice outboxes.
         services.AddScoped(provider => new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
             provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
         services.AddScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>(static provider =>
             provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
         services.AddScoped<Honua.Core.Features.Security.Admission.IAiMonthlyActorNoticeStore>(static provider =>
+            provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
+        services.AddScoped<Honua.Core.Features.Security.Admission.IAiIncidentNoticeStore>(static provider =>
             provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
 
         services.AddScoped<IAlertRuleRepository, PostgresAlertRuleRepository>();
@@ -553,7 +553,12 @@ internal static partial class ServiceCollectionExtensions
                 configuration["Database:Schema"]));
 
         // Register table discovery implementation
-        services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
+        services.AddScoped<ITableDiscoveryService>(provider => new PostgreSqlTableDiscoveryService(
+            provider.GetRequiredService<ILogger<PostgreSqlTableDiscoveryService>>(),
+            new PostgreSqlTableDiscoveryOptions(
+                provider.GetService<ISchemaContext>(),
+                provider.GetRequiredService<PostgresSchemaConfiguration>(),
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(provider, connectionString, cancellationToken))));
 
         // Register layer publishing implementation
         // Snapshot copies of large imported tables need a longer, explicit budget than ordinary
@@ -1057,13 +1062,7 @@ internal static partial class ServiceCollectionExtensions
         // Register the read-only journal/physical-schema guard and migration runner. Both
         // canonical numbered roots flow through this runner and its public.schema_versions
         // journal; the guard rejects divergence instead of repairing it from a store path.
-        services.AddSingleton(coreSchemaMigrations);
-        services.AddSingleton(serviceProvider =>
-            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
-                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
-                configuration));
-        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
-            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
+        AddCoreSchemaGuard(services, configuration, coreSchemaMigrations);
 
         // Register migration runner for schema upgrades
         services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();
@@ -1080,9 +1079,41 @@ internal static partial class ServiceCollectionExtensions
             .Bind(configuration.GetSection(Honua.Core.Configuration.MigrationSafetyOptions.SectionName));
 
         // Register database compatibility checker for PostGIS preflight validation
-        services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();
+        services.AddSingleton<IDatabaseCompatibilityChecker>(provider =>
+            new PostgresDatabaseCompatibilityChecker(
+                provider.GetRequiredService<ILogger<PostgresDatabaseCompatibilityChecker>>(),
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(provider, connectionString, cancellationToken)));
 
         return services;
+    }
+
+    private static void AddCoreSchemaGuard(
+        IServiceCollection services, IConfiguration configuration, PostgresCoreSchemaMigrationManifest coreSchemaMigrations)
+    {
+        services.AddSingleton(coreSchemaMigrations);
+        services.AddSingleton(serviceProvider =>
+            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
+                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
+                configuration,
+                (connectionString, cancellationToken) => CreateTargetConnectionAsync(serviceProvider, connectionString, cancellationToken)));
+        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
+            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
+    }
+
+    private static async ValueTask<NpgsqlConnection> CreateTargetConnectionAsync(
+        IServiceProvider provider, string connectionString, CancellationToken cancellationToken)
+    {
+        // Migrate-only composition has no serving pool. Discovery and explicit migration targets retain their
+        // connection string; only the resolved serving configuration shares its managed budget.
+        var cache = provider.GetService<PostgresConnectionStringCache>();
+        if (cache is not null && string.Equals(connectionString,
+                await cache.ResolvedConnectionStringTask.WaitAsync(cancellationToken).ConfigureAwait(false),
+                StringComparison.Ordinal))
+        {
+            return provider.GetRequiredService<NpgsqlDataSource>().CreateConnection();
+        }
+
+        return new NpgsqlConnection(connectionString);
     }
 
     private static void AddAttachmentUploadServices(

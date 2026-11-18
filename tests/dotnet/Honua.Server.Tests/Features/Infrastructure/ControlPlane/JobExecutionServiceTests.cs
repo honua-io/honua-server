@@ -2048,29 +2048,33 @@ public sealed partial class JobExecutionServiceTests
     [UnitTest]
     public async Task HeartbeatPump_CancelsJobCts_WhenDurableCancellationSignalDetected()
     {
-        var running = CreateProvisioningJob(claimedBy: "worker-test") with
-        {
-            Status = ExecutionJobStatus.Running
-        };
-        var withSignal = running with
-        {
-            CancellationRequestedAt = DateTimeOffset.UtcNow
-        };
-
+        var running = CreateProvisioningJob(claimedBy: "worker-test") with { Status = ExecutionJobStatus.Running };
+        var withSignal = running with { CancellationRequestedAt = DateTimeOffset.UtcNow };
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
-        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>())
-            .Returns(withSignal);
+        jobStore.GetAsync(running.OperationId, Arg.Any<CancellationToken>()).Returns(withSignal);
 
         using var jobCts = new CancellationTokenSource();
         using var context = new JobExecutionContext(
             running.OperationId, "worker-test", jobStore, null,
             new JobHeartbeatPolicy { Interval = TimeSpan.FromMilliseconds(10), Timeout = TimeSpan.FromSeconds(30) },
             jobCts, NullLogger.Instance);
-
-        using var pumpTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await context.RunHeartbeatPumpAsync(pumpTimeout.Token);
+        using var pumpStop = new CancellationTokenSource();
+        var pump = context.RunHeartbeatPumpAsync(pumpStop.Token);
+        var cancelDeadline = DateTime.UtcNow.AddSeconds(2);
+        while (!jobCts.IsCancellationRequested && DateTime.UtcNow < cancelDeadline)
+        {
+            await Task.Delay(10);
+        }
 
         Assert.True(jobCts.IsCancellationRequested);
+        await Task.Delay(100);
+        await jobStore.Received().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.CancellationRequestedAt.HasValue && job.LastHeartbeatAt.HasValue),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        await pumpStop.CancelAsync();
+        await pump;
     }
 
     [UnitTest]

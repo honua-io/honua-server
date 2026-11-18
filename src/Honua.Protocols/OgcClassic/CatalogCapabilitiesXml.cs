@@ -19,6 +19,8 @@ internal static class CatalogCapabilitiesXml
             new XElement(ows + "ServiceContact",
                 string.IsNullOrWhiteSpace(contact?.Name) ? null : new XElement(ows + "IndividualName", contact.Name),
                 contact is null ? null : new XElement(ows + "ContactInfo",
+                    string.IsNullOrWhiteSpace(contact.Phone) ? null : new XElement(ows + "Phone",
+                        new XElement(ows + "Voice", contact.Phone)),
                     string.IsNullOrWhiteSpace(contact.Email) ? null : new XElement(ows + "Address",
                         new XElement(ows + "ElectronicMailAddress", contact.Email)),
                     string.IsNullOrWhiteSpace(contact.Url) ? null : new XElement(ows + "OnlineResource", new XAttribute(Xlink + "href", contact.Url)))));
@@ -33,6 +35,7 @@ internal static class CatalogCapabilitiesXml
             new XElement("ContactPersonPrimary",
                 new XElement("ContactPerson", contact?.Name ?? string.Empty),
                 new XElement("ContactOrganization", metadata.Publisher ?? string.Empty)),
+            string.IsNullOrWhiteSpace(contact?.Phone) ? null : new XElement("ContactVoiceTelephone", contact.Phone),
             string.IsNullOrWhiteSpace(contact?.Email) ? null : new XElement("ContactElectronicMailAddress", contact.Email));
     }
 

@@ -37,7 +37,7 @@ The unattended allow-list is currently empty because no shipped actuator has pro
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ConnectionStrings__DefaultConnection` | — (**required**) | Primary PostgreSQL/PostGIS connection string. |
+| `ConnectionStrings__DefaultConnection` | — (**required** with the PostgreSQL/PostGIS primary) | Primary PostgreSQL/PostGIS connection string and system database. A host with a DuckDB or MySQL primary has no system database, whether or not this is set. |
 | `DataSource__Provider` | `postgres` | Primary provider: `postgres` (read/write), `duckdb`, or `mysql` (read-only). |
 | `DuckDB__DatabasePath` | — | Path to the DuckDB database file (when `DataSource__Provider=duckdb`). |
 | `DuckDB__ReadOnly` | `true` | Open the DuckDB file read-only. |
@@ -58,7 +58,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `HONUA_ADMIN_PASSWORD` | — (**required in production**) | Password for the admin API (`/api/v1/admin/*`). |
+| `HONUA_ADMIN_PASSWORD` | — (**required in production**) | Password for the admin API (`/api/v1/admin/*`). Outside Development and Test, configured passwords must contain at least 16 characters, including uppercase, lowercase, a digit and a special character. This applies to inline values and Secrets Manager values at startup and after rotation. Environment names are matched case-insensitively. |
 | `Security__ConnectionEncryption__MasterKey` | — (**required outside Development**) | Master key (minimum 32 characters) used to encrypt stored data-connection credentials; startup fails without it outside Development. |
 | `Security__ConnectionEncryption__Salt` | derived from master key | Optional explicit salt for master-key derivation; set it to control salt rotation (a warning is logged when derived). |
 | `Security__RequestSecretReferences__AllowedEnvironmentVariables__0..n` | empty | Environment variable names that a request-supplied `env:NAME` secret reference may name (exact match). With every `RequestSecretReferences` list empty, all request-supplied secret references are refused. See [Secret references](../../guides/deploy/configuration.md#references-supplied-in-a-request). |
@@ -146,8 +146,6 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ConnectionStrings__Redis` | — | Redis connection string for job coordination. Caches are per node and do not use it. |
-| `HONUA_REDIS_URL` | — | Docker Compose convenience alias for `ConnectionStrings__Redis`. |
 | `Cache__Enabled` | `true` | Master switch for metadata/response caching. |
 | `Cache__DefaultTtlSeconds` | `300` (shipped config) | Default TTL for cached metadata. |
 | `Cache__ServiceTtlSeconds` | `300` (shipped config) | TTL for cached service metadata. |
@@ -227,6 +225,7 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `Limits__Geometry__MaxVerticesPerGeometry` | `50000` | Max vertices accepted per geometry. Also the most vertices a Geometry Service request may add to one geometry (`densify`, shape-preserving measurement). |
 | `Limits__Geometry__MaxGeometrySize` | `5242880` (5 MiB) | Max geometry payload size. |
 | `Limits__Geometry__MaxCoordinatePrecision` | `8` | Max coordinate decimal precision. |
+| `Limits__Geometry__MaxOverlayCandidatePairs` | `2000000` | Max segment pairs that could cross in one Geometry Service overlay, union, cut, trim, generalization, repair, relation or offset; a quarter of it for callers that are not signed in. Checked before each geometry or pair is computed; a request over it returns a 400 error. |
 | `Limits__Edits__MaxFeaturesPerEdit` | `500` | Max features per edit operation. |
 | `Limits__Edits__MaxEditsPerTransaction` | `2500` | Max edits per transaction. |
 | `Limits__Edits__MaxPayloadSize` | `26214400` (25 MiB) | Max edit payload size. |
@@ -266,7 +265,7 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | --- | --- | --- |
 | `HONUA_SERVE_API_DOCS` (`ServeApiDocs`) | `true` in Development, else `false` | Serve the interactive API explorer at `/docs` ([details](../openapi-and-explorer.md)). |
 | `HONUA_SKIP_MIGRATIONS` | `false` | Skip database migrations on startup; the server verifies the migration journal against its binary instead. Apply the migrations out of band first with `HONUA_MIGRATE_ONLY=true`. |
-| `HONUA_MIGRATE_ONLY` | `false` | Apply database migrations, print one JSON summary line to standard output and exit, without serving. Runs the PostGIS preflight and every migration-safety setting below; starts no listener or background service and needs no Redis, licence, admin password or encryption key. Also accepted as `--HONUA_MIGRATE_ONLY=true`. Ignores `HONUA_SKIP_MIGRATIONS`; refused inside AWS Lambda. Exit codes and summary fields: [Run migrations out of band](../../guides/deploy/upgrade-and-rollback.md#run-migrations-out-of-band). |
+| `HONUA_MIGRATE_ONLY` | `false` | Apply database migrations, print one JSON summary line to standard output and exit, without serving. Runs the PostGIS preflight and every migration-safety setting below; starts no listener or background service and needs no licence, admin password or encryption key. Also accepted as `--HONUA_MIGRATE_ONLY=true`. Ignores `HONUA_SKIP_MIGRATIONS`; refused inside AWS Lambda. Exit codes and summary fields: [Run migrations out of band](../../guides/deploy/upgrade-and-rollback.md#run-migrations-out-of-band). |
 | `Database__PreferSerialBoundedSpatialReads` | unset (automatic) | Serial planning for eligible source-backed point bbox reads with first-page limits of 1–100 and default ordering. Set `false` to opt out; `true` explicitly enables the same bounded policy. Counts have an independent policy below. Aggregates, streaming, tiles, larger/later pages and caller-owned transactions retain ordinary planning. See the [PostGIS profile](data-sources/postgis.md#bounded-source-backed-spatial-reads). |
 | `Database__DisableJitForSourceSpatialCounts` | `false` | Opt-in transaction-local JIT suppression for exact counts on source-backed point layers with simple intersects/envelope bboxes. Preserves predicates and parallel-worker settings; excludes ambient and borrowed transactions. See the [PostGIS count profile](data-sources/postgis.md#source-backed-spatial-counts). |
 | `Database__PreferSerialSourceSpatialCounts` | unset (automatic) | Serial planning for exact counts associated with eligible bounded source-backed point bbox reads. Standalone and unbounded counts retain database planning. Set `false` to opt out or `true` to include eligible standalone spatial counts. Independent of count JIT suppression and the read option; excludes distinct, non-default versions and caller-owned transactions. See the [PostGIS profile](data-sources/postgis.md#source-backed-spatial-counts). |
@@ -293,7 +292,7 @@ Database connection pool and query admission:
 | `Limits__Connections__MinConnectionPoolSize` | `20` | Npgsql pool minimum. |
 | `Deployment__MaxTasks` | unset | Most server tasks that run at once against one database (the autoscaling maximum). With a value above 1, or `Deployment__Mode=MultiNode` and no count, each pool is sized from the database limit and admin changes to settings held in one task's memory are refused. |
 | `Database__InstanceClass` | unset | Database instance class, for example `db.t4g.small`. Pool sizing reads the database's connection limit from it. |
-| `Database__MaxConnections` | unset | The database's `max_connections`, when the instance class does not say it. Wins over `Database__InstanceClass`. |
+| `Database__MaxConnections` | unset | The database's `max_connections`. Wins over `Database__InstanceClass`. Automatic sizing reserves one listener per task within an 80% budget, then sizes two pools per task; it refuses a budget too small for one connection per pool. |
 | `Limits__Connections__ConnectionIdleLifetimeSeconds` | `600` | Idle connection lifetime. |
 | `Limits__Connections__CommandTimeoutSeconds` | `30` | Database command timeout. |
 | `Limits__Connections__RequestTimeout` | `00:01:00` | End-to-end request timeout. |

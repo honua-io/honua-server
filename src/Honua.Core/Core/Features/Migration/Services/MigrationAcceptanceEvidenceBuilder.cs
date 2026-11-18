@@ -87,7 +87,7 @@ public static class MigrationAcceptanceEvidenceBuilder
             InventoryArtifactKind = input.Inventory.ArtifactKind,
             ManifestArtifactKind = manifest.ArtifactKind,
             ParityEvidenceArtifactKind = parityEvidence.ArtifactKind,
-            EvidenceReferences = SanitizeEvidenceReferences(input.EvidenceReferences),
+            EvidenceReferences = MigrationEvidenceReferences.Sanitize(input.EvidenceReferences),
             CostEvidence = costEvidence,
             Notes = BuildEntryNotes(manifest, parityEvidence, options)
         };
@@ -309,7 +309,7 @@ public static class MigrationAcceptanceEvidenceBuilder
                 BytesRead = operation.BytesRead,
                 BytesWritten = operation.BytesWritten,
                 ArtifactSizeBytes = operation.ArtifactSizeBytes,
-                EvidenceReferences = SanitizeEvidenceReferences(operation.EvidenceReferences)
+                EvidenceReferences = MigrationEvidenceReferences.Sanitize(operation.EvidenceReferences)
             })
             .OrderBy(static operation => operation.Id, StringComparer.Ordinal)
             .ThenBy(static operation => operation.Stage, StringComparer.Ordinal)
@@ -377,7 +377,7 @@ public static class MigrationAcceptanceEvidenceBuilder
             ArtifactSizeBytes = artifactSizeBytes,
             ManualReviewRatio = manualReviewRatio,
             Operations = operations,
-            EvidenceReferences = SanitizeEvidenceReferences(normalized.EvidenceReferences),
+            EvidenceReferences = MigrationEvidenceReferences.Sanitize(normalized.EvidenceReferences),
             Findings = findings
         };
     }
@@ -819,7 +819,7 @@ public static class MigrationAcceptanceEvidenceBuilder
                 State = NormalizeState(evidence.State),
                 Summary = string.IsNullOrWhiteSpace(evidence.Summary) ? defaultSummary : evidence.Summary.Trim(),
                 ArtifactKinds = Order(evidence.ArtifactKinds),
-                EvidenceReferences = SanitizeEvidenceReferences(evidence.EvidenceReferences),
+                EvidenceReferences = MigrationEvidenceReferences.Sanitize(evidence.EvidenceReferences),
                 Notes = Order(evidence.Notes)
             };
         }
@@ -889,35 +889,6 @@ public static class MigrationAcceptanceEvidenceBuilder
             MigrationEvidenceStates.NotApplicable => MigrationEvidenceStates.NotApplicable,
             _ => MigrationEvidenceStates.Unknown
         };
-
-    private static string[] SanitizeEvidenceReferences(IEnumerable<string> values)
-        => values
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Select(static value => SanitizeEvidenceReference(value.Trim()))
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static value => value, StringComparer.Ordinal)
-            .ToArray();
-
-    private static string SanitizeEvidenceReference(string value)
-    {
-        var sensitiveTailIndex = value.IndexOfAny(['?', '#']);
-        var withoutQueryOrFragment = sensitiveTailIndex >= 0 ? value[..sensitiveTailIndex] : value;
-
-        if (!Uri.TryCreate(withoutQueryOrFragment, UriKind.Absolute, out var uri) ||
-            string.IsNullOrEmpty(uri.UserInfo))
-        {
-            return withoutQueryOrFragment;
-        }
-
-        var builder = new UriBuilder(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty
-        };
-
-        return builder.Uri.AbsoluteUri;
-    }
 
     private static string[] Order(IEnumerable<string> values)
         => values

@@ -844,18 +844,25 @@ internal static class AdminAuthEndpoints
             HttpOnly = true,
             IsEssential = true,
             SameSite = SameSiteMode.Strict,
-            Secure = context.Request.IsHttps,
+            Secure = UseSecureSessionCookie(context),
             MaxAge = lifetime,
             Path = "/"
         };
     }
+
+    // Behind a TLS-terminating proxy whose forwarded headers are not trusted the request looks
+    // like HTTP; a configured https public base URL still keeps the session cookie off plain
+    // HTTP. (Browser-session writes there still need trusted forwarded headers.)
+    internal static bool UseSecureSessionCookie(HttpContext context)
+        => context.Request.IsHttps
+           || BaseUrlResolver.GetBaseUrl(context).StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     private static void SetCookie(HttpResponse response, string name, string value, CookieOptions options)
     {
         response.Cookies.Append(name, value, options);
     }
 
-    private static void DeleteCookie(HttpResponse response, string name)
+    internal static void DeleteCookie(HttpResponse response, string name)
     {
         response.Cookies.Delete(name, new CookieOptions
         {

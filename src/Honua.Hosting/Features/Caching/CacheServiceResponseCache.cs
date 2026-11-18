@@ -181,8 +181,7 @@ internal sealed partial class CacheServiceResponseCache : IResponseCache
 
         if (missIndices is { Count: > 0 })
         {
-            // Batch-fetch all missing namespace versions concurrently so that N misses
-            // result in a single Redis pipeline round-trip rather than N sequential ones.
+            // Fetch missing namespace versions concurrently rather than sequentially.
             var fetchTasks = new Task<string?>[missIndices.Count];
             for (var j = 0; j < missIndices.Count; j++)
             {

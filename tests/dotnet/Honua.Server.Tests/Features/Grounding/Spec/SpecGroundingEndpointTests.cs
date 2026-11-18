@@ -17,31 +17,27 @@ namespace Honua.Server.Tests.Features.Grounding.Spec;
 
 [Collection("Database")]
 [Protocol(global::Honua.TestKit.Constants.ProtocolNames.Grounding)]
-public sealed class SpecGroundingEndpointTests : IAsyncLifetime
+public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.GroundingHost host)
+    : IClassFixture<SpecGroundingEndpointTests.GroundingHost>
 {
-    private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly HttpClient _client = host.Fixture.Client;
 
-    public SpecGroundingEndpointTests()
+    // One host for the class: each case sends its whole spec and turn, and these endpoints
+    // store nothing between requests.
+    public sealed class GroundingHost : IAsyncLifetime
     {
-        var graphProvider = SpecGroundingTestSupport.CreateGraphProvider(
-            SpecGroundingTestSupport.CreateLayer(1, "Rivers"),
-            SpecGroundingTestSupport.CreateLayer(2, "Hospitals North"),
-            SpecGroundingTestSupport.CreateLayer(3, "Hospitals South"),
-            SpecGroundingTestSupport.CreateLayer(4, "Zones"));
-
-        _fixture = new WebAppFixture()
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
-            .ReplaceService<IMetadataV2GraphProvider>(graphProvider);
-    }
+            .ReplaceService<IMetadataV2GraphProvider>(SpecGroundingTestSupport.CreateGraphProvider(
+                SpecGroundingTestSupport.CreateLayer(1, "Rivers"),
+                SpecGroundingTestSupport.CreateLayer(2, "Hospitals North"),
+                SpecGroundingTestSupport.CreateLayer(3, "Hospitals South"),
+                SpecGroundingTestSupport.CreateLayer(4, "Zones")));
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
+        public Task InitializeAsync() => Fixture.InitializeAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Operation(Operations.GroundingMutate)]

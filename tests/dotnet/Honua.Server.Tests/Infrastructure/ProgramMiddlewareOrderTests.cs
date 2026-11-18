@@ -19,7 +19,7 @@ public sealed class ProgramMiddlewareOrderTests
         var portalIndex = source.IndexOf("app.UsePortalTokenAuthentication();", StringComparison.Ordinal);
         var authorizationIndex = source.IndexOf("app.UseAuthorization();", StringComparison.Ordinal);
         var tenantIndex = source.IndexOf("app.UseHonuaTenantContext();", StringComparison.Ordinal);
-        // Output caching is wired as an entitlement-gated `app.UseWhen` branch (#2998), so the
+        // Output caching is wired as an entitlement-gated `app.UseWhen` branch, so the
         // call sits on the branch builder as `entitled.UseOutputCache())` — an expression-bodied
         // lambda argument with no trailing semicolon. Match without one, or this assertion silently
         // stops finding the call it exists to order.
