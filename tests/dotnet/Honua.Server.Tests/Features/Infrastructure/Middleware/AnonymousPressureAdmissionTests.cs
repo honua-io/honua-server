@@ -174,6 +174,23 @@ public sealed class AnonymousPressureAdmissionTests
         response.Headers.Contains("X-Database-Reached").Should().BeTrue();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Infrastructure)]
+    public async Task InvokeAsync_RefusedAnonymousWork_SpreadsRetryAfterOverOneToThreeSeconds()
+    {
+        await using var app = await StartAsync(PressuredGate());
+        var client = app.GetTestClient();
+        var delays = new HashSet<double>();
+        for (var i = 0; i < 60; i++)
+        {
+            using var response = await client.GetAsync("/rest/services/test/FeatureServer/0/query");
+            delays.Add(response.Headers.RetryAfter!.Delta!.Value.TotalSeconds);
+        }
+
+        delays.Should().BeSubsetOf([1d, 2d, 3d]);
+        delays.Should().HaveCountGreaterThan(1, "60 refusals at one fixed delay would retry as one wave");
+    }
+
     private static IRuntimeTunableAdmissionGate PressuredGate()
     {
         var gate = Substitute.For<IRuntimeTunableAdmissionGate>();

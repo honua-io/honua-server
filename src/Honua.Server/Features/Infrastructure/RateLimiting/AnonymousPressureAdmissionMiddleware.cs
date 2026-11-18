@@ -9,7 +9,10 @@ namespace Honua.Infrastructure.RateLimiting;
 
 internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
 {
-    private const int RetryAfterSeconds = 1;
+    // A fixed delay sends every refused client back in the same second, so the retries arrive as
+    // one wave; spreading them over 1-3 seconds lets the queue drain between them.
+    internal const int MinRetryAfterSeconds = 1;
+    internal const int MaxRetryAfterSeconds = 3;
 
     public Task InvokeAsync(HttpContext context)
     {
@@ -23,7 +26,8 @@ internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
 
         var pressure = gate.GetPressure();
         return IsUnderPressure(pressure)
-            ? BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, RetryAfterSeconds)
+            ? BackpressureResponseWriter.WriteAsync(
+                context, BackpressureKind.Saturated, Random.Shared.Next(MinRetryAfterSeconds, MaxRetryAfterSeconds + 1))
             : next(context);
     }
 
