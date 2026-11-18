@@ -2,7 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -10,16 +10,16 @@ namespace Honua.Server.Tests.Features.Admin;
 // A published version is a self-contained file tree: every file it names is stored under it.
 // The advisory Export check (.github/workflows/export-portolan-check.yml) sets
 // HONUA_EXPORT_SNAPSHOT_DIR and runs the pinned Portolan validator over the copy this case writes.
-public sealed partial class PairedPublishEndpointTests
+public sealed partial class ExportEndpointTests
 {
     private const string SnapshotDirectoryVariable = "HONUA_EXPORT_SNAPSHOT_DIR";
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task PairedPublish_Version_CopiesAsSelfContainedFileTree()
+    [Endpoint("POST /api/v1/admin/exports")]
+    public async Task ExportVersion_CopiesAsSelfContainedFileTree()
     {
         var published = await PublishAsync(IdentityField);
-        var descriptor = await ReadCollectionAsync(published.DescriptorKey);
+        var descriptor = await ReadCollectionAsync(published.CollectionKey);
         var versionPrefix = ArtifactKey(published, string.Empty);
         var requested = Environment.GetEnvironmentVariable(SnapshotDirectoryVariable);
         var target = string.IsNullOrEmpty(requested) ? Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString()) : requested;
