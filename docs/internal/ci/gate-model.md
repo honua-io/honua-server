@@ -578,6 +578,31 @@ gate runners. Heavy-pool readiness remains independent of gate-pool admission.
 The producer takes one snapshot; the existing PR selector retains its bounded
 wake/wait orchestration. Both sparse checkouts include the shared validator.
 
+### Host NuGet fallback folder
+
+Build-host runners start every job with an empty home. They export
+`HONUA_NUGET_FALLBACK`, a package folder that only the host can write. A
+no-credential host account fills it from trunk's package closure (honua-iac
+`install-nuget-fallback.sh`). When a job passes `host-package-fallback: 'true'`,
+`setup-dotnet-ci` resolves the link to one generation and sets
+`NUGET_FALLBACK_PACKAGES` to it. The job then skips the ~1.7 GB NuGet cache
+archive, and NuGet downloads only the packages the folder lacks (GitHub
+Packages ids are never in it). If the variable is unset, the target is missing
+or writable, or it holds no package, the job restores the cache archive as
+before. Hosted runners never set the variable. Only the `ci.yml` `server-tests`
+shards and the `PR Gate / Affected shard` jobs opt in, because both re-check
+package imports after consuming managed outputs. `fast-server-tests` stays out:
+a fully consumed group goes straight to its test phase. Producers stay out as
+well, since a producer must keep its static web asset roots under the
+package folder it packages. A consumed `obj` folder names the producer's
+`~/.nuget/packages`, which the fallback leaves mostly empty, so on the fallback
+even a fully consumed shard runs `managed-test-build.py fallback`: it restores
+only projects whose package imports are missing and compiles nothing. A shard
+restored from the exact-head shard cache gets the same restore-only check,
+because that payload's `obj` came from whichever job wrote the cache. Measured
+18 Nov 2026: Setup .NET took 77-86 s on build-host runners against 31 s hosted,
+about 50 s of it the archive.
+
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
@@ -3009,6 +3034,33 @@ ownership theory went from 79.3 to 7.1 s, `FeatureLockCapabilityManifestTests`
 from 195.3 to 49.4 s and `VectorProcessParityIntegrationTests` from 87.4 to 35.2 s
 of case time (362.0 to 91.7 s). On hosted full run 44271438677 the three took
 38, 105.6 and 87.9 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Shared hosts in MCP bearer, MCP scope and Studio AI proxy tests
+
+`McpBearerAuthenticationTests`, `McpScopeAuthorizationTests` and
+`StudioAiProxyEndpointsTests` started a new application for every case. The 34 MCP
+bearer cases, including the 8 that then start a host of their own configuration,
+now share one class host for the default configuration, and the 8 scope cases share
+one. Each case mints its own tokens and opens its own sessions, well under the
+32-session per-principal cap; the in-process client has no remote address, so the
+failed-attempt limiter never counts it; the API-key case issues and revokes a key of
+its own. The Studio AI proxy tests keep one class host per end-user authorization
+setting (two instead of 31). Borrowing a host empties the captured audit log and
+clears any admission denial or financial setup, and admission send counters are
+read relative to the start of the case. Cases with another configuration still own
+their hosts, and every assertion is unchanged.
+
+Measured on the build host (Release, the same 68 cases, 68/68 passing before and
+after): the test run went from 235 s to 51 s for the two MCP classes and from 148 s
+to 4 s for the Studio AI proxy class. Case time went from 96.8 to 46.7 s
+(`McpBearerAuthenticationTests`), 17.8 to 2.6 s (`McpScopeAuthorizationTests`) and
+68.4 to 4.6 s (`StudioAiProxyEndpointsTests`); host start-up in a class fixture is
+not counted as case time. On hosted full run 44271438677 the three classes took
+168.0 s of case time.
 
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required

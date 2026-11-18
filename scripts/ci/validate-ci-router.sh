@@ -197,6 +197,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-matrix-file-transport.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-matrix-file-transport.py
   run_fixture scripts/ci/fixtures/validate-pr-managed-build.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-managed-build.py
   run_fixture scripts/ci/fixtures/validate-managed-sdk-selection.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-sdk-selection.py
+  run_fixture scripts/ci/fixtures/validate-host-package-fallback.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-host-package-fallback.py
 fi
 run_fixture managed-artifact-client node --test .github/actions/managed-test-artifacts/client.test.mjs
 

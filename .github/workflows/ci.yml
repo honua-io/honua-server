@@ -1312,10 +1312,12 @@ jobs:
         run: scripts/ci/server-test-shard-free-disk.sh
 
       - name: Setup .NET
+        id: setup-dotnet
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           artifact-sdk-version: ${{ needs.build.outputs.managed_sdk_version }}
+          host-package-fallback: 'true'
 
       - name: Select shard managed outputs
         env:
@@ -1445,13 +1447,23 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./artifacts/test-results
 
+      # Consumed obj folders name the producer's ~/.nuget/packages. With the host fallback that
+      # folder is mostly empty, so a fully consumed shard still re-checks its package imports
+      # here; the check restores only projects whose packages are missing and compiles nothing.
       - name: Build server test binaries
         id: shard-cache-build
-        if: steps.managed-status.outputs.restored != 'true' && steps.shard-cache-materialize.outputs.restored != 'true'
+        if: (steps.managed-status.outputs.restored != 'true' || steps.setup-dotnet.outputs.host-package-fallback-used == 'true') && steps.shard-cache-materialize.outputs.restored != 'true'
         timeout-minutes: 20
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
         run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RESTORED_PROJECTS}"
+
+      # An exact-head cache payload carries the obj of the job that wrote it, which may name a
+      # package folder this runner lacks; re-check its imports the same way (restore only).
+      - name: Re-check package imports of cached shard binaries
+        if: steps.setup-dotnet.outputs.host-package-fallback-used == 'true' && steps.shard-cache-materialize.outputs.restored == 'true'
+        timeout-minutes: 10
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RUNNER_TEMP}/shard-projects.json"
 
       - name: Package shard-local cache payload
         id: shard-cache-package
