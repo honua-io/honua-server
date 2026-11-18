@@ -34,7 +34,11 @@ public sealed partial class RowLevelSecurityEndpointsTests
         {
             using var response = await admin.PostAsJsonAsync("/api/v1/admin/rls-policies", new
             {
-                role = "*", service = "*", layer = "*", attribute = "category", claimType = "category",
+                role = "*",
+                service = "*",
+                layer = "*",
+                attribute = "category",
+                claimType = "category",
                 filterExpression = mode == "area" ? null : "name = 'allowed'",
                 areaGeometry = mode == "expression" ? null : PolicyArea
             });
@@ -70,14 +74,20 @@ public sealed partial class RowLevelSecurityEndpointsTests
     [InlineData(null, "{}")]
     [InlineData(null, "{\"type\":\"Point\",\"coordinates\":[0,0]}")]
     [InlineData(null, """{"type":"Polygon","coordinates":[[[0,0],[2,2],[0,2],[2,0],[0,0]]]}""")]
+    [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/admin/rls-policies")]
     public async Task RlsPolicy_InvalidRestrictions_RejectsCreation(string? filter, string? area)
     {
         using var admin = CreateAdminClient();
         using var response = await admin.PostAsJsonAsync("/api/v1/admin/rls-policies", new
         {
-            role = "*", service = "*", layer = "*", attribute = "category", claimType = "category",
-            filterExpression = filter, areaGeometry = area
+            role = "*",
+            service = "*",
+            layer = "*",
+            attribute = "category",
+            claimType = "category",
+            filterExpression = filter,
+            areaGeometry = area
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

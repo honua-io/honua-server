@@ -228,8 +228,11 @@ public sealed class PostgresCombinedReadPolicyStoreTests(PostgresFixture fixture
     {
         var created = await _rows.CreatePolicyAsync(new RlsPolicy
         {
-            Role = "reader", Service = "alpha", Layer = "parcels",
-            Attribute = "region", ClaimType = "region",
+            Role = "reader",
+            Service = "alpha",
+            Layer = "parcels",
+            Attribute = "region",
+            ClaimType = "region",
             FilterExpression = "name = 'allowed'",
             AreaGeometry = """{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}"""
         });
