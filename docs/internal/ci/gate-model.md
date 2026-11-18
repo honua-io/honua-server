@@ -1769,7 +1769,9 @@ managed analysis to supersede and no helper workflow for it; `codeql.yml` is the
 only CodeQL analysis of C# (Roslyn analyzers still run as errors in the build).
 Pull requests run that analysis only for the paths in `.github/codeql/pr-paths.txt`
 (auth, admin endpoints, connections and secrets, import and object storage, SQL
-building, and workflows). Trunk push still scans `src/**`, and the Monday schedule
+building, operation approval, the MCP and Studio AI surface, outbound HTTP
+proxies, sharing, sessions, exports, and workflows; s-sec-server reviewed it).
+Trunk push still scans `src/**`, and the Monday schedule
 remains the full instrumented scan. Serving Image Boundary builds the PostGIS
 image on a pull request and leaves Lambda native-AOT to nightly and deploy.
 Review Gate Attestation stays two jobs: identity resolution has to finish before
