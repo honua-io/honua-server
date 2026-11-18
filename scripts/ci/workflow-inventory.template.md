@@ -733,7 +733,9 @@ execution matrix and enforced test filters remain unchanged.
 ### Pre-PR and trailing affected execution
 
 `pre-pr-check.sh --affected-tests` restores once, builds the affected unit-test
-closure without analyzers, then runs unit tests by default. Pass `--integration`
+closure without analyzers, then runs unit tests by default. A markdown file under
+`scripts/ci/` does not by itself select every isolated unit; executable files there,
+anything under `.github/`, and the shared build files still do. Pass `--integration`
 with `--affected-tests` to include affected integration shards. The independent
 PR Format check retains analyzer coverage. Positively classified docs/CI-only
 changes use the existing governance checks without starting a .NET build;

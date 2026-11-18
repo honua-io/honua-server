@@ -243,9 +243,22 @@ def validate(root, catalog):
             raise ValueError(f'{path}: stale generated coverage inventory; run update')
 
 
+def selects_every_isolated_unit(path):
+    """Shared build files and executable CI inputs reach every unit.
+
+    Markdown under scripts/ci/ is documentation. A template edit next to a
+    server test must not rebuild all 28 isolated unit projects.
+    """
+    if Path(path).name in {'Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props', 'global.json', 'NuGet.config', 'Honua.sln'}:
+        return True
+    if path.startswith('.github/'):
+        return True
+    return path.startswith('scripts/ci/') and not path.endswith('.md')
+
+
 def plan(root, catalog, changed):
     selected = []
-    broad = any(p.startswith(('.github/', 'scripts/ci/')) or Path(p).name in {'Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props', 'global.json', 'NuGet.config', 'Honua.sln'} for p in changed)
+    broad = any(selects_every_isolated_unit(p) for p in changed)
     reasons = []
     eligible_inputs = set()
     eligible_directories = []
