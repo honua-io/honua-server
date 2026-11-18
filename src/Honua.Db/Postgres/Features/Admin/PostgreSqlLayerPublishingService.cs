@@ -527,6 +527,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await InsertFieldsAsync(connection, transaction, layerId, fields, cancellationToken);
 
+        var globalIdIndex = ManagedGlobalIdIndexFor(storage, layerId, ResolveEditingForPublish(request, fields)?.GlobalIdField);
+        await SerializeGlobalIdPublishAsync(transaction, globalIdIndex, cancellationToken).ConfigureAwait(false);
         var materializedCount = await MaterializeLayerFeaturesAsync(
             connection,
             transaction,
@@ -545,6 +547,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             await PrepareManagedCopyAsync(connection, transaction, layerId, managedSchema, primaryKeyColumn!.Name,
                 srid, cancellationToken).ConfigureAwait(false);
         }
+
+        await BuildManagedGlobalIdIndexAsync(transaction, globalIdIndex, cancellationToken).ConfigureAwait(false);
 
         var refreshedExtent = await RefreshLayerExtentAsync(connection, transaction, layerId, cancellationToken);
 

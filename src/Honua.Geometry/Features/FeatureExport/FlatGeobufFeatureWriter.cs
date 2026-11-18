@@ -72,6 +72,7 @@ internal static class FlatGeobufFeatureWriter
         var canIndex = features.Count > 0;
         var hasZ = false;
         var hasM = false;
+        var layerType = new LayerGeometryType();
         foreach (var feature in features)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -86,6 +87,7 @@ internal static class FlatGeobufFeatureWriter
                     throw new InvalidDataException("FlatGeobuf requires a valid complete WKB geometry.");
                 }
                 geometry = reader.Read(wkb);
+                layerType.Include(GeometryConversionsType(geometry));
                 hasZ |= query.IncludeZ && declaredZ;
                 hasM |= query.IncludeM && declaredM;
             }
@@ -112,7 +114,7 @@ internal static class FlatGeobufFeatureWriter
         var header = new HeaderT
         {
             Name = resource.Metadata.Name,
-            GeometryType = GeometryType.Unknown,
+            GeometryType = layerType.Header,
             HasZ = hasZ,
             HasM = hasM,
             Columns = columns,
@@ -366,6 +368,22 @@ internal static class FlatGeobufFeatureWriter
             result.Ends = parts.Select(part => end = checked(end + (uint)part.NumPoints)).ToList();
         }
         return result;
+    }
+
+    // GDAL and QGIS take a layer's geometry type from the header; Unknown makes a single-type
+    // layer read as mixed geometry. Declare the type when every geometry shares it.
+    private struct LayerGeometryType
+    {
+        private GeometryType? _type;
+        private bool _mixed;
+
+        internal readonly GeometryType Header => _mixed || _type is not { } type ? GeometryType.Unknown : type;
+
+        internal void Include(GeometryType type)
+        {
+            _mixed |= _type is { } seen && seen != type;
+            _type ??= type;
+        }
     }
 
     private static GeometryType GeometryConversionsType(NtsGeometry geometry) => geometry switch

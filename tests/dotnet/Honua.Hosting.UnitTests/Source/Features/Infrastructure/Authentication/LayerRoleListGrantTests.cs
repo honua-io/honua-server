@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -219,6 +220,8 @@ public sealed class LayerRoleListGrantTests
             AuthorizationOperation.Update);
 
         serviceResult.Should().BeNull();
+        ResponseAccessVerdict.Restricted(context).Should().BeFalse();
+        ResponseAccessVerdict.GrantedToAnonymous(context).Should().BeFalse();
     }
 
     private static async Task<AccessDecision> EvaluateAsync(

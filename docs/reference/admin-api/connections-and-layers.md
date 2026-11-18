@@ -183,7 +183,10 @@ This operation changes canonical metadata, preserving stored rows, attachment
 parent IDs, storage bindings, filters and access policies. The response includes
 the persisted `editing` object. The update uses the current graph revision and
 revalidates the service/layer binding on concurrency retries. Invalid repairs
-return `400` without persisting other fields in the same patch.
+return `400` without persisting other fields in the same patch. Declaring a
+GlobalID over stored values that repeat a UUID or are not UUIDs returns `409`
+and changes nothing; repair those values and retry. Publishing a managed layer
+with `globalIdField` applies the same check to the source rows and returns `400`.
 
 To change edit policy explicitly, include nullable `create`, `update` and `delete`
 booleans in `editing`. These affect only the selected service's FeatureServer
@@ -193,6 +196,15 @@ shared by its publications. Enabling writes requires the selected storage bindin
 to declare edit support; Query-only imported table bindings currently do not.
 Repairing metadata alone does not make their writer available. Composite
 relationships remain read-only even when the underlying storage supports edits.
+
+To turn on editor tracking, name the fields in `editing`: `creatorField` and
+`editorField` must be declared String fields, and `createdAtField` and
+`updatedAtField` must be declared Date, DateTime, String, BigInteger or Double
+fields. Omitted or null fields keep their value and an empty string clears one.
+Every edit protocol then stamps these fields from the caller and the server
+clock; they appear in GeoServices `editFieldsInfo` and in gRPC `DescribeLayer`.
+A field of another type, or an unknown property in `editing`, returns `400` and
+changes nothing.
 
 ## Publish an editable managed copy
 

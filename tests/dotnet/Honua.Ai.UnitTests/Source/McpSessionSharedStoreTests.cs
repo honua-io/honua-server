@@ -38,6 +38,23 @@ public sealed partial class McpSessionSharedStoreTests
     }
 
     [UnitTest]
+    public async Task LogLevelSetOnA_GovernsNotificationsSentFromB()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = NewManager(store, time);
+        var b = NewManager(store, time);
+        var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+
+        (await b.GetLogLevelAsync(id!, CancellationToken.None)).Should().BeNull("no logging/setLevel yet");
+        (await a.SetLogLevelAsync(id!, "error", CancellationToken.None)).Should().BeTrue();
+
+        (await b.GetLogLevelAsync(id!, CancellationToken.None)).Should().Be("error",
+            "the job bridge may run on a different task from the one that answered logging/setLevel");
+        (await b.SetLogLevelAsync("unknown-session", "error", CancellationToken.None)).Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task SessionMintedOnA_IsBoundToItsPrincipal_OnB()
     {
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);

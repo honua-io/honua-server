@@ -51798,6 +51798,7 @@
       "MetadataV2EditingPatch": {
         "type": "object",
         "nullable": true,
+        "additionalProperties": false,
         "properties": {
           "globalIdField": {
             "type": "string",
@@ -51823,6 +51824,26 @@
             "type": "boolean",
             "nullable": true,
             "description": "Delete policy for the selected publication; null preserves it."
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the creating user; null preserves it and an empty string clears it."
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the creation time; null preserves it and an empty string clears it."
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the last editing user; null preserves it and an empty string clears it."
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the last edit time; null preserves it and an empty string clears it."
           }
         }
       },

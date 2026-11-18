@@ -4,6 +4,7 @@
   "title": "ground_candidates inputSchema",
   "description": "Argument shape for the ground_candidates tool (Analyze, Publish Data). Reference advertised name: honua_ground_candidates. Grounds a natural-language goal to a workflow family, ranked candidates, a draft intent, and an optional clarification envelope. See taxonomy.md §Intent and planning and planning.md §2.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["goal"],
   "properties": {
     "goal": {

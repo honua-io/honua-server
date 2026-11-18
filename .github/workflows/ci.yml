@@ -2532,6 +2532,10 @@ jobs:
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
     env:
+      # Full run 44183857476 died in the pinned SDK TypeScript build at Node's
+      # default ~2 GB heap. This job pins Node 22.23.3; that default still applies.
+      # Hosted runners have 16 GB.
+      NODE_OPTIONS: --max-old-space-size=4096
       HONUA_MCP_CERT_TARGET: standalone
       HONUA_BASE_URL: http://localhost:5000
       HONUA_TRANSPORT: ${{ matrix.transport }}
@@ -2582,7 +2586,9 @@ jobs:
         uses: ./.github/actions/setup-honua-mcp
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          node-version: ${{ env.NODE_VERSION }}
+          # SDK engines require Node >= 22.12. The workflow NODE_VERSION stays 20
+          # for the browser and JavaScript integration jobs.
+          node-version: '22.23.3'
           python-version: ${{ env.PYTHON_VERSION }}
           sdk-ref: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}
 
@@ -2682,7 +2688,7 @@ jobs:
         uses: ./.github/actions/setup-honua-mcp
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '22.23.3'
           python-version: ${{ env.PYTHON_VERSION }}
           sdk-ref: ${{ github.event.inputs.sdk_ref || env.MCP_SDK_REF }}
 

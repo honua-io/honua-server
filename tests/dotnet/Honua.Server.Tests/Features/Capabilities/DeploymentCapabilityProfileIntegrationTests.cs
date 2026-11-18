@@ -5,8 +5,6 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Capabilities;
-using Honua.Core.Features.Metadata.Abstractions;
-using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Extensions;
@@ -16,10 +14,10 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
-public sealed class DeploymentCapabilityProfileIntegrationTests
+public sealed partial class DeploymentCapabilityProfileIntegrationTests
+    : IClassFixture<DeploymentCapabilityProfileIntegrationTests.FolderApplications>
 {
     private static readonly string[] EnabledCapabilities =
     [
@@ -27,6 +25,13 @@ public sealed class DeploymentCapabilityProfileIntegrationTests
         "ops.health",
         "serve.stac",
     ];
+
+    private readonly FolderApplications _folderApplications;
+
+    public DeploymentCapabilityProfileIntegrationTests(FolderApplications folderApplications)
+    {
+        _folderApplications = folderApplications;
+    }
 
     [IntegrationTheory]
     [InlineData("/rest/services/Public/Parcels/FeatureServer", "serve.geoservices-featureserver", HttpStatusCode.OK)]
@@ -43,41 +48,25 @@ public sealed class DeploymentCapabilityProfileIntegrationTests
     [Endpoint("GET /admin/services/{folderName}/{serviceName}.{serviceType}")]
     public async Task FolderPath_ConfiguredProfile_EnforcesItsCapability(string path, string capability, HttpStatusCode expectedStatus)
     {
-        var fixture = CreateFixture([capability]);
-        await fixture.InitializeAsync();
-        try
+        var fixture = await _folderApplications.GetAsync(capability);
+        using var response = await fixture.Client.GetAsync(path + "?f=json");
+        var body = await response.Content.ReadAsStringAsync();
+        if (expectedStatus == HttpStatusCode.NotFound && response.StatusCode == HttpStatusCode.OK)
         {
-            var original = fixture.GetCurrentV2GraphSnapshot().Graph;
-            var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
-            provider.SetGraph(original with
-            {
-                Folders = [new() { Metadata = new() { Id = "folder", Name = "Public" } }],
-                Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
-                    ? service with { FolderId = "folder", PublicName = "Parcels" } : service).ToArray()
-            }, schema: fixture.CurrentSchema);
-            using var response = await fixture.Client.GetAsync(path + "?f=json");
-            var body = await response.Content.ReadAsStringAsync();
-            if (expectedStatus == HttpStatusCode.NotFound && response.StatusCode == HttpStatusCode.OK)
-            {
-                await response.AssertGeoServicesErrorAsync(404);
-            }
-            else
-            {
-                response.StatusCode.Should().Be(expectedStatus, body);
-            }
-            if (expectedStatus == HttpStatusCode.OK)
-            {
-                using var document = JsonDocument.Parse(body);
-                document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
-                if (path.EndsWith("/Parcels", StringComparison.Ordinal))
-                    document.RootElement.GetProperty("services").GetArrayLength().Should().BeGreaterThan(0);
-                else
-                    document.RootElement.GetProperty("serviceName").GetString().Should().Be("Parcels");
-            }
+            await response.AssertGeoServicesErrorAsync(404);
         }
-        finally
+        else
         {
-            await fixture.DisposeAsync();
+            response.StatusCode.Should().Be(expectedStatus, body);
+        }
+        if (expectedStatus == HttpStatusCode.OK)
+        {
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+            if (path.EndsWith("/Parcels", StringComparison.Ordinal))
+                document.RootElement.GetProperty("services").GetArrayLength().Should().BeGreaterThan(0);
+            else
+                document.RootElement.GetProperty("serviceName").GetString().Should().Be("Parcels");
         }
     }
 

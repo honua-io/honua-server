@@ -168,6 +168,46 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
         fixture.GetCurrentV2GraphSnapshot().Graph.Should().BeEquivalentTo(original);
     }
 
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task EditorTracking_IsStoredAndPublishedAndAnEmptyStringClearsIt()
+    {
+        await using var fixture = await CreateFixtureAsync(withEditing: true);
+        using var client = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        using var response = await PutAsync(client,
+            "{\"editing\":{\"editorField\":\"OWNER\",\"updatedAtField\":\"edited_at\",\"creatorField\":\"\"}}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var editing = fixture.GetCurrentV2GraphSnapshot().Graph.Resources.Single(resource => resource.Metadata.Id == ResourceId).Editing!;
+        editing.Should().BeEquivalentTo(new { EditorField = "owner", UpdatedAtField = "edited_at", CreatorField = (string?)null, GlobalIdField = "globalid" });
+        using var layer = await client.GetAsync($"/rest/services/{ServiceName}/FeatureServer/900?f=json");
+        using var document = JsonDocument.Parse(await layer.Content.ReadAsStringAsync());
+        var fields = document.RootElement.GetProperty("editFieldsInfo");
+        fields.GetProperty("editorField").GetString().Should().Be("owner");
+        fields.GetProperty("editDateField").GetString().Should().Be("edited_at");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
+    public async Task EditorTracking_WrongTypeOrUnknownProperty_IsRejectedWithoutMutation()
+    {
+        await using var fixture = await CreateFixtureAsync(withEditing: true);
+        using var client = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        var original = fixture.GetCurrentV2GraphSnapshot().Graph;
+        foreach (var payload in new[]
+                 {
+                     "{\"editing\":{\"editorField\":\"edited_at\"}}",
+                     "{\"editing\":{\"updatedAtField\":\"objectid\"}}",
+                     "{\"editing\":{\"creatorField\":\"missing\"}}",
+                     "{\"editing\":{\"editorTrackingField\":\"owner\"}}"
+                 })
+        {
+            using var response = await PutAsync(client, payload);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, payload);
+            fixture.GetCurrentV2GraphSnapshot().Graph.Should().BeEquivalentTo(original);
+        }
+    }
+
     private static void AssertOpenApiContract()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -188,7 +228,9 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
         var request = schemas.GetProperty("MetadataV2EditingPatch");
         request.GetProperty("nullable").GetBoolean().Should().BeTrue();
         request.GetProperty("properties").EnumerateObject().Select(property => property.Name)
-            .Should().BeEquivalentTo(["globalIdField", "supportsAttachments", "create", "update", "delete"]);
+            .Should().BeEquivalentTo(["globalIdField", "supportsAttachments", "create", "update", "delete",
+                "creatorField", "createdAtField", "editorField", "updatedAtField"]);
+        request.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
         var intent = request.GetProperty("properties").GetProperty("supportsAttachments");
         intent.GetProperty("type").GetString().Should().Be("boolean");
         intent.GetProperty("nullable").GetBoolean().Should().BeTrue();
@@ -282,7 +324,8 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer },
                     new MetadataV2Field { Name = "globalid", Type = MetadataV2FieldType.Uuid },
-                    new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String }
+                    new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String },
+                    new MetadataV2Field { Name = "edited_at", Type = MetadataV2FieldType.DateTime }
                 ], accessPolicy: access, annotations: new Dictionary<string, string> { ["honua.io/attachments"] = "true" })
             .AddResource("attachment-unrelated-resource", "Unrelated", MetadataV2ObjectType.Table, accessPolicy: access)
             .AddStorageBinding("attachment-primary-binding", ResourceId, "test.layers.900", storageLayerId: 900)

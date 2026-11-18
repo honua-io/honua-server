@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Collaboration.FeatureLocks;
+using Honua.Core.Features.Console.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
@@ -23,7 +24,8 @@ internal sealed class CapabilityManifestRuntimeInventory(
     IServiceProviderIsService serviceInventory,
     IFeatureOutputFormatRegistry outputFormats,
     ManifestRoutedCapabilityIndex routedCapabilities,
-    IFeatureLockService? featureLockService = null)
+    IFeatureLockService? featureLockService = null,
+    ConsolePersistenceNotice? consolePersistence = null)
 {
     public ManifestRoutedCapabilityIndex RoutedCapabilities { get; } = routedCapabilities;
 
@@ -39,6 +41,8 @@ internal sealed class CapabilityManifestRuntimeInventory(
 
     public bool HasSharedFeatureLockStore { get; } = featureLockService
         is Collaboration.FeatureLocks.PostgresFeatureLockService;
+
+    public bool HasDurableConsoleContent { get; } = consolePersistence?.Durable == true;
 
     public bool FeatureLockAuthorizerConfigured { get; } = featureLockAuthorizers
         .Any(static authorizer => authorizer is not Collaboration.FeatureLocks.FailClosedFeatureLockAuthorizer);

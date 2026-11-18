@@ -520,6 +520,24 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
         _exportQueries.Single().ClipRegion.Should().NotBeNull();
     }
 
+    [IntegrationTheory]
+    [InlineData("SUBSET=Long(-100.0,-99.9)&SUBSET=Lat(10.0,10.1)", "SUBSET")]
+    [InlineData("BBOX=-100.0,10.0,-99.9,10.1", "BBOX")]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithTrimOutsideCoverage_ReturnsInvalidSubsetting(string trim, string locator)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&{trim}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        content.Should().Contain("exceptionCode=\"InvalidSubsetting\"");
+        content.Should().Contain($"locator=\"{locator}\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]

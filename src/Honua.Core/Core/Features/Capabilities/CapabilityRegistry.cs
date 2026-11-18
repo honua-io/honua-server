@@ -345,6 +345,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // Shared PostgreSQL leases implement cross-node coordination; availability
             // depends on the selected runtime store.
             ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            // Console catalog, share-link, open-data and embed-key state lives in the system database
+            // when the host has one (ADR-0086); availability follows the selected store.
+            ("console.content.persistent", "console", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             // GeoServices applyEdits still has no client-supplied version-token support.
 
             ("edit.geoservices-version-tokens", "edit", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
