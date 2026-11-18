@@ -41,7 +41,7 @@ internal static class ShapefileExportWriter
         // is a fixed-format hex string (no separators, never rooted), so this combine cannot
         // silently drop Path.GetTempPath().
         var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDir);
+        ExportScratch.Create(scratchDir);
 
         try
         {
