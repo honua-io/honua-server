@@ -32,6 +32,7 @@ internal static class McpToolSchemas
     private const string CancelJobArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["jobId"],
           "properties": {
             "jobId": {
@@ -52,6 +53,7 @@ internal static class McpToolSchemas
     private const string PublishServiceArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["connectionId", "schema", "table", "layerName"],
           "properties": {
             "connectionId": {
@@ -245,6 +247,7 @@ internal static class McpToolSchemas
     private const string PlanAnalysisArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["intent"],
           "properties": {
             "intent": {
@@ -263,6 +266,7 @@ internal static class McpToolSchemas
     private const string PackageReviewArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "contractVersion": {
               "type": "string",
@@ -319,6 +323,7 @@ internal static class McpToolSchemas
     private const string IngestDatasetArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["format", "data", "datasetName"],
           "properties": {
             "format": {
@@ -436,6 +441,7 @@ internal static class McpToolSchemas
             $$"""
             {
               "type": "object",
+              "additionalProperties": false,
               "required": ["plan"],
               "properties": {
                 "plan": {
@@ -466,7 +472,7 @@ internal static class McpToolSchemas
                           "inputs": {
                             "type": "object",
                             "additionalProperties": { "type": "string" },
-                            "description": "Process inputs keyed by parameter name, as string-encoded values specified by the process catalog entry for this step's processId. Consult honua://catalog/processes for each parameter's name, value type, whether it is required, and how the value must be encoded (for example base64 WKB, a data URI FeatureCollection, an SRID, or a layer id)."
+                            "description": "Process inputs keyed by parameter name, as string-encoded values. honua://catalog/processes lists each processId's parameters with type, whether required, and encoding (e.g. base64 WKB, data URI FeatureCollection, SRID, layer id)."
                           },
                           "dependsOn": {
                             "type": "array",

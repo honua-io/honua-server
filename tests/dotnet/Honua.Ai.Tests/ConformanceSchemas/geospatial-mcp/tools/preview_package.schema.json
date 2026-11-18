@@ -5,6 +5,7 @@
   "description": "Argument shape for the read-only composition-review tool (advertised name honua_preview_package). Computes a read-only preview plan for a map/app package before publishing, in addition to the requirement-coverage review; it never mutates server state. x-honua-reference-shape: tracks the reference implementation; the bare taxonomy models package preview as a CapabilityCatalog + resource read.",
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "properties": {
     "contractVersion": {
       "type": "string",

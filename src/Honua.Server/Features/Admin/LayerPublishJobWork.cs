@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -209,19 +208,8 @@ internal static partial class LayerPublishJobWork
         }
 
         await InvalidateCatalogAsync(services, logger, summary.ServiceName, summary.StorageLayerId).ConfigureAwait(false);
-        try
-        {
-            var notifications = services.GetService<IMcpNotificationPublisher>();
-            if (notifications is not null)
-            {
-                await notifications.BroadcastResourcesListChanged().ConfigureAwait(false);
-                await notifications.BroadcastToolsListChanged().ConfigureAwait(false);
-            }
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            Log.NotificationFailed(logger, jobId, exception);
-        }
+        await LayerPublishCatalogNotifications.BroadcastAsync(
+            services, exception => Log.NotificationFailed(logger, jobId, exception)).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded() with { CompletedWithCommittedEffects = true };
     }
