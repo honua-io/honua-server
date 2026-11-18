@@ -180,7 +180,7 @@ public sealed class GeoServicesDatumTransformationCatalogTests
     [InlineData(Nad83_2011, 9774, "NAD_1983_2011_To_WGS_1984_1")]
     public void TryGetDefault_Wgs84RealizationPair_ReturnsNullTransformPipeline(int fromSrid, int epsgOp, string name)
     {
-        // NAD83(HARN)/NSRS2007/2011 -> WGS84 are EPSG null transformations (#1501).
+        // NAD83(HARN)/NSRS2007/2011 -> WGS84 are EPSG null transformations.
         // They are seeded as the exact-identity +proj=noop, which PostGIS applies through
         // the 3-argument ST_Transform chokepoint (validated against the runtime).
         var found = _catalog.TryGetDefault(fromSrid, Wgs84, out var selection);

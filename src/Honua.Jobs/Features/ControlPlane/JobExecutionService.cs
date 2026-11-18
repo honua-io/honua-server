@@ -485,10 +485,6 @@ internal sealed partial class JobExecutionService(
                 jobCts,
                 partitionLeaseRenewalCts.Token);
 
-        // PA-159: the worker-side execution loop (claim -> executor dispatch -> terminal
-        // finalize) had metrics and logging but no trace span, leaving the actual job
-        // execution invisible in traces even though ControlPlaneTelemetry already provides
-        // a StartExecutionActivity helper used by the submission-side backend calls.
         using var activity = ControlPlaneTelemetry.StartExecutionActivity(
             ControlPlaneTelemetry.Activities.ExecutionRun, "run", running);
 
@@ -500,8 +496,10 @@ internal sealed partial class JobExecutionService(
             operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, jobCts, logger,
             running.AttemptCount, licenseCancellation);
 
-        // Start heartbeat pump in background.
-        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
+        // Linked to host shutdown only. The executor can still be running after
+        // its token is cancelled, and a missing beat makes the reconciler treat
+        // that live attempt as lost.
+        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var heartbeatTask = context.RunHeartbeatPumpAsync(heartbeatCts.Token);
         using var qualificationScope = ExecutionQualificationBarrier.Begin(operationId, workerId);
         using var securityScope = JobSecurityScope.Begin(running.Audit.SubmitterSecurityContext);
@@ -560,7 +558,7 @@ internal sealed partial class JobExecutionService(
             {
                 // The heartbeat pump or a progress fence observed that this attempt no longer
                 // owns the record. Skip terminal writes so a stale executor cannot cancel or
-                // fail the attempt a new worker already claimed (#6154).
+                // fail the attempt a new worker already claimed.
                 activity?.SetStatus(ActivityStatusCode.Error, "Execution lease lost.");
                 Log.ExecutionLeaseLost(logger, operationId);
                 return;
@@ -662,8 +660,7 @@ internal sealed partial class JobExecutionService(
                 }
 
                 // Surface the executor-authored failure detail on the durable job
-                // record instead of collapsing it to the generic safe message
-                // (#2348). An executor's JobExecutionResult.Failed(...) message is
+                // record. An executor's JobExecutionResult.Failed(...) message is
                 // a curated, client-safe reason (e.g. "missing required input",
                 // "sink.honua-layer is unavailable in this deployment"), unlike a
                 // raw thrown exception; persisting it makes GP jobs diagnosable
@@ -876,7 +873,7 @@ internal sealed partial class JobExecutionService(
 
         try
         {
-            // Redis LockExtend is an atomic owner comparison and renewal. Performing it after the
+            // RenewLeaseAsync is an atomic owner comparison and renewal. Performing it after the
             // executor returns closes the interval before terminal finalization in which a paused
             // worker's lease can expire before the background renewal observes the loss.
             return await jobStore.RenewLeaseAsync(
@@ -1244,7 +1241,7 @@ internal sealed partial class JobExecutionService(
                 UpdatedAt = now,
                 CompletedAt = now,
                 // Persist the caller-supplied reason: a curated, client-safe
-                // executor failure detail (#2348) or the generic safe message for
+                // executor failure detail or the generic safe message for
                 // unexpected thrown exceptions. Never a raw exception string.
                 ErrorMessage = reason,
                 Warnings = warnings ?? latestBeforeFail.Warnings,
@@ -1705,24 +1702,23 @@ internal sealed partial class JobExecutionContext(
 
                     // Ownership or attempt moved (reconciler requeued, or another worker
                     // claimed). Cancel the executor before breaking so the stale attempt
-                    // stops instead of running beside the new one (#6154).
+                    // stops instead of running beside the new one.
                     if (!TryObserveLease(job))
                     {
                         break;
                     }
 
                     // A remote API host persisted a durable cancellation signal.
-                    // Cancel the local CTS so the executor receives the signal
-                    // through its CancellationToken.
+                    // Cancel the executor token, but keep heartbeats until the
+                    // execution method stops this pump. The worker is still
+                    // inside the attempt until the executor returns; dropping
+                    // the beat here makes the reconciler treat that live
+                    // attempt as lost. Cancel is queued so a callback cannot
+                    // re-enter this lock on the pump stack.
                     if (job.CancellationRequestedAt.HasValue && durableCancellationCts != null)
                     {
-                        try { durableCancellationCts.Cancel(); }
-                        catch (ObjectDisposedException)
-                        {
-                            // Expected race: the execution task completed and disposed
-                            // the CTS between the read above and this cancel. Benign.
-                        }
-                        break;
+                        var cts = durableCancellationCts;
+                        ThreadPool.UnsafeQueueUserWorkItem(static state => CancelLease((CancellationTokenSource)state!), cts);
                     }
 
                     var updated = job with

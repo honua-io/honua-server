@@ -124,7 +124,7 @@ public sealed partial class FeatureStreamEndpointsTests
     {
         // Production leaves MultiTenancy:DefaultTenantId at "public", so a request without a
         // valid credential resolves a tenant that cannot see tenant-a's layer. That is still an
-        // authentication failure, not a missing layer (honua-server#4778).
+        // authentication failure, not a missing layer.
         await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -386,7 +386,7 @@ public sealed partial class FeatureStreamEndpointsTests
     {
         // TestServer keeps the close frame even when the endpoint's pending receive is
         // cancelled; Kestrel tears the socket down and the client saw 1006 instead of the
-        // typed close (honua-server#4776). Only a real Kestrel host proves this outcome.
+        // typed close. Only a real Kestrel host proves this outcome.
         await using var fixture = new WebAppFixture().UseKestrel().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");

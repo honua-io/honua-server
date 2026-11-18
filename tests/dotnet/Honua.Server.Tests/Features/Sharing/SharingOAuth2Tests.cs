@@ -259,7 +259,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_AuthorizationCodeWithoutRegisteredPkce_ReturnsInvalidGrant()
     {
-        // Hard PKCE requirement (#1484): a code minted without a code_challenge is
+        // Hard PKCE requirement: a code minted without a code_challenge is
         // rejected by the token endpoint even if the client sends no verifier. This
         // guards the seam directly (the authorize endpoint also blocks no-PKCE flows).
         var code = await SeedAuthorizationCodeAsync(codeChallenge: null, method: null);
@@ -283,7 +283,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_RefreshTokenGrant_RotatesRefreshTokenAndRevokesOld()
     {
-        // Refresh-token rotation (#1484): a refresh exchange returns a NEW refresh
+        // Refresh-token rotation: a refresh exchange returns a NEW refresh
         // token and revokes the presented one, so reusing the old token fails.
         var verifier = "rotation-pkce-verifier-value-abcdefghijklmnopqrstuv";
         var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
@@ -370,7 +370,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_ClientCredentialsGrant_WhenEnabledWithValidSecret_ReachesIssuanceAndBindsToClientIp()
     {
-        // Opt in to the client_credentials grant (ADR-0053, #1860) and provision an
+        // Opt in to the client_credentials grant (ADR-0053) and provision an
         // API key whose value is the client_secret, then exchange it end-to-end
         // through the real HTTP endpoint. The grant binds the issued token to the
         // calling client's IP (PortalTokenClientType.Ip); the in-process TestServer
@@ -380,7 +380,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         // the full happy path (valid full-admin secret + resolvable IP -> opaque
         // IP-bound admin token, no refresh token) is covered without a TestServer by
         // PortalOAuthClientCredentialsTests. Constrained keys are refused before the
-        // binding step (SharingManagedKeyAuthorityTests, #4577).
+        // binding step (SharingManagedKeyAuthorityTests).
         var fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
@@ -490,7 +490,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_AuthorizationCodeGrantViaGetQueryString_Returns405MethodNotAllowed()
     {
-        // BH7-001: The token endpoint must be POST-only per RFC 6749 §4.1.3.
+        // The token endpoint must be POST-only per RFC 6749 §4.1.3.
         // A GET registration exposed auth codes, client_secret, and refresh
         // tokens in URL query strings — logged by proxies/CDN/access logs (CWE-598).
         // Verify that GET requests are rejected with 405 Method Not Allowed.
@@ -559,7 +559,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/introspect")]
     public async Task Introspect_WhenEnabledForUnknownToken_ReturnsActiveFalse()
     {
-        // RFC 7662 introspection (#1890) is off by default; opt in and drive the real
+        // RFC 7662 introspection is off by default; opt in and drive the real
         // admin-guarded endpoint. An unknown/forged token must introspect as
         // { active: false } per RFC 7662 Â§2.2 â€” no other detail is leaked.
         var fixture = new WebAppFixture()
@@ -655,7 +655,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     [Endpoint("POST /sharing/rest/oauth2/revoke")]
     public async Task Revoke_AccessToken_SubsequentValidationFails()
     {
-        // Per-token revocation (#2155): an access token that validates today must fail
+        // Per-token revocation: an access token that validates today must fail
         // the very next authorization check after it is revoked. The opaque token is
         // bound to the redirect host, so validation is checked through the real
         // IPortalTokenIssuer with a matching referer binding before and after revoke.
@@ -694,7 +694,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     public async Task Revoke_RefreshToken_SubsequentRefreshFails()
     {
         // Revoking a refresh token closes the silent re-issuance path end-to-end: the
-        // refresh_token grant must fail once the token is revoked (#2155).
+        // refresh_token grant must fail once the token is revoked.
         var verifier = "revoke-refresh-verifier-value-abcdefghijklmnopqrstuvwxyz";
         var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
         var code = await SeedAuthorizationCodeAsync(challenge, "S256");

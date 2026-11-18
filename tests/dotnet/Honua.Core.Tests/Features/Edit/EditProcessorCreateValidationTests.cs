@@ -43,7 +43,7 @@ public sealed class EditProcessorCreateValidationTests
         ]
     };
 
-    // BH2-014 regression: a feature that supplies SOME attributes (e.g. only the nullable "notes"
+    // a feature that supplies SOME attributes (e.g. only the nullable "notes"
     // field) but omits the required "name" field must be rejected with a named error, not passed
     // through to the DB to fail with an opaque NOT NULL constraint violation.
     [UnitTest]
@@ -110,8 +110,7 @@ public sealed class EditProcessorCreateValidationTests
         var processor = CreateProcessor();
         var resource = CreateResourceWithRequiredField();
 
-        // Completely empty attribute dictionary: the original "no attributes at all" check
-        // (not the BH2-014 per-field check) should fire first with the legacy message.
+        // The empty attribute dictionary check should run before per-field validation.
         var attributes = ImmutableDictionary<string, object?>.Empty;
 
         var request = UnifiedEditRequest.WithCreates(
@@ -126,8 +125,7 @@ public sealed class EditProcessorCreateValidationTests
 
     // Resource whose non-nullable "objectid" field carries NO semantic roles — mirrors the many
     // seeded/published layers (e.g. WebAppFixtureMetadataV2Mixin, ServiceRbacTestFixture) that
-    // declare objectid as Nullable=false without the "id.primary" role. BH2-014 (#2456) keyed its
-    // primary-id skip exclusively on the role, so every create omitting objectid was rejected.
+    // declare objectid as Nullable=false without the "id.primary" role.
     private static MetadataV2Object CreateResourceWithUnroledObjectId() => new()
     {
         SchemaFields =
@@ -156,9 +154,8 @@ public sealed class EditProcessorCreateValidationTests
         ]
     };
 
-    // Regression (#2456): a create that supplies every required NON-id field but omits the
-    // server-assigned "objectid" must validate, even when objectid lacks the "id.primary" role.
-    // Before the fix this failed with "Required attribute(s) missing for create operation: objectid".
+    // Creates may omit the server-assigned objectid even when it lacks the
+    // id.primary role; all required non-ID fields must still validate.
     [UnitTest]
     public void ValidateEdit_CreateOmittingUnroledObjectId_Succeeds()
     {
@@ -178,7 +175,7 @@ public sealed class EditProcessorCreateValidationTests
             + "even when it does not carry the id.primary semantic role");
     }
 
-    // The fix must not weaken BH2-014: a genuinely-missing required NON-id field is still rejected
+    // A missing required non-id field is rejected
     // even on a layer whose objectid lacks the id.primary role.
     [UnitTest]
     public void ValidateEdit_CreateMissingRequiredFieldOnUnroledObjectIdLayer_StillFails()
@@ -242,12 +239,6 @@ public sealed class EditProcessorCreateValidationTests
             "field presence check must be case-insensitive so 'NAME' satisfies the 'name' schema field");
     }
 
-    // Resource that carries BOTH a distinct public primary id ("id", string, id.primary role) AND a
-    // separate server-assigned integer object-id ("objectid", no role) — the shape of the OGC API
-    // Features String-ID layers (OgcFeaturesStringIdentifierEndpointTests, StringIdLayerId=99).
-    // FindPrimaryIdField resolves to the roled public "id", so before this fix the conventional
-    // integer "objectid" fell through the primary-id skip and a create omitting it (the normal case,
-    // since the server auto-assigns it) was rejected — surfacing as an OGC HTTP 500.
     private static MetadataV2Object CreateResourceWithDistinctPublicIdAndObjectId() => new()
     {
         SchemaFields =
@@ -277,11 +268,9 @@ public sealed class EditProcessorCreateValidationTests
         ]
     };
 
-    // Regression (OGC create-with-top-level-string-feature-id): a create that supplies the public
-    // "id" plus the required "name" but omits the server-assigned integer "objectid" must validate,
-    // even though "objectid" is non-nullable and does not carry the id.primary role (a separate
-    // "id" field does). Before the fix this failed with
-    // "Required attribute(s) missing for create operation: objectid" → OGC HTTP 500.
+    // A public string id and required name may be supplied without the server-assigned
+    // integer objectid, even when objectid is non-nullable and the separate id field
+    // carries the id.primary role.
     [UnitTest]
     public void ValidateEdit_CreateOmittingServerAssignedObjectIdBesidePublicId_Succeeds()
     {
@@ -302,9 +291,8 @@ public sealed class EditProcessorCreateValidationTests
             + "client, even when a distinct id.primary field is the resource's resolved primary id");
     }
 
-    // The fix must not weaken validation: on the same two-id-field layer, a genuinely-missing
-    // required NON-id field ("name") is still rejected, and the server-assigned "objectid" must not
-    // appear in the missing-required list.
+    // On a two-ID-field layer, reject a missing required name without including
+    // the server-assigned objectid in the missing-required list.
     [UnitTest]
     public void ValidateEdit_CreateMissingRequiredFieldBesidePublicIdAndObjectId_StillFails()
     {

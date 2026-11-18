@@ -20,7 +20,7 @@ namespace Honua.Core.Features.FileImport.Services;
 
 internal sealed partial class UniversalImportJobService : IImportJobService, IDisposable
 {
-    // PA-016: this is the DI-registered IImportJobService (see ServiceCollectionExtensions.cs) and
+    // This is the DI-registered IImportJobService (see ServiceCollectionExtensions.cs) and
     // its ProcessJobAsync is invoked fire-and-forget (`_ = ProcessJobAsync(...)`), so it needs its
     // own ActivitySource plus the detach-from-caller idiom at the top of ProcessJobAsync. Registered
     // as "Honua.Import.Jobs" in Honua.ServiceDefaults.Extensions._activitySourceNames.
@@ -216,7 +216,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var licensedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
         cancellationToken = licensedCancellation.Token;
-        // PA-016: fire-and-forget (`_ = ProcessJobAsync(...)`) off the request handler. The
+        // Fire-and-forget (`_ = ProcessJobAsync(...)`) off the request handler. The
         // continuation still flows the caller's ExecutionContext, so Activity.Current here would
         // otherwise be the HTTP request's activity — which ends when the response returns, long
         // before this background job finishes. Capture it as a link instead of an implicit

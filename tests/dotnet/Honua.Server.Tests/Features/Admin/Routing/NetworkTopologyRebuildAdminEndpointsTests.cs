@@ -68,7 +68,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests
         await using (var createTable = connection.CreateCommand())
         {
             // Both tables must physically exist (not just the well-known pgRouting demo
-            // names) so the promotion/rollback artifact-existence check (#2719), which
+            // names) so the promotion/rollback artifact-existence check, which
             // runs `to_regclass` against whichever generation is being (re)activated, sees
             // a real relation for the dataset's own initial active generation.
             createTable.CommandText =

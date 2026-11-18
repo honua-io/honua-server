@@ -106,17 +106,19 @@ class CandidateBindingTests(unittest.TestCase):
             "recovery": {"substrates": [{"store": store, "original_destroyed": True,
                                          "restored_into_empty_store": True,
                                          "files_before": "checksum file", "files_after": "checksum file"}
-                                        for store in ("postgres", "redis", "gp-output")]}}
+                                        for store in ("postgres", "gp-output")]}}
         self.assertEqual(pin, binding.verify(pin, summary)["candidate"])
         with self.assertRaisesRegex(ValueError, "another candidate"):
             binding.verify({**pin, "server_image": "server@sha256:" + "4" * 64}, summary)
-        for mutation in ("missing-store", "retained-original", "corrupt-bytes", "wrong-worker", "skipped"):
+        for mutation in ("missing-store", "retained-original", "legacy-store", "corrupt-bytes", "wrong-worker", "skipped"):
             bad = copy.deepcopy(summary)
             proof = bad["scenarios"][2]["evidence"]
             if mutation == "missing-store":
                 proof["recovery"]["substrates"].pop()
             elif mutation == "retained-original":
-                proof["recovery"]["substrates"][2]["original_destroyed"] = False
+                proof["recovery"]["substrates"][1]["original_destroyed"] = False
+            elif mutation == "legacy-store":
+                proof["recovery"]["substrates"].append({"store": "unsupported-store"})
             elif mutation == "corrupt-bytes":
                 proof["artifact"]["sha256_after"] = "b" * 64
             elif mutation == "wrong-worker":

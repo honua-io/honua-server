@@ -256,10 +256,11 @@ if (tracingSection.Exists() || tracingEnabled)
     builder.AddTelemetryDefaults();
 }
 
-if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
-        builder.Environment.IsDevelopment(),
-        isTestEnvironment,
-        keyRingIsShared: !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"))))
+var durableKeyRing = OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+    builder.Environment.IsDevelopment(),
+    isTestEnvironment,
+    keyRingIsShared: !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")));
+if (durableKeyRing)
 {
     // The key ring lives in the system database so that every node unprotects what any node
     // protected: an operation secret consumed on another node is deleted before it is
@@ -856,7 +857,7 @@ builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActi
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
     Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
-// Discovery is a scoped projection: an explicit workspace mapping never replaces caller authorization.
+// Discovery is a scoped projection: an explicit environment mapping never replaces caller authorization.
 builder.Services.AddOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>()
     .BindConfiguration(Honua.Server.Features.Console.Services.CatalogDiscoveryOptions.SectionName)
     .ValidateOnStart();
@@ -1264,7 +1265,16 @@ if (configurationErrors.Count > 0)
 {
     var errorDetails = string.Join(Environment.NewLine, configurationErrors);
     ConfigurationLog.ConfigurationValidationFailed(app.Logger, configurationErrors.Count, errorDetails);
-    throw new InvalidOperationException("Configuration validation failed. See logs for details.");
+    const string configurationRefusal = "Configuration validation failed. See logs for details.";
+    if (Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+    {
+        throw new InvalidOperationException(configurationRefusal);
+    }
+
+    // Thrown from here, the refusal leaves Main unhandled and the AOT image aborts with exit 139.
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(
+        app, configurationRefusal + Environment.NewLine + errorDetails);
+    return;
 }
 
 ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
@@ -1734,6 +1744,24 @@ catch (Honua.Core.Features.FeatureStore.Domain.DataStoreProviderUnavailableExcep
     return;
 }
 #endif
+
+// The key-ring checks (every key protected, every wrapped key readable with the configured secret)
+// run when KeyManagementOptions is first built. Left to the data-protection hosted service, a
+// refusal escapes app.Run unhandled and the AOT image aborts with exit 139, so build it here.
+if (durableKeyRing)
+{
+    try
+    {
+        _ = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<
+            Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>>().Value;
+    }
+    catch (InvalidOperationException ex)
+        when (!Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+    {
+        await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+        return;
+    }
+}
 
 // Configure health endpoints
 app.MapHealthEndpoints();

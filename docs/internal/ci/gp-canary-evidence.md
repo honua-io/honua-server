@@ -6,7 +6,7 @@ retry is not a production burn-in interval or whole-catalog GP qualification.
 Issues #3809 and #3857 remain open until their live evidence requirements hold.
 
 PRs also run `published-image-rehearsal` against the digest-pinned server image
-in the workflow. It reuses the reliability Compose PostGIS/Redis/server services
+in the workflow. It reuses the reliability Compose PostGIS/server services
 and checks the pulled image's source label. The exact same canary input, async
 HTTP execution, result decoding and numerical oracles run against that server.
 This catches response-shape/default-format assumptions that mock tests cannot.

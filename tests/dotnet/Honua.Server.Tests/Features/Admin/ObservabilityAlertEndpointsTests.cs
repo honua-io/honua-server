@@ -212,7 +212,7 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
             DateTimeOffset resolvedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(Lifecycle);
 
-        // Mirrors the atomic contract (#3865): a mutation always comes back with the
+        // Mirrors the atomic contract: a mutation always comes back with the
         // durable audit intent that was written alongside it.
         public Task<AlertLifecycleTransition> ApplyAsync(
             AlertLifecycleCommand command, CancellationToken cancellationToken = default)

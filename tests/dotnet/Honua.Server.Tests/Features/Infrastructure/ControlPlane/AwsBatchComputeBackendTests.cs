@@ -89,7 +89,7 @@ public sealed class AwsBatchComputeBackendTests
             [AwsBatchParameterKeys.RetryAttempts] = "2",
             [AwsBatchParameterKeys.ShareIdentifier] = "tenant-a",
             ["env.EXTRA_FLAG"] = "value",
-            // Custom-code param->env contract (#2191): env.CUSTOMCODE_* keys the
+            // Custom-code param->env contract: env.CUSTOMCODE_* keys the
             // submit coordinator projects must surface to the container verbatim.
             ["env.CUSTOMCODE_REPO_URL"] = "https://github.com/honua-io/example.git"
         });
@@ -330,7 +330,7 @@ public sealed class AwsBatchComputeBackendTests
         client.Config.RegionEndpoint.Should().BeNull();
 
         // Without a pinned signing region the SDK resolves one from the ambient chain, ending in
-        // EC2 instance metadata, which hangs every request inside a container (#4998).
+        // EC2 instance metadata, which hangs every request inside a container.
         client.Config.AuthenticationRegion.Should().Be("us-west-2");
     }
 
@@ -764,9 +764,9 @@ public sealed class AwsBatchComputeBackendTests
     [Fact]
     public async Task ObserveAsync_PreservesCurrentStatusWhenDescribeThrowsProviderException()
     {
-        // Regression for finding: a credential/transport failure during observe must not
-        // escape the backend. If it did, the reconciler's generic catch would stamp the
-        // durable record terminal Failed while the AWS Batch job could still be running.
+        // Observe credential and transport failures must remain inside the backend.
+        // Otherwise the reconciler could mark the durable record terminal Failed
+        // while the provider job is still running.
         var client = new StubAwsBatchJobClient
         {
             DescribeException = new AmazonServiceException("credential acquisition failed: token expired")
@@ -785,9 +785,8 @@ public sealed class AwsBatchComputeBackendTests
     [Fact]
     public async Task CancelAsync_PreservesCurrentStatusWhenDescribeThrowsProviderException()
     {
-        // Regression for finding: a credential/transport failure during cancel must not
-        // escape the backend. The cancel endpoints wrap this call directly, so an uncaught
-        // exception would surface as an unhandled API failure to the user.
+        // Cancel credential and transport failures must remain inside the backend
+        // because cancellation endpoints call it directly.
         var client = new StubAwsBatchJobClient
         {
             DescribeException = new AmazonServiceException("service unavailable")

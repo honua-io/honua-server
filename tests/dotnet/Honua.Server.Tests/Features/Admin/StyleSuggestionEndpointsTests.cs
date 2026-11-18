@@ -66,7 +66,7 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
         response.Be404NotFound();
     }
 
-    // --- Depth pack (#2983): styling.auto-suggest contract assertions ---
+    // --- Depth pack: styling.auto-suggest contract assertions ---
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]

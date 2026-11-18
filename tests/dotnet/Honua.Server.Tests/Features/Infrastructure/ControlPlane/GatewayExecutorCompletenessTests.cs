@@ -192,7 +192,7 @@ public sealed class GatewayExecutorCompletenessTests
     {
         // Production-shaped executor set: MetadataRelease (real), plus stand-ins for
         // AdminConfigChange/Deploy. Seed has none — the gateway must return NotSupported,
-        // never claim Executed with no work performed (BH6-032).
+        // never claim Executed with no work performed.
         var executors = new IOperationExecutor[]
         {
             new MetadataReleaseOperationExecutor(new MetadataReleaseControlService([new InMemoryWorkflowOperationStore()])),

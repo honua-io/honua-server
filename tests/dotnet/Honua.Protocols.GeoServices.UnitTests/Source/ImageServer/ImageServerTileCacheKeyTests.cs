@@ -114,7 +114,7 @@ public class ImageServerTileCacheKeyTests
     [UnitTest]
     public void Build_VariesByTimeExtentStart()
     {
-        // #4061: an Esri start,end extent shares its end with an instant request, so the start bound
+        // An Esri start,end extent shares its end with an instant request, so the start bound
         // must partition the key or the two windows would serve each other's cached tiles.
         var end = DateTimeOffset.Parse("2020-06-01T00:00:00Z", CultureInfo.InvariantCulture);
         var start = DateTimeOffset.Parse("2020-01-01T00:00:00Z", CultureInfo.InvariantCulture);

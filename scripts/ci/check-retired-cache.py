@@ -7,6 +7,8 @@ import re
 import subprocess
 
 POLICY_FILES = {
+    # The architecture guard must name the banned packages it detects.
+    "tests/dotnet/Honua.Architecture.SourceTests/RetiredCacheDependencyTests.cs",
     "scripts/ci/check-retired-cache.py",
     "scripts/ci/check-retired-cache.test.py",
     "scripts/ci/check-retired-cache-workflow.test.py",
@@ -19,7 +21,24 @@ ROUTING_DATA_FILES = {
     "scripts/ci/fixtures/full-run-capacity-contracts.json",
     "scripts/ci/fixtures/live-output-capacity-contracts.json",
     "scripts/ci/test-shard-image-selection.py",
+    # Analyzer suppressions and retired-term allowances are keyed by test file path.
+    "scripts/ci/analyzer-baseline/AnalyzerBaseline.tsv",
+    "scripts/ci/retired-terms-allowlist.v1.json",
 }
+
+# Recorded CI runs list the files those runs changed; history is not rewritten.
+RECORDED_RUN_ROOTS = ("eng/ci/fixtures/shard-promotion/",)
+
+# The Lambda preview certification harness is outside the ECS-on-Fargate scope of the cache
+# retirement and keeps its wording until it is reworked.
+LAMBDA_PREVIEW_FILES = {
+    "scripts/cloud/lambda-certification.md",
+    "scripts/cloud/lambda-certification.py",
+    "scripts/cloud/test-certify-lambda-preview.py",
+}
+
+# Diagnostic redaction must keep recognising any connection URL a user may paste.
+REDACTION_FILES = {"src/Honua.Geoprocessing/Core/Features/Geoprocessing/Diagnostics/GpDiagnosticRedactor.cs"}
 
 
 # NuGet lock files record the resolved closure of references that the checked project
@@ -32,6 +51,9 @@ def exempt(path: str) -> bool:
     name = PurePosixPath(path)
     return (path in POLICY_FILES
             or path in ROUTING_DATA_FILES
+            or path in LAMBDA_PREVIEW_FILES
+            or path in REDACTION_FILES
+            or path.startswith(RECORDED_RUN_ROOTS)
             or name.name in GENERATED_DEPENDENCY_RECORDS
             or name.name.casefold() in {"changelog", "changelog.md", "changelog.rst", "changelog.txt",
                                         "third-party-notices.md", "third-party-notices.txt"}

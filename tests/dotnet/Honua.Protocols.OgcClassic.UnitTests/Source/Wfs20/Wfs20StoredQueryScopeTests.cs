@@ -23,7 +23,6 @@ public sealed class Wfs20StoredQueryScopeTests
 
     private static readonly InMemoryWfsStoredQueryStore StoredQueries = new();
 
-    // ─── BH3-009 regression ──────────────────────────────────────────────────────
 
     [UnitTest]
     public async Task HandleDropStoredQuery_QueryFromOtherScope_ReturnsInvalidParameterValue()

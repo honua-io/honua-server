@@ -126,10 +126,10 @@ paging. Child grouping observes request cancellation.
 | String functions | `contains`, `startswith`, `endswith`, `substring`, `tolower`, `toupper`, `length`, `trim`, `indexof`, `replace`, `concat` |
 | Numeric functions | `round`, `floor`, `ceiling`, `abs` |
 | Date/time functions | `now`, `year`, `month`, `day`, `hour`, `minute`, `second` |
-| Spatial functions | `geo.distance`, `geo.intersects` with `geography'SRID=4326;WKT'` / `geometry'SRID=####;WKT'` literals. Geometry requires an explicit SRID; geography without one retains the WGS84 shorthand. |
+| Spatial functions | `geo.distance`, `geo.intersects`, and `geo.length` (geodesic length in meters) with `geography'SRID=4326;WKT'` / `geometry'SRID=####;WKT'` literals. Geometry requires an explicit SRID; geography without one retains the WGS84 shorthand. `geo.length` takes the geography or geometry property, not a literal. |
 | Typed literals | `date'...'`, `datetime'...'`/`datetimeoffset'...'`, `geography'...'`/`geometry'...'` |
 
-Not supported (rejected with 400): `has`, `in`, `any`, `all` operators; `cast`/`isof`; `geo.length` and any other `geo.*` function beyond the two listed; `$levels`.
+Not supported (rejected with 400): `has`, `in`, `any`, `all` operators; `cast`/`isof`; any `geo.*` function beyond `geo.distance`, `geo.intersects`, and `geo.length`; `$levels`.
 
 ## $apply aggregation
 

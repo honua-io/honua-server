@@ -35,8 +35,6 @@ public sealed class ImageServerMensurationMathTests
     [UnitTest]
     public void GeodesicDistanceMeters_OneDegreeLongitudeAt40N_IsAbout85Km_NotOne()
     {
-        // EPSG:4269 (NAD83) 1° of longitude at 40°N. The pre-fix planar path returned the raw
-        // degree delta (1.0) as "meters"; the ground distance is ~85 km.
         var distance = ImageServerMensurationMath.GeodesicDistanceMeters(0, 40, 1, 40);
         distance.Should().BeInRange(84_500d, 85_500d);
     }
@@ -44,9 +42,6 @@ public sealed class ImageServerMensurationMathTests
     [UnitTest]
     public void TryConvertToLonLat_WebMercator1000mAt60N_MeasuresAbout1000GroundMeters()
     {
-        // Two points 1000 ground-meters apart (north-south) at 60°N. In Web Mercator the
-        // northing delta is ~2000 m (scale = 1/cos(60°) = 2), so the pre-fix planar path
-        // reported ~2000 m. After inverse-Mercator normalization the ground distance is ~1000 m.
         const double lat0 = 60d;
         const double lon0 = 10d;
         var groundMeters = 1000d;
@@ -96,8 +91,6 @@ public sealed class ImageServerMensurationMathTests
     [UnitTest]
     public void InitialBearingDegrees_DiagonalAt60N_IsCorrectedBelow45Degrees()
     {
-        // From (0,60) to (1,61): the pre-fix planar azimuth atan2(dx,dy) was exactly 45°. The
-        // true initial bearing folds in meridian convergence and is well below 45°.
         var bearing = ImageServerMensurationMath.InitialBearingDegrees(0, 60, 1, 61);
         bearing.Should().BeInRange(24d, 28d);
         bearing.Should().BeLessThan(45d);

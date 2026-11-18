@@ -27,7 +27,9 @@ internal sealed class PublishedConsoleContent(
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var ownedIds = snapshot.Graph.Services.Select(service => service.Metadata.Id)
-            .Concat(snapshot.Graph.Publications.Select(publication => publication.Metadata.Id)).ToHashSet(StringComparer.Ordinal);
+            .Concat(snapshot.Graph.Publications.Select(publication => publication.Metadata.Id))
+            .Concat(snapshot.Graph.Objects.Where(IsDatasetIdentity).Select(dataset => dataset.Metadata.Id))
+            .ToHashSet(StringComparer.Ordinal);
         var items = new Dictionary<string, ConsoleContentItem>(StringComparer.Ordinal);
         var context = contextAccessor.HttpContext;
         if (context is null)
@@ -36,21 +38,78 @@ internal sealed class PublishedConsoleContent(
         }
 
         var request = new PublishedMetadataRequest(snapshot, context.User, BaseUrlResolver.GetBaseUrl(context));
+        var catalog = new CatalogProjection(request, items);
         foreach (var service in snapshot.Index.ServicesById.Values)
         {
-            var published = projection.ProjectService(request, service);
-            if (published is null)
-            {
-                continue;
-            }
-            items.TryAdd(service.Metadata.Id, ProjectService(published, request));
-            foreach (var resourcePublications in published.Publications.GroupBy(publication => publication.ResourceId))
-            {
-                var publication = resourcePublications.FirstOrDefault(candidate => candidate.IsPrimary) ?? resourcePublications.First();
-                items.TryAdd(publication.Metadata.Id, ProjectLayer(publication, published, request));
-            }
+            AddService(service, catalog);
+        }
+        foreach (var dataset in catalog.Datasets.Values)
+        {
+            items.TryAdd(dataset.Id, dataset);
         }
         return new(ownedIds, items);
+    }
+
+    private void AddService(MetadataV2Service service, CatalogProjection catalog)
+    {
+        var request = catalog.Request;
+        var published = projection.ProjectService(request, service);
+        if (published is null)
+        {
+            return;
+        }
+        catalog.Items.TryAdd(service.Metadata.Id, ProjectService(published, request));
+        foreach (var group in published.Publications.GroupBy(publication => publication.ResourceId))
+        {
+            var publication = group.FirstOrDefault(candidate => candidate.IsPrimary) ?? group.First();
+            catalog.Items.TryAdd(publication.Metadata.Id, ProjectLayer(publication, published, request));
+            AddDataset(publication, published, catalog);
+        }
+    }
+
+    private static bool IsDatasetIdentity(MetadataV2Object dataset) => dataset.Type is
+        MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table
+        or MetadataV2ObjectType.RasterDataset or MetadataV2ObjectType.TileDataset;
+
+    private void AddDataset(MetadataV2Layer publication, PublishedMetadataService published,
+        CatalogProjection catalog)
+    {
+        var dataset = catalog.Request.Snapshot.ResolveResource(publication)!;
+        var kind = dataset.Type switch
+        {
+            MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table => "feature-type",
+            MetadataV2ObjectType.RasterDataset => "coverage",
+            _ => null
+        };
+        if (kind is null)
+        {
+            return;
+        }
+        var visibility = ProjectVisibility(projection.DeriveAccessTier(dataset.AccessPolicy, published.Service.AccessPolicy));
+        if (catalog.Datasets.TryGetValue(dataset.Metadata.Id, out var existing) && existing.Visibility >= visibility)
+        {
+            return;
+        }
+        catalog.Datasets[dataset.Metadata.Id] = ProjectDataset(dataset, kind, visibility);
+    }
+
+    private static ConsoleContentItem ProjectDataset(MetadataV2Object dataset, string kind, ConsoleVisibility visibility)
+    {
+        var sidecar = new ConsoleDatasetTypeMetadata
+        {
+            DatasetId = dataset.Metadata.Id,
+            Kind = kind,
+            FieldCount = dataset.SchemaFields.Count,
+            GeometryType = dataset.Spatial?.GeometryType.ToString()
+        };
+        return ProjectItem(dataset.Metadata, ConsoleContentItemType.Dataset) with
+        {
+            TypeMetadata = JsonSerializer.SerializeToElement(sidecar, ConsoleJsonContext.Default.ConsoleDatasetTypeMetadata),
+            Visibility = visibility,
+            Title = dataset.Metadata.Title ?? dataset.Metadata.Name,
+            Lifecycle = dataset.Status?.Lifecycle ?? MetadataV2LifecycleStatus.Active,
+            OperationalState = dataset.Status?.State ?? MetadataV2OperationalState.Unknown
+        };
     }
 
     private static ConsoleContentItem ProjectService(PublishedMetadataService published, PublishedMetadataRequest request)
@@ -84,7 +143,7 @@ internal sealed class PublishedConsoleContent(
         var sidecar = new ConsoleLayerTypeMetadata
         {
             ServiceId = published.Service.Metadata.Id,
-            ResourceId = resource.Metadata.Id,
+            DatasetId = resource.Metadata.Id,
             FieldCount = resource.SchemaFields.Count,
             GeometryType = resource.Spatial?.GeometryType.ToString(),
             Url = PublishedMetadataProjection.PublicationUrl(request, published.Service, publication),
@@ -118,6 +177,12 @@ internal sealed class PublishedConsoleContent(
             Generation = metadata.Generation,
             IsReadOnly = true
         };
+
+    private sealed record CatalogProjection(
+        PublishedMetadataRequest Request, Dictionary<string, ConsoleContentItem> Items)
+    {
+        public Dictionary<string, ConsoleContentItem> Datasets { get; } = new(StringComparer.Ordinal);
+    }
 
     private static ConsoleVisibility ProjectVisibility(string access) => access switch
     {

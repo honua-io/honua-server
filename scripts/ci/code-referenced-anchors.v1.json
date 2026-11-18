@@ -47,7 +47,7 @@
       "why": "SCIM ServiceProviderConfig documentationUri. Advertised on the wire to every SCIM client that discovers the endpoint."
     },
     {
-      "url": "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not",
+      "url": "https://honua.io/docs/guides/deploy/docker-compose/#durable-administration-requires-the-system-database",
       "sources": [
         "src/Honua.Core/Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
       ],
@@ -112,7 +112,7 @@
       "sources": [
         "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
-      "why": "runbook_url for the upload-queue alerts. The Imports table covers rejected uploads, queue limits, and imports that never progress because Redis is absent. Retargeted from /operations/runbook#file-upload-problems (#3592).",
+      "why": "runbook_url for the upload-queue alerts. The Imports table covers rejected uploads, queue limits, and imports that never progress because no job runner executes them. Retargeted from /operations/runbook#file-upload-problems (#3592).",
       "alerts": [
         "HonuaUploadQueueDepthHigh",
         "HonuaUploadQueueFull"
@@ -133,7 +133,7 @@
       "sources": [
         "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
-      "why": "runbook_url for the cache-hit-ratio alerts. The section is the canonical description of the edge/Redis/in-memory cache stack and the fallback behaviour a low hit ratio implies. Retargeted from /operations/runbook#cache-performance-problems (#3592).",
+      "why": "runbook_url for the cache-hit-ratio alerts. The section is the canonical description of the edge and in-memory cache stack and the fallback behaviour a low hit ratio implies. Retargeted from /operations/runbook#cache-performance-problems (#3592).",
       "alerts": [
         "HonuaCacheHitRatioLow",
         "HonuaCacheHitRatioCritical"

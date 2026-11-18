@@ -67,7 +67,7 @@ internal static class ImportedSnapshotRefresher
 
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(physical)))[..12];
         var hashed = $"{physical[..(40 - hash.Length - 1)]}_{hash}";
-        // Imports before the length-limit fix used the unsuffixed name through
+        // Legacy imports use the unsuffixed name through
         // PostgreSQL's 63-character identifier limit. Refresh both candidates so
         // those published layers are not stranded after an upgrade.
         return physical.Length <= 63 ? [physical, hashed] : [hashed];

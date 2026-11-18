@@ -20,7 +20,7 @@ public sealed class EndpointAuthorizationGuardTests
     {
         "RequireAuthorization",
         "RequireAdminAuthorization",
-        // Narrow operation-approval policy (honua-server#3365): admits only full administrators
+        // Narrow operation-approval policy: admits only full administrators
         // or scoped admin API keys carrying the explicit admin:approve grant.
         "RequireAdminApproveAuthorization",
         "RequireAdminApiKey",
@@ -28,7 +28,7 @@ public sealed class EndpointAuthorizationGuardTests
         "RequireRole",
         "RequireScope",
         "AllowAnonymous",
-        // Temporal history (honua-server#1166) auth helpers wrap RequireAuthorization with a distinct
+        // Temporal history auth helpers wrap RequireAuthorization with a distinct
         // policy per surface (history read, diff read, rollback execute); recognize them explicitly.
         "RequireTemporalHistoryRead",
         "RequireTemporalDiffRead",
@@ -42,7 +42,7 @@ public sealed class EndpointAuthorizationGuardTests
         // Read-only ops-reader policy (A12): a method-aware Require*Authorization helper that admits
         // ops:read/admin for safe reads while still requiring full admin write for mutating routes.
         "RequireOpsReadAuthorization",
-        // Controlled-conformance mutation policy (honua-server#3038): a narrowly scoped write
+        // Controlled-conformance mutation policy: a narrowly scoped write
         // credential for the scheduled SDK conformance runner, additionally gated per run by an
         // ownership token checked inside each handler.
         "RequireConformanceMutateAuthorization",

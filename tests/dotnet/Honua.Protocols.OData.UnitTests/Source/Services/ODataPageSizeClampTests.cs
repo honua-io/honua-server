@@ -104,7 +104,7 @@ public sealed class ODataPageSizeClampTests
     public void ClampPageSize_Zero_ReturnsZero()
     {
         // OData v4 $top=0 requests a deliberately empty page; the explicit zero must be
-        // preserved rather than promoted to a full server page (#1989).
+        // preserved rather than promoted to a full server page.
         var service = CreateService(maxPageSize: 1000);
 
         service.ClampPageSize(0).Should().Be(0);

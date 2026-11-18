@@ -28,6 +28,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ISO country aliases; generated from ICU so invariant-globalization builds need no culture data. -->
+    <EmbeddedResource Include="Features/Geocoding/Domain/country-aliases.tsv" LogicalName="Honua.Geocoding.country-aliases.tsv" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Honua.Core.Tests" />
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />

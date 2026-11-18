@@ -25,24 +25,34 @@ namespace Honua.Server.Tests.Features.Admin;
 
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
-public sealed class ClientCertificateAdminEndpointsTests : IDisposable
+public sealed class ClientCertificateAdminEndpointsTests(ClientCertificateAdminEndpointsTests.AdminHost host)
+    : IClassFixture<ClientCertificateAdminEndpointsTests.AdminHost>
 {
     private const string AdminPassword = "client-cert-admin-key";
     private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly HttpClient _client;
+    private readonly WebApplicationFactory<Program> _factory = host.Factory;
+    private readonly HttpClient _client = host.Client;
 
-    public ClientCertificateAdminEndpointsTests()
+    // One default host per class: every case creates its own Guid-named profile, mapping, revocation
+    // or agent key. Cases that need other settings or another edition build a factory of their own.
+    public sealed class AdminHost : IDisposable
     {
-        _factory = CreateFactory();
-        _client = _factory.CreateClient();
-        _client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
-    }
+        public AdminHost()
+        {
+            Factory = CreateFactory();
+            Client = Factory.CreateClient();
+            Client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        }
 
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
+        internal WebApplicationFactory<Program> Factory { get; }
+
+        internal HttpClient Client { get; }
+
+        public void Dispose()
+        {
+            Client.Dispose();
+            Factory.Dispose();
+        }
     }
 
     [IntegrationTheory]
@@ -287,7 +297,10 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
     [Endpoint("POST /api/v1/admin/security/client-certificates/validate")]
     public async Task ValidateCertificate_WithMappedCertificate_ReturnsValidResult()
     {
-        using var certificate = CreateCertificate("CN=Honua Native Prod", "spiffe://honua/prod/admin");
+        // The validator walks every enabled profile whose issuer matches, and other cases on the shared
+        // host create profiles for "CN=Honua Native Prod" without this anchor, so the issuer is unique.
+        var issuer = $"CN=Honua Native Prod {Guid.NewGuid():N}";
+        using var certificate = CreateCertificate(issuer, "spiffe://honua/prod/admin");
         var anchorPem = PemEncoding.WriteString("CERTIFICATE", certificate.RawData);
         var profileId = await CreateProfileAndReadIdAsync(certificate.Issuer, anchorPem);
         await CreateMappingAsync(profileId);
@@ -533,7 +546,7 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
                     ["HONUA_ADMIN_PASSWORD"] = AdminPassword,
                     ["Authentication:ClientCertificates:Mode"] = "Optional",
                     ["Authentication:ClientCertificates:EnvironmentId"] = "prod",
-                    // #2958: mTLS client-certificate auth is demoted to experimental and gated
+                    // MTLS client-certificate auth is demoted to experimental and gated
                     // behind Capabilities:Experimental:security.mtls:Enabled (default off). This
                     // suite proves the flag-ON behavior, so every fixture opts in explicitly.
                     ["Capabilities:Experimental:security.mtls:Enabled"] = "true"

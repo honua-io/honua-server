@@ -740,7 +740,7 @@ public class ImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task ImportFile_TargetSchemaOutsideOperationalSchemas_Returns400AndCreatesNoSchema()
     {
-        // SEC-23: import targets are limited to the configured operational schemas.
+        // import targets are limited to the configured operational schemas.
         var requestedTableName = $"custom_schema_{Guid.NewGuid():N}";
         var targetSchema = $"adhoc_{Guid.NewGuid():N}";
 
@@ -1235,7 +1235,7 @@ public class ImportEndpointTests : IAsyncLifetime
 
     private async Task CleanupSchemaBoundaryImportAsync(int? layerId, string serviceName, string? tableName)
     {
-        // #2020: serialize the global honua.*/honua_data cleanup deletes + DROP TABLE under the
+        // Serialize the global honua.*/honua_data cleanup deletes + DROP TABLE under the
         // schema-mutation advisory lock (parameterized multi-statement command).
         await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
@@ -1261,7 +1261,7 @@ public class ImportEndpointTests : IAsyncLifetime
 
     private async Task DropSchemaIfExistsAsync(string schemaName)
     {
-        // #2020: route the raw DROP SCHEMA ... CASCADE through the locked, retrying helper
+        // Route the raw DROP SCHEMA ... CASCADE through the locked, retrying helper
         // (DropSchemaAsync already emits DROP SCHEMA IF EXISTS {schema} CASCADE under the lock).
         await _fixture.Postgres.DropSchemaAsync(schemaName);
     }

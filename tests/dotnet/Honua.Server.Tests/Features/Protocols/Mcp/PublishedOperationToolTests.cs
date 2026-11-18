@@ -407,7 +407,7 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Invoke_SameParams_DifferentPrincipal_MissesCacheAndTakesFreshPolicyRoundTrip()
     {
-        // Security regression (PR #2584 review): the cache key includes the full
+        // Security regression: the cache key includes the full
         // policy-relevant principal context, and a cache hit skips the policy
         // decision point — so a result cached under a policy-ALLOWED privileged
         // caller must NEVER be served to a different caller with the same params.
@@ -482,7 +482,7 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Invoke_SameParamsSamePrincipalDifferentTenant_MissesCache()
     {
-        // Security regression (#3430): the deterministic result cache is a process-wide
+        // Security regression: the deterministic result cache is a process-wide
         // singleton and OperationPolicyContext.PrincipalId is the canonical actor id,
         // which is deliberately NOT tenant-qualified. Before the tenant component was
         // added to the cache key, one caller with an identical actor/tier/role set and
@@ -580,7 +580,7 @@ public sealed partial class PublishedOperationToolTests
         // The pre-image is assembled from caller-influenced values (tenant, schema,
         // roles, parameter names/values). Without per-component escaping, a value
         // carrying the component delimiter could be re-parsed into another caller's
-        // key — the same injectivity requirement #3430 places on the MCP session
+        // key — the same injectivity requirement as the MCP session
         // binding key.
         var left = IPublishedOperationCache.BuildKey(
             "op",
@@ -725,7 +725,7 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Source_RepeatedCalls_ReuseProjectionUntilCatalogVersionChanges()
     {
-        // SEC-18: the projection is rebuilt only when the catalog version changes, so
+        // the projection is rebuilt only when the catalog version changes, so
         // repeated tools/list calls do not resolve executors or rebuild tool schemas.
         var executorResolutions = 0;
         var scopeFactory = new ServiceCollection()

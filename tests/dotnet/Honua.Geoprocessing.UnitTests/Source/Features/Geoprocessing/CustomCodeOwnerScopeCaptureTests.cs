@@ -99,7 +99,7 @@ public sealed class CustomCodeOwnerScopeCaptureTests
     [UnitTest]
     public void TryCapture_GrantBasedWriteSubmitter_PinsGrantsAndAcceptsScope()
     {
-        // #2192: the submitter's write authority comes purely from a layer-scoped
+        // The submitter's write authority comes purely from a layer-scoped
         // write:{service}/{layer} permission GRANT — no data-editor role. The capture
         // must accept the declared write AND pin the grant into the snapshot so the
         // later mint can intersect against it (instead of under-scoping the token).

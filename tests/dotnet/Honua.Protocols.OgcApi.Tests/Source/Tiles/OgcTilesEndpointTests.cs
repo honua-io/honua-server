@@ -523,7 +523,7 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}")]
     public async Task GetTile_WithUnknownSubsetAxis_ReturnsBadRequest()
     {
-        // CITE guard (#1792 Shape A): the vertical-subset support added for elevation must
+        // CITE guard: the vertical-subset support for elevation must
         // NOT accept an unknown / non-vertical axis. The easting axis E(...) must still 400 —
         // this is the assertion behind CITE API Tiles 16/16 "unknown subset is rejected".
         var response = await _fixture.Client.GetAsync(
@@ -537,8 +537,8 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}")]
     public async Task GetTile_WithVerticalSubsetValue_IsAccepted()
     {
-        // #1792 Shape A: a vertical (Z) subset is now accepted and RECORDED (not rendered).
-        // The request must no longer 400; it returns a tile or NoContent like an ordinary
+        // A vertical (Z) subset is accepted and RECORDED (not rendered).
+        // The request must not 400; it returns a tile or NoContent like an ordinary
         // tile request. The vertical selection is record-but-don't-render for vector layers
         // (documented divergence in TilesEndpoints.cs).
         var response = await _fixture.Client.GetAsync(
@@ -633,7 +633,7 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task GetDatasetTile_WithoutFormatOrAccept_ReturnsPngMapTile()
     {
-        // The dataset tileset is a map tileset advertising only image/png (#5446).
+        // The dataset tileset is a map tileset advertising only image/png.
         var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
@@ -692,7 +692,7 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
 
     private Task UpdateServiceProtocolsAsync()
     {
-        // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
+        // Protocol gating reads MetadataV2Service.Protocols.
         // Seed the in-memory test graph directly via the fixture helper.
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,

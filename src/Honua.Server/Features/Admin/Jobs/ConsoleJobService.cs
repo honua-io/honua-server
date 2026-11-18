@@ -171,14 +171,7 @@ internal sealed partial class ConsoleJobService(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        return new ConsoleJobLogPageResponse
-        {
-            JobId = job.OperationId,
-            CorrelationId = job.Audit.CorrelationId,
-            State = "available",
-            Items = page.Items.Select(MapLogEntry).ToArray(),
-            NextCursor = page.NextCursor
-        };
+        return await BuildLogPageAsync(context, job, page).ConfigureAwait(false);
     }
 
     public async Task<ConsoleJobArtifactPageResponse?> GetArtifactsAsync(

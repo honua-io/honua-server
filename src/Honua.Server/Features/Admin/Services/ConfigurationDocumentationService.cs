@@ -307,6 +307,8 @@ public sealed class ConfigurationDocumentationService
                     "Maximum geometry size in bytes", FileSizeConstants.TenMB, opts.MaxGeometrySize, "Range: 1MB-100MB"),
                 BuildPropertyWithCurrent("Limits:Geometry:MaxCoordinatePrecision", "Limits__Geometry__MaxCoordinatePrecision", "integer",
                     "Maximum coordinate decimal places", 8, opts.MaxCoordinatePrecision, "Range: 1-15"),
+                BuildPropertyWithCurrent("Limits:Geometry:MaxOverlayCandidatePairs", "Limits__Geometry__MaxOverlayCandidatePairs", "integer",
+                    "Maximum segment pairs that could cross in one Geometry Service overlay (a quarter when not signed in)", 2000000, opts.MaxOverlayCandidatePairs, "Range: 1000-50000000"),
                 BuildPropertyWithCurrent("Limits:Geometry:SimplifyTolerance", "Limits__Geometry__SimplifyTolerance", "number",
                     "Auto-simplification tolerance in meters (null = disabled)", null, opts.SimplifyTolerance, "Range: 0-1000")
             ]
@@ -499,7 +501,7 @@ public sealed class ConfigurationDocumentationService
         return new ConfigurationSection
         {
             Name = "TemporaryFiles",
-            Description = "Temporary export and artifact file storage configuration. Shared cloud-backed temporary files require Redis coordination so quotas remain correct across replicas.",
+            Description = "Temporary export and artifact file storage configuration. Shared cloud-backed temporary files require durable database coordination so quotas remain correct across replicas.",
             Properties =
             [
                 // Path.Combine is safe here: the second segment is a fixed relative literal,

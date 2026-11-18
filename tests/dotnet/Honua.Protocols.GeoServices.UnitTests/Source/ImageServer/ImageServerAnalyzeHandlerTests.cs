@@ -91,7 +91,7 @@ public class ImageServerAnalyzeHandlerTests
     {
 
         var context = CreateImageServerContext();
-        // Hillshade is now an implemented terrain function (#1803); use a genuinely-unknown
+        // Hillshade is now an implemented terrain function; use a genuinely-unknown
         // function name so the unsupported-function -> 400 path is exercised.
         var result = await _handler.AnalyzeAsync(
             context,
