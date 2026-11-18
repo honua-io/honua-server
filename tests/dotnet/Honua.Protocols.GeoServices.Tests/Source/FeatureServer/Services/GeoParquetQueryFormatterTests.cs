@@ -3,6 +3,7 @@
 
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Text.Json;
 using Apache.Arrow;
 using FluentAssertions;
