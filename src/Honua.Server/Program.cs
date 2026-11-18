@@ -51,7 +51,6 @@ using Honua.Core.Features.Infrastructure.Health;
 using Honua.Server.Features.Identity;
 using Honua.Server.Features.Identity.Saml;
 using Honua.Server.Features.Identity.Scim;
-using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
@@ -2018,11 +2017,6 @@ app.MapOgcTileCacheExportEndpoints();
 
 // Configure Esri tile/vector-tile cache package import + serving endpoints
 app.MapTileCachePackageEndpoints();
-
-if (isTestEnvironment)
-{
-    app.MapCrossServerConsumeProbeEndpoints();
-}
 
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();
