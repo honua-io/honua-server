@@ -161,7 +161,7 @@ aws lambda publish-version --function-name honua-prod
 
 ### Keep settings out of the 4 KB Lambda environment
 
-AWS Lambda caps a function's environment variables at 4 KB in total. A Redis-on release cell already
+AWS Lambda caps a function's environment variables at 4 KB in total. A release cell already
 uses most of it, so move settings into a **settings document**: one Secrets Manager secret whose
 value is a JSON object of configuration keys. The function environment then carries a single
 reference:
@@ -228,7 +228,7 @@ How the document behaves:
   override never needs a document edit.
 - **References inside the document:** a value can itself be an `aws:secretsmanager:` reference.
   Startup resolves it exactly as if it had come from the environment (the admin password,
-  connection-encryption master key, audit-chain key, Redis and database connection strings,
+  connection-encryption master key, audit-chain key, database connection strings,
   license content, key-ring certificate). Keep key material in its own secret and reference it;
   do not paste plaintext keys into the document.
 - **Fail-closed:** an unreadable secret, a value that is not JSON, a root that is not a JSON
@@ -257,7 +257,7 @@ If the secret uses a customer-managed KMS key, also grant `kms:Decrypt` on that 
 
 ### How the control-plane event functions dispatch
 
-The three control-plane event functions run with `ControlPlane__TriggerMode=Event`, and `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` picks the handler: `batch-event` (alias `reconcile`) reconciles the execution job named by an EventBridge "Batch Job State Change" event's `detail.jobId`, `backstop` runs one execution-job sweep and one workflow-operation sweep, and `scheduled-tick` runs the tick named by the schedule's `{"kind": "<ScheduledTickKind>"}` input. Schedule `{"kind": "JobStoreRetention"}` every 10 minutes: it deletes jobs, job logs, result packages and leases past their retention, which no Lambda function does on its own. By default they run the `*-lambda-aot` image. Its Lambda Web Adapter posts every non-HTTP invocation as raw JSON to `POST /events` on `127.0.0.1:8080` (the adapter's `AWS_LWA_PASS_THROUGH_PATH`, default `/events`), and the server maps that route only when `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` is set. The route runs the handler in-process and answers only loopback callers, so it needs no token. On these functions host validation also accepts a loopback Host header on a connection that is loopback at both ends, because the adapter's requests never carry the public hosts in `HostValidation__AllowedHosts`. The API function sets no selector, so it keeps strict host validation and has no `/events` route. An unknown selector returns `400` with `control_plane_lambda_handler_unknown`. On a cell without Redis, `batch-event`, `backstop`, and the `WorkflowSchedule`, `JobReconciliation`, and `GeoprocessingOutputSweep` ticks answer `503` with a capability-unavailable problem that names `missingDependency: redis` (logged once per cold start at Warning), the other ticks run as usual, and any unexpected failure answers a problem+json `500` that names the exception type.
+The three control-plane event functions run with `ControlPlane__TriggerMode=Event`, and `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` picks the handler: `batch-event` (alias `reconcile`) reconciles the execution job named by an EventBridge "Batch Job State Change" event's `detail.jobId`, `backstop` runs one execution-job sweep and one workflow-operation sweep, and `scheduled-tick` runs the tick named by the schedule's `{"kind": "<ScheduledTickKind>"}` input. Schedule `{"kind": "JobStoreRetention"}` every 10 minutes: it deletes jobs, job logs, result packages and leases past their retention, which no Lambda function does on its own. By default they run the `*-lambda-aot` image. Its Lambda Web Adapter posts every non-HTTP invocation as raw JSON to `POST /events` on `127.0.0.1:8080` (the adapter's `AWS_LWA_PASS_THROUGH_PATH`, default `/events`), and the server maps that route only when `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` is set. The route runs the handler in-process and answers only loopback callers, so it needs no token. On these functions host validation also accepts a loopback Host header on a connection that is loopback at both ends, because the adapter's requests never carry the public hosts in `HostValidation__AllowedHosts`. The API function sets no selector, so it keeps strict host validation and has no `/events` route. An unknown selector returns `400` with `control_plane_lambda_handler_unknown`. On a cell without the system database, `batch-event`, `backstop`, and the `WorkflowSchedule`, `JobReconciliation`, and `GeoprocessingOutputSweep` ticks answer `503` with a capability-unavailable problem that names `missingDependency: system-database` (logged once per cold start at Warning), the other ticks run as usual, and any unexpected failure answers a problem+json `500` that names the exception type.
 
 ### MCP sessions on Lambda
 
@@ -265,13 +265,13 @@ A Lambda API function runs as many execution environments, and an MCP client's r
 
 ### Background file imports run on AWS Batch
 
-A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With Redis on and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch` and `TargetKind=AwsBatch`; `TargetKind` defaults to `KubernetesJob` on every workload, and the server refuses to start when the two disagree), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
+A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With the system database and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch` and `TargetKind=AwsBatch`; `TargetKind` defaults to `KubernetesJob` on every workload, and the server refuses to start when the two disagree), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
 
 A batch worker cannot read the API instance's local disk, so this path needs shared file storage on both the API function and the Batch job definition:
 
 - `FileStorage__Provider=AwsS3`, `FileStorage__AwsS3__BucketName` and `FileStorage__AwsS3__Region` (optionally `FileStorage__AwsS3__KeyPrefix`) on the API function and in the GP job definition's environment;
 - `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on that bucket for the API function's role, and the same for the Batch job role (`gp_batch_data_bucket_enabled` and `gp_batch_data_bucket_arn` in the `aws-serverless` module);
-- Redis (`ConnectionStrings__redis`) on both, as GP jobs already require.
+- The system database (`ConnectionStrings__DefaultConnection`) on both, as GP jobs already require.
 
 Without a Batch workload, or with host-local file storage, the API function refuses background imports with `503 Background import service not available` before it stages anything. The `import.background` capability reports `runner: unavailable` with `reasonCode` `durable-runner-required` or `shared-file-storage-required`. Imports below the background threshold still run synchronously.
 
