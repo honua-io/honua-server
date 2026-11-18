@@ -74,6 +74,7 @@ public sealed class StudioAiTranscriptSignerTests
         root.GetProperty("endpointIdentity").GetString().Should().Be("honua.example/api/v1/studio/ai/chat");
         root.GetProperty("actionId").GetString().Should().Be("compose-map");
         root.GetProperty("runNonce").GetString().Should().Be("run-nonce-unique");
+        root.GetProperty("requestedBy").GetString().Should().Be("apikey:api-key:00000000-0000-0000-0000-000000000007");
         root.GetProperty("provider").GetString().Should().Be("provider-a");
         root.GetProperty("model").GetString().Should().Be("model-v1");
         signed.TranscriptDigest.Should().Be(Convert.ToHexStringLower(SHA256.HashData(canonical)));
@@ -114,6 +115,33 @@ public sealed class StudioAiTranscriptSignerTests
 
         sign.Should().Throw<InvalidOperationException>()
             .WithMessage("*does not match the certified candidate*");
+    }
+
+    [Fact]
+    public void Sign_WithoutServerResolvedRequester_RejectsBeforeSigning()
+    {
+        var privateKey = new Ed25519PrivateKeyParameters(new byte[Ed25519PrivateKeyParameters.KeySize], 0);
+        var key = new StudioAiTranscriptSigner.SigningKey(
+            "test-key", privateKey, privateKey.GeneratePublicKey().GetEncoded());
+        var certification = Request().Certification!;
+        var request = new StudioAiChatRequest
+        {
+            Certification = new StudioAiTranscriptCertification
+            {
+                CandidateId = certification.CandidateId,
+                TenantId = certification.TenantId,
+                ReleaseId = certification.ReleaseId,
+                EndpointIdentity = certification.EndpointIdentity,
+                ActionId = certification.ActionId,
+                RunNonce = certification.RunNonce,
+            },
+            Messages = Request().Messages,
+        };
+
+        var sign = () => CreateSigner(Substitute.For<ISecretProvider>())
+            .Sign(key, request, "provider-a", "model-v1", Events());
+
+        sign.Should().Throw<InvalidOperationException>().WithMessage("*requesting actor*");
     }
 
     [Fact]
@@ -223,7 +251,8 @@ public sealed class StudioAiTranscriptSignerTests
             ReleaseId = "release-9",
             EndpointIdentity = "honua.example/api/v1/studio/ai/chat",
             ActionId = "compose-map",
-            RunNonce = "run-nonce-unique"
+            RunNonce = "run-nonce-unique",
+            RequestedBy = "apikey:api-key:00000000-0000-0000-0000-000000000007"
         },
         System = "system prompt",
         Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "request bytes" }]

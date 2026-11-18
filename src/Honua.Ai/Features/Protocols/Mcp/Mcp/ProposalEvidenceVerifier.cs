@@ -30,11 +30,11 @@ internal sealed class ProposalEvidenceVerifier(
         IMcpTool tool,
         JsonElement? arguments,
         JsonElement? meta,
-        string tenantId,
-        string sessionId,
+        ProposalEvidenceCaller caller,
         JsonElement? callId,
         CancellationToken cancellationToken)
     {
+        var tenantId = caller.TenantId;
         if (tool is not IEvidenceBoundProposalTool proposalTool)
         {
             throw Invalid("Signed model output may select only a catalog-owned proposal tool.");
@@ -122,6 +122,15 @@ internal sealed class ProposalEvidenceVerifier(
         if (!string.Equals(transcriptTenant, tenantId, StringComparison.Ordinal))
         {
             throw Invalid("The signed transcript tenant does not match the authenticated MCP tenant.");
+        }
+
+        // A transcript is evidence only for the actor who requested it: another caller holding the
+        // bytes (a log, a shared session, a leaked envelope) cannot present it as its own proposal.
+        var requestedBy = RequireString(root, "requestedBy");
+        if (string.IsNullOrWhiteSpace(caller.ActorId)
+            || !string.Equals(requestedBy, caller.ActorId, StringComparison.Ordinal))
+        {
+            throw Invalid("The signed transcript was requested by a different actor than the proposer.");
         }
 
         var requestBytes = RequireBase64(root, "request");
@@ -216,7 +225,7 @@ internal sealed class ProposalEvidenceVerifier(
             ReleaseId = RequireString(root, "releaseId"),
             ActionId = RequireString(root, "actionId"),
             RunNonce = RequireString(root, "runNonce"),
-            McpSessionId = sessionId,
+            McpSessionId = caller.SessionId,
             McpCallId = callId?.GetRawText() ?? "null",
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
@@ -344,3 +353,6 @@ internal sealed class ProposalEvidenceVerifier(
 
     private static GeoprocessingValidationException Invalid(string message) => new(message);
 }
+
+// The authenticated proposer a signed transcript is checked against: its tenant, canonical actor and MCP session.
+internal sealed record ProposalEvidenceCaller(string TenantId, string? ActorId, string SessionId);

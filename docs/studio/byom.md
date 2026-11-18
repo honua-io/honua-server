@@ -114,6 +114,12 @@ The signature covers these fields:
 
 - The five certification bindings, provider name, exact model identity, signer
   key ID, and issue/expiry timestamps.
+- `requestedBy`: the canonical actor of the authenticated caller, resolved by the
+  server and never read from the request. A transcript presented as MCP proposal
+  evidence is accepted only from that same actor. Approval checks it again against
+  the proposal's recorded requester. The actor includes the authentication scheme,
+  so the chat call and the MCP call must use the same credential (for example the
+  same API key).
 - The accepted request's canonical bytes and canonical provider event bytes,
   both base64-encoded. Request whitespace and equivalent JSON encodings are
   normalized; this is not a signature over the original HTTP whitespace.
