@@ -198,6 +198,9 @@ internal sealed class ZarrTileService : IZarrTileService
             return StandardErrorHelpers.CreateForbidden(context, "Access to this resource is forbidden.");
         }
 
+        // Collect every decision so an anonymous caller is challenged (401) whenever any
+        // publication would admit them after signing in, rather than seeing graph-order 403s.
+        AccessDecision? denial = null;
         foreach (var publication in publications)
         {
             var resource = snapshot.ResolveResource(publication);
@@ -212,13 +215,13 @@ internal sealed class ZarrTileService : IZarrTileService
                         AuthorizationOperation.Query,
                         cancellationToken)
                     .ConfigureAwait(false);
-            if (!access.IsAllowed)
+            if (!access.IsAllowed && denial is not { RequiresAuthentication: true })
             {
-                return CreateDeniedResult(context, access);
+                denial = access;
             }
         }
 
-        return null;
+        return denial is { } denied ? CreateDeniedResult(context, denied) : null;
     }
 
     private static IResult CreateDeniedResult(HttpContext context, AccessDecision access)

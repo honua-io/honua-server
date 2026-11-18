@@ -89,10 +89,29 @@ public sealed class ReadPolicyEnforceabilityHttpTests : IAsyncLifetime
         using var response = await PostFieldMaskPolicyAsync(admin, layer: "parcels");
 
         var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
-        using var document = JsonDocument.Parse(payload);
-        var policyId = document.RootElement.GetProperty("data").GetProperty("policyId").GetGuid();
-        using var deleted = await admin.DeleteAsync($"{FieldMaskPoliciesPath}/{policyId}");
+        try
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
+        }
+        finally
+        {
+            await DeleteCreatedPolicyAsync(admin, payload);
+        }
+    }
+
+    // Removes the policy a create response describes, if it describes one, so a failed
+    // assertion does not leave state behind for later tests in the collection.
+    private static async Task DeleteCreatedPolicyAsync(HttpClient admin, string createPayload)
+    {
+        using var document = JsonDocument.Parse(createPayload);
+        if (!document.RootElement.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Object
+            || !data.TryGetProperty("policyId", out var policyId))
+        {
+            return;
+        }
+
+        using var deleted = await admin.DeleteAsync($"{FieldMaskPoliciesPath}/{policyId.GetGuid()}");
         deleted.IsSuccessStatusCode.Should().BeTrue();
     }
 

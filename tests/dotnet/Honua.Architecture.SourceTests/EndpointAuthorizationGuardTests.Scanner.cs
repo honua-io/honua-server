@@ -10,15 +10,17 @@ namespace Honua.Architecture.Tests;
 
 public sealed partial class EndpointAuthorizationGuardTests
 {
-    // Helpers that take a route builder and apply AllowAnonymous or an authorization policy to it.
-    private static readonly string[] AuthorizationWrapperMarkers =
+    // Helpers that take a route builder and apply AllowAnonymous or an authorization policy to it,
+    // trusted only inside the directory that defines them.
+    private const string SensorThingsDirectory = "src/Honua.Protocols/SensorThings/";
+    private static readonly string[] SensorThingsAuthorizationWrappers =
     {
         "ConfigureCoreWrite",
         "ConfigureWriteAuthorization",
     };
 
     private static readonly Regex MapRouteRegex = new(
-        @"\.(?<verb>MapGet|MapPost|MapPut|MapDelete|MapPatch|MapMethods)\s*\(\s*(?:""(?<route>[^""]*)""|@""(?<route2>[^""]*)"")",
+        @"\.(?<verb>MapGet|MapPost|MapPut|MapDelete|MapPatch|MapMethods)\s*\(\s*(?<route>[^,]+?)\s*,",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex MapGroupRegex = new(
@@ -34,7 +36,8 @@ public sealed partial class EndpointAuthorizationGuardTests
         {
             var content = StripComments(File.ReadAllText(file));
             var relativePath = Path.GetRelativePath(repoRoot, file).Replace('\\', '/');
-            gaps.AddRange(FindUnmarkedRoutesInFile(content, verbs).Select(route => relativePath + " " + route));
+            var scanned = new ScannedFile(relativePath, content, CollectGroupAuthFlags(content));
+            gaps.AddRange(FindUnmarkedRoutesInFile(scanned, verbs).Select(route => relativePath + " " + route));
         }
 
         gaps.Sort(System.StringComparer.Ordinal);
@@ -55,10 +58,9 @@ public sealed partial class EndpointAuthorizationGuardTests
         return segments.Contains("bin") || segments.Contains("obj");
     }
 
-    private static IEnumerable<string> FindUnmarkedRoutesInFile(string content, IReadOnlyCollection<string> verbs)
+    private static IEnumerable<string> FindUnmarkedRoutesInFile(ScannedFile file, IReadOnlyCollection<string> verbs)
     {
-        var file = new ScannedFile(content, CollectGroupAuthFlags(content));
-        foreach (Match match in MapRouteRegex.Matches(content))
+        foreach (Match match in MapRouteRegex.Matches(file.Content))
         {
             var verb = match.Groups["verb"].Value;
             if (!verbs.Contains(verb) || HasAuthorizationDecision(file, match.Index))
@@ -66,7 +68,9 @@ public sealed partial class EndpointAuthorizationGuardTests
                 continue;
             }
 
-            var route = match.Groups["route"].Success ? match.Groups["route"].Value : match.Groups["route2"].Value;
+            // Route expressions (literals, constants, interpolated strings) are kept as written,
+            // with whitespace collapsed so each baseline entry stays on one line.
+            var route = Regex.Replace(match.Groups["route"].Value, @"\s+", " ");
             yield return verb + " " + route;
         }
     }
@@ -75,7 +79,7 @@ public sealed partial class EndpointAuthorizationGuardTests
     {
         var content = file.Content;
         var chain = ExtractFluentChain(content, matchIndex);
-        if (AuthOptInMarkers.Any(chain.Contains) || IsInsideAuthorizationWrapper(content, matchIndex))
+        if (AuthOptInMarkers.Any(chain.Contains) || IsInsideAuthorizationWrapper(file, matchIndex))
         {
             return true;
         }
@@ -95,34 +99,46 @@ public sealed partial class EndpointAuthorizationGuardTests
             ? hasGroupAuth
             : IsAuthorizedGroupParameter(file, matchIndex, receiver);
 
-    private static bool IsInsideAuthorizationWrapper(string content, int matchIndex)
+    private static bool IsInsideAuthorizationWrapper(ScannedFile file, int matchIndex)
     {
-        var statementPrefix = content[FindStatementStart(content, matchIndex)..matchIndex];
-        return AuthorizationWrapperMarkers.Any(statementPrefix.Contains);
+        if (!file.RelativePath.StartsWith(SensorThingsDirectory, System.StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var statementPrefix = file.Content[FindStatementStart(file.Content, matchIndex)..matchIndex];
+        return SensorThingsAuthorizationWrappers.Any(statementPrefix.Contains);
     }
 
-    // A route mapped on a builder parameter, e.g. `MapImportRoutes(IEndpointRouteBuilder group)`,
-    // inherits the group's decision when every call to that method in the file passes an
-    // authorized MapGroup variable.
+    // A route mapped on a builder parameter of a private helper, e.g.
+    // `private static void MapImportRoutes(IEndpointRouteBuilder group, ...)`, inherits the
+    // group's decision when every use of that helper in the file passes an authorized MapGroup
+    // variable as its first argument.
     private static bool IsAuthorizedGroupParameter(ScannedFile file, int matchIndex, string receiver)
     {
         var declarations = Regex.Matches(
             file.Content[..matchIndex],
-            @"(?<name>\w+)\s*\(\s*(?:this\s+)?(?:IEndpointRouteBuilder|RouteGroupBuilder)\s+" + Regex.Escape(receiver) + @"\b",
+            @"\bprivate\s+static\s+[\w<>?]+\s+(?<name>\w+)\s*\(\s*(?:IEndpointRouteBuilder|RouteGroupBuilder)\s+" + Regex.Escape(receiver) + @"\b",
             RegexOptions.CultureInvariant);
         if (declarations.Count == 0)
         {
             return false;
         }
 
-        var declaration = declarations[^1];
-        var calls = Regex.Matches(
-                file.Content,
-                @"\b" + Regex.Escape(declaration.Groups["name"].Value) + @"\s*\(\s*(?<arg>\w+)\s*[,)]",
-                RegexOptions.CultureInvariant)
-            .Where(call => call.Index != declaration.Index)
+        var name = declarations[^1].Groups["name"].Value;
+        var uses = Regex.Matches(file.Content, @"\b" + Regex.Escape(name) + @"\s*\(", RegexOptions.CultureInvariant)
+            .Where(use => !IsDeclaration(file.Content, use.Index))
             .ToList();
-        return calls.Count > 0 && calls.All(call => file.GroupAuth.TryGetValue(call.Groups["arg"].Value, out var authorized) && authorized);
+        return uses.Count > 0 && uses.All(use => PassesAuthorizedGroup(file, use.Index + use.Length));
+    }
+
+    private static bool IsDeclaration(string content, int nameIndex)
+        => Regex.IsMatch(content[FindStatementStart(content, nameIndex)..nameIndex], @"\bprivate\s+static\s+[\w<>?]+\s+$");
+
+    private static bool PassesAuthorizedGroup(ScannedFile file, int argumentsStart)
+    {
+        var argument = Regex.Match(file.Content[argumentsStart..], @"^\s*(?<arg>\w+)\s*[,)]", RegexOptions.CultureInvariant);
+        return argument.Success && file.GroupAuth.TryGetValue(argument.Groups["arg"].Value, out var authorized) && authorized;
     }
 
     private static List<string> ReadBaseline(string repoRoot)
@@ -262,5 +278,5 @@ public sealed partial class EndpointAuthorizationGuardTests
 
     // One source file with its comments stripped and its MapGroup variables mapped to whether
     // the group carries an authorization decision.
-    private sealed record ScannedFile(string Content, Dictionary<string, bool> GroupAuth);
+    private sealed record ScannedFile(string RelativePath, string Content, Dictionary<string, bool> GroupAuth);
 }

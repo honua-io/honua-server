@@ -49,6 +49,8 @@ public sealed partial class EndpointAuthorizationGuardTests
         // credential for the scheduled SDK conformance runner, additionally gated per run by an
         // ownership token checked inside each handler.
         "RequireConformanceMutateAuthorization",
+        // MCP routes authenticate the bearer token in an endpoint filter before the handler runs.
+        "McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync",
     };
 
     [ArchitectureTest]
