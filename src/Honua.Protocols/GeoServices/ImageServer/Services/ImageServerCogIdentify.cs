@@ -31,44 +31,25 @@ internal sealed record ImageServerCogIdentifyResult(RasterInfo? Raster, PixelVal
 internal static class ImageServerCogIdentify
 {
     // null when the layer is not COG-only or no readable COG covers the point: the caller answers
-    // its NoData document. The point's reference is checked first, because a point in another
-    // reference never lands inside a Web Mercator extent.
+    // its NoData document.
     public static async Task<ImageServerCogIdentifyResult?> TryReadAsync(
         HttpContext context, ImageServerCogIdentifyRequest request, CancellationToken cancellationToken)
     {
-        var resolver = context.RequestServices.GetService<ICogTileResolver>();
-        var registrations = resolver is null
-            ? []
-            : await ImageServerCogRasters.ListCogOnlyAsync(context, request.Layer, cancellationToken).ConfigureAwait(false);
-        if (registrations.Length == 0)
+        var points = await ImageServerCogPoints.OpenAsync(context, request.Layer, cancellationToken).ConfigureAwait(false);
+        if (points is null)
         {
             return null;
         }
 
-        if (Unsupported(request) is { } unsupported)
-        {
-            return new ImageServerCogIdentifyResult(null, null, StandardErrorHelpers.CreateNotImplemented(context, unsupported));
-        }
-
-        registrations = registrations.Where(registration => Covers(registration.Metadata!, request)).ToArray();
-        if (registrations.Length == 0)
-        {
-            return null;
-        }
-
-        if (!ImageServerCogRasters.IsEntitled(context))
-        {
-            return new ImageServerCogIdentifyResult(null, null, ImageServerCogRasters.PaymentRequired(context));
-        }
-
-        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(typeof(ImageServerCogIdentify).FullName!)
-            ?? NullLogger.Instance;
-        var reader = new CogPixelReader(resolver!, request) { Logger = logger };
-        return await ReadFirstWithDataAsync(reader, registrations, cancellationToken).ConfigureAwait(false);
+        return points.Refuse(request) is { } refusal
+            ? new ImageServerCogIdentifyResult(null, null, refusal)
+            : await points.ReadAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
-    // An absent sr is the service's own reference, Web Mercator for these layers.
-    private static string? Unsupported(ImageServerCogIdentifyRequest request)
+    // An absent sr is the service's own reference, Web Mercator for these layers. The reference is
+    // checked before coverage, because a point in another reference never lands inside a Web
+    // Mercator extent.
+    internal static string? Unsupported(ImageServerCogIdentifyRequest request)
         => !ImageServerCogExport.IsWebMercator(request.Srid)
             ? "Identify on cloud COG layers takes a Web Mercator point; use sr 3857 or 102100."
             : request.HasRenderingRule
@@ -77,7 +58,7 @@ internal static class ImageServerCogIdentify
 
     // The first COG holding data at the point wins, as export draws it; when every covering COG
     // holds NoData there, the first one reports it.
-    private static async Task<ImageServerCogIdentifyResult?> ReadFirstWithDataAsync(
+    internal static async Task<ImageServerCogIdentifyResult?> ReadFirstWithDataAsync(
         CogPixelReader reader, CogRegistration[] registrations, CancellationToken cancellationToken)
     {
         ImageServerCogIdentifyResult? noData = null;
@@ -96,12 +77,12 @@ internal static class ImageServerCogIdentify
         return noData;
     }
 
-    private static bool Covers(CogMetadata metadata, ImageServerCogIdentifyRequest request)
+    internal static bool Covers(CogMetadata metadata, ImageServerCogIdentifyRequest request)
         => metadata.Srid == 3857 && metadata.Compression != "JPEG" && metadata.PlanarConfiguration == 1
             && request.X >= metadata.Extent.XMin && request.X < metadata.Extent.XMax
             && request.Y > metadata.Extent.YMin && request.Y <= metadata.Extent.YMax;
 
-    private sealed record CogPixelReader(ICogTileResolver Resolver, ImageServerCogIdentifyRequest Request)
+    internal sealed record CogPixelReader(ICogTileResolver Resolver, ImageServerCogIdentifyRequest Request)
     {
         public required ILogger Logger { get; init; }
 
@@ -206,5 +187,82 @@ internal static class ImageServerCogIdentify
             BandValues = values,
             ContributingRasterIds = hasData ? [registration.Id] : [],
         };
+    }
+}
+
+// The COG-only registrations of a layer, resolved once per request so getSamples can read many
+// points without listing them again for each one.
+internal sealed class ImageServerCogPoints
+{
+    private readonly HttpContext _context;
+    private readonly ICogTileResolver _resolver;
+    private readonly CogRegistration[] _registrations;
+    private readonly ILogger _logger;
+
+    private ImageServerCogPoints(HttpContext context, ICogTileResolver resolver, CogRegistration[] registrations)
+    {
+        _context = context;
+        _resolver = resolver;
+        _registrations = registrations;
+        _logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(typeof(ImageServerCogIdentify).FullName!)
+            ?? NullLogger.Instance;
+    }
+
+    // null when the layer is not COG-only (or COG serving is not installed).
+    public static async Task<ImageServerCogPoints?> OpenAsync(HttpContext context, ImageServerCogLayer layer, CancellationToken cancellationToken)
+    {
+        var resolver = context.RequestServices.GetService<ICogTileResolver>();
+        var registrations = resolver is null
+            ? []
+            : await ImageServerCogRasters.ListCogOnlyAsync(context, layer, cancellationToken).ConfigureAwait(false);
+        return registrations.Length == 0 ? null : new ImageServerCogPoints(context, resolver!, registrations);
+    }
+
+    // 501 for a reference or rendering the COG samples cannot answer, 402 without the entitlement.
+    public IResult? Refuse(ImageServerCogIdentifyRequest request)
+        => ImageServerCogIdentify.Unsupported(request) is { } unsupported
+            ? StandardErrorHelpers.CreateNotImplemented(_context, unsupported)
+            : ImageServerCogRasters.IsEntitled(_context) ? null : ImageServerCogRasters.PaymentRequired(_context);
+
+    // null when no readable COG covers the point.
+    public async Task<ImageServerCogIdentifyResult?> ReadAsync(ImageServerCogIdentifyRequest request, CancellationToken cancellationToken)
+    {
+        var covering = _registrations.Where(registration => ImageServerCogIdentify.Covers(registration.Metadata!, request)).ToArray();
+        return covering.Length == 0
+            ? null
+            : await ImageServerCogIdentify.ReadFirstWithDataAsync(
+                new ImageServerCogIdentify.CogPixelReader(_resolver, request) { Logger = _logger }, covering, cancellationToken).ConfigureAwait(false);
+    }
+}
+
+// One getSamples point in its own reference.
+internal readonly record struct ImageServerCogSamplePoint(double X, double Y, int? Srid);
+
+// Samples many points of one request from a COG-only layer. The registrations are resolved on the
+// first point that raster_data does not answer, so an ordinary raster_data layer never reaches the
+// COG store, and each point's own reference is checked.
+internal sealed class ImageServerCogSampler(HttpContext context, ImageServerCogLayer layer)
+{
+    private bool _opened;
+    private ImageServerCogPoints? _points;
+
+    // null when the layer is not COG-only or no readable COG covers the point.
+    public async Task<ImageServerCogIdentifyResult?> ReadAsync(ImageServerCogSamplePoint point, CancellationToken cancellationToken)
+    {
+        if (!_opened)
+        {
+            _points = await ImageServerCogPoints.OpenAsync(context, layer, cancellationToken).ConfigureAwait(false);
+            _opened = true;
+        }
+
+        var request = new ImageServerCogIdentifyRequest(layer, point.X, point.Y) { Srid = point.Srid };
+        if (_points is null)
+        {
+            return null;
+        }
+
+        return _points.Refuse(request) is { } refusal
+            ? new ImageServerCogIdentifyResult(null, null, refusal)
+            : await _points.ReadAsync(request, cancellationToken).ConfigureAwait(false);
     }
 }
