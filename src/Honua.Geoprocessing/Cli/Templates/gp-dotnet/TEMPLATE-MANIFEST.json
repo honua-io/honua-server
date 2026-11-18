@@ -89,8 +89,8 @@
     },
     {
       "path": "tests/SummaryTool.Tests/packages.lock.json",
-      "sha256": "de54cff87163ad06278813a6b75396cacb45fdd82d5ec315025e56432d743cb9",
-      "sizeBytes": 26071
+      "sha256": "d83509871159196f7442dca8c34bedeec9daed421788db4db1c263329f1cfbf0",
+      "sizeBytes": 20554
     },
     {
       "path": "tests/SummaryTool.Tests/SummaryTool.Tests.csproj",
