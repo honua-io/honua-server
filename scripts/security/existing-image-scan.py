@@ -35,8 +35,8 @@ def bind_identity(image, platform, revision, inspected):
 
 
 def note_requested_image(identity, requested):
-    """Record the digest the caller named when the scan pulled a platform manifest."""
-    if not requested:
+    """Record the caller-named digest when the scan pulled a different manifest."""
+    if not requested or requested == identity["image"]:
         return identity
     validate(requested, identity["platform"], identity["sourceRevision"])
     return {**identity, "requestedImage": requested}

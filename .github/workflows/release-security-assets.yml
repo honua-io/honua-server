@@ -77,20 +77,10 @@ jobs:
           REGISTRY_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
-          # Inspecting a published index reports no platform. Pull the runnable
-          # manifest for this platform. SCAN_IMAGE stays the digest the caller named
+          # Inspecting a published index reports no platform. The shared step pulls
+          # the runnable manifest and leaves SCAN_IMAGE as the digest the caller named,
           # so the OpenVEX document and the attestation-free resolution still see an index.
-          REQUESTED_IMAGE="$SCAN_IMAGE"
-          docker buildx imagetools inspect --raw "$REQUESTED_IMAGE" > requested-manifest.json
-          RESOLVED_IMAGE="$(python3 scripts/security/release_images.py resolve-scan-image \
-            --image "$REQUESTED_IMAGE" --platform "$SCAN_PLATFORM" < requested-manifest.json)"
-          export REQUESTED_IMAGE SCAN_IMAGE="$RESOLVED_IMAGE"
-          echo "REQUESTED_IMAGE=$REQUESTED_IMAGE" >> "$GITHUB_ENV"
-          echo "RESOLVED_IMAGE=$RESOLVED_IMAGE" >> "$GITHUB_ENV"
-          docker pull --platform "$SCAN_PLATFORM" "$RESOLVED_IMAGE"
-          docker image inspect "$RESOLVED_IMAGE" > existing-image-inspect.json
-          python3 scripts/security/existing-image-scan.py identity
+          bash scripts/security/bind-platform-image.sh
           : > "$RUNNER_TEMP/release-empty.trivyignore"
       # Buildx provenance and SBOM attestations live in the image index beside the platform
       # manifest. Registries that reject attestation layers (the AWS Marketplace registry) get

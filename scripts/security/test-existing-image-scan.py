@@ -35,6 +35,9 @@ class ExistingImageScanTests(unittest.TestCase):
             scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED), requested)
         self.assertEqual(IMAGE, bound["image"])
         self.assertEqual(requested, bound["requestedImage"])
+        same = scan.note_requested_image(
+            scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED), IMAGE)
+        self.assertNotIn("requestedImage", same)
         for key, value in (("RepoDigests", []), ("Architecture", "arm64"), ("Config", {})):
             changed = copy.deepcopy(INSPECTED)
             changed[0][key] = value

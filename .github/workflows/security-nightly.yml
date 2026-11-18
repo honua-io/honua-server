@@ -82,21 +82,9 @@ jobs:
           REGISTRY_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
-          # A published digest is often an index. Inspecting the index reports no
-          # platform, so the scan pulls the one runnable manifest for this platform.
-          # SCAN_IMAGE stays the digest the caller named. Later steps must not treat
-          # the resolved manifest as if it were that published digest.
-          REQUESTED_IMAGE="$SCAN_IMAGE"
-          docker buildx imagetools inspect --raw "$REQUESTED_IMAGE" > requested-manifest.json
-          RESOLVED_IMAGE="$(python3 scripts/security/release_images.py resolve-scan-image \
-            --image "$REQUESTED_IMAGE" --platform "$SCAN_PLATFORM" < requested-manifest.json)"
-          export REQUESTED_IMAGE SCAN_IMAGE="$RESOLVED_IMAGE"
-          echo "REQUESTED_IMAGE=$REQUESTED_IMAGE" >> "$GITHUB_ENV"
-          echo "RESOLVED_IMAGE=$RESOLVED_IMAGE" >> "$GITHUB_ENV"
-          docker pull --platform "$SCAN_PLATFORM" "$RESOLVED_IMAGE"
-          docker image inspect "$RESOLVED_IMAGE" > existing-image-inspect.json
-          python3 scripts/security/existing-image-scan.py identity
+          # A published digest is often an index. The shared step pulls the one
+          # runnable manifest and leaves SCAN_IMAGE as the digest the caller named.
+          bash scripts/security/bind-platform-image.sh
           # The action requires a regular file; /dev/null is rejected. Use a fresh
           # empty file so no repository ignore entries affect this inventory.
           : > "$RUNNER_TEMP/existing-image-empty.trivyignore"

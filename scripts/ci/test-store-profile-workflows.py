@@ -23,7 +23,7 @@ _RELEASE_DOCKER = '''docker() {
 '''
 
 
-def _run_release_pull(pull):
+def _run_release_pull():
     revision = 'e' * 40
     index = {'mediaType': 'application/vnd.oci.image.index.v1+json', 'manifests': [
         {'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'digest': _RELEASE_PLATFORM_DIGEST,
@@ -40,7 +40,8 @@ def _run_release_pull(pull):
                            REGISTRY_TOKEN='unused', GITHUB_ACTOR='actor', RUNNER_TEMP=str(work),
                            GITHUB_ENV=str(work / 'env'), GITHUB_SERVER_URL='https://github.com',
                            GITHUB_REPOSITORY='honua-io/honua-server', GITHUB_RUN_ID='1')
-        subprocess.run(['bash', '-c', _RELEASE_DOCKER + pull], cwd=work, env=environment, check=True)
+        subprocess.run(['bash', '-c', _RELEASE_DOCKER + 'export -f docker\nbash scripts/security/bind-platform-image.sh'],
+                       cwd=work, env=environment, check=True)
         identity = json.loads((work / 'existing-image-identity.json').read_text())
         return (work / 'env').read_text(), identity, (work / 'requested-manifest.json').is_file()
 
@@ -163,11 +164,15 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         vex = next(step['run'] for step in steps
                    if step.get('name') == 'Generate the release OpenVEX document')
         trivy = next(step for step in steps if step.get('name') == 'Scan with the release VEX applied')
+        self.assertIn('bash scripts/security/bind-platform-image.sh', pull)
         self.assertIn('--image "$SCAN_IMAGE"', vex)
         self.assertIn('"$PLATFORM_REF" != "$SCAN_IMAGE"', vex)
-        self.assertNotIn('SCAN_IMAGE=', pull.split('GITHUB_ENV', 1)[1])
+        script = (ROOT / 'scripts/security/bind-platform-image.sh').read_text()
+        persisted = script.split('>> "$GITHUB_ENV"', 1)[0].rsplit('{', 1)[1]
+        self.assertEqual(['echo "REQUESTED_IMAGE=$requested"', 'echo "RESOLVED_IMAGE=$resolved"'],
+                         [line.strip() for line in persisted.splitlines() if line.strip() and line.strip() != '}'])
         self.assertEqual(trivy['with']['image-ref'], '${{ env.RESOLVED_IMAGE }}')
-        saved, identity, manifest = _run_release_pull(pull)
+        saved, identity, manifest = _run_release_pull()
         repository, platform_digest, requested_digest = _RELEASE_PULL_IDS
         self.assertIn('RESOLVED_IMAGE=' + repository + platform_digest, saved)
         self.assertIn('REQUESTED_IMAGE=' + repository + requested_digest, saved)
