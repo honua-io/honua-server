@@ -297,7 +297,7 @@ public sealed class QueryConcurrencyGateTests
         (await queued).Should().BeTrue();
 
         var snapshot = gate.GetSnapshot();
-        snapshot.QueueWaitEwmaMs.Should().BeApproximately(125, 0.01);
+        snapshot.QueueWaitEwmaMs.Should().BeApproximately(25, 0.01, "the immediate first admission averaged in a zero wait");
 
         gate.Release();
     }
@@ -309,14 +309,14 @@ public sealed class QueryConcurrencyGateTests
     public async Task WaitAsync_ImmediateAdmissionsAfterABurst_DecayQueueWaitEwma()
     {
         var clock = new ManualTimeProvider();
-        var gate = new QueryConcurrencyGate(new ConnectionLimits { MaxConcurrentQueries = 1, MaxConnectionPoolSize = 1, ConnectionAcquisitionTimeoutSeconds = 5 }, clock);
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits { MaxConcurrentQueries = 1, MaxConnectionPoolSize = 1, ConnectionAcquisitionTimeoutSeconds = 5 }, clock);
         (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
         var queued = gate.WaitAsync(CancellationToken.None);
         clock.Advance(TimeSpan.FromMilliseconds(800));
         gate.Release();
         (await queued).Should().BeTrue();
         gate.Release();
-        gate.GetPressure().QueueWaitEwmaMs.Should().BeApproximately(800, 0.01);
+        gate.GetPressure().QueueWaitEwmaMs.Should().BeApproximately(160, 0.01, "one zero-wait admission, then an 800 ms wait");
 
         for (var i = 0; i < 20; i++)
         {
@@ -324,7 +324,7 @@ public sealed class QueryConcurrencyGateTests
             gate.Release();
         }
 
-        gate.GetPressure().QueueWaitEwmaMs.Should().BeLessThan(10, "twenty unqueued admissions bring 800 ms below 10 ms (0.8^20 x 800)");
+        gate.GetPressure().QueueWaitEwmaMs.Should().BeLessThan(10, "twenty unqueued admissions bring 160 ms below 10 ms (0.8^20 x 160)");
     }
 
     [UnitTest]
@@ -409,7 +409,7 @@ public sealed class QueryConcurrencyGateTests
         snapshot.AvailableSlots.Should().Be(1);
         snapshot.QueuedWaiters.Should().Be(0);
         snapshot.DurationEwmaMs.Should().BeApproximately(1, 0.01);
-        snapshot.QueueWaitEwmaMs.Should().BeApproximately(75, 0.01);
+        snapshot.QueueWaitEwmaMs.Should().BeApproximately(15, 0.01, "the immediate first admission averaged in a zero wait");
         snapshot.AdjustmentCount.Should().Be(1);
         snapshot.LastAdjustmentDirection.Should().Be("increase");
 

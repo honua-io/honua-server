@@ -38,8 +38,9 @@ internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
     // behaviour and waits milliseconds. A flood either queues at least as many requests as the
     // gate has slots, or keeps a queue at a saturated gate while the average queue wait climbs;
     // either way signed-in requests behind it would wait, so anonymous work gets a retry instead.
-    // The wait average only moves when a queued request is admitted, so it is read only while a
-    // queue exists; a stale value from an earlier flood must not refuse work at an empty queue.
+    // The wait average covers every admission (an immediate one counts as zero) and lags the
+    // queue, so it is read only while a queue exists; a value left from an earlier flood must not
+    // refuse work at an empty queue.
     internal static bool IsUnderPressure(DatabaseAdmissionPressure pressure)
         => (pressure.HasUtilization && pressure.QueuedWaiters >= pressure.CurrentLimit)
             || (pressure.Utilization >= SaturatedUtilization
