@@ -74,7 +74,9 @@ jobs:
       - name: Validate requested identity
         run: python3 scripts/security/existing-image-scan.py validate
       - name: Verify scan receipt controls
-        run: python3 scripts/security/test-existing-image-scan.py
+        run: |
+          python3 scripts/security/test-existing-image-scan.py
+          python3 scripts/security/test-bind-platform-image.py
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Pull the existing image without running it
@@ -684,6 +686,7 @@ jobs:
           set -euo pipefail
           python3 scripts/security/test-existing-image-scan.py
           python3 scripts/security/test-release-images.py
+          python3 scripts/security/test-bind-platform-image.py
           node --test scripts/security/private-findings.test.js
           python3 scripts/security/release_images.py inventory-validate
           python3 scripts/security/release_images.py vex-validate
@@ -708,6 +711,7 @@ jobs:
         run: |
           python3 scripts/security/test-existing-image-scan.py
           python3 scripts/security/test-release-images.py
+          python3 scripts/security/test-bind-platform-image.py
           node --test scripts/security/private-findings.test.js
       - name: Read supported release digests
         id: inventory

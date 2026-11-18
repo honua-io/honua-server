@@ -64,6 +64,7 @@ jobs:
           set -euo pipefail
           python3 scripts/security/test-existing-image-scan.py
           python3 scripts/security/test-release-images.py
+          python3 scripts/security/test-bind-platform-image.py
           python3 scripts/security/existing-image-scan.py validate
           if ! [[ "$RELEASE" =~ ^[0-9]{4}\.[0-9]+(\.[0-9]+)?(-rc\.[0-9]+)?$ ]]; then
             echo "::error::Release id must look like 2026.1, 2026.1.1 or 2026.1-rc.2"
