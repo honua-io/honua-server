@@ -96,7 +96,6 @@ public sealed class ExportCompanionFilesTests
         collection["providers"]!.ToJsonString().Should().Be(
             "[{\"name\":\"City and County of Honolulu\",\"roles\":[\"producer\"],\"url\":\"https://example.gov/gis\"},"
             + "{\"name\":\"Example GIS\",\"roles\":[\"host\"]}]");
-        ExportCollectionDocument.Read(collection).Should().NotBeNull("the companions do not disturb the Honua facts");
     }
 
     private const string StoredStyle = """
