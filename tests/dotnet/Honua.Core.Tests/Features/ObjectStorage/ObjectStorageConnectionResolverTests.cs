@@ -76,6 +76,7 @@ public sealed class ObjectStorageConnectionResolverTests
     [InlineData("pmtiles/2026")]
     [InlineData("mapserver/export-tiles")]
     [InlineData("attachments")]
+    [InlineData("scenes")]
     public void BuiltIns_RefuseFoldersTheServerWrites(string folder)
     {
         var builtIn = EnabledBuiltIns(folder);

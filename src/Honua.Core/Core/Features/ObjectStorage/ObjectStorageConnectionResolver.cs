@@ -104,7 +104,8 @@ public sealed class ObjectStorageConnectionResolver(
 
 // The installation's own bucket, shown as read-only connections only when the operator opts in
 // (Connections:ObjectStorage:BuiltIn). Each data connection covers one listed folder; folders the server
-// writes (imports, exports, audit, geoprocessing outputs, studio deliverables, published tiles) are refused.
+// writes (imports, exports, audit, geoprocessing outputs, studio deliverables, published tiles, scene assets)
+// are refused.
 public static class ObjectStorageBuiltInConnections
 {
     public const string DataRole = "data";
@@ -117,7 +118,7 @@ public static class ObjectStorageBuiltInConnections
     private static readonly string[] ServerFolders =
     [
         "imports/", "exports/", "publications/", "audit/", "gp/", "studio-deliverables/", "custom-code/", "pmtiles/",
-        "mapserver/", "imageserver/", "temporary-files/", "attachments/", "cog/", "tile-exports/",
+        "mapserver/", "imageserver/", "temporary-files/", "attachments/", "cog/", "tile-exports/", "scenes/",
     ];
 
     public static IReadOnlyList<ObjectStorageConnection> From(CloudStorageOptions storage, ObjectStorageBuiltInOptions builtIn)
