@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -223,9 +224,16 @@ internal static partial class WmsRequestHandlers
             // Intentional catch-all: outermost WMS request-dispatch boundary. Already
             // logged (with exception) and mapped to a WMS ServiceExceptionReport.
             OgcClassicLog.WmsFailed(logger, serviceId, ex.Message, ex);
-            return CreateWmsServiceException(context, "NoApplicableCode", "WMS request failed.", StatusCodes.Status500InternalServerError);
+            return CreateWmsFailure(context, ex);
         }
     }
+
+    // A FILTER naming a field the caller's read policy withholds is a request error; any other
+    // failure at the dispatch boundary is a server fault.
+    private static IResult CreateWmsFailure(HttpContext context, Exception exception)
+        => exception is MaskedFieldReferenceException
+            ? CreateWmsServiceException(context, "InvalidParameterValue", "WMS request includes an invalid FILTER.", StatusCodes.Status400BadRequest)
+            : CreateWmsServiceException(context, "NoApplicableCode", "WMS request failed.", StatusCodes.Status500InternalServerError);
 
     private static WmsLayer[] ResolveWmsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service, HttpContext context)
     {

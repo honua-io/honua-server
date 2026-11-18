@@ -7,7 +7,6 @@ using System.Globalization;
 using System.Buffers;
 using System.Linq;
 using System.Text.Json;
-using Honua.Core.Exceptions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -589,9 +588,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemsQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return ex is ServiceUnavailableException
-                ? StandardErrorHelpers.CreateFromException(context, ex)
-                : StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving items.");
+            return StandardErrorHelpers.CreateQueryFailure(context, ex, "An error occurred while retrieving items.");
         }
         finally
         {
@@ -928,9 +925,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return ex is ServiceUnavailableException
-                ? StandardErrorHelpers.CreateFromException(context, ex)
-                : StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the feature.");
+            return StandardErrorHelpers.CreateQueryFailure(context, ex, "An error occurred while retrieving the feature.");
         }
         finally
         {

@@ -72,6 +72,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__ClientCertificates__TrustProfiles__N__*` | — | Trust-profile definitions (issuer subjects, SAN types, principal mappings, roles). |
 | `Authentication__ClientCertificates__ForwardedCertificate__Enabled` | `false` | Accept proxy-forwarded client certificates. |
 | `Authentication__ClientCertificates__ForwardedCertificate__TrustedProxyNetworks__N` | — | CIDR ranges allowed to forward certificates. |
+| `Authentication__PortalToken__AllowQueryStringCredentials` | `false` | Accept a password or portal token in the `generateToken` query string (GET, or POST without a form body). Off by default because URLs are recorded by proxies and access logs; turn on only for a legacy client that cannot POST a form body. |
 | `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the GeoServices REST Portal OAuth2 bridge. |
 | `Authentication__PortalToken__OAuth2__RequirePkce` | `true` | Require PKCE on every authorization-code flow. |
 | `Authentication__PortalToken__OAuth2__RotateRefreshTokens` | `true` | Rotate refresh tokens on each use. |
