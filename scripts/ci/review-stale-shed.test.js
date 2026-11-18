@@ -114,9 +114,9 @@ test('late old-head workflow_run still reconciles the current head after cancell
   assert.equal(result.failure, null);
 });
 
-test('a PR Gate completion does not re-attest a head that already succeeded', async () => {
+test('a later PR Gate attempt does not re-attest a head whose newest status succeeded', async () => {
   const result = await runShed(GATE_SHED, {
-    payload: { workflow_run: { name: 'PR Gate', head_sha: 'a'.repeat(40), pull_requests: [{ number: 42 }] } },
+    payload: { workflow_run: { name: 'PR Gate', run_attempt: 2, head_sha: 'a'.repeat(40), pull_requests: [{ number: 42 }] } },
     pull: OPEN_PR,
     statuses: [{ context: 'Review Gate', state: 'success' }],
   });
@@ -125,14 +125,36 @@ test('a PR Gate completion does not re-attest a head that already succeeded', as
   assert.match(result.notices.join('\n'), /already has Review Gate success/);
 });
 
-test('a PR Gate completion still attests when Review Gate has not succeeded', async () => {
+test('PR Gate attempt 1 still attests when Review Gate already succeeded', async () => {
   const result = await runShed(GATE_SHED, {
-    payload: { workflow_run: { name: 'PR Gate', head_sha: 'a'.repeat(40), pull_requests: [{ number: 42 }] } },
+    payload: { workflow_run: { name: 'PR Gate', run_attempt: 1, head_sha: 'a'.repeat(40), pull_requests: [{ number: 42 }] } },
     pull: OPEN_PR,
-    statuses: [{ context: 'Review Gate', state: 'failure' }],
+    statuses: [{ context: 'Review Gate', state: 'success' }],
+  });
+  assert.equal(result.superseded, false);
+  assert.equal(result.calls.listStatuses || 0, 0);
+});
+
+test('a later PR Gate attempt still attests when the newest Review Gate status failed', async () => {
+  const result = await runShed(GATE_SHED, {
+    payload: { workflow_run: { name: 'PR Gate', run_attempt: 2, head_sha: 'a'.repeat(40), pull_requests: [{ number: 42 }] } },
+    pull: OPEN_PR,
+    statuses: [
+      { context: 'Review Gate', state: 'failure' },
+      { context: 'Review Gate', state: 'success' },
+    ],
   });
   assert.equal(result.superseded, false);
   assert.equal(result.failure, null);
+});
+
+test('a later PR Gate attempt still attests when Review Gate has no status', async () => {
+  const result = await runShed(GATE_SHED, {
+    payload: { workflow_run: { name: 'PR Gate', run_attempt: 2, head_sha: 'a'.repeat(40), pull_requests: [{ number: 42 }] } },
+    pull: OPEN_PR,
+    statuses: [],
+  });
+  assert.equal(result.superseded, false);
 });
 
 test('review-gate admits a workflow_run that is still the current head', async () => {

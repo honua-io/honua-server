@@ -176,7 +176,7 @@ jobs:
   build-and-verify:
     name: Build and verify ${{ matrix.description }}
     needs: [detect, runner-select]
-    if: ${{ always() && !cancelled() && needs.detect.result == 'success' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.detect.outputs.selected != '[]') && (github.event_name != 'pull_request' || matrix.variant != 'lambda') }}
+    if: ${{ always() && !cancelled() && needs.detect.result == 'success' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.detect.outputs.selected != '[]') }}
     runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '"ubuntu-latest"') || 'ubuntu-latest' }}
     # Still 180, even though a leg now builds ONE variant instead of all in
     # series. A cold native-AOT build of a single variant has been observed not

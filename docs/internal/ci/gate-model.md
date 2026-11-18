@@ -1764,9 +1764,11 @@ building, and workflows). Trunk push still scans `src/**`, and the Monday schedu
 remains the full instrumented scan. Serving Image Boundary builds the PostGIS
 image on a pull request and leaves Lambda native-AOT to nightly and deploy.
 Review Gate Attestation stays two jobs: identity resolution has to finish before
-the attestation can serialize on the pull request number. A PR Gate completion
-does not attest again when that head already has Review Gate success. A later
-review event still re-attests through the bridge.
+the attestation can serialize on the pull request number. Attempt 1 of PR Gate
+still attests, because that completion is what review-first uses to observe or
+release the admission run. A later PR Gate attempt does not attest again when
+the newest Review Gate status for that head is already success. A later review
+event still re-attests through the bridge.
 CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
 cancel superseded PR runs through their per-PR concurrency groups.
 

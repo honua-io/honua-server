@@ -35,19 +35,24 @@ class CodeQlPrPathsTests(unittest.TestCase):
         self.assertIn("src/**", triggers["push"]["paths"])
         self.assertEqual(triggers["schedule"], [{"cron": "0 0 * * 1"}])
 
-    def test_every_glob_names_a_real_directory(self) -> None:
+    def test_every_glob_names_a_real_path(self) -> None:
         for pattern in canonical_paths():
-            directory = pattern[:-3] if pattern.endswith("/**") else pattern
             with self.subTest(pattern=pattern):
-                self.assertTrue((ROOT / directory).is_dir(), pattern)
+                if pattern.endswith("/**"):
+                    self.assertTrue((ROOT / pattern[:-3]).is_dir(), pattern)
+                else:
+                    self.assertTrue(any(ROOT.glob(pattern)), pattern)
 
     def test_the_list_covers_each_required_class(self) -> None:
         text = "\n".join(canonical_paths())
         for needle in (
             "Authentication",
             "Features/Admin",
+            "Features/Identity",
             "Features/Security",
             "Features/Import",
+            "*DataProtection*",
+            "*Secret*",
             "FileStorage",
             "Infrastructure/Sql",
             ".github/workflows/**",

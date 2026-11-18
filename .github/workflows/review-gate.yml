@@ -113,15 +113,19 @@ jobs:
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; no admission can consume its Review Gate status`);
             }
-            // PR Gate completion does not change review evidence. One successful
-            // Review Gate status per head is the record; a later review event
-            // still arrives through the bridge and re-attests.
-            if (context.payload.workflow_run?.name === 'PR Gate') {
+            // Attempt 1 of PR Gate is the event review-first uses to observe or
+            // release a completed admission run, so it always continues. A later
+            // attempt does not change review evidence. Shed that attempt when the
+            // newest Review Gate status for this head is already success. A review
+            // event still arrives through the bridge and re-attests.
+            if (context.payload.workflow_run?.name === 'PR Gate'
+                && Number(context.payload.workflow_run.run_attempt) > 1) {
               const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
                 ...context.repo, ref: pull.head.sha, per_page: 100,
               });
-              if (statuses.some(status => status.context === 'Review Gate' && status.state === 'success')) {
-                return shed(`PR #${prNumber} head already has Review Gate success; PR Gate completion is not a new head`);
+              const latest = statuses.find(status => status.context === 'Review Gate');
+              if (latest?.state === 'success') {
+                return shed(`PR #${prNumber} head already has Review Gate success; a later PR Gate attempt is not a new head`);
               }
             }
             // Events are unordered: an old-head event can run after a newer one.
