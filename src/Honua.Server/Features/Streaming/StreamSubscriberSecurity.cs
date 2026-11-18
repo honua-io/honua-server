@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
@@ -39,6 +40,16 @@ internal sealed class StreamSubscriberSecurity
 
     private static bool AllowsRow(StreamLayerReadPolicy policy, IReadOnlyDictionary<string, JsonElement>? attributes)
     {
+        if (!policy.SupportsStreaming)
+        {
+            return false;
+        }
+
+        if (policy.RequiredFields.Any(field => attributes?.ContainsKey(field) != true))
+        {
+            return false;
+        }
+
         foreach (var predicate in policy.Predicates)
         {
             if (attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, attributes))
@@ -245,4 +256,11 @@ internal enum StreamSubscriberSecurityRefreshOutcome
 
 internal sealed record StreamLayerReadPolicy(
     IReadOnlyList<FilterExpression> Predicates,
-    HashSet<string> MaskedFields);
+    HashSet<string> MaskedFields)
+{
+    public IReadOnlyList<string> RequiredFields { get; } = Predicates
+        .SelectMany(FeatureQuerySecurity.CollectFieldReferences).Distinct(StringComparer.Ordinal).ToArray();
+
+    public bool SupportsStreaming { get; } = Predicates.All(static predicate =>
+        InMemoryFilterEvaluator.TryValidateStreamingExpression(predicate, out _));
+}

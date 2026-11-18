@@ -13,13 +13,14 @@ DuckDB) and served as a static dataset.
 
 - **Reference layers** — static datasets (parcels, boundaries, zoning) that change infrequently
 - **Analytical exports** — pre-computed analytics materialized into DuckDB tables
-- **Edge / air-gapped deployments** — single-file database, no external database dependency
 - **Prototyping** — quick setup without PostgreSQL infrastructure
 
 DuckDB is **not suitable** for write-heavy or real-time workloads. For editable feature layers, use
 the PostgreSQL provider.
 
 ## Configuration
+
+The service and layer catalog is stored only in a PostgreSQL/PostGIS system database, so a host whose primary data source is DuckDB refuses to start, with a message saying so, in any environment other than Development or Test.
 
 Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `appsettings.json`:
 
@@ -76,8 +77,8 @@ Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `apps
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `DatabasePath` | `:memory:` | Path to `.duckdb` file. Use absolute paths in production. |
-| `ReadOnly` | `true` | Open database in read-only mode. Recommended for production. |
+| `DatabasePath` | `:memory:` | Path to `.duckdb` file. Use absolute paths. |
+| `ReadOnly` | `true` | Open database in read-only mode (recommended). |
 | `SpatialExtensionPath` | `null` | Offline path for DuckDB extension files. When null, DuckDB downloads extensions automatically on first use. The current property name is historical; it is also used for `httpfs` and `azure`. |
 | `HttpFs:S3` | empty | Optional S3-compatible settings applied to each DuckDB connection before external views are created. |
 | `Azure` | empty | Optional Azure Blob/ADLS settings applied to each DuckDB connection before external views are created. |

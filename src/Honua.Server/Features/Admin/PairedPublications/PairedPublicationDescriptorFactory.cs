@@ -58,12 +58,39 @@ internal static class PairedPublicationDescriptorFactory
         };
     }
 
-    // The Version's one document: a STAC collection that also carries the Dataset's description and licence.
-    public static JsonObject Collection(PublicationDescriptor descriptor, PairedPublicationSource source)
+    // The Version's one document: a STAC collection that also carries the Dataset's description and licence,
+    // links its README.md and AGENTS.md, lists the style and thumbnail as assets and names who produced and hosts the data.
+    public static JsonObject Collection(ExportCompanionInput companions)
     {
-        var metadata = source.Resource.Metadata;
-        return ExportCollectionDocument.Write(descriptor, new ExportCollectionMetadata(
-            string.IsNullOrWhiteSpace(metadata.Description) ? null : metadata.Description.Trim(),
-            string.IsNullOrWhiteSpace(metadata.License) ? null : metadata.License.Trim()));
+        var license = companions.Metadata.License;
+        var collection = ExportCollectionDocument.Write(companions.Descriptor, new ExportCollectionMetadata(
+            companions.Description, string.IsNullOrWhiteSpace(license) ? null : license.Trim()));
+        collection["providers"] = ExportStacFacts.Providers(companions);
+        var links = collection["links"]!.AsArray();
+        links.Add(Link("agents", ExportCompanionFiles.AgentsFileName));
+        links.Add(Link("describedby", ExportCompanionFiles.ReadmeFileName));
+        var assets = collection["assets"]!.AsObject();
+        assets["style"] = Asset(ExportCompanionFiles.StyleFileName, ExportCompanionFiles.StyleMediaType, "style");
+        if (companions.Thumbnail is not null)
+        {
+            assets["thumbnail"] = Asset(ExportThumbnail.FileName, ExportThumbnail.MediaType, "thumbnail");
+        }
+
+        return collection;
     }
+
+    // Portolan wants the plain markdown media type on these links.
+    private static JsonObject Link(string rel, string href) => new()
+    {
+        ["rel"] = rel,
+        ["href"] = href,
+        ["type"] = "text/markdown"
+    };
+
+    private static JsonObject Asset(string href, string mediaType, string role) => new()
+    {
+        ["href"] = href,
+        ["type"] = mediaType,
+        ["roles"] = new JsonArray(role)
+    };
 }

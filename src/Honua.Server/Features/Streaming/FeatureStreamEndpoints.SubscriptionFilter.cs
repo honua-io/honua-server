@@ -465,7 +465,8 @@ internal static partial class FeatureStreamEndpoints
                 if (!policies.TryGetValue(layer.Resource.Metadata.Id, out var policy))
                 {
                     var predicates = (await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false)).ToList();
-                    if (!PermanentFilterAccepted(layer.Resource, filterService, predicates))
+                    if (!PermanentFilterAccepted(layer.Resource, filterService, predicates) ||
+                        predicates.Any(static predicate => !InMemoryFilterEvaluator.TryValidateStreamingExpression(predicate, out _)))
                     {
                         deniedNames.Add(nameKey);
                         deniedExact.Add((service.Metadata.Id, layer.LayerId));

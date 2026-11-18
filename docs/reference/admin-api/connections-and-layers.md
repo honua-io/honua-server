@@ -95,9 +95,8 @@ In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/
 |---|---|---|
 | GET | `/api/v1/admin/connections/{id}/tables` | Discover PostGIS tables on a connection (`id` is GUID or name) |
 | POST | `/api/v1/admin/connections/{id}/tables/validate` | Validate a table before publishing |
-| GET | `/api/v1/admin/connections/tables` | Discover tables across all connections |
 
-Run `GET /api/v1/admin/connections/primary-db/tables` in the explorer.
+Run `GET /api/v1/admin/connections/primary-db/tables` in the explorer. Table discovery requires a connection GUID or name. To inspect several connections, list them with `GET /api/v1/admin/connections`, then discover tables on each connection. `GET /api/v1/admin/connections/tables` returns `400` because the connection ID is missing.
 
 ## Layer publishing
 
@@ -133,6 +132,14 @@ A published layer reads its source table by default, and the server cannot write
 | `capabilities` | `Query`, `Extract`, `Create`, `Update`, `Delete`, `Editing` | Tokens declared on the feature publication. Omitted means `["Query","Extract"]`. The set must include `Query`. Edit tokens require `storageMode` `managed`; a source-backed request that declares them is rejected with 400. |
 
 For example, publish `{"schema":"public","table":"parcels","layerName":"parcels-edit","serviceName":"parcels-edit","srid":4326,"storageMode":"managed","capabilities":["Query","Create","Update","Delete"]}` to the same route. The response echoes `storageMode` and `capabilities`, and reports the managed `features` table as the layer's storage. Create, update and delete requests to `/ogc/features/collections/{layerId}/items` and FeatureServer `applyEdits` then read back through every serving protocol.
+
+### Exact field types
+
+By default a `numeric`/`decimal` column publishes as `Double` and a `timestamp with time zone` column as `DateTime`. Set `exactTypes: true` on the publish request to publish them as `Decimal` and `TimestampOffset` instead, so the gRPC feature API returns their exact digits and original offsets. The primary key and the `temporalColumn` keep their default types. The flag is off by default and does not change existing layers. Exactness is not stored as a separate setting: a republish infers it from the layer's existing `Decimal` or `TimestampOffset` fields, so a layer that already has them stays exact even when the request omits the flag. `POST /api/v1/admin/connections/{id}/tables/validate` accepts the same flag to preview the field types; it has no temporal column, so the preview reports every `timestamp with time zone` column as `TimestampOffset`.
+
+Edits through FeatureServer `applyEdits` and OGC API Features may send a decimal as a JSON number and an offset timestamp as epoch milliseconds; the server stores the canonical exact text (a timestamp in UTC). gRPC edits must send the exact text. FeatureServer statistics and class breaks treat decimals as numbers (double results) and offset timestamps as dates.
+
+Other protocols and exports keep working on such a layer: GeoServices, PBF, GeoArrow, FlatGeobuf, GeoParquet, Shapefile and GeoPackage write decimals as doubles and offset timestamps as UTC date-times; GeoJSON (OGC API Features) writes decimals as JSON numbers with every digit and offset timestamps as RFC 3339 UTC date-times.
 
 ## Service and layer settings
 

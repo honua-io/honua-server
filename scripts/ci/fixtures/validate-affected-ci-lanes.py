@@ -206,6 +206,26 @@ class ShardWidthTests(unittest.TestCase):
         self.assertTrue(TRAILING.core_package_required(["Directory.Build.props"]))
         self.assertTrue(TRAILING.core_package_required([".github/ci-shards.json"]))
 
+    def test_repository_metadata_skips_build_and_core_package(self):
+        # 44254098776 built, formatted and packed Core for .github/codeql/pr-paths.txt alone.
+        metadata = [
+            ".github/codeql/pr-paths.txt",
+            ".github/ISSUE_TEMPLATE/bug.yml",
+            ".github/CODEOWNERS",
+            ".github/dependabot.yml",
+            ".github/hygiene.json",
+        ]
+        self.assertFalse(TRAILING.core_package_required(metadata))
+        for path in [".github/actions/setup-dotnet-ci/action.yml", ".github/test-projects.json",
+                     ".github/codeql-extra.yml", ".github/CODEOWNERS.bak"]:
+            with self.subTest(path=path):
+                self.assertTrue(TRAILING.core_package_required([path]))
+        ci = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+        run = ci['jobs']['changes']['steps']
+        script = next(step['run'] for step in run if 'REPO_METADATA=' in step.get('run', ''))
+        self.assertIn(f"REPO_METADATA='{TRAILING.REPO_METADATA}'", script)
+        self.assertEqual(2, script.count('-e "^${REPO_METADATA}"'))
+
 
 if __name__ == '__main__':
     unittest.main()

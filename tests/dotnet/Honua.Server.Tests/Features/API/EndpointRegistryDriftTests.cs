@@ -13,7 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.API;
 
-[Collection("Database")]
 public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 {
     private static readonly Regex _routeConstraintRegex =

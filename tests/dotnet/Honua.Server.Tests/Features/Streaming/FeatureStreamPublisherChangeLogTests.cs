@@ -21,15 +21,17 @@ public sealed class FeatureStreamPublisherChangeLogTests(FeatureChangeDatabaseFi
 {
     private const int LayerId = 734301;
 
-    [IntegrationTest(Timeout = 120000)]
-    public async Task PublishStrictAsync_ChangeLoggedUnderTheEventId_DispatchesTheLoggedChange()
+    [IntegrationTheory(Timeout = 120000)]
+    [InlineData(null)]
+    [InlineData("configured_job_store")]
+    public async Task PublishStrictAsync_ChangeLoggedUnderTheEventId_DispatchesTheLoggedChange(string? jobStoreSchema)
     {
         var eventId = Guid.NewGuid().ToString("N");
         var generation = await InsertChangeAsync(eventId);
         var sink = new SignalingSink();
         var publisher = new FeatureStreamPublisher(
             new NoWakeSignal(),
-            new PostgresFeatureChangeLog(new JobStoreDatabase(database.DataSource), new RealtimeCapabilityLimits(Options.Create(new RealtimeOptions())), TimeProvider.System),
+            new PostgresFeatureChangeLog(new JobStoreDatabase(database.DataSource, jobStoreSchema), new RealtimeCapabilityLimits(Options.Create(new RealtimeOptions())), TimeProvider.System),
             NullLogger<FeatureStreamPublisher>.Instance,
             new FeatureChangeEventSinkBroadcaster(
                 [sink],

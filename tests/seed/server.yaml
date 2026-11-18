@@ -221,6 +221,8 @@ sql:
           layer         VARCHAR(256) NOT NULL,
           attribute     VARCHAR(256) NOT NULL,
           claim_type    VARCHAR(256) NOT NULL,
+          filter_expression TEXT,
+          area_geometry TEXT,
           comparison    SMALLINT     NOT NULL DEFAULT 0,
           description   TEXT,
           created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),

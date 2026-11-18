@@ -868,7 +868,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 resource,
                 properties?.Where(property => property.Value is not null)
                     .ToImmutableDictionary(property => property.Key, property => property.Value, StringComparer.OrdinalIgnoreCase),
-                ValidationExtensions.AttributeValidationMode.Strict,
+                ValidationExtensions.AttributeValidationMode.Json,
                 isUpdate: true);
             if (!submittedAttributes.IsValid)
             {

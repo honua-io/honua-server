@@ -347,32 +347,20 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private static MetadataV2FieldType MapPostgresType(string dataType)
+        => PublishFieldTypePolicy.MapPostgresType(dataType);
+
+    // Re-types the attribute fields the policy publishes exactly; every other field is unchanged.
+    private static List<LayerFieldInsert> WithExactFieldTypes(
+        List<LayerFieldInsert> fields, List<ColumnInfo> columns, PublishFieldTypePolicy typePolicy)
     {
-        var normalized = dataType.Trim().ToLowerInvariant();
-        return normalized switch
-        {
-            "smallint" => MetadataV2FieldType.Integer,
-            "integer" => MetadataV2FieldType.Integer,
-            "bigint" => MetadataV2FieldType.BigInteger,
-            "real" => MetadataV2FieldType.Float,
-            "double precision" => MetadataV2FieldType.Double,
-            "numeric" => MetadataV2FieldType.Double,
-            "decimal" => MetadataV2FieldType.Double,
-            "boolean" => MetadataV2FieldType.Boolean,
-            "date" => MetadataV2FieldType.Date,
-            "timestamp without time zone" => MetadataV2FieldType.DateTime,
-            "timestamp with time zone" => MetadataV2FieldType.DateTime,
-            "time without time zone" => MetadataV2FieldType.Time,
-            "time with time zone" => MetadataV2FieldType.Time,
-            "uuid" => MetadataV2FieldType.Uuid,
-            "json" => MetadataV2FieldType.Json,
-            "jsonb" => MetadataV2FieldType.Json,
-            "bytea" => MetadataV2FieldType.Binary,
-            "character varying" => MetadataV2FieldType.String,
-            "character" => MetadataV2FieldType.String,
-            "text" => MetadataV2FieldType.String,
-            _ => MetadataV2FieldType.String
-        };
+        var columnTypes = columns
+            .GroupBy(static column => column.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static group => group.Key, static group => group.First().DataType, StringComparer.OrdinalIgnoreCase);
+        return fields.Select(field => columnTypes.TryGetValue(field.Name, out var dataType)
+                && typePolicy.Map(field.Name, dataType) is var exact and (MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset)
+                ? field with { Type = exact }
+                : field)
+            .ToList();
     }
 
     private static async Task<bool> HonuaTableExistsAsync(
