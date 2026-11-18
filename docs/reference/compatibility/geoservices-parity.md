@@ -442,7 +442,7 @@ Geometry Service request budgets:
   gets the standard retry response with `Retry-After: 1`. The service description is not
   counted.
 - Under database pressure, every Geometry Service operation from a caller that is not
-  signed in is shed with the same retry response. The service description stays available.
+  signed in is shed with a retry response whose `Retry-After` is spread over 1 to 3 seconds. The service description stays available.
 
 Known parameter-level caveats:
 
