@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -539,6 +540,14 @@ internal sealed partial class ODataSearchService
 
             var resource = snapshot.ResolveResource(publication);
             if (!snapshot.IsRoutable(publication))
+            {
+                continue;
+            }
+
+            // The endpoint authorized one publication for this index; never read another one
+            // the caller may not query.
+            if (context is not null && !await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context, resource!, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
