@@ -52,7 +52,11 @@ public sealed class PublishFieldTypePolicyTests
     {
         var request = new LayerPublishRequest
         {
-            Schema = "public", Table = "ledger", LayerName = "Ledger", ExactTypes = true, TemporalColumn = "observed_at"
+            Schema = "public",
+            Table = "ledger",
+            LayerName = "Ledger",
+            ExactTypes = true,
+            TemporalColumn = "observed_at"
         };
 
         var policy = PublishFieldTypePolicy.ForPublish(request, "amount_id");

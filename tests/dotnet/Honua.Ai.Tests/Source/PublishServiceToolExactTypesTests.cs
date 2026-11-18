@@ -17,7 +17,11 @@ public sealed class PublishServiceToolExactTypesTests
     {
         var request = BuildRequest(new McpPublishServiceArgument
         {
-            ConnectionId = "primary", Schema = "public", Table = "ledger", LayerName = "Ledger", ExactTypes = true
+            ConnectionId = "primary",
+            Schema = "public",
+            Table = "ledger",
+            LayerName = "Ledger",
+            ExactTypes = true
         });
 
         request.Parameters.Should().Contain("exactTypes", "true");
@@ -28,7 +32,10 @@ public sealed class PublishServiceToolExactTypesTests
     {
         var request = BuildRequest(new McpPublishServiceArgument
         {
-            ConnectionId = "primary", Schema = "public", Table = "ledger", LayerName = "Ledger"
+            ConnectionId = "primary",
+            Schema = "public",
+            Table = "ledger",
+            LayerName = "Ledger"
         });
 
         request.Parameters.Should().NotContainKey("exactTypes");
