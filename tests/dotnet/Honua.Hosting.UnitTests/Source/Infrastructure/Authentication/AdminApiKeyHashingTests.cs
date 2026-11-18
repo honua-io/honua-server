@@ -67,7 +67,10 @@ public sealed class AdminApiKeyHashingTests
         {
             result.Record.KeySalt.Should().HaveCount(AdminApiKeyHashing.SaltSizeInBytes);
             result.Record.KeyHash.Should().Equal(HMACSHA256.HashData(result.Record.KeySalt!, Encoding.UTF8.GetBytes(result.Key)));
-            (await store.ValidateAsync(result.Key, CancellationToken.None)).Should().NotBeNull();
         }
+
+        (await store.ValidateAsync(created.Key, CancellationToken.None)).Should().BeNull("rotation revokes the previous key");
+        (await store.ValidateAsync(rotated!.Key, CancellationToken.None)).Should().NotBeNull();
+        (await store.ValidateAsync(registered.Key, CancellationToken.None)).Should().NotBeNull();
     }
 }
