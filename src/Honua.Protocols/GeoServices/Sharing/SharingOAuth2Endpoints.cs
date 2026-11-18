@@ -141,8 +141,8 @@ internal static class SharingOAuth2Endpoints
         }
         else
         {
-            token = ReadFirst(context.Request.Query["token"]);
-            tokenTypeHint = ReadFirst(context.Request.Query["token_type_hint"]);
+            // RFC 7009 §2.1: parameters travel in the form body only, never in the URL.
+            token = tokenTypeHint = null;
         }
 
         if (string.IsNullOrWhiteSpace(token))
@@ -193,7 +193,8 @@ internal static class SharingOAuth2Endpoints
         }
         else
         {
-            token = ReadFirst(context.Request.Query["token"]);
+            // RFC 7662 §2.1: the token travels in the form body only, never in the URL.
+            token = null;
         }
 
         if (string.IsNullOrWhiteSpace(token))
