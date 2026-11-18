@@ -8,6 +8,8 @@ namespace Honua.Core.Features.Infrastructure.Validation;
 
 // XML from servers or documents Honua does not control. A DOCTYPE is skipped rather than
 // refused (WMS 1.1.1 capabilities carry one); nothing it declares is expanded or resolved.
+// Documents Honua parses for authentication (SAML) use SecureXmlDocumentParser in Honua.Hosting,
+// which refuses a DOCTYPE outright.
 public static class RemoteXmlDocumentParser
 {
     public static XDocument Parse(string xml, LoadOptions loadOptions = LoadOptions.None)
@@ -18,14 +20,14 @@ public static class RemoteXmlDocumentParser
         {
             DtdProcessing = DtdProcessing.Ignore,
             XmlResolver = null,
-            MaxCharactersFromEntities = 0,
+            MaxCharactersFromEntities = 1024,
             // Same whitespace handling as XDocument.Parse for the given options.
             IgnoreWhitespace = (loadOptions & LoadOptions.PreserveWhitespace) == 0,
         };
 
         using var stringReader = new StringReader(xml);
-        // codeql[cs/xml/missing-validation]: DTDs are ignored, XmlResolver is null and
-        // MaxCharactersFromEntities is 0, so external entities and entity expansion are blocked.
+        // codeql[cs/xml/missing-validation]: DTDs are ignored, so no entity is declared or expanded,
+        // and XmlResolver is null, so nothing external is fetched.
         using var xmlReader = XmlReader.Create(stringReader, settings);
         return XDocument.Load(xmlReader, loadOptions);
     }
