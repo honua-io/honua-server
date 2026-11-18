@@ -26,7 +26,7 @@ The conversion is best-effort and never silent: everything that cannot be transl
 
 > Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/metadata/layers/{storageLayerId}/style/export-sld`.
 
-   The `X-Sld-Diagnostic-Count` response header reports how many export diagnostics were emitted (`X-Sld-Diagnostics` carries them as JSON when non-zero). A 422 means the stored style has no SLD-expressible layers.
+   The `X-Sld-Diagnostic-Count` response header reports how many export diagnostics were emitted (`X-Sld-Diagnostics` carries them as JSON when non-zero). A 422 means the stored style has no SLD-expressible layers (for example only background layers, or symbol layers whose `icon-image` is data-driven and that have no text).
 
 ## Supported symbolizers
 
@@ -60,6 +60,7 @@ Expected (trimmed): the converted document with a bumped revision.
 
 - **400 with a generic parse error** — malformed XML, or the document used DTDs/external entities, which are rejected by design. Raw parser messages are never echoed.
 - **413** — the payload exceeds the 1 MiB cap; split the SLD or strip unused rules.
+- **415 with an empty body** — the import request did not send an XML `Content-Type`; send `application/xml` or `text/xml`.
 - **422 with `SLD document contained no convertible symbolizers`** — every rule fell in the unsupported set; check the diagnostics for the specific constructs.
 - **Icons missing after import** — `ExternalGraphic` hrefs are never fetched by the server; supply the sprite to your map client separately.
 - **Import succeeded but a rule renders everything** — its filter used an unsupported operator and was dropped (the rule renders unfiltered); see [troubleshooting](../deploy/troubleshooting.md) for log correlation.

@@ -25,6 +25,7 @@ anonymous GET /admin/services/{serviceName}.{serviceType}
 anonymous GET /api/enrich/catalog
 anonymous GET /api/enrich/datasets
 anonymous GET /api/enrich/datasets/{id}
+anonymous GET /api/v1/attachments/downloads/{token}
 anonymous GET /api/v1/realtime/incidents/sse
 anonymous GET /api/v{version:apiVersion}/admin/auth/config
 anonymous GET /api/v{version:apiVersion}/admin/auth/csrf
