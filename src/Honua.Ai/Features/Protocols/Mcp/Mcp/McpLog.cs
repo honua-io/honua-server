@@ -99,6 +99,12 @@ internal static partial class McpLog
     public static partial void BatchTooLarge(ILogger logger, int length, int maxBatchSize);
     [LoggerMessage(8175, LogLevel.Warning, "MCP access audit record failed: Action={Action}, Target={Target}")]
     public static partial void AccessAuditFailed(ILogger logger, string action, string target, Exception exception);
+    [LoggerMessage(8227, LogLevel.Warning, "MCP access audit queue full; record dropped: Dropped={Dropped}, Capacity={Capacity}")]
+    public static partial void AccessAuditDropped(ILogger logger, long dropped, int capacity);
+    [LoggerMessage(8228, LogLevel.Warning, "MCP access audit batch write failed: Count={Count}")]
+    public static partial void AccessAuditBatchFailed(ILogger logger, int count, Exception exception);
+    [LoggerMessage(8229, LogLevel.Warning, "MCP access audit record arrived after the audit writer stopped; record not written")]
+    public static partial void AccessAuditAfterStop(ILogger logger);
 
     [LoggerMessage(EventId = 7750, Level = LogLevel.Warning, Message = "MCP workflow notification publication failed")]
     public static partial void WorkflowNotificationFailed(ILogger logger, Exception exception);
