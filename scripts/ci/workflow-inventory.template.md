@@ -1923,3 +1923,26 @@ on hosted full trunk run 44183857476, the moved classes summed 127 of 415 second
 in Collaboration Mobile Identity 1, 85 of 456 seconds in Console Alerts 2, and 180
 of 320 seconds in STAC API Governance 2, each run one class at a time. The
 parallel saving is not yet measured.
+
+### Feature stream cases share one host per repeated configuration
+
+`FeatureStreamEndpointsTests` cases on the class's shared Pro host take about 0
+seconds each; cases that build their own host take 9 to 12 seconds, almost all of
+it host start. Cases that repeat a configuration now share one keyed variant host
+on `FeatureStreamProHost`, started on first use, so a shard whose filter skips
+those cases never starts it. Each acquisition drops sessions an earlier case left, and variants keep the class
+host's one-hour heartbeat so no scheduled frame lands in an ordered read.
+The ten subscriber-policy cases use two variants (each anchors its cursor on its
+own change); dev auth off, Community edition, the service-level access catalog and
+the service-only filter catalog use one each for nine cases that read only their
+own requests or events; and the
+eight expired-cursor executions share one host over the fixed 50 to 60
+retention-window fake store, which none of them appends to. About 20 host starts
+are removed; assertions are unchanged. Cases that mutate metadata, policies,
+limits or their own event store keep their own host.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check, aggregate dependency or runner count changes. Before, on hosted full trunk
+run 44183857476, the class took 599 seconds in Server Features Streaming
+Transports and 101, 170 and 232 seconds in Streaming Endpoints 1, 2 and 4.

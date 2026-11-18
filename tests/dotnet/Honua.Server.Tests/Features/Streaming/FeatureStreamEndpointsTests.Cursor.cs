@@ -160,11 +160,7 @@ public sealed partial class FeatureStreamEndpointsTests
     [InlineData("snapshot-then-delta")]
     public async Task WebSocket_ExpiredControlCursor_ResetsAndSnapshotsWithoutLosingSibling(string mode)
     {
-        await using var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IFeatureChangeEventStore>(FakeFeatureChangeEventStore.WithRetentionWindow(
-                FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50)));
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("retention-window-50-60", CreateRetentionWindowFixture);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var socket = await fixture.CreateWebSocketClient().ConnectAsync(
             new Uri("ws://localhost/api/v1/streaming/features"), timeout.Token);
