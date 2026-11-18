@@ -2831,3 +2831,22 @@ class-fixture host and stays in its collection.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Read-only toolbox and OGC Maps validation cases share one host per class
+
+On hosted full trunk run 44250783964 these three classes started a host for every
+case, inside serial collections:
+- `ToolboxTranslationEndpointTests`: 34 cases, 66 seconds, Migration 1.
+- `OgcMapsParameterValidationTests`: 22 cases, 46 seconds, OGC API Maps
+  Rendering and Records 2.
+- `OgcMapsErrorHandlingTests`: 23 cases, 34 seconds, OGC API Maps Rendering and
+  Records 1.
+
+Their cases only POST manifests to the stateless translation validator (which
+reads the process catalog and stores nothing) or render and read with GET. Each
+class now has one class-fixture host. The toolbox host keeps its small
+edit-payload cap, and the maps classes use the default host they used before.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
