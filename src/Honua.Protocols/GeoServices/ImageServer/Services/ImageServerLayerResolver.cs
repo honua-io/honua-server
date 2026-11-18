@@ -80,8 +80,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             .Where(publication => TenantScopeHelpers.IsPublicationVisible(
                 context, publication, snapshot.ResolveResource(publication), service))
             .Select(publication => new ImageServerPublicationLayer(
-                publication.Metadata.Id,
-                publication.LayerIndex,
+                publication,
                 snapshot.ResolveStorageLayerId(publication),
                 snapshot.ResolveResource(publication)))
             .Where(static publication =>
@@ -116,7 +115,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             var raster = await rasterStore.GetPrimaryRasterInfoAsync(
                 publication.StorageLayerId!.Value,
                 cancellationToken).ConfigureAwait(false);
-            if (raster is not null)
+            if (raster is not null || await HasScannedCogsAsync(context, new(snapshot, publication.Publication, []), cancellationToken).ConfigureAwait(false))
             {
                 layer = publication;
                 break;
@@ -139,8 +138,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
 
         return new ImageServerLayerResolution(
             layer.StorageLayerId.Value,
-            layer.PublicationId,
-            layer.PublicationLayerIndex,
+            layer.Publication.Metadata.Id,
+            layer.Publication.LayerIndex,
             null)
         {
             ServiceId = service.Metadata.Id,
@@ -273,9 +272,12 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         };
     }
 
+    // A layer whose imagery is only registered cloud COGs serves its raster operations from the COGs.
+    private static async Task<bool> HasScannedCogsAsync(HttpContext context, ImageServerCogLayer layer, CancellationToken cancellationToken)
+        => (await ImageServerCogRasters.ListScannedAsync(context, layer, cancellationToken).ConfigureAwait(false)).Length > 0;
+
     private readonly record struct ImageServerPublicationLayer(
-        string PublicationId,
-        int? PublicationLayerIndex,
+        MetadataV2Layer Publication,
         int? StorageLayerId,
         MetadataV2Object? Resource);
 
