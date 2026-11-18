@@ -2930,3 +2930,27 @@ the build host for the same 80 cases, `AttachmentEndpointTests` and
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Raster store substitutes borrow a switched host
+
+`ImageServerEndpointsTests`, `GeoservicesCatalogEndpointTests` and
+`ImageServerWmtsMatrixSetTests` booted a new host in 60 cases whose only difference
+from a host the class already had was the `IRasterStore` substitute. TestKit's
+`SwitchedServiceHost<T>` registers a `ServiceSwitch<T>` (a forwarding proxy) in
+place of the service, and such a case now borrows the class host with its own
+substitute. Borrowing and returning restore the seeded catalog under a new
+revision, so revision-keyed output and tile caches never serve one case's
+response to another; the WMTS matrix-set class keeps one host per configuration
+and deletes its stored tiles through the storage service on every borrow. Cases
+that register anything besides the store keep their own hosts, and every
+assertion is unchanged.
+
+Measured on the build host (Release, the same 182 cases): case time went from
+1078.0 s to 198.5 s (`ImageServerEndpointsTests` 692.9 to 103.7 s,
+`GeoservicesCatalogEndpointTests` 313.8 to 88.2 s, `ImageServerWmtsMatrixSetTests`
+71.3 to 6.6 s) and wall time from 810 s to 375 s. On hosted full run 44271438677
+the three classes took 461.2 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
