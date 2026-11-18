@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
@@ -75,6 +76,78 @@ public sealed class ConfigurationDocumentationCredentialTests
         currentValues.Should().NotContain(NestedToken);
         currentValues.Should().NotContain("webhook-signing-secret");
     }
+
+    [UnitTest]
+    public void BuildDocumentation_LimitDefaultsComeFromUnconfiguredOptions()
+    {
+        var configured = new LimitsOptions();
+        configured.Query.MaxRecordCount = 2000;
+        configured.Geometry.MaxVerticesPerGeometry = 1000;
+        configured.Geometry.MaxGeometrySize = 1;
+        configured.Geometry.MaxOverlayCandidatePairs = 1000;
+        configured.Edits.MaxFeaturesPerEdit = 2;
+        configured.Edits.MaxEditsPerTransaction = 3;
+        configured.Edits.MaxPayloadSize = 4;
+        configured.Attachments.MaxAttachmentSize = 5;
+        configured.Attachments.MaxAttachmentsPerFeature = 1;
+        configured.Attachments.MaxTotalAttachmentSize = 6;
+        configured.Tiles.MaxTileZoom = 5;
+        configured.Tiles.MaxFeaturesPerTile = 7;
+        configured.Tiles.TileTimeout = TimeSpan.FromSeconds(1);
+        configured.Connections.MaxConcurrentQueries = 10;
+        configured.Connections.RequestTimeout = TimeSpan.FromSeconds(11);
+
+        var documentation = CreateService(configured).BuildDocumentation();
+        var code = new LimitsOptions();
+
+        ExpectDefault(documentation, "Limits:Query:MaxRecordCount", code.Query.MaxRecordCount, 2000);
+        ExpectDefault(documentation, "Limits:Geometry:MaxVerticesPerGeometry", code.Geometry.MaxVerticesPerGeometry, 1000);
+        ExpectDefault(documentation, "Limits:Geometry:MaxGeometrySize", code.Geometry.MaxGeometrySize, 1L);
+        ExpectDefault(documentation, "Limits:Geometry:MaxOverlayCandidatePairs", code.Geometry.MaxOverlayCandidatePairs, 1000L);
+        ExpectDefault(documentation, "Limits:Edits:MaxFeaturesPerEdit", code.Edits.MaxFeaturesPerEdit, 2);
+        ExpectDefault(documentation, "Limits:Edits:MaxEditsPerTransaction", code.Edits.MaxEditsPerTransaction, 3);
+        ExpectDefault(documentation, "Limits:Edits:MaxPayloadSize", code.Edits.MaxPayloadSize, 4L);
+        ExpectDefault(documentation, "Limits:Attachments:MaxAttachmentSize", code.Attachments.MaxAttachmentSize, 5L);
+        ExpectDefault(documentation, "Limits:Attachments:MaxAttachmentsPerFeature", code.Attachments.MaxAttachmentsPerFeature, 1);
+        ExpectDefault(documentation, "Limits:Attachments:MaxTotalAttachmentSize", code.Attachments.MaxTotalAttachmentSize, 6L);
+        ExpectDefault(documentation, "Limits:Tiles:MaxTileZoom", code.Tiles.MaxTileZoom, 5);
+        ExpectDefault(documentation, "Limits:Tiles:MaxFeaturesPerTile", code.Tiles.MaxFeaturesPerTile, 7);
+        ExpectDefault(documentation, "Limits:Tiles:TileTimeout", code.Tiles.TileTimeout, TimeSpan.FromSeconds(1));
+        ExpectDefault(documentation, "Limits:Connections:MaxConcurrentQueries", code.Connections.MaxConcurrentQueries, 10);
+        ExpectDefault(documentation, "Limits:Connections:RequestTimeout", code.Connections.RequestTimeout, TimeSpan.FromSeconds(11));
+
+        EnvironmentDefault(documentation, "Limits__Query__MaxRecordCount")
+            .Should().Be(code.Query.MaxRecordCount.ToString(CultureInfo.InvariantCulture));
+        EnvironmentDefault(documentation, "Limits__Geometry__MaxVerticesPerGeometry")
+            .Should().Be(code.Geometry.MaxVerticesPerGeometry.ToString(CultureInfo.InvariantCulture));
+        EnvironmentDefault(documentation, "Limits__Connections__MaxConcurrentQueries")
+            .Should().Be(code.Connections.MaxConcurrentQueries.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static void ExpectDefault(
+        ConfigurationDocumentation documentation,
+        string path,
+        object codeDefault,
+        object configuredCurrent)
+    {
+        var property = Property(documentation, path);
+        property.DefaultValue.Should().Be(codeDefault);
+        property.CurrentValue.Should().Be(configuredCurrent);
+    }
+
+    private static string? EnvironmentDefault(ConfigurationDocumentation documentation, string name)
+        => documentation.EnvironmentVariables.Should().ContainSingle(variable => variable.Name == name).Which.Default;
+
+    private static ConfigurationDocumentationService CreateService(LimitsOptions limits)
+        => new(
+            new ConfigurationBuilder().Build(),
+            new TestWebHostEnvironment(),
+            Options.Create(limits),
+            Options.Create(new CacheOptions()),
+            Options.Create(new TileOptions()),
+            Options.Create(new AdaptiveSamplingOptions()),
+            Options.Create(new TracingOptions()),
+            []);
 
     private static ConfigurationProperty Property(ConfigurationDocumentation documentation, string path)
     {

@@ -271,6 +271,7 @@ public sealed class ConfigurationDocumentationService
 
     private ConfigurationSection BuildLimitsQuerySection()
     {
+        var code = new LimitsOptions().Query;
         var opts = _limitsOptions.Value.Query;
         return new ConfigurationSection
         {
@@ -279,21 +280,22 @@ public sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildPropertyWithCurrent("Limits:Query:MaxRecordCount", "Limits__Query__MaxRecordCount", "integer",
-                    "Maximum features per query response", 2000, opts.MaxRecordCount, "Range: 100-10000"),
+                    "Maximum features per query response", code.MaxRecordCount, opts.MaxRecordCount, "Range: 100-10000"),
                 BuildPropertyWithCurrent("Limits:Query:DefaultRecordCount", "Limits__Query__DefaultRecordCount", "integer",
-                    "Default features when not specified", 1000, opts.DefaultRecordCount, "Range: 100+"),
+                    "Default features when not specified", code.DefaultRecordCount, opts.DefaultRecordCount, "Range: 100+"),
                 BuildPropertyWithCurrent("Limits:Query:MaxOffset", "Limits__Query__MaxOffset", "integer",
-                    "Maximum pagination offset", 1000000, opts.MaxOffset, "Range: 0-1000000"),
+                    "Maximum pagination offset", code.MaxOffset, opts.MaxOffset, "Range: 0-1000000"),
                 BuildPropertyWithCurrent("Limits:Query:MaxBboxAreaSqKm", "Limits__Query__MaxBboxAreaSqKm", "number",
-                    "Maximum bounding box area in square km", 100000.0, opts.MaxBboxAreaSqKm),
+                    "Maximum bounding box area in square km", code.MaxBboxAreaSqKm, opts.MaxBboxAreaSqKm),
                 BuildPropertyWithCurrent("Limits:Query:QueryTimeout", "Limits__Query__QueryTimeout", "timespan",
-                    "Query timeout (HH:MM:SS format)", TimeSpan.FromSeconds(30), opts.QueryTimeout, "Range: 00:00:05-00:02:00")
+                    "Query timeout (HH:MM:SS format)", code.QueryTimeout, opts.QueryTimeout, "Range: 00:00:05-00:02:00")
             ]
         };
     }
 
     private ConfigurationSection BuildLimitsGeometrySection()
     {
+        var code = new LimitsOptions().Geometry;
         var opts = _limitsOptions.Value.Geometry;
         return new ConfigurationSection
         {
@@ -302,21 +304,22 @@ public sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildPropertyWithCurrent("Limits:Geometry:MaxVerticesPerGeometry", "Limits__Geometry__MaxVerticesPerGeometry", "integer",
-                    "Maximum vertices per geometry", 100000, opts.MaxVerticesPerGeometry, "Range: 1000-1000000"),
+                    "Maximum vertices per geometry", code.MaxVerticesPerGeometry, opts.MaxVerticesPerGeometry, "Range: 1000-1000000"),
                 BuildPropertyWithCurrent("Limits:Geometry:MaxGeometrySize", "Limits__Geometry__MaxGeometrySize", "integer",
-                    "Maximum geometry size in bytes", FileSizeConstants.TenMB, opts.MaxGeometrySize, "Range: 1MB-100MB"),
+                    "Maximum geometry size in bytes", code.MaxGeometrySize, opts.MaxGeometrySize, "Range: 1MB-100MB"),
                 BuildPropertyWithCurrent("Limits:Geometry:MaxCoordinatePrecision", "Limits__Geometry__MaxCoordinatePrecision", "integer",
-                    "Maximum coordinate decimal places", 8, opts.MaxCoordinatePrecision, "Range: 1-15"),
+                    "Maximum coordinate decimal places", code.MaxCoordinatePrecision, opts.MaxCoordinatePrecision, "Range: 1-15"),
                 BuildPropertyWithCurrent("Limits:Geometry:MaxOverlayCandidatePairs", "Limits__Geometry__MaxOverlayCandidatePairs", "integer",
-                    "Maximum segment pairs that could cross in one Geometry Service overlay (a quarter when not signed in)", 2000000, opts.MaxOverlayCandidatePairs, "Range: 1000-50000000"),
+                    "Maximum segment pairs that could cross in one Geometry Service overlay (a quarter when not signed in)", code.MaxOverlayCandidatePairs, opts.MaxOverlayCandidatePairs, "Range: 1000-50000000"),
                 BuildPropertyWithCurrent("Limits:Geometry:SimplifyTolerance", "Limits__Geometry__SimplifyTolerance", "number",
-                    "Auto-simplification tolerance in meters (null = disabled)", null, opts.SimplifyTolerance, "Range: 0-1000")
+                    "Auto-simplification tolerance in meters (null = disabled)", code.SimplifyTolerance, opts.SimplifyTolerance, "Range: 0-1000")
             ]
         };
     }
 
     private ConfigurationSection BuildLimitsEditsSection()
     {
+        var code = new LimitsOptions().Edits;
         var opts = _limitsOptions.Value.Edits;
         return new ConfigurationSection
         {
@@ -325,17 +328,18 @@ public sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildPropertyWithCurrent("Limits:Edits:MaxFeaturesPerEdit", "Limits__Edits__MaxFeaturesPerEdit", "integer",
-                    "Maximum features per edit operation", 1000, opts.MaxFeaturesPerEdit, "Range: 1-10000"),
+                    "Maximum features per edit operation", code.MaxFeaturesPerEdit, opts.MaxFeaturesPerEdit, "Range: 1-10000"),
                 BuildPropertyWithCurrent("Limits:Edits:MaxEditsPerTransaction", "Limits__Edits__MaxEditsPerTransaction", "integer",
-                    "Maximum operations per transaction", 5000, opts.MaxEditsPerTransaction, "Range: 100-50000"),
+                    "Maximum operations per transaction", code.MaxEditsPerTransaction, opts.MaxEditsPerTransaction, "Range: 100-50000"),
                 BuildPropertyWithCurrent("Limits:Edits:MaxPayloadSize", "Limits__Edits__MaxPayloadSize", "integer",
-                    "Maximum request body size in bytes", FileSizeConstants.FiftyMB, opts.MaxPayloadSize, "Range: 1MB-500MB")
+                    "Maximum request body size in bytes", code.MaxPayloadSize, opts.MaxPayloadSize, "Range: 1MB-500MB")
             ]
         };
     }
 
     private ConfigurationSection BuildLimitsAttachmentsSection()
     {
+        var code = new LimitsOptions().Attachments;
         var opts = _limitsOptions.Value.Attachments;
         return new ConfigurationSection
         {
@@ -344,19 +348,20 @@ public sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildPropertyWithCurrent("Limits:Attachments:MaxAttachmentSize", "Limits__Attachments__MaxAttachmentSize", "integer",
-                    "Maximum single attachment size in bytes", FileSizeConstants.TenMB, opts.MaxAttachmentSize, "Range: 1MB-100MB"),
+                    "Maximum single attachment size in bytes", code.MaxAttachmentSize, opts.MaxAttachmentSize, "Range: 1MB-100MB"),
                 BuildPropertyWithCurrent("Limits:Attachments:MaxAttachmentsPerFeature", "Limits__Attachments__MaxAttachmentsPerFeature", "integer",
-                    "Maximum attachments per feature", 10, opts.MaxAttachmentsPerFeature, "Range: 1-100"),
+                    "Maximum attachments per feature", code.MaxAttachmentsPerFeature, opts.MaxAttachmentsPerFeature, "Range: 1-100"),
                 BuildPropertyWithCurrent("Limits:Attachments:MaxTotalAttachmentSize", "Limits__Attachments__MaxTotalAttachmentSize", "integer",
-                    "Maximum total attachment size per feature in bytes", FileSizeConstants.OneHundredMB, opts.MaxTotalAttachmentSize, "Range: 10MB-1GB"),
+                    "Maximum total attachment size per feature in bytes", code.MaxTotalAttachmentSize, opts.MaxTotalAttachmentSize, "Range: 10MB-1GB"),
                 BuildPropertyWithCurrent("Limits:Attachments:AllowedMimeTypes", "Limits__Attachments__AllowedMimeTypes", "string",
-                    "Comma-separated allowed MIME types", "image/*,application/pdf,text/plain,text/csv,application/json", opts.AllowedMimeTypes)
+                    "Comma-separated allowed MIME types", code.AllowedMimeTypes, opts.AllowedMimeTypes)
             ]
         };
     }
 
     private ConfigurationSection BuildLimitsTilesSection()
     {
+        var code = new LimitsOptions().Tiles;
         var opts = _limitsOptions.Value.Tiles;
         return new ConfigurationSection
         {
@@ -365,21 +370,22 @@ public sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildPropertyWithCurrent("Limits:Tiles:MaxTileZoom", "Limits__Tiles__MaxTileZoom", "integer",
-                    "Maximum tile zoom level", 22, opts.MaxTileZoom, "Range: 1-24"),
+                    "Maximum tile zoom level", code.MaxTileZoom, opts.MaxTileZoom, "Range: 1-24"),
                 BuildPropertyWithCurrent("Limits:Tiles:MinTileZoom", "Limits__Tiles__MinTileZoom", "integer",
-                    "Minimum tile zoom level", 0, opts.MinTileZoom, "Range: 0-10"),
+                    "Minimum tile zoom level", code.MinTileZoom, opts.MinTileZoom, "Range: 0-10"),
                 BuildPropertyWithCurrent("Limits:Tiles:MaxFeaturesPerTile", "Limits__Tiles__MaxFeaturesPerTile", "integer",
-                    "Maximum features per tile", 10000, opts.MaxFeaturesPerTile, "Range: 1000-1000000"),
+                    "Maximum features per tile", code.MaxFeaturesPerTile, opts.MaxFeaturesPerTile, "Range: 1000-1000000"),
                 BuildPropertyWithCurrent("Limits:Tiles:TileTimeout", "Limits__Tiles__TileTimeout", "timespan",
-                    "Tile generation timeout", TimeSpan.FromSeconds(10), opts.TileTimeout, "Range: 00:00:01-00:01:00"),
+                    "Tile generation timeout", code.TileTimeout, opts.TileTimeout, "Range: 00:00:01-00:01:00"),
                 BuildPropertyWithCurrent("Limits:Tiles:MaxTileSize", "Limits__Tiles__MaxTileSize", "integer",
-                    "Maximum encoded vector tile size in bytes before HTTP compression", 512000, opts.MaxTileSize, "Range: 1-9223372036854775807 bytes")
+                    "Maximum encoded vector tile size in bytes before HTTP compression", code.MaxTileSize, opts.MaxTileSize, "Range: 1-9223372036854775807 bytes")
             ]
         };
     }
 
     private ConfigurationSection BuildLimitsConnectionsSection()
     {
+        var code = new LimitsOptions().Connections;
         var opts = _limitsOptions.Value.Connections;
         return new ConfigurationSection
         {
@@ -388,38 +394,39 @@ public sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildPropertyWithCurrent("Limits:Connections:MaxConcurrentQueries", "Limits__Connections__MaxConcurrentQueries", "integer",
-                    "Maximum concurrent query operations", 100, opts.MaxConcurrentQueries, "Range: 10-1000"),
+                    "Maximum concurrent query operations", code.MaxConcurrentQueries, opts.MaxConcurrentQueries, "Range: 10-1000"),
                 BuildPropertyWithCurrent("Limits:Connections:MaxConnectionPoolSize", "Limits__Connections__MaxConnectionPoolSize", "integer",
                     "Maximum database connection pool size. An unset value on Lambda defaults to 4; an explicit value wins.",
-                    200, opts.MaxConnectionPoolSize, "Range: 1-1000"),
+                    code.MaxConnectionPoolSize, opts.MaxConnectionPoolSize, "Range: 1-1000"),
                 BuildPropertyWithCurrent("Limits:Connections:MinConnectionPoolSize", "Limits__Connections__MinConnectionPoolSize", "integer",
-                    "Minimum database connection pool size (clamped to MaxConnectionPoolSize)", 20, opts.MinConnectionPoolSize, "Range: 0-100"),
+                    "Minimum database connection pool size (clamped to MaxConnectionPoolSize)", code.MinConnectionPoolSize, opts.MinConnectionPoolSize, "Range: 0-100"),
                 BuildPropertyWithCurrent("Limits:Connections:BufferSizeBytes", "Limits__Connections__BufferSizeBytes", "integer",
-                    "Npgsql read/write buffer size in bytes", 32768, opts.BufferSizeBytes, "Range: 4096-65536"),
+                    "Npgsql read/write buffer size in bytes", code.BufferSizeBytes, opts.BufferSizeBytes, "Range: 4096-65536"),
                 BuildPropertyWithCurrent("Limits:Connections:Multiplexing", "Limits__Connections__Multiplexing", "string",
-                    "Npgsql multiplexing mode ('auto', 'true', or 'false'); default off avoids write-lock contention at high concurrency", "false", opts.Multiplexing, "Allowed: auto|true|false"),
+                    "Npgsql multiplexing mode ('auto', 'true', or 'false'); default off avoids write-lock contention at high concurrency", code.Multiplexing, opts.Multiplexing, "Allowed: auto|true|false"),
                 BuildPropertyWithCurrent("Limits:Connections:ConnectionAcquisitionTimeoutSeconds", "Limits__Connections__ConnectionAcquisitionTimeoutSeconds", "integer",
-                    "Maximum seconds to wait for a gate slot before returning HTTP 503 with Retry-After", 5, opts.ConnectionAcquisitionTimeoutSeconds, "Range: 1-60"),
+                    "Maximum seconds to wait for a gate slot before returning HTTP 503 with Retry-After", code.ConnectionAcquisitionTimeoutSeconds, opts.ConnectionAcquisitionTimeoutSeconds, "Range: 1-60"),
                 BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyEnabled", "Limits__Connections__AdaptiveConcurrencyEnabled", "boolean",
-                    "Enable adaptive query admission below the configured database pool ceiling", false, opts.AdaptiveConcurrencyEnabled, "Allowed: true|false"),
+                    "Enable adaptive query admission below the configured database pool ceiling", code.AdaptiveConcurrencyEnabled, opts.AdaptiveConcurrencyEnabled, "Allowed: true|false"),
                 BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyMinQueries", "Limits__Connections__AdaptiveConcurrencyMinQueries", "integer",
-                    "Minimum adaptive concurrent query limit", 1, opts.AdaptiveConcurrencyMinQueries, "Range: 1-1000"),
+                    "Minimum adaptive concurrent query limit", code.AdaptiveConcurrencyMinQueries, opts.AdaptiveConcurrencyMinQueries, "Range: 1-1000"),
                 BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyInitialQueries", "Limits__Connections__AdaptiveConcurrencyInitialQueries", "integer",
-                    "Initial adaptive concurrent query limit; 0 starts at MaxConcurrentQueries", 0, opts.AdaptiveConcurrencyInitialQueries, "Range: 0-1000"),
+                    "Initial adaptive concurrent query limit; 0 starts at MaxConcurrentQueries", code.AdaptiveConcurrencyInitialQueries, opts.AdaptiveConcurrencyInitialQueries, "Range: 0-1000"),
                 BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyMaxQueries", "Limits__Connections__AdaptiveConcurrencyMaxQueries", "integer",
-                    "Maximum adaptive concurrent query limit; 0 uses MaxConcurrentQueries", 0, opts.AdaptiveConcurrencyMaxQueries, "Range: 0-1000"),
+                    "Maximum adaptive concurrent query limit; 0 uses MaxConcurrentQueries", code.AdaptiveConcurrencyMaxQueries, opts.AdaptiveConcurrencyMaxQueries, "Range: 0-1000"),
                 BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyTargetDurationMs", "Limits__Connections__AdaptiveConcurrencyTargetDurationMs", "integer",
-                    "Target database lease duration for adaptive admission", 100, opts.AdaptiveConcurrencyTargetDurationMs, "Range: 1-60000"),
+                    "Target database lease duration for adaptive admission", code.AdaptiveConcurrencyTargetDurationMs, opts.AdaptiveConcurrencyTargetDurationMs, "Range: 1-60000"),
                 BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyUpdateIntervalMs", "Limits__Connections__AdaptiveConcurrencyUpdateIntervalMs", "integer",
-                    "Minimum milliseconds between adaptive admission adjustments", 1000, opts.AdaptiveConcurrencyUpdateIntervalMs, "Range: 0-60000"),
+                    "Minimum milliseconds between adaptive admission adjustments", code.AdaptiveConcurrencyUpdateIntervalMs, opts.AdaptiveConcurrencyUpdateIntervalMs, "Range: 0-60000"),
                 BuildPropertyWithCurrent("Limits:Connections:RequestTimeout", "Limits__Connections__RequestTimeout", "timespan",
-                    "Overall request timeout", TimeSpan.FromSeconds(120), opts.RequestTimeout, "Range: 00:00:10-00:10:00")
+                    "Overall request timeout", code.RequestTimeout, opts.RequestTimeout, "Range: 00:00:10-00:10:00")
             ]
         };
     }
 
     private ConfigurationSection BuildLimitsImportsSection()
     {
+        var code = new LimitsOptions().Imports;
         var opts = _limitsOptions.Value.Imports;
         return new ConfigurationSection
         {
@@ -428,19 +435,19 @@ public sealed class ConfigurationDocumentationService
             Properties =
             [
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewSize", "Limits__Imports__MaxPreviewSize", "integer",
-                    "Maximum file size for preview in bytes", FileSizeConstants.TenMB, opts.MaxPreviewSize, "Range: 1MB-50MB"),
+                    "Maximum file size for preview in bytes", code.MaxPreviewSize, opts.MaxPreviewSize, "Range: 1MB-50MB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxSyncImportSize", "Limits__Imports__MaxSyncImportSize", "integer",
-                    "Maximum file size for general synchronous imports in bytes; direct PostGIS raster imports use the lower of this value and the fixed 50 MiB serving-process ceiling", FileSizeConstants.FiftyMB, opts.MaxSyncImportSize, "Range: 10MB-500MB"),
+                    "Maximum file size for general synchronous imports in bytes; direct PostGIS raster imports use the lower of this value and the fixed 50 MiB serving-process ceiling", code.MaxSyncImportSize, opts.MaxSyncImportSize, "Range: 10MB-500MB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxImportSize", "Limits__Imports__MaxImportSize", "integer",
-                    "Maximum import file size in bytes", FileSizeConstants.FiveHundredMB, opts.MaxImportSize, "Range: 50MB-5GB"),
+                    "Maximum import file size in bytes", code.MaxImportSize, opts.MaxImportSize, "Range: 50MB-5GB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxTilePackageSize", "Limits__Imports__MaxTilePackageSize", "integer",
-                    "Maximum Esri tile-cache package upload in bytes", 2L * FileSizeConstants.OneGB, opts.MaxTilePackageSize, "Range: 50MB-5GB"),
+                    "Maximum Esri tile-cache package upload in bytes", code.MaxTilePackageSize, opts.MaxTilePackageSize, "Range: 50MB-5GB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewFeatures", "Limits__Imports__MaxPreviewFeatures", "integer",
-                    "Maximum features in preview", 100, opts.MaxPreviewFeatures, "Range: 10-1000"),
+                    "Maximum features in preview", code.MaxPreviewFeatures, opts.MaxPreviewFeatures, "Range: 10-1000"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewCountScan", "Limits__Imports__MaxPreviewCountScan", "integer",
-                    "Maximum features scanned while deriving preview counts for streaming formats with unknown totals", 100000, opts.MaxPreviewCountScan, "Range: 10-1000000"),
+                    "Maximum features scanned while deriving preview counts for streaming formats with unknown totals", code.MaxPreviewCountScan, opts.MaxPreviewCountScan, "Range: 10-1000000"),
                 BuildPropertyWithCurrent("Limits:Imports:BatchSize", "Limits__Imports__BatchSize", "integer",
-                    "Feature insertion batch size", 1000, opts.BatchSize, "Range: 100-10000")
+                    "Feature insertion batch size", code.BatchSize, opts.BatchSize, "Range: 100-10000")
             ]
         };
     }
@@ -903,6 +910,7 @@ public sealed class ConfigurationDocumentationService
 
     private List<EnvironmentVariableInfo> BuildEnvironmentVariableQuickReference(IEnumerable<ConfigurationSection> sections)
     {
+        var limits = new LimitsOptions();
         var envVars = new List<EnvironmentVariableInfo>
         {
             // Feature flags
@@ -951,10 +959,10 @@ public sealed class ConfigurationDocumentationService
             new() { Name = "FileStorage__AzureBlob__ContainerName", ConfigPath = "FileStorage", Description = "Azure Blob container name", Required = false, Example = "honua-attachments" },
 
             // Key limits
-            new() { Name = "Limits__Query__MaxRecordCount", ConfigPath = "Limits.Query", Description = "Max features per query", Default = "2000", Example = "5000" },
+            new() { Name = "Limits__Query__MaxRecordCount", ConfigPath = "Limits.Query", Description = "Max features per query", Default = limits.Query.MaxRecordCount.ToString(System.Globalization.CultureInfo.InvariantCulture), Example = "5000" },
             new() { Name = "Limits__Query__QueryTimeout", ConfigPath = "Limits.Query", Description = "Query timeout", Default = "00:00:30", Example = "00:01:00" },
-            new() { Name = "Limits__Geometry__MaxVerticesPerGeometry", ConfigPath = "Limits.Geometry", Description = "Max vertices", Default = "100000", Example = "50000" },
-            new() { Name = "Limits__Connections__MaxConcurrentQueries", ConfigPath = "Limits.Connections", Description = "Max concurrent queries", Default = "100", Example = "200" },
+            new() { Name = "Limits__Geometry__MaxVerticesPerGeometry", ConfigPath = "Limits.Geometry", Description = "Max vertices", Default = limits.Geometry.MaxVerticesPerGeometry.ToString(System.Globalization.CultureInfo.InvariantCulture), Example = "10000" },
+            new() { Name = "Limits__Connections__MaxConcurrentQueries", ConfigPath = "Limits.Connections", Description = "Max concurrent queries", Default = limits.Connections.MaxConcurrentQueries.ToString(System.Globalization.CultureInfo.InvariantCulture), Example = "50" },
 
             // Networking
             new() { Name = "PUBLIC_BASE_URL", ConfigPath = "Networking", Description = "Public base URL override", Required = false, Example = "https://api.honua.example.com" },
