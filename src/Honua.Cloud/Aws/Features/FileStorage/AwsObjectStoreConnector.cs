@@ -157,7 +157,7 @@ internal sealed class AwsObjectStoreConnector(AwsObjectStoreClientFactory client
             return ImportObjectStoreException.NotFound("The bucket was not found.");
         }
 
-        if (AwsObjectStoreErrors.IsRequesterPaysSignal(exception) || await IsRequesterPaysAsync(client, connection.Bucket).ConfigureAwait(false))
+        if (AwsObjectStoreErrors.IsRequesterPaysSignal(exception) || await IsRequesterPaysAsync(client, connection).ConfigureAwait(false))
         {
             return ImportObjectStoreException.RequesterPays();
         }
@@ -165,12 +165,15 @@ internal sealed class AwsObjectStoreConnector(AwsObjectStoreClientFactory client
         return ImportObjectStoreException.Forbidden("The connection role cannot list this bucket prefix.");
     }
 
-    private static async Task<bool> IsRequesterPaysAsync(IAmazonS3 client, string bucket)
+    private static async Task<bool> IsRequesterPaysAsync(IAmazonS3 client, ObjectStorageConnection connection)
     {
         try
         {
-            var payment = await client.GetBucketRequestPaymentAsync(new GetBucketRequestPaymentRequest { BucketName = bucket })
-                .ConfigureAwait(false);
+            var payment = await client.GetBucketRequestPaymentAsync(new GetBucketRequestPaymentRequest
+            {
+                BucketName = connection.Bucket,
+                ExpectedBucketOwner = connection.ExpectedBucketOwner,
+            }).ConfigureAwait(false);
             return string.Equals(payment.Payer, "Requester", StringComparison.OrdinalIgnoreCase);
         }
         catch (AmazonS3Exception)

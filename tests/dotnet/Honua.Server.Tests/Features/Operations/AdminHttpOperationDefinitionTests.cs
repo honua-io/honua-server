@@ -68,7 +68,6 @@ public sealed class AdminHttpOperationDefinitionTests
     [InlineData("admin.connections.create")]
     [InlineData("admin.connections.update")]
     [InlineData("admin.connections.delete")]
-    [InlineData("admin.connections.object-storage.setup")]
     [InlineData("admin.import.upload-object")]
     public void Definition_ConnectionChanges_RequireOperatorApproval(string operationId)
     {

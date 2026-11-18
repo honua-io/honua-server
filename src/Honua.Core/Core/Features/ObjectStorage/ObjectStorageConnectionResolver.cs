@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.ObjectStorage;
 
@@ -41,12 +40,10 @@ public interface IObjectStorageConnectionResolver
 }
 
 public sealed class ObjectStorageConnectionResolver(
-    IOptionsMonitor<CloudStorageOptions> storageOptions,
-    IOptionsMonitor<ObjectStorageConnectionOptions> connectionOptions,
+    ObjectStorageBuiltInSources builtInSources,
     IObjectStorageConnectionStore? store = null) : IObjectStorageConnectionResolver
 {
-    private IReadOnlyList<ObjectStorageConnection> BuiltIns()
-        => ObjectStorageBuiltInConnections.From(storageOptions.CurrentValue, connectionOptions.CurrentValue.BuiltIn);
+    private IReadOnlyList<ObjectStorageConnection> BuiltIns() => builtInSources.BuiltIns();
 
     public async Task<IReadOnlyList<ObjectStorageConnection>> ListAsync(CancellationToken cancellationToken)
     {
@@ -114,28 +111,36 @@ public static class ObjectStorageBuiltInConnections
 
     public const string PublicRole = "public";
 
-    // Relative to FileStorage:AwsS3:KeyPrefix ("gp/" covers the geoprocessing output prefix); the configured
-    // PMTiles prefix is added.
+    // Server-written folders. Each is refused both under FileStorage:AwsS3:KeyPrefix and at the bucket root,
+    // because some writers (COG artifacts, tile exports) address the bucket root directly. Configured prefixes
+    // (PMTiles, geoprocessing outputs, the audit sink) are added.
     private static readonly string[] ServerFolders =
     [
         "imports/", "exports/", "publications/", "audit/", "gp/", "studio-deliverables/", "custom-code/", "pmtiles/",
-        "mapserver/", "imageserver/", "temporary-files/", "attachments/",
+        "mapserver/", "imageserver/", "temporary-files/", "attachments/", "cog/", "tile-exports/",
     ];
 
     public static IReadOnlyList<ObjectStorageConnection> From(CloudStorageOptions storage, ObjectStorageBuiltInOptions builtIn)
+        => From(storage, builtIn, configuredServerFolders: []);
+
+    public static IReadOnlyList<ObjectStorageConnection> From(
+        CloudStorageOptions storage,
+        ObjectStorageBuiltInOptions builtIn,
+        IEnumerable<string> configuredServerFolders)
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(builtIn);
+        ArgumentNullException.ThrowIfNull(configuredServerFolders);
         if (!IsEligible(storage, builtIn) || ObjectStoragePolicy.NormalizePrefix(storage.AwsS3!.KeyPrefix) is not { } root)
         {
             return [];
         }
 
         var template = Template(storage.AwsS3, builtIn.ExpectedBucketOwner!);
-        var reserved = ServerFolders.Append(storage.PMTilesPublish.KeyPrefix)
+        var reserved = ServerFolders.Concat(configuredServerFolders).Append(storage.PMTilesPublish.KeyPrefix)
             .Select(ObjectStoragePolicy.NormalizePrefix)
             .Where(folder => !string.IsNullOrEmpty(folder))
-            .Select(folder => root + folder)
+            .SelectMany(folder => new[] { root + folder, folder! })
             .ToList();
         var connections = builtIn.DataPrefixes
             .Select(ObjectStoragePolicy.NormalizePrefix)

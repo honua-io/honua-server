@@ -86,6 +86,18 @@ public sealed class ObjectStorageConnectionResolverTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public void BuiltIns_RefuseConfiguredServerFoldersAndBucketRootWriters()
+    {
+        var builtIn = EnabledBuiltIns("outputs/2026", "cog", "drop");
+        builtIn.PublicFiles = false;
+
+        var builtIns = ObjectStorageBuiltInConnections.From(Storage(s3 => s3 with { KeyPrefix = null }), builtIn, ["outputs"]);
+
+        builtIns.Should().ContainSingle().Which.Prefix.Should().Be("drop/");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void BuiltIns_AreOffForEndpointOverridesStaticKeysAndOtherProviders()
     {
         var builtIn = EnabledBuiltIns("drop");
@@ -151,7 +163,9 @@ public sealed class ObjectStorageConnectionResolverTests
         => Stored.ToString().Should().NotContain(Stored.ExternalId!);
 
     private static ObjectStorageConnectionResolver Resolver(params ObjectStorageConnection[] stored)
-        => new(new StaticMonitor<CloudStorageOptions>(new()), new StaticMonitor<ObjectStorageConnectionOptions>(new()), store: new ListStore(stored));
+        => new(
+            new ObjectStorageBuiltInSources(new StaticMonitor<CloudStorageOptions>(new()), new StaticMonitor<ObjectStorageConnectionOptions>(new()), []),
+            new ListStore(stored));
 
     private sealed class StaticMonitor<T>(T value) : IOptionsMonitor<T>
     {
@@ -169,7 +183,7 @@ public sealed class ObjectStorageConnectionResolverTests
         public Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken)
             => Task.FromResult<ObjectStorageConnectionSetup?>(null);
 
-        public Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection connection, CancellationToken cancellationToken)
+        public Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection connection, string mintedBy, CancellationToken cancellationToken)
             => Task.FromResult(ObjectStorageCreateOutcome.SetupRejected);
 
         public Task<ObjectStorageConnection?> GetAsync(Guid id, CancellationToken cancellationToken)

@@ -17,6 +17,8 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
 {
     private const int MaxPerMinter = 5;
 
+    private const string Minter = "api-key:minter";
+
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task ConnectionWrittenByOneTask_IsReadByAnotherAndAdvancesTheGeneration()
@@ -28,7 +30,7 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
             var connection = await SetupAsync(writer, "parcels/");
             var before = await GenerationAsync(schema);
 
-            (await writer.CreateAsync(connection, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.Created);
+            (await writer.CreateAsync(connection, Minter, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.Created);
 
             var read = await reader.GetAsync(connection.Id, CancellationToken.None);
             read!.ExternalId.Should().Be(connection.ExternalId);
@@ -52,15 +54,15 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
             var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
             var connection = await SetupAsync(store, "parcels/");
 
-            (await store.CreateAsync(connection with { ExternalId = ObjectStoragePolicy.NewExternalId() }, CancellationToken.None))
+            (await store.CreateAsync(connection with { ExternalId = ObjectStoragePolicy.NewExternalId() }, Minter, CancellationToken.None))
                 .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "an unknown external id was never minted");
-            (await store.CreateAsync(connection with { Prefix = "other/" }, CancellationToken.None))
+            (await store.CreateAsync(connection with { Prefix = "other/" }, Minter, CancellationToken.None))
                 .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "the setup was minted for another prefix");
-            (await store.CreateAsync(connection with { CreatedBy = "someone-else" }, CancellationToken.None))
+            (await store.CreateAsync(connection, "someone-else", CancellationToken.None))
                 .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "the setup was minted by another principal");
-            (await store.CreateAsync(connection, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.Created);
+            (await store.CreateAsync(connection, Minter, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.Created);
             (await store.FindOpenSetupAsync(connection.ExternalId!, CancellationToken.None)).Should().BeNull();
-            (await store.CreateAsync(connection with { Id = Guid.NewGuid() }, CancellationToken.None))
+            (await store.CreateAsync(connection with { Id = Guid.NewGuid() }, Minter, CancellationToken.None))
                 .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "a consumed external id cannot be reused");
         });
     }
@@ -75,7 +77,7 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
             var connection = await SetupAsync(store, "parcels/", DateTimeOffset.UtcNow.AddMinutes(-1));
 
             (await store.FindOpenSetupAsync(connection.ExternalId!, CancellationToken.None)).Should().BeNull();
-            (await store.CreateAsync(connection, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.SetupRejected);
+            (await store.CreateAsync(connection, Minter, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.SetupRejected);
         });
     }
 
@@ -87,7 +89,7 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
         {
             var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
             var connection = await SetupAsync(store, "parcels/");
-            await store.CreateAsync(connection, CancellationToken.None);
+            await store.CreateAsync(connection, Minter, CancellationToken.None);
 
             var act = () => fixture.ExecuteAsync(
                 $"UPDATE \"{schema}\".object_storage_connections SET external_id = 'replaced' WHERE connection_id = '{connection.Id}'");
@@ -168,7 +170,7 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
             new ObjectStorageConnectionSetup
             {
                 ExternalId = externalId,
-                MintedBy = "test",
+                MintedBy = Minter,
                 Bucket = "customer-imports",
                 Prefix = prefix,
                 ExpiresAt = expiresAt ?? DateTimeOffset.UtcNow.AddHours(24),

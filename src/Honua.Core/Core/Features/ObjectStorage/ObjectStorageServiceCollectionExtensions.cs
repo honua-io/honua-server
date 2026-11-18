@@ -15,6 +15,8 @@ public static class ObjectStorageServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         services.Configure<ObjectStorageConnectionOptions>(configuration.GetSection(ObjectStorageConnectionOptions.SectionName));
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IObjectStorageServerFolders, GeoprocessingOutputServerFolders>());
+        services.TryAddSingleton<ObjectStorageBuiltInSources>();
         services.TryAddSingleton<IObjectStorageConnectionResolver, ObjectStorageConnectionResolver>();
         services.TryAddSingleton<ObjectStoreImportAvailability>();
         return services;

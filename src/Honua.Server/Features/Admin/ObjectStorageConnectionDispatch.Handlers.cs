@@ -29,7 +29,9 @@ internal static partial class ObjectStorageConnectionDispatch
             Id = Guid.NewGuid(),
             CreatedBy = http.GetUserIdentity(),
         };
-        var outcome = await store.CreateAsync(connection, http.RequestAborted).ConfigureAwait(false);
+        var outcome = await store
+            .CreateAsync(connection, ObjectStorageConnectionEndpoints.SetupPrincipal(http), http.RequestAborted)
+            .ConfigureAwait(false);
         if (outcome != ObjectStorageCreateOutcome.Created)
         {
             return Invalid(SetupRejectedMessage);
@@ -61,7 +63,7 @@ internal static partial class ObjectStorageConnectionDispatch
 
         var setup = await store.FindOpenSetupAsync(draft.ExternalId!, http.RequestAborted).ConfigureAwait(false);
         if (setup is null
-            || setup.MintedBy != http.GetUserIdentity()
+            || setup.MintedBy != ObjectStorageConnectionEndpoints.SetupPrincipal(http)
             || setup.Bucket != draft.Bucket
             || setup.Prefix != draft.Prefix)
         {

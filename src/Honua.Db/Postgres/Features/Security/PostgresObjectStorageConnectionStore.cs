@@ -94,12 +94,16 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
         };
     }
 
-    public async Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection connection, CancellationToken cancellationToken)
+    public async Task<ObjectStorageCreateOutcome> CreateAsync(
+        ObjectStorageConnection connection,
+        string mintedBy,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        ArgumentException.ThrowIfNullOrWhiteSpace(mintedBy);
         await using var db = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await db.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        if (!await ConsumeSetupAsync(transaction, connection, cancellationToken).ConfigureAwait(false))
+        if (!await ConsumeSetupAsync(transaction, connection with { CreatedBy = mintedBy }, cancellationToken).ConfigureAwait(false))
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return ObjectStorageCreateOutcome.SetupRejected;
@@ -157,7 +161,8 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
-    // Single use: only an unexpired, unconsumed setup minted by the creator for the same bucket and prefix is accepted.
+    // Single use: only an unexpired, unconsumed setup minted by the creator (CreatedBy here) for the same bucket and
+    // prefix is accepted.
     private async Task<bool> ConsumeSetupAsync(
         NpgsqlTransaction transaction,
         ObjectStorageConnection connection,

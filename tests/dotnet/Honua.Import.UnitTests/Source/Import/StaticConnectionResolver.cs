@@ -22,9 +22,11 @@ internal sealed class StaticConnectionResolver(params ObjectStorageConnection[] 
     };
 
     private readonly ObjectStorageConnectionResolver _inner = new(
-        new StaticMonitor<CloudStorageOptions>(new()),
-        new StaticMonitor<ObjectStorageConnectionOptions>(new()),
-        store: new Store(connections));
+        new ObjectStorageBuiltInSources(
+            new StaticMonitor<CloudStorageOptions>(new()),
+            new StaticMonitor<ObjectStorageConnectionOptions>(new()),
+            []),
+        new Store(connections));
 
     public Task<IReadOnlyList<ObjectStorageConnection>> ListAsync(CancellationToken cancellationToken)
         => _inner.ListAsync(cancellationToken);
@@ -52,7 +54,7 @@ internal sealed class StaticConnectionResolver(params ObjectStorageConnection[] 
         public Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
-        public Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection connection, CancellationToken cancellationToken)
+        public Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection connection, string mintedBy, CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
         public Task<ObjectStorageConnection?> GetAsync(Guid id, CancellationToken cancellationToken)

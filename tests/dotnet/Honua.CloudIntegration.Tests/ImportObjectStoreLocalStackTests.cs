@@ -159,7 +159,7 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
 
         var health = await connector.TestAsync(connection, CancellationToken.None);
         var page = await connector.BrowseAsync(new ObjectStorageBrowseRequest { Connection = connection, Prefix = "parcels/" }, CancellationToken.None);
-        var resolver = new ObjectStorageConnectionResolver(new StaticMonitor<CloudStorageOptions>(new()), new StaticMonitor<ObjectStorageConnectionOptions>(new()), store: new SingleStore(connection));
+        var resolver = new ObjectStorageConnectionResolver(NoBuiltIns(), new SingleStore(connection));
         var outside = await resolver.ResolveObjectAsync(connection.Id, "private/secret.geojson", CancellationToken.None);
         var resolved = await resolver.ResolveObjectAsync(connection.Id, "parcels/lots.geojson", CancellationToken.None);
         var admission = await EvaluateAsync(ImportObjectLocation.From(resolved), new AwsImportObjectStoreReader(factory), SyncLimits());
@@ -312,6 +312,9 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         }
     }
 
+    private static ObjectStorageBuiltInSources NoBuiltIns()
+        => new(new StaticMonitor<CloudStorageOptions>(new()), new StaticMonitor<ObjectStorageConnectionOptions>(new()), []);
+
     private sealed class StaticMonitor<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue => value;
@@ -328,7 +331,7 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         public Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken)
             => Task.FromResult<ObjectStorageConnectionSetup?>(null);
 
-        public Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection item, CancellationToken cancellationToken)
+        public Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection item, string mintedBy, CancellationToken cancellationToken)
             => Task.FromResult(ObjectStorageCreateOutcome.SetupRejected);
 
         public Task<ObjectStorageConnection?> GetAsync(Guid id, CancellationToken cancellationToken)

@@ -82,9 +82,9 @@ public interface IObjectStorageConnectionStore
     // Returns the setup only while it is unexpired and unconsumed.
     Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken);
 
-    // Consumes the open setup minted by connection.CreatedBy for the same bucket and prefix, and inserts
-    // the connection, in one transaction.
-    Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection connection, CancellationToken cancellationToken);
+    // Consumes the open setup that mintedBy minted for the same bucket and prefix, and inserts the
+    // connection, in one transaction.
+    Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection connection, string mintedBy, CancellationToken cancellationToken);
 
     Task<ObjectStorageConnection?> GetAsync(Guid id, CancellationToken cancellationToken);
 
