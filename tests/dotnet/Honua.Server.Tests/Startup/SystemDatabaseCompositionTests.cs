@@ -10,20 +10,19 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Startup;
 
-[Trait("Category", "Unit")]
 public sealed class SystemDatabaseCompositionTests
 {
     private const string Connection = "Host=db;Database=honua;Username=honua";
     private const string MissingConnectionError = "ConnectionStrings__DefaultConnection is required";
 
-    [Theory]
+    [UnitTheory]
     [InlineData(null)]
     [InlineData("postgis")]
     [InlineData("postgresql")]
     public void IsConfigured_PostgreSqlPrimaryWithAConnection_IsASystemDatabase(string? provider)
         => SystemDatabaseComposition.IsConfigured(Build(provider, Connection)).Should().BeTrue();
 
-    [Theory]
+    [UnitTheory]
     [InlineData("postgis", null)]
     [InlineData("duckdb", Connection)]
     [InlineData("mysql", Connection)]
@@ -31,13 +30,13 @@ public sealed class SystemDatabaseCompositionTests
     public void IsConfigured_NoConnectionOrNonPostgreSqlPrimary_IsNotASystemDatabase(string provider, string? connection)
         => SystemDatabaseComposition.IsConfigured(Build(provider, connection)).Should().BeFalse();
 
-    [Theory]
+    [UnitTheory]
     [InlineData("duckdb")]
     [InlineData("mysql")]
     public void ProductionValidation_NonPostgreSqlPrimaryWithoutConnection_DoesNotRequireOne(string provider)
         => ValidateProduction(provider).Should().NotContain(error => error.Contains(MissingConnectionError));
 
-    [Theory]
+    [UnitTheory]
     [InlineData(null)]
     [InlineData("postgis")]
     public void ProductionValidation_PostgreSqlPrimaryWithoutConnection_StillRequiresOne(string? provider)
