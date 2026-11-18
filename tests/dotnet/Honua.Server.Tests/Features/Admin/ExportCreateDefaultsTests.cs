@@ -21,4 +21,18 @@ public sealed class ExportCreateDefaultsTests
         slug.Should().Be(expected);
         ExportRequestRules.IsExportId(slug).Should().BeTrue();
     }
+
+    [UnitTheory]
+    [InlineData(0, 30, 0, 14)]
+    [InlineData(20, 22, 14, 14)]
+    [InlineData(null, 8, null, 8)]
+    [InlineData(2, null, 2, null)]
+    [InlineData(-3, 4, 0, 4)]
+    public void ClampZoom_StaysInsideTheTileCeiling(int? min, int? max, int? expectedMin, int? expectedMax)
+    {
+        var zoom = ExportCreateDefaults.ClampZoom(min, max, 0, 14);
+
+        zoom.MinZoom.Should().Be(expectedMin);
+        zoom.MaxZoom.Should().Be(expectedMax);
+    }
 }

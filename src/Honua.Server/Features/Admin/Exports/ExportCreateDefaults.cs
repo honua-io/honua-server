@@ -17,7 +17,8 @@ internal static class ExportCreateDefaults
 {
     private const int MaxIdLength = 64;
 
-    public static ExportCreatePlan Resolve(ExportCreateRequest request, MetadataV2GraphSnapshot snapshot)
+    public static ExportCreatePlan Resolve(
+        ExportCreateRequest request, MetadataV2GraphSnapshot snapshot, int lowestZoom = 0, int highestZoom = 24)
     {
         var source = request.Source;
         if (source is null || !string.Equals(source.Kind ?? "layer", "layer", StringComparison.Ordinal))
@@ -38,6 +39,7 @@ internal static class ExportCreateDefaults
         }
 
         var resource = published.Resource;
+        var zoom = ClampZoom(request.MinZoom, request.MaxZoom, lowestZoom, highestZoom);
         var start = new TileOperationStartRequest
         {
             Operation = TileCacheExecutionSpecBuilder.ExportOperation,
@@ -45,13 +47,22 @@ internal static class ExportCreateDefaults
             LayerId = source.LayerId,
             ExportId = request.ExportId ?? Slug(resource.Metadata.Name, resource.Metadata.Id),
             IdentityField = request.IdentityField ?? resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId,
-            MinZoom = request.MinZoom,
-            MaxZoom = request.MaxZoom
+            MinZoom = zoom.MinZoom,
+            MaxZoom = zoom.MaxZoom
         };
         var title = string.IsNullOrWhiteSpace(resource.Metadata.Title) ? null : resource.Metadata.Title.Trim();
         return ExportRequestRules.Problem(start) is { } problem
             ? Refuse(problem, StatusCodes.Status400BadRequest)
             : new ExportCreatePlan(start, title, null, StatusCodes.Status202Accepted);
+    }
+
+    // A requested zoom outside the server's tile ceiling is clamped. Clients overzoom past the archive.
+    internal static (int? MinZoom, int? MaxZoom) ClampZoom(int? minZoom, int? maxZoom, int lowest, int highest)
+    {
+        var min = minZoom is { } low ? Math.Clamp(low, lowest, highest) : (int?)null;
+        return maxZoom is not { } high
+            ? (min, null)
+            : (min, Math.Clamp(high, min ?? lowest, highest));
     }
 
     // Lowercase letters, digits and single hyphens, 3-64 characters, starting with a letter or digit.

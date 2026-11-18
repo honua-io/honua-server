@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -8,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Admin.TileOperations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Exports;
 
@@ -50,10 +52,12 @@ internal static class ExportAdminEndpoints
         HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ITileCacheJobService jobService,
+        [FromServices] IOptions<LimitsOptions> limits,
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var resolved = ExportCreateDefaults.Resolve(request, snapshot);
+        var tiles = limits.Value.Tiles;
+        var resolved = ExportCreateDefaults.Resolve(request, snapshot, tiles.MinTileZoom, tiles.MaxTileZoom);
         if (resolved.Problem is { } problem)
         {
             return Failure(problem, resolved.StatusCode);
