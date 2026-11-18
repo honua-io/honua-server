@@ -47,7 +47,9 @@ class ManagedWorkflowTests(unittest.TestCase):
         shard = job('server-tests')
         self.assertIn('needs: [changes, targeted-shards, build]', shard)
         self.assertLess(shard.index('Consume managed shard'), shard.index('Plan shard-local exact-head cache'))
-        self.assertIn("if: steps.managed-status.outputs.restored != 'true' && steps.shard-cache-materialize.outputs.restored != 'true'", shard)
+        self.assertIn("if: (steps.managed-status.outputs.restored != 'true' || "
+                      "steps.setup-dotnet.outputs.host-package-fallback-used == 'true') && "
+                      "steps.shard-cache-materialize.outputs.restored != 'true'", shard)
         self.assertIn('managed-test-build.py fallback --projects-file', shard)
         self.assertIn('actions/cache/restore@', shard)
         self.assertIn('matrix.advisory != true', shard)

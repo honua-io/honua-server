@@ -684,7 +684,7 @@ All issue forms now require acceptance criteria, affected repos, gate-tier impac
 
 Five composite actions were added to `.github/actions/` for shared CI setup and evidence handling:
 
-- `setup-dotnet-ci` — .NET SDK, NuGet cache *(active)*
+- `setup-dotnet-ci` — .NET SDK, NuGet cache, opt-in host NuGet fallback folder *(active)*
 - `setup-node-ci` — Node.js setup, npm cache *(future: SDK workflows)*
 - `setup-python-ci` — Python setup, pip cache *(future: conformance/script workflows)*
 - `upload-ci-evidence` — artifact upload with standard naming and tier-based retention *(active)*

@@ -279,10 +279,10 @@
       "path": "/folders"
     },
     {
-      "operationId": "createFormPackageDraft",
+      "operationId": "createFormDraft",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/forms/packages"
+      "path": "/forms"
     },
     {
       "operationId": "createInvestigation",
@@ -825,10 +825,10 @@
       "path": "/metadata/coordinated-releases/{packageId}/operation"
     },
     {
-      "operationId": "getCurrentFormPackage",
+      "operationId": "getCurrentForm",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/forms/packages/{formId}"
+      "path": "/forms/{formId}"
     },
     {
       "operationId": "getDatabaseQueryCacheStatistics",
@@ -933,10 +933,10 @@
       "path": "/field-workflows/submissions/{submissionId}"
     },
     {
-      "operationId": "getFormPackageVersion",
+      "operationId": "getFormVersion",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}"
+      "path": "/forms/{formId}/versions/{formVersion}"
     },
     {
       "operationId": "getGeoServerImportJob",
@@ -1383,6 +1383,12 @@
       "path": "/zarr-stores/{id}"
     },
     {
+      "operationId": "goLiveFormDraft",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/forms/{formId}/versions/{formVersion}/publish"
+    },
+    {
       "operationId": "importGeocoderReferenceData",
       "catalogOperationId": null,
       "method": "POST",
@@ -1581,16 +1587,16 @@
       "path": "/folders"
     },
     {
-      "operationId": "listFormPackageVersions",
+      "operationId": "listFormVersions",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/forms/packages/{formId}/versions"
+      "path": "/forms/{formId}/versions"
     },
     {
-      "operationId": "listFormPackages",
+      "operationId": "listForms",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/forms/packages"
+      "path": "/forms"
     },
     {
       "operationId": "listGeoServerImportJobs",
@@ -1911,12 +1917,6 @@
       "path": "/raster-artifacts/cog"
     },
     {
-      "operationId": "publishFormPackageVersion",
-      "catalogOperationId": null,
-      "method": "POST",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}/publish"
-    },
-    {
       "operationId": "publishGpProcessRelease",
       "catalogOperationId": null,
       "method": "POST",
@@ -2061,10 +2061,10 @@
       "path": "/investigations/{investigationId}/pins/{pinId}"
     },
     {
-      "operationId": "reopenFormPackageVersion",
+      "operationId": "reopenFormVersion",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}/reopen"
+      "path": "/forms/{formId}/versions/{formVersion}/reopen"
     },
     {
       "operationId": "replayFeatureChangeEvents",
@@ -2487,10 +2487,10 @@
       "path": "/folders/{id}"
     },
     {
-      "operationId": "updateFormPackageDraft",
+      "operationId": "updateFormDraft",
       "catalogOperationId": null,
       "method": "PUT",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}"
+      "path": "/forms/{formId}/versions/{formVersion}"
     },
     {
       "operationId": "updateImportedRaster",
@@ -2631,10 +2631,10 @@
       "path": "/connections/{id}/tables/validate"
     },
     {
-      "operationId": "validateFormPackageVersion",
+      "operationId": "validateFormDraft",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}/validate"
+      "path": "/forms/{formId}/versions/{formVersion}/validate"
     },
     {
       "operationId": "validatePackage",

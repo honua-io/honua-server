@@ -931,6 +931,7 @@
         "description",
         "dryRun",
         "enabled",
+        "exactTypes",
         "fieldDomains",
         "fields",
         "folderId",
@@ -2094,10 +2095,12 @@
       "toolName": "honua_admin_rls_policy_create",
       "title": "Create RLS policy",
       "inputFields": [
+        "areaGeometry",
         "attribute",
         "claimType",
         "comparison",
         "description",
+        "filterExpression",
         "layer",
         "role",
         "service"
