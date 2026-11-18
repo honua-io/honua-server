@@ -56,7 +56,10 @@ public sealed partial class McpTaxonomyAlignmentTests
         var disagreements = new List<string>();
         foreach (var tool in BuildTools())
         {
-            if (!vendoredSchemas.TryGetValue(tool.Name, out var standardPath))
+            // Reference-shape tools address a Studio draft (draftId, generation) instead of the
+            // standard's package ids, so their argument shape is compared by the conformance tests.
+            if (!vendoredSchemas.TryGetValue(tool.Name, out var standardPath)
+                || ReferenceShapeTargetedTools.ContainsKey(tool.Name))
             {
                 continue;
             }
@@ -65,8 +68,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             using var standard = JsonDocument.Parse(File.ReadAllText(standardPath));
             var liveClosed = IsClosed(tool.Describe().InputSchema);
             var standardClosed = IsClosed(standard.RootElement);
-            // Reference-shape tools require members the standard cannot express, so its schema stays open.
-            if (liveClosed != standardClosed && !ReferenceShapeTargetedTools.ContainsKey(tool.Name))
+            if (liveClosed != standardClosed)
             {
                 disagreements.Add($"{tool.Name} (live closed={liveClosed}) vs {standardName} (standard closed={standardClosed})");
             }

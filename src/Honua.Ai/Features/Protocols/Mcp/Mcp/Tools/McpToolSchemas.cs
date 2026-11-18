@@ -472,7 +472,7 @@ internal static class McpToolSchemas
                           "inputs": {
                             "type": "object",
                             "additionalProperties": { "type": "string" },
-                            "description": "Process inputs keyed by parameter name, as strings encoded per the catalog entry for this step's processId. honua://catalog/processes gives each parameter's name, type, whether it is required and its encoding (base64 WKB, data URI FeatureCollection, SRID, layer id)."
+                            "description": "Process inputs keyed by parameter name, string-encoded per the catalog entry for this step's processId. honua://catalog/processes gives each parameter's name, type, whether it is required and its encoding (base64 WKB, data URI FeatureCollection, SRID, layer id)."
                           },
                           "dependsOn": {
                             "type": "array",
