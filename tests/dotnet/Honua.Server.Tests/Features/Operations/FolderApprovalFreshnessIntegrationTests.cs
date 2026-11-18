@@ -175,7 +175,7 @@ public sealed partial class FolderOperationIntegrationTests
         using var scope = _fixture.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
         var before = await store.GetCurrentAsync();
-        var mutation = FolderMutation.Create(before.Graph, new FolderRequest { Name = "Concurrent" }, null);
+        var mutation = FolderMutation.Create(before.Graph, new FolderMutationCommand.Create("Concurrent", default), null);
         await store.SaveAsync(mutation.Graph, before.Etag);
     }
 

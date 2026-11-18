@@ -9,14 +9,14 @@
     "adjudication": "docs/gis/data/capability-manifest-adjudication.v1.json"
   },
   "summary": {
-    "manifestIdCount": 48,
+    "manifestIdCount": 49,
     "resolvedCount": 40,
     "byResolution": {
       "declared-gap": 1,
       "direct": 21,
       "entitlement": 8,
       "mapped": 7,
-      "not-licensable": 7,
+      "not-licensable": 8,
       "registered": 4
     }
   },
@@ -72,6 +72,14 @@
       "capability": "collaboration.map-sessions",
       "resolution": "mapped",
       "note": "Leases are shared through the PostgreSQL lease store, so a lease claimed on one node blocks a competing write on another; a host without the system database keeps the in-process store, and the manifest publishes available:false with reasonCode dependency-unavailable there. Same licensed capability as collaboration.feature-locks."
+    },
+    {
+      "manifestId": "console.content.persistent",
+      "category": "console",
+      "kind": "Feature",
+      "capability": null,
+      "resolution": "not-licensable",
+      "note": "A storage fact, not a capability: Console catalog, share-link, open-data and embed-key state is kept in the system database when the host has one, and the manifest publishes available:false with reasonCode dependency-unavailable on an in-memory host. The surfaces it unlocks are licensed by the routes they call."
     },
     {
       "manifestId": "edit.features",

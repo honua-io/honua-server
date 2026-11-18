@@ -9,6 +9,21 @@ namespace Honua.Core.Features.Raster.CogParser;
 
 public static class CogTiffTileEncoder
 {
+    // GDAL's COG layout declaration. GDAL 3.8 reports LAYOUT=COG only when the ghost area, the
+    // 4-byte size leader and the repeated last-4-bytes trailer around each tile are all present.
+    private static readonly byte[] GhostArea = Encoding.ASCII.GetBytes(
+        "GDAL_STRUCTURAL_METADATA_SIZE=000140 bytes\n"
+        + "LAYOUT=IFDS_BEFORE_DATA\n"
+        + "BLOCK_ORDER=ROW_MAJOR\n"
+        + "BLOCK_LEADER=SIZE_AS_UINT4\n"
+        + "BLOCK_TRAILER=LAST_4_BYTES_REPEATED\n"
+        + "KNOWN_INCOMPATIBLE_EDITION=NO\n ");
+
+    private const int BlockLeaderBytes = 4;
+    private const int BlockTrailerBytes = 4;
+
+    private static readonly int IfdOffset = (8 + GhostArea.Length + 1) & ~1;
+
     public static byte[]? Encode(byte[] samples, CogMetadata metadata, RasterExtent extent)
     {
         var bits = metadata.BitsPerSample;
@@ -55,14 +70,16 @@ public static class CogTiffTileEncoder
             fields.Add((42113, 2, (uint)noData.Length, noData));
         }
 
-        var externalOffset = 8 + 2 + fields.Count * 12 + 4;
+        var externalOffset = IfdOffset + 2 + fields.Count * 12 + 4;
         var tileOffset = externalOffset + fields.Where(field => field.Value.Length > 4)
-            .Sum(field => (field.Value.Length + 1) & ~1);
-        using var stream = new MemoryStream(checked(tileOffset + samples.Length));
+            .Sum(field => (field.Value.Length + 1) & ~1) + BlockLeaderBytes;
+        using var stream = new MemoryStream(checked(tileOffset + samples.Length + BlockTrailerBytes));
         using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
         writer.Write((ushort)0x4949);
         writer.Write((ushort)42);
-        writer.Write(8u);
+        writer.Write((uint)IfdOffset);
+        writer.Write(GhostArea);
+        writer.Write(new byte[IfdOffset - 8 - GhostArea.Length]);
         writer.Write((ushort)fields.Count);
         foreach (var field in fields)
         {
@@ -90,6 +107,7 @@ public static class CogTiffTileEncoder
             writer.Write(field.Value);
             if (field.Value.Length % 2 != 0) writer.Write((byte)0);
         }
+        writer.Write((uint)samples.Length);
         if (metadata.IsLittleEndian || bits == 8)
         {
             writer.Write(samples);
@@ -99,6 +117,9 @@ public static class CogTiffTileEncoder
             for (var sample = 0; sample < samples.Length; sample += bits / 8)
                 for (var b = bits / 8 - 1; b >= 0; b--) writer.Write(samples[sample + b]);
         }
+        writer.Flush();
+        var trailer = stream.GetBuffer().AsSpan(tileOffset + samples.Length - BlockTrailerBytes, BlockTrailerBytes).ToArray();
+        writer.Write(trailer);
         return stream.ToArray();
     }
 
