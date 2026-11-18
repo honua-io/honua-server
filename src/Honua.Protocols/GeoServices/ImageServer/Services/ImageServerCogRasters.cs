@@ -30,9 +30,9 @@ internal static class ImageServerCogRasters
 {
     public const string Entitlement = "raster.cloud-cog-serving";
 
-    // exportImage, identify, statistics and histograms read raster_data only; a COG-only layer
-    // is drawn from its tiles, so it advertises metadata and nothing it cannot answer.
-    public const string Capabilities = "Metadata";
+    // exportImage composes the COG tiles (ImageServerCogExport); identify, statistics and
+    // histograms read raster_data only, so a COG-only layer advertises nothing it cannot answer.
+    public const string Capabilities = "Image,Metadata";
 
     // raster_data rasters win; COGs describe the layer only when it has none. Registered COG ids
     // are not raster_data rows, so the caller skips raster_data statistics when FromCogs is set.
@@ -45,16 +45,22 @@ internal static class ImageServerCogRasters
         }
 
         var rasters = await ListAsync(context, layer, cancellationToken).ConfigureAwait(false);
-        var refusal = rasters.Length > 0 && !IsEntitled(context)
-            ? StandardErrorHelpers.CreatePaymentRequired(
-                context,
-                "COG Serving requires an active Pro entitlement. Install a license that includes 'raster.cloud-cog-serving'.",
-                ["entitlement: " + Entitlement])
-            : null;
+        var refusal = rasters.Length > 0 && !IsEntitled(context) ? PaymentRequired(context) : null;
         return new ImageServerCogResolution(rasters, refusal) { FromCogs = true };
     }
 
     public static async Task<RasterInfo[]> ListAsync(HttpContext context, ImageServerCogLayer layer, CancellationToken cancellationToken)
+    {
+        var registrations = await ListScannedAsync(context, layer, cancellationToken).ConfigureAwait(false);
+        var rasters = registrations.Select(Describe).ToArray();
+
+        // One service envelope cannot union grids in different CRSs; keep the first registration's.
+        return rasters.Length == 0 ? rasters : rasters.Where(raster => raster.Srid == rasters[0].Srid).ToArray();
+    }
+
+    // The scanned registrations bound to the publication, in store order (the tile route's order).
+    public static async Task<CogRegistration[]> ListScannedAsync(
+        HttpContext context, ImageServerCogLayer layer, CancellationToken cancellationToken)
     {
         var cogStore = context.RequestServices.GetService<ICogStore>();
         if (cogStore is null
@@ -65,14 +71,31 @@ internal static class ImageServerCogRasters
         }
 
         var registrations = await cogStore.ListByLayerAsync(layerIndex, cancellationToken).ConfigureAwait(false);
-        var rasters = registrations
-            .Where(registration => registration.Metadata is { Width: > 0, Height: > 0 })
-            .Select(Describe)
-            .ToArray();
-
-        // One service envelope cannot union grids in different CRSs; keep the first registration's.
-        return rasters.Length == 0 ? rasters : rasters.Where(raster => raster.Srid == rasters[0].Srid).ToArray();
+        return registrations.Where(registration => registration.Metadata is { Width: > 0, Height: > 0 }).ToArray();
     }
+
+    // The scanned registrations of a layer holding no raster_data rows. raster_data wins, as in
+    // ResolveAsync, so a layer with both keeps its raster_data answers when a selection is empty.
+    public static async Task<CogRegistration[]> ListCogOnlyAsync(
+        HttpContext context, ImageServerCogLayer layer, CancellationToken cancellationToken)
+    {
+        var registrations = await ListScannedAsync(context, layer, cancellationToken).ConfigureAwait(false);
+        var rasterStore = context.RequestServices.GetService<IRasterStore>();
+        if (registrations.Length == 0 || rasterStore is null
+            || (layer.Snapshot.ResolveStorageLayerId(layer.Publication) ?? layer.Publication.LayerIndex) is not { } storageLayerId)
+        {
+            return registrations;
+        }
+
+        var primary = await rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        return primary is null ? registrations : [];
+    }
+
+    public static IResult PaymentRequired(HttpContext context)
+        => StandardErrorHelpers.CreatePaymentRequired(
+            context,
+            "COG Serving requires an active Pro entitlement. Install a license that includes 'raster.cloud-cog-serving'.",
+            ["entitlement: " + Entitlement]);
 
     // Matches the tile route, which answers 402 for these layers without the entitlement.
     public static bool IsEntitled(HttpContext context)

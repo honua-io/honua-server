@@ -68,7 +68,7 @@ public sealed class ImageServerCogServiceInfoTests
         info.PixelType.Should().Be(esriPixelType);
         info.PixelSizeX.Should().BeApproximately(38.2185, 1e-3);
         info.MinValues.Should().BeEmpty("COG statistics are not computed from raster_data");
-        info.Capabilities.Should().Be("Metadata", "exportImage, identify and statistics do not read COGs");
+        info.Capabilities.Should().Be("Image,Metadata", "exportImage composes COG tiles; identify and statistics do not read COGs");
         info.HasHistograms.Should().BeFalse();
         await _rasterStore.DidNotReceiveWithAnyArgs().GetStatisticsAsync(default, default, default, default, default);
     }
