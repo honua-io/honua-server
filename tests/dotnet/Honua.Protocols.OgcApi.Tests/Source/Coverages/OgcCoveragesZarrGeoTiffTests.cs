@@ -78,7 +78,7 @@ public sealed class OgcCoveragesZarrGeoTiffTests
         var tiff = await response.Content.ReadAsByteArrayAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(tiff));
         response.Content.Headers.ContentType!.MediaType.Should().Be("image/tiff");
-        response.Content.Headers.GetValues("Content-Bbox").Should().ContainSingle().Which.Should().Be("-1,-1,1,1");
+        response.Headers.GetValues("Content-Bbox").Should().ContainSingle().Which.Should().Be("-1,-1,1,1");
         tiff[..4].Should().Equal(0x49, 0x49, 42, 0);
         ReadFloatPixels(tiff, 4).Should().Equal(0f, 1f, 2f, 3f);
 
