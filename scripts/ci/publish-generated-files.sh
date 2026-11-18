@@ -137,15 +137,29 @@ fi
 # (#4732) pushed this branch, then failed `gh pr list` with "GraphQL: API
 # rate limit already exceeded" while REST quota was still available.
 repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required to address the REST pulls API}"
+body='Automated regeneration of the tracked projections listed in scripts/ci/generated-files.sh (see docs/internal/ci/generated-files-on-trunk.md). Lands through the normal PR Gate + Review Gate + per-PR lander path; this workflow never writes trunk directly. Refs #3213.'
+# The automation PAT is a user account, so Repository hygiene's bundle rule
+# applies: no closing references, and usually under 300 lines. Until this PR
+# lands, trunk's projections are stale against their sources and every lane's
+# local pre-pr refuses on them, so it carries the documented exception. The
+# label goes on first; the body edit after it raises the `edited` event that
+# re-runs hygiene with both (the `opened` run saw neither and is cancelled).
+exception='Bundle-exception: blocking red — trunk projections are stale against their authored sources until this lands, and local pre-pr refuses on that drift.'
 existing="$(gh api "repos/${repo}/pulls?state=open&base=trunk&head=${repo%%/*}:${branch}" \
   --jq '.[0].number // empty')"
 if [[ -n "${existing}" ]]; then
   echo "Updated existing generated-files PR #${existing}."
-  exit 0
+else
+  existing="$(gh api --method POST "repos/${repo}/pulls" \
+    -f base=trunk \
+    -f head="${branch}" \
+    -f title="${title}" \
+    -f body="${body}" \
+    --jq '.number')"
+  echo "Opened generated-files PR #${existing}."
 fi
-gh api --method POST "repos/${repo}/pulls" \
-  -f base=trunk \
-  -f head="${branch}" \
-  -f title="${title}" \
-  -f body='Automated regeneration of the tracked projections listed in scripts/ci/generated-files.sh (see docs/internal/ci/generated-files-on-trunk.md). Lands through the normal PR Gate + Review Gate + per-PR lander path; this workflow never writes trunk directly. Refs #3213.' \
-  --jq '.html_url'
+gh api --method POST "repos/${repo}/issues/${existing}/labels" -f 'labels[]=bundle-exception' --silent
+labelled_body="${body}
+
+${exception}"
+gh api --method PATCH "repos/${repo}/pulls/${existing}" -f body="${labelled_body}" --silent
