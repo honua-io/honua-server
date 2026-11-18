@@ -25,6 +25,8 @@ internal static partial class StyleDocumentWithheldFields
 
     private const string MirroredLayerStylePrefix = "style-layer-";
 
+    private const string PromoteIdProperty = "promoteId";
+
     internal const string EmptyMapLibreStyle = """{"version":8,"sources":{},"layers":[]}""";
 
     private static readonly HashSet<string> FieldReferenceProperties = new(StringComparer.OrdinalIgnoreCase)
@@ -88,6 +90,7 @@ internal static partial class StyleDocumentWithheldFields
     {
         if (styleId.StartsWith(MirroredLayerStylePrefix, StringComparison.Ordinal)
             && int.TryParse(styleId.AsSpan(MirroredLayerStylePrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var layerId)
+            && string.Equals(styleId, MirroredLayerStylePrefix + layerId.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
             && snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var mirrored))
         {
             return mirrored;
@@ -112,9 +115,13 @@ internal static partial class StyleDocumentWithheldFields
             return null;
         }
 
+        // Only a source's feature-id property names a field; its type, url and tile templates must survive.
         foreach (var source in (style["sources"] as JsonObject)?.Select(entry => entry.Value).OfType<JsonObject>() ?? [])
         {
-            RemoveReferencing(source, withheld);
+            if (source[PromoteIdProperty] is { } promoteId && StyleReferences(promoteId, withheld))
+            {
+                source.Remove(PromoteIdProperty);
+            }
         }
 
         if (StyleReferences(style["metadata"], withheld))

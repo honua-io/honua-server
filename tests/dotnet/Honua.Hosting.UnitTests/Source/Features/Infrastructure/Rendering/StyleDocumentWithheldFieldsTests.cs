@@ -98,4 +98,15 @@ public class StyleDocumentWithheldFieldsTests
 
         result.Should().NotContain("notes").And.Contain("\"url\":\"/tiles.json\"");
     }
+
+    [UnitTest]
+    public void MapLibre_KeepsSourceTileTemplatesWhenAWithheldFieldIsNamedLikeAPlaceholder()
+    {
+        var withheldX = new HashSet<string>(["x", "vector"], StringComparer.OrdinalIgnoreCase);
+        const string style = """{"version":8,"sources":{"s":{"type":"vector","tiles":["/t/{z}/{x}/{y}.pbf"],"promoteId":"x"}},"layers":[]}""";
+
+        var result = StyleDocumentWithheldFields.WithoutWithheldMapLibre(style, withheldX)!;
+
+        result.Should().Contain("\"type\":\"vector\"").And.Contain("{x}").And.NotContain("promoteId");
+    }
 }
