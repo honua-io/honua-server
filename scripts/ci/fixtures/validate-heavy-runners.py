@@ -75,8 +75,12 @@ ANALYZER_TESTS_RUNNER = ("matrix.analyzer-partition == 'tests' && ("
                          + planned_heavy("',analyzers-{0},', matrix.analyzer-test-partition") + " || 'ubuntu-latest') || ")
 # Native AOT is not a matrix: every trusted run takes the heavy pool, forks stay hosted.
 AOT_RUNNER = "${{ vars.HONUA_HEAVY_RUNNER" + FORK_GUARD + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"
+# Full runs (the ci.yml run-name rule) take free standard hosted runners; affected runs keep the pool.
+FULL_RUN_HOSTED = ("(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+                   " && (inputs.full_ci || !inputs.selective_base)) && 'ubuntu-latest' || ")
 SHARD_JOBS = {
-    "ci.yml": ("server-tests", "${{ " + TRUSTED_HEAVY_RUNNER + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
+    "ci.yml": ("server-tests", "${{ " + FULL_RUN_HOSTED + TRUSTED_HEAVY_RUNNER
+               + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
     "pr-gate.yml": ("affected-shard", "${{ needs.runner-select.outputs.heavy_ready == 'true' && " + HEAVY_SHARD_RUNNER + " || 'ubuntu-latest' }}"),
 }
 
@@ -103,26 +107,29 @@ class ShardRunnerRoutingTests(unittest.TestCase):
             with self.subTest(workflow=workflow):
                 self.assertEqual(self.shard_job(workflow)["runs-on"], runs_on)
 
-    def test_full_matrix_never_waits_for_hosted_capacity_when_heavy_is_configured(self):
+    def test_full_runs_take_hosted_runners_and_affected_runs_the_heavy_pool(self):
         expression = self.shard_job("ci.yml")["runs-on"]
         self.assertNotIn("strategy.job-index", expression)
-        probe = """const {expression, event, fork, heavy, fallback} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+        probe = """const {expression, event, fork, heavy, fallback, inputs} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 const repository = 'owner/repo', source = fork ? 'fork/repo' : repository;
 const payload = event === 'pull_request' ? {pull_request: {head: {repo: {full_name: source}}}} :
     event === 'workflow_run' ? {workflow_run: {head_repository: {full_name: source}}} : {};
-const github = {repository, event: payload}, vars = {HONUA_HEAVY_RUNNER: heavy, HONUA_CI_HEAVY_RUNNER: fallback};
-process.stdout.write(JSON.stringify(new Function('github', 'vars', 'fromJSON', `return (${expression});`)(github, vars, JSON.parse)));
+const github = {repository, event_name: event, event: payload}, vars = {HONUA_HEAVY_RUNNER: heavy, HONUA_CI_HEAVY_RUNNER: fallback};
+process.stdout.write(JSON.stringify(new Function('github', 'vars', 'inputs', 'fromJSON', `return (${expression});`)(github, vars, inputs, JSON.parse)));
 """
         pool = {"group": "honua-heavy", "labels": ["honua-heavy"]}
-        for event, fork, configured, fallback in product(
-                ["push", "workflow_dispatch", "pull_request", "workflow_run"],
-                [False, True], [False, True], ["", "ubuntu-24.04"]):
+        affected = {"full_ci": False, "selective_base": "a" * 40}
+        runs = [("schedule", {}, True), ("workflow_dispatch", {"full_ci": False, "selective_base": ""}, True),
+                ("workflow_dispatch", {**affected, "full_ci": True}, True), ("workflow_dispatch", affected, False),
+                ("push", {}, False), ("pull_request", {}, False), ("workflow_run", {}, False)]
+        for (event, inputs, full), fork, configured, fallback in product(
+                runs, [False, True], [False, True], ["", "ubuntu-24.04"]):
             trusted = event not in {"pull_request", "workflow_run"} or not fork
-            expected = pool if configured and trusted else fallback or "ubuntu-latest"
-            context = {"expression": expression[3:-2].strip(), "event": event,
+            expected = "ubuntu-latest" if full else pool if configured and trusted else fallback or "ubuntu-latest"
+            context = {"expression": expression[3:-2].strip(), "event": event, "inputs": inputs,
                        "fork": fork, "heavy": json.dumps(pool) if configured else "",
                        "fallback": fallback}
-            with self.subTest(event=event, fork=fork, configured=configured, fallback=fallback):
+            with self.subTest(event=event, inputs=inputs, fork=fork, configured=configured, fallback=fallback):
                 result = subprocess.run(["node", "-e", probe], input=json.dumps(context),
                                         text=True, capture_output=True, check=True)
                 self.assertEqual(json.loads(result.stdout), expected)
