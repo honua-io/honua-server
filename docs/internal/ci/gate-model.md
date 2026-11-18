@@ -1497,8 +1497,13 @@ before publishing change outputs; neither cancellation nor a failed cancellation
 Admitted affected runs use two concurrent server shards. A selective run whose
 router reason is `no_path_match` schedules none of those default smoke shards.
 Honua.Core package compatibility, which uses the heavy pool, runs on a selective
-dispatch only when a changed file sits outside docs, workflows, `scripts/ci/` and
-tests. An empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+dispatch only when a changed file sits outside docs, workflows, `scripts/ci/`,
+repository metadata and tests. Repository metadata (`.github/codeql/`, issue
+templates, CODEOWNERS, Dependabot, actionlint, hygiene and PR template files)
+starts no managed build or integration lane on any `ci.yml` run: affected run
+44254098776 spent a 30-minute producer build plus Format, GDAL and Core package
+jobs on a range whose only build input was `.github/codeql/pr-paths.txt`. An
+empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
 Core package or Postgres compatibility job still does. All trusted indices
 use the configured `honua-heavy` pool, so a run holds at most two heavy runners
 for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,

@@ -504,15 +504,18 @@ jobs:
               echo "non_test_changes=true" >> $GITHUB_OUTPUT
             fi
 
+            # Repository metadata that no build, test or package reads;
+            # scripts/ci/trailing_selection.py REPO_METADATA keeps the same list.
+            REPO_METADATA='\.github/(codeql/|ISSUE_TEMPLATE/|CODEOWNERS$|actionlint\.yaml$|dependabot\.yml$|hygiene\.json$|pull_request_template\.md$)'
             BUILD_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/)' \
+                | grep -Ev -e '^($|docs/|README\.md$|\.github/(workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/)' -e "^${REPO_METADATA}" \
                 | sed '/^$/d' || true
             )
 
             INTEGRATION_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | grep -Ev -e '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' -e "^${REPO_METADATA}" \
                 | sed '/^$/d' || true
             )
 
