@@ -3,6 +3,8 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer;
@@ -46,11 +48,15 @@ public sealed class ImageServerCogServiceInfoTests
             multidimensional, NullLogger<ImageServerMetadataHandler>.Instance);
     }
 
-    [UnitTest]
+    [UnitTheory]
+    [InlineData("uint8", "U8")]
+    [InlineData("float32", "F32")]
+    [InlineData("int16", "S16")]
     [Operation(Operations.GetServiceInfo)]
-    public async Task GetServiceInfoAsync_CogOnlyLayer_DescribesTheScannedCogGrid()
+    public async Task GetServiceInfoAsync_CogOnlyLayer_DescribesTheScannedCogGrid(string cogPixelType, string esriPixelType)
     {
-        _cogStore.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns(new[] { Registration(CogMetadata()) });
+        _cogStore.ListByLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new[] { Registration(CogMetadata() with { PixelType = cogPixelType }) });
 
         var result = await _handler.GetServiceInfoAsync(CreateContext(), 1);
 
@@ -59,9 +65,27 @@ public sealed class ImageServerCogServiceInfoTests
         info.Extent.YMax.Should().Be(CogExtent.YMax);
         info.SpatialReference.Wkid.Should().Be(3857);
         info.BandCount.Should().Be(1);
+        info.PixelType.Should().Be(esriPixelType);
         info.PixelSizeX.Should().BeApproximately(38.2185, 1e-3);
         info.MinValues.Should().BeEmpty("COG statistics are not computed from raster_data");
+        info.Capabilities.Should().Be("Metadata", "exportImage, identify and statistics do not read COGs");
+        info.HasHistograms.Should().BeFalse();
         await _rasterStore.DidNotReceiveWithAnyArgs().GetStatisticsAsync(default, default, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_CogOnlyLayerWithoutEntitlement_AnswersPaymentRequiredLikeTiles()
+    {
+        _cogStore.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns(new[] { Registration(CogMetadata()) });
+        var licensing = Substitute.For<ILicenseEntitlementService>();
+        licensing.CheckEntitlement(ImageServerCogRasters.Entitlement).Returns(new LicenseEntitlementDecision(
+            ImageServerCogRasters.Entitlement, false, default, default, RequiredEdition: null, UpgradeMessage: "not active"));
+
+        var context = CreateContext(services => services.AddSingleton(licensing));
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status402PaymentRequired);
     }
 
     [UnitTest]
@@ -104,12 +128,13 @@ public sealed class ImageServerCogServiceInfoTests
         CreatedAt = DateTimeOffset.UnixEpoch,
     };
 
-    private DefaultHttpContext CreateContext()
+    private DefaultHttpContext CreateContext(Action<IServiceCollection>? configure = null)
         => ImageServerTestFixtures.CreateContext("/rest/services/1/ImageServer", services =>
         {
             services.AddSingleton(_rasterStore);
             services.AddSingleton(_cogStore);
             services.AddOptions();
             services.Configure<ImageServerTileMetadataOptions>(_ => { });
+            configure?.Invoke(services);
         });
 }

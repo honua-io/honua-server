@@ -80,11 +80,14 @@ internal sealed class ImageServerMetadataHandler
 
             // Get raster information
             var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
-            var servedFromCogs = rasters.Length == 0;
-            if (servedFromCogs)
+            var cogs = await ImageServerCogRasters.ResolveAsync(
+                context, new(snapshot, resolved.Publication, rasters), cancellationToken).ConfigureAwait(false);
+            if (cogs.Refusal is { } refusal)
             {
-                rasters = await ImageServerCogRasters.ListAsync(context, snapshot, resolved.Publication).ConfigureAwait(false);
+                return refusal;
             }
+
+            rasters = cogs.Rasters;
 
             if (rasters.Length == 0)
             {
@@ -109,8 +112,7 @@ internal sealed class ImageServerMetadataHandler
             // the whole metadata response instead of just omitting statistics.
             var rasterIds = rasters.Select(r => r.Id).ToArray();
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-            // Registered COG ids are not raster_data rows; their statistics are not computed yet.
-            RasterStatistics[] statistics = servedFromCogs ? [] : await ImageServerStatisticsBudget.ResolveAsync(
+            RasterStatistics[] statistics = cogs.FromCogs ? [] : await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
                 ImageServerStatisticsBudget.CreateStatisticsOperationKey(
                     schemaName, layerId, rasterIds, mergeStrategy),
@@ -211,7 +213,7 @@ internal sealed class ImageServerMetadataHandler
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
                 MeanValues = statistics.Select(s => s.MeanValue ?? 0).ToArray(),
                 StdvValues = statistics.Select(s => s.StandardDeviation ?? 0).ToArray(),
-                Capabilities = "Catalog,Image,Metadata,Mensuration,Pixels,Statistics",
+                Capabilities = cogs.FromCogs ? ImageServerCogRasters.Capabilities : "Catalog,Image,Metadata,Mensuration,Pixels,Statistics",
                 MensurationCapabilities = "Basic",
                 MaxImageHeight = MaxImageHeight,
                 MaxImageWidth = MaxImageWidth,
@@ -219,7 +221,7 @@ internal sealed class ImageServerMetadataHandler
                 SingleFusedMapCache = advertiseTileCache,
                 CacheType = null,
                 TileInfo = tileInfo,
-                HasHistograms = true,
+                HasHistograms = !cogs.FromCogs,
                 // Capability fields describe what the request pipeline executes: raster
                 // functions run through renderingRule, the mosaic methods are exactly those the
                 // mosaic-rule parser executes, and a rule-less request composites newest
