@@ -26,7 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
 public sealed partial class OperationsProgressEndpointsTests

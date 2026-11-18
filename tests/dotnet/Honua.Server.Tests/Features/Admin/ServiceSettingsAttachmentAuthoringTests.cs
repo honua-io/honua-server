@@ -25,7 +25,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer)]
 [Operation(Operations.Configuration)]
 public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper output)
