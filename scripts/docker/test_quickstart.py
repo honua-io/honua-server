@@ -306,5 +306,13 @@ class QuickstartTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, "Missing credentials must refuse startup")
 
 
+    def test_console_index_is_compressible_when_identity_is_refused(self):
+        config = (ROOT / 'docs/get-started/console.nginx.conf').read_text()
+        index = config.split('location = /console/index.html {', 1)[1].split('}', 1)[0]
+        self.assertRegex(index, r'\n\s*gzip on;')
+        self.assertIn('Cache-Control no-store', index)
+        spa = config.split('location /console/ {', 1)[1].split('}', 1)[0]
+        self.assertIn('try_files $uri /console/index.html;', spa)
+
 if __name__ == "__main__":
     unittest.main()
