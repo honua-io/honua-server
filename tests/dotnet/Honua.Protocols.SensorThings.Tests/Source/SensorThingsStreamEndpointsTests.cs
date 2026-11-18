@@ -17,9 +17,24 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
-public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
+public sealed partial class SensorThingsStreamEndpointsTests(SensorThingsStreamEndpointsTests.StreamHost host)
+    : IClassFixture<SensorThingsStreamEndpointsTests.StreamHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+    private readonly WebAppFixture _fixture = host.Fixture;
+
+    // One application serves every case. Stream cases open their own connections and read from
+    // the live tail or from a cursor taken in the same case, so observations ingested by an
+    // earlier case are never expected; the tenant-collision case seeds and drops its own schema.
+    public sealed class StreamHost : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = CreateFixture();
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
+    private static WebAppFixture CreateFixture() => new WebAppFixture().ConfigureWebHost(builder =>
     {
         builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -30,10 +45,6 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
                 ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin",
             }));
     });
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Operation(Operations.Streaming)]

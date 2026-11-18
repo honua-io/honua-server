@@ -42,21 +42,16 @@ internal static class BrowserSessionSecurity
                 || (request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
                     && (metadata?.GetMetadata<UsesBrowserSessionMetadata>() is not null
                         || !HasAuthenticatedExplicitCredential(context)));
+            if (IsCrossOriginSessionWebSocket(context))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
             // SAML POST bindings validate signed protocol messages and their own correlation state.
             if (!safe && requiresCsrf && metadata?.GetMetadata<BrowserCsrfProtocolBindingMetadata>() is null)
             {
-                if (!request.IsHttps || !IsSameOrigin(request))
-                {
-                    await RejectCsrfAsync(context).ConfigureAwait(false);
-                    return;
-                }
-
-                try
-                {
-                    await context.RequestServices.GetRequiredService<IAntiforgery>()
-                        .ValidateRequestAsync(context).ConfigureAwait(false);
-                }
-                catch (AntiforgeryValidationException)
+                if (!request.IsHttps || !IsSameOrigin(request) || !await PassesAntiforgeryAsync(context).ConfigureAwait(false))
                 {
                     await RejectCsrfAsync(context).ConfigureAwait(false);
                     return;
@@ -66,6 +61,38 @@ internal static class BrowserSessionSecurity
             await next(context).ConfigureAwait(false);
         });
     }
+
+    private static async Task<bool> PassesAntiforgeryAsync(HttpContext context)
+    {
+        try
+        {
+            await context.RequestServices.GetRequiredService<IAntiforgery>()
+                .ValidateRequestAsync(context).ConfigureAwait(false);
+            return true;
+        }
+        catch (AntiforgeryValidationException)
+        {
+            return false;
+        }
+    }
+
+    // A WebSocket upgrade is a GET, so the antiforgery check never sees it. When the browser
+    // session cookie is the credential, the upgrade must come from this origin: same-site
+    // pages on another origin (a sibling subdomain) would otherwise receive the cookie.
+    // Browsers cannot set headers on an upgrade, so a token in the query string also counts
+    // as the caller's own credential.
+    private static bool IsCrossOriginSessionWebSocket(HttpContext context) =>
+        context.WebSockets.IsWebSocketRequest
+        && context.Request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
+        && !HasAuthenticatedExplicitCredential(context)
+        && !HasAuthenticatedQueryCredential(context)
+        && !IsSameOrigin(context.Request);
+
+    private static bool HasAuthenticatedQueryCredential(HttpContext context) =>
+        context.User.Identity is { IsAuthenticated: true } identity
+        && identity.AuthenticationType != OidcAuthenticationExtensions.AdminSessionScheme
+        && !context.IsAdminAuthSessionBridged()
+        && context.Items.ContainsKey(PortalTokenAuthenticationExtensions.QueryCredentialKey);
 
     private static bool HasAuthenticatedExplicitCredential(HttpContext context) =>
         context.User.Identity is { IsAuthenticated: true } identity

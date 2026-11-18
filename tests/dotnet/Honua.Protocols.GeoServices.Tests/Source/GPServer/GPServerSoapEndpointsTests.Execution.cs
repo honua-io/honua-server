@@ -12,8 +12,6 @@ using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 
@@ -35,19 +33,14 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task SoapExecution_ProcessAuthorization_PrecedesParameterValidation(string operation)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         jobs.EnsureCallerAuthorizedAsync(Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process,
             OperatorOperation.Execute, Arg.Any<CancellationToken>())
             .ThrowsAsync(new GeoprocessingAuthorizationException(false, "Execution is forbidden."));
         jobs.EnsureGPServerExecutionAuthorizedAsync(Arg.Any<ClaimsPrincipal>(),
             Arg.Any<GPServerExecutionContext>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new GeoprocessingAuthorizationException(false, "Execution is forbidden."));
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         using var response = await PostAsync(client, operation, "<Malformed/>");
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, await response.Content.ReadAsStringAsync());
         await jobs.DidNotReceiveWithAnyArgs().SubmitGPServerJobAsync(default!, default, default!, default!, default, default);
@@ -62,13 +55,8 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task SoapExecution_ProcessingSpatialReference_IsRefusedBeforeSubmission(string operation, string key)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        var jobs = fixture.ResetJobs();
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         var environment = $"""
             <EnvironmentValues><PropertyArray><PropertySetProperty>
             <Key>{key}</Key><Value xsi:type="tns:GPLong"><Value>4326</Value></Value>
@@ -90,7 +78,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "SubmitJob")]
     public async Task SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding()
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         AnalysisPlan? submittedPlan = null;
         IReadOnlyDictionary<string, string>? binding = null;
         jobs.SubmitGPServerJobAsync(Arg.Any<AnalysisPlan>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(),
@@ -100,12 +88,7 @@ public sealed partial class GPServerSoapEndpointsTests
                 binding = call.Arg<IReadOnlyDictionary<string, string>?>();
                 return Task.FromResult(SoapJob());
             });
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         using var response = await PostAsync(client, "SubmitJob", AreaArguments);
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, text);
@@ -128,7 +111,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "SubmitJob")]
     public async Task SoapSubmitJob_ArgumentNamespaceForms_BindTheSameInputs(string form)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         AnalysisPlan? submittedPlan = null;
         jobs.SubmitGPServerJobAsync(Arg.Any<AnalysisPlan>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(),
             Arg.Any<GPServerExecutionContext>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<CancellationToken>()).Returns(call =>
@@ -136,12 +119,7 @@ public sealed partial class GPServerSoapEndpointsTests
                 submittedPlan = call.Arg<AnalysisPlan>();
                 return Task.FromResult(SoapJob());
             });
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         using var response = await PostOperationAsync(client, SoapOperationForm("SubmitJob", AreaArguments, form));
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, text);
@@ -157,13 +135,8 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "SubmitJob")]
     public async Task SoapSubmitJob_UnrecognisedArgument_IsRejectedBeforeSubmission()
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        var jobs = fixture.ResetJobs();
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         using var response = await PostAsync(client, "SubmitJob", AreaArguments + "<Recurse>true</Recurse>");
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, text);
@@ -181,17 +154,10 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task SoapJobOperation_CrossServiceBinding_CannotReadOrCancel(string operation)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         jobs.GetGPServerJobAsync("soap-job", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(SoapJob("beta"));
-        var terminal = Substitute.For<IGeoprocessingJobTerminalService>();
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-            services.RemoveAll<IGeoprocessingJobTerminalService>();
-            services.AddSingleton(terminal);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        var terminal = fixture.ResetTerminal();
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.TerminalFactory, "alpha-reader");
         using var response = await PostAsync(client, operation, "<JobID>soap-job</JobID>");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, await response.Content.ReadAsStringAsync());
         await jobs.DidNotReceiveWithAnyArgs().GetGPServerJobResultsAsync(default!, default!, default!, default!, default);
@@ -208,15 +174,10 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task SoapJobOperation_OwnershipDenial_IsPropagated(string operation)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         jobs.GetGPServerJobAsync("soap-job", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new GeoprocessingAuthorizationException(false, "Job belongs to another caller."));
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         using var response = await PostAsync(client, operation, "<JobID>soap-job</JobID>");
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, await response.Content.ReadAsStringAsync());
     }
@@ -232,19 +193,12 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "CancelJob")]
     public async Task SoapCancelJob_UsesTruthfulCanonicalCancellation(string outcome, HttpStatusCode expected)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         jobs.GetGPServerJobAsync("soap-job", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(SoapJob());
-        var terminal = Substitute.For<IGeoprocessingJobTerminalService>();
+        var terminal = fixture.ResetTerminal();
         terminal.CancelGPServerAsync("soap-job", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(new GeoprocessingCancelResult(Enum.Parse<GeoprocessingCancelOutcome>(outcome), SoapJob() with { Status = ExecutionJobStatus.Cancelled }));
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-            services.RemoveAll<IGeoprocessingJobTerminalService>();
-            services.AddSingleton(terminal);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.TerminalFactory, "alpha-reader");
         using var response = await PostAsync(client, "CancelJob", "<JobID>soap-job</JobID>");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(expected, body);
@@ -264,21 +218,14 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "Execute")]
     public async Task SoapExecute_TerminalFailure_ReturnsFaultInsteadOfSuccessfulEmptyResults(string outcome)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         jobs.SubmitGPServerJobAsync(Arg.Any<AnalysisPlan>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(),
             Arg.Any<GPServerExecutionContext>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<CancellationToken>()).Returns(SoapJob());
-        var terminal = Substitute.For<IGeoprocessingJobTerminalService>();
+        var terminal = fixture.ResetTerminal();
         terminal.WaitForResultAsync("soap-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(new GeoprocessingTerminalResult(Enum.Parse<GeoprocessingTerminalResultOutcome>(outcome),
                 SoapJob() with { Status = Enum.Parse<ExecutionJobStatus>(outcome), ErrorMessage = "Deliberate worker failure." }));
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-            services.RemoveAll<IGeoprocessingJobTerminalService>();
-            services.AddSingleton(terminal);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.TerminalFactory, "alpha-reader");
         using var response = await PostAsync(client, "Execute", AreaArguments);
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, body);
@@ -296,14 +243,9 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "GetJobToolName")]
     public async Task SoapJobOperation_ValidBinding_ReturnsCanonicalStatus(string operation, string expected)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         jobs.GetGPServerJobAsync("soap-job", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(SoapJob());
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         using var response = await PostAsync(client, operation, "<JobID>soap-job</JobID>");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
@@ -318,7 +260,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task SoapJobMetadata_SucceededJob_DoesNotRequireResultStore(string operation)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         var job = SoapJob() with
         {
             Status = ExecutionJobStatus.Succeeded,
@@ -329,12 +271,7 @@ public sealed partial class GPServerSoapEndpointsTests
         jobs.GetGPServerJobAsync("soap-job", Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(job);
         jobs.GetGPServerJobResultsAsync("soap-job", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Result store unavailable."));
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         using var response = await PostAsync(client, operation, "<JobID>soap-job</JobID>");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);

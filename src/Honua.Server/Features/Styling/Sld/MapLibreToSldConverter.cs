@@ -111,8 +111,10 @@ internal static class MapLibreToSldConverter
                 AddPolygonSymbolizer(rule, layer, diagnostics);
                 return rule;
             case "symbol":
-                AddSymbolLayer(rule, layer, diagnostics);
-                return rule;
+                // A symbol layer with neither an icon nor text has nothing to export; dropping
+                // the rule (as for background layers) lets a style made only of such layers
+                // reach the MapLibreLayers error instead of exporting an empty <Rule>.
+                return AddSymbolLayer(rule, layer, diagnostics) ? rule : null;
             case "background":
                 diagnostics.Add(Warn(
                     "BackgroundLayer",
@@ -190,7 +192,7 @@ internal static class MapLibreToSldConverter
         rule.Add(symbolizer);
     }
 
-    private static void AddSymbolLayer(XElement rule, MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
+    private static bool AddSymbolLayer(XElement rule, MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
     {
         var iconImage = TryGetLiteralString(layer, "icon-image", diagnostics, isLayout: true);
         var hasText = layer.Layout?.ContainsKey("text-field") == true
@@ -284,7 +286,10 @@ internal static class MapLibreToSldConverter
                 "SymbolLayer",
                 $"Symbol layer '{layer.Id}' has no icon-image or text-field; nothing to export.",
                 layer.Id));
+            return false;
         }
+
+        return true;
     }
 
     private static string? GetFontFamily(MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)

@@ -113,7 +113,7 @@ public class GeometryLimits
     // Segment pairs that may cross, counted before a Geometry Service operation nodes geometries
     // (overlay, union, cut, trim, generalization, repair, relation, offset); a quarter of it for
     // callers that are not signed in.
-    [Range(typeof(long), "1000", "50000000")]
+    [Range(1000d, 50000000d)]
     public long MaxOverlayCandidatePairs { get; set; } = 2000000;
 
     public double? SimplifyTolerance { get; set; }
