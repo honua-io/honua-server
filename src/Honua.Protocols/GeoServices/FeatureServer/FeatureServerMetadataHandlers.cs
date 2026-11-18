@@ -3,7 +3,6 @@
 
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -296,15 +295,16 @@ internal static partial class FeatureServerEndpoints
                 context.RequestServices.GetRequiredService<IConfiguration>(),
                 "sync.offline");
             var schemaResource = await HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
-            var timeInfo = OmitWithheldTimeFields(schemaResource, await BuildTimeInfoV2Async(
+            var timeInfo = GeoServicesWithheldFields.WithoutWithheldTimeFields(schemaResource, await BuildTimeInfoV2Async(
                 resource,
                 publication,
                 snapshot,
                 featureReader,
                 cancellationToken).ConfigureAwait(false));
 
-            var drawingInfo = ResolveDrawingInfoV2(resource, snapshot);
-            var popupInfo = ResolvePopupInfoV2(resource);
+            var drawingInfo = GeoServicesWithheldFields.WithoutWithheldReferences(
+                ResolveDrawingInfoV2(resource, snapshot), schemaResource) ?? BuildDefaultDrawingInfoV2(resource);
+            var popupInfo = GeoServicesWithheldFields.WithoutWithheldReferences(ResolvePopupInfoV2(resource), schemaResource);
 
             var extrusionValidationErrors = ValidateExtrusionInfoV2(resource, out var extrusionInfo);
             if (extrusionValidationErrors.Count > 0)
@@ -337,7 +337,7 @@ internal static partial class FeatureServerEndpoints
                 timeInfo,
                 drawingInfo: drawingInfo,
                 popupInfo: popupInfo,
-                extrusionInfo: extrusionInfo,
+                extrusionInfo: WithoutWithheldExtrusion(schemaResource, extrusionInfo),
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads,
                 branchVersioningEnabled: await IsPublicationBranchVersioningAvailableAsync(
@@ -366,26 +366,9 @@ internal static partial class FeatureServerEndpoints
     }
 
     // Field names the caller's masks withhold are left out of schema listings, as hidden fields are.
-    private static async Task<MetadataV2Object> HideMaskedFieldsAsync(
+    private static Task<MetadataV2Object> HideMaskedFieldsAsync(
         HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
-    {
-        if (context.RequestServices.GetService<IFieldMaskSource>() is not { } masks)
-        {
-            return resource;
-        }
-
-        var masked = await masks.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-        return resource.WithSchemaFieldsHidden(masked);
-    }
-
-    // A time extent over a withheld field would disclose that field's values.
-    private static FeatureServerTimeInfo? OmitWithheldTimeFields(MetadataV2Object schemaResource, FeatureServerTimeInfo? timeInfo)
-        => timeInfo is not null
-           && (schemaResource.IsHiddenSchemaField(timeInfo.StartTimeField)
-               || schemaResource.IsHiddenSchemaField(timeInfo.EndTimeField)
-               || schemaResource.IsHiddenSchemaField(timeInfo.TrackIdField))
-            ? null
-            : timeInfo;
+        => GeoServicesWithheldFields.HideMaskedFieldsAsync(context, resource, cancellationToken);
 
     private static async Task<IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)>> HideMaskedFieldsAsync(
         HttpContext context,
@@ -400,6 +383,14 @@ internal static partial class FeatureServerEndpoints
 
         return visible;
     }
+
+    // Extrusion over a withheld field would name it and draw its values as heights.
+    private static FeatureServerExtrusionInfo? WithoutWithheldExtrusion(
+        MetadataV2Object schemaResource, FeatureServerExtrusionInfo? extrusionInfo)
+        => schemaResource.IsHiddenSchemaField(extrusionInfo?.HeightField)
+           || schemaResource.IsHiddenSchemaField(extrusionInfo?.BaseHeightField)
+            ? null
+            : extrusionInfo;
 
     private static IReadOnlyList<string> ValidateExtrusionInfoV2(
         MetadataV2Object resource,
