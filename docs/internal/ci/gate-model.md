@@ -616,15 +616,18 @@ host and read its heartbeat, nothing else) and runs
   which carries no job condition.
 
 A manual PR Gate dispatch on `trunk` can set the boolean `qualify_light` input
-(default `false`) to place the six PR Gate control jobs on the light pool.
+(default `false`) to place the PR Gate control jobs on the light pool.
 Only `workflow_dispatch` on `refs/heads/trunk` honors this override. It pins the
-`honua-light` runner group and label for those six jobs; it accepts
-no runner label input. Both test-analyzer rows remain hosted; producer,
-heavy-shard and Fast/architecture routing stays unchanged. Other refs and events
-keep the six jobs on `ubuntu-latest`. Qualification is an operator-run health
-check; the input does not enable normal routing or change repository settings.
+`honua-light` runner group and label; it accepts no runner label input. Shard
+selection and the affected-shard aggregate run only on pull requests, so a
+dispatch qualifies runner select, Format and source Analyzers, CI router
+validation and the required aggregate. Both test-analyzer rows remain hosted;
+producer, heavy-shard and Fast/architecture routing stays unchanged. Other refs
+and events keep these jobs on `ubuntu-latest`. Qualification is an operator-run
+health check; the input does not enable normal routing or change repository
+settings.
 
-Draft Format and the admission/control jobs follow that same six-job rule.
+Draft Format and the admission/control jobs follow that same rule.
 Runner select, the format/analyzer
 matrix, affected-shard selection, the affected-shard aggregate, CI router validation
 and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
@@ -1779,8 +1782,9 @@ Image measurement exports stay outside the Docker build context: `.dockerignore`
 
 ## Lightweight workflow routing and compatibility
 
-The lightweight workflow callers use the same fork-guarded `HONUA_LIGHT_RUNNER`
-JSON selector and `ubuntu-latest` fallback as PR Gate control jobs. This includes
+The lightweight workflow callers use the fork-guarded `HONUA_LIGHT_RUNNER`
+JSON selector and `ubuntu-latest` fallback. PR Gate control jobs do not: they
+stay on `ubuntu-latest` except for a trunk `qualify_light` dispatch. This includes
 Repository hygiene, Clean code, Runner label lint, Review Gate Attestation,
 Review Event Bridge and OpenAPI drift/governance.
 Reusable workflow pins must include the shared selector support. Each local
