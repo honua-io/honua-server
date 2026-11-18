@@ -25,6 +25,19 @@ public sealed record SecureConnectionAuditDetails
     public bool? Healthy { get; init; }
 
     public string? Reason { get; init; }
+
+    // Object storage connections: what the customer role grants. The external id is never recorded.
+    public string? Bucket { get; init; }
+
+    public string? Prefix { get; init; }
+
+    public string? Region { get; init; }
+
+    public string? RoleArn { get; init; }
+
+    public string? PreviousRegion { get; init; }
+
+    public string? PreviousRoleArn { get; init; }
 }
 
 [JsonSourceGenerationOptions(

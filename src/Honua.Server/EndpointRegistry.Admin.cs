@@ -160,6 +160,8 @@ public static partial class EndpointRegistry
         new("PUT", "/api/v1/admin/connections/{id}"),
         new("DELETE", "/api/v1/admin/connections/{id}"),
         new("POST", "/api/v1/admin/connections/{id}/test"),
+        new("POST", "/api/v1/admin/connections/object-storage/setup"),
+        new("GET", "/api/v1/admin/connections/{id}/objects"),
         new("POST", "/api/v1/admin/connections/encryption/validate"),
         new("POST", "/api/v1/admin/connections/encryption/rotate-key"),
 
