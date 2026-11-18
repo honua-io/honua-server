@@ -30,6 +30,11 @@ internal static class ExecutionJobSecretParameters
     // The scoped job capability handed to custom-code jobs.
     public const string JobToken = "env.HONUA_JOB_TOKEN";
 
+    // The single-use code a custom-code job exchanges for its capability at start.
+    public const string RedemptionCode = "env.HONUA_JOB_REDEMPTION_CODE";
+
+    private static readonly string[] SecretKeys = [JobToken, RedemptionCode];
+
     public static ExecutionJobRecord Protect(ExecutionJobRecord job, IExecutionJobSecretProtector protector)
         => Transform(job, protector, static (p, value) => p.Protect(value));
 
@@ -42,15 +47,20 @@ internal static class ExecutionJobSecretParameters
         Func<IExecutionJobSecretProtector, string, string> transform)
     {
         if (ReferenceEquals(protector, UnprotectedExecutionJobSecrets.Instance) ||
-            !job.Spec.Parameters.TryGetValue(JobToken, out var value) || string.IsNullOrEmpty(value))
+            !SecretKeys.Any(key => job.Spec.Parameters.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value)))
         {
             return job;
         }
 
-        var parameters = new Dictionary<string, string>(job.Spec.Parameters, StringComparer.Ordinal)
+        var parameters = new Dictionary<string, string>(job.Spec.Parameters, StringComparer.Ordinal);
+        foreach (var key in SecretKeys)
         {
-            [JobToken] = transform(protector, value),
-        };
+            if (parameters.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))
+            {
+                parameters[key] = transform(protector, value);
+            }
+        }
+
         return job with { Spec = job.Spec with { Parameters = parameters } };
     }
 }

@@ -1817,6 +1817,7 @@ app.MapDeployControlEndpoints();
 app.MapGpProcessReleaseEndpoints();
 app.MapGpProcessReleaseJobEndpoints();
 Honua.Server.Features.Geoprocessing.CustomCode.CustomCodeArtifactEndpoints.MapCustomCodeArtifactEndpoints(app);
+Honua.Server.Features.Geoprocessing.CustomCode.CustomCodeCapabilityRedemptionEndpoints.MapCustomCodeCapabilityRedemptionEndpoints(app);
 
 // Cloud event-driven control-plane surface (TriggerMode=Event only): the EventBridge-invoked
 // reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).

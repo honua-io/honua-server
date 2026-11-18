@@ -200,6 +200,7 @@ anonymous PATCH /scim/v2/Users/{id}
 anonymous POST /admin/services/{folderName}/{serviceName}.{serviceType}
 anonymous POST /admin/services/{serviceName}.{serviceType}
 anonymous POST /api/enrich
+anonymous POST /api/geoprocessing/jobs/{jobId}/attempts/{attempt}/capability
 anonymous POST /api/v1/cloud-demo/reset
 anonymous POST /api/v{version:apiVersion}/admin/auth/bearer
 anonymous POST /api/v{version:apiVersion}/admin/auth/logout

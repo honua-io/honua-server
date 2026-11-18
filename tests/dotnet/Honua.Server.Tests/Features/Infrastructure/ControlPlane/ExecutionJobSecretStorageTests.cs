@@ -24,6 +24,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class ExecutionJobSecretStorageTests(DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
 {
     private const string Token = "4f9c2b7e1d3a5c6b8e0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b";
+    private const string RedemptionCode = "9a1b3c5d7e9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b";
 
     [IntegrationTest]
     public async Task StoredRecord_DoesNotHoldTheJobCapability_AndReadsItBack()
@@ -37,6 +38,31 @@ public sealed class ExecutionJobSecretStorageTests(DatabaseFixtureAdapter databa
         var stored = await StoredRecordTextAsync(harness, job.OperationId);
         stored.Should().NotContain(Token).And.Contain(DataProtectionExecutionJobSecrets.Marker);
         (await store.GetAsync(job.OperationId))!.Spec.Parameters[ExecutionJobSecretParameters.JobToken].Should().Be(Token);
+    }
+
+    [IntegrationTest]
+    public async Task StoredRecord_DoesNotHoldTheRedemptionCode_AndReadsItBack()
+    {
+        await using var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(ExecutionJobSecretStorageTests));
+        var store = ProtectedStore(harness, new EphemeralDataProtectionProvider());
+        var job = WithToken(CreateQueuedJob("protected-code"));
+        job = job with
+        {
+            Spec = job.Spec with
+            {
+                Parameters = new Dictionary<string, string>(job.Spec.Parameters, StringComparer.Ordinal)
+                {
+                    [ExecutionJobSecretParameters.RedemptionCode] = RedemptionCode,
+                },
+            },
+        };
+
+        (await store.TryCreateAsync(job)).Should().BeTrue();
+
+        (await StoredRecordTextAsync(harness, job.OperationId)).Should().NotContain(RedemptionCode).And.NotContain(Token);
+        var read = (await store.GetAsync(job.OperationId))!.Spec.Parameters;
+        read[ExecutionJobSecretParameters.RedemptionCode].Should().Be(RedemptionCode);
+        read[ExecutionJobSecretParameters.JobToken].Should().Be(Token);
     }
 
     [IntegrationTest]

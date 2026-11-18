@@ -68,11 +68,15 @@ the SDK-as-transport / GDAL-as-engine pattern.
 ## The contract (job inputs)
 
 Identical to the python runtime (one contract, two runtimes). The Batch container
-receives the auth spine as **env vars** (standard Batch secret injection, so the token
-is strippable):
+receives the auth spine as **env vars** (standard Batch secret injection, so they
+are strippable):
 
 - `HONUA_BASE_URL`
-- `HONUA_JOB_TOKEN` — the scoped, job-bound bearer token (from the server)
+- `HONUA_JOB_REDEMPTION_CODE` — a single-use code the harness exchanges once, before
+  fetching source, for the scoped job-bound token
+  (`POST /api/geoprocessing/jobs/{jobId}/attempts/{attempt}/capability`); the server
+  never puts the token itself in the AWS Batch job
+- `HONUA_JOB_TOKEN` — the scoped token directly, for local runs only
 
 The `customcode.*` parameters are resolved in this order (see
 `harness/src/Honua.CustomCode.Harness/JobSpec.cs`):
