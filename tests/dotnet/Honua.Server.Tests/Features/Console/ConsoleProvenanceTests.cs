@@ -30,9 +30,9 @@ public class ConsoleProvenanceTests
         await store.CreateAsync(Item("catalog-1", ConsoleContentItemType.Layer));
         await store.CreateAsync(Item("svc-1", ConsoleContentItemType.Service,
             new ConsoleProvenanceRef { Kind = "catalog-resource", ItemId = "catalog-1", Rel = "publishes" }));
-        await store.CreateAsync(Item("studio-1", ConsoleContentItemType.SavedMap,
+        await store.CreateAsync(Item("studio-1", ConsoleContentItemType.Map,
             new ConsoleProvenanceRef { Kind = "published-service", ItemId = "svc-1", Rel = "derived-from" }));
-        await store.CreateAsync(Item("app-1", ConsoleContentItemType.GeneratedApp,
+        await store.CreateAsync(Item("app-1", ConsoleContentItemType.App,
             new ConsoleProvenanceRef { Kind = "studio-artifact", ItemId = "studio-1", Rel = "generated-by" }));
 
         var chain = await store.GetProvenanceChainAsync("app-1", maxDepth: 5, CancellationToken.None);

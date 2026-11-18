@@ -112,11 +112,20 @@ public sealed class ServiceContact
 
 public sealed class ContactInfo
 {
+    [XmlElement("Phone", Namespace = Wfs20Utilities.OwsNamespace)]
+    public Phone? Phone { get; set; }
+
     [XmlElement("Address", Namespace = Wfs20Utilities.OwsNamespace)]
     public Address? Address { get; set; }
 
     [XmlElement("OnlineResource", Namespace = Wfs20Utilities.OwsNamespace)]
     public OnlineResource? OnlineResource { get; set; }
+}
+
+public sealed class Phone
+{
+    [XmlElement("Voice", Namespace = Wfs20Utilities.OwsNamespace)]
+    public string? Voice { get; set; }
 }
 
 public sealed class Address

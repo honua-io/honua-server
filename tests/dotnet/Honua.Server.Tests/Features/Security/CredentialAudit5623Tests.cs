@@ -14,11 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Security;
 
-// Audit platform-20261006 / issue 5623 outcomes:
-// SRV-AUTH-001 -> fixed; SRV_AUTH_001_ScopedApiKeyCannotReadAnUnrelatedAuthOnlyLayer.
-// SRV-AUTH-004, SRV-AUTH-006, SRV-AUTH-007, SRV-AUTH-005, SRV-AUTH-010,
-// SRV-AUTH-011, SRV-AUTH-012, SRV-AUTH-014, SRV-AUTH-015 -> not attempted;
-// higher-severity SRV-AUTH-001 was completed first as the bounded fix unit.
 public sealed class CredentialAudit5623Tests
 {
     [UnitTest]

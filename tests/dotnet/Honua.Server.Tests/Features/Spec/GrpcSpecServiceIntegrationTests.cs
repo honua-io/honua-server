@@ -425,10 +425,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
     public async Task PlanSpec_UnknownNumericKind_RaisesInvalidArgument()
     {
-        // Protobuf does not constrain enum values on the wire — a future
-        // client (or a forward-rolled one) can send any int32. The transport
-        // mapping must whitelist defined values rather than silently coerce
-        // an undefined one into the default arm, which used to leak Compute.
+        // Protobuf accepts arbitrary int32 enum values on the wire. Transport mapping
+        // must allow only defined values instead of coercing an undefined value to Compute.
         var document = new Proto.CanonicalSpecDocument
         {
             GrammarVersion = "grammar/1.0",

@@ -226,7 +226,7 @@ public partial class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Equal(original.StoragePath, result.StoragePath);
         Assert.Equal(original.CreatedAt, result.CreatedAt);
 
-        // #4404: asserting only on the returned value proves the method's return path, not
+        // Asserting only on the returned value proves the method's return path, not
         // that the row was written. Re-read it.
         var persisted = await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id);
         Assert.NotNull(persisted);

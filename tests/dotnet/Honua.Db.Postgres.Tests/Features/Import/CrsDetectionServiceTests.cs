@@ -362,7 +362,7 @@ public class CrsDetectionServiceTests : IAsyncLifetime
     {
         // NAD83(HARN) is a distinct datum realization from plain NAD83. Its UTM zone codes are NOT
         // 26900+zone (that is plain NAD83), so the ESRI UTM zone-arithmetic branch must NOT match a
-        // "_HARN" name and silently return 26917 (#2743). The made-up name/body has no
+        // "_HARN" name and silently return 26917. The made-up name/body has no
         // spatial_ref_sys match, so detection falls through to null rather than a wrong datum.
         var harnPrj = """
             PROJCS["NAD_1983_HARN_UTM_Zone_17N",
@@ -457,7 +457,7 @@ public class CrsDetectionServiceTests : IAsyncLifetime
     {
         // COMPD_CS carries a trailing VERT_CS whose EPSG authority (5703, NAVD88 height) validates
         // in spatial_ref_sys. Detection must resolve to the horizontal (projected) member 32617, not
-        // the vertical 5703 (#2743).
+        // the vertical 5703.
         var compound = """
             COMPD_CS["NAD83 / UTM zone 17N + NAVD88 height",
                 PROJCS["NAD83 / UTM zone 17N",
@@ -491,7 +491,7 @@ public class CrsDetectionServiceTests : IAsyncLifetime
     {
         // BOUNDCRS wraps a SOURCECRS (the data's CRS, 25832) plus a TARGETCRS (4326) and an abridged
         // transformation. Detection must resolve the source projected code, not the WGS 84 target
-        // that would otherwise win as a trailing authority (#2743).
+        // that would otherwise win as a trailing authority.
         var bound = """
             BOUNDCRS[
                 SOURCECRS[

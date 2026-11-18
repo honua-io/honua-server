@@ -15,7 +15,7 @@ public sealed class LayerDefsParserTests
     private static readonly CommonQueryValidator Validator =
         new(Options.Create(new LimitsOptions()));
 
-    // Regression (#1430): the Esri JSON-array layerDefs form
+    // The Esri JSON-array layerDefs form
     // [{"layerId":N,"where":"..."}] must parse into the same per-layer map as the
     // object form, instead of failing with "Invalid layer id".
     [Fact]

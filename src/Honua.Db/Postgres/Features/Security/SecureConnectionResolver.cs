@@ -271,7 +271,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
 
                 // Only the endpoint, credential, TLS-mode and tuning keywords are honoured; a
                 // keyword that loads files, relaxes certificate checks or passes startup options
-                // is refused whichever storage path supplied the string (SEC-23).
+                // is refused whichever storage path supplied the string.
                 var disallowedKeyword = PostgresConnectionKeywordPolicy.FindDisallowedKeyword(builder);
                 if (disallowedKeyword is not null)
                 {

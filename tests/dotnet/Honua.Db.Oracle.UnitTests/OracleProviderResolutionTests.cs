@@ -62,7 +62,7 @@ public class OracleProviderResolutionTests
     [Fact]
     public async Task GetEstimatesAsync_WithPermanentFilterConfigured_ThrowsNotSupportedException()
     {
-        // BH6-021 regression: GetEstimatesAsync was missing the EnsureNoPermanentFilterAsync
+        // GetEstimatesAsync was missing the EnsureNoPermanentFilterAsync
         // guard that all other public read methods call. A permanent (row-visibility) filter
         // configured on an Oracle layer must block estimates just as it blocks queries.
         var provider = CreateOracleStore(v2Provider: new StubV2Provider(LayerId, permanentFilterExpression: "status = 'active'") { Locator = "SCHEMA.TABLE" });

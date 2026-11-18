@@ -175,7 +175,7 @@ public sealed class MaterialAmbiguityEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
-    // Auto-resolve unambiguous single-candidate bindings (#1949)
+    // Auto-resolve unambiguous single-candidate bindings
     // -----------------------------------------------------------------------
 
     [UnitTest]
@@ -379,11 +379,9 @@ public sealed class MaterialAmbiguityEvaluatorTests
     [UnitTest]
     public void Evaluate_PublishWithNoResolvableSource_SurfacesPublishSourceFreeText()
     {
-        // Finding #2 regression: when PublishData has no ExplicitInputs and
-        // no high-confidence dataset lead, the evaluator must ask for the
-        // source. Without this, answering publish.target on a follow-up turn
-        // leaves draftIntent.publishing == null with no clarification — a
-        // terminal dead state.
+        // When PublishData has no ExplicitInputs and no high-confidence dataset lead,
+        // ask for the source. Answering publish.target on a follow-up turn must not
+        // leave draftIntent.publishing null without a clarification.
         var classification = new WorkflowFamilyClassification
         {
             Value = WorkflowFamily.PublishData,
@@ -484,7 +482,7 @@ public sealed class MaterialAmbiguityEvaluatorTests
     [UnitTest]
     public void Evaluate_PublishWithServiceIdExplicitInput_StillAsksForSource()
     {
-        // Regression: when ExplicitInputs names an id that the ranking knows
+        // When ExplicitInputs names an id that the ranking knows
         // is a service catalog entry, the source is not resolved — services
         // cannot be drafted as a PublishSourceKind.FeatureLayer. The
         // evaluator must keep emitting the publish.source clarification so

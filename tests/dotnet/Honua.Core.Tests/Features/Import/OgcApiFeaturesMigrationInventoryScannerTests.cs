@@ -285,10 +285,13 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
     }
 
     [Trait("Tier", "Fast")]
-    [Fact]
-    public async Task ScanSourceAsync_WithFixtureSource_CapturesCollectionsSchemaPagingAndItems()
+    [Theory]
+    [InlineData("https://demo.example/ogcapi/")]
+    [InlineData("")]
+    public async Task ScanSourceAsync_WithFixtureSource_CapturesCollectionsSchemaPagingAndItems(string landingLinkPrefix)
     {
-        using var httpClient = new HttpClient(new FixtureOgcApiFeaturesHandler())
+        using var handler = new FixtureOgcApiFeaturesHandler(landingLinkPrefix);
+        using var httpClient = new HttpClient(handler, disposeHandler: false)
         {
             BaseAddress = new Uri("https://demo.example")
         };
@@ -438,8 +441,10 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
             Value = value
         };
 
-    private sealed class FixtureOgcApiFeaturesHandler : HttpMessageHandler
+    private sealed class FixtureOgcApiFeaturesHandler(string landingLinkPrefix = "https://demo.example/ogcapi/") : HttpMessageHandler
     {
+        public string LandingLinkPrefix { get; } = landingLinkPrefix;
+
         public List<Uri> RequestUris { get; } = [];
 
         // Response ownership transfers to the caller via the return value
@@ -543,6 +548,11 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
                 {
                     Headers = { Location = new Uri("https://other.example/ogcapi/") }
                 });
+            }
+
+            if (json != null && pathAndQuery == "/ogcapi/")
+            {
+                json = json.Replace("https://demo.example/ogcapi/", LandingLinkPrefix, StringComparison.Ordinal);
             }
 
             return Task.FromResult<HttpResponseMessage>(json == null

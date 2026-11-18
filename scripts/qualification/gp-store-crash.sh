@@ -109,7 +109,7 @@ run_store_crash_case() {
     compose kill -s SIGKILL worker >/dev/null || return 1
   else
     record_disruption store "$target" hide-marker-and-bytes
-    # Hide both the marker and the actual bytes; no synthetic Redis outage.
+    # Hide both the marker and the actual bytes; no synthetic PostgreSQL outage.
     outage_root="$object_root/.qualification-outage-$job"
     mkdir "$outage_root" || return 1
     local outage_failed=0
@@ -140,7 +140,7 @@ run_store_crash_case() {
   # Resume without qualification fences for natural recovery. This local
   # export never alters the caller's original environment.
   HONUA_GP_QUALIFICATION_BARRIER_ROOT=""
-  compose restart server server-peer redis postgres >/dev/null || return 1
+  compose restart server server-peer postgres >/dev/null || return 1
   wait_ready && wait_peer_ready || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
   record_disruption "$disruption" "$target" recovered

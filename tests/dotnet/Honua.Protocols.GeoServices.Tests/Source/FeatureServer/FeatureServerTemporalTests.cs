@@ -328,10 +328,9 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
             new long[] { 1, 3 }
         };
 
-        // Start/end-relative Esri relations (ArcObjects esriTimeRelation vocabulary).
-        // Feature interval = [timestamp, COALESCE(event_date, timestamp)]; a single time
-        // value sets queryStart == queryEnd. ArcGIS Pro / arcpy send these spellings and
-        // previously got HTTP 400 because only Overlaps/OverlapsStartWithinEnd were mapped.
+        // ArcGIS Pro and arcpy send start/end-relative ArcObjects esriTimeRelation
+        // spellings. The feature interval is [timestamp, COALESCE(event_date, timestamp)];
+        // a single query time sets queryStart == queryEnd.
 
         // start > queryStart (2023-01-04): OID 2,3,5.
         yield return new object[]
@@ -421,7 +420,7 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
     {
         // The ArcGIS API for Python (arcgis 2.4.x) serializes query(time_filter=) to the
         // "timeFilter" query parameter. It must be accepted as an alias of "time" rather
-        // than rejected with HTTP 400 "Unknown query parameter: timeFilter" (#1775).
+        // than rejected with HTTP 400 "Unknown query parameter: timeFilter".
         var serviceId = WebAppFixture.TestServiceId;
         var layerId = WebAppFixture.TestLayerId;
         var encodedTime = Uri.EscapeDataString("2023-12-15T00:00:00Z,2024-02-15T00:00:00Z");
@@ -626,7 +625,7 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         var response = await _client.GetAsync(
             $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?time={encodedTime}&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();

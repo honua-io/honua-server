@@ -61,7 +61,7 @@ def verify(pin, summary):
             or artifact["sha256_before"] != artifact["sha256_after"]):
         raise ValueError("restored GP bytes do not match the server-read checksum")
     stores = recovery["recovery"]["substrates"]
-    if len(stores) != 3 or {s["store"] for s in stores} != {"postgres", "redis", "gp-output"}:
+    if len(stores) != 2 or {s["store"] for s in stores} != {"postgres", "gp-output"}:
         raise ValueError("recovery did not restore every GP durable store")
     for store in stores:
         if (store["original_destroyed"] is not True or store["restored_into_empty_store"] is not True

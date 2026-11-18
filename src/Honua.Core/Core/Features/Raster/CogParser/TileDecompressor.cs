@@ -88,7 +88,6 @@ public static class TileDecompressor
     // TIFF DEFLATE is zlib-wrapped, not raw DEFLATE.
     // Tradeoff: callers consume the returned byte[] across async hops and ownership boundaries,
     // so we still allocate a sized byte[] for the result but pool the growing scratch buffer
-    // (the unbounded intermediate that previously came from MemoryStream's internal doubling).
     private static byte[] DecompressZlib(byte[] compressedData, int maxDecompressedBytes)
     {
         // MemoryStream(byte[]) is a non-copying wrapper over the input, so no pooling needed there.

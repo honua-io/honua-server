@@ -550,7 +550,7 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
             // The shared AuditLogMiddleware also records a request-level "admin.post" event for
             // the HTTP request itself, so the capturing sink holds that AND the domain event.
             // Assert on the domain-specific alert_rule.create audit event rather than the total
-            // count (mirrors #2415/#2421); the middleware auditing is correct, the count was stale.
+            // count; the middleware auditing is correct.
             var ruleAudits = audit.Recorded.Where(e => e.Action == "alert_rule.create").ToList();
             ruleAudits.Should().ContainSingle();
             ruleAudits[0].ResourceType.Should().Be("alert_rule");
@@ -815,7 +815,7 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         IReadOnlyCollection<AlertChannelType> allowedChannels,
         IReadOnlyCollection<AlertChannelType> configuredChannels)
     {
-        // #2998: rule mutations/evaluation are entitlement-gated; grant Enterprise so these
+        // Rule mutations/evaluation are entitlement-gated; grant Enterprise so these
         // tests keep exercising the stubbed IAlertEditionPolicy paths past the license gate.
         // The license gate itself is covered by AlertEntitlementGateTests.
         return new WebAppFixture()

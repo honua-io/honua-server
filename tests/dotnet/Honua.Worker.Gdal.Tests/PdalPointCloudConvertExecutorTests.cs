@@ -272,7 +272,7 @@ public sealed class PdalPointCloudConvertExecutorTests
         args.Should().NotContain("reprojection");
         args.Should().Contain("--writers.las.compression=false");
 
-        // honua-server#4401: `pdal translate` otherwise writes its DEFAULT 0.01 scale rather than
+        // `pdal translate` otherwise writes its DEFAULT 0.01 scale rather than
         // the source's, quantising a verbatim decompress. For a geographic source that is 0.01
         // degrees — roughly 1.1 km. Forwarding scale and offset preserves the producer's
         // resolution whatever CRS the source is in.
@@ -288,7 +288,7 @@ public sealed class PdalPointCloudConvertExecutorTests
         args.Should().Contain("--filters.reprojection.in_srs=EPSG:32610");
         args.Should().Contain("--filters.reprojection.out_srs=EPSG:4979");
 
-        // #4401: the output is EPSG:4979 degrees, so the source's projected (metre) scale must
+        // The output is EPSG:4979 degrees, so the source's projected (metre) scale must
         // NOT be forwarded; an explicit geographic scale is pinned instead, with an automatic
         // offset so the int32 point records stay in range.
         args.Should().NotContain("--writers.las.forward=scale,offset");

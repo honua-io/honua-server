@@ -8,6 +8,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
@@ -117,6 +119,42 @@ public sealed class FeatureQueryBuilderFlatGeobufTests
         encoded.Attributes["objectid"].Should().Be(1L);
         encoded.Attributes["public_id"].Should().Be("public-1");
     }
+
+    [Fact]
+    public void WriteFlatGeobuf_SingleGeometryType_DeclaresItInTheHeader()
+    {
+        var header = WriteHeader(Point(1, 2), Point(3, 4), null);
+
+        header.GeometryType.Should().Be(FlatGeobuf.GeometryType.Point);
+    }
+
+    [Fact]
+    public void WriteFlatGeobuf_MixedGeometryTypes_KeepsUnknownInTheHeader()
+    {
+        var line = new WKBWriter().Write(new GeometryFactory().CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]));
+
+        var header = WriteHeader(Point(1, 2), line);
+
+        header.GeometryType.Should().Be(FlatGeobuf.GeometryType.Unknown);
+    }
+
+    private static FlatGeobuf.Header WriteHeader(params byte[]?[] geometries)
+    {
+        var resource = CreateResource();
+        var features = geometries.Select((wkb, index) => Feature.Create(index + 1, wkb)).ToList();
+        var payload = FlatGeobufFeatureWriter.Write(features, new FlatGeobufFeatureWriter.ExportOptions
+        {
+            Resource = resource,
+            Query = new FeatureQuery(),
+            ProjectedFields = [],
+            OutputSrid = 4326
+        }, CancellationToken.None);
+        using var stream = new MemoryStream(payload);
+        return FlatGeobuf.Helpers.ReadHeader(stream);
+    }
+
+    private static byte[] Point(double x, double y)
+        => new WKBWriter().Write(new GeometryFactory().CreatePoint(new Coordinate(x, y)));
 
     private static MetadataV2Object CreateResource(params MetadataV2Field[] additionalFields)
         => new()

@@ -212,7 +212,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_PointIntoPolygonCollection_ReturnsBadRequest()
     {
-        // #6108: the layer's declared geometry type is enforced by the shared mutation
+        // The layer's declared geometry type is enforced by the shared mutation
         // validator, so OGC API Features cannot make a polygon layer heterogeneous.
         var feature = new GeoJsonFeature
         {
@@ -300,7 +300,6 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
         AssertPointCoordinates(fetched!, originalCoordinates);
 
         // Send the default-CRS GET representation back without adding Content-Crs.
-        // Before the fix this second write treated CRS84 coordinates as EPSG:3857.
         using var replaceRequest = new HttpRequestMessage(
             HttpMethod.Put,
             $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items/{requiredFeatureId}")
@@ -359,8 +358,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
         //   (-122, 37) -> ( -13_580_978,  4_439_107 )
         //   (-100, 37) -> ( -11_131_949,  4_439_107 )
         // The narrow envelope below therefore contains the first and excludes the
-        // second. Previously this test asserted only HttpStatusCode.OK and inspected
-        // no features at all, so an ignored bbox passed (#4393).
+        // second.
         var insideId = await CreateProjectedPointAsync(-122d, 37d, "Projected bbox inside");
         var outsideId = await CreateProjectedPointAsync(-100d, 37d, "Projected bbox outside");
 

@@ -114,7 +114,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests(Postgr
             result.Warnings.Should().Contain(static w => w.Contains("failure", StringComparison.OrdinalIgnoreCase));
 
             // ...but a migration missing one of the source's attachments is not a successful
-            // migration (#4600). Feature counts match here, which is exactly why attachment parity
+            // migration. Feature counts match here, which is exactly why attachment parity
             // has to be reconciled on its own evidence.
             result.Success.Should().BeFalse();
             result.NeedsReview.Should().BeTrue();

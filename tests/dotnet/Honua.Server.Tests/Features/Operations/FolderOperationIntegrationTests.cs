@@ -1,6 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Security;
+using Honua.Core.Features.Guardrails.Domain;
+using Microsoft.AspNetCore.Http;
+using Honua.Server.Features.Admin;
 using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -19,6 +23,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Tests.Features.Admin;
+using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -41,6 +46,93 @@ public sealed partial class FolderOperationIntegrationTests(FolderOperationInteg
     private HttpClient _proposer = null!;
     private readonly HumanApprovalHttpClient _approver = host.Approver;
     private readonly IOperationProposalStore _proposals = host.Proposals;
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ServiceMove_ApprovedReplay_RevalidatesCurrentRequesterServiceRoles()
+    {
+        var initial = await SnapshotAsync();
+        await ApplyAsync("folder.create", new() { ["name"] = "Destination", ["If-Match"] = initial.Etag });
+        var before = await RestrictServiceToCurrentRequesterRoleAsync();
+        var destination = before.Graph.Folders.Single().Metadata.Id;
+        var payload = new AdminApiOperationApprovalPayload
+        {
+            OperationId = "service.move",
+            TenantId = "public",
+            SchemaName = _fixture.CurrentSchema,
+            ServiceName = "test",
+            Parameters = new() { ["folderId"] = destination, ["If-Match"] = before.Etag }
+        };
+        await WithRequesterContextAsync(payload, async context =>
+        {
+            var accepted = await CreateRequesterProposalAsync(context, new()
+            {
+                OperationId = payload.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId,
+                RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
+                Plan = new OperationProposalPlan
+                {
+                    Summary = "Move service using current requester membership",
+                    ExecutionPayload = JsonSerializer.Serialize(payload, AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+                }
+            });
+            accepted.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, accepted.Message);
+            await ApproveAsync(accepted.ProposalId!);
+            var completed = (await _proposals.GetAsync(accepted.ProposalId!))!;
+            completed.Status.Should().Be(OperationProposalStatus.Succeeded, completed.ResolutionReason);
+        }, "folder-requester");
+        (await SnapshotAsync()).Graph.Services.Where(service => service.Metadata.Name == "test")
+            .Should().OnlyContain(service => service.FolderId == destination);
+    }
+
+    private async Task<MetadataV2GraphSnapshot> RestrictServiceToCurrentRequesterRoleAsync()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var current = await store.GetCurrentAsync();
+        return await store.SaveAsync(current.Graph with
+        {
+            Services = current.Graph.Services.Select(service => service.Metadata.Name == "test"
+                ? service with
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowedRoles = ["original-membership"],
+                        AllowedWriteRoles = ["original-membership"]
+                    }
+                } : service).ToArray()
+        }, current.Etag);
+    }
+
+    private async Task<MetadataV2GraphSnapshot> RestrictLastServiceFacetAsync()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var before = await store.GetCurrentAsync();
+        var facet = before.Graph.Services.Last(service => service.Metadata.Name == "test");
+        var restricted = before.Graph with
+        {
+            Services = before.Graph.Services.Select(service => service.Metadata.Id == facet.Metadata.Id
+                ? service with { AccessPolicy = new AccessPolicy { AllowedRoles = ["service-owner"], AllowedWriteRoles = ["service-owner"] } }
+                : service).ToArray()
+        };
+        var saved = await store.SaveAsync(restricted, before.Etag);
+        saved.Etag.Should().NotBe(before.Etag);
+        var policyContext = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        policyContext.Request.Method = HttpMethods.Put;
+        policyContext.Request.Path = "/api/v1/admin/services/test/folder";
+        policyContext.Request.Headers["X-API-Key"] = _proposer.DefaultRequestHeaders.GetValues("X-API-Key").Single();
+        var authenticated = await policyContext.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme);
+        authenticated.Succeeded.Should().BeTrue();
+        policyContext.User = authenticated.Principal!;
+        var deniedFacet = saved.Graph.Services.Single(service => service.Metadata.Id == facet.Metadata.Id);
+        MetadataV2TenantVisibility.IsVisibleToTenant(deniedFacet, null).Should().BeTrue();
+        (await FolderEndpoints.RequireServiceAccessAsync(policyContext, deniedFacet)).Should().NotBeNull(
+            "the real authenticated requester must fail the shared service-policy check before testing proposal admission");
+        return saved;
+    }
 
     public async Task InitializeAsync()
     {
@@ -84,6 +176,8 @@ public sealed partial class FolderOperationIntegrationTests(FolderOperationInteg
             }).ConfigureServices(services =>
             {
                 FolderPostgresTestHost.Configure(services, () => Fixture.CurrentSchema);
+                services.AddHttpClient(AdminApiOperationExecutor.HttpClientName)
+                    .AddHttpMessageHandler(() => new RejectFolderMutationLoopbackHandler());
                 services.AddSingleton<IPrincipalMembershipSource>(Memberships);
                 services.AddSingleton<ILicenseEntitlementService>(Licensing);
                 services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
@@ -288,6 +382,20 @@ public sealed partial class FolderOperationIntegrationTests(FolderOperationInteg
         (await SnapshotAsync()).Etag.Should().Be(before.Etag);
         (await SnapshotAsync()).Graph.Services.Where(service => service.Metadata.Name == "test")
             .Should().OnlyContain(service => service.FolderId == null);
+    }
+
+    private sealed class RejectFolderMutationLoopbackHandler : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            var isFolderMutation = request.Method != HttpMethod.Get &&
+                (path.StartsWith("/api/v1/admin/folders", StringComparison.Ordinal) ||
+                 path.StartsWith("/api/v1/admin/services/", StringComparison.Ordinal) && path.EndsWith("/folder", StringComparison.Ordinal));
+            if (isFolderMutation)
+                throw new InvalidOperationException("Folder operations must use the shared mutation service.");
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     internal sealed class ReplayServiceAuthorization(IOperatorAuthorizationEvaluator evaluator) : IOperatorAuthorizationEvaluator

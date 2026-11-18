@@ -552,7 +552,7 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("continue-on-error: true", Exactly.Twice(),
             "optional marker cache transport must fail open for restore and save");
 
-        // #3204 routing contract. The pull_request trigger carries the inputs
+        // Routing contract. The pull_request trigger carries the inputs
         // that DEFINE the image and nothing else. Managed-source inputs are
         // deliberately absent: they invalidate every variant on nearly
         // every pull request, which is what made this workflow a ~140-minute

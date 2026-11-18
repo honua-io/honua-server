@@ -2,7 +2,7 @@
 """Replay the #3302 Operate read, status-contract and MCP catalog observation on a pinned image.
 
 Boots the image through the unchanged installed harness (metadata-release-installed.py
-Harness.start: isolated seeded PostGIS/Redis, Development Enterprise dev grant, no deploy targets,
+Harness.start: isolated seeded PostGIS, Development Enterprise dev grant, no deploy targets,
 alerting disabled, no operation submitted). Expected values are specified here from that fixture,
 not copied from observed output. The receipt is observation evidence only; it does not qualify
 proposal authorization, deployment, recovery, installed clients or placements.
@@ -199,7 +199,7 @@ def main():
             "harnessSha256": harness.harness_hash,
             "replayScript": "scripts/qualification/operate-read-observation.py",
             "replayScriptSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            "setup": "Harness.start only; isolated seeded PostGIS/Redis, Development Enterprise dev grant, no deploy targets, alerting disabled; no operation submitted",
+            "setup": "Harness.start only; isolated seeded PostGIS, Development Enterprise dev grant, no deploy targets, alerting disabled; no operation submitted",
         },
         "replayProcedure": REPLAY_PROCEDURE,
     }

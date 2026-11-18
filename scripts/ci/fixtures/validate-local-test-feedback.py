@@ -26,7 +26,7 @@ class FeedbackTests(unittest.TestCase):
         self.catalog = {'projects': {
             self.unit: {'role': 'unit', 'isolated': True, 'resources': []},
             self.component: {'role': 'component', 'isolated': False, 'resources': ['postgres']},
-            self.mixed: {'role': 'mixed', 'isolated': False, 'resources': ['postgres', 'redis']}}}
+            self.mixed: {'role': 'mixed', 'isolated': False, 'resources': ['docker', 'postgres']}}}
         self.registry = {'shards': [
             {'name': 'unit-id', 'shard_name': 'Unit', 'csproj': self.unit, 'filter': 'FullyQualifiedName~Unit'},
             {'shard_name': 'Component', 'csproj': self.component, 'filter': 'FullyQualifiedName~Component', 'timeout_minutes': 3},
@@ -84,7 +84,7 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual([s['name'] for s in result['shards']], ['Component', 'Mixed'])
         self.assertNotIn('Tier!=Fast', result['shards'][0]['effectiveFilter'])
         self.assertIn('Tier!=Fast', result['shards'][1]['effectiveFilter'])
-        self.assertEqual(result['resources'], ['postgres', 'redis'])
+        self.assertEqual(result['resources'], ['docker', 'postgres'])
         self.assertFalse(result['validatesPullRequest'])
         self.assertTrue(result['fullGatesRequired'])
 

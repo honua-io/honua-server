@@ -14,9 +14,10 @@ namespace Honua.Server.Tests;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreSpatial")]
-public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
+public sealed class CrsTransformationCorrectnessTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    // One host per class: every case only reads the seeded test layer.
+    private readonly WebAppFixture _fixture = fixture;
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const double CoordinateTolerance = 0.0001;
@@ -33,13 +34,6 @@ public sealed class CrsTransformationCorrectnessTests : IAsyncLifetime
         ["Antarctica"] = (0.0000, -85.0000, "Antarctica - Extreme south"),
         ["Greenland"] = (-42.0000, 75.0000, "Greenland - Arctic/polar region"),
     };
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-    }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     #region CRS84 vs EPSG:4326 AXIS ORDER VERIFICATION
 

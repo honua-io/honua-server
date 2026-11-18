@@ -54,7 +54,6 @@ public sealed class AdminAuthorizationTests : IClassFixture<AdminAuthorizationTe
     }
 
     // --- AdminEndpoints (config, openapi, version, capabilities, tables) ---
-    // v1 manifest endpoints were removed in #1035 cutover; their auth tests removed with them.
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/config")]
@@ -66,7 +65,7 @@ public sealed class AdminAuthorizationTests : IClassFixture<AdminAuthorizationTe
 
     // The admin OpenAPI document is public API documentation (the bundled
     // admin-api.json snapshot), intentionally readable without credentials so the
-    // /docs explorer can load it (#1635). The operations it documents stay gated.
+    // /docs explorer can load it. The operations it documents stay gated.
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/openapi.json")]
     public async Task GetOpenApi_WithoutAuth_Returns200WithValidOpenApiDocument()
@@ -87,7 +86,7 @@ public sealed class AdminAuthorizationTests : IClassFixture<AdminAuthorizationTe
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // The capabilities handshake is intentionally anonymous (#1633): browser SDK
+    // The capabilities handshake is intentionally anonymous: browser SDK
     // consumers run checkCompatibility() before they have credentials. The payload
     // must stay limited to constant build metadata — assert the expected fields are
     // present and that nothing deployment-specific leaks alongside them.
@@ -182,7 +181,7 @@ public sealed class AdminAuthorizationTests : IClassFixture<AdminAuthorizationTe
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // SIEM export and tamper-evidence surfaces are operator-only (#350, #509):
+    // SIEM export and tamper-evidence surfaces are operator-only:
     // reading the audit trail in bulk or verifying its integrity must require
     // admin credentials.
     [IntegrationTest]
@@ -364,7 +363,6 @@ public sealed class AdminAuthorizationTests : IClassFixture<AdminAuthorizationTe
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // --- MetadataResourceEndpoints removed in #1035 cutover; auth tests removed with them. ---
 
     // --- OperationsProgressEndpoints ---
 
@@ -430,7 +428,7 @@ public sealed class AdminAuthorizationTests : IClassFixture<AdminAuthorizationTe
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // --- ComplianceAdminEndpoints (#352) ---
+    // --- ComplianceAdminEndpoints ---
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/compliance/dashboard")]

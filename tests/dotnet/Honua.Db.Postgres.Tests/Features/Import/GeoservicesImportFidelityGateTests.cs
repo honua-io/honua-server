@@ -109,7 +109,7 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
                     finding.Code == MigrationCatalogReconciliationCodes.SubtypeMissing &&
                     finding.Severity == MigrationCatalogReconciliationSeverities.Fail);
 
-            // #4600: that catalog finding now controls the verdict.
+            // That catalog finding now controls the verdict.
             result.Success.Should().BeFalse("a migration that dropped the source subtype set is not a successful migration");
             result.NeedsReview.Should().BeTrue();
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);

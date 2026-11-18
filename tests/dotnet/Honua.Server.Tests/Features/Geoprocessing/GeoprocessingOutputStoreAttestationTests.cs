@@ -236,9 +236,9 @@ public sealed class GeoprocessingOutputStoreReadinessEndpointTests : IDisposable
     {
         var options = GeoprocessingOutputStoreTestHelper.Attest(new() { Enabled = true, LocalRootPath = _root });
         var configuration = GeoprocessingOutputStoreTestHelper.Configuration(options);
-        // The #4770 candidate topology grants Pro, which entitles the output-cache middleware.
-        // Its base policy stored the anonymous 200 readiness answer for the default 60 s, so
-        // store loss stayed invisible to probes until the entry expired.
+        // This topology grants Pro, which entitles the output-cache middleware. If its base
+        // policy stored the anonymous 200 readiness answer for the default 60 s, store loss
+        // would stay invisible to probes until the entry expired.
         configuration["Licensing:DevGrantEdition"] = "Pro";
         using var baseFactory = TestWebApplicationFactory.CreateForEnvironment(environmentName);
         using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
@@ -266,7 +266,7 @@ public sealed class GeoprocessingOutputStoreReadinessEndpointTests : IDisposable
 
         loseMarker(Path.Join(_root, GeoprocessingOutputStoreAttestation.FileName));
 
-        // The #4770 reproduction probed six times; every probe after the loss must fail closed.
+        // Probe six times; every probe after the loss must fail closed.
         for (var probe = 0; probe < 6; probe++)
         {
             var notReady = await client.GetAsync("/healthz/ready");

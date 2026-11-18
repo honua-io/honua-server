@@ -102,7 +102,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/append",
             requestContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -131,7 +131,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
             "/rest/services/nonexistent/FeatureServer/append",
             requestContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -180,7 +180,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/append",
             requestContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -204,7 +204,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/append",
             requestContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -404,7 +404,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/calculate",
             form);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -419,7 +419,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var fixture = await StartMutableFixtureAsync();
         var response = await PostCalculateAsync(fixture, "not-json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -467,7 +467,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var response = await _client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/queryDomains?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -497,7 +497,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var response = await _client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/relationships?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -545,7 +545,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var response = await _client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -560,11 +560,11 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var response = await _client.GetAsync(
             "/rest/services/nonexistent/FeatureServer/0/validateSQL?where=1%3D1&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // Regression for #1446: validateSQL must accept the Esri `sql` parameter
+    // validateSQL must accept the Esri `sql` parameter
     // (with optional `sqlType`) and support both GET and a POST companion route.
     [IntegrationTest]
     [Operation(Operations.ValidateSql)]
@@ -589,11 +589,11 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var response = await _client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/validateSQL?sql=1%3D1&sqlType=bogus&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // Regression for #1901: the layer-level validateSQL must accept the same canonical Esri
+    // The layer-level validateSQL must accept the same canonical Esri
     // clause-type sqlType enum (esriSQLTypeWhere/OrderBy/Expression) and short forms
     // (where/orderBy/expression) that real ArcGIS clients and the service-level endpoint use,
     // in addition to the SQL-dialect aliases (standard/native).
@@ -696,7 +696,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
     }
 
-    // #1446: Esri's canonical validateSQL is at the SERVICE level (no layerId) and takes
+    // Esri's canonical validateSQL is at the SERVICE level (no layerId) and takes
     // sql + sqlType (one of where, orderBy, expression).
     [IntegrationTest]
     [Operation(Operations.ValidateSql)]
@@ -759,7 +759,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
     }
 
-    // #1858: Real Esri clients send the canonical sqlType enum
+    // Real Esri clients send the canonical sqlType enum
     // (esriSQLTypeWhere / esriSQLTypeOrderBy / esriSQLTypeExpression). These must be
     // accepted in addition to the short forms.
     [IntegrationTest]
@@ -810,7 +810,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         document.RootElement.GetProperty("isValidSQL").GetBoolean().Should().BeTrue();
     }
 
-    // #1901: the ArcGIS API for Python sends sqlType=statement; both endpoints map it to
+    // The ArcGIS API for Python sends sqlType=statement; both endpoints map it to
     // expression validation.
     [IntegrationTest]
     [Operation(Operations.ValidateSql)]
@@ -833,7 +833,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var response = await _client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid > 0")}&sqlType=bogus&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -845,7 +845,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var response = await _client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/validateSQL?sqlType=where&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -870,7 +870,7 @@ public sealed class FeatureServerMaintenanceTests : IClassFixture<FeatureServerM
         var response = await _client.GetAsync(
             $"/rest/services/nonexistent/FeatureServer/validateSQL?sql={Uri.EscapeDataString("objectid > 0")}&sqlType=where&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

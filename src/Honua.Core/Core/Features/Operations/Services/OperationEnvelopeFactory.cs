@@ -67,7 +67,7 @@ public sealed class OperationEnvelopeFactory(
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                // A lost Redis reply does not prove that creation failed. Only the
+                // A lost store reply does not prove that creation failed. Only the
                 // nonce from this attempt can authorize cleanup of an unaudited v0.
                 await FailUncertainAcceptanceAsync(envelope, acceptanceAttempt).ConfigureAwait(false);
                 throw;

@@ -59,7 +59,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
 
     // Perf-parity budget the scorecard is graded against. Configurable via the
     // HONUA_TEST_PERF_PARITY_* environment variables so CI/operators can tighten or relax the
-    // latency budget without recompiling; falls back to the GeoServices default budget (#1249).
+    // latency budget without recompiling; falls back to the GeoServices default budget.
     private static readonly PerfParityBudget _perfParityBudget = LoadPerfParityBudget();
 
     private static PerfParityBudget LoadPerfParityBudget()
@@ -961,10 +961,8 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
         honuaSingleOutField.Rows[0].Should().ContainKey(sanitizedCompareField);
         honuaSingleOutField.Rows[0].Should().NotContainKey(sanitizedNumericField);
 
-        // The frozen snapshot is the source of truth: the import copied exactly these rows,
-        // so derive the expected count from the snapshot rather than re-querying the live
-        // external service, whose row counts drift between snapshot capture and now (the live
-        // re-query previously made this assertion flaky — see honua-server nightly parity).
+        // Derive the expected row count from the frozen snapshot that was imported.
+        // Live external service counts can drift after snapshot capture.
         var expectedCompareNotNull = sourceSnapshot.TotalCount
             - CountJsonNull(sourceSnapshot.Rows, serviceCase.CompareField);
         var honuaNotNullWhereCount = await QueryCountWithWhereAsync(
@@ -4058,7 +4056,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
 
         // Grade the already-measured latency ratios against the configurable perf budget and
         // embed the resulting verdict into the scorecard so the gate (and CI) can enforce it.
-        // This is the performance analogue of the correctness Checks above (issue #1249).
+        // This is the performance analogue of the correctness Checks above.
         var perfParity = GeoServicesPerfParityGate.Evaluate(
             latencyMetrics.SampleCount,
             latencyMetrics.HonuaToSourceP95Ratio,

@@ -213,28 +213,12 @@ from datetime import timedelta  # noqa: E402
 
 import httpx  # noqa: E402
 
-import capacity_evidence as emitter  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_capacity_observations import emit, observations  # noqa: E402
-
-
-def _post_window_drill(source, passed=True):
-    """Move the fixture's recoveries after the window and attach drill evidence."""
-    end = emitter.timestamp(source["window"]["endedAt"])
-    source["recoveries"] = [dict(event, injectedAt=collector_module.iso(end+timedelta(seconds=10*i+1)),
-                                 detectedAt=collector_module.iso(end+timedelta(seconds=10*i+2)),
-                                 recoveredAt=collector_module.iso(end+timedelta(seconds=10*i+5)))
-                            for i, event in enumerate(source["recoveries"])]
-    source["faultDrill"] = dict(window=dict(startedAt=collector_module.iso(end+timedelta(seconds=1)),
-                                            endedAt=collector_module.iso(end+timedelta(seconds=40))),
-                                excludedFromMeasuredWindow=True, recoveries=source["recoveries"], recovered=True,
-                                dataIntegrity=dict(passed=True), gpJobs=dict(stuckJobIds=[] if passed else ["gp-1"], passed=passed),
-                                failures=[], passed=passed)
-    return source
+from test_capacity_observations import emit, observations, post_window_drill  # noqa: E402
 
 
 def test_receipt_marks_the_post_window_fault_period():
-    result, _ = emit(_post_window_drill(observations()))
+    result, _ = emit(post_window_drill(observations()))
     assert result["status"] == "completed"
     assert result["faultDrill"]["excludedFromMeasuredWindow"] is True
     fault = result["signals"]["recoveryTimeSeconds"]["recoveryEvidence"]["faultWindow"]
@@ -244,7 +228,7 @@ def test_receipt_marks_the_post_window_fault_period():
 
 
 def test_a_failed_drill_cannot_claim_completion():
-    result, _ = emit(_post_window_drill(observations(), passed=False))
+    result, _ = emit(post_window_drill(observations(), stuck_job_ids=["gp-1"]))
     assert result["status"] == "incomplete"
     assert result["faultDrill"]["gpJobs"]["stuckJobIds"] == ["gp-1"]
 
@@ -288,7 +272,7 @@ def _drill_collector(monkeypatch, job_states):
     async def faults(client):
         # Drill-time traffic goes through the recording client but must not join the window.
         await client.get("http://fixture/rest/services/test/FeatureServer/0/query?f=json")
-        collector.recoveries.extend(dict(dependency=name) for name in ("worker", "database", "redis"))
+        collector.recoveries.extend(dict(dependency=name) for name in ("worker", "database"))
 
     async def integrity(client):
         return dict(passed=True)
