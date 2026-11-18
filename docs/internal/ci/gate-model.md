@@ -2905,3 +2905,25 @@ minute and the failed-password block now apply, per case.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Shared default host survives between serial cases
+
+`WebAppFixtureSharedBootstrapMixin` used to dispose the shared default host and
+its Postgres fixture as soon as the last `WebAppFixture` released it. A serial
+collection whose cases each own a default fixture holds no other reference, so
+every case booted a new host: 132 such classes on trunk, 1357 cases and about
+2555 s of case time on a full run. The last release now schedules disposal after
+a 30-second idle grace and the next acquire cancels it, so consecutive cases and
+classes reuse one host. Cases stay isolated by the schema each fixture creates
+on initialization and drops on disposal, which is how parallel classes already
+share the host. The process-exit handler disposes a host still in its grace.
+
+`SharedHostCleanupTests` release an idle host explicitly before their cold-start
+and reference-count assertions, assert that a caller inside the grace reuses the
+same host, and assert that the grace on its own disposes the host. Measured on
+the build host for the same 80 cases, `AttachmentEndpointTests` and
+`OgcStylesEndpointTests` went from 170.0 s to 16.8 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.

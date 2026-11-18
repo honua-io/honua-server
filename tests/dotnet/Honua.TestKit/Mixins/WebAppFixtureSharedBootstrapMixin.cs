@@ -8,13 +8,22 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.TestKit.Mixins;
 
+// The shared host outlives its last reference for IdleReleaseDelay. A serial test collection
+// whose cases each own a default WebAppFixture releases the last reference after every case;
+// without the grace each case booted a new host and Postgres fixture. Cases stay isolated
+// because every fixture owns a schema it creates on initialization and drops on disposal.
 internal static class WebAppFixtureSharedBootstrapMixin
 {
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
+    private static readonly TimeSpan ProcessExitDisposalLimit = TimeSpan.FromSeconds(10);
     private static WebApplicationFactory<Program>? _sharedFactory;
     private static PostgresFixture? _sharedPostgres;
     private static int _sharedRefCount;
     private static bool _sharedInitialized;
+    private static CancellationTokenSource? _pendingRelease;
+    private static int _processExitHooked;
+
+    internal static TimeSpan IdleReleaseDelay { get; set; } = TimeSpan.FromSeconds(30);
 
     internal static WebApplicationFactory<Program> Factory
         => _sharedFactory ?? throw new InvalidOperationException("Shared web factory not initialized.");
@@ -29,6 +38,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
         await _sharedLock.WaitAsync();
         try
         {
+            CancelPendingRelease();
             if (!_sharedInitialized)
             {
                 try
@@ -38,6 +48,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
                     _sharedFactory = (buildFactory ?? BuildSharedFactory)(_sharedPostgres.ConnectionString, sharedAdminPassword);
                     _sharedFactory.StartServer();
                     _sharedInitialized = true;
+                    HookProcessExit();
                 }
                 catch
                 {
@@ -73,12 +84,86 @@ internal static class WebAppFixtureSharedBootstrapMixin
 
             if (_sharedRefCount == 0 && _sharedInitialized)
             {
-                await DisposeSharedResourcesAsync();
+                CancelPendingRelease();
+                var pending = new CancellationTokenSource();
+                _pendingRelease = pending;
+                _ = ReleaseWhenIdleAsync(pending);
             }
         }
         finally
         {
             _sharedLock.Release();
+        }
+    }
+
+    // Disposes an unreferenced shared host now instead of after the idle grace.
+    internal static async Task ReleaseIdleNowAsync()
+    {
+        await _sharedLock.WaitAsync();
+        try
+        {
+            await DisposeIfIdleAsync();
+        }
+        finally
+        {
+            _sharedLock.Release();
+        }
+    }
+
+    private static async Task ReleaseWhenIdleAsync(CancellationTokenSource pending)
+    {
+        try
+        {
+            await Task.Delay(IdleReleaseDelay, pending.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        await _sharedLock.WaitAsync();
+        try
+        {
+            if (ReferenceEquals(_pendingRelease, pending))
+            {
+                await DisposeIfIdleAsync();
+            }
+        }
+        finally
+        {
+            _sharedLock.Release();
+        }
+    }
+
+    // Callers hold _sharedLock.
+    private static async Task DisposeIfIdleAsync()
+    {
+        CancelPendingRelease();
+        if (_sharedRefCount == 0 && _sharedInitialized)
+        {
+            await DisposeSharedResourcesAsync();
+        }
+    }
+
+    private static void CancelPendingRelease()
+    {
+        var pending = _pendingRelease;
+        _pendingRelease = null;
+        if (pending is null)
+        {
+            return;
+        }
+
+        pending.Cancel();
+        pending.Dispose();
+    }
+
+    private static void HookProcessExit()
+    {
+        if (Interlocked.Exchange(ref _processExitHooked, 1) == 0)
+        {
+            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+                ReleaseIdleNowAsync().Wait(ProcessExitDisposalLimit);
         }
     }
 
@@ -123,7 +208,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
             ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
         };
 
-        // The shared bootstrap owns this factory until startup fails or its last caller releases it.
+        // The shared bootstrap owns this factory until startup fails or it stays unreferenced past the idle grace.
         return Honua.TestKit.ConfiguredWebApplicationFactory.Create(builder =>
             {
                 WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings(builder);
