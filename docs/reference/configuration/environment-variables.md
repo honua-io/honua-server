@@ -189,6 +189,7 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `FileStorage__AwsS3__KeyPrefix` | — | Key prefix for objects this server names itself. |
 | `FileStorage__AwsS3__AccessKeyId` / `FileStorage__AwsS3__SecretAccessKey` | — | S3 credentials (prefer instance roles where possible). |
 | `HONUA_STORAGE_PROVIDER`, `HONUA_S3_BUCKET`, `HONUA_S3_REGION`, `HONUA_S3_SERVICE_URL`, `HONUA_S3_FORCE_PATH_STYLE`, `HONUA_S3_ACCESS_KEY_ID`, `HONUA_S3_SECRET_ACCESS_KEY` | — | Docker Compose convenience aliases for the `FileStorage__AwsS3__*` keys. |
+| `GeoServices__ExportTiles__AnonymousArtifactsPerHour` | `30` | Archives that anonymous synchronous MapServer and ImageServer `exportTiles` calls may store per server task per hour. Further anonymous calls get `429` with `Retry-After`; signed-in callers are not counted. `0` refuses anonymous synchronous exports. |
 
 ## Imports and limits
 

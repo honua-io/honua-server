@@ -65,6 +65,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerComputeTiePointsHandler>();
         services.AddScoped<ImageServerCalculateVolumeHandler>();
         services.AddScoped<ImageServerExportTilesHandler>();
+        services.AddExportTilesArtifactBudget(configuration);
 
         // Durable tile-export raster producer + source fence. Registered as singletons so
         // the singleton TileExport job executor can hold them; each resolves the scoped raster store
