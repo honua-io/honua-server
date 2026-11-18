@@ -656,6 +656,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}/approval-review/{action}")]
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/promote")]
     public async Task PromoteDeployOperation_WhenParkedInReconciling_ForcesCutover()
     {

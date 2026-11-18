@@ -81,10 +81,19 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
         WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver", string? tenantId = null)
         => AuthenticateAsync(() => CreateHttpsClient(fixture), provider, subject, tenantId);
 
-    public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
+    public static Task<HumanApprovalHttpClient> AuthenticateAsync(
         Func<HttpClient> createClient, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver", string? tenantId = null)
+        => AuthenticateAsync(createClient, provider, new HumanApprovalIdentity(subject, tenantId, ["admin"]));
+
+    public static Task<HumanApprovalHttpClient> AuthenticateAsync(
+        WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider, HumanApprovalIdentity identity)
+        => AuthenticateAsync(() => CreateHttpsClient(fixture), provider, identity);
+
+    public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
+        Func<HttpClient> createClient, AdminAuthEndpointsTests.StubHttpClientFactory provider, HumanApprovalIdentity identity)
     {
-        provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(subject, subject, ["admin"], tenantId);
+        provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(
+            identity.Subject, identity.Subject, identity.Roles, identity.TenantId);
         var client = createClient();
         if (client.BaseAddress?.Scheme != Uri.UriSchemeHttps)
             client.BaseAddress = new Uri("https://localhost");
@@ -168,6 +177,9 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
         return (await response.Content.ReadFromJsonAsync(
             DeployControlJsonContext.Default.DeployHumanApprovalReviewResponse))!;
     }
+
+    public async Task<HttpResponseMessage> ReviewDeployAsync(string operationId, string action)
+        => await SubmitDeployReviewAsync(operationId, action, await OpenDeployReviewAsync(operationId, action));
 
     public async Task<HttpResponseMessage> SubmitDeployReviewAsync(
         string operationId, string action, DeployHumanApprovalReviewResponse snapshot)
@@ -271,3 +283,5 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
     }
 
 }
+
+internal sealed record HumanApprovalIdentity(string Subject, string? TenantId, IReadOnlyList<string> Roles);
