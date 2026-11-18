@@ -1252,26 +1252,26 @@ job savings remain unmeasured: the shard also includes
 ### Admin authentication parallel case groups
 
 xUnit runs the cases of one test class in sequence, and `AdminAuthEndpointsTests`
-was also in the `Database` collection, which disables parallel execution. Its 79
+was also in the `Database` collection, which disables parallel execution. Its 80
 cases each start their own application, so the class ran end to end in one
 sequence. Each partial file now holds its cases in a nested class
 (`BrowserSessions`, `CallbackErrors`, `FailedAttempts`, `GrpcBrowserSessions`,
 `WebSocketOrigin`), and the outer class leaves the `Database` collection, so the
 six groups run in parallel. No class uses the collection fixture. Every case still
-creates its own application, isolated database schema, stub identity provider and
-clock, and no assertion changes. Rate-limit and failed-attempt state stays per
+creates its own application and isolated database schema; stub identity providers
+and clocks are created per case where used, and no assertion changes. Rate-limit and failed-attempt state stays per
 application, so parallel groups do not share it.
 
 The nested names keep the `AdminAuthEndpointsTests` prefix, so the shard filter
 `FullyQualifiedName~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests`
-selects the same 79 cases in the Server Features Admin Authentication and
+selects the same 80 cases in the Server Features Admin Authentication and
 Credentials shard on selected PR runs and twice-daily full trunk runs. Runner
 count, required check names, aggregate dependencies, workflows and shard
 definitions are unchanged.
 
 Before, on hosted full trunk run 44183857476, the class summed 618.9 seconds and
-the shard's TRX start-to-finish interval was 648.9 seconds: the cases ran one at
-a time.
+the shard's TRX start-to-finish interval was 648.9 seconds for the 79 cases it
+then held: the cases ran one at a time. The parallel saving is not yet measured.
 
 ### ImageServer raw pixel host lifetime
 
