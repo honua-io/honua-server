@@ -106,11 +106,11 @@ DOCKER = '''docker() {
 '''
 
 
-def run_bind(source, inspected_image, platform="linux/amd64", image=REQUESTED):
+def run_bind(source, inspected_image, platform="linux/amd64"):
     with tempfile.TemporaryDirectory() as directory:
         work = Path(directory)
         (work / "scripts").symlink_to(ROOT / "scripts", target_is_directory=True)
-        environment = dict(os.environ, SCAN_IMAGE=image, SCAN_PLATFORM=platform, SCAN_REVISION=REVISION,
+        environment = dict(os.environ, SCAN_IMAGE=REQUESTED, SCAN_PLATFORM=platform, SCAN_REVISION=REVISION,
                            SOURCE_MANIFEST=json.dumps(source), INSPECT_JSON=json.dumps(inspected(inspected_image)),
                            REGISTRY_TOKEN="unused", GITHUB_ACTOR="actor", RUNNER_TEMP=str(work),
                            GITHUB_ENV=str(work / "env"), GITHUB_SERVER_URL="https://github.com",
