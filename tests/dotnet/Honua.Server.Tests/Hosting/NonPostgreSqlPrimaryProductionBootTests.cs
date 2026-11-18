@@ -12,7 +12,7 @@ namespace Honua.Server.Tests.Hosting;
 // The service and layer catalog lives only in the PostgreSQL/PostGIS system database. A production host whose
 // primary is DuckDB or MySQL has no catalog store, so it must refuse to start with one clear message and a plain
 // exit status, instead of starting and answering every catalog-bound request with an error. The startup checks
-// that still apply to such a host outside production refuse the same way rather than crashing.
+// that still apply to such a host in the Test environment refuse the same way rather than crashing.
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class NonPostgreSqlPrimaryProductionBootTests
 {
@@ -54,8 +54,8 @@ public sealed class NonPostgreSqlPrimaryProductionBootTests
     public Task DuckDbPrimaryRequiringADurableJobStore_RefusesWithoutCrashing()
         => AssertRefusedAsync("duckdb", new Dictionary<string, string>
         {
-            ["ASPNETCORE_ENVIRONMENT"] = "Development",
-            ["DOTNET_ENVIRONMENT"] = "Development",
+            ["ASPNETCORE_ENVIRONMENT"] = "Test",
+            ["DOTNET_ENVIRONMENT"] = "Test",
             ["Jobs__RequireDurableStore"] = "true",
         }, "Jobs:RequireDurableStore");
 
