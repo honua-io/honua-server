@@ -831,7 +831,11 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
-          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
+          # On trunk, full and scheduled runs compare trunk with itself, so a
+          # range selection may build only the default profile; they build all.
+          profile_scope=--changed-from-git
+          if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi
+          python3 scripts/ci/protocol-profile-selection.py --dry-run "${profile_scope}" > "${RUNNER_TEMP}/protocol-profiles.json"
           cat "${RUNNER_TEMP}/protocol-profiles.json"
 
       - name: Download selected shard matrix

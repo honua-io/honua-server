@@ -32,6 +32,8 @@ class ManagedWorkflowTests(unittest.TestCase):
         profiles = (ROOT / 'scripts/ci/build-selected-protocol-profiles.py').read_text()
         self.assertIn('"-p:RunAnalyzers=true", "-p:BuildProjectReferences=false"', profiles)
         self.assertIn('os.environ.get("PRODUCER_RUN_ANALYZERS", "true").strip().lower() == "false"', profiles)
+        self.assertIn('if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi', producer)
+        self.assertIn('protocol-profile-selection.py --dry-run "${profile_scope}"', producer)
         self.assertIn('dotnet-restore-retry.sh \"${BUILD_TARGET}\" -p:Configuration=Release', producer)
         self.assertLess(producer.index('Build (warnings as errors)'), producer.index('mode: publish'))
         self.assertNotIn('dotnet test ', producer)

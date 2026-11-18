@@ -399,7 +399,10 @@ producer so these checks do not wait for artifact publication. The required
 boot/migration smoke remains on the producer after pristine artifact publication.
 Full CI owns remote-source, raster, layer, geometry/calculate-field, imagery,
 GDAL/PDAL and import/export fidelity proofs, including the existing receipt
-tripwires. Protocol-profile compilation also runs in full CI.
+tripwires. Protocol-profile compilation also runs in full CI: full and scheduled
+runs select every profile with `protocol-profile-selection.py --all`. A range
+selection compares trunk with itself there and would build only `all`, which
+is what full run 44309947920 did.
 
 ### Import-fidelity gates: correctness and performance
 
