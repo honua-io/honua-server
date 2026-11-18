@@ -137,19 +137,24 @@ internal sealed class McpJsonRpcNotification
     public JsonElement? Params { get; set; }
 }
 
-internal sealed class McpProgressNotificationParams
+// notifications/message params (MCP logging utility); data is the structured payload.
+internal sealed class McpLogMessageParams
 {
-    [JsonPropertyName("progressToken")]
-    public string ProgressToken { get; set; } = string.Empty;
+    [JsonPropertyName("level")]
+    public string Level { get; set; } = string.Empty;
 
-    [JsonPropertyName("progress")]
-    public double Progress { get; set; }
+    [JsonPropertyName("logger")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Logger { get; set; }
 
-    [JsonPropertyName("total")]
-    public double? Total { get; set; }
+    [JsonPropertyName("data")]
+    public JsonElement Data { get; set; }
+}
 
-    [JsonPropertyName("message")]
-    public string? Message { get; set; }
+internal sealed class McpSetLevelParams
+{
+    [JsonPropertyName("level")]
+    public string? Level { get; set; }
 }
 
 // -----------------------------------------------------------------------
@@ -213,7 +218,14 @@ internal sealed class McpServerCapabilities
 
     [JsonPropertyName("prompts")]
     public McpCapabilityFlag Prompts { get; set; } = new();
+
+    // Present ({}) only while the server-initiated stream can carry notifications/message.
+    [JsonPropertyName("logging")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public McpEmptyCapability? Logging { get; set; }
 }
+
+internal sealed class McpEmptyCapability;
 
 internal sealed class McpCapabilityFlag
 {

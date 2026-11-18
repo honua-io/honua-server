@@ -5,6 +5,7 @@
   "description": "Argument shape for the discovery/query feature-query tool (advertised name honua_query_features). Reads features from a published layer with an optional attribute and spatial filter. x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "allOf": [{ "$ref": "../common/service-layer-reference.schema.json" }],
   "required": ["serviceId", "serviceLayerIndex"],
   "properties": {
