@@ -8,8 +8,6 @@ using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Proto = Geospatial.V1;
@@ -60,7 +58,7 @@ public sealed partial class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/GetAttachmentUrl")]
-    public async Task GetAttachmentUrl_LocalStoragePath_IsReplacedByAServerLink()
+    public async Task GetAttachmentUrl_LocalStoragePath_IsNeverReturned()
     {
         ArrangeAttachmentParent();
         var store = Substitute.For<IAttachmentStore>();
@@ -69,26 +67,19 @@ public sealed partial class GrpcFeatureServiceTests
         var storage = Substitute.For<ICloudFileStorage>();
         storage.GetPresignedUrlAsync("private/two", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns("file:///private/two");
-        var metadata = Substitute.For<IAttachmentNativeMetadataStore>();
-        metadata.GetNativeMetadataAsync(Arg.Any<AttachmentNativeMetadataQuery>(), Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<long, AttachmentNativeMetadata>());
         using var context = CreateCallContext(null, null, null, services =>
         {
             services.AddSingleton(store);
             services.AddSingleton(storage);
-            services.AddSingleton(metadata);
-            services.AddDataProtection().UseEphemeralDataProtectionProvider();
         });
-        var request = context.GetHttpContext().Request;
-        request.Scheme = "https";
-        request.Host = new HostString("gis.example.test");
-        var response = await _sut.GetAttachmentUrl(new Proto.GetAttachmentUrlRequest
+        var action = () => _sut.GetAttachmentUrl(new Proto.GetAttachmentUrlRequest
         {
             Parent = AttachmentParent(),
             AttachmentId = 2
         }, context);
-        response.Url.Should().StartWith("https://gis.example.test/api/v1/attachments/downloads/");
-        response.Url.Should().NotContain("private");
+        var exception = (await action.Should().ThrowAsync<RpcException>()).Which;
+        exception.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        exception.Status.Detail.Should().NotContain("private/two");
     }
 
     [UnitTest]

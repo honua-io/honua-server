@@ -66,9 +66,7 @@ internal sealed partial class HonuaFeatureService
             attachment.StoragePath, lifetime, context.CancellationToken).ConfigureAwait(false);
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
         {
-            // No HTTPS presigned URL (local file storage returns a path): serve it from this server.
-            url = AttachmentDownloadLinks.Create(context.GetHttpContext(),
-                new AttachmentDownloadTarget(target.Layer.StorageLayerId, target.FeatureId, attachment.Id), lifetime);
+            throw AttachmentError(StatusCode.FailedPrecondition, "Secure attachment downloads are not configured.");
         }
         return new Proto.GetAttachmentUrlResponse
         {

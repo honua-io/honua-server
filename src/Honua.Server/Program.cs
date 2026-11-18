@@ -1947,7 +1947,6 @@ app.MapServerFeatureEndpoints();
 #if !HONUA_EXCLUDE_GRPC
 // Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
-Honua.Server.Features.Protocols.Grpc.AttachmentDownloadLinks.MapAttachmentDownloadLinks(app);
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
     .RequireAdminAuthorization()

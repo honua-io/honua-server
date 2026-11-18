@@ -3807,34 +3807,6 @@
       ]
     },
     {
-      "surfaceId": "grpc-attachment-download-link",
-      "displayName": "gRPC attachment download link",
-      "surfaceKind": "http-route",
-      "protocol": "gRPC",
-      "canonicalIdentifier": "/api/v1/attachments/downloads/{token}",
-      "parentSurfaceId": null,
-      "endpointPrefixes": [],
-      "endpointExactMatches": [
-        "/api/v1/attachments/downloads/{token}"
-      ],
-      "endpointContains": [],
-      "operationKeys": [],
-      "proofs": [
-        {
-          "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage and gRPC-Web integration tests assert that GetAttachmentUrl on storage without presigned URLs returns a server link that downloads only that attachment with nosniff, attachment disposition and no-store, and that a tampered token gets 404.",
-          "executionLane": "ci:test-all+architecture",
-          "evidenceLocations": [
-            "src/Honua.Server/Features/Protocols/Grpc/AttachmentDownloadLinks.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/GrpcIntegrationTests.Attachments.cs"
-          ],
-          "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": "#8286"
-        }
-      ]
-    },
-    {
       "surfaceId": "cog-range-proxy",
       "displayName": "Published Cloud Optimized GeoTIFF range proxy",
       "surfaceKind": "http-route-family",

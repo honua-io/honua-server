@@ -124,9 +124,6 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"),
-        // Short-lived download link returned by gRPC GetAttachmentUrl when storage has no presigned URLs;
-        // mapped only in builds that include gRPC.
-        new("GET", "/api/v1/attachments/downloads/{token}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/replicas"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}"),
     ];

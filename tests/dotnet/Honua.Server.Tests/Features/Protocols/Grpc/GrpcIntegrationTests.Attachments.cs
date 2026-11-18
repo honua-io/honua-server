@@ -41,7 +41,6 @@ public sealed partial class GrpcIntegrationTests
             _attachments.GetAsync(WebAppFixture.TestLayerId, 1, 23, Arg.Any<CancellationToken>()).Returns(attachment);
             _attachmentStorage.GetPresignedUrlAsync("private/attachment-object", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
                 .Returns("https://downloads.example.test/attachment?signature=test");
-            ConfigureLocalStorageAttachment();
             Fixture.ConfigureServices(services =>
             {
                 services.AddSingleton(AttachmentMetadata);
@@ -49,45 +48,6 @@ public sealed partial class GrpcIntegrationTests
                 services.AddSingleton(_attachmentStorage);
             });
         }
-
-        // Local file storage answers a presigned-URL request with a file path, never a URL.
-        private void ConfigureLocalStorageAttachment()
-        {
-            var attachment = Attachment.CreateForUpload(24, 1, WebAppFixture.TestLayerId,
-                "local.txt", "text/plain", 5, "local/attachment-object");
-            _attachments.GetAsync(WebAppFixture.TestLayerId, 1, 24, Arg.Any<CancellationToken>()).Returns(attachment);
-            _attachments.DownloadAsync(WebAppFixture.TestLayerId, 1, 24, Arg.Any<CancellationToken>())
-                .Returns(_ => AttachmentContent.Create(attachment, new MemoryStream("local"u8.ToArray())));
-            _attachmentStorage.GetPresignedUrlAsync("local/attachment-object", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-                .Returns("/var/lib/honua/files/local/attachment-object");
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("POST /geospatial.v1.FeatureService/GetAttachmentUrl")]
-    [Endpoint("GET /api/v1/attachments/downloads/{token}")]
-    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/GetAttachmentUrl")]
-    public async Task GetAttachmentUrl_LocalStorage_ReturnsAServerLinkThatDownloadsOnlyThatAttachment()
-    {
-        var download = await _client.GetAttachmentUrlAsync(new Proto.GetAttachmentUrlRequest
-        {
-            Parent = ExistingAttachmentParent(),
-            AttachmentId = 24
-        }, _headers);
-        var link = new Uri(download.Url);
-        const string downloadRoute = "/api/v1/attachments/downloads/{token}";
-        link.AbsolutePath.Should().StartWith(downloadRoute[..(downloadRoute.LastIndexOf('/') + 1)]);
-        download.Url.Should().NotContain("attachment-object");
-        using var http = _fixture.CreateClient();
-        using var response = await http.GetAsync(link.PathAndQuery);
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        (await response.Content.ReadAsStringAsync()).Should().Be("local");
-        response.Content.Headers.ContentDisposition!.FileName.Should().Contain("local.txt");
-        response.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
-        response.Headers.CacheControl!.NoStore.Should().BeTrue();
-        using var tampered = await http.GetAsync(link.PathAndQuery[..^2] + "xx");
-        tampered.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
