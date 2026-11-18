@@ -1995,3 +1995,23 @@ itself is unchanged.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### MCP endpoint, modern-bearer and guidance cases share one host per class
+
+On hosted full trunk run 44250783964 three MCP classes started a host for every
+case. `McpEndpointIntegrationTests` took 112 seconds of case time over a
+262-second span in MCP Endpoints. `McpModernBearerAuthenticationTests` took 70
+over 127 seconds in MCP and Sessions 1. `McpAuthenticationGuidanceTests` took 26
+over 62 seconds in MCP and Sessions 2. All three run in the serial Database
+collection, so these host starts ran one after another. Each class now has one
+class-fixture host and stays in its collection.
+- MCP endpoint cases open their own sessions. The per-principal cap of 32 evicts
+  the least-recently-used session, never one a case just opened.
+- Modern-bearer cases mint their own tokens. Each gets a fresh `jti` unless a
+  case pins a fresh id, so one case's replay record cannot admit or refuse
+  another case's token. The zero-skew expiry case keeps its own host.
+- Guidance cases only read responses on fresh clients.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
