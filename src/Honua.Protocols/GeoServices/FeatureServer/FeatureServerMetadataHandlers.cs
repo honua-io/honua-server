@@ -328,9 +328,11 @@ internal static partial class FeatureServerEndpoints
                     accessibleResources.Contains(relationship.RelatedResourceId))]
             };
 
+            // Edit constraints (composite ownership) come from every relationship, including ones the
+            // caller cannot see; only the advertised relationship list is filtered.
             LayerResponse response = MapLayerToResponseV2(
                 service,
-                metadataResource,
+                schemaResource,
                 publication,
                 snapshot,
                 limits,
