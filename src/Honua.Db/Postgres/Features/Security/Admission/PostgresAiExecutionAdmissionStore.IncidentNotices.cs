@@ -18,15 +18,15 @@ internal sealed partial class PostgresAiExecutionAdmissionStore : IAiIncidentNot
             FROM {_incidentNotices} WHERE delivered_at IS NULL
             ORDER BY created_at, deployment_id, authority_scope, episode_id LIMIT @limit
             """, reader => new AiIncidentNotice
-            {
-                DeploymentId = reader.GetString(0),
-                AuthorityScope = reader.GetString(1),
-                EpisodeId = reader.GetGuid(2),
-                ChargedTokens = reader.GetDecimal(3),
-                ChargedMoney = reader.GetDecimal(4),
-                TokenLimit = reader.GetInt64(5),
-                MoneyLimit = reader.GetInt64(6)
-            }), limit, cancellationToken);
+        {
+            DeploymentId = reader.GetString(0),
+            AuthorityScope = reader.GetString(1),
+            EpisodeId = reader.GetGuid(2),
+            ChargedTokens = reader.GetDecimal(3),
+            ChargedMoney = reader.GetDecimal(4),
+            TokenLimit = reader.GetInt64(5),
+            MoneyLimit = reader.GetInt64(6)
+        }), limit, cancellationToken);
 
     public async Task<bool> MarkQueuedAsync(AiIncidentNotice notice, CancellationToken cancellationToken)
     {

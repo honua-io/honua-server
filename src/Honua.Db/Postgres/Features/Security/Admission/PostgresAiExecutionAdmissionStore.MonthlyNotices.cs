@@ -18,15 +18,15 @@ internal sealed partial class PostgresAiExecutionAdmissionStore : IAiMonthlyActo
             FROM {_monthlyNotices} WHERE delivered_at IS NULL
             ORDER BY created_at, deployment_id, actor_key, month_start LIMIT @limit
             """, reader => new AiMonthlyActorNotice
-            {
-                DeploymentId = reader.GetString(0),
-                ActorKey = reader.GetString(1),
-                MonthStart = reader.GetFieldValue<DateTimeOffset>(2),
-                ChargedTokens = reader.GetDecimal(3),
-                ChargedMoney = reader.GetDecimal(4),
-                TokenLimit = reader.GetInt64(5),
-                MoneyLimit = reader.GetInt64(6)
-            }), limit, cancellationToken);
+        {
+            DeploymentId = reader.GetString(0),
+            ActorKey = reader.GetString(1),
+            MonthStart = reader.GetFieldValue<DateTimeOffset>(2),
+            ChargedTokens = reader.GetDecimal(3),
+            ChargedMoney = reader.GetDecimal(4),
+            TokenLimit = reader.GetInt64(5),
+            MoneyLimit = reader.GetInt64(6)
+        }), limit, cancellationToken);
 
     public async Task<bool> MarkQueuedAsync(AiMonthlyActorNotice notice, CancellationToken cancellationToken)
     {
