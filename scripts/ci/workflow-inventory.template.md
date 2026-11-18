@@ -1662,3 +1662,89 @@ job: wall 633 to 419-438 seconds; DeploymentCapabilityProfileIntegrationTests
 80.4 to 43.0-43.7 seconds and CapabilityManifestEndpointTests 305.0 to
 225.7-241.8 seconds, while the unchanged classes in the same job also ran
 148.5 to 102-110 seconds, so part of that difference is host load.
+
+### Sharing REST token host lifetime
+
+`SharingRestTokenTests` shares one application with the protected-service graph
+and token settings across every case that used the default token configuration,
+instead of starting one per case. A startup filter stamps the request client
+address; each case now gets its own TEST-NET-3 address, so failed attempts that
+the authentication failure limiter counts per source never carry over between
+cases, and IP-bound tokens still bind to the address of the case that issued
+them. Each case issues, exchanges or revokes only its own tokens and keys. Cases
+that need other settings or a replaced credential verifier keep their own
+applications.
+
+The class stays in Server Features Sharing 1 on selected PR runs and full trunk
+runs. No workflow, shard filter, required check, aggregate dependency or runner
+count changes. Build-host class 45/45 identical passing cases in one job, 297.2
+to 34.7-34.8 seconds (process wall 345 to 62-71 seconds).
+
+### Sharing community and REST read host lifetime
+
+`SharingCommunityTests` shares one application with the durable PostgreSQL
+portal sharing stores; the portal sharing tables are created once, and each case
+deletes all rows from `portal_item_shares` and `portal_community_groups` before
+it starts, so every case still begins from empty sharing tables. The case that
+needs the store binding removed keeps its own application.
+`SharingRestReadTests` shares one application across the default-graph cases,
+which only send anonymous GET and HEAD requests; none of the endpoints they call
+(sharing info, portal URI list, portals/self, search, content items and
+`/rest/info`) is output-cached. The configured-public-root and
+disabled-entitlement cases keep their own applications.
+
+Both classes stay in Server Features Sharing 2 on selected PR runs and full
+trunk runs. No workflow, shard filter, required check, aggregate dependency or
+runner count changes. One build-host job, all 83 cases of the three Sharing
+classes identical and passing: SharingCommunityTests 114.6 to 10.3-10.9 seconds,
+SharingRestReadTests 121.3 to 16.1-17.5 seconds, SharingRestTokenTests 326.4 to
+36.3-38.9 seconds; process wall 584 to 106-121 seconds.
+
+### API key token parameter host lifetime
+
+`ApiKeyTokenParameterTests` shares one application across the class. Each case
+creates only its own keys and never revokes or lists shared ones. Key names are
+not unique in the store;
+lookup is by key material. The in-process transport leaves the client address
+unset, and the authentication failure limiter ignores a request with no client
+address, so the expected invalid-token responses do not lock later cases out.
+The protected layer's access metadata is set once when the host starts.
+`ApiKeyTokenParameterPrincipalTests` does not use this host.
+
+The class stays split across Security and Authorization 2 and 3 on selected PR
+runs and full trunk runs. No workflow, shard filter, required check, aggregate
+dependency or runner count changes. One build-host job, 24/24 identical passing
+cases, zero skipped: class span 163.3 to 3.9-4.0 seconds (process wall 186 to
+63 and 29 seconds). Whole-job shard savings were not measured.
+
+### Patch concurrency host lifetime
+
+`PatchConcurrencyTests` shares two Pro applications with the OData seed across
+the class instead of one per case. One keeps the product field-mask source,
+because only that source takes the combined row and field read path; the other
+registers the test's mutable mask. Each case inserts and edits only its own
+feature, and starts by installing a fresh write barrier and clearing the test
+mask. `OgcPatch_PublicIdentifierAndMaskedField_UsesCompleteSnapshot` changes
+the layer schema and keeps its own application.
+
+The class stays in Core Mutation Concurrency on selected PR runs and full
+trunk runs. No workflow, shard filter, required check, aggregate dependency or
+runner count changes. One build-host job, 43/43 passing cases, zero skipped:
+class span 199.8 to 15.2-15.6 seconds (process wall 212 to 38-43 seconds).
+
+### GPServer SOAP job host lifetime
+
+`GPServerSoapEndpointsTests` built one application per job case to inject a
+fresh job-service substitute. The class fixture now holds one job-service
+substitute and one terminal-service substitute, registered as singletons so
+every consumer, including the real singleton terminal service, sees the same
+object, and two lazily started applications: one with the job substitute and
+the real terminal service, one with both substitutes. Each case clears the
+substitutes it uses (returns, callbacks and received calls) and configures
+them again, so every assertion is unchanged.
+
+The class stays split across GeoServices GPServer SOAP and SOAP Progress on
+selected PR runs and full trunk runs. No workflow, shard filter, required
+check, aggregate dependency or runner count changes. One build-host job, 81/81
+passing cases, zero skipped: class span 243.7 to 23.0-24.2 seconds (process
+wall 248 to 27-28 seconds).
