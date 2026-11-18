@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Publishing.Descriptors;
-using Honua.Server.Features.Admin.PairedPublications;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -20,7 +19,7 @@ public sealed partial class PairedPublishEndpointTests
     public async Task PairedPublish_Version_CopiesAsSelfContainedFileTree()
     {
         var published = await PublishAsync(IdentityField);
-        var descriptor = await ReadJsonAsync<PublicationDescriptor>(published.DescriptorKey);
+        var descriptor = await ReadCollectionAsync(published.DescriptorKey);
         var versionPrefix = ArtifactKey(published, string.Empty);
         var requested = Environment.GetEnvironmentVariable(SnapshotDirectoryVariable);
         var target = string.IsNullOrEmpty(requested) ? Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString()) : requested;
@@ -28,7 +27,7 @@ public sealed partial class PairedPublishEndpointTests
         {
             var copied = await CopyTreeAsync(versionPrefix, target);
 
-            copied.Should().Contain(["descriptor.json", PairedPublicationDescriptorFactory.StacItemFileName,
+            copied.Should().Contain([ExportCollectionDocument.FileName,
                 descriptor.Artifacts.Geoparquet.Href, descriptor.Artifacts.Pmtiles.Href]);
             (await File.ReadAllBytesAsync(Path.Join(target, descriptor.Artifacts.Geoparquet.Href))).Should().Equal(
                 await ReadBytesAsync(ArtifactKey(published, descriptor.Artifacts.Geoparquet.Href)));

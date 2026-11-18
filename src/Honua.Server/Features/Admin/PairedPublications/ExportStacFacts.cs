@@ -6,10 +6,9 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Admin.PairedPublications;
 
-// Licence, providers and table:columns for the export's STAC document, from metadata Honua holds.
+// Licence and providers for the export's STAC collection, from metadata Honua holds.
 internal static class ExportStacFacts
 {
-    internal const string TableExtension = "https://stac-extensions.github.io/table/v1.2.0/schema.json";
     private const string Proprietary = "proprietary";
 
     // Metadata licences are canonical SPDX or the literal 'proprietary' (MetadataV2GraphValidation);
@@ -43,45 +42,6 @@ internal static class ExportStacFacts
 
         providers.Add(new JsonObject { ["name"] = input.HostName, ["roles"] = new JsonArray("host") });
         return providers;
-    }
-
-    // The GeoParquet columns: the public fields, then the geometry and its bounding box.
-    public static JsonArray TableColumns(ExportCompanionInput input)
-    {
-        var columns = new JsonArray();
-        foreach (var field in input.PublicFields)
-        {
-            columns.Add(Column(field.Name, field.Type, field.Description ?? field.Title));
-        }
-
-        var descriptor = input.Descriptor;
-        columns.Add(Column(descriptor.Geometry.Column, "geometry", $"Feature geometry as WKB in {descriptor.Crs.Geoparquet}."));
-        columns.Add(Column("bbox", "struct", "Feature bounding box (xmin, ymin, xmax, ymax) for spatial filtering."));
-        return columns;
-    }
-
-    // Adds the facts to a STAC object's properties and declares the table extension on the object.
-    public static void Apply(JsonObject stac, JsonObject properties, ExportCompanionInput input)
-    {
-        if (License(input.Metadata) is { } license)
-        {
-            properties["license"] = license;
-        }
-
-        properties["providers"] = Providers(input);
-        properties["table:columns"] = TableColumns(input);
-        stac["stac_extensions"] = new JsonArray(TableExtension);
-    }
-
-    private static JsonObject Column(string name, string type, string? description)
-    {
-        var column = new JsonObject { ["name"] = name, ["type"] = type };
-        if (!string.IsNullOrWhiteSpace(description))
-        {
-            column["description"] = description.Trim();
-        }
-
-        return column;
     }
 
     private static string? WebUrl(string? value)

@@ -34,8 +34,8 @@ public sealed class ExportCompanionFilesTests
         var files = ExportCompanionFiles.Render(Input(StoredStyle));
 
         files.Should().OnlyContain(file => !Encoding.UTF8.GetString(file.Content).Contains("owner", StringComparison.OrdinalIgnoreCase));
-        ExportStacFacts.TableColumns(Input(null)).Select(column => column!["name"]!.GetValue<string>())
-            .Should().Equal("objectid", "tmk", "geometry", "bbox");
+        PairedPublicationDescriptorFactory.Collection(Input(null))["table:columns"]!.AsArray()
+            .Select(column => column!["name"]!.GetValue<string>()).Should().Equal("objectid", "tmk");
     }
 
     [UnitTheory]
@@ -82,24 +82,20 @@ public sealed class ExportCompanionFilesTests
     }
 
     [UnitTest]
-    public void StacItem_CarriesCompanionAssetsLicenceProvidersAndColumns()
+    public void Collection_LinksCompanionsAndCarriesLicenceAndProviders()
     {
-        var item = PairedPublicationDescriptorFactory.StacItem(Input(null));
+        var collection = PairedPublicationDescriptorFactory.Collection(Input(null));
 
-        item["stac_extensions"]!.AsArray().Select(uri => uri!.GetValue<string>()).Should().Equal(ExportStacFacts.TableExtension);
-        item["assets"]!["readme"]!["href"]!.GetValue<string>().Should().Be("README.md");
-        item["assets"]!["agents"]!["roles"]![0]!.GetValue<string>().Should().Be("metadata");
-        item["assets"]!["style"]!["type"]!.GetValue<string>().Should().Be(ExportCompanionFiles.StyleMediaType);
-        item["assets"]!["thumbnail"].Should().BeNull("no thumbnail was rendered for this input");
-        PairedPublicationDescriptorFactory.StacItem(Input(null) with { Thumbnail = [1] })["assets"]!["thumbnail"]!["roles"]![0]!
+        collection["links"]!.AsArray().Where(link => link!["type"]!.GetValue<string>() == "text/markdown")
+            .Select(link => $"{link!["rel"]}={link["href"]}").Should().Equal("agents=AGENTS.md", "describedby=README.md");
+        collection["assets"]!["style"]!["type"]!.GetValue<string>().Should().Be(ExportCompanionFiles.StyleMediaType);
+        collection["assets"]!["thumbnail"].Should().BeNull("no thumbnail was rendered for this input");
+        PairedPublicationDescriptorFactory.Collection(Input(null) with { Thumbnail = [1] })["assets"]!["thumbnail"]!["roles"]![0]!
             .GetValue<string>().Should().Be("thumbnail");
-        var properties = item["properties"]!;
-        properties["license"]!.GetValue<string>().Should().Be("CC-BY-4.0");
-        properties["providers"]!.ToJsonString().Should().Be(
+        collection["license"]!.GetValue<string>().Should().Be("CC-BY-4.0");
+        collection["providers"]!.ToJsonString().Should().Be(
             "[{\"name\":\"City and County of Honolulu\",\"roles\":[\"producer\"],\"url\":\"https://example.gov/gis\"},"
             + "{\"name\":\"Example GIS\",\"roles\":[\"host\"]}]");
-        properties["table:columns"]![1]!.ToJsonString().Should().Be(
-            "{\"name\":\"tmk\",\"type\":\"string\",\"description\":\"Parcel | key\"}");
     }
 
     private const string StoredStyle = """
@@ -150,8 +146,7 @@ public sealed class ExportCompanionFilesTests
         Identity = new PublicationIdentity("tmk", "tmk", "tmk"),
         Geometry = new PublicationGeometry("geometry", "wkb", ["MultiPolygon"]),
         Artifacts = Artifacts(),
-        Validation = new PublicationValidation(PublicationValidation.Passed, CapturedAt, []),
-        Links = new PublicationLinks("item.json")
+        Validation = new PublicationValidation(PublicationValidation.Passed, CapturedAt, [])
     };
 
     private static PublicationArtifacts Artifacts() => new(

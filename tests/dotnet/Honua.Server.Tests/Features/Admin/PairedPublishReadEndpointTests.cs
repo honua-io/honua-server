@@ -73,7 +73,7 @@ public sealed partial class PairedPublishEndpointTests
             }
 
             var suffixes = new[] { "current.json" }.Concat(new[] { first.Version, second.Version }
-                .SelectMany(version => new[] { "descriptor.json", "item.json", $"{_publicationId}.pmtiles", $"{_publicationId}.parquet" }
+                .SelectMany(version => new[] { ExportCollectionDocument.FileName, $"{_publicationId}.pmtiles", $"{_publicationId}.parquet" }
                     .Select(file => $"{version}/{file}")));
             foreach (var suffix in suffixes)
             {
@@ -114,7 +114,7 @@ public sealed partial class PairedPublishEndpointTests
         client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
         using var current = await client.GetAsync($"{PublicationRoute}/current.json");
         current.StatusCode.Should().Be(HttpStatusCode.TemporaryRedirect);
-        current.Headers.Location!.OriginalString.Should().Be($"{PublicationRoute}/{first.Version}/descriptor.json");
+        current.Headers.Location!.OriginalString.Should().Be($"{PublicationRoute}/{first.Version}/{ExportCollectionDocument.FileName}");
         using var headRequest = new HttpRequestMessage(HttpMethod.Head, $"{PublicationRoute}/current.json");
         using var head = await client.SendAsync(headRequest);
         head.StatusCode.Should().Be(HttpStatusCode.TemporaryRedirect);
@@ -125,7 +125,7 @@ public sealed partial class PairedPublishEndpointTests
         pinned.StatusCode.Should().Be(HttpStatusCode.OK);
         (await pinned.Content.ReadAsByteArrayAsync()).Should().Equal(await ReadBytesAsync(first.DescriptorKey));
         using var changed = await client.GetAsync($"{PublicationRoute}/current.json");
-        changed.Headers.Location!.OriginalString.Should().Be($"{PublicationRoute}/{second.Version}/descriptor.json");
+        changed.Headers.Location!.OriginalString.Should().Be($"{PublicationRoute}/{second.Version}/{ExportCollectionDocument.FileName}");
     }
 
     [IntegrationTheory]
@@ -143,12 +143,12 @@ public sealed partial class PairedPublishEndpointTests
         var published = await PublishAsync(IdentityField);
         _fixture.RestoreV2ResourceSchemaFields(WebAppFixture.TestLayerId,
             resource.SchemaFields.Where(field => field.Name != objectId.Name).ToArray());
-        var descriptor = await ReadJsonAsync<PublicationDescriptor>(published.DescriptorKey);
+        var descriptor = await ReadCollectionAsync(published.DescriptorKey);
         descriptor.Artifacts.Pmtiles.Fields.Should().Contain("objectid");
         descriptor.Artifacts.Geoparquet.Fields.Should().Contain("objectid");
         using var client = _fixture.CreateClient(allowAutoRedirect: false);
         client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
             using var response = await client.SendAsync(request);
@@ -156,7 +156,7 @@ public sealed partial class PairedPublishEndpointTests
         }
 
         _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId, objectId with { Hidden = true });
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
             using var response = await client.SendAsync(request);
@@ -202,7 +202,7 @@ public sealed partial class PairedPublishEndpointTests
     {
         var published = await PublishAsync(IdentityField);
         using var anonymous = _fixture.CreateClient();
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.parquet", "missing/descriptor.json" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.parquet", "missing/collection.json" })
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, $"{PublicationRoute}/{suffix}");
             request.Headers.TryAddWithoutValidation("If-None-Match", "*");
@@ -226,7 +226,7 @@ public sealed partial class PairedPublishEndpointTests
             "publication-read-test", CancellationToken.None);
         using var denied = _fixture.CreateClient(allowAutoRedirect: false);
         denied.DefaultRequestHeaders.Add("X-API-Key", issued.Key);
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.parquet", "missing/descriptor.json", $"missing/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.parquet", "missing/collection.json", $"missing/{_publicationId}.parquet" })
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
             request.Headers.TryAddWithoutValidation("If-None-Match", "*");
@@ -244,7 +244,7 @@ public sealed partial class PairedPublishEndpointTests
     {
         var published = await PublishAsync(IdentityField);
         HideField(IdentityField);
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/item.json", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" }
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" }
                      .Concat(ExportCompanionFiles.FileNames.Select(file => $"{published.Version}/{file}")))
         {
             using var response = await _client.GetAsync($"{PublicationRoute}/{suffix}");
@@ -279,7 +279,7 @@ public sealed partial class PairedPublishEndpointTests
         }, schema: _fixture.MetadataGraphSchema);
 
         foreach (var suffix in new[] { "current.json" }.Concat(new[] { first, second }.SelectMany(published =>
-            new[] { $"{published.Version}/descriptor.json", $"{published.Version}/item.json",
+            new[] { $"{published.Version}/{ExportCollectionDocument.FileName}",
                 $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })))
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
@@ -331,7 +331,7 @@ public sealed partial class PairedPublishEndpointTests
             }).ToArray()
         }, schema: _fixture.MetadataGraphSchema);
 
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.parquet" })
         {
             using var response = await _client.GetAsync($"{PublicationRoute}/{suffix}");
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -358,7 +358,7 @@ public sealed partial class PairedPublishEndpointTests
             }).ToArray()
         }, schema: _fixture.MetadataGraphSchema);
 
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
             request.Headers.TryAddWithoutValidation("If-None-Match", "*");
@@ -379,10 +379,10 @@ public sealed partial class PairedPublishEndpointTests
         var store = PairedPublicationStore.Create(Storage, options, _publicationId);
         var pointer = await ReadJsonAsync<PublicationPointer>(published.PointerKey);
         var expectedTag = await store.ReadPointerETagAsync(CancellationToken.None);
-        (await store.SwitchPointerAsync(pointer with { Descriptor = "../descriptor.json" }, expectedTag, CancellationToken.None))
+        (await store.SwitchPointerAsync(pointer with { Collection = "../collection.json" }, expectedTag, CancellationToken.None))
             .Should().BeTrue();
 
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/descriptor.json", $"{published.Version}/{_publicationId}.pmtiles" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles" })
         {
             using var response = await _client.GetAsync($"{PublicationRoute}/{suffix}");
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);

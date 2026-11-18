@@ -3,6 +3,7 @@
 
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Honua.Core.Features.Publishing.Descriptors;
 using Honua.Server.Features.Admin.PairedPublications;
 using Honua.TestKit.Attributes;
 
@@ -21,21 +22,22 @@ public sealed partial class PairedPublishEndpointTests
         var readme = await ReadTextAsync(published, ExportCompanionFiles.ReadmeFileName);
         var agents = await ReadTextAsync(published, ExportCompanionFiles.AgentsFileName);
         var style = JsonNode.Parse(await ReadTextAsync(published, ExportCompanionFiles.StyleFileName))!;
-        var item = JsonNode.Parse(await ReadTextAsync(published, PairedPublicationDescriptorFactory.StacItemFileName))!;
+        var collection = JsonNode.Parse(await ReadTextAsync(published, ExportCollectionDocument.FileName))!;
         readme.Should().Contain($"`{_publicationId}.parquet`").And.NotContain($"`{HiddenField}`");
         agents.Should().Contain($"| `{IdentityField}` |").And.NotContain($"`{HiddenField}`");
         style["sources"]![ExportStyleAsset.SourceId]!["url"]!.GetValue<string>().Should().Be($"pmtiles://{_publicationId}.pmtiles");
         style["layers"]!.AsArray().Should().NotBeEmpty()
             .And.OnlyContain(layer => layer!["source-layer"]!.GetValue<string>() == "layer");
-        item["properties"]!["table:columns"]!.AsArray().Select(column => column!["name"]!.GetValue<string>())
-            .Should().Contain([IdentityField, "geometry"]).And.NotContain(HiddenField);
-        item["properties"]!["providers"]!.AsArray().Should().ContainSingle(provider => provider!["roles"]![0]!.GetValue<string>() == "host");
-        item["assets"]!["readme"]!["href"]!.GetValue<string>().Should().Be(ExportCompanionFiles.ReadmeFileName);
-        item["assets"]!["thumbnail"]!["href"]!.GetValue<string>().Should().Be(ExportThumbnail.FileName);
+        collection["table:columns"]!.AsArray().Select(column => column!["name"]!.GetValue<string>())
+            .Should().Contain(IdentityField).And.NotContain(HiddenField);
+        collection["providers"]!.AsArray().Should().ContainSingle(provider => provider!["roles"]![0]!.GetValue<string>() == "host");
+        collection["links"]!.AsArray().Should().Contain(link => link!["rel"]!.GetValue<string>() == "describedby"
+            && link["href"]!.GetValue<string>() == ExportCompanionFiles.ReadmeFileName);
+        collection["assets"]!["thumbnail"]!["href"]!.GetValue<string>().Should().Be(ExportThumbnail.FileName);
         using var thumbnail = SkiaSharp.SKBitmap.Decode(await ReadBytesAsync(ArtifactKey(published, ExportThumbnail.FileName)));
         thumbnail.Width.Should().Be(ExportThumbnail.Size);
     }
 
-    private async Task<string> ReadTextAsync(Honua.Core.Features.Publishing.Descriptors.PublishedPublication published, string fileName)
+    private async Task<string> ReadTextAsync(PublishedPublication published, string fileName)
         => System.Text.Encoding.UTF8.GetString(await ReadBytesAsync(ArtifactKey(published, fileName)));
 }

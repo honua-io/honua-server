@@ -50392,7 +50392,7 @@
           },
           "DescriptorKey": {
             "type": "string",
-            "description": "Storage key of the version's publication descriptor (publication-descriptor v1)."
+            "description": "Storage key of the version's STAC collection document (collection.json)."
           },
           "PointerKey": {
             "type": "string",

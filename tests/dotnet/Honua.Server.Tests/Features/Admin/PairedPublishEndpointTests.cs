@@ -41,8 +41,8 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
     private const string HiddenField = "notes";
     private readonly WebAppFixture _fixture = host.Fixture;
     private readonly string _publicationId = $"paired-{Guid.NewGuid():N}"[..24];
-    private static readonly JSchema DescriptorSchema = JSchema.Parse(
-        File.ReadAllText(RepositoryPaths.Resolve("docs", "gis", "schemas", "publication-descriptor.v1.schema.json")));
+    private static readonly JSchema CollectionSchema = JSchema.Parse(
+        File.ReadAllText(RepositoryPaths.Resolve("docs", "gis", "schemas", "stac-honua.v1.0.0.schema.json")));
     private HttpClient _client = null!;
 
     public Task InitializeAsync()
@@ -106,16 +106,17 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
 
         var published = await PublishAsync(IdentityField);
 
-        var descriptorJson = JObject.Parse(System.Text.Encoding.UTF8.GetString(await ReadBytesAsync(published.DescriptorKey)));
-        descriptorJson.IsValid(DescriptorSchema, out IList<ValidationError> errors).Should().BeTrue(
+        var collectionJson = JObject.Parse(System.Text.Encoding.UTF8.GetString(await ReadBytesAsync(published.DescriptorKey)));
+        collectionJson.IsValid(CollectionSchema, out IList<ValidationError> errors).Should().BeTrue(
             string.Join("; ", errors.Select(error => $"{error.Path}: {error.Message}")));
-        var descriptor = await ReadJsonAsync<PublicationDescriptor>(published.DescriptorKey);
+        collectionJson.ToString().Should().NotContain($"\"{HiddenField}\"", "a non-public field appears nowhere in an Export");
+        var descriptor = await ReadCollectionAsync(published.DescriptorKey);
         descriptor.Validation.Status.Should().Be(PublicationValidation.Passed);
         PublicationDescriptorRules.Violations(descriptor).Should().BeEmpty();
         descriptor.Artifacts.Pmtiles.CaptureId.Should().Be(published.CaptureId);
         descriptor.Artifacts.Geoparquet.CaptureId.Should().Be(published.CaptureId);
         descriptor.Identity.Field.Should().Be(IdentityField);
-        descriptor.Fields.Single(field => field.Name == HiddenField).Public.Should().BeFalse();
+        descriptor.Fields.Should().NotContain(field => field.Name == HiddenField);
         descriptor.Artifacts.Pmtiles.Fields.Should().NotContain(HiddenField).And.Contain(IdentityField);
         descriptor.Artifacts.Geoparquet.Fields.Should().NotContain(HiddenField).And.Contain(IdentityField);
 
@@ -233,12 +234,11 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
         var store = PairedPublicationStore.Create(Storage, options, _publicationId);
-        var foreign = JsonSerializer.Deserialize(
-            await File.ReadAllTextAsync(RepositoryPaths.Resolve("docs", "gis", "schemas", "publication-descriptor.v1", "maui-county-parcels.json")),
-            PublicationDescriptorJsonContext.Default.PublicationDescriptor)!;
-        await store.PutJsonOnceAsync(store.VersionKey("v0", "descriptor.json"), foreign,
-            PublicationDescriptorJsonContext.Default.PublicationDescriptor, CancellationToken.None);
-        var pointer = new PublicationPointer(_publicationId, "v0", "v0/descriptor.json", DateTimeOffset.UtcNow);
+        var foreign = JsonNode.Parse(await File.ReadAllTextAsync(
+            RepositoryPaths.Resolve("docs", "gis", "schemas", "export-collection.v1", "maui-county-parcels.json")))!.AsObject();
+        await store.PutJsonOnceAsync(store.VersionKey("v0", ExportCollectionDocument.FileName), foreign,
+            PublicationDescriptorJsonContext.Default.JsonObject, CancellationToken.None);
+        var pointer = new PublicationPointer(_publicationId, "v0", $"v0/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
         (await store.SwitchPointerAsync(pointer, expectedETag: null, CancellationToken.None)).Should().BeTrue();
 
         var (status, json) = await RunAsync(IdentityField);
@@ -288,7 +288,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
         var store = PairedPublicationStore.Create(Storage, options, _publicationId);
-        var v1 = new PublicationPointer(_publicationId, "v1", "v1/descriptor.json", DateTimeOffset.UtcNow);
+        var v1 = new PublicationPointer(_publicationId, "v1", $"v1/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
 
         (await store.SwitchPointerAsync(v1, expectedETag: null, CancellationToken.None)).Should().BeTrue();
         var firstTag = await store.ReadPointerETagAsync(CancellationToken.None);
@@ -406,6 +406,9 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
         await stream!.CopyToAsync(copy);
         return copy.ToArray();
     }
+
+    private async Task<PublicationDescriptor> ReadCollectionAsync(string key)
+        => ExportCollectionDocument.Read(JsonNode.Parse(await ReadBytesAsync(key))!.AsObject())!;
 
     private async Task<T> ReadJsonAsync<T>(string key)
         => JsonSerializer.Deserialize(await ReadBytesAsync(key),

@@ -32,7 +32,7 @@ internal sealed class PairedPublicationReader(
         {
             var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
             if (pointer is null || pointer.PublicationId != publicationId || !IsVersion(pointer.Version) ||
-                pointer.Descriptor != $"{pointer.Version}/descriptor.json")
+                pointer.Collection != $"{pointer.Version}/{ExportCollectionDocument.FileName}")
             {
                 return null;
             }
@@ -122,7 +122,7 @@ internal sealed class PairedPublicationReader(
         => storage.GetMetadataAsync(target.Store.VersionKey(target.Descriptor.Version, fileName), cancellationToken);
 
     internal static bool IsAllowedFile(PublicationDescriptor descriptor, string fileName)
-        => fileName is "descriptor.json" or "item.json" || ExportCompanionFiles.FileNames.Contains(fileName) ||
+        => fileName == ExportCollectionDocument.FileName || ExportCompanionFiles.FileNames.Contains(fileName) ||
            fileName == descriptor.Artifacts.Pmtiles.Href || fileName == descriptor.Artifacts.Geoparquet.Href;
 
     private static bool IsDescriptor(PublicationDescriptor? descriptor, string version)
@@ -149,7 +149,7 @@ internal sealed class PairedPublicationReader(
     private static bool HasStampValue(CloudFile file, string name)
         => file.Metadata.Any(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(pair.Value));
 
-    private static bool IsVersion(string? value)
+    internal static bool IsVersion(string? value)
         => value is { Length: > 0 and <= 96 } && char.IsAsciiLetterOrDigit(value[0]) &&
            value.All(character => char.IsAsciiLetterOrDigit(character) || character == '-');
 }
