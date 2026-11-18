@@ -53,6 +53,11 @@ public interface IOgcStyleProjection
     Task<OgcStyleDeleteResult> DeleteStyleAsync(
         string styleId,
         CancellationToken cancellationToken = default);
+
+    // The review the Console requires before it enables Save on a shared style.
+    Task<SharedStyleImpact?> GetSharedStyleImpactAsync(
+        SharedStyleImpactRequest request,
+        CancellationToken cancellationToken = default);
 }
 
 public enum OgcStyleEncoding
@@ -68,7 +73,35 @@ public enum OgcStyleEncoding
 
 public sealed record OgcStyleSummary(string StyleId, string Title);
 
-public sealed record OgcStylesheet(string Content, string MediaType, OgcStyleEncoding Encoding);
+public sealed record OgcStylesheet(string Content, string MediaType, OgcStyleEncoding Encoding)
+{
+    // Stored revision. Zero means the style has not been saved through PUT yet.
+    public int StoredVersion { get; init; }
+
+    // Canonical MapLibre document the revision identifies, before endpoint URLs are rewritten.
+    public string? CanonicalMapLibreJson { get; init; }
+}
+
+public sealed record SharedStyleImpact
+{
+    public required string StyleId { get; init; }
+
+    public required int StoredVersion { get; init; }
+
+    public required int ReportedVersion { get; init; }
+
+    public required string EntityTag { get; init; }
+
+    public required string ContentHash { get; init; }
+
+    public required string ImpactHash { get; init; }
+
+    public required bool ImpactComplete { get; init; }
+
+    public required IReadOnlyList<SharedStyleAssociation> Associations { get; init; }
+
+    public required IReadOnlyList<SharedStyleConsumerRow> Consumers { get; init; }
+}
 
 public sealed record OgcStyleMetadata(
     string StyleId,

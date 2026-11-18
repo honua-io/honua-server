@@ -441,6 +441,10 @@ internal static partial class ServiceCollectionExtensions
             new PostgresStudioPackageStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+        services.AddScoped<Honua.Core.Features.Styling.Abstractions.ISharedStyleConsumerIndex>(serviceProvider =>
+            new Features.Studio.PostgresSharedStyleConsumerIndex(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
         // Durable Studio map collaboration store. Overrides the in-memory
         // default registered by AddStudioMapCollaboration when Postgres is active.
         services.AddScoped<Honua.Core.Features.Console.Collaboration.Abstractions.IStudioMapCollaborationStore>(serviceProvider =>
