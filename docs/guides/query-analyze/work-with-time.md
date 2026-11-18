@@ -13,15 +13,15 @@ resources:
 
 Make a layer time-aware, discover its temporal extent, and filter or animate it with the same time-window semantics across GeoServices, OGC, and vector tiles.
 
-**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)), a published layer with `Date`/`DateTime` columns ([publish layers](../publish/publish-layers.md)), and an admin API key ([authentication](../secure/authentication.md)). Step 1 always needs the key; the quickstart also requires it for the reads in steps 2 to 5, so send it as `X-API-Key` (or use the authorized API explorer) instead of opening those URLs anonymously, which returns error code 499, "Authentication is required".
+**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)), a published layer with `Date`/`DateTime` columns ([publish layers](../publish/publish-layers.md)), and an admin API key ([authentication](../secure/authentication.md)). Step 1 always needs the key; the quickstart also requires it for the reads in steps 2 to 5, so send it as `X-API-Key` (or use the authorized API explorer) instead of opening those URLs anonymously (an anonymous GeoServices read returns error code 499, "Authentication is required").
 
-Temporal behavior is opt-in: a layer advertises a time dimension only after you name its start (and optionally end) time fields in catalog metadata. Accepted time values everywhere include ISO 8601 instants (`2024-06-15T12:00:00Z`), intervals (`start/end` for OGC, `start,end` for GeoServices/MVT), Unix epoch milliseconds, and open-ended bounds: `../end` for OGC `datetime`, `null,end` for GeoServices and MVT `time` (a `..` bound in `time` is rejected as a path traversal attempt).
+Temporal behavior is opt-in: a layer advertises a time dimension only after you name its start (and optionally end) time fields in catalog metadata. Accepted time values everywhere include ISO 8601 instants (`2024-06-15T12:00:00Z`), intervals (`start/end` for OGC, `start,end` for GeoServices/MVT), Unix epoch milliseconds, and open-ended bounds: `../end` for OGC `datetime`, `null,end` for GeoServices and MVT `time` (`time=../end` is rejected as a path traversal attempt).
 
 ## Steps
 
 1. Mark the layer time-aware by naming its time fields. The fields must resolve to `Date`/`DateTime` columns on the layer:
 
-   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `PUT /api/v1/admin/services/{service}/layers/{layerId}/metadata` with this body. `{layerId}` is the catalog layer id (the id `honua layers` and the FeatureServer layer URLs use), not the layer's position in the service; the route parameter is named `serviceLayerIndex` in the API reference, and an index that is not a catalog layer id returns "Layer … not found":
+   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `PUT /api/v1/admin/services/{service}/layers/{layerId}/metadata` with this body. `{layerId}` is the layer's FeatureServer id (the `id` listed by `/rest/services/{service}/FeatureServer?f=json`, named `serviceLayerIndex` in the API reference), which is not always 0; an id the service does not publish returns "Layer … not found":
 
    ```json
    {
@@ -71,9 +71,9 @@ Expected (trimmed):
 
 GeoServices REST endpoints (`/rest/services/...`) report errors as HTTP 200 with an `error` object whose `code` carries the status; OGC API Features returns the status itself.
 
-- **Code 404 from `temporalExtent`** — the layer is not time-aware (no `timeInfo` configured, or the configured field does not resolve to a `Date`/`DateTime` column), or `{layerId}` is not a catalog layer id ("Service layer was not found").
-- **Code 499 "Authentication is required"** — the request had no API key; the quickstart requires one for these reads.
-- **Code 400 on `query?time=`** — same cause as above, a reversed range (`start > end`), or a `..` open bound ("Path traversal attempt detected"); write `null,end` instead.
+- **Code 404 from `temporalExtent`** — the layer is not time-aware (no `timeInfo` configured, or the configured field does not resolve to a `Date`/`DateTime` column), or `{layerId}` is not a FeatureServer layer id of that service ("Service layer was not found").
+- **Code 499 "Authentication is required" (GeoServices), or an HTTP error status (OGC, WMS, tiles)** — the request had no API key; the quickstart requires one for these reads.
+- **Code 400 on `query?time=`** — same cause as above, a reversed range (`start > end`), or an open bound written with `..` (`../end` is reported as "Path traversal attempt detected"); write `null,end` instead.
 - **WMS `GetMap` with `TIME` returns the whole layer** — the layer does not advertise a time dimension, so WMS 1.3.0 ignores `TIME` (Annex C.3.5) instead of returning `InvalidDimensionValue`; configure `timeInfo` first.
 - **402 on `?time=` tiles or `queryDateBins`** — these need the Pro `temporal.time-series-tiles` / `temporal.histogram` entitlements.
 - **501 from `PUT /api/v1/admin/services/{serviceName}/timeinfo`** — the service-level endpoint is intentionally not supported; use the per-layer metadata endpoint shown in step 1. See [troubleshooting](../deploy/troubleshooting.md).
