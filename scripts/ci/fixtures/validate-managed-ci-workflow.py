@@ -29,7 +29,9 @@ class ManagedWorkflowTests(unittest.TestCase):
             for flag in ['TreatWarningsAsErrors=true', 'RunAnalyzers="${PRODUCER_RUN_ANALYZERS}"', 'UseSharedCompilation=false']:
                 self.assertIn(flag, section)
         self.assertIn("PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}", producer)
-        self.assertIn('-p:RunAnalyzers=true', (ROOT / 'scripts/ci/build-selected-protocol-profiles.py').read_text())
+        profiles = (ROOT / 'scripts/ci/build-selected-protocol-profiles.py').read_text()
+        self.assertIn('"-p:RunAnalyzers=true", "-p:BuildProjectReferences=false"', profiles)
+        self.assertIn('os.environ.get("PRODUCER_RUN_ANALYZERS", "true").strip().lower() == "false"', profiles)
         self.assertIn('dotnet-restore-retry.sh \"${BUILD_TARGET}\" -p:Configuration=Release', producer)
         self.assertLess(producer.index('Build (warnings as errors)'), producer.index('mode: publish'))
         self.assertNotIn('dotnet test ', producer)
