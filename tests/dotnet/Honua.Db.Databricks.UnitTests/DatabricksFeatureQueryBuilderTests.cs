@@ -3,6 +3,7 @@
 
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Globalization;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -132,6 +133,31 @@ public class DatabricksFeatureQueryBuilderTests
         // distinct from capability rejections (NotSupportedException).
         Assert.Throws<UnknownFilterFieldException>(
             () => DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { Where = "not_a_column = 1" }));
+    }
+
+    [Fact]
+    public void BuildSelect_ElevenWhereParametersAfterSearchParameters_EachMarkerBindsItsOwnValue()
+    {
+        var query = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["name"], [new FeatureSearchTerm[] { new("harbor", false) }]),
+            Where = "code IN (100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110)",
+        };
+
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping("name", "owner", "code"), query);
+
+        var markers = System.Text.RegularExpressions.Regex.Matches(statement.Sql, @":(f\d+)")
+            .Select(match => match.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var bound = statement.Parameters.Where(p => p.Name.StartsWith('f')).ToList();
+        Assert.Equal(11, bound.Count);
+        Assert.Equal(bound.Select(p => p.Name).ToHashSet(StringComparer.Ordinal), markers);
+        var first = statement.Parameters.Count - bound.Count;
+        for (var i = 0; i < bound.Count; i++)
+        {
+            Assert.Equal($"f{first + i}", bound[i].Name);
+            Assert.Equal((100 + i).ToString(CultureInfo.InvariantCulture), bound[i].Value);
+        }
     }
 
     [Fact]
