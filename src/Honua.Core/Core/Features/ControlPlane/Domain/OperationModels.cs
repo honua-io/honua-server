@@ -167,6 +167,8 @@ public sealed record OperationAuditInfo
 
     public string? RequestedBy { get; init; }
 
+    public string? RequestedByActorId { get; init; }
+
     public string? TenantId { get; init; }
 
     public string? Reason { get; init; }
@@ -182,6 +184,9 @@ public sealed record OperationAuditInfo
     public string? ProposalId { get; init; }
 
     public string? ApprovedBy { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DeployHumanApproval? DeployHumanApproval { get; init; }
 
     public string? RequestFingerprint { get; init; }
 
@@ -233,6 +238,9 @@ public sealed record DeployOperationSpec
     public CanaryRampSpec? CanaryRamp { get; init; }
 
     public DateTimeOffset? TrafficExposedAt { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ManualPromotionPending { get; init; }
 
     public DeployProtectionState? Protection { get; init; }
 }

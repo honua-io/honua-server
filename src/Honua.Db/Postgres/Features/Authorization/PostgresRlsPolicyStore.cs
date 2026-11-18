@@ -25,7 +25,7 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
     public async Task<IReadOnlyList<RlsPolicy>> ListPoliciesAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
-            SELECT policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at
+            SELECT policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at, filter_expression, area_geometry
             FROM {_table}
             ORDER BY created_at DESC
             """;
@@ -38,7 +38,7 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
     public async Task<RlsPolicy?> GetPolicyAsync(Guid policyId, CancellationToken cancellationToken = default)
     {
         var sql = $"""
-            SELECT policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at
+            SELECT policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at, filter_expression, area_geometry
             FROM {_table}
             WHERE policy_id = @policy_id
             """;
@@ -56,9 +56,9 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
 
         var sql = $"""
             INSERT INTO {_table}
-                (policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at)
+                (policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at, filter_expression, area_geometry)
             VALUES
-                (@policy_id, @role, @service, @layer, @attribute, @claim_type, @comparison, @description, @created_at, @updated_at)
+                (@policy_id, @role, @service, @layer, @attribute, @claim_type, @comparison, @description, @created_at, @updated_at, @filter_expression, @area_geometry)
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -71,6 +71,8 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
         command.Parameters.AddWithValue("claim_type", NpgsqlDbType.Varchar, policy.ClaimType);
         command.Parameters.AddWithValue("comparison", NpgsqlDbType.Smallint, (short)policy.Comparison);
         command.Parameters.AddWithValue("description", NpgsqlDbType.Text, (object?)policy.Description ?? DBNull.Value);
+        command.Parameters.AddWithValue("filter_expression", NpgsqlDbType.Text, (object?)policy.FilterExpression ?? DBNull.Value);
+        command.Parameters.AddWithValue("area_geometry", NpgsqlDbType.Text, (object?)policy.AreaGeometry ?? DBNull.Value);
         command.Parameters.AddWithValue("created_at", NpgsqlDbType.TimestampTz, policy.CreatedAt);
         command.Parameters.AddWithValue("updated_at", NpgsqlDbType.TimestampTz, policy.UpdatedAt);
 
@@ -114,7 +116,7 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
         // (case-insensitive). A single set-based query keeps this cheap and correct
         // under concurrent writes; role filtering uses a lowered-name ANY match.
         var sql = $"""
-            SELECT policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at
+            SELECT policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at, filter_expression, area_geometry
             FROM {_table}
             WHERE (service = '*' OR LOWER(service) = LOWER(@service))
               AND (layer = '*' OR LOWER(layer) = LOWER(@layer))
@@ -167,6 +169,8 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
                 Description = reader.IsDBNull(7) ? null : reader.GetString(7),
                 CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
                 UpdatedAt = reader.GetFieldValue<DateTimeOffset>(9),
+                FilterExpression = reader.IsDBNull(10) ? null : reader.GetString(10),
+                AreaGeometry = reader.IsDBNull(11) ? null : reader.GetString(11),
             });
         }
 
