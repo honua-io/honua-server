@@ -39,7 +39,7 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 }
 ```
 
-`operation` is one of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `paired-publish`; scope with `serviceId`, `layerId`, `minZoom`/`maxZoom`, `bbox`, `tileMatrixSetId` (currently `WebMercatorQuad`), and the `maxTiles` safety cap. `warm` re-primes existing cache entries on the same request shape.
+`operation` is one of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish` (export a Layer as files with the [Exports API](#export-a-layer-as-files)); scope with `serviceId`, `layerId`, `minZoom`/`maxZoom`, `bbox`, `tileMatrixSetId` (currently `WebMercatorQuad`), and the `maxTiles` safety cap. `warm` re-primes existing cache entries on the same request shape.
 
 `maxTiles` defaults to **500** and is clamped to the server's configured limit. Set it explicitly when increasing coverage. If the requested pyramid exceeds the cap, only the selected tiles are processed; archive/publish jobs report a truncation warning and the archive header describes the selected coverage. Inspect job warnings before treating an archive as complete.
 
@@ -109,34 +109,33 @@ The range proxy checks every read against the access policy of the layer the arc
 
 For `SignedUrl`/`PublicUrl`, the bucket CORS policy must allow `GET`/`HEAD` with the `Range` request header and expose `Accept-Ranges`, `Content-Range`, `Content-Length`, `ETag`, and `Last-Modified`.
 
-## Paired PMTiles and GeoParquet
+## Export a Layer as files
 
-`paired-publish` writes one version of a layer as a PMTiles archive for display and a GeoParquet file for query and export, both from a single read of the layer. It takes `serviceId`, `layerId`, a `publicationId` (3-64 lowercase letters, digits or hyphens), an `identityField` (a visible text field that names each feature in both files), and the usual `minZoom`, `maxZoom`, `maxTiles` and `tileCompression`. `bbox` is refused: tile coverage follows the captured features.
+An Export publishes a Layer as cloud-native files: each Version is a PMTiles archive for display and a GeoParquet file for query, both written from a single read of the Layer. Start one with `POST /api/v1/admin/exports` (operation `admin.exports.create`); an agent's request becomes a proposal that a person approves in Console Approvals. Only `source` is required:
 
 ```json
 {
-  "operation": "paired-publish",
-  "serviceId": "maui-parcels",
-  "layerId": 1,
-  "publicationId": "maui-county-parcels",
+  "source": { "kind": "layer", "serviceId": "maui-parcels", "layerId": 1 },
+  "exportId": "maui-county-parcels",
   "identityField": "tmk_txt",
   "minZoom": 8,
-  "maxZoom": 14,
-  "maxTiles": 200000
+  "maxZoom": 14
 }
 ```
 
-Each run writes a new immutable version under `{KeyPrefix}/publications/{publicationId}/{version}/`: the two artifacts, three companion files generated from the layer's metadata, and one STAC 1.1 collection document (`collection.json`). The companions are `README.md` (title, description, licence, source and capture time), `AGENTS.md` (the public fields, the coordinate system and ready-to-run DuckDB and Python queries for the GeoParquet file) and `style.json` (a MapLibre style for the PMTiles file, made from the layer's stored style without symbol layers), plus a `thumbnail.png` when the server can render one. The collection document follows the open [Portolan specification](https://github.com/portolan-sdi/portolan-spec) v0.3.0: GeoParquet is the `data` asset and PMTiles the `visual` asset, each with its media type, `file:size` and a multihash `file:checksum`, plus a `pmtiles` link; it links `README.md` (`describedby`) and `AGENTS.md` (`agents`), lists the style and thumbnail as assets, and carries the licence as an SPDX identifier (`other` otherwise), the producer and host providers and `table:columns` for the public fields. Facts only Honua needs, such as the field that links a tile feature to its GeoParquet row, ride in the [`honua:` STAC extension](../../gis/schemas/stac-honua.v1.0.0.schema.json). Asset links are relative to the document, so the same file works wherever it is served. Both artifacts embed the same capture ID in their metadata (`honua:captureId`), and hidden fields appear in no file. The run then moves `{KeyPrefix}/publications/{publicationId}/current.json` to the new version with a conditional write.
+`exportId` (3-64 lowercase letters, digits or hyphens) defaults to the Layer's name as a slug, and `identityField` (the field that names each feature in both files) defaults to the Layer's object id. The response is `202` with the Export in status `running` and its job id. `GET /api/v1/admin/exports` lists Exports and `GET /api/v1/admin/exports/{exportId}` returns one with its Versions, the signed-in URL of each file and why it is not public. `DELETE /api/v1/admin/exports/{exportId}` (operation `admin.exports.delete`) unpublishes it: its files stop being served and its Versions are kept.
 
-The pointer moves only when every check passes: both stored copies match the generated bytes, the layer and its metadata did not change during the capture, and the collection document satisfies the extension's cross-field rules. Otherwise the job fails, the new version is deleted, and the previous version stays current. A run that finds the pointer already moved by another publish also fails without activating its version. Earlier versions are kept.
+Each run writes a new immutable Version under `{KeyPrefix}/exports/{exportId}/{version}/`: the two files, three companion files generated from the Layer's metadata, and one STAC 1.1 collection document (`collection.json`). The companions are `README.md` (title, description, licence, source and capture time), `AGENTS.md` (the public fields, the coordinate system and ready-to-run DuckDB and Python queries for the GeoParquet file) and `style.json` (a MapLibre style for the PMTiles file, made from the Layer's stored style without symbol layers), plus a `thumbnail.png` when the server can render one. The collection document follows the open [Portolan specification](https://github.com/portolan-sdi/portolan-spec) v0.3.0: GeoParquet is the `data` asset and PMTiles the `visual` asset, each with its media type, `file:size` and a multihash `file:checksum`, plus a `pmtiles` link; it links `README.md` (`describedby`) and `AGENTS.md` (`agents`), lists the style and thumbnail as assets, and carries the licence as an SPDX identifier (`other` otherwise), the producer and host providers and `table:columns` for the public fields. Facts only Honua needs, such as the field that links a tile feature to its GeoParquet row, ride in the [`honua:` STAC extension](../../gis/schemas/stac-honua.v1.0.0.schema.json). Asset links are relative to the document, so the same file works wherever it is served. Both files embed the same capture ID in their metadata (`honua:captureId`), and hidden fields appear in no file. The run then moves `{KeyPrefix}/exports/{exportId}/current.json` to the new Version with a conditional write.
 
-The identity field must hold a unique, non-empty value for every feature, so each rendered feature resolves to exactly one GeoParquet row. Tiles in a paired archive keep every feature and attribute: the per-tile size budget that can drop attributes from served tiles does not apply, so choose `minZoom` and `maxTiles` with the layer's density in mind. A publication id stays bound to the layer it first published; a run for another layer with the same id fails.
+The pointer moves only when every check passes: both stored copies match the generated bytes, the Layer and its metadata did not change during the capture, and the collection document satisfies the extension's cross-field rules. Otherwise the job fails, the new Version is deleted, and the previous Version stays current. A run that finds the pointer already moved by another run also fails without activating its Version. Earlier Versions are kept.
 
-Paired publish needs a layer stored in Honua's managed feature table (imported or created in Honua), because the capture check reads that table's edit log; layers that read an external source table are refused. The completed job status carries `publishedPublication` with the version, capture ID, collection document key (`descriptorKey`) and pointer key.
+The identity field must hold a unique, non-empty value for every feature, so each rendered feature resolves to exactly one GeoParquet row. Tiles in an Export keep every feature and attribute: the per-tile size budget that can drop attributes from served tiles does not apply, so choose `minZoom` and `maxZoom` with the Layer's density in mind. An Export id stays bound to the Layer it first exported; a run for another Layer with the same id fails.
 
-Authenticated `GET` or `HEAD` requests to `/api/v1/publications/{publicationId}/current.json` return a `307` redirect to the current version's `collection.json`. Resolve its relative asset links against that immutable URL to keep both files on the same capture when a later publish moves the pointer. Versioned files support byte ranges, `HEAD` and conditional requests with `ETag`.
+An Export needs a Layer stored in Honua's managed feature table (imported or created in Honua), because the capture check reads that table's edit log; Layers that read an external source table are refused. The export job's status carries `publishedExportVersion` with the Version, capture ID, collection document key and pointer key.
 
-Every read requires export access to the current source layer and checks its tenant, publication and visible fields. Retiring or rebinding the source, changing its tenant or hiding a published field can make retained versions unavailable. Immutable artifacts cannot apply current row filters or field masks, so a read returns `403` when the current policy requires either. This also applies to redirects, conditional requests and byte ranges. Responses use `private, no-store` so shared caches cannot bypass these checks.
+Authenticated `GET` or `HEAD` requests to `/api/v1/exports/{exportId}/current.json` return a `307` redirect to the current Version's `collection.json`. Resolve its relative asset links against that immutable URL to keep both files on the same capture when a later run moves the pointer. Versioned files support byte ranges, `HEAD` and conditional requests with `ETag`.
+
+Every read requires export access to the current source layer and checks its tenant, Layer and visible fields. Retiring or rebinding the source, changing its tenant or hiding a published field can make retained versions unavailable. Immutable artifacts cannot apply current row filters or field masks, so a read returns `403` when the current policy requires either. This also applies to redirects, conditional requests and byte ranges. Responses use `private, no-store` so shared caches cannot bypass these checks.
 
 ## Troubleshoot
 
