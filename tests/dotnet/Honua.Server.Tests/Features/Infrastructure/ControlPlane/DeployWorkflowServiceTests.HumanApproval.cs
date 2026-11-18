@@ -226,7 +226,7 @@ public sealed partial class DeployWorkflowServiceTests
         saved.Audit.DeployHumanApproval.CapabilityReference.Should().NotBeNullOrWhiteSpace();
         saved.Audit.DeployHumanApproval.WorkflowVersion.Should().Be(operation.Version);
         saved.Deploy!.ManualPromotionPending.Should().BeTrue();
-        (await promote()).Outcome.Should().Be(DeployPromotionOutcome.PreconditionFailed);
+        (await promote()).Outcome.Should().Be(DeployWorkflowService.DeployPromotionOutcome.PreconditionFailed);
         saved.Audit.DeployHumanApproval.Action.Should().Be("promote");
         backend.PromoteCount.Should().Be(1);
 

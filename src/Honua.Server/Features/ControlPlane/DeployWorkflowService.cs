@@ -961,21 +961,21 @@ internal sealed partial class DeployWorkflowService
         => operation.Deploy?.ManualPromotionPending == true
             ? "The previous manual promotion must be observed before another promotion can be requested."
             : operation.Status switch
-        {
-            WorkflowOperationStatus.Reconciling when operation.Deploy?.Protection != null =>
-                "The deploy operation has already been promoted.",
-            WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling => null,
-            WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval =>
-                "The deploy operation must be submitted before it can be promoted.",
-            WorkflowOperationStatus.RollbackRequested =>
-                "The deploy operation is rolling back and cannot be promoted.",
-            WorkflowOperationStatus.Succeeded =>
-                "The deploy operation has already been promoted.",
-            WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed
-                or WorkflowOperationStatus.ManualInterventionRequired =>
-                $"The deploy operation is already in a terminal state ({operation.Status}) and cannot be promoted.",
-            _ => $"The deploy operation cannot be promoted from status {operation.Status}."
-        };
+            {
+                WorkflowOperationStatus.Reconciling when operation.Deploy?.Protection != null =>
+                    "The deploy operation has already been promoted.",
+                WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling => null,
+                WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval =>
+                    "The deploy operation must be submitted before it can be promoted.",
+                WorkflowOperationStatus.RollbackRequested =>
+                    "The deploy operation is rolling back and cannot be promoted.",
+                WorkflowOperationStatus.Succeeded =>
+                    "The deploy operation has already been promoted.",
+                WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed
+                    or WorkflowOperationStatus.ManualInterventionRequired =>
+                    $"The deploy operation is already in a terminal state ({operation.Status}) and cannot be promoted.",
+                _ => $"The deploy operation cannot be promoted from status {operation.Status}."
+            };
 
     private static OperationAuditInfo MergePromotionAudit(OperationAuditInfo audit, string? requestedBy, string? reason)
         => audit with
