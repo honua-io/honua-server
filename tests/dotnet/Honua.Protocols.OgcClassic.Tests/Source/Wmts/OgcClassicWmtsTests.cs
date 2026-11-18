@@ -23,13 +23,33 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wmts10)]
-public sealed class OgcClassicWmtsTests : IAsyncLifetime
+public sealed class OgcClassicWmtsTests(OgcClassicWmtsTests.WmtsHost host)
+    : IClassFixture<OgcClassicWmtsTests.WmtsHost>, IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private WebAppFixture _fixture = host.Fixture;
+    private WebAppFixture? _dedicatedHost;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    // One host per class for the cases that only read. Cases that change service, layer, style or
+    // feature rows call UseDedicatedHostAsync first so later cases still see the seeded catalog.
+    public sealed class WmtsHost : IAsyncLifetime
+    {
+        internal WebAppFixture Fixture { get; } = new();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync() => _dedicatedHost?.DisposeAsync() ?? Task.CompletedTask;
+
+    private async Task UseDedicatedHostAsync()
+    {
+        _dedicatedHost = new WebAppFixture();
+        await _dedicatedHost.InitializeAsync();
+        _fixture = _dedicatedHost;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Wmts)]
@@ -54,6 +74,8 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_GetCapabilities_WithWmtsEnabledAndMapServerDisabled_ReturnsXml()
     {
+        await UseDedicatedHostAsync();
+
         // Protocol gating reads MetadataV2Service.Protocols.
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
@@ -466,6 +488,8 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetCapabilities_UnpaintedStyle_OmitsLegendUrl(string styleType)
     {
+        await UseDedicatedHostAsync();
+
         await _fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(WebAppFixture.TestLayerId, $$$$"""
             {"version":8,"sources":{"honua":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}}},
              "layers":[{"id":"unpainted","type":"{{{{styleType}}}}","source":"honua"}]}
@@ -1055,6 +1079,8 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_OgcRoute_GetFeatureInfo_WithWmtsEnabledAndMapServerDisabled_ReturnsSeededFeature()
     {
+        await UseDedicatedHostAsync();
+
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
@@ -1083,6 +1109,8 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_OgcRoute_GetTile_UnknownTileMatrixSet_ReturnsOwsExceptionReport()
     {
+        await UseDedicatedHostAsync();
+
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
