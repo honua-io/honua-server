@@ -73,45 +73,10 @@ internal sealed class ZarrTileService : IZarrTileService
             return StandardErrorHelpers.CreateBadRequest(context, "Tile coordinates must be non-negative.");
         }
 
-        // The route id is a service-local publication index, not a storage-layer id.
-        // Resolve that publication first so authorization evaluates the exact resource
-        // and service policy that published the Zarr registration.
-        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var publication = snapshot.Graph.Publications
-            .Where(candidate => candidate.LayerIndex == layerId && snapshot.IsRoutable(candidate))
-            .OrderByDescending(candidate => candidate.IsPrimary)
-            .ThenBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
-            .FirstOrDefault();
-        var resource = publication is null ? null : snapshot.ResolveResource(publication);
-        var service = publication is not null
-            ? snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId)
-            : null;
-
-        if (publication is null || resource is null)
+        var denied = await AuthorizeLayerIndexAsync(context, layerId, cancellationToken).ConfigureAwait(false);
+        if (denied is not null)
         {
-            return StandardErrorHelpers.CreateForbidden(context, "Access to this resource is forbidden.");
-        }
-
-        var access = await _layerAccessAuthorizer
-            .AuthorizePublicationAsync(
-                context.User,
-                publication,
-                resource,
-                service,
-                AuthorizationOperation.Query,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (!access.IsAllowed)
-        {
-            if (access.RequiresAuthentication)
-            {
-                context.Response.Headers.Append("WWW-Authenticate", "Bearer");
-                return StandardErrorHelpers.CreateUnauthorized(
-                    context, "Authentication is required to access this resource.");
-            }
-
-            return StandardErrorHelpers.CreateForbidden(
-                context, "Access to this resource is forbidden.");
+            return denied;
         }
 
         var registrations = await _store.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
@@ -213,6 +178,72 @@ internal sealed class ZarrTileService : IZarrTileService
             colormap: null, fillValue: slice.Plan.Array.FillValue);
         ZarrLog.DatacubeTileRendered(_logger, layerId, result.Variable, z, x, y, png.Length);
         return Results.Bytes(png, "image/png");
+    }
+
+    // The route id is a service-local publication index that several services can share,
+    // and Zarr registrations are keyed by that index alone. Every routable publication with
+    // the index must allow the caller, so a public layer cannot vouch for a private one.
+    private async Task<IResult?> AuthorizeLayerIndexAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var publications = snapshot.Graph.Publications
+            .Where(candidate => candidate.LayerIndex == layerId && snapshot.IsRoutable(candidate))
+            .ToList();
+        if (publications.Count == 0)
+        {
+            return StandardErrorHelpers.CreateForbidden(context, "Access to this resource is forbidden.");
+        }
+
+        foreach (var publication in publications)
+        {
+            var denied = await AuthorizePublicationAsync(context, snapshot, publication, cancellationToken).ConfigureAwait(false);
+            if (denied is not null)
+            {
+                return denied;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<IResult?> AuthorizePublicationAsync(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Layer publication,
+        CancellationToken cancellationToken)
+    {
+        var resource = snapshot.ResolveResource(publication);
+        if (resource is null)
+        {
+            return StandardErrorHelpers.CreateForbidden(context, "Access to this resource is forbidden.");
+        }
+
+        var service = snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId);
+        var access = await _layerAccessAuthorizer
+            .AuthorizePublicationAsync(
+                context.User,
+                publication,
+                resource,
+                service,
+                AuthorizationOperation.Query,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (access.IsAllowed)
+        {
+            return null;
+        }
+
+        if (access.RequiresAuthentication)
+        {
+            context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+            return StandardErrorHelpers.CreateUnauthorized(
+                context, "Authentication is required to access this resource.");
+        }
+
+        return StandardErrorHelpers.CreateForbidden(context, "Access to this resource is forbidden.");
     }
 
     private static string? GetQueryValue(HttpContext context, string key)
