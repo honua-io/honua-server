@@ -62,6 +62,9 @@ public sealed record ExportVersionField(string Name, string Type, bool Public)
 public sealed record ExportIdentity(string Field, string PmtilesProperty, string GeoparquetColumn)
 {
     public string Type { get; init; } = "string";
+
+    // True when the field is the Layer's declared text key. False when it is the object id rendered as text.
+    public bool Stable { get; init; } = true;
 }
 
 public sealed record ExportGeometry(string Column, string Encoding, IReadOnlyList<string> Types)

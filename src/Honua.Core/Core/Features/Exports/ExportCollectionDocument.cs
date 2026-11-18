@@ -78,7 +78,8 @@ public static class ExportCollectionDocument
         {
             ["field"] = export.Identity.Field,
             ["pmtiles_property"] = export.Identity.PmtilesProperty,
-            ["geoparquet_column"] = export.Identity.GeoparquetColumn
+            ["geoparquet_column"] = export.Identity.GeoparquetColumn,
+            ["stable"] = export.Identity.Stable
         };
         collection["honua:geometry"] = Geometry(export.Geometry);
         collection["honua:public_fields"] = Strings(publicFields.Select(field => field.Name));
@@ -128,7 +129,10 @@ public static class ExportCollectionDocument
             Bounds = [.. bbox.Select(value => Item(value).GetValue<double>())],
             Crs = new ExportCrs(Text(collection, "honua:source_crs"), "OGC:CRS84"),
             Fields = ReadColumns(collection),
-            Identity = new ExportIdentity(Text(identity, "field"), Text(identity, "pmtiles_property"), Text(identity, "geoparquet_column")),
+            Identity = new ExportIdentity(Text(identity, "field"), Text(identity, "pmtiles_property"), Text(identity, "geoparquet_column"))
+            {
+                Stable = identity["stable"] is null || identity["stable"]!.GetValue<bool>()
+            },
             Geometry = ReadGeometry(Node(collection, "honua:geometry").AsObject()),
             Artifacts = new ExportArtifacts(ReadVisual(collection, visual), ReadData(data)),
             Validation = ReadValidation(Node(collection, "honua:validation").AsObject())

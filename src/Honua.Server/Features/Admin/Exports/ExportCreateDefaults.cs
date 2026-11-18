@@ -3,7 +3,6 @@
 
 using System.Text;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 
@@ -12,7 +11,7 @@ namespace Honua.Server.Features.Admin.Exports;
 internal sealed record ExportCreatePlan(TileOperationStartRequest? Start, string? Title, string? Problem, int StatusCode);
 
 // Turns "export this Layer" into a complete export job: the id defaults to the Layer's name as a slug
-// and the identity to the Layer's object id, both overridable.
+// and the identity to the Layer's declared text key, or the object id as text. Both stay overridable.
 internal static class ExportCreateDefaults
 {
     private const int MaxIdLength = 64;
@@ -40,13 +39,14 @@ internal static class ExportCreateDefaults
 
         var resource = published.Resource;
         var zoom = ClampZoom(request.MinZoom, request.MaxZoom, lowestZoom, highestZoom);
+        var identity = ExportFields.ChooseIdentity(resource, request.IdentityField);
         var start = new TileOperationStartRequest
         {
             Operation = TileCacheExecutionSpecBuilder.ExportOperation,
             ServiceId = source.ServiceId,
             LayerId = source.LayerId,
             ExportId = request.ExportId ?? Slug(resource.Metadata.Name, resource.Metadata.Id),
-            IdentityField = request.IdentityField ?? resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId,
+            IdentityField = identity.Field,
             MinZoom = zoom.MinZoom,
             MaxZoom = zoom.MaxZoom
         };

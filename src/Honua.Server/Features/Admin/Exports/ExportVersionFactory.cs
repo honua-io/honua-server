@@ -51,7 +51,10 @@ internal static class ExportVersionFactory
             Bounds = capture.Bounds,
             Crs = new ExportCrs(string.Create(CultureInfo.InvariantCulture, $"EPSG:{srid}"), "OGC:CRS84"),
             Fields = fields.Declared,
-            Identity = new ExportIdentity(published.IdentityField, published.IdentityField, published.IdentityField),
+            Identity = new ExportIdentity(published.IdentityField, published.IdentityField, published.IdentityField)
+            {
+                Stable = fields.Stable
+            },
             Geometry = new ExportGeometry("geometry", "wkb", capture.GeometryTypes),
             Artifacts = new ExportArtifacts(published.Artifacts.Pmtiles, published.Artifacts.Geoparquet),
             Validation = published.Validation
