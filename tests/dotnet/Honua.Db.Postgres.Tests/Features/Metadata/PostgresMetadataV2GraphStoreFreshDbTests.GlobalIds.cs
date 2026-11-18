@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
@@ -81,7 +82,8 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 
             var activate = async () => await store.SaveAsync(declared, original.Etag);
 
-            (await activate.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
+            (await activate.Should().ThrowAsync<MetadataV2GlobalIdIntegrityException>()).WithInnerException<PostgresException>()
+                .Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
             (await store.GetCurrentAsync())!.Etag.Should().Be(original.Etag);
             command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".features";
             (await command.ExecuteScalarAsync()).Should().Be(2);

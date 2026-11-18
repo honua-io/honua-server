@@ -201,6 +201,14 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         return MaterializeSnapshot(json, etag);
     }
 
+    // The activation trigger builds global-ID indexes (migration 198); duplicates fail the unique
+    // build and non-UUID text fails the uuid cast inside sync_metadata_global_id_indexes.
+    private static bool IsGlobalIdIntegrityFailure(PostgresException ex)
+        => (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName?.StartsWith("idx_features_gid_", StringComparison.Ordinal) == true)
+            || (ex.SqlState == PostgresErrorCodes.InvalidTextRepresentation
+                && ex.Where?.Contains("sync_metadata_global_id_indexes", StringComparison.Ordinal) == true);
+
     public async Task<MetadataV2GraphSnapshot> SaveAsync(
         MetadataV2Graph graph,
         string? expectedEtag,
@@ -258,7 +266,16 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
             }
         }
 
-        var snapshot = await PublishGraphAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
+        MetadataV2GraphSnapshot snapshot;
+        try
+        {
+            snapshot = await PublishGraphAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (IsGlobalIdIntegrityFailure(ex))
+        {
+            throw new MetadataV2GlobalIdIntegrityException(ex);
+        }
+
         var commitWasReconciled = false;
         try
         {

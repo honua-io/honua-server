@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,7 +51,7 @@ internal sealed class McpJobProgressBridge
         }
 
         // Missing options match the product default: the stream is off, so there
-        // is nowhere for notifications/progress to go.
+        // is nowhere for notifications/message to go.
         if (_options?.Value.ServerInitiatedStreamEnabled != true)
         {
             return;
@@ -116,12 +117,12 @@ internal sealed class McpJobProgressBridge
             }
 
             var terminal = record.Status.IsTerminal();
-            var phase = record.CurrentPhase ?? record.Status.ToString();
-            var progress = record.PercentComplete ?? (terminal ? ProgressTotal : 0d);
+            var phase = Phase(record);
+            var progress = Progress(record);
 
             if (first || progress != lastProgress || !string.Equals(phase, lastPhase, StringComparison.Ordinal))
             {
-                await _publisher.PublishProgress(sessionId, jobId, progress, ProgressTotal, phase).ConfigureAwait(false);
+                await PublishStatusAsync(sessionId, (jobId, record), cancellationToken).ConfigureAwait(false);
                 lastProgress = progress;
                 lastPhase = phase;
                 first = false;
@@ -139,4 +140,47 @@ internal sealed class McpJobProgressBridge
             }
         }
     }
+
+    // Job status goes out as notifications/message: the job outlives the tools/call that
+    // started it, so there is no client progressToken a stock client would accept.
+    private async Task PublishStatusAsync(
+        string sessionId,
+        (string JobId, ExecutionJobRecord Record) job,
+        CancellationToken cancellationToken)
+    {
+        // A failed job is an error, so a session that lowered its level to errors still learns of it.
+        var messageLevel = job.Record.Status == ExecutionJobStatus.Failed ? McpLogging.Error : McpLogging.Info;
+        var level = await _sessions.GetLogLevelAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (!McpLogging.IsEnabled(level, messageLevel))
+        {
+            return;
+        }
+
+        using var data = StatusData(job.JobId, job.Record);
+        await _publisher.PublishMessage(sessionId, messageLevel, McpLogging.JobsLogger, data.RootElement.Clone())
+            .ConfigureAwait(false);
+    }
+
+    private static JsonDocument StatusData(string jobId, ExecutionJobRecord record)
+    {
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("jobId", jobId);
+            writer.WriteString("uri", McpResourceUris.JobsPrefix + jobId);
+            writer.WriteString("status", record.Status.ToString());
+            writer.WriteString("phase", Phase(record));
+            writer.WriteNumber("progress", Progress(record));
+            writer.WriteNumber("total", ProgressTotal);
+            writer.WriteEndObject();
+        }
+
+        return JsonDocument.Parse(buffer.ToArray());
+    }
+
+    private static string Phase(ExecutionJobRecord record) => record.CurrentPhase ?? record.Status.ToString();
+
+    private static double Progress(ExecutionJobRecord record) =>
+        record.PercentComplete ?? (record.Status.IsTerminal() ? ProgressTotal : 0d);
 }

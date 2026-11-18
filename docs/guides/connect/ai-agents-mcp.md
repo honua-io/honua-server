@@ -186,6 +186,10 @@ Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnly
 
 Every successful tool result returns its data twice: as `structuredContent` and as the same serialized JSON in a `text` content block, so clients that pass only `content` to the model still see the full result. For large results, tools that provide a summary send it as a one-line text block before the JSON.
 
+### Review what an agent read
+
+Each tool call and resource read by an authenticated caller writes one record to the audit feed. A platform administrator reads them at `GET /api/v1/admin/observability/audit?resourceType=mcp`, narrowed with `actor=<actor>` to one key or user (`actorAgent` matches calls made with an `agent`-grant key) and with `action=mcp.tool.call` or `action=mcp.resource.read`. A record names the tool or the resource URI without its query, the outcome (`Success`, `Failure` or `Denied`) and, for a tool call, the service, layer, job, style or item identifiers it was given, never query text or results. Refused calls also keep their existing authorization records. Records follow the audit feed's retention.
+
 ## What the tools do
 
 ### Plan, validate, and run geoprocessing
@@ -204,6 +208,7 @@ Once a plan validates:
 - `honua_list_jobs` — poll the submitted `jobId` to `Succeeded`, `Failed`, or `Cancelled`; follow `nextCursor` when present. Submission alone does not establish completion.
 - `honua_get_job_results` — retrieve the terminal result package by `jobId`, including typed artifact references. Check the artifact content before reporting a successful analysis. Both tools are available in default discovery.
 - `honua_cancel_job` — requests cancellation by `jobId`.
+- With `Mcp:ServerInitiatedStreamEnabled=true`, a session holding `GET /mcp` also receives job status as `notifications/message` (level `info`, or `error` for a failed job; logger `honua.jobs`, `data` with `jobId`, `uri`, `status`, `phase`, `progress` and `total`) after `honua_execute_plan` returns. These are not `notifications/progress`: the job outlives the tool call, so there is no request progress token to match. Send `logging/setLevel` with `notice` or higher to receive only failures, or `critical` or higher to stop them. With the shared session store (the system database) the level holds on every server instance; with stateless session tokens or in-memory sessions it holds only on the instance that received it.
 - `honua_diagnose_job` — read-only diagnosis of a job you can read: `observed` facts (status, timestamps, heartbeat, structured failure, release identity, artifacts) kept apart from `inferred` explanations (canonical phase, liveness verdict, failure classification, recovery, retry disposition), with `evidence.missing` and `evidence.truncated` listed. A returned diagnosis is never proof the job succeeded; read `observed.status`.
 - `honua_job_evidence` — the bounded evidence behind a diagnosis: sanitized steps, the most recent events (`events`, maximum 500) and artifact availability, with no inferred layer. Both tools read the same projection as `GET /api/v1/admin/jobs/{jobId}/diagnostics`; see [Diagnose a remote geoprocessing job](../query-analyze/gp-job-diagnostics.md).
 
@@ -480,7 +485,7 @@ So a non-agent automation key with `admin:write` can publish without any operato
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `Mcp:ServerInitiatedStreamEnabled` | `false` | Offer the optional server-initiated `GET /mcp` SSE stream (progress / `*/list_changed`). Off by default: `GET /mcp` returns `405 Method Not Allowed` + `Allow: POST, DELETE` per the Streamable-HTTP spec, so spec-compliant SDK clients skip the stream instead of hanging it at a buffering ingress. `initialize` advertises `tools.listChanged` and `resources.listChanged` only when this is on, because that is the only channel that can deliver the notification. `honua_execute_plan` starts its job-store progress poll only when this is on, for the same reason. |
+| `Mcp:ServerInitiatedStreamEnabled` | `false` | Offer the optional server-initiated `GET /mcp` SSE stream (job status / `*/list_changed`). Off by default: `GET /mcp` returns `405 Method Not Allowed` + `Allow: POST, DELETE` per the Streamable-HTTP spec, so spec-compliant SDK clients skip the stream instead of hanging it at a buffering ingress. `initialize` advertises `tools.listChanged`, `resources.listChanged` and `logging` only when this is on, because that is the only channel that can deliver the notification. `honua_execute_plan` starts its job-store status poll only when this is on, for the same reason. |
 | `Mcp:SessionIdleTimeout` | `00:30:00` | Sliding idle TTL. Every request (or an opened GET stream) on a session refreshes the window; an untouched session expires and is swept. Expired ids return `404`, so clients re-initialize cleanly. |
 | `Mcp:MaxSessions` | `10000` | Maximum concurrently tracked sessions. Bounds memory on a public endpoint. |
 | `Mcp:MaxAnonymousSessions` | `1000` | Maximum concurrently tracked anonymous sessions, counted inside `Mcp:MaxSessions`. An anonymous `initialize` only ever evicts another anonymous session. An authenticated `initialize` evicts anonymous sessions when the global table is full, and never another principal's session. |
@@ -527,7 +532,7 @@ The MCP surface is the same set of tools and resources everywhere; one configura
 | Profile | Key config | Progress delivery | `honua_plan_analysis` | Notes |
 |---|---|---|---|---|
 | **Baseline serverless** (recommended default) | `Mcp:ServerInitiatedStreamEnabled=false` | Poll `honua://jobs/{jobId}` for job state (no server push); `GET /mcp` → `405` | `engine:"fixture"` — a canned capability demo; hand-author plans from `honua://catalog/processes` and confirm with `honua_validate_plan` | Works behind buffering ingress (CloudFront → API Gateway HTTP API → Lambda); the SDK skips the optional standalone stream. |
-| **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
+| **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes job status + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
 
 Both profiles change only *how* the surface behaves, not *which* tools and resources it advertises. The read-only pre-flight tools (`honua_validate_plan`, `honua_dry_run_plan`) report the same execution reality in every profile — including that a job runs a single process, so multi-step or sync-only plans are flagged rather than silently under-executed.
 

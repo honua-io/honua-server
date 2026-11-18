@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
@@ -106,8 +107,8 @@ internal sealed class FormOfflinePolicyService
         links.Add(new FormLink { Rel = "fieldcollection-push-change", Href = Absolute(context, "/api/v1/fieldcollection/changes"), Method = HttpMethods.Post });
     }
 
-    private static string Absolute(HttpContext context, string path)
-        => $"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}{path}";
+    internal static string Absolute(HttpContext context, string path)
+        => BaseUrlResolver.GetBaseUrl(context).TrimEnd('/') + path;
 }
 
 internal static partial class FormOfflinePolicyLog
