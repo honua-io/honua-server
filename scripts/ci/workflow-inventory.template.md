@@ -1684,8 +1684,9 @@ deletes all rows from `portal_item_shares` and `portal_community_groups` before
 it starts, so every case still begins from empty sharing tables. The case that
 needs the store binding removed keeps its own application.
 `SharingRestReadTests` shares one application across the default-graph cases,
-which only send anonymous GET and HEAD requests; the info, portal URI list and
-sharing root endpoints are not output-cached. The configured-public-root and
+which only send anonymous GET and HEAD requests; none of the endpoints they call
+(sharing info, portal URI list, portals/self, search, content items and
+`/rest/info`) is output-cached. The configured-public-root and
 disabled-entitlement cases keep their own applications.
 
 Both classes stay in Server Features Sharing 2 on selected PR runs and full
