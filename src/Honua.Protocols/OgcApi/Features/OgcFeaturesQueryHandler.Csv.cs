@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
-using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -74,9 +73,8 @@ internal sealed partial class OgcFeaturesQueryHandler
             catch (Exception exception) when (!httpContext.Response.HasStarted &&
                 exception is not (OperationCanceledException or OutOfMemoryException))
             {
-                var result = exception is ServiceUnavailableException
-                    ? StandardErrorHelpers.CreateFromException(httpContext, exception)
-                    : StandardErrorHelpers.CreateInternalServerError(httpContext, "An error occurred while retrieving items.");
+                var result = StandardErrorHelpers.CreateQueryFailure(
+                    httpContext, exception, "An error occurred while retrieving items.");
                 await result.ExecuteAsync(httpContext);
             }
         }

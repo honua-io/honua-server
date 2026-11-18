@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -216,6 +217,16 @@ internal static partial class WmsRequestHandlers
                 context,
                 "OperationNotSupported",
                 "WMS request includes an option the configured feature provider does not support.",
+                StatusCodes.Status400BadRequest);
+        }
+        catch (MaskedFieldReferenceException ex)
+        {
+            // A FILTER naming a field the caller's read policy withholds is a request error.
+            OgcClassicLog.WmsFailed(logger, serviceId, ex.Message, ex);
+            return CreateWmsServiceException(
+                context,
+                "InvalidParameterValue",
+                "WMS request includes an invalid FILTER.",
                 StatusCodes.Status400BadRequest);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)

@@ -407,7 +407,7 @@ internal static partial class StaticMapEndpoints
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StaticMapLog.Failed(logger, serviceId, ex.Message, ex);
-            return StandardErrorHelpers.CreateInternalServerError(context, "Static map rendering failed.");
+            return StandardErrorHelpers.CreateQueryFailure(context, ex, "Static map rendering failed.");
         }
     }
 
