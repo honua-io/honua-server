@@ -22,12 +22,12 @@ public sealed partial class AdminAuthEndpointsTests
         var cookie = await SignInSessionCookieAsync();
 
         var crossOrigin = await UpgradeOutcomeAsync(cookie, "https://app.localhost");
-        crossOrigin.Should().Contain("403");
+        crossOrigin.Should().EndWith("status code: 403");
 
         // Positive control: the same upgrade from the server's own origin passes the check and
         // reaches routing, which has no WebSocket endpoint at the probe path.
         var sameOrigin = await UpgradeOutcomeAsync(cookie, "https://localhost");
-        sameOrigin.Should().NotContain("403");
+        sameOrigin.Should().NotEndWith("status code: 403");
     }
 
     private async Task<string> SignInSessionCookieAsync()

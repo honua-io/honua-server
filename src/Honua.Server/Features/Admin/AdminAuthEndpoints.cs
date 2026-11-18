@@ -850,8 +850,9 @@ internal static class AdminAuthEndpoints
         };
     }
 
-    // Behind a TLS-terminating proxy without forwarded headers the request looks like HTTP; a
-    // configured https public base URL still marks the session cookie Secure.
+    // Behind a TLS-terminating proxy whose forwarded headers are not trusted the request looks
+    // like HTTP; a configured https public base URL still keeps the session cookie off plain
+    // HTTP. (Browser-session writes there still need trusted forwarded headers.)
     internal static bool UseSecureSessionCookie(HttpContext context)
         => context.Request.IsHttps
            || BaseUrlResolver.GetBaseUrl(context).StartsWith("https://", StringComparison.OrdinalIgnoreCase);

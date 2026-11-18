@@ -79,11 +79,20 @@ internal static class BrowserSessionSecurity
     // A WebSocket upgrade is a GET, so the antiforgery check never sees it. When the browser
     // session cookie is the credential, the upgrade must come from this origin: same-site
     // pages on another origin (a sibling subdomain) would otherwise receive the cookie.
+    // Browsers cannot set headers on an upgrade, so a token in the query string also counts
+    // as the caller's own credential.
     private static bool IsCrossOriginSessionWebSocket(HttpContext context) =>
         context.WebSockets.IsWebSocketRequest
         && context.Request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
         && !HasAuthenticatedExplicitCredential(context)
+        && !HasAuthenticatedQueryCredential(context)
         && !IsSameOrigin(context.Request);
+
+    private static bool HasAuthenticatedQueryCredential(HttpContext context) =>
+        context.User.Identity is { IsAuthenticated: true } identity
+        && identity.AuthenticationType != OidcAuthenticationExtensions.AdminSessionScheme
+        && !context.IsAdminAuthSessionBridged()
+        && context.Items.ContainsKey(PortalTokenAuthenticationExtensions.QueryCredentialKey);
 
     private static bool HasAuthenticatedExplicitCredential(HttpContext context) =>
         context.User.Identity is { IsAuthenticated: true } identity
