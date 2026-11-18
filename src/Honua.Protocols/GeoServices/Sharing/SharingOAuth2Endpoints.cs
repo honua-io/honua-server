@@ -520,15 +520,10 @@ internal static class SharingOAuth2Endpoints
         }
         else
         {
-            var query = context.Request.Query;
-            grantType = ReadFirst(query["grant_type"]);
-            code = ReadFirst(query["code"]);
-            codeVerifier = ReadFirst(query["code_verifier"]);
-            redirectUri = ReadFirst(query["redirect_uri"]);
-            clientId = ReadFirst(query["client_id"]);
-            refreshToken = ReadFirst(query["refresh_token"]);
-            clientSecret = ReadFirst(query["client_secret"]);
-            scope = ReadFirst(query["scope"]);
+            // RFC 6749 §4.1.3 and §6: token request parameters travel in the form body only.
+            // The query string is never read, so codes, refresh tokens and client secrets stay
+            // out of URLs; the request then fails validation as an incomplete grant.
+            grantType = code = codeVerifier = redirectUri = clientId = refreshToken = clientSecret = scope = null;
         }
 
         // RFC 6749 Â§2.3.1: a confidential client MAY present its credentials via HTTP

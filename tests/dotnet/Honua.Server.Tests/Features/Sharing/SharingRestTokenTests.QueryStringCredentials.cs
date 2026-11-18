@@ -42,10 +42,17 @@ public sealed partial class SharingRestTokenTests
     public async Task GenerateToken_QueryStringPortalToken_IsRefusedByDefault()
     {
         using var client = _fixture.CreateClient();
-        var url = $"{TokenEndpoint}?token=portal-token-in-url" +
+        using var issued = await PostFormAsync(client,
+            ("username", "admin"), ("password", AdminPassword),
+            ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
+        var portalToken = (await ReadTokenPayloadAsync(issued)).Token;
+        var url = $"{TokenEndpoint}?token={Uri.EscapeDataString(portalToken)}" +
             $"&serverUrl={Uri.EscapeDataString("https://server.example.com/services")}" +
             $"&client=referer&referer={Uri.EscapeDataString(SecureRefererA)}&f=json";
-        using var response = await client.GetAsync(url);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Referrer = new Uri(SecureRefererA);
+
+        using var response = await client.SendAsync(request);
 
         await AssertQueryStringRefusalAsync(response);
     }

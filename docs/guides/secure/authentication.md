@@ -500,7 +500,7 @@ accepting an elicitation or opening a URL grants no approval by itself.
 
 ### 4. Issue GeoServices REST-compatible tokens
 
-GeoServices REST clients, including desktop GIS applications and native client SDKs, authenticate against the portal token endpoint, which is always available. Send the credentials as a POST form body. A password or portal token in the `generateToken` query string (a GET, or a POST without a form body) is refused with a `400` unless `Authentication__PortalToken__AllowQueryStringCredentials=true`; turn that on only for a legacy client that cannot POST a form, because URLs are recorded by proxies and access logs:
+GeoServices REST clients, including desktop GIS applications and native client SDKs, authenticate against the portal token endpoint, which is always available. Send the credentials as a POST form body. A password or portal token in the `generateToken` query string (a GET, or a POST without a form body) is refused with a `400` unless `Authentication__PortalToken__AllowQueryStringCredentials=true`; turn that on only for a legacy client that cannot POST a form, because URLs are recorded by proxies and access logs. The OAuth2 `token` endpoint reads its parameters from the form body only.
 
 Applications can call the same endpoint with `username`, `password`, `client: "referer"`, `referer: "https://app.example.com"`, and `expiration: 60`. Desktop GIS clients and other GeoServices REST clients can discover the endpoint when they prompt for credentials.
 
