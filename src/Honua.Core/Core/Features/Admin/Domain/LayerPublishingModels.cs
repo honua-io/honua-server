@@ -55,6 +55,10 @@ public sealed class LayerPublishRequest
 
     public bool SupportsAttachments { get; init; }
 
+    // Opt-in: numeric/decimal columns publish as Decimal and timestamptz as TimestampOffset
+    // (the primary key and the temporal column keep their default types).
+    public bool ExactTypes { get; init; }
+
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
 
     public string? ServiceName { get; init; }
@@ -99,6 +103,12 @@ public sealed class TablePublishValidationRequest
     public bool AllowEmptyTable { get; init; }
 
     public bool ManagedStore { get; init; }
+
+    // Reports numeric/decimal and timestamptz columns with their exact published types.
+    public bool ExactTypes { get; init; }
+
+    // With ExactTypes, this column keeps DateTime as it does on publish.
+    public string? TemporalColumn { get; init; }
 
     public required string Schema { get; init; }
 
@@ -197,6 +207,9 @@ public sealed class PublishedLayerSummary
 {
     public required int StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
+
     public required string LayerName { get; init; }
 
     public required string Schema { get; init; }
@@ -253,6 +266,9 @@ public sealed class LayerExtentRefreshLayerResult
 {
     public int StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
+
     public required string LayerName { get; init; }
 
     public bool HasExtent { get; init; }
@@ -263,6 +279,9 @@ public sealed class LayerExtentRefreshLayerResult
 public sealed class MaterializedFeatureRefreshResult
 {
     public int StorageLayerId { get; init; }
+
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
 
     public required string LayerName { get; init; }
 

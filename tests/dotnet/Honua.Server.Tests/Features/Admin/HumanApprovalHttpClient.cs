@@ -81,10 +81,19 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
         WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver", string? tenantId = null)
         => AuthenticateAsync(() => CreateHttpsClient(fixture), provider, subject, tenantId);
 
-    public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
+    public static Task<HumanApprovalHttpClient> AuthenticateAsync(
         Func<HttpClient> createClient, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver", string? tenantId = null)
+        => AuthenticateAsync(createClient, provider, new HumanApprovalIdentity(subject, tenantId, ["admin"]));
+
+    public static Task<HumanApprovalHttpClient> AuthenticateAsync(
+        WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider, HumanApprovalIdentity identity)
+        => AuthenticateAsync(() => CreateHttpsClient(fixture), provider, identity);
+
+    public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
+        Func<HttpClient> createClient, AdminAuthEndpointsTests.StubHttpClientFactory provider, HumanApprovalIdentity identity)
     {
-        provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(subject, subject, ["admin"], tenantId);
+        provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(
+            identity.Subject, identity.Subject, identity.Roles, identity.TenantId);
         var client = createClient();
         if (client.BaseAddress?.Scheme != Uri.UriSchemeHttps)
             client.BaseAddress = new Uri("https://localhost");
@@ -157,6 +166,29 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
         snapshot!.Proposal.Version.Should().Be(snapshot.Review.ProposalVersion);
         snapshot.Proposal.PlanHash.Should().Be(snapshot.Review.PlanHash);
         return snapshot.Review;
+    }
+
+    public async Task<DeployHumanApprovalReviewResponse> OpenDeployReviewAsync(string operationId, string action)
+    {
+        using var response = await Client.GetAsync(
+            $"/api/v1/admin/deploy/operations/{operationId}/approval-review/{action}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        return (await response.Content.ReadFromJsonAsync(
+            DeployControlJsonContext.Default.DeployHumanApprovalReviewResponse))!;
+    }
+
+    public async Task<HttpResponseMessage> ReviewDeployAsync(string operationId, string action)
+        => await SubmitDeployReviewAsync(operationId, action, await OpenDeployReviewAsync(operationId, action));
+
+    public async Task<HttpResponseMessage> SubmitDeployReviewAsync(
+        string operationId, string action, DeployHumanApprovalReviewResponse snapshot)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            $"/api/v1/admin/deploy/operations/{operationId}/{action}");
+        request.Headers.Add(OperationHumanApprovalAuthority.CapabilityHeader, snapshot.Review.Capability);
+        request.Content = JsonContent.Create(new { reason = "Reviewed deployment" });
+        return await Client.SendAsync(request);
     }
 
     public async Task<HttpResponseMessage> ApproveAsync(string proposalId) =>
@@ -251,3 +283,5 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
     }
 
 }
+
+internal sealed record HumanApprovalIdentity(string Subject, string? TenantId, IReadOnlyList<string> Roles);

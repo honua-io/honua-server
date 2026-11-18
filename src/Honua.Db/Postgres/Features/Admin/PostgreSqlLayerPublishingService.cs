@@ -297,6 +297,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 {
                     AllowEmptyTable = request.AllowEmptyTable,
                     ManagedStore = isManagedStore,
+                    ExactTypes = request.ExactTypes,
+                    TemporalColumn = request.TemporalColumn,
                     Schema = schema,
                     Table = table,
                     LayerName = request.LayerName,
@@ -414,9 +416,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             }
         }
 
-        var fields = isManagedStore && !request.CreateEditableCopy
-            ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
-            : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains);
+        var fields = WithExactFieldTypes(
+            isManagedStore && !request.CreateEditableCopy
+                ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
+                : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains),
+            selectedColumns,
+            PublishFieldTypePolicy.ForPublish(request, primaryKeyColumn?.Name));
         var attributeColumns = isManagedStore && !request.CreateEditableCopy
             ? SelectManagedAttributeColumns(selectedColumns, primaryKeyColumn, geometryColumn)
             : selectedColumns;
@@ -522,6 +527,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await InsertFieldsAsync(connection, transaction, layerId, fields, cancellationToken);
 
+        var globalIdIndex = ManagedGlobalIdIndexFor(storage, layerId, ResolveEditingForPublish(request, fields)?.GlobalIdField);
+        await SerializeGlobalIdPublishAsync(transaction, globalIdIndex, cancellationToken).ConfigureAwait(false);
         var materializedCount = await MaterializeLayerFeaturesAsync(
             connection,
             transaction,
@@ -540,6 +547,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             await PrepareManagedCopyAsync(connection, transaction, layerId, managedSchema, primaryKeyColumn!.Name,
                 srid, cancellationToken).ConfigureAwait(false);
         }
+
+        await BuildManagedGlobalIdIndexAsync(transaction, globalIdIndex, cancellationToken).ConfigureAwait(false);
 
         var refreshedExtent = await RefreshLayerExtentAsync(connection, transaction, layerId, cancellationToken);
 

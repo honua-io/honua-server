@@ -261,7 +261,9 @@ internal static class AdminAuthEndpoints
                 "Operator bearer issuance is not configured on this server.");
         }
 
-        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt);
+        var binding = await sessionStore.BindOperatorBearerAsync(sessionId!, session.ExpiresAt, context.RequestAborted)
+            .ConfigureAwait(false);
+        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt, binding);
         if (issuance is null)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
@@ -844,11 +846,18 @@ internal static class AdminAuthEndpoints
             HttpOnly = true,
             IsEssential = true,
             SameSite = SameSiteMode.Strict,
-            Secure = context.Request.IsHttps,
+            Secure = UseSecureSessionCookie(context),
             MaxAge = lifetime,
             Path = "/"
         };
     }
+
+    // Behind a TLS-terminating proxy whose forwarded headers are not trusted the request looks
+    // like HTTP; a configured https public base URL still keeps the session cookie off plain
+    // HTTP. (Browser-session writes there still need trusted forwarded headers.)
+    internal static bool UseSecureSessionCookie(HttpContext context)
+        => context.Request.IsHttps
+           || BaseUrlResolver.GetBaseUrl(context).StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     private static void SetCookie(HttpResponse response, string name, string value, CookieOptions options)
     {

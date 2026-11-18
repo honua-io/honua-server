@@ -4,6 +4,7 @@
   "title": "plan_analysis inputSchema",
   "description": "Argument shape for the plan_analysis tool (Analyze family; emits an AnalysisPlan). Reference advertised name: honua_plan_analysis. Compiles a natural-language intent into an analysis plan / canonical spec draft. See taxonomy.md §Intent and planning.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["intent"],
   "properties": {
     "intent": {

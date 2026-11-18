@@ -1,6 +1,6 @@
 <Project>
-  <!-- TargetFramework is set after Directory.Build.props is imported. Keep the .NET 10
-       plugin assets on compiler-generated state machines; only .NET 11 supports runtime async.
+  <!-- TargetFramework is set after Directory.Build.props is imported. Runtime async
+       is a .NET 11 feature, so enable it only for net11.0.
        Clean bin/obj after changing this opt-in when validating incremental/AOT outputs. -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net11.0'">
     <Features>$(Features);runtime-async=on</Features>
@@ -99,7 +99,7 @@
   <!--
     .NET 11 moved these Microsoft.Extensions packages into the shared framework,
     so restore reports NU1510 (as an error under TreatWarningsAsErrors) for a direct
-    reference. Drop the reference only on net11.0+ so a net10.0 build keeps it.
+    reference. Drop the reference on net11.0+.
   -->
   <ItemGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net11.0'))">
     <PackageReference Remove="Microsoft.Extensions.DependencyInjection.Abstractions" />

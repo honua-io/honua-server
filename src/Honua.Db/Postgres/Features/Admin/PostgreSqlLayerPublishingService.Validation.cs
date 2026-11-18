@@ -333,7 +333,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             FeatureCount = geometryHealth?.FeatureCount ?? nonSpatialRowCount,
             NullGeometryCount = geometryHealth?.NullGeometryCount,
             InvalidGeometryCount = geometryHealth?.InvalidGeometryCount,
-            Fields = BuildValidationFields(tableInfo?.Columns ?? [], request.Fields),
+            Fields = BuildValidationFields(
+                tableInfo?.Columns ?? [], request.Fields, PublishFieldTypePolicy.ForValidation(request, tableInfo?.Columns ?? [])),
             Checks = checks.ToArray()
         };
     }
@@ -401,7 +402,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private static TablePublishValidationField[] BuildValidationFields(
         List<ColumnInfo> columns,
-        IReadOnlyList<string> selected)
+        IReadOnlyList<string> selected,
+        PublishFieldTypePolicy typePolicy)
     {
         var selectedSet = selected == null || selected.Count == 0
             ? null
@@ -414,7 +416,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             {
                 Name = column.Name,
                 DataType = column.DataType,
-                FieldType = MapPostgresType(column.DataType).ToString(),
+                FieldType = typePolicy.Map(column.Name, column.DataType).ToString(),
                 IsNullable = column.IsNullable,
                 IsPrimaryKey = column.IsPrimaryKey,
                 IsSelected = selectedSet == null ? !column.IsInternalImportColumn : selectedSet.Contains(column.Name),

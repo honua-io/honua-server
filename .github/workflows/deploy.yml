@@ -2,7 +2,7 @@ name: Build & Publish Images
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 env:
@@ -25,12 +25,13 @@ jobs:
   authorize-publish:
     uses: ./.github/workflows/publish-authorization.yml
     with:
-      tag-patterns: 'v*'
+      tag-patterns: 'v*.*.*'
 
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     needs: authorize-publish
     continue-on-error: ${{ matrix.image_key == 'aot' }}
+    environment: publish-images
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     strategy:
@@ -383,6 +384,7 @@ jobs:
     continue-on-error: ${{ matrix.tag_suffix == '-aot' }}
     needs: build-and-push
     if: ${{ needs.build-and-push.result == 'success' }}
+    environment: publish-images
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:

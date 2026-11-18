@@ -9,6 +9,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Honua.Tests.ParquetUnitSupport;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Newtonsoft.Json.Linq;
@@ -196,7 +197,7 @@ public sealed class GeoParquetSdkInteropConformanceTests
             returnGeometry: true, outputSrid: 4326, returnZ: false, returnM: false, new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
         using var batchReader = reader.GetRecordBatchReader();
         var batch = await batchReader.ReadNextRecordBatchAsync();
 
@@ -232,7 +233,7 @@ public sealed class GeoParquetSdkInteropConformanceTests
             returnGeometry: true, outputSrid: 4326, returnZ: false, returnM: false, new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
         using var batchReader = reader.GetRecordBatchReader();
         var batch = await batchReader.ReadNextRecordBatchAsync();
 
@@ -263,7 +264,7 @@ public sealed class GeoParquetSdkInteropConformanceTests
     private static string ExtractGeoMetadata(byte[] payload)
     {
         using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
         reader.Schema.Metadata.Should().ContainKey("geo");
         return reader.Schema.Metadata["geo"];
     }
@@ -271,7 +272,7 @@ public sealed class GeoParquetSdkInteropConformanceTests
     private static async Task<Geometry> ReadFirstGeometryAsync(byte[] payload)
     {
         using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
         using var batchReader = reader.GetRecordBatchReader();
         var batch = await batchReader.ReadNextRecordBatchAsync();
         var geometryColumn = (BinaryArray)batch!.Column("geometry");

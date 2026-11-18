@@ -30,8 +30,9 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-// Default raster reads share one host; cases with custom stores, authorization, or elevation
-// retain isolated hosts and schemas. The collection serializes access to the default substitute.
+// Default raster reads share one host, and cases that only bring their own raster store substitute
+// borrow it through a store switch; cases with custom authorization, masks, resolvers, graphs or
+// elevation retain isolated hosts and schemas. The collection serializes access to the shared host.
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
@@ -41,14 +42,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
 
     public ImageServerEndpointsTests(DefaultRasterHost defaultHost) => _defaultHost = defaultHost;
 
-    public sealed class DefaultRasterHost : IAsyncLifetime
+    public sealed class DefaultRasterHost : SwitchedServiceHost<IRasterStore>
     {
-        public WebAppFixture Application { get; } = new WebAppFixture()
-            .ConfigureServices(services => services.AddSingleton(CreateRasterStoreSubstitute()));
-
-        public Task InitializeAsync() => Application.InitializeAsync();
-
-        public Task DisposeAsync() => Application.DisposeAsync();
+        public DefaultRasterHost()
+            : base(CreateRasterStoreSubstitute())
+        {
+        }
     }
 
     private const int TestLayerId = 0;
@@ -442,13 +441,8 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         }
     }
 
-    private static async Task<WebAppFixture> CreateFixtureAsync(IRasterStore rasterStore)
-    {
-        var fixture = new WebAppFixture()
-            .ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
-        return fixture;
-    }
+    private Task<SwitchedServiceLease> UseRasterStoreAsync(IRasterStore rasterStore)
+        => _defaultHost.BorrowAsync(rasterStore);
 
     [IntegrationTest]
     [Operation(Operations.GetTile)]
@@ -459,7 +453,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         var store = CreateRasterStoreSubstitute();
         var raster = await store.GetPrimaryRasterInfoAsync(TestLayerId, CancellationToken.None)
             ?? throw new InvalidOperationException("The raster substitute must provide its primary raster.");
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             string[] paths =
@@ -514,7 +508,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 Height = 256,
                 Srid = 3857
             });
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             string[] paths =
@@ -927,7 +921,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 };
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var renderingRule = Uri.EscapeDataString(
@@ -968,7 +962,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 };
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var renderingRule = Uri.EscapeDataString(
@@ -1008,7 +1002,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 };
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var renderingRule = Uri.EscapeDataString(
@@ -1129,7 +1123,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         };
         store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([temporalRaster]);
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1152,7 +1146,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_KvpAndRestful_ReturnPngTiles()
     {
-        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateTileExportRasterStoreSubstitute());
         try
         {
             var serviceId = WebAppFixture.TestServiceId;
@@ -1195,7 +1189,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 Srid = 3857,
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1233,7 +1227,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 Srid = 3857,
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1253,7 +1247,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Identify)]
     public async Task Wmts_GetFeatureInfo_ReturnsPixelValueAtTilePixel()
     {
-        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateSamplingRasterStoreSubstitute());
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1301,7 +1295,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             store.QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
                 .Returns(Array.Empty<RasterInfo>());
         }
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             using var response = await fixture.Client.GetAsync(
@@ -1366,7 +1360,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Identify)]
     public async Task Wmts_GetFeatureInfo_WithOutOfRangePixel_ReturnsException()
     {
-        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateSamplingRasterStoreSubstitute());
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1391,7 +1385,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_WithUnsupportedFormat_ReturnsXmlException()
     {
-        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateTileExportRasterStoreSubstitute());
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1501,7 +1495,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 };
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1619,7 +1613,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 },
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1678,7 +1672,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 };
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             // Default (no f): thumbnail returns image bytes.
@@ -1728,7 +1722,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         var store = CreateRasterStoreSubstitute();
         store.GetRasterInfoAsync(TestLayerId, 999, Arg.Any<CancellationToken>())
             .Returns((RasterInfo?)null);
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1784,7 +1778,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Query)]
     public async Task QueryCatalog_Get_OrderByFieldsDescending_SortsFeatures()
     {
-        var fixture = await CreateFixtureAsync(CreateMultiRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateMultiRasterStoreSubstitute());
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -1914,7 +1908,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 [300] = new RasterSensorMetadata { RasterDataId = 300, ExteriorOrientationJson = """{"offNadirAngle":18}""" },
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             const string targetGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":4326}}""";
@@ -2325,7 +2319,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 },
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
@@ -2418,7 +2412,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 },
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var getResponse = await fixture.Client.GetAsync(
@@ -2506,7 +2500,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         //   deltas [+2, +2, -2, -2] => cut = 4·100 = 400, fill = -4·100 = -400,
         //   area = 4·100 = 400, minz = 8, maxz = 12, meanz = 10 (hand-verifiable).
         var store = CreateVolumeRasterStoreSubstitute([12d, 12d, 8d, 8d]);
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             const string geometries =
@@ -2595,7 +2589,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         // A DEM is modeled but the AOI clip exceeds the synchronous pixel budget: reject with an
         // actionable 400 rather than analysing a truncated (wrong) volume.
         var store = CreateVolumeRasterStoreSubstitute([12d, 8d], exceedBudget: true);
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             const string geometries =
@@ -2618,7 +2612,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     {
         // baseType=0 requires the constant base plane; omitting constantZ is a 400.
         var store = CreateVolumeRasterStoreSubstitute([12d, 8d]);
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             const string geometries =
@@ -2641,7 +2635,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     {
         // Only baseType=0 (constant plane) is supported; a best-fitting/perimeter base is 501.
         var store = CreateVolumeRasterStoreSubstitute([12d, 8d]);
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             const string geometries =
@@ -2731,7 +2725,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 };
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var geometry = Uri.EscapeDataString(
@@ -2782,7 +2776,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     public async Task ComputeStatisticsHistograms_WithGeometry_ClipsAnalysisToAoi()
     {
         var store = CreateRasterStoreSubstitute();
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             var geometry = Uri.EscapeDataString(
@@ -2885,7 +2879,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Query)]
     public async Task GetSamples_Get_WithMultipoint_ReturnsSamples()
     {
-        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateSamplingRasterStoreSubstitute());
         try
         {
             var geometry = Uri.EscapeDataString(
@@ -2910,7 +2904,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Query)]
     public async Task GetSamples_Post_WithPoint_ReturnsSample()
     {
-        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateSamplingRasterStoreSubstitute());
         try
         {
             using var content = new FormUrlEncodedContent(new[]
@@ -2939,7 +2933,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Query)]
     public async Task GetSamples_Get_WithoutGeometry_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateSamplingRasterStoreSubstitute());
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -3198,7 +3192,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
                 },
             });
 
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             // Image origin (0,0) maps to the ground offset (-120, 35); outSR=4326 keeps it as-is.
@@ -3230,7 +3224,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         // the warped/reprojected location, which differs from the untransformed reprojection of the
         // same input coordinate.
         var store = CreateRpcRasterStoreSubstitute();
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             // Image origin (0,0) warps to ground (-120, 35), then reprojects into Web Mercator (3857).
@@ -3276,7 +3270,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         // ground(4326) -> outSR leg, the request is rejected with a precise 400 rather than silently
         // dropping the requested transformation. WKID 108001 does not connect 4326 -> 3857.
         var store = CreateRpcRasterStoreSubstitute();
-        var fixture = await CreateFixtureAsync(store);
+        var fixture = await UseRasterStoreAsync(store);
         try
         {
             const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0}]}""";
@@ -3363,7 +3357,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Export)]
     public async Task ExportTiles_WritesZipArchiveToCloudStorage()
     {
-        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateTileExportRasterStoreSubstitute());
         var uploadedFileIds = new List<string>();
         try
         {
@@ -3432,7 +3426,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Export)]
     public async Task ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage()
     {
-        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateTileExportRasterStoreSubstitute());
         string? fileId = null;
         try
         {
@@ -3476,7 +3470,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Export)]
     public async Task ExportTiles_WithCompactStorageFormat_ReturnsBadRequest()
     {
-        var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
+        var fixture = await UseRasterStoreAsync(CreateTileExportRasterStoreSubstitute());
         try
         {
             // Compact Cache V2 / TPKX now negotiates the durable async path rather than the
@@ -3501,7 +3495,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     [Operation(Operations.Metadata)]
     public async Task KeyProperties_Get_ReturnsBandProperties()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(bandCount: 3));
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(bandCount: 3));
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -3528,7 +3522,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     {
         // The ArcGIS API for Python ImageryLayer.key_properties() issues an HTTP POST.
         // Without a POST route the server returns 405 and the SDK surfaces an empty {}.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(bandCount: 3));
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(bandCount: 3));
         try
         {
             using var content = new FormUrlEncodedContent(new[]
@@ -3561,7 +3555,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         // canonical Esri raster key-properties document: a flat object whose
         // BandProperties entries carry a BandName, plus cell-size and config
         // keyword properties. See ArcGIS REST "Key Properties" reference.
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(bandCount: 2));
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(bandCount: 2));
         try
         {
             var response = await fixture.Client.GetAsync(

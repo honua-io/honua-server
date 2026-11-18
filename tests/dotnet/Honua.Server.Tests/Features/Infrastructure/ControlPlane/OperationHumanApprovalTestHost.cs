@@ -123,6 +123,22 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
         Context.Request.Headers[OperationHumanApprovalAuthority.CapabilityHeader] = review.Capability;
     }
 
+    public void DeployReviewRequest(ApprovalTestHuman human, WorkflowOperationRecord operation, string action)
+    {
+        SetRequest(human, AdminHumanApprovalEndpointMetadata.Review);
+        _services.GetRequiredService<RequestTenantContext>().Set(operation.Audit.TenantId, TenantContextSource.Claim);
+        Context.Request.Path = $"/api/v1/admin/deploy/operations/{operation.OperationId}/approval-review/{action}";
+    }
+
+    public void DeployApproveRequest(ApprovalTestHuman human, WorkflowOperationRecord operation,
+        string action, OperationHumanApprovalReview review)
+    {
+        SetRequest(human, AdminHumanApprovalEndpointMetadata.Approve);
+        _services.GetRequiredService<RequestTenantContext>().Set(operation.Audit.TenantId, TenantContextSource.Claim);
+        Context.Request.Path = $"/api/v1/admin/deploy/operations/{operation.OperationId}/{action}";
+        Context.Request.Headers[OperationHumanApprovalAuthority.CapabilityHeader] = review.Capability;
+    }
+
     public static OperationProposalApprovalContext Approval(ApprovalTestHuman human) => new()
     {
         ApprovedBy = CanonicalSecurityActor.Resolve(human.Principal)!.ActorId,

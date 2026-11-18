@@ -180,6 +180,15 @@ class AttestationFreeCopy(unittest.TestCase):
         with self.assertRaises(ValueError):
             ri.platform_manifest(self.INDEX, "linux/arm64")
 
+    def test_resolves_an_index_to_the_runnable_manifest_and_keeps_a_single_manifest(self):
+        requested = "ghcr.io/honua-io/honua-server@sha256:" + "a" * 64
+        self.assertEqual("ghcr.io/honua-io/honua-server@sha256:" + "1" * 64,
+                         ri.resolve_scan_image(self.INDEX, requested, "linux/amd64"))
+        single = {"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json"}
+        self.assertEqual(requested, ri.resolve_scan_image(single, requested, "linux/arm64"))
+        with self.assertRaises(ValueError):
+            ri.resolve_scan_image(self.INDEX, "ghcr.io/honua-io/honua-server:nightly", "linux/amd64")
+
     @staticmethod
     def descriptor(media_type):
         return {"mediaType": media_type, "digest": "sha256:" + "3" * 64, "size": 123}

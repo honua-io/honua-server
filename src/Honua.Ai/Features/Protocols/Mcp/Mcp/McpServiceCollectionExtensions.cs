@@ -441,7 +441,7 @@ internal static class McpServiceCollectionExtensions
             McpTokenReplayScopeResolver>());
 
         // Server-push notifications over the session SSE stream:
-        // the publisher builds notifications/progress + */list_changed frames and
+        // the publisher builds notifications/message + */list_changed frames and
         // enqueues them onto the owning session; the progress bridge polls the
         // canonical job runtime and forwards progress to the session that started
         // the job. Both are process-wide singletons.

@@ -5,6 +5,7 @@
   "description": "Argument shape for the read-only composition-review tool (advertised name honua_validate_package). Inspects a map/app package's requirement coverage (data bindings, permissions, schema, CRS, capabilities, dependencies, approvals) and returns canonical findings without mutating server state. x-honua-reference-shape: tracks the reference implementation; the bare taxonomy models package review as a CapabilityCatalog + resource read.",
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "properties": {
     "contractVersion": {
       "type": "string",

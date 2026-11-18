@@ -6,8 +6,8 @@ using System.Text.Json.Nodes;
 
 namespace Honua.Core.Features.Publishing.Descriptors;
 
-// The cross-field rules of publication descriptor v1 that JSON Schema cannot express.
-// They assume a document the schema accepts.
+// The cross-field rules of an Export version that JSON Schema cannot express (docs/gis/schemas/stac-honua.v1.0.0.schema.json).
+// They run on the typed version, which ExportCollectionDocument reads from a collection document the schema accepts.
 public static class PublicationDescriptorRules
 {
     public const string CaptureId = "capture-id";
@@ -27,7 +27,7 @@ public static class PublicationDescriptorRules
         return Violations(node.AsObject());
     }
 
-    public static IReadOnlyList<string> Violations(JsonObject descriptor)
+    private static List<string> Violations(JsonObject descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
         var fields = descriptor["fields"]!.AsArray().Select(field => field!.AsObject()).ToList();

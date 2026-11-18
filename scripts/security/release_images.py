@@ -10,6 +10,7 @@ Subcommands:
   verdict              bind a Trivy inventory to one supported image and classify findings
   report               aggregate per-image verdicts into public and private summaries
   platform-manifest    pick one platform's manifest digest from a raw image index (stdin)
+  resolve-scan-image   print the runnable image ref to pull for one platform (stdin is the raw manifest)
   assert-single-manifest  fail unless a raw manifest (stdin) is a single image without attestations
 """
 
@@ -204,6 +205,23 @@ def report(verdicts, expected_keys, today):
 
 # ---------------------------------------------------------------- registry
 
+def resolve_scan_image(document, image, platform):
+    """Return the image reference a platform scan can pull and inspect.
+
+    A published multi-arch digest is an index. Inspecting that index reports no
+    operating system or architecture, and it also lists attestation manifests.
+    A single-manifest digest is returned unchanged. Callers keep the requested
+    digest: a release OpenVEX document has to name that digest as well as this one.
+    """
+    _require(isinstance(image, str) and IMAGE_PATTERN.fullmatch(image),
+             "An immutable honua-server image digest is required")
+    _require(platform in PLATFORMS, f"Unsupported platform: {platform!r}")
+    _require(isinstance(document, dict), "Manifest must be an object")
+    if "manifests" not in document:
+        return image
+    return f"{_vex.IMAGE_REPOSITORY}@{platform_manifest(document, platform)}"
+
+
 def platform_manifest(index, platform):
     _require(index.get("mediaType") in INDEX_MEDIA_TYPES, "Source is not an image index")
     os_name, arch = platform.split("/", 1)
@@ -276,6 +294,9 @@ def _build_parser():
     p.add_argument("--inventory", default=INVENTORY)
     p.add_argument("--today", default=datetime.date.today().isoformat())
     sub.add_parser("platform-manifest").add_argument("--platform", choices=PLATFORMS, required=True)
+    p = sub.add_parser("resolve-scan-image")
+    p.add_argument("--image", required=True)
+    p.add_argument("--platform", choices=PLATFORMS, required=True)
     sub.add_parser("assert-single-manifest")
     return parser
 
@@ -344,6 +365,10 @@ def _cmd_platform_manifest(args):
     print(platform_manifest(json.load(sys.stdin), args.platform))
 
 
+def _cmd_resolve_scan_image(args):
+    print(resolve_scan_image(json.load(sys.stdin), args.image, args.platform))
+
+
 def _cmd_assert_single_manifest(_args):
     assert_single_manifest(json.load(sys.stdin))
     print("single image manifest without attestations")
@@ -358,6 +383,7 @@ COMMANDS = {
     "verdict": _cmd_verdict,
     "report": _cmd_report,
     "platform-manifest": _cmd_platform_manifest,
+    "resolve-scan-image": _cmd_resolve_scan_image,
     "assert-single-manifest": _cmd_assert_single_manifest,
 }
 

@@ -19,7 +19,10 @@ permissions:
 
 jobs:
   select:
-    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    # Hosted, like PR Gate's runner-select: honua-light hosts only have the snap
+    # AWS CLI, which snap-confine refuses inside the runner sandbox, so every
+    # read failed as "host unreadable" there and all callers stayed hosted.
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       runner: ${{ steps.select.outputs.runner || toJSON(inputs.hosted-runner) }}

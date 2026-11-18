@@ -51,7 +51,6 @@ using Honua.Core.Features.Infrastructure.Health;
 using Honua.Server.Features.Identity;
 using Honua.Server.Features.Identity.Saml;
 using Honua.Server.Features.Identity.Scim;
-using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
@@ -143,7 +142,17 @@ if (Honua.Server.Hosting.ComposeExecutor.ComposeExecutorMode.Resolve(builder.Con
     return;
 }
 
-DataStoreBuildPolicy.Validate(builder.Configuration);
+if (Honua.Server.Startup.PrimaryCatalogStore.ProductionRefusal(builder.Configuration, builder.Environment) is { } catalogRefusal)
+{
+    Honua.Server.Hosting.StartupRefusal.Exit(catalogRefusal);
+    return;
+}
+
+if (!Honua.Server.Hosting.StartupRefusal.Passes(() => DataStoreBuildPolicy.Validate(builder.Configuration)))
+{
+    return;
+}
+
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
@@ -237,7 +246,7 @@ builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
     services => services.GetRequiredService<Honua.ControlPlane.OperationHumanApprovalAuthority>());
 
-var systemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"));
+var systemDatabaseConfigured = Honua.Server.Startup.SystemDatabaseComposition.IsConfigured(builder.Configuration);
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
     .GetValue<bool>(nameof(JobDurabilityOptions.RequireDurableStore));
@@ -259,7 +268,7 @@ if (tracingSection.Exists() || tracingEnabled)
 var durableKeyRing = OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     builder.Environment.IsDevelopment(),
     isTestEnvironment,
-    keyRingIsShared: !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")));
+    keyRingIsShared: systemDatabaseConfigured);
 if (durableKeyRing)
 {
     // The key ring lives in the system database so that every node unprotects what any node
@@ -320,9 +329,12 @@ if (durableKeyRing)
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
 // Only a host with no system database can still be stopped here.
-DurableJobSubstrateStartupGate.EnsureSatisfied(
+if (!Honua.Server.Hosting.StartupRefusal.Passes(() => DurableJobSubstrateStartupGate.EnsureSatisfied(
     new DurableJobSubstrateOptions { SystemDatabaseConfigured = systemDatabaseConfigured },
-    requireDurableJobStore);
+    requireDurableJobStore)))
+{
+    return;
+}
 
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>
@@ -1950,6 +1962,7 @@ app.MapServerFeatureEndpoints();
 #if !HONUA_EXCLUDE_GRPC
 // Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
+Honua.Server.Features.Protocols.Grpc.AttachmentDownloadEndpoints.MapAttachmentDownloadEndpoints(app);
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
     .RequireAdminAuthorization()
@@ -2007,11 +2020,6 @@ app.MapOgcTileCacheExportEndpoints();
 
 // Configure Esri tile/vector-tile cache package import + serving endpoints
 app.MapTileCachePackageEndpoints();
-
-if (isTestEnvironment)
-{
-    app.MapCrossServerConsumeProbeEndpoints();
-}
 
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();

@@ -89,6 +89,11 @@ class AdmissionTests(unittest.TestCase):
         for name, job in jobs.items():
             if name in excluded:
                 continue
+            if job.get("uses") == "./.github/workflows/advisory-runner-select.yml":
+                callee = yaml.safe_load((ROOT / ".github/workflows/advisory-runner-select.yml").read_text())
+                self.assertEqual(list(callee["jobs"]), ["select"], "the selector must stay one job")
+                bound += 1
+                continue
             self.assertNotIn("uses", job, "new reusable workflows need an explicit expanded bound")
             matrix = job.get("strategy", {}).get("matrix", {})
             if name == "postgres-compat":

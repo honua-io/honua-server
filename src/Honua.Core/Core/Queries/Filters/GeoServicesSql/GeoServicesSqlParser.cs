@@ -1159,24 +1159,16 @@ public sealed class GeoServicesSqlParser
                 if (Peek() == '\'')
                 {
                     Advance();
-                    if (Peek() == '\'')
+                    if (Peek() != '\'')
                     {
-                        Advance();
-                        builder.Append('\'');
-                        continue;
+                        AddToken(TokenType.String, builder.ToString());
+                        return;
                     }
-
-                    AddToken(TokenType.String, builder.ToString());
-                    return;
                 }
 
-                // Bound the literal size so an unbounded single-quoted payload cannot
-                // pin a large StringBuilder in memory before the closing quote arrives.
-                if (builder.Length >= FilterParserGuard.MaxStringLiteralLength)
-                {
-                    FilterParserGuard.EnsureStringLiteralLength(builder.Length + 1, "GeoServicesSQL string literal");
-                }
-
+                // Bound every decoded character, escaped quotes included, so a single-quoted
+                // payload cannot grow past the literal cap before the closing quote arrives.
+                FilterParserGuard.EnsureStringLiteralLength(builder.Length + 1, "GeoServicesSQL string literal");
                 builder.Append(Advance());
             }
 

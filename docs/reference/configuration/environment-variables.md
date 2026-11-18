@@ -37,7 +37,7 @@ The unattended allow-list is currently empty because no shipped actuator has pro
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ConnectionStrings__DefaultConnection` | — (**required**) | Primary PostgreSQL/PostGIS connection string. |
+| `ConnectionStrings__DefaultConnection` | — (**required** with the PostgreSQL/PostGIS primary) | Primary PostgreSQL/PostGIS connection string and system database. A host with a DuckDB or MySQL primary has no system database, whether or not this is set, and refuses to start outside Development and Test because the service and layer catalog is stored there. |
 | `DataSource__Provider` | `postgres` | Primary provider: `postgres` (read/write), `duckdb`, or `mysql` (read-only). |
 | `DuckDB__DatabasePath` | — | Path to the DuckDB database file (when `DataSource__Provider=duckdb`). |
 | `DuckDB__ReadOnly` | `true` | Open the DuckDB file read-only. |

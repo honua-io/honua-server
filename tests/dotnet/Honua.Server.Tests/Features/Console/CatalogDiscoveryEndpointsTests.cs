@@ -14,7 +14,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Console;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.RoleManagement)]
 public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime

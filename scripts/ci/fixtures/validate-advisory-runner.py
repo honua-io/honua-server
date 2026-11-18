@@ -117,7 +117,8 @@ esac
     def test_selector_trust_and_timeouts(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/advisory-runner-select.yml').read_text())
         job = workflow['jobs']['select']
-        self.assertIn('github.event.pull_request.head.repo.full_name == github.repository', job['runs-on'])
+        # honua-light hosts only offer the snap AWS CLI, which cannot start in the runner sandbox.
+        self.assertEqual(job['runs-on'], 'ubuntu-latest')
         self.assertEqual(job['outputs']['runner'], '${{ steps.select.outputs.runner || toJSON(inputs.hosted-runner) }}')
         checkout = job['steps'][0]
         self.assertEqual(checkout['id'], 'trusted-base')

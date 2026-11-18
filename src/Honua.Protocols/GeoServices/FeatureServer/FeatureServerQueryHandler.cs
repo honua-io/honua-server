@@ -3205,6 +3205,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 parsed = new ParsedHavingValue(0, text, null, null, null);
                 return true;
             case MetadataV2FieldType.DateTime:
+            case MetadataV2FieldType.TimestampOffset:
                 if (!TryParseHavingTimestamp(raw, out var timestamp))
                 {
                     error = $"having value for datetime field '{field}' must be an epoch-millisecond integer or a timestamp literal.";
@@ -3372,7 +3373,8 @@ internal sealed partial class FeatureServerQueryHandler(
         fieldType is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Double
-            or MetadataV2FieldType.Float;
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Decimal;
 
     private static bool TryParseStatisticType(string value, out StatisticType statisticType)
     {

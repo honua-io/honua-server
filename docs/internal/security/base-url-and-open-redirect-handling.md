@@ -5,7 +5,7 @@ result cannot be steered by an attacker-controlled `Host` header.
 
 ## Resolution rules
 
-`BaseUrlResolver.GetBaseUrl(...)` (in `Honua.Server.Features.Infrastructure`)
+`BaseUrlResolver.GetBaseUrl(...)` (in `Honua.Infrastructure.Helpers`)
 produces the base URL used by HATEOAS link generators and the OGC API
 Processes job-submission `Location` header. The resolution order is:
 
@@ -32,6 +32,8 @@ is no separate configuration for redirect-style responses.
 
 - OGC API Processes job submission (`POST /ogc/processes/processes/{processId}/execution`) — the `201 Created` response's `Location` header.
 - All HATEOAS link bodies (OGC API Features, Tiles, Records, etc.).
+- Form offline-policy links (`GET /api/v1/forms/{formId}/offline-policy`).
+- The ImageServer KML GroundOverlay `exportImage` href.
 
 ## Reviewer notes
 

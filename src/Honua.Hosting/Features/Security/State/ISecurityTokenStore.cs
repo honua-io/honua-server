@@ -14,7 +14,8 @@ internal enum SecurityTokenKind
     PortalToken,
     JobToken,
     TemporaryFile,
-    ConsoleEmbedToken
+    ConsoleEmbedToken,
+    AdminSessionBearerBinding
 }
 
 internal readonly record struct SecurityTokenKey(SecurityTokenKind Kind, string Value);

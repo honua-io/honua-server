@@ -34,6 +34,14 @@ def bind_identity(image, platform, revision, inspected):
             "imageId": metadata["Id"]}
 
 
+def note_requested_image(identity, requested):
+    """Record the caller-named digest when the scan pulled a different manifest."""
+    if not requested or requested == identity["image"]:
+        return identity
+    validate(requested, identity["platform"], identity["sourceRevision"])
+    return {**identity, "requestedImage": requested}
+
+
 def verdict(identity, inventory):
     if not isinstance(inventory, dict):
         raise ValueError("Trivy inventory must be an object")
@@ -76,8 +84,10 @@ def main():
     if mode == "validate":
         return 0
     if mode == "identity":
-        identity = bind_identity(image, platform, revision,
-                                 json.loads(Path("existing-image-inspect.json").read_text()))
+        identity = note_requested_image(
+            bind_identity(image, platform, revision,
+                          json.loads(Path("existing-image-inspect.json").read_text())),
+            os.environ.get("REQUESTED_IMAGE") or None)
         identity["workflowRun"] = f"{os.environ.get('GITHUB_SERVER_URL')}/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ.get('GITHUB_RUN_ID')}"
         Path("existing-image-identity.json").write_text(json.dumps(identity, indent=2) + "\n")
         return 0

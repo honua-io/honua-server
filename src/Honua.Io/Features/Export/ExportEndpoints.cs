@@ -381,7 +381,7 @@ internal static partial class ExportEndpoints
         // is a fixed-format hex string (no separators, never rooted), so this combine cannot
         // silently drop Path.GetTempPath().
         var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDir);
+        ExportScratch.Create(scratchDir);
         // SanitizeExportFilename strips path separators, drive/colon characters, and
         // traversal segments (FileUploadSecurity.SanitizeFileName), so the combined
         // segment cannot be rooted and cannot escape scratchDir.
@@ -534,10 +534,10 @@ internal static partial class ExportEndpoints
         MetadataV2FieldType.String => ExportFieldType.String,
         MetadataV2FieldType.Integer => ExportFieldType.Integer,
         MetadataV2FieldType.BigInteger => ExportFieldType.BigInteger,
-        MetadataV2FieldType.Double => ExportFieldType.Double,
+        MetadataV2FieldType.Double or MetadataV2FieldType.Decimal => ExportFieldType.Double,
         MetadataV2FieldType.Float => ExportFieldType.Float,
         MetadataV2FieldType.Boolean => ExportFieldType.Boolean,
-        MetadataV2FieldType.DateTime => ExportFieldType.DateTime,
+        MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => ExportFieldType.DateTime,
         MetadataV2FieldType.Date => ExportFieldType.Date,
         MetadataV2FieldType.Time => ExportFieldType.Time,
         MetadataV2FieldType.Json => ExportFieldType.Json,

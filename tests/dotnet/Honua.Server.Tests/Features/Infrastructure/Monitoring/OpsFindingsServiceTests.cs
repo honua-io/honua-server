@@ -651,13 +651,13 @@ public sealed partial class OpsFindingsServiceTests
     }
 
     [UnitTheory]
-    [InlineData(8, 0)]
-    [InlineData(1, 1)]
+    [InlineData(8, 1, 300)]
+    [InlineData(10, 10, 0)]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Evaluate_AnonymousAdmissionActive_ExplainsTemporaryLimit(int inFlight, int queued)
+    public async Task Evaluate_AnonymousAdmissionActive_ExplainsTemporaryLimit(int inFlight, int queued, double queueWaitMs)
     {
         var gate = Substitute.For<IRuntimeTunableAdmissionGate>();
-        gate.GetPressure().Returns(new DatabaseAdmissionPressure(inFlight, 10, queued, 0, 0));
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(inFlight, 10, queued, queueWaitMs, 0));
         var service = CreateService(admissionGate: gate);
 
         var findings = await service.EvaluateAsync();
@@ -674,7 +674,7 @@ public sealed partial class OpsFindingsServiceTests
     public async Task Evaluate_AnonymousAdmissionPressureClears_RemovesFindingDespitePastTimeouts()
     {
         var gate = Substitute.For<IRuntimeTunableAdmissionGate>();
-        gate.GetPressure().Returns(new DatabaseAdmissionPressure(8, 10, 0, 0, 0));
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(8, 10, 1, 300, 0));
         var service = CreateService(admissionGate: gate);
         Assert.Contains(await service.EvaluateAsync(), finding => finding.Rule == "anonymous-pressure-admission");
 

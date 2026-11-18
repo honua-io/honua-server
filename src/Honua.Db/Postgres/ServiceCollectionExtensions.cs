@@ -237,12 +237,14 @@ internal static partial class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
             new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider)),
             serviceProvider.GetRequiredService<IChangeTracker>()));
-        // One scoped store serves admission and the monthly notice outbox.
+        // One scoped store serves admission and the spend notice outboxes.
         services.AddScoped(provider => new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
             provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
         services.AddScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>(static provider =>
             provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
         services.AddScoped<Honua.Core.Features.Security.Admission.IAiMonthlyActorNoticeStore>(static provider =>
+            provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
+        services.AddScoped<Honua.Core.Features.Security.Admission.IAiIncidentNoticeStore>(static provider =>
             provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
 
         services.AddScoped<IAlertRuleRepository, PostgresAlertRuleRepository>();
@@ -446,10 +448,10 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetService<TimeProvider>(),
                 configuration["Database:Schema"]));
+        // The analysis content tables are created in honua whatever Database:Schema names.
         services.AddScoped<IAnalysisContentStore>(serviceProvider =>
             new PostgresAnalysisContentStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
 
         // Durable workflow package drafts, versions, and publications.
         // Replaces the in-memory store when PostGIS is composed, including the test host

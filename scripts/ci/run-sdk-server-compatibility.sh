@@ -747,7 +747,7 @@ require_dir "$DOTNET_DIR" "honua-sdk-dotnet"
         cp "$dotnet_global_json" "$smoke_dir/global.json"
     fi
     cd "$smoke_dir"
-    dotnet new console --framework net10.0 --output "$smoke_dir" >/dev/null
+    dotnet new console --framework net11.0 --output "$smoke_dir" >/dev/null
     smoke_project="$(find "$smoke_dir" -maxdepth 1 -name '*.csproj' -print -quit)"
     dotnet add "$smoke_project" reference "$dotnet_admin_project" >/dev/null
     cat > "$smoke_dir/Program.cs" <<'CS'
