@@ -312,13 +312,16 @@ internal static class SamlTestAssertions
         var nsmgr = new XmlNamespaceManager(document.NameTable);
         nsmgr.AddNamespace("saml", "urn:oasis:names:tc:SAML:2.0:assertion");
         var element = (XmlElement)document.SelectSingleNode($"//*[@ID='{referenceId}']")!;
+        // The replay store is shared across test hosts, so every signed message needs its own ID.
+        var uniqueId = referenceId + "-" + Guid.NewGuid().ToString("N");
+        element.SetAttribute("ID", uniqueId);
 
         using var rsa = parameters.Certificate.GetRSAPrivateKey()!;
         var signedXml = new SignedXml(element) { SigningKey = rsa };
         signedXml.SignedInfo!.CanonicalizationMethod = SignedXml.XmlDsigExcC14NTransformUrl;
         signedXml.SignedInfo.SignatureMethod = parameters.SignatureMethod;
 
-        var reference = new Reference("#" + referenceId);
+        var reference = new Reference("#" + uniqueId);
         reference.DigestMethod = parameters.DigestMethod;
         reference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
         reference.AddTransform(new XmlDsigExcC14NTransform());
