@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
@@ -34,7 +35,6 @@ internal static class ImageServerCogExport
     private const int MaxParallelReads = 8;
     private const int DefaultOutputDimension = 400;
     private const double EdgeTolerance = 1e-6;
-    private static readonly int[] WebMercatorSrids = [3857, 102100, 102113, 900913];
 
     // null unless the layer's imagery is only scanned COGs: the caller keeps its raster_data answer.
     public static async Task<ImageServerCogExportResult?> TryRenderAsync(
@@ -99,10 +99,10 @@ internal static class ImageServerCogExport
         var bboxSrid = SpatialReferenceHelpers.TryParseSrid(request.Request.BboxSr);
         return IsWebMercator(bboxSrid) && IsWebMercator(query.OutputSrid)
             ? null
-            : "Cloud COG layers export in Web Mercator; use bboxSR and imageSR 3857 or 102100.";
+            : "Cloud COG layers export in Web Mercator; use bboxSR and imageSR 3857 (102100 is the same system).";
     }
 
-    internal static bool IsWebMercator(int? srid) => srid is null || WebMercatorSrids.Contains(srid.Value);
+    internal static bool IsWebMercator(int? srid) => srid is null || SpatialReferenceExtensions.IsWebMercatorSrid(srid.Value);
 
     // Later registrations are drawn first so the first registration holding a pixel wins, as in
     // the tile route's layer lookup; transparent (NoData) pixels let the next COG show through.

@@ -51,7 +51,7 @@ internal static class ImageServerCogIdentify
     // Mercator extent.
     internal static string? Unsupported(ImageServerCogIdentifyRequest request)
         => !ImageServerCogExport.IsWebMercator(request.Srid)
-            ? "Identify on cloud COG layers takes a Web Mercator point; use sr 3857 or 102100."
+            ? "Identify on cloud COG layers takes a Web Mercator point; use sr 3857 (102100 is the same system)."
             : request.HasRenderingRule
                 ? "renderingRule is not applied to cloud COG layers; identify reports their raw samples."
                 : null;
