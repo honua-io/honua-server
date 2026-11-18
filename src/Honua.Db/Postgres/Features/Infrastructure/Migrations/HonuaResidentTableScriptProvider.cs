@@ -8,9 +8,10 @@ using DbUp.Engine.Transactions;
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
 // Some tables are always created in the honua schema whatever Database:Schema names: the feature
-// change log (the change-tracking trigger writes it there) and the analysis content items. A few
-// migrations reach them through $HonuaSchema$, which under a configured schema names a table that
-// does not exist. Their hashes are pinned, so those references are bound back to honua here.
+// change log (the change-tracking trigger writes it there), the analysis content items and the
+// RBAC role store. A few migrations reach them through $HonuaSchema$, which under a configured
+// schema names a table that does not exist. Their hashes are pinned, so those references are
+// bound back to honua here.
 internal sealed class HonuaResidentTableScriptProvider(IScriptProvider source) : IScriptProvider
 {
     internal const string ResidentSchema = "honua";
@@ -18,7 +19,8 @@ internal sealed class HonuaResidentTableScriptProvider(IScriptProvider source) :
     private static readonly Dictionary<string, Regex> _residentReferences = new(StringComparer.Ordinal)
     {
         ["Honua.Server.Migrations.157_FeatureChangeRealtimeStream.sql"] = ReferencesTo("feature_changes", "feature_change_outbox"),
-        ["Honua.Server.Migrations.199_AddAnalysisContentTenantOwnership.sql"] = ReferencesTo("analysis_content_items")
+        ["Honua.Server.Migrations.199_AddAnalysisContentTenantOwnership.sql"] = ReferencesTo("analysis_content_items"),
+        ["Honua.Server.Migrations.215_AddConsoleAccessEnvironmentOwnership.sql"] = ReferencesTo("rbac_role_permissions")
     };
 
     public IEnumerable<SqlScript> GetScripts(IConnectionManager connectionManager)

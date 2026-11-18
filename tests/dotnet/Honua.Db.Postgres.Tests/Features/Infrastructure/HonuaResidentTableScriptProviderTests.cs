@@ -44,6 +44,24 @@ public sealed class HonuaResidentTableScriptProviderTests
     }
 
     [Fact]
+    public void Render_ConsoleAccessMigration_BindsRolePermissionsToHonua()
+    {
+        var script = new SqlScript("Honua.Server.Migrations.215_AddConsoleAccessEnvironmentOwnership.sql", """
+            INSERT INTO $HonuaSchema$.rbac_role_permissions (role_id, service, layer, operation)
+            SELECT role_id, service, layer, 'environment-membership'
+            FROM $HonuaSchema$.rbac_role_permissions
+            WHERE lower(service) = 'console-access' AND operation = 'workspace-membership'
+            ON CONFLICT (role_id, service, layer, operation) DO NOTHING;
+            """);
+
+        var rendered = HonuaResidentTableScriptProvider.Render(script).Contents;
+
+        Assert.Contains("INSERT INTO honua.rbac_role_permissions", rendered, StringComparison.Ordinal);
+        Assert.Contains("FROM honua.rbac_role_permissions", rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("$HonuaSchema$", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Render_UnlistedScript_IsUnchanged()
     {
         var script = new SqlScript("Honua.Server.Migrations.999_Future.sql",
