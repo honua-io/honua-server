@@ -444,10 +444,9 @@ public sealed partial class ComposeProposalExecutorTests
         using var host = new OperationHumanApprovalTestHost();
         var requester = await host.CreateHumanAsync("requester");
         var approver = await host.CreateHumanAsync("approver");
-        var store = new MemoryWorkflows();
-        var service = ComposeServiceRequiringApproval(client, release, host, store);
+        var compose = ComposeServiceRequiringApproval(client, release, host);
 
-        var created = await service.CreateAsync(
+        var created = await compose.Service.CreateAsync(
             "compose-local", release, prior, "agent", "converge", "compose-unit-create", "corr",
             OperationPriority.Normal, submitImmediately: true, parameterOverrides: null, principal: requester.Principal);
 
@@ -455,20 +454,21 @@ public sealed partial class ComposeProposalExecutorTests
         Assert.Equal(WorkflowOperationStatus.AwaitingApproval, created.Status);
         Assert.Equal(["status"], client.Ops);
 
-        var same = await Assert.ThrowsAsync<ResourceConflictException>(() => SubmitReviewedAsync(service, host, requester, store, created.OperationId));
+        var same = await Assert.ThrowsAsync<ResourceConflictException>(() => SubmitReviewedAsync(compose, requester, created.OperationId));
         Assert.Contains("Separation of duties", same.Message, StringComparison.Ordinal);
         Assert.Equal(["status"], client.Ops);
 
-        var submitted = await SubmitReviewedAsync(service, host, approver, store, created.OperationId);
+        var submitted = await SubmitReviewedAsync(compose, approver, created.OperationId);
         Assert.NotNull(submitted);
         Assert.Equal(WorkflowOperationStatus.Reconciling, submitted.Status);
         Assert.Equal(prior, submitted.Deploy!.CurrentRevision);
         Assert.Equal(["status", "status", "converge"], client.Ops);
     }
 
-    private static DeployWorkflowService ComposeServiceRequiringApproval(
-        RecordingClient client, string release, OperationHumanApprovalTestHost host, MemoryWorkflows store)
+    private static ReviewedCompose ComposeServiceRequiringApproval(
+        RecordingClient client, string release, OperationHumanApprovalTestHost host)
     {
+        var store = new MemoryWorkflows();
         var targets = new MemoryTargets(new DeployTargetDefinition
         {
             TargetId = "compose-local",
@@ -479,27 +479,29 @@ public sealed partial class ComposeProposalExecutorTests
             ArtifactReference = release,
             RequiresApproval = true
         });
-        return new DeployWorkflowService(
+        var service = new DeployWorkflowService(
             targets,
             [store],
             [Backend(client, release, "/tmp/honua-compose-unit.sock")],
             new NotRequiredApproval(),
             NullLogger<DeployWorkflowService>.Instance,
             humanApprovalAuthority: host.Authority);
+        return new ReviewedCompose(service, host, store);
     }
 
     // Each submission carries the submitting person's own current review of the plan.
     private static async Task<WorkflowOperationRecord?> SubmitReviewedAsync(
-        DeployWorkflowService service, OperationHumanApprovalTestHost host, ApprovalTestHuman human,
-        MemoryWorkflows store, string operationId)
+        ReviewedCompose compose, ApprovalTestHuman human, string operationId)
     {
-        var operation = (await store.GetAsync(operationId))!;
-        host.DeployReviewRequest(human, operation, "submit");
-        var review = await host.Authority.OpenDeployReviewAsync(operation, "submit", host.Context);
-        host.DeployApproveRequest(human, operation, "submit", review);
-        return await service.SubmitAsync(
+        var operation = (await compose.Store.GetAsync(operationId))!;
+        compose.Host.DeployReviewRequest(human, operation, "submit");
+        var review = await compose.Host.Authority.OpenDeployReviewAsync(operation, "submit", compose.Host.Context);
+        compose.Host.DeployApproveRequest(human, operation, "submit", review);
+        return await compose.Service.SubmitAsync(
             operationId, OperationHumanApprovalTestHost.Approval(human).ApprovedBy, "reviewed", CancellationToken.None);
     }
+
+    private sealed record ReviewedCompose(DeployWorkflowService Service, OperationHumanApprovalTestHost Host, MemoryWorkflows Store);
 
     [UnitTest]
     public async Task ApprovedProposal_WithoutTargetApprovalFlag_PreservesApprover()

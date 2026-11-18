@@ -32,20 +32,7 @@ public sealed partial class RowLevelSecurityEndpointsTests
         Guid? policyId = null;
         try
         {
-            using var response = await admin.PostAsJsonAsync("/api/v1/admin/rls-policies", new
-            {
-                role = "*",
-                service = "*",
-                layer = "*",
-                attribute = "category",
-                claimType = "category",
-                filterExpression = mode == "area" ? null : "name = 'allowed'",
-                areaGeometry = mode == "expression" ? null : PolicyArea
-            });
-            var payload = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
-            using var document = JsonDocument.Parse(payload);
-            policyId = document.RootElement.GetProperty("data").GetProperty("policyId").GetGuid();
+            policyId = await CreateBoundaryPolicyAsync(admin, mode);
 
             var rows = await QueryObjectIdsByCategoryAsync("boundary");
             rows.Select(row => row.ObjectId).Should().BeEquivalentTo(expected);
@@ -67,6 +54,24 @@ public sealed partial class RowLevelSecurityEndpointsTests
             }
             await _fixture.Postgres.ExecuteAsync($"DELETE FROM \"{_fixture.CurrentSchema}\".features WHERE layer_id = 0 AND objectid BETWEEN 910 AND 912");
         }
+    }
+
+    private static async Task<Guid> CreateBoundaryPolicyAsync(HttpClient admin, string mode)
+    {
+        using var response = await admin.PostAsJsonAsync("/api/v1/admin/rls-policies", new
+        {
+            role = "*",
+            service = "*",
+            layer = "*",
+            attribute = "category",
+            claimType = "category",
+            filterExpression = mode == "area" ? null : "name = 'allowed'",
+            areaGeometry = mode == "expression" ? null : PolicyArea
+        });
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
+        using var document = JsonDocument.Parse(payload);
+        return document.RootElement.GetProperty("data").GetProperty("policyId").GetGuid();
     }
 
     [IntegrationTheory]
