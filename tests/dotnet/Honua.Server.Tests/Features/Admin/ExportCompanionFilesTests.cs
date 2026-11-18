@@ -149,17 +149,29 @@ public sealed class ExportCompanionFilesTests
         ],
         Identity = new PublicationIdentity("tmk", "tmk", "tmk"),
         Geometry = new PublicationGeometry("geometry", "wkb", ["MultiPolygon"]),
-        Artifacts = new PublicationArtifacts(
-            new PmtilesPublicationArtifact
-            {
-                Href = "parcels.pmtiles", Bytes = 10, Sha256 = "aa", CaptureId = "capture-1", Fields = ["objectid", "tmk"],
-                VectorLayer = "layer", Minzoom = 0, Maxzoom = 14
-            },
-            new GeoparquetPublicationArtifact
-            {
-                Href = "parcels.parquet", Bytes = 20, Sha256 = "bb", CaptureId = "capture-1", Fields = ["objectid", "tmk"]
-            }),
+        Artifacts = Artifacts(),
         Validation = new PublicationValidation(PublicationValidation.Passed, CapturedAt, []),
         Links = new PublicationLinks("item.json")
     };
+
+    private static PublicationArtifacts Artifacts() => new(
+        new PmtilesPublicationArtifact
+        {
+            Href = "parcels.pmtiles",
+            Bytes = 10,
+            Sha256 = "aa",
+            CaptureId = "capture-1",
+            Fields = ["objectid", "tmk"],
+            VectorLayer = "layer",
+            Minzoom = 0,
+            Maxzoom = 14
+        },
+        new GeoparquetPublicationArtifact
+        {
+            Href = "parcels.parquet",
+            Bytes = 20,
+            Sha256 = "bb",
+            CaptureId = "capture-1",
+            Fields = ["objectid", "tmk"]
+        });
 }
