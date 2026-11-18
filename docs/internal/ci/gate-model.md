@@ -267,15 +267,15 @@ Stage 3 details:
 
 ## PR Lane (Required Checks)
 
-These workflows are merge-blocking for all PRs to trunk:
-
-Every other `pull_request` or `pull_request_target` workflow is optional and
-path-filtered, apart from the required Clean code check and three cheap
-control workflows that run on every event: Review Gate Attestation, auto-merge
-ready pull requests, and Close external pull requests. Runner label lint reads only
+Besides the required checks below and the required Clean code check, every
+`pull_request` or `pull_request_target` workflow is optional and path-filtered,
+apart from two cheap control workflows that run on every event: auto-merge
+ready pull requests and Close external pull requests. Runner label lint reads only
 `.github/workflows`, so it runs only when a pull request or trunk push changes
 that directory. A new optional pull request workflow needs a `paths` filter
 naming what can change its result.
+
+These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
