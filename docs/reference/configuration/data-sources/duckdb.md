@@ -13,13 +13,14 @@ DuckDB) and served as a static dataset.
 
 - **Reference layers** — static datasets (parcels, boundaries, zoning) that change infrequently
 - **Analytical exports** — pre-computed analytics materialized into DuckDB tables
-- **Edge / air-gapped deployments** — single-file database, no external database dependency
 - **Prototyping** — quick setup without PostgreSQL infrastructure
 
 DuckDB is **not suitable** for write-heavy or real-time workloads. For editable feature layers, use
 the PostgreSQL provider.
 
 ## Configuration
+
+The service and layer catalog is stored only in a PostgreSQL/PostGIS system database, so a production host whose primary data source is DuckDB refuses to start and says so.
 
 Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `appsettings.json`:
 

@@ -225,8 +225,11 @@ publication is refused with a typed `dependency-unavailable` receipt naming
 `workflow-definition-store`, and no publication record is written. Publish to
 another target, or configure the system database.
 
-A host started without a system database (one whose primary data source is
-DuckDB or MySQL, which use their own connection settings) still serves every
+A production host whose primary data source is DuckDB or MySQL has no system
+database and refuses to start, because the service and layer catalog is stored
+only in the PostgreSQL/PostGIS system database.
+
+A host started without a system database still serves every
 protocol, and the admin REST API and Console still connect sources, publish layers, configure
 services, style and render. It refuses the following with a typed
 `dependency-unavailable` receipt naming `system-database`:

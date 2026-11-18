@@ -143,7 +143,17 @@ if (Honua.Server.Hosting.ComposeExecutor.ComposeExecutorMode.Resolve(builder.Con
     return;
 }
 
-DataStoreBuildPolicy.Validate(builder.Configuration);
+if (Honua.Server.Startup.PrimaryCatalogStore.ProductionRefusal(builder.Configuration, builder.Environment) is { } catalogRefusal)
+{
+    Honua.Server.Hosting.StartupRefusal.Exit(catalogRefusal);
+    return;
+}
+
+if (!Honua.Server.Hosting.StartupRefusal.Passes(() => DataStoreBuildPolicy.Validate(builder.Configuration)))
+{
+    return;
+}
+
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
@@ -320,9 +330,12 @@ if (durableKeyRing)
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
 // Only a host with no system database can still be stopped here.
-DurableJobSubstrateStartupGate.EnsureSatisfied(
+if (!Honua.Server.Hosting.StartupRefusal.Passes(() => DurableJobSubstrateStartupGate.EnsureSatisfied(
     new DurableJobSubstrateOptions { SystemDatabaseConfigured = systemDatabaseConfigured },
-    requireDurableJobStore);
+    requireDurableJobStore)))
+{
+    return;
+}
 
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>
