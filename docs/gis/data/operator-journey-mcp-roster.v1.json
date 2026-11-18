@@ -85,6 +85,8 @@
       "mode": "execute",
       "inputFields": [
         "assumeRoleArn",
+        "connectionId",
+        "key",
         "overwriteExisting",
         "sourceSrid",
         "sourceUri",

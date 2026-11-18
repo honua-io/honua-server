@@ -34,7 +34,8 @@ public sealed class ObjectStorageConnectionEndpointsTests(ObjectStorageConnectio
         first.GetProperty("externalId").GetString().Should().MatchRegex("^[0-9a-f]{64}$");
         second.GetProperty("externalId").GetString().Should().NotBe(first.GetProperty("externalId").GetString());
         first.GetProperty("roleNamePrefix").GetString().Should().Be("honua-connection-");
-        first.TryGetProperty("quickCreateUrl", out _).Should().BeFalse("no template URL is configured");
+        (first.TryGetProperty("quickCreateUrl", out var quickCreate) ? quickCreate.ValueKind : JsonValueKind.Null)
+            .Should().Be(JsonValueKind.Null, "no template URL is configured");
     }
 
     [IntegrationTest]
