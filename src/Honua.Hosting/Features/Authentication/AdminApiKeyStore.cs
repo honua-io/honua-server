@@ -114,11 +114,12 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
 
         var now = _timeProvider.GetUtcNow();
         var generated = GenerateKeyMaterial();
+        var (hash, salt) = AdminApiKeyHashing.HashSalted(generated);
         var record = new AdminApiKeyRecord(
             Guid.NewGuid(),
             name,
             CreateDisplayPrefix(generated),
-            AdminApiKeyHashing.HashLegacy(generated),
+            hash,
             NormalizePermissions(permissions),
             now,
             now,
@@ -128,7 +129,8 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             RevokedAt: null,
             createdBy,
             AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
-            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges),
+            salt);
 
         if (!_keys.TryAdd(record.Id, record))
         {
@@ -162,11 +164,12 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             }
 
             var generated = GenerateKeyMaterial();
+            var (hash, salt) = AdminApiKeyHashing.HashSalted(generated);
             var updated = existing with
             {
                 KeyPrefix = CreateDisplayPrefix(generated),
-                KeyHash = AdminApiKeyHashing.HashLegacy(generated),
-                KeySalt = null,
+                KeyHash = hash,
+                KeySalt = salt,
                 UpdatedAt = now,
                 RotatedAt = now,
                 LastUsedAt = null,
@@ -303,11 +306,12 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         }
 
         var now = _timeProvider.GetUtcNow();
+        var (hash, salt) = AdminApiKeyHashing.HashSalted(keyMaterial);
         var record = new AdminApiKeyRecord(
             Guid.NewGuid(),
             name,
             CreateDisplayPrefix(keyMaterial),
-            AdminApiKeyHashing.HashLegacy(keyMaterial),
+            hash,
             NormalizePermissions(permissions),
             now,
             now,
@@ -317,7 +321,8 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             RevokedAt: null,
             createdBy,
             AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
-            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges),
+            salt);
 
         if (!_keys.TryAdd(record.Id, record))
         {

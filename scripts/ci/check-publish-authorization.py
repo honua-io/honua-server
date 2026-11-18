@@ -11,7 +11,8 @@ A trunk test in `if:` is not enough: GitHub compares strings without case, so
 the ref exactly. Any status function (success(), always(), cancelled(), failure()) replaces the
 implicit success() check, so such a job inherits authorization only when a required conjunct of its
 `if:` is success() or that need's `result == 'success'`.
-The authorization job takes only literal tag globs that start with a letter or digit.
+The authorization job takes only tag globs that a repository tag ruleset protects
+(PROTECTED_TAG_GLOBS); keep that list equal to the rulesets' patterns.
 A job that cannot meet a rule yet is listed with its reason in
 scripts/ci/publish-authorization-exceptions.json. An exception for a rule the job meets, or for
 a job that does not publish, fails the check, so the list only shrinks.
@@ -29,7 +30,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 AUTHORIZER = './.github/workflows/publish-authorization.yml'
 STATUS_FUNCTION = re.compile(r'\b(?:success|always|cancelled|failure)\s*\(', re.IGNORECASE)
-LITERAL_TAG_GLOB = re.compile(r'^[A-Za-z0-9][^\s$]*$')
+# Tag globs the 'Immutable server publication tags' ruleset covers. A wider glob such as v* would
+# let a tag outside the ruleset pass the authorization job.
+PROTECTED_TAG_GLOBS = frozenset({'v*.*.*', 'honua-core-v*'})
 RULES = ('authorization', 'environment')
 PUBLISHING_ACTIONS = ('softprops/action-gh-release@', 'actions/deploy-pages@', 'pypa/gh-action-pypi-publish@')
 PUBLISHING_COMMANDS = re.compile(
@@ -135,8 +138,9 @@ def _tag_pattern_problems(name: str, jobs: dict) -> list[str]:
         if (job or {}).get('uses') != AUTHORIZER:
             continue
         patterns = str(((job or {}).get('with') or {}).get('tag-patterns', ''))
-        if not all(LITERAL_TAG_GLOB.match(pattern) for pattern in patterns.split()):
-            problems.append(f'{name}:{job_id}: tag-patterns {patterns!r} must be literal globs that start with a letter or digit')
+        if not set(patterns.split()) <= PROTECTED_TAG_GLOBS:
+            allowed = ' '.join(sorted(PROTECTED_TAG_GLOBS))
+            problems.append(f'{name}:{job_id}: tag-patterns {patterns!r} may name only ruleset-protected tag globs ({allowed})')
     return problems
 
 

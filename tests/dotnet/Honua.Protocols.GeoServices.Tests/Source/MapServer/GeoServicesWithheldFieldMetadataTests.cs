@@ -70,6 +70,18 @@ public sealed class GeoServicesWithheldFieldMetadataTests(GeoServicesWithheldFie
         layer.GetRawText().Should().NotContain("notes").And.NotContain("Confidential");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
+    public async Task MapServerLegend_ListsNoClassOfMaskedField()
+    {
+        using var document = JsonDocument.Parse(await GetOkAsync("/rest/services/test/MapServer/legend?f=json"));
+        var legend = document.RootElement.GetProperty("layers")[0].GetProperty("legend");
+
+        legend.GetArrayLength().Should().Be(1, "a renderer keyed on a withheld field shows one default class");
+        legend.GetRawText().Should().NotContain("Confidential");
+    }
+
     private async Task<string> GetOkAsync(string path)
     {
         using var response = await _app.Client.GetAsync(path);
@@ -95,7 +107,8 @@ public sealed class GeoServicesWithheldFieldMetadataFixture : IAsyncLifetime
             {
                 ["drawingInfo"] = JsonElement.Parse("""
                     {"renderer":{"type":"uniqueValue","field1":"notes",
-                     "uniqueValueInfos":[{"value":"Confidential","label":"Confidential"}]}}
+                     "uniqueValueInfos":[{"value":"Confidential","label":"Confidential",
+                       "symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[230,0,0,255],"size":8}}]}}
                     """),
                 ["popupInfo"] = JsonElement.Parse("""{"title":"{notes}"}"""),
             },

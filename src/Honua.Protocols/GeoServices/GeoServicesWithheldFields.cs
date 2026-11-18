@@ -45,6 +45,21 @@ internal static partial class GeoServicesWithheldFields
         return resource.WithSchemaFieldsHidden(masked);
     }
 
+    // Hidden fields plus every field the caller's masks name, including masked names the schema does not declare.
+    public static async Task<IReadOnlySet<string>> WithheldFieldNamesAsync(
+        HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(resource);
+        var withheld = new HashSet<string>(resource.HiddenSchemaFieldNames(), StringComparer.OrdinalIgnoreCase);
+        if (context.RequestServices.GetService<IFieldMaskSource>() is { } masks)
+        {
+            withheld.UnionWith(await masks.ResolveAsync(resource, cancellationToken).ConfigureAwait(false));
+        }
+
+        return withheld;
+    }
+
     // A renderer, label class or popup that names a withheld field would disclose it, and a class renderer its values.
     public static JsonElement? WithoutWithheldReferences(JsonElement? document, MetadataV2Object schemaResource)
     {
@@ -62,6 +77,13 @@ internal static partial class GeoServicesWithheldFields
 
         var trimmed = WithoutWithheldEntries(value, withheld);
         return References(trimmed, null, withheld) ? null : trimmed;
+    }
+
+    // True when a renderer, label class or popup document names one of the withheld fields.
+    public static bool NamesWithheldField(JsonElement document, IReadOnlySet<string> withheld)
+    {
+        ArgumentNullException.ThrowIfNull(withheld);
+        return References(document, null, withheld);
     }
 
     // A time extent over a withheld field would disclose that field's values.

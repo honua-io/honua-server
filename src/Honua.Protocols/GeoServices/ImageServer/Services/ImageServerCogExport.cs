@@ -143,9 +143,12 @@ internal static class ImageServerCogExport
     internal sealed record TileRead(int Order, CogRegistration Registration, TileAddress Tile);
 
     // Reads tiles through the tile route's resolver. Each COG's first tile is read alone so its
-    // metadata scan is cached before the rest are read in parallel.
-    private sealed record CogTileSource(ICogTileResolver Resolver, ILogger Logger)
+    // metadata scan is cached before the rest are read in parallel. Format overrides the rendered
+    // tile format (statistics read raw samples).
+    internal sealed record CogTileSource(ICogTileResolver Resolver, ILogger Logger)
     {
+        public RasterFormat? Format { get; init; }
+
         public async Task<ConcurrentDictionary<TileRead, byte[]>> ReadAllAsync(IReadOnlyList<TileRead> reads, CancellationToken cancellationToken)
         {
             var tiles = new ConcurrentDictionary<TileRead, byte[]>();
@@ -176,7 +179,7 @@ internal static class ImageServerCogExport
         // does not fail the export.
         private async Task<byte[]?> TryReadAsync(TileRead read, CancellationToken cancellationToken)
         {
-            var format = read.Registration.Metadata!.Compression == "JPEG" ? RasterFormat.JPEG : RasterFormat.PNG;
+            var format = Format ?? (read.Registration.Metadata!.Compression == "JPEG" ? RasterFormat.JPEG : RasterFormat.PNG);
             try
             {
                 var result = await Resolver.GetTileAsync(read.Registration, read.Tile.Z, read.Tile.Y, read.Tile.X, format, cancellationToken)

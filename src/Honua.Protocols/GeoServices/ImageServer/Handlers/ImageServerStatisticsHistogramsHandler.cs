@@ -21,6 +21,8 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
     private const int DefaultBinCount = 256;
 
+    private static readonly string[] CogUnappliedParameters = ["geometry", "renderingRule", "mosaicRule", "time"];
+
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerStatisticsHistogramsHandler> _logger;
@@ -208,8 +210,8 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     cancellationToken);
                 if (selected.Length == 0)
                 {
-                    ImageServerLog.NoRastersFound(_logger, layerId);
-                    return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+                    var cogRequest = new ImageServerCogStatisticsRequest(new(snapshot, resolved.Publication, []), bands, binCount) { Unsupported = CogUnsupported(values) };
+                    return await AnswerFromCogsAsync(context, new CogStatisticsCall(layerId, cogRequest, (histogramsOnly ? StatisticsResponseKind.HistogramsOnly : StatisticsResponseKind.StatisticsAndHistograms)), cancellationToken).ConfigureAwait(false);
                 }
 
                 targetRasters.AddRange(selected);
@@ -270,24 +272,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
             ImageServerLog.StatisticsHistogramsComputed(_logger, layerId, statisticsList.Count);
             scope.SetSuccess(histogramsOnly ? histogramsList.Count : statisticsList.Count);
-
-            if (histogramsOnly)
-            {
-                var histogramsResponse = new ComputeHistogramsResponse
-                {
-                    Histograms = histogramsList.ToArray(),
-                };
-
-                return Results.Json(histogramsResponse, ImageServerJsonContext.Default.ComputeHistogramsResponse);
-            }
-
-            var response = new ComputeStatisticsHistogramsResponse
-            {
-                Statistics = statisticsList.ToArray(),
-                Histograms = histogramsList.ToArray(),
-            };
-
-            return Results.Json(response, ImageServerJsonContext.Default.ComputeStatisticsHistogramsResponse);
+            return new BandResults(statisticsList, histogramsList, (histogramsOnly ? StatisticsResponseKind.HistogramsOnly : StatisticsResponseKind.StatisticsAndHistograms)).ToResult();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -304,6 +289,59 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 context,
                 "An error occurred while computing statistics and histograms.");
         }
+    }
+
+    // A layer whose imagery is only registered COGs answers from the COGs' overviews; any other
+    // layer with nothing selected keeps the not-found answer.
+    private async Task<IResult> AnswerFromCogsAsync(HttpContext context, CogStatisticsCall call, CancellationToken cancellationToken)
+    {
+        var cogs = await ImageServerCogStatistics.TryComputeAsync(context, call.Request, cancellationToken).ConfigureAwait(false);
+        if (cogs is null)
+        {
+            ImageServerLog.NoRastersFound(_logger, call.LayerId);
+            return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+        }
+
+        if (cogs.Refusal is { } refusal)
+        {
+            return refusal;
+        }
+
+        var results = new BandResults([], [], call.Kind);
+        AppendAlignedBandResults(results.Statistics, results.Histograms, call.Request.Bands, cogs.Statistics, cogs.Histograms);
+        ImageServerLog.StatisticsHistogramsComputed(_logger, call.LayerId, results.Statistics.Count);
+        return results.ToResult();
+    }
+
+    // The COG path reads whole overviews of every registered COG with no rendering.
+    internal static string? CogUnsupported(IReadOnlyDictionary<string, StringValues> values)
+    {
+        var applied = CogUnappliedParameters
+            .Where(name => !string.IsNullOrWhiteSpace(ImageServerRequestValues.GetString(values, name)))
+            .ToArray();
+        return applied.Length == 0
+            ? null
+            : $"{string.Join(", ", applied)} {(applied.Length == 1 ? "is" : "are")} not applied to cloud COG layers; their statistics describe every registered COG.";
+    }
+
+    private enum StatisticsResponseKind
+    {
+        StatisticsAndHistograms,
+        HistogramsOnly,
+    }
+
+    private sealed record CogStatisticsCall(int LayerId, ImageServerCogStatisticsRequest Request, StatisticsResponseKind Kind);
+
+    private sealed record BandResults(List<BandStatistic> Statistics, List<BandHistogram> Histograms, StatisticsResponseKind Kind)
+    {
+        public IResult ToResult()
+            => Kind == StatisticsResponseKind.HistogramsOnly
+                ? Results.Json(
+                    new ComputeHistogramsResponse { Histograms = Histograms.ToArray() },
+                    ImageServerJsonContext.Default.ComputeHistogramsResponse)
+                : Results.Json(
+                    new ComputeStatisticsHistogramsResponse { Statistics = Statistics.ToArray(), Histograms = Histograms.ToArray() },
+                    ImageServerJsonContext.Default.ComputeStatisticsHistogramsResponse);
     }
 
     private static void AppendAlignedBandResults(

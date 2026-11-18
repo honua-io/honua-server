@@ -202,28 +202,18 @@ internal static partial class MapServerEndpoints
                 styleLayers = stylePlan.StyleLayers;
             }
 
-            List<LegendEntry> entries;
-            if (layer.DrawingInfoJson is { } drawingInfoJson &&
-                TryBuildClassifiedRendererEntries(
-                    drawingInfoJson,
-                    layer,
-                    geoServicesStyleConverter,
-                    swatchWidth,
-                    swatchHeight,
-                    out var classifiedEntries,
-                    out var classifiedError))
+            var withheldFields = await GeoServicesWithheldFields.WithheldFieldNamesAsync(context, layer.Resource, cancellationToken)
+                .ConfigureAwait(false);
+            var (entries, classifiedError) = BuildLayerLegendEntries(layer, styleLayers, new LegendRenderOptions
             {
-                if (classifiedError is not null)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, classifiedError);
-                }
-
-                entries = classifiedEntries!;
-            }
-            else
+                WithheldFields = withheldFields,
+                StyleConverter = geoServicesStyleConverter,
+                SwatchWidth = swatchWidth,
+                SwatchHeight = swatchHeight,
+            });
+            if (classifiedError is not null)
             {
-                entries = TryBuildSavedClassifiedRendererEntries(layer, geoServicesStyleConverter, swatchWidth, swatchHeight)
-                    ?? BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);
+                return StandardErrorHelpers.CreateBadRequest(context, classifiedError);
             }
 
             legendLayers.Add(new LegendLayerInfo
@@ -332,11 +322,49 @@ internal static partial class MapServerEndpoints
         return true;
     }
 
+    // How one request draws its legend: the fields withheld from the caller for this layer and the swatch size.
+    private sealed record LegendRenderOptions
+    {
+        public required IReadOnlySet<string> WithheldFields { get; init; }
+
+        public required IGeoServicesStyleConverter StyleConverter { get; init; }
+
+        public required int SwatchWidth { get; init; }
+
+        public required int SwatchHeight { get; init; }
+    }
+
+    private readonly record struct LayerLegendResult(List<LegendEntry> Entries, string? Error);
+
+    // A request's own dynamic renderer lists the classes the caller supplied; a saved renderer or style
+    // keyed on a field withheld from this caller lists no class values of that field.
+    private static LayerLegendResult BuildLayerLegendEntries(
+        LegendLayerDescriptor layer,
+        MapLibreStyleLayer[] styleLayers,
+        LegendRenderOptions options)
+    {
+        if (layer.DrawingInfoJson is { } drawingInfoJson &&
+            TryBuildClassifiedRendererEntries(
+                drawingInfoJson,
+                layer,
+                options.StyleConverter,
+                options.SwatchWidth,
+                options.SwatchHeight,
+                out var classifiedEntries,
+                out var error))
+        {
+            return new LayerLegendResult(classifiedEntries ?? [], error);
+        }
+
+        var entries = TryBuildSavedClassifiedRendererEntries(layer, options)
+            ?? BuildLegendEntries(styleLayers, layer.GeometryType, options);
+        return new LayerLegendResult(entries, null);
+    }
+
     private static List<LegendEntry> BuildLegendEntries(
         MapLibreStyleLayer[] styleLayers,
         MetadataV2GeometryType geometryType,
-        int swatchWidth = DefaultLegendSwatchWidth,
-        int swatchHeight = DefaultLegendSwatchHeight)
+        LegendRenderOptions options)
     {
         var entries = new List<LegendEntry>();
 
@@ -346,16 +374,16 @@ internal static partial class MapServerEndpoints
             var defaultSwatch = SkiaMapRenderer.RenderLegendSwatch(
                 new MapLibreStyleLayer { Type = "default" },
                 geometryType,
-                swatchWidth,
-                swatchHeight);
+                options.SwatchWidth,
+                options.SwatchHeight);
 
             entries.Add(new LegendEntry
             {
                 Label = "Default",
                 ImageData = Convert.ToBase64String(defaultSwatch),
                 ContentType = "image/png",
-                Width = swatchWidth,
-                Height = swatchHeight
+                Width = options.SwatchWidth,
+                Height = options.SwatchHeight
             });
 
             return entries;
@@ -368,14 +396,14 @@ internal static partial class MapServerEndpoints
                 continue;
             }
 
-            var classes = LegendClassifier.Classify(styleLayer);
+            var classes = LegendClassifier.Classify(styleLayer, options.WithheldFields);
             foreach (var legendClass in classes.Classes)
             {
                 var swatchBytes = SkiaMapRenderer.RenderLegendSwatch(
                     styleLayer,
                     geometryType,
-                    swatchWidth,
-                    swatchHeight,
+                    options.SwatchWidth,
+                    options.SwatchHeight,
                     legendClass.Properties);
 
                 entries.Add(new LegendEntry
@@ -386,8 +414,8 @@ internal static partial class MapServerEndpoints
                         : null,
                     ImageData = Convert.ToBase64String(swatchBytes),
                     ContentType = "image/png",
-                    Width = swatchWidth,
-                    Height = swatchHeight
+                    Width = options.SwatchWidth,
+                    Height = options.SwatchHeight
                 });
             }
         }
@@ -399,12 +427,11 @@ internal static partial class MapServerEndpoints
     // that cannot be drawn falls back to the drawn style's entries rather than failing the request.
     private static List<LegendEntry>? TryBuildSavedClassifiedRendererEntries(
         LegendLayerDescriptor layer,
-        IGeoServicesStyleConverter geoServicesStyleConverter,
-        int swatchWidth,
-        int swatchHeight)
+        LegendRenderOptions options)
     {
         if (!TryGetSavedDrawingInfo(layer.Resource, out var savedDrawingInfo)
-            || ResolveSavedDrawingInfoMapLibreStyle(layer.Resource, layer.StyleLayerId, geoServicesStyleConverter) is null)
+            || GeoServicesWithheldFields.NamesWithheldField(savedDrawingInfo, options.WithheldFields)
+            || ResolveSavedDrawingInfoMapLibreStyle(layer.Resource, layer.StyleLayerId, options.StyleConverter) is null)
         {
             return null;
         }
@@ -412,9 +439,9 @@ internal static partial class MapServerEndpoints
         return TryBuildClassifiedRendererEntries(
                 savedDrawingInfo.GetRawText(),
                 layer,
-                geoServicesStyleConverter,
-                swatchWidth,
-                swatchHeight,
+                options.StyleConverter,
+                options.SwatchWidth,
+                options.SwatchHeight,
                 out var entries,
                 out var error)
             && error is null
