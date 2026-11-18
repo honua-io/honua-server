@@ -74,13 +74,12 @@ public sealed class ObjectStorageConnectionResolverTests
     [InlineData("audit")]
     [InlineData("gp/outputs")]
     [InlineData("pmtiles/2026")]
-    [InlineData("custom")]
     public void BuiltIns_RefuseFoldersTheServerWrites(string folder)
     {
         var builtIn = EnabledBuiltIns(folder);
         builtIn.PublicFiles = false;
 
-        ObjectStorageBuiltInConnections.From(Storage(), builtIn, ["custom/outputs"]).Should().BeEmpty();
+        ObjectStorageBuiltInConnections.From(Storage(), builtIn).Should().BeEmpty();
     }
 
     [Trait("Tier", "Fast")]

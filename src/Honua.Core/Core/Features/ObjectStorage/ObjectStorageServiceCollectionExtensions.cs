@@ -16,6 +16,7 @@ public static class ObjectStorageServiceCollectionExtensions
         services.Configure<ObjectStorageConnectionOptions>(configuration.GetSection(ObjectStorageConnectionOptions.SectionName));
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IObjectStorageConnectionResolver, ObjectStorageConnectionResolver>();
+        services.TryAddSingleton<ObjectStoreImportAvailability>();
         return services;
     }
 }

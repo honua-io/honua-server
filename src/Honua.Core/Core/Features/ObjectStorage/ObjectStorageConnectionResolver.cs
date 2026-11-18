@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
 using Microsoft.Extensions.Options;
@@ -44,14 +43,10 @@ public interface IObjectStorageConnectionResolver
 public sealed class ObjectStorageConnectionResolver(
     IOptionsMonitor<CloudStorageOptions> storageOptions,
     IOptionsMonitor<ObjectStorageConnectionOptions> connectionOptions,
-    IOptionsMonitor<GeoprocessingOutputStagingOptions>? geoprocessingOutputs = null,
     IObjectStorageConnectionStore? store = null) : IObjectStorageConnectionResolver
 {
     private IReadOnlyList<ObjectStorageConnection> BuiltIns()
-        => ObjectStorageBuiltInConnections.From(
-            storageOptions.CurrentValue,
-            connectionOptions.CurrentValue.BuiltIn,
-            geoprocessingOutputs?.CurrentValue.KeyPrefix is { } gp ? [gp] : []);
+        => ObjectStorageBuiltInConnections.From(storageOptions.CurrentValue, connectionOptions.CurrentValue.BuiltIn);
 
     public async Task<IReadOnlyList<ObjectStorageConnection>> ListAsync(CancellationToken cancellationToken)
     {
@@ -119,28 +114,22 @@ public static class ObjectStorageBuiltInConnections
 
     public const string PublicRole = "public";
 
-    // Relative to FileStorage:AwsS3:KeyPrefix. The configured geoprocessing and PMTiles prefixes are added.
+    // Relative to FileStorage:AwsS3:KeyPrefix ("gp/" covers the geoprocessing output prefix); the configured
+    // PMTiles prefix is added.
     private static readonly string[] ServerFolders =
         ["imports/", "exports/", "publications/", "audit/", "gp/", "studio-deliverables/", "custom-code/", "pmtiles/"];
 
     public static IReadOnlyList<ObjectStorageConnection> From(CloudStorageOptions storage, ObjectStorageBuiltInOptions builtIn)
-        => From(storage, builtIn, extraServerFolders: []);
-
-    public static IReadOnlyList<ObjectStorageConnection> From(
-        CloudStorageOptions storage,
-        ObjectStorageBuiltInOptions builtIn,
-        IEnumerable<string> extraServerFolders)
     {
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(builtIn);
-        ArgumentNullException.ThrowIfNull(extraServerFolders);
         if (!IsEligible(storage, builtIn) || ObjectStoragePolicy.NormalizePrefix(storage.AwsS3!.KeyPrefix) is not { } root)
         {
             return [];
         }
 
-        var s3 = storage.AwsS3;
-        var reserved = ServerFolders.Concat(extraServerFolders).Append(storage.PMTilesPublish.KeyPrefix)
+        var template = Template(storage.AwsS3, builtIn.ExpectedBucketOwner!);
+        var reserved = ServerFolders.Append(storage.PMTilesPublish.KeyPrefix)
             .Select(ObjectStoragePolicy.NormalizePrefix)
             .Where(folder => !string.IsNullOrEmpty(folder))
             .Select(folder => root + folder)
@@ -150,13 +139,13 @@ public static class ObjectStorageBuiltInConnections
             .Where(folder => !string.IsNullOrEmpty(folder) && !reserved.Exists(server => Overlaps(server, root + folder)))
             .Select(folder => root + folder)
             .Distinct(StringComparer.Ordinal)
-            .Select(prefix => BuiltIn(DataRole, s3, prefix, builtIn.ExpectedBucketOwner!))
+            .Select(prefix => BuiltIn(template, DataRole, prefix))
             .ToList();
         if (builtIn.PublicFiles
             && storage.PMTilesPublish.UrlStrategy == PMTilesUrlStrategy.PublicUrl
             && ObjectStoragePolicy.NormalizePrefix(storage.PMTilesPublish.KeyPrefix) is { Length: > 0 } publicFolder)
         {
-            connections.Add(BuiltIn(PublicRole, s3, root + publicFolder, builtIn.ExpectedBucketOwner!));
+            connections.Add(BuiltIn(template, PublicRole, root + publicFolder));
         }
 
         return connections;
@@ -178,16 +167,22 @@ public static class ObjectStorageBuiltInConnections
     private static bool Overlaps(string first, string second)
         => first.StartsWith(second, StringComparison.Ordinal) || second.StartsWith(first, StringComparison.Ordinal);
 
-    private static ObjectStorageConnection BuiltIn(string role, AwsS3Options s3, string prefix, string owner) => new()
+    private static ObjectStorageConnection Template(AwsS3Options s3, string owner) => new()
     {
-        Id = ObjectStoragePolicy.BuiltInId(role, s3.BucketName, prefix),
-        Name = role == DataRole ? $"Installation data ({prefix.TrimEnd('/')})" : "Installation public files",
+        Id = Guid.Empty,
+        Name = string.Empty,
         Description = "Built in; read-only.",
         Bucket = s3.BucketName,
-        Prefix = prefix,
         Region = s3.Region,
         ExpectedBucketOwner = owner,
         BuiltIn = true,
         CreatedBy = "system",
+    };
+
+    private static ObjectStorageConnection BuiltIn(ObjectStorageConnection template, string role, string prefix) => template with
+    {
+        Id = ObjectStoragePolicy.BuiltInId(role, template.Bucket, prefix),
+        Name = role == DataRole ? $"Installation data ({prefix.TrimEnd('/')})" : "Installation public files",
+        Prefix = prefix,
     };
 }

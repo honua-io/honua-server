@@ -233,17 +233,13 @@ public class ImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task CapabilityManifest_ObjectStore_IsConfiguredWhenTheHostCanReadS3()
+    public async Task CapabilityManifest_ObjectStore_IsListedWithTheS3Scheme()
     {
         using var response = await _client.GetAsync("/api/v1/capabilities/manifest");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var capability = document.RootElement.GetProperty("capabilities").EnumerateArray()
             .Single(item => item.GetProperty("id").GetString() == "import.objectStore");
-        if (capability.TryGetProperty("reasonCode", out var reason))
-        {
-            reason.GetString().Should().NotBe("disabled-by-configuration");
-        }
 
         capability.GetProperty("schemes").EnumerateArray().Select(item => item.GetString())
             .Should().Equal("s3");

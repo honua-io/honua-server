@@ -20,19 +20,21 @@ public sealed class AwsObjectStoreConnectorTests
     {
         BuiltIn = true,
         RoleArn = null,
+        ExpectedBucketOwner = "123456789012",
     };
 
     [UnitTest]
     public async Task Browse_ListsOneCappedFolderLevelAndSniffsKindsFromRangedReads()
     {
         using var s3 = new FakeS3();
+        using var factory = s3.CreateFactory();
         s3.Objects["layers/a.tif"] = Tiff("LAYOUT=COG");
         s3.Objects["layers/b.tif"] = Tiff("plain");
         s3.Objects["layers/c.pmtiles"] = Encoding.ASCII.GetBytes("PMTiles\u0003rest");
         s3.Objects["layers/d.parquet"] = Encoding.ASCII.GetBytes("PAR1rest");
         s3.Objects["layers/e.csv"] = Encoding.ASCII.GetBytes("id,name");
         s3.Folders.Add("layers/2026/");
-        var connector = Connector(s3);
+        var connector = Connector(factory);
 
         var page = await connector.BrowseAsync(new ObjectStorageBrowseRequest { Connection = BuiltIn, Prefix = "layers/" }, CancellationToken.None);
 
@@ -44,18 +46,21 @@ public sealed class AwsObjectStoreConnectorTests
             ["cog", "geotiff", "pmtiles", "geoparquet", "other"],
             page.Objects.OrderBy(entry => entry.Key, StringComparer.Ordinal).Select(entry => entry.Kind));
         Assert.All(s3.Reads, read => Assert.Equal(ObjectStorageObjectKinds.SniffBytes - 1, read.ByteRange.End));
+        Assert.Equal(BuiltIn.ExpectedBucketOwner, listed.ExpectedBucketOwner);
+        Assert.All(s3.Reads, read => Assert.Equal(BuiltIn.ExpectedBucketOwner, read.ExpectedBucketOwner));
     }
 
     [UnitTest]
     public async Task Browse_SniffsAtMostTheCappedNumberOfObjects()
     {
         using var s3 = new FakeS3();
+        using var factory = s3.CreateFactory();
         for (var index = 0; index < AwsObjectStoreConnector.MaxSniffedObjects + 10; index++)
         {
             s3.Objects[$"layers/{index:D3}.tif"] = Tiff("plain");
         }
 
-        var page = await Connector(s3).BrowseAsync(new ObjectStorageBrowseRequest { Connection = BuiltIn, Prefix = "layers/" }, CancellationToken.None);
+        var page = await Connector(factory).BrowseAsync(new ObjectStorageBrowseRequest { Connection = BuiltIn, Prefix = "layers/" }, CancellationToken.None);
 
         Assert.Equal(AwsObjectStoreConnector.MaxSniffedObjects + 10, page.Objects.Count);
         Assert.Equal(AwsObjectStoreConnector.MaxSniffedObjects, s3.Reads.Count);
@@ -65,9 +70,10 @@ public sealed class AwsObjectStoreConnectorTests
     public async Task RequesterPaysBucket_IsRefusedWithAClearMessage()
     {
         using var s3 = new FakeS3 { ListError = Denied(), Payer = "Requester" };
+        using var factory = s3.CreateFactory();
 
         var refused = await Assert.ThrowsAsync<ImportObjectStoreException>(
-            () => Connector(s3).BrowseAsync(new ObjectStorageBrowseRequest { Connection = BuiltIn, Prefix = "layers/" }, CancellationToken.None));
+            () => Connector(factory).BrowseAsync(new ObjectStorageBrowseRequest { Connection = BuiltIn, Prefix = "layers/" }, CancellationToken.None));
 
         Assert.Equal(ImportObjectStoreProblems.RequesterPays, refused.Code);
         Assert.Contains("Requester-pays", refused.Message, StringComparison.Ordinal);
@@ -77,8 +83,9 @@ public sealed class AwsObjectStoreConnectorTests
     public async Task Test_ReportsHealthyWhenTheRegionMatchesAndTheRoleCanList()
     {
         using var s3 = new FakeS3();
+        using var factory = s3.CreateFactory();
 
-        var result = await Connector(s3).TestAsync(BuiltIn, CancellationToken.None);
+        var result = await Connector(factory).TestAsync(BuiltIn, CancellationToken.None);
 
         Assert.True(result.IsHealthy, result.Message);
         Assert.Equal(1, Assert.Single(s3.Lists).MaxKeys);
@@ -88,8 +95,9 @@ public sealed class AwsObjectStoreConnectorTests
     public async Task Test_ReportsARegionMismatch()
     {
         using var s3 = new FakeS3 { Region = "us-west-2" };
+        using var factory = s3.CreateFactory();
 
-        var result = await Connector(s3).TestAsync(BuiltIn, CancellationToken.None);
+        var result = await Connector(factory).TestAsync(BuiltIn, CancellationToken.None);
 
         Assert.False(result.IsHealthy);
         Assert.Contains("us-west-2", result.Message, StringComparison.Ordinal);
@@ -99,11 +107,12 @@ public sealed class AwsObjectStoreConnectorTests
     public async Task Browse_ListsAnUnreadableObjectAsOther()
     {
         using var s3 = new FakeS3();
+        using var factory = s3.CreateFactory();
         s3.Objects["layers/a.pmtiles"] = Encoding.ASCII.GetBytes("PMTiles\u0003rest");
         s3.Objects["layers/b.tif"] = Tiff("LAYOUT=COG");
         s3.Unreadable.Add("layers/b.tif");
 
-        var page = await Connector(s3).BrowseAsync(new ObjectStorageBrowseRequest { Connection = BuiltIn, Prefix = "layers/" }, CancellationToken.None);
+        var page = await Connector(factory).BrowseAsync(new ObjectStorageBrowseRequest { Connection = BuiltIn, Prefix = "layers/" }, CancellationToken.None);
 
         Assert.Equal(["pmtiles", "other"], page.Objects.OrderBy(entry => entry.Key, StringComparer.Ordinal).Select(entry => entry.Kind));
     }
@@ -120,14 +129,15 @@ public sealed class AwsObjectStoreConnectorTests
     public async Task Test_ReportsAnUnreachableServiceAsUnhealthy()
     {
         using var s3 = new FakeS3 { ListError = new AmazonClientException("network down") };
+        using var factory = s3.CreateFactory();
 
-        var result = await Connector(s3).TestAsync(BuiltIn, CancellationToken.None);
+        var result = await Connector(factory).TestAsync(BuiltIn, CancellationToken.None);
 
         Assert.False(result.IsHealthy);
         Assert.Contains("could not be reached", result.Message, StringComparison.Ordinal);
     }
 
-    private static AwsObjectStoreConnector Connector(FakeS3 s3) => s3.Connector();
+    private static AwsObjectStoreConnector Connector(AwsObjectStoreClientFactory factory) => new(factory);
 
     private static byte[] Tiff(string ghost)
         => [.. "II*\0"u8.ToArray(), 8, 0, 0, 0, .. Encoding.ASCII.GetBytes("GDAL_STRUCTURAL_METADATA_SIZE=000140 bytes\n" + ghost)];
@@ -147,8 +157,6 @@ internal sealed class FakeS3() : AmazonS3Client(
     public List<ListObjectsV2Request> Lists { get; } = [];
 
     public List<GetObjectRequest> Reads { get; } = [];
-
-    private AwsObjectStoreClientFactory? _factory;
 
     public Exception? ListError { get; init; }
 
@@ -190,18 +198,7 @@ internal sealed class FakeS3() : AmazonS3Client(
         });
     }
 
-    public AwsObjectStoreConnector Connector()
-        => new(_factory ??= new AwsObjectStoreClientFactory(new AwsObjectStoreClientSeams { HostClient = this }));
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _factory?.Dispose();
-        }
-
-        base.Dispose(disposing);
-    }
+    public AwsObjectStoreClientFactory CreateFactory() => new(new AwsObjectStoreClientSeams { HostClient = this });
 
     public override Task<GetObjectResponse> GetObjectAsync(GetObjectRequest request, CancellationToken cancellationToken = default)
     {

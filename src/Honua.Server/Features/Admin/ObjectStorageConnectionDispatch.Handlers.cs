@@ -112,7 +112,7 @@ internal static partial class ObjectStorageConnectionDispatch
             return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
         }
 
-        await RecordAsync(http, "connection.update", updated, previous: connection).ConfigureAwait(false);
+        await RecordUpdateAsync(http, updated, connection).ConfigureAwait(false);
         return TypedResults.Ok(ApiResponse<SecureConnectionSummary>.CreateSuccess(ToSummary(updated)));
     }
 

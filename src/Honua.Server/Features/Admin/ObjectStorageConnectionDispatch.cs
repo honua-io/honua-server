@@ -144,29 +144,43 @@ internal static partial class ObjectStorageConnectionDispatch
     [LoggerMessage(EventId = 4590, Level = LogLevel.Warning, Message = "Object storage connections could not be read; database connections are served alone.")]
     private static partial void ObjectStorageReadFailed(ILogger logger, Exception exception);
 
-    private static Task RecordAsync(HttpContext http, string action, ObjectStorageConnection connection, ObjectStorageConnection? previous = null)
-        => RecordAsync(http, action, AuditOutcome.Success, connection.Id, Details(connection) with
+    private static Task RecordAsync(HttpContext http, string action, ObjectStorageConnection connection)
+        => RecordAsync(http, new AuditEntry
         {
-            PreviousRegion = previous?.Region,
-            PreviousRoleArn = previous?.RoleArn,
+            Action = action,
+            Id = connection.Id,
+            Details = Details(connection),
+        });
+
+    private static Task RecordUpdateAsync(HttpContext http, ObjectStorageConnection updated, ObjectStorageConnection previous)
+        => RecordAsync(http, new AuditEntry
+        {
+            Action = "connection.update",
+            Id = updated.Id,
+            Details = Details(updated) with
+            {
+                PreviousRegion = previous.Region,
+                PreviousRoleArn = previous.RoleArn,
+            },
         });
 
     // A draft test has no connection id yet.
     private static Task RecordTestAsync(HttpContext http, ObjectStorageConnection connection, ObjectStorageTestResult result)
-        => RecordAsync(
-            http,
-            "connection.test",
-            result.IsHealthy ? AuditOutcome.Success : AuditOutcome.Failure,
-            connection.Id,
-            Details(connection) with { Healthy = result.IsHealthy });
+        => RecordAsync(http, new AuditEntry
+        {
+            Action = "connection.test",
+            Outcome = result.IsHealthy ? AuditOutcome.Success : AuditOutcome.Failure,
+            Id = connection.Id,
+            Details = Details(connection) with { Healthy = result.IsHealthy },
+        });
 
-    private static Task RecordAsync(HttpContext http, string action, AuditOutcome outcome, Guid id, SecureConnectionAuditDetails details)
+    private static Task RecordAsync(HttpContext http, AuditEntry entry)
         => http.RequestServices.GetRequiredService<SecureConnectionGovernance>().RecordAsync(
             http,
-            action,
-            outcome,
-            id == Guid.Empty ? null : id.ToString(),
-            details,
+            entry.Action,
+            entry.Outcome,
+            entry.Id == Guid.Empty ? null : entry.Id.ToString(),
+            entry.Details,
             http.RequestAborted);
 
     // What the customer role grants; the external id is never recorded.
@@ -183,4 +197,15 @@ internal static partial class ObjectStorageConnectionDispatch
     private static BadRequest<ApiResponse<object>> Invalid(string message) => TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {message}"));
 
     private static Conflict<ApiResponse<object>> ReadOnly() => TypedResults.Conflict(ApiResponse<object>.Failure(BuiltInReadOnlyMessage));
+
+    private sealed record AuditEntry
+    {
+        public required string Action { get; init; }
+
+        public AuditOutcome Outcome { get; init; } = AuditOutcome.Success;
+
+        public required Guid Id { get; init; }
+
+        public required SecureConnectionAuditDetails Details { get; init; }
+    }
 }
