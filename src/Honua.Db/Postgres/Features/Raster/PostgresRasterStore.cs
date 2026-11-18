@@ -2358,9 +2358,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             SELECT tile_data, content_type
             FROM {_rasterTilesTable}
             WHERE raster_data_id = @rasterId AND zoom_level = @level AND tile_x = @col AND tile_y = @row
+              AND EXISTS (SELECT 1 FROM {_rasterDataTable} owner WHERE owner.id = @rasterId AND owner.layer_id = @layerId)
               AND {RasterTileProvenanceSql.AdmissionPredicate}
             """;
         AddParameter(tileCommand, "@rasterId", rasterId);
+        AddParameter(tileCommand, "@layerId", layerId);
         AddParameter(tileCommand, "@level", level);
         AddParameter(tileCommand, "@col", col);
         AddParameter(tileCommand, "@row", row);
