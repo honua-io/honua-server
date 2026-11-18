@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Sharing;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class SharingRestReadTests : IAsyncLifetime
+public sealed class SharingRestReadTests : IClassFixture<SharingRestReadTests.ReadHost>
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string PublicServiceId = "public-svc";
@@ -35,14 +35,21 @@ public sealed class SharingRestReadTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture;
 
-    public SharingRestReadTests()
+    public SharingRestReadTests(ReadHost host)
     {
-        _fixture = CreateFixture();
+        _fixture = host.Fixture;
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    // Cases on the default graph only send anonymous reads, so one application serves them all;
+    // each case still creates its own client. Cases with other settings build their own.
+    public sealed class ReadHost : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = CreateFixture();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     private static WebAppFixture CreateFixture()
     {
