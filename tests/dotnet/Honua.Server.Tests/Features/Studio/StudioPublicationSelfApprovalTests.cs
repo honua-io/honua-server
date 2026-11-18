@@ -38,7 +38,7 @@ namespace Honua.Server.Tests.Features.Studio;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
+public sealed partial class StudioPublicationSelfApprovalTests : IAsyncLifetime
 {
     private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
     private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;

@@ -766,8 +766,8 @@ jobs:
       # Selective (affected) dispatches compile without analyzers: PR Gate's
       # analyzer partitions proved each landed PR and Format Check below still
       # runs dotnet format. Scheduled and full runs keep the analyzer build.
-      # Protocol-profile builds keep analyzers for the projects they recompile
-      # (Honua.Server); referenced projects are reused from the producer build.
+      # Protocol-profile builds analyze Honua.Server; build-selected-protocol-
+      # profiles.py reads this variable to reuse the no-analyzer references.
       PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}
     steps:
       - name: Place the producer SDK in the runner temp directory
@@ -785,12 +785,12 @@ jobs:
       # before .NET setup and restore so runner diagnostics keep enough space.
       - name: Free disk space
         if: runner.environment == 'github-hosted'
+        # Detached: about 88 GB is free before cleanup (107 GB after), so the
+        # build need not wait 1-7.5 min (once a 28 min hang) for rm to finish.
         run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/swift || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
           df -h / || true
+          sudo -n setsid rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL < /dev/null > /dev/null 2>&1 &
 
       - name: Setup .NET
         id: managed-sdk
@@ -831,7 +831,11 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
-          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
+          # On trunk, full and scheduled runs compare trunk with itself, so a
+          # range selection may build only the default profile; they build all.
+          profile_scope=--changed-from-git
+          if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi
+          python3 scripts/ci/protocol-profile-selection.py --dry-run "${profile_scope}" > "${RUNNER_TEMP}/protocol-profiles.json"
           cat "${RUNNER_TEMP}/protocol-profiles.json"
 
       - name: Download selected shard matrix
@@ -976,12 +980,12 @@ jobs:
       # Reclaim runner disk before the build + coverage run; the modular
       # topology pushed some runners over the free-disk limit. Best-effort.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
+        # Detached for the same reason as the producer's cleanup.
         run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/swift || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
           df -h / || true
+          sudo -n setsid rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL < /dev/null > /dev/null 2>&1 &
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1312,10 +1316,12 @@ jobs:
         run: scripts/ci/server-test-shard-free-disk.sh
 
       - name: Setup .NET
+        id: setup-dotnet
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           artifact-sdk-version: ${{ needs.build.outputs.managed_sdk_version }}
+          host-package-fallback: 'true'
 
       - name: Select shard managed outputs
         env:
@@ -1445,13 +1451,23 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./artifacts/test-results
 
+      # Consumed obj folders name the producer's ~/.nuget/packages. With the host fallback that
+      # folder is mostly empty, so a fully consumed shard still re-checks its package imports
+      # here; the check restores only projects whose packages are missing and compiles nothing.
       - name: Build server test binaries
         id: shard-cache-build
-        if: steps.managed-status.outputs.restored != 'true' && steps.shard-cache-materialize.outputs.restored != 'true'
+        if: (steps.managed-status.outputs.restored != 'true' || steps.setup-dotnet.outputs.host-package-fallback-used == 'true') && steps.shard-cache-materialize.outputs.restored != 'true'
         timeout-minutes: 20
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
         run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RESTORED_PROJECTS}"
+
+      # An exact-head cache payload carries the obj of the job that wrote it, which may name a
+      # package folder this runner lacks; re-check its imports the same way (restore only).
+      - name: Re-check package imports of cached shard binaries
+        if: steps.setup-dotnet.outputs.host-package-fallback-used == 'true' && steps.shard-cache-materialize.outputs.restored == 'true'
+        timeout-minutes: 10
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RUNNER_TEMP}/shard-projects.json"
 
       - name: Package shard-local cache payload
         id: shard-cache-package

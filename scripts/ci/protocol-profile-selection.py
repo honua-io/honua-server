@@ -239,12 +239,16 @@ def main(argv=None):
     parser.add_argument("--profile", default=None)
     parser.add_argument("--changed-file", action="append", default=[])
     parser.add_argument("--changed-from-git", action="store_true")
+    parser.add_argument("--all", action="store_true", help="Select every profile (scheduled and full_ci runs)")
     args = parser.parse_args(argv)
     if args.execute:
         print("protocol-profile-selection is dry-run only and does not build or publish", file=sys.stderr)
         return 2
 
     document = load_definition()
+    if args.all:
+        print(json.dumps(full(document, "full CI validates every profile"), sort_keys=True))
+        return 0
     if args.changed_from_git:
         changed = git_changed_files()
     elif args.changed_file:

@@ -684,7 +684,7 @@ All issue forms now require acceptance criteria, affected repos, gate-tier impac
 
 Five composite actions were added to `.github/actions/` for shared CI setup and evidence handling:
 
-- `setup-dotnet-ci` — .NET SDK, NuGet cache *(active)*
+- `setup-dotnet-ci` — .NET SDK, NuGet cache, opt-in host NuGet fallback folder *(active)*
 - `setup-node-ci` — Node.js setup, npm cache *(future: SDK workflows)*
 - `setup-python-ci` — Python setup, pip cache *(future: conformance/script workflows)*
 - `upload-ci-evidence` — artifact upload with standard naming and tier-based retention *(active)*
@@ -1012,7 +1012,9 @@ stale or busy proof and setup failure select `ubuntu-latest`, without wake,
 wait, polling or retries. Light jobs stay hosted. The producer uses a private writable SDK directory, skips sudo
 cleanup off hosted runners and bounds all nested build workers to four.
 Selective dispatches build that graph with `RunAnalyzers=false`; scheduled
-and `full_ci` runs, and the protocol-profile builds, keep analyzers.
+and `full_ci` runs keep analyzers. Protocol-profile builds analyze Honua.Server
+and, after a no-analyzer producer, reuse its referenced projects
+(`BuildProjectReferences=false` after a no-analyzer `ResolveProjectReferences`).
 See [producer admission and MAIN-owned preflight](gate-model.md#full-ci-producer-admission)
 before enabling the source contract; merging it does not activate any pool.
 

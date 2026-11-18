@@ -14,6 +14,7 @@ using Honua.Ai.Protocols.Mcp.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -618,13 +619,16 @@ internal sealed partial class McpDataAccessSurface
                         "A bound MCP session is required for governed proposal calls.");
                 }
 
+                var caller = new ProposalEvidenceCaller(
+                    tenantId,
+                    CanonicalSecurityActor.Resolve(httpContext.User)?.ActorId,
+                    sessionId);
                 httpContext.Items[ProposalEvidenceVerifier.HttpContextItemKey] =
                     await _proposalEvidenceVerifier.VerifyAsync(
                         tool,
                         parameters.Arguments,
                         parameters.Meta,
-                        tenantId,
-                        sessionId,
+                        caller,
                         request.Id,
                         cancellationToken).ConfigureAwait(false);
             }
