@@ -303,6 +303,12 @@
       "path": "/metadata/release-packages"
     },
     {
+      "operationId": "createObjectStorageConnectionSetup",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections/object-storage/setup"
+    },
+    {
       "operationId": "createOidcProvider",
       "catalogOperationId": "admin.oidc-provider.create",
       "method": "POST",
@@ -1531,6 +1537,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/cloud-rasters"
+    },
+    {
+      "operationId": "listConnectionObjects",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/connections/{id}/objects"
     },
     {
       "operationId": "listConsoleJobs",
