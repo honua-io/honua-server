@@ -17,6 +17,12 @@ public sealed class FilterExpressionServiceParseBoundsTests
 
     private static readonly string TextBeyondLimit = new('a', FilterParserGuard.MaxStringLiteralLength + 1);
     private static readonly string TextAtLimit = new('a', FilterParserGuard.MaxStringLiteralLength);
+    // Doubled apostrophes decode to one character each, so these literals decode to exactly
+    // the limit, or one past it, while their source text is longer.
+    private static readonly string EscapedQuotesBeyondLimit = new('\'', 2 * (FilterParserGuard.MaxStringLiteralLength + 1));
+    private static readonly string EscapedQuotesAtLimit = new('\'', 2 * FilterParserGuard.MaxStringLiteralLength);
+    private static readonly string TextEndingInEscapedQuoteBeyondLimit = TextAtLimit + "''";
+    private static readonly string TextEndingInEscapedQuoteAtLimit = TextAtLimit[1..] + "''";
     private static readonly string NameBeyondLimit = new('a', FilterParserGuard.MaxIdentifierLength + 1);
     private static readonly string NameAtLimit = new('a', FilterParserGuard.MaxIdentifierLength);
 
@@ -63,7 +69,13 @@ public sealed class FilterExpressionServiceParseBoundsTests
         { FilterLanguage.Cql2Text, $"name = '{TextBeyondLimit}'" },
         { FilterLanguage.Cql2Json, $$"""{"op":"=","args":[{"property":"name"},"{{TextBeyondLimit}}"]}""" },
         { FilterLanguage.OData, $"Name eq '{TextBeyondLimit}'" },
-        { FilterLanguage.GeoServicesSql, $"name = '{TextBeyondLimit}'" }
+        { FilterLanguage.GeoServicesSql, $"name = '{TextBeyondLimit}'" },
+        { FilterLanguage.Cql2Text, $"name = '{EscapedQuotesBeyondLimit}'" },
+        { FilterLanguage.Cql2Text, $"name = '{TextEndingInEscapedQuoteBeyondLimit}'" },
+        { FilterLanguage.OData, $"Name eq '{EscapedQuotesBeyondLimit}'" },
+        { FilterLanguage.OData, $"Name eq '{TextEndingInEscapedQuoteBeyondLimit}'" },
+        { FilterLanguage.GeoServicesSql, $"name = '{EscapedQuotesBeyondLimit}'" },
+        { FilterLanguage.GeoServicesSql, $"name = '{TextEndingInEscapedQuoteBeyondLimit}'" }
     };
 
     [UnitTheory]
@@ -126,6 +138,14 @@ public sealed class FilterExpressionServiceParseBoundsTests
         { FilterLanguage.Cql2Text, $"A_CONTAINS(tags, ({Values(FilterParserGuard.MaxInListSize)}))" },
         { FilterLanguage.Cql2Text, $"f({Values(FilterParserGuard.MaxInListSize)}) = 1" },
         { FilterLanguage.OData, $"Name eq '{TextAtLimit}'" },
+        { FilterLanguage.OData, $"Name eq '{EscapedQuotesAtLimit}'" },
+        { FilterLanguage.OData, $"Name eq '{TextEndingInEscapedQuoteAtLimit}'" },
+        { FilterLanguage.Cql2Text, $"name = '{TextAtLimit}'" },
+        { FilterLanguage.Cql2Text, $"name = '{EscapedQuotesAtLimit}'" },
+        { FilterLanguage.Cql2Text, $"name = '{TextEndingInEscapedQuoteAtLimit}'" },
+        { FilterLanguage.GeoServicesSql, $"name = '{TextAtLimit}'" },
+        { FilterLanguage.GeoServicesSql, $"name = '{EscapedQuotesAtLimit}'" },
+        { FilterLanguage.GeoServicesSql, $"name = '{TextEndingInEscapedQuoteAtLimit}'" },
         { FilterLanguage.OData, $"concat({Values(FilterParserGuard.MaxInListSize)}) eq '1'" }
     };
 
