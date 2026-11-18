@@ -15,17 +15,22 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class AdminSessionCookieSecurityTests
 {
     [UnitTheory]
-    [InlineData("https", "http://honua.internal:8080", true)]
-    [InlineData("http", "https://maps.example.com", true)]
-    [InlineData("http", "http://honua.internal:8080", false)]
-    public void SessionCookie_IsSecure_WhenTheRequestOrThePublicBaseUrlIsHttps(
-        string requestScheme, string publicBaseUrl, bool expectedSecure)
+    [InlineData("https", "http://honua.internal:8080")]
+    [InlineData("http", "https://maps.example.com")]
+    public void SessionCookie_IsSecure_WhenTheRequestOrThePublicBaseUrlIsHttps(string requestScheme, string publicBaseUrl)
     {
         var context = Context(requestScheme, publicBaseUrl);
 
-        AdminAuthEndpoints.UseSecureSessionCookie(context).Should().Be(expectedSecure);
-        AdminAuthEndpoints.CreateAdminAuthCookieOptions(context, TimeSpan.FromMinutes(5)).Secure
-            .Should().Be(expectedSecure);
+        AdminAuthEndpoints.UseSecureSessionCookie(context).Should().BeTrue();
+        AdminAuthEndpoints.CreateAdminAuthCookieOptions(context, TimeSpan.FromMinutes(5)).Secure.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void SessionCookie_IsNotSecure_WhenNeitherIsHttps()
+    {
+        var context = Context("http", "http://honua.internal:8080");
+
+        AdminAuthEndpoints.CreateAdminAuthCookieOptions(context, TimeSpan.FromMinutes(5)).Secure.Should().BeFalse();
     }
 
     private static DefaultHttpContext Context(string scheme, string publicBaseUrl)
