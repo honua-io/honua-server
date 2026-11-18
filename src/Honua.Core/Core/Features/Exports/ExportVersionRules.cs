@@ -4,11 +4,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Honua.Core.Features.Publishing.Descriptors;
+namespace Honua.Core.Features.Exports;
 
 // The cross-field rules of an Export version that JSON Schema cannot express (docs/gis/schemas/stac-honua.v1.0.0.schema.json).
 // They run on the typed version, which ExportCollectionDocument reads from a collection document the schema accepts.
-public static class PublicationDescriptorRules
+public static class ExportVersionRules
 {
     public const string CaptureId = "capture-id";
     public const string UniqueFieldNames = "unique-field-names";
@@ -20,10 +20,10 @@ public static class PublicationDescriptorRules
     public static readonly IReadOnlyList<string> All =
         [CaptureId, UniqueFieldNames, PublicFieldsOnly, IdentityMapping, BoundsOrder, ZoomOrder];
 
-    public static IReadOnlyList<string> Violations(PublicationDescriptor descriptor)
+    public static IReadOnlyList<string> Violations(ExportVersion descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
-        var node = JsonSerializer.SerializeToNode(descriptor, PublicationDescriptorJsonContext.Default.PublicationDescriptor)!;
+        var node = JsonSerializer.SerializeToNode(descriptor, ExportVersionJsonContext.Default.ExportVersion)!;
         return Violations(node.AsObject());
     }
 

@@ -5,8 +5,8 @@ using System.Text;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Publishing.Descriptors;
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Core.Features.Exports;
+using Honua.Server.Features.Admin.Exports;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 
@@ -34,7 +34,7 @@ public sealed class ExportCompanionFilesTests
         var files = ExportCompanionFiles.Render(Input(StoredStyle));
 
         files.Should().OnlyContain(file => !Encoding.UTF8.GetString(file.Content).Contains("owner", StringComparison.OrdinalIgnoreCase));
-        PairedPublicationDescriptorFactory.Collection(Input(null))["table:columns"]!.AsArray()
+        ExportVersionFactory.Collection(Input(null))["table:columns"]!.AsArray()
             .Select(column => column!["name"]!.GetValue<string>()).Should().Equal("objectid", "tmk");
     }
 
@@ -84,13 +84,13 @@ public sealed class ExportCompanionFilesTests
     [UnitTest]
     public void Collection_LinksCompanionsAndCarriesLicenceAndProviders()
     {
-        var collection = PairedPublicationDescriptorFactory.Collection(Input(null));
+        var collection = ExportVersionFactory.Collection(Input(null));
 
         collection["links"]!.AsArray().Where(link => link!["type"]!.GetValue<string>() == "text/markdown")
             .Select(link => $"{link!["rel"]}={link["href"]}").Should().Equal("agents=AGENTS.md", "describedby=README.md");
         collection["assets"]!["style"]!["type"]!.GetValue<string>().Should().Be(ExportCompanionFiles.StyleMediaType);
         collection["assets"]!["thumbnail"].Should().BeNull("no thumbnail was rendered for this input");
-        PairedPublicationDescriptorFactory.Collection(Input(null) with { Thumbnail = [1] })["assets"]!["thumbnail"]!["roles"]![0]!
+        ExportVersionFactory.Collection(Input(null) with { Thumbnail = [1] })["assets"]!["thumbnail"]!["roles"]![0]!
             .GetValue<string>().Should().Be("thumbnail");
         collection["license"]!.GetValue<string>().Should().Be("CC-BY-4.0");
         collection["providers"]!.ToJsonString().Should().Be(
@@ -127,30 +127,30 @@ public sealed class ExportCompanionFilesTests
             ContactPoint = new MetadataV2ContactPoint { Url = "https://example.gov/gis" }
         }, "Example GIS", storedStyle));
 
-    private static PublicationDescriptor Descriptor() => new()
+    private static ExportVersion Descriptor() => new()
     {
         PublicationId = "parcels",
         Version = "20261117T120000Z-abcdef12",
         Title = "County parcels",
         PublishedAt = CapturedAt,
-        SourceLayer = new PublicationSourceLayer("county", "parcels"),
-        Capture = new PublicationCapture("capture-1", CapturedAt, "rev-1", 1234),
+        SourceLayer = new ExportSourceLayer("county", "parcels"),
+        Capture = new ExportCapture("capture-1", CapturedAt, "rev-1", 1234),
         Bounds = [-158.3, 21.25, -157.6, 21.75],
-        Crs = new PublicationCrs("EPSG:3857", "OGC:CRS84"),
+        Crs = new ExportCrs("EPSG:3857", "OGC:CRS84"),
         Fields =
         [
-            new PublicationField("objectid", "integer", Public: true),
-            new PublicationField("tmk", "string", Public: true) { Title = "Tax map key", Description = "Parcel | key" },
-            new PublicationField("owner", "string", Public: false)
+            new ExportField("objectid", "integer", Public: true),
+            new ExportField("tmk", "string", Public: true) { Title = "Tax map key", Description = "Parcel | key" },
+            new ExportField("owner", "string", Public: false)
         ],
-        Identity = new PublicationIdentity("tmk", "tmk", "tmk"),
-        Geometry = new PublicationGeometry("geometry", "wkb", ["MultiPolygon"]),
+        Identity = new ExportIdentity("tmk", "tmk", "tmk"),
+        Geometry = new ExportGeometry("geometry", "wkb", ["MultiPolygon"]),
         Artifacts = Artifacts(),
-        Validation = new PublicationValidation(PublicationValidation.Passed, CapturedAt, [])
+        Validation = new ExportValidation(ExportValidation.Passed, CapturedAt, [])
     };
 
-    private static PublicationArtifacts Artifacts() => new(
-        new PmtilesPublicationArtifact
+    private static ExportArtifacts Artifacts() => new(
+        new PmtilesExportArtifact
         {
             Href = "parcels.pmtiles",
             Bytes = 10,
@@ -161,7 +161,7 @@ public sealed class ExportCompanionFilesTests
             Minzoom = 0,
             Maxzoom = 14
         },
-        new GeoparquetPublicationArtifact
+        new GeoparquetExportArtifact
         {
             Href = "parcels.parquet",
             Bytes = 20,

@@ -4,16 +4,16 @@
 using System.Globalization;
 using System.Text;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // The layer's public metadata (with the service's governance fallbacks applied), who hosts it,
 // and its stored MapLibre style, read once at publish time.
 internal sealed record ExportLayerFacts(MetadataV2ObjectMetadata Metadata, string HostName, string? StoredMapLibreStyle);
 
 // What the companion files are generated from: the validated descriptor and the layer's facts.
-internal sealed record ExportCompanionInput(PublicationDescriptor Descriptor, ExportLayerFacts Layer)
+internal sealed record ExportCompanionInput(ExportVersion Descriptor, ExportLayerFacts Layer)
 {
     public MetadataV2ObjectMetadata Metadata => Layer.Metadata;
 
@@ -25,7 +25,7 @@ internal sealed record ExportCompanionInput(PublicationDescriptor Descriptor, Ex
     public byte[]? Thumbnail { get; init; }
 
     // Only public fields reach the artifacts, so only they are described.
-    public IReadOnlyList<PublicationField> PublicFields => [.. Descriptor.Fields.Where(candidate => candidate.Public)];
+    public IReadOnlyList<ExportField> PublicFields => [.. Descriptor.Fields.Where(candidate => candidate.Public)];
 
     public string DisplayTitle => Text(Descriptor.Title) ?? Text(Metadata.Title) ?? Descriptor.PublicationId;
 

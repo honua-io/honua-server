@@ -4,10 +4,10 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
-namespace Honua.Core.Features.Publishing.Descriptors;
+namespace Honua.Core.Features.Exports;
 
 // One Export version as Honua models it. It is stored only as its STAC collection document (ExportCollectionDocument).
-public sealed record PublicationDescriptor
+public sealed record ExportVersion
 {
     public required string PublicationId { get; init; }
 
@@ -18,39 +18,39 @@ public sealed record PublicationDescriptor
 
     public required DateTimeOffset PublishedAt { get; init; }
 
-    public required PublicationSourceLayer SourceLayer { get; init; }
+    public required ExportSourceLayer SourceLayer { get; init; }
 
-    public required PublicationCapture Capture { get; init; }
+    public required ExportCapture Capture { get; init; }
 
     public required double[] Bounds { get; init; }
 
-    public required PublicationCrs Crs { get; init; }
+    public required ExportCrs Crs { get; init; }
 
-    public required IReadOnlyList<PublicationField> Fields { get; init; }
+    public required IReadOnlyList<ExportVersionField> Fields { get; init; }
 
-    public required PublicationIdentity Identity { get; init; }
+    public required ExportIdentity Identity { get; init; }
 
-    public required PublicationGeometry Geometry { get; init; }
+    public required ExportGeometry Geometry { get; init; }
 
-    public required PublicationArtifacts Artifacts { get; init; }
+    public required ExportArtifacts Artifacts { get; init; }
 
-    public required PublicationValidation Validation { get; init; }
+    public required ExportValidation Validation { get; init; }
 }
 
-public sealed record PublicationSourceLayer(string Service, string Layer)
+public sealed record ExportSourceLayer(string Service, string Layer)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Title { get; init; }
 }
 
-public sealed record PublicationCapture(string CaptureId, DateTimeOffset CapturedAt, string SourceRevision, long FeatureCount);
+public sealed record ExportCapture(string CaptureId, DateTimeOffset CapturedAt, string SourceRevision, long FeatureCount);
 
-public sealed record PublicationCrs(string Source, string Geoparquet)
+public sealed record ExportCrs(string Source, string Geoparquet)
 {
     public string Pmtiles { get; init; } = "EPSG:3857";
 }
 
-public sealed record PublicationField(string Name, string Type, bool Public)
+public sealed record ExportVersionField(string Name, string Type, bool Public)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Title { get; init; }
@@ -59,20 +59,20 @@ public sealed record PublicationField(string Name, string Type, bool Public)
     public string? Description { get; init; }
 }
 
-public sealed record PublicationIdentity(string Field, string PmtilesProperty, string GeoparquetColumn)
+public sealed record ExportIdentity(string Field, string PmtilesProperty, string GeoparquetColumn)
 {
     public string Type { get; init; } = "string";
 }
 
-public sealed record PublicationGeometry(string Column, string Encoding, IReadOnlyList<string> Types)
+public sealed record ExportGeometry(string Column, string Encoding, IReadOnlyList<string> Types)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? BboxColumn { get; init; }
 }
 
-public sealed record PublicationArtifacts(PmtilesPublicationArtifact Pmtiles, GeoparquetPublicationArtifact Geoparquet);
+public sealed record ExportArtifacts(PmtilesExportArtifact Pmtiles, GeoparquetExportArtifact Geoparquet);
 
-public sealed record PmtilesPublicationArtifact
+public sealed record PmtilesExportArtifact
 {
     public const string MediaTypeValue = "application/vnd.pmtiles";
 
@@ -95,7 +95,7 @@ public sealed record PmtilesPublicationArtifact
     public required int Maxzoom { get; init; }
 }
 
-public sealed record GeoparquetPublicationArtifact
+public sealed record GeoparquetExportArtifact
 {
     public const string MediaTypeValue = "application/vnd.apache.parquet";
 
@@ -112,25 +112,25 @@ public sealed record GeoparquetPublicationArtifact
     public required IReadOnlyList<string> Fields { get; init; }
 }
 
-public sealed record PublicationValidation(string Status, DateTimeOffset ValidatedAt, IReadOnlyList<PublicationValidationCheck> Checks)
+public sealed record ExportValidation(string Status, DateTimeOffset ValidatedAt, IReadOnlyList<ExportValidationCheck> Checks)
 {
     public const string Passed = "passed";
     public const string Failed = "failed";
     public const string Unavailable = "unavailable";
 }
 
-public sealed record PublicationValidationCheck(string Name, string Status)
+public sealed record ExportValidationCheck(string Name, string Status)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Detail { get; init; }
 }
 
-public sealed record PublishedPublication(string PublicationId, string Version, string CaptureId, string DescriptorKey, string PointerKey);
+public sealed record PublishedExportVersion(string PublicationId, string Version, string CaptureId, string DescriptorKey, string PointerKey);
 
-public sealed record PublicationPointer(string PublicationId, string Version, string Collection, DateTimeOffset SwitchedAt);
+public sealed record ExportPointer(string PublicationId, string Version, string Collection, DateTimeOffset SwitchedAt);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
-[JsonSerializable(typeof(PublicationDescriptor))]
-[JsonSerializable(typeof(PublicationPointer))]
+[JsonSerializable(typeof(ExportVersion))]
+[JsonSerializable(typeof(ExportPointer))]
 [JsonSerializable(typeof(JsonObject))]
-public sealed partial class PublicationDescriptorJsonContext : JsonSerializerContext;
+public sealed partial class ExportVersionJsonContext : JsonSerializerContext;

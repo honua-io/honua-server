@@ -8,9 +8,9 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.Infrastructure.Authentication;
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -20,7 +20,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-public sealed partial class PairedPublishEndpointTests
+public sealed partial class ExportEndpointTests
 {
     private string PublicationRoute => $"/api/v1/publications/{_publicationId}";
 
@@ -376,8 +376,8 @@ public sealed partial class PairedPublishEndpointTests
     {
         var published = await PublishAsync(IdentityField);
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = PairedPublicationStore.Create(Storage, options, _publicationId);
-        var pointer = await ReadJsonAsync<PublicationPointer>(published.PointerKey);
+        var store = ExportStore.Create(Storage, options, _publicationId);
+        var pointer = await ReadJsonAsync<ExportPointer>(published.PointerKey);
         var expectedTag = await store.ReadPointerETagAsync(CancellationToken.None);
         (await store.SwitchPointerAsync(pointer with { Collection = "../collection.json" }, expectedTag, CancellationToken.None))
             .Should().BeTrue();

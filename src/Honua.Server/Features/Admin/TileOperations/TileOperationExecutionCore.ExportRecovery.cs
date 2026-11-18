@@ -2,9 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.Infrastructure.Progress;
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Admin.Exports;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -13,12 +13,12 @@ internal sealed partial class TileOperationExecutionCore
     // A durable retry keeps its operation id. Recover its activated version before reading
     // fresh data: a missing job receipt must not turn one operation into a second publication.
     private static async Task<TileOperationProgress> RecoverActivatedAsync(
-        PairedPublishContext context, PublicationPointer recoveryPointer, TileOperationProgress progress, CancellationToken cancellationToken)
+        ExportPublishContext context, ExportPointer recoveryPointer, TileOperationProgress progress, CancellationToken cancellationToken)
     {
         if (recoveryPointer.PublicationId != context.Run.PublicationId
             || await context.Store.PointerStateAsync(recoveryPointer.Version).ConfigureAwait(false) != PointerState.NamesVersion)
         {
-            throw new PairedActivationUnknownException(
+            throw new ExportActivationUnknownException(
                 "This operation already started a version whose activation is no longer observable; its artifacts were retained. Start a new publish explicitly if needed.");
         }
 
@@ -28,15 +28,15 @@ internal sealed partial class TileOperationExecutionCore
             if (previous.PublicationId != context.Run.PublicationId || previous.Version != recoveryPointer.Version
                 || previous.SourceLayer.Service != context.Source.Published.Service.Metadata.Id
                 || previous.SourceLayer.Layer != context.Source.Resource.Metadata.Id
-                || previous.Validation.Status != PublicationValidation.Passed
-                || PublicationDescriptorRules.Violations(previous).Count != 0)
+                || previous.Validation.Status != ExportValidation.Passed
+                || ExportVersionRules.Violations(previous).Count != 0)
             {
-                throw new PairedPublicationException("The stored publication does not match this operation's source.");
+                throw new ExportException("The stored publication does not match this operation's source.");
             }
 
             return progress with
             {
-                PublishedPublication = new PublishedPublication(previous.PublicationId, previous.Version,
+                PublishedExportVersion = new PublishedExportVersion(previous.PublicationId, previous.Version,
                     previous.Capture.CaptureId, context.Store.VersionKey(previous.Version, ExportCollectionDocument.FileName),
                     context.Store.PointerKey),
                 Status = OperationStatus.Completed,
@@ -46,14 +46,14 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        throw new PairedActivationUnknownException("The activated operation's collection document could not be recovered; its artifacts were retained.");
+        throw new ExportActivationUnknownException("The activated operation's collection document could not be recovered; its artifacts were retained.");
     }
 
     // The switch is not cancellable: once storage may have applied it, the job must learn which
     // version is current rather than abandon the answer.
-    internal static async Task SwitchPointerAsync(PairedPublicationStore store, PairedPublicationRun run, string? expectedETag)
+    internal static async Task SwitchPointerAsync(ExportStore store, ExportVersionRun run, string? expectedETag)
     {
-        var pointer = new PublicationPointer(
+        var pointer = new ExportPointer(
             run.PublicationId, run.Version, $"{run.Version}/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
         bool switched;
         try
@@ -80,7 +80,7 @@ internal sealed partial class TileOperationExecutionCore
                 return;
             case PointerState.Unknown:
             case PointerState.NamesOther:
-                throw new PairedActivationUnknownException(
+                throw new ExportActivationUnknownException(
                     $"The activation outcome of version {run.Version} is unknown; the version was kept. Check the publication pointer before retrying.");
         }
     }

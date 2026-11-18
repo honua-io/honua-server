@@ -7,14 +7,14 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // Versions are written once under their own keys; only the pointer changes, and only when it still
 // names the version this run started from.
-internal sealed class PairedPublicationStore
+internal sealed class ExportStore
 {
     internal const string PointerFileName = "current.json";
     private const string JsonContentType = "application/json";
@@ -22,7 +22,7 @@ internal sealed class PairedPublicationStore
     private readonly ICloudFileStorage _storage;
     private readonly string _publicationKey;
 
-    private PairedPublicationStore(ICloudFileStorage storage, string publicationKey)
+    private ExportStore(ICloudFileStorage storage, string publicationKey)
     {
         _storage = storage;
         _publicationKey = publicationKey;
@@ -30,23 +30,23 @@ internal sealed class PairedPublicationStore
 
     public string PointerKey => $"{_publicationKey}/{PointerFileName}";
 
-    public static PairedPublicationStore Create(ICloudFileStorage storage, CloudStorageOptions options, string publicationId)
+    public static ExportStore Create(ICloudFileStorage storage, CloudStorageOptions options, string publicationId)
     {
         var root = PMTilesPublishKeyRoot.Resolve(options);
         var publicationKey = string.IsNullOrEmpty(root) ? $"publications/{publicationId}" : $"{root}/publications/{publicationId}";
-        return new PairedPublicationStore(storage, publicationKey);
+        return new ExportStore(storage, publicationKey);
     }
 
     public string VersionKey(string version, string fileName) => $"{_publicationKey}/{version}/{fileName}";
 
     // A create-only marker fences overlapping attempts before any artifact upload. It also
     // survives a lost job receipt; retries recover its version instead of recapturing data.
-    public async Task<PublicationPointer?> BeginOperationAsync(string operationId, PairedPublicationRun run, CancellationToken cancellationToken)
+    public async Task<ExportPointer?> BeginOperationAsync(string operationId, ExportVersionRun run, CancellationToken cancellationToken)
     {
         var operationKey = $"{_publicationKey}/operations/{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(operationId)))}.json";
-        var pointer = new PublicationPointer(run.PublicationId, run.Version,
+        var pointer = new ExportPointer(run.PublicationId, run.Version,
             $"{run.Version}/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
-        using var content = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(pointer, PublicationDescriptorJsonContext.Default.PublicationPointer));
+        using var content = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(pointer, ExportVersionJsonContext.Default.ExportPointer));
         UploadResult result;
         try
         {
@@ -64,7 +64,7 @@ internal sealed class PairedPublicationStore
         }
         catch (Exception)
         {
-            throw new PairedActivationUnknownException("The publication operation could not be reserved; no artifacts were uploaded.");
+            throw new ExportActivationUnknownException("The publication operation could not be reserved; no artifacts were uploaded.");
         }
 
         if (result.Success)
@@ -72,8 +72,8 @@ internal sealed class PairedPublicationStore
             return null;
         }
 
-        return await ReadJsonAsync(operationKey, PublicationDescriptorJsonContext.Default.PublicationPointer, cancellationToken).ConfigureAwait(false)
-            ?? throw new PairedActivationUnknownException("The publication operation reservation is unknown; no artifacts were uploaded.");
+        return await ReadJsonAsync(operationKey, ExportVersionJsonContext.Default.ExportPointer, cancellationToken).ConfigureAwait(false)
+            ?? throw new ExportActivationUnknownException("The publication operation reservation is unknown; no artifacts were uploaded.");
     }
 
     // Null when no version has been switched in yet.
@@ -86,24 +86,24 @@ internal sealed class PairedPublicationStore
         }
 
         return string.IsNullOrWhiteSpace(pointer.ETag)
-            ? throw new PairedPublicationException("The storage provider reports no version tag for the current publication pointer.")
+            ? throw new ExportException("The storage provider reports no version tag for the current publication pointer.")
             : pointer.ETag;
     }
 
-    public async Task<PublicationPointer?> ReadPointerAsync(CancellationToken cancellationToken)
-        => await ReadJsonAsync(PointerKey, PublicationDescriptorJsonContext.Default.PublicationPointer, cancellationToken).ConfigureAwait(false);
+    public async Task<ExportPointer?> ReadPointerAsync(CancellationToken cancellationToken)
+        => await ReadJsonAsync(PointerKey, ExportVersionJsonContext.Default.ExportPointer, cancellationToken).ConfigureAwait(false);
 
-    public Task<PublicationDescriptor?> ReadCollectionAsync(PublicationPointer pointer, CancellationToken cancellationToken)
-        => PairedPublicationReader.IsVersion(pointer.Version)
+    public Task<ExportVersion?> ReadCollectionAsync(ExportPointer pointer, CancellationToken cancellationToken)
+        => ExportReader.IsVersion(pointer.Version)
             ? ReadCollectionAtAsync(VersionKey(pointer.Version, ExportCollectionDocument.FileName), cancellationToken)
-            : Task.FromResult<PublicationDescriptor?>(null);
+            : Task.FromResult<ExportVersion?>(null);
 
-    public Task<PublicationDescriptor?> ReadVersionAsync(string version, CancellationToken cancellationToken)
+    public Task<ExportVersion?> ReadVersionAsync(string version, CancellationToken cancellationToken)
         => ReadCollectionAtAsync(VersionKey(version, ExportCollectionDocument.FileName), cancellationToken);
 
-    private async Task<PublicationDescriptor?> ReadCollectionAtAsync(string key, CancellationToken cancellationToken)
+    private async Task<ExportVersion?> ReadCollectionAtAsync(string key, CancellationToken cancellationToken)
     {
-        var collection = await ReadJsonAsync(key, PublicationDescriptorJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
+        var collection = await ReadJsonAsync(key, ExportVersionJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
         return collection is null ? null : ExportCollectionDocument.Read(collection);
     }
 
@@ -164,7 +164,7 @@ internal sealed class PairedPublicationStore
         }, cancellationToken).ConfigureAwait(false);
         if (!result.Success)
         {
-            throw new PairedPublicationException($"Writing publication object '{Path.GetFileName(key)}' failed.");
+            throw new ExportException($"Writing publication object '{Path.GetFileName(key)}' failed.");
         }
     }
 
@@ -199,10 +199,10 @@ internal sealed class PairedPublicationStore
         }
     }
 
-    public async Task<bool> SwitchPointerAsync(PublicationPointer pointer, string? expectedETag, CancellationToken cancellationToken)
+    public async Task<bool> SwitchPointerAsync(ExportPointer pointer, string? expectedETag, CancellationToken cancellationToken)
     {
         using var content = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(
-            pointer, PublicationDescriptorJsonContext.Default.PublicationPointer));
+            pointer, ExportVersionJsonContext.Default.ExportPointer));
         var result = await _storage.UploadIfMatchAsync(new FileUploadRequest
         {
             Content = content,

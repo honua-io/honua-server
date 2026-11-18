@@ -3,15 +3,15 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Services;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // Which source fields each artifact carries. Hidden fields reach neither artifact.
-internal sealed record PairedPublicationFields(
-    IReadOnlyList<PublicationField> Declared,
+internal sealed record ExportFields(
+    IReadOnlyList<ExportVersionField> Declared,
     ImmutableArray<string> Hidden,
     IReadOnlyList<string> TileFields,
     IReadOnlyList<string> ParquetFields,
@@ -21,7 +21,7 @@ internal sealed record PairedPublicationFields(
     // Column names the GeoParquet writer owns; a field with one of them would be renamed.
     private static readonly string[] WriterColumns = ["geometry", "bbox"];
 
-    public static PairedPublicationFields Resolve(MetadataV2Object resource, string identityField)
+    public static ExportFields Resolve(MetadataV2Object resource, string identityField)
     {
         var geometry = resource.FindPrimaryGeometryField();
         var source = resource.SchemaFields
@@ -35,18 +35,18 @@ internal sealed record PairedPublicationFields(
         var objectIdField = resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId;
         if (hidden.Contains(objectIdField, StringComparer.OrdinalIgnoreCase))
         {
-            throw new PairedPublicationException(
+            throw new ExportException(
                 $"The layer's id field '{objectIdField}' is hidden; GeoParquet always carries it, so show it before publishing.");
         }
 
         var declared = visible.Select(Describe)
             .Concat(source.Where(field => field.Hidden && DescriptorType(field.Type) is not null
-                    && PairedPublishRequestRules.IsPortableFieldName(field.Name))
-                .Select(field => new PublicationField(field.Name, DescriptorType(field.Type)!, Public: false)))
+                    && ExportRequestRules.IsPortableFieldName(field.Name))
+                .Select(field => new ExportVersionField(field.Name, DescriptorType(field.Type)!, Public: false)))
             .ToList();
         if (!declared.Any(field => string.Equals(field.Name, objectIdField, StringComparison.OrdinalIgnoreCase)))
         {
-            declared.Insert(0, new PublicationField(objectIdField, "integer", Public: true));
+            declared.Insert(0, new ExportVersionField(objectIdField, "integer", Public: true));
         }
 
         var parquetFields = GeoParquetFeatureWriter
@@ -56,7 +56,7 @@ internal sealed record PairedPublicationFields(
             .ToList();
         // Tile features carry every public attribute plus the object id column the tile query selects.
         var tileFields = declared.Where(field => field.Public).Select(field => field.Name).ToList();
-        return new PairedPublicationFields(declared, hidden, tileFields, parquetFields, objectIdField, identityField);
+        return new ExportFields(declared, hidden, tileFields, parquetFields, objectIdField, identityField);
     }
 
     public bool IsPublic(string name)
@@ -67,28 +67,28 @@ internal sealed record PairedPublicationFields(
         var identity = visible.FirstOrDefault(field => string.Equals(field.Name, identityField, StringComparison.Ordinal));
         if (identity is not { Type: MetadataV2FieldType.String })
         {
-            throw new PairedPublicationException(
+            throw new ExportException(
                 $"Identity field '{identityField}' must be a visible text field of the layer.");
         }
 
         if (visible.FirstOrDefault(field => WriterColumns.Contains(field.Name, StringComparer.OrdinalIgnoreCase)) is { } reserved)
         {
-            throw new PairedPublicationException(
+            throw new ExportException(
                 $"Field '{reserved.Name}' collides with a GeoParquet column; rename or hide it before publishing.");
         }
     }
 
-    private static PublicationField Describe(MetadataV2Field field)
+    private static ExportVersionField Describe(MetadataV2Field field)
     {
-        if (!PairedPublishRequestRules.IsPortableFieldName(field.Name))
+        if (!ExportRequestRules.IsPortableFieldName(field.Name))
         {
-            throw new PairedPublicationException(
+            throw new ExportException(
                 $"Field '{field.Name}' is not a portable column name; rename or hide it before publishing.");
         }
 
-        var type = DescriptorType(field.Type) ?? throw new PairedPublicationException(
+        var type = DescriptorType(field.Type) ?? throw new ExportException(
             $"Field '{field.Name}' has a type the publication descriptor cannot describe; hide it before publishing.");
-        return new PublicationField(field.Name, type, Public: true)
+        return new ExportVersionField(field.Name, type, Public: true)
         {
             Title = string.IsNullOrWhiteSpace(field.Alias) ? null : field.Alias,
             Description = string.IsNullOrWhiteSpace(field.Description) ? null : field.Description

@@ -7,7 +7,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Rendering;
 using SkiaSharp;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 internal sealed record ExportThumbnailSource(IReadOnlyList<Feature> Features, double[] Bounds, MetadataV2GeometryType GeometryType);
 

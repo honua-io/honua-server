@@ -10,14 +10,14 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // One routable managed layer and the change fence that proves both artifacts read the same data.
-internal sealed class PairedPublicationSource
+internal sealed class ExportLayerSource
 {
     private readonly IChangeTracker _changeTracker;
 
-    private PairedPublicationSource(
+    private ExportLayerSource(
         PMTilesPublishedSource published,
         int storageLayerId,
         long metadataRevision,
@@ -44,7 +44,7 @@ internal sealed class PairedPublicationSource
     public string Revision => string.Create(
         CultureInfo.InvariantCulture, $"metadata-{MetadataRevision}:changes-{Generation}");
 
-    public static async Task<PairedPublicationSource> OpenAsync(
+    public static async Task<ExportLayerSource> OpenAsync(
         IMetadataV2GraphProvider graphProvider,
         IServiceProvider services,
         string serviceId,
@@ -53,25 +53,25 @@ internal sealed class PairedPublicationSource
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var published = PMTilesProxySourceResolver.ResolveForPublish(snapshot, serviceId, layerId)
-            ?? throw new PairedPublicationException("The paired publish target is not a routable layer of the service.");
+            ?? throw new ExportException("The paired publish target is not a routable layer of the service.");
 
         if (!IsManagedTable(published.Resource, snapshot.ResolveStorageBinding(published.Publication)))
         {
-            throw new PairedPublicationException(
+            throw new ExportException(
                 "Paired publish needs a layer stored in Honua's managed feature table, whose edits it can fence.");
         }
 
         var changeTracker = services.GetService<IChangeTracker>();
         if (changeTracker is null or NoOpChangeTracker)
         {
-            throw new PairedPublicationException("Paired publish needs edit change tracking, which this data provider does not record.");
+            throw new ExportException("Paired publish needs edit change tracking, which this data provider does not record.");
         }
 
         var storageLayerId = snapshot.ResolveStorageLayerId(published.Publication)
             ?? snapshot.ResolveStorageLayerId(published.Resource)
             ?? layerId;
         var generation = await changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
-        return new PairedPublicationSource(published, storageLayerId, snapshot.Revision, generation, changeTracker);
+        return new ExportLayerSource(published, storageLayerId, snapshot.Revision, generation, changeTracker);
     }
 
     private static bool IsManagedTable(MetadataV2Object resource, MetadataV2StorageBinding? binding)
@@ -102,7 +102,7 @@ internal sealed class PairedPublicationSource
         var router = services.GetService<FeatureProviderQueryRouter>();
         if (router is null)
         {
-            throw new PairedPublicationException("Paired publish requires binding-aware managed relation validation.");
+            throw new ExportException("Paired publish requires binding-aware managed relation validation.");
         }
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -119,7 +119,7 @@ internal sealed class PairedPublicationSource
         if (reader is not IManagedFeatureWriteSupport support
             || !await support.SupportsManagedWritesAsync(StorageLayerId, cancellationToken).ConfigureAwait(false))
         {
-            throw new PairedPublicationException("Paired publish requires the canonical managed relation and layer partition.");
+            throw new ExportException("Paired publish requires the canonical managed relation and layer partition.");
         }
 
         return reader;
@@ -138,7 +138,7 @@ internal sealed class PairedPublicationSource
     }
 }
 
-internal class PairedPublicationException(string message) : Exception(message);
+internal class ExportException(string message) : Exception(message);
 
 // The pointer may name the version, so the version must be kept.
-internal sealed class PairedActivationUnknownException(string message) : PairedPublicationException(message);
+internal sealed class ExportActivationUnknownException(string message) : ExportException(message);

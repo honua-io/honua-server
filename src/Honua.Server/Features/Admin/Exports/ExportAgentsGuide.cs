@@ -2,13 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // AGENTS.md for one export version: what an agent needs to query the GeoParquet file correctly
 // without asking: the columns, the coordinate system, and queries that run as written.
-// Field names are portable identifiers (PairedPublishRequestRules), so they are safe to quote in SQL.
+// Field names are portable identifiers (ExportRequestRules), so they are safe to quote in SQL.
 internal static class ExportAgentsGuide
 {
     public static string Render(ExportCompanionInput input)
@@ -24,7 +24,7 @@ internal static class ExportAgentsGuide
         return text.ToString();
     }
 
-    private static void AppendCoordinates(StringBuilder text, PublicationDescriptor descriptor)
+    private static void AppendCoordinates(StringBuilder text, ExportVersion descriptor)
         => text.Append("## Coordinate system\n\n")
             .Append("- Geometry column `").Append(descriptor.Geometry.Column).Append("` holds WKB in ")
             .Append(descriptor.Crs.Geoparquet).Append(" (longitude, latitude); the source layer is ")
@@ -34,7 +34,7 @@ internal static class ExportAgentsGuide
             .Append("- Extent: ").Append(ExportMarkdown.Bounds(descriptor.Bounds)).Append(" (west, south, east, north).\n")
             .Append("- Feature count: ").Append(descriptor.Capture.FeatureCount).Append(".\n\n");
 
-    private static void AppendFields(StringBuilder text, IReadOnlyList<PublicationField> fields, string identityField)
+    private static void AppendFields(StringBuilder text, IReadOnlyList<ExportField> fields, string identityField)
     {
         text.Append("## Fields\n\n| Name | Type | Description |\n|---|---|---|\n");
         foreach (var field in fields)
@@ -54,7 +54,7 @@ internal static class ExportAgentsGuide
         text.Append('\n');
     }
 
-    private static void AppendQueries(StringBuilder text, PublicationDescriptor descriptor)
+    private static void AppendQueries(StringBuilder text, ExportVersion descriptor)
     {
         var file = descriptor.Artifacts.Geoparquet.Href;
         var (west, south, east, north) = (ExportMarkdown.Number(descriptor.Bounds[0]), ExportMarkdown.Number(descriptor.Bounds[1]),

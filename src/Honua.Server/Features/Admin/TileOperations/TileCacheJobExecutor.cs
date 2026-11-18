@@ -89,7 +89,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
-        if (finalProgress.Status == OperationStatus.Completed && finalProgress.PublishedPublication is { } publication)
+        if (finalProgress.Status == OperationStatus.Completed && finalProgress.PublishedExportVersion is { } publication)
         {
             // Activation has committed. Cancellation can no longer undo it, and a terminal
             // progress/report failure must not make the durable runner retry the publication.

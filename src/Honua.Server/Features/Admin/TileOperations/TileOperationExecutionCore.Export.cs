@@ -9,11 +9,11 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Progress;
 using Honua.Infrastructure.Services;
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Microsoft.Extensions.Options;
 
@@ -23,11 +23,11 @@ namespace Honua.Server.Features.Admin.TileOperations;
 // version, and the publication's pointer moves to that version only after both validate.
 internal sealed partial class TileOperationExecutionCore
 {
-    private sealed record PairedPublishContext(
-        PairedPublicationRun Run,
-        PairedPublicationSource Source,
-        PairedPublicationFields Fields,
-        PairedPublicationStore Store,
+    private sealed record ExportPublishContext(
+        ExportVersionRun Run,
+        ExportLayerSource Source,
+        ExportFields Fields,
+        ExportStore Store,
         string? PointerETag);
 
     private sealed record PairedArtifacts(Stream Archive, string ArchiveSha256, byte[] Parquet, string ParquetSha256);
@@ -43,7 +43,7 @@ internal sealed partial class TileOperationExecutionCore
         {
             return await PairedPublishAsync(progress, request, tileSources, services, cancellationToken).ConfigureAwait(false);
         }
-        catch (PairedPublicationException ex)
+        catch (ExportException ex)
         {
             return PairedFailure(progress, ex.Message);
         }
@@ -68,7 +68,7 @@ internal sealed partial class TileOperationExecutionCore
         var context = await OpenPairedPublishAsync(request, graphProvider, services, cancellationToken).ConfigureAwait(false);
         if (tileSources[request.LayerId!.Value].StorageLayerId != context.Source.StorageLayerId)
         {
-            throw new PairedPublicationException("The layer was rebound while the publish started; retry the publish.");
+            throw new ExportException("The layer was rebound while the publish started; retry the publish.");
         }
 
         var previous = await context.Store.BeginOperationAsync(progress.JobId, context.Run, cancellationToken).ConfigureAwait(false);
@@ -78,7 +78,7 @@ internal sealed partial class TileOperationExecutionCore
         }
 
         var reader = await context.Source.ResolveReaderAsync(graphProvider, services, cancellationToken).ConfigureAwait(false);
-        var capture = await PairedPublicationCapture.ReadAsync(
+        var capture = await ExportFeatureCapture.ReadAsync(
             reader, context.Source.StorageLayerId, context.Fields, cancellationToken).ConfigureAwait(false);
         var limits = services.GetRequiredService<IOptions<LimitsOptions>>().Value;
         var extensions = PairedMetadata(context.Run);
@@ -108,14 +108,14 @@ internal sealed partial class TileOperationExecutionCore
             companions = companions with { Thumbnail = TryRenderThumbnail(context, capture, companions) };
             return await ActivateAsync(current, context, companions, build, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not PairedActivationUnknownException)
+        catch (Exception ex) when (ex is not ExportActivationUnknownException)
         {
             await DeleteUnusedVersionAsync(context, services, current.JobId).ConfigureAwait(false);
             throw;
         }
     }
 
-    private static async Task<PairedPublishContext> OpenPairedPublishAsync(
+    private static async Task<ExportPublishContext> OpenPairedPublishAsync(
         TileOperationStartRequest request,
         IMetadataV2GraphProvider graphProvider,
         IServiceProvider services,
@@ -123,34 +123,34 @@ internal sealed partial class TileOperationExecutionCore
     {
         if (!string.Equals(request.TileMatrixSetId, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
         {
-            throw new PairedPublicationException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
+            throw new ExportException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
         }
 
         var storage = services.GetService<ICloudFileStorage>()
-            ?? throw new PairedPublicationException("Cloud storage is not configured. Paired publish requires cloud storage.");
+            ?? throw new ExportException("Cloud storage is not configured. Paired publish requires cloud storage.");
         var options = services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = PairedPublicationStore.Create(storage, options, request.PublicationId!);
+        var store = ExportStore.Create(storage, options, request.PublicationId!);
         var pointerETag = await store.ReadPointerETagAsync(cancellationToken).ConfigureAwait(false);
 
-        var source = await PairedPublicationSource.OpenAsync(
+        var source = await ExportLayerSource.OpenAsync(
             graphProvider, services, request.ServiceId!, request.LayerId!.Value, cancellationToken).ConfigureAwait(false);
         if (pointerETag is not null)
         {
             await RequireSameSourceAsync(store, source, cancellationToken).ConfigureAwait(false);
         }
 
-        var fields = PairedPublicationFields.Resolve(source.Resource, request.IdentityField!);
+        var fields = ExportFields.Resolve(source.Resource, request.IdentityField!);
         var capturedAt = DateTimeOffset.UtcNow;
         var captureId = $"capture-{Guid.NewGuid():N}";
-        var run = new PairedPublicationRun(
-            request.PublicationId!, PairedPublicationDescriptorFactory.NewVersion(capturedAt, captureId), captureId, capturedAt);
-        return new PairedPublishContext(run, source, fields, store, pointerETag);
+        var run = new ExportVersionRun(
+            request.PublicationId!, ExportVersionFactory.NewVersion(capturedAt, captureId), captureId, capturedAt);
+        return new ExportPublishContext(run, source, fields, store, pointerETag);
     }
 
     // A publication id names one dataset; another layer must not silently replace it for its readers.
     private static async Task RequireSameSourceAsync(
-        PairedPublicationStore store,
-        PairedPublicationSource source,
+        ExportStore store,
+        ExportLayerSource source,
         CancellationToken cancellationToken)
     {
         var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
@@ -159,16 +159,16 @@ internal sealed partial class TileOperationExecutionCore
             || active.SourceLayer.Service != source.Published.Service.Metadata.Id
             || active.SourceLayer.Layer != source.Resource.Metadata.Id)
         {
-            throw new PairedPublicationException(
+            throw new ExportException(
                 "This publication id already publishes a different layer; choose another publication id.");
         }
     }
 
-    private static ImmutableDictionary<string, string> PairedMetadata(PairedPublicationRun run)
+    private static ImmutableDictionary<string, string> PairedMetadata(ExportVersionRun run)
         => ImmutableDictionary<string, string>.Empty
-            .Add(PairedPublicationCapture.CaptureIdMetadataKey, run.CaptureId)
-            .Add(PairedPublicationCapture.PublicationIdMetadataKey, run.PublicationId)
-            .Add(PairedPublicationCapture.VersionMetadataKey, run.Version);
+            .Add(ExportFeatureCapture.CaptureIdMetadataKey, run.CaptureId)
+            .Add(ExportFeatureCapture.PublicationIdMetadataKey, run.PublicationId)
+            .Add(ExportFeatureCapture.VersionMetadataKey, run.Version);
 
     // The per-tile budget may drop attributes or features to fit a size; a paired archive must hold
     // every captured feature with its attributes, so only maxTiles bounds this build.
@@ -186,38 +186,38 @@ internal sealed partial class TileOperationExecutionCore
     {
         if (build.Failed > 0)
         {
-            throw new PairedPublicationException($"{build.Failed} tiles failed during generation; nothing was published.");
+            throw new ExportException($"{build.Failed} tiles failed during generation; nothing was published.");
         }
 
         if (build.WasTruncated)
         {
-            throw new PairedPublicationException("The tile pyramid exceeds maxTiles; raise maxTiles or lower maxZoom so every captured feature is tiled.");
+            throw new ExportException("The tile pyramid exceeds maxTiles; raise maxTiles or lower maxZoom so every captured feature is tiled.");
         }
     }
 
-    private static async Task<List<PublicationValidationCheck>> StoreAndCheckAsync(
-        PairedPublishContext context,
+    private static async Task<List<ExportValidationCheck>> StoreAndCheckAsync(
+        ExportPublishContext context,
         PairedArtifacts artifacts,
         string jobId,
         IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken)
     {
         var run = context.Run;
-        var pmtilesKey = context.Store.VersionKey(run.Version, PairedPublicationDescriptorFactory.PmtilesFileName(run));
-        var parquetKey = context.Store.VersionKey(run.Version, PairedPublicationDescriptorFactory.GeoparquetFileName(run));
+        var pmtilesKey = context.Store.VersionKey(run.Version, ExportVersionFactory.PmtilesFileName(run));
+        var parquetKey = context.Store.VersionKey(run.Version, ExportVersionFactory.GeoparquetFileName(run));
         var tags = ImmutableDictionary<string, string>.Empty
             .Add("jobId", jobId)
             .Add("layerId", context.Source.StorageLayerId.ToString(CultureInfo.InvariantCulture));
 
         // The paired operation tag keeps these archives out of the generic PMTiles range proxy, which
         // serves only "publish" objects and cannot apply the publication read policy.
-        await context.Store.PutOnceAsync(pmtilesKey, artifacts.Archive, PmtilesPublicationArtifact.MediaTypeValue,
+        await context.Store.PutOnceAsync(pmtilesKey, artifacts.Archive, PmtilesExportArtifact.MediaTypeValue,
             PMTilesProxySourceResolver.StampPublishMetadata(
                 tags.Add("operation", TileCacheExecutionSpecBuilder.PairedPublishOperation), context.Source.Published),
             cancellationToken).ConfigureAwait(false);
         using (var parquet = new MemoryStream(artifacts.Parquet, writable: false))
         {
-            await context.Store.PutOnceAsync(parquetKey, parquet, GeoparquetPublicationArtifact.MediaTypeValue,
+            await context.Store.PutOnceAsync(parquetKey, parquet, GeoparquetExportArtifact.MediaTypeValue,
                 tags.Add("operation", TileCacheExecutionSpecBuilder.PairedPublishOperation), cancellationToken).ConfigureAwait(false);
         }
 
@@ -227,21 +227,21 @@ internal sealed partial class TileOperationExecutionCore
             await StoredCopyCheckAsync(context.Store, (pmtilesKey, artifacts.ArchiveSha256), "pmtiles-stored", cancellationToken).ConfigureAwait(false),
             await StoredCopyCheckAsync(context.Store, (parquetKey, artifacts.ParquetSha256), "geoparquet-stored", cancellationToken).ConfigureAwait(false),
             unchanged
-                ? new PublicationValidationCheck("source-unchanged", PublicationValidation.Passed)
-                : new PublicationValidationCheck("source-unchanged", PublicationValidation.Failed)
+                ? new ExportValidationCheck("source-unchanged", ExportValidation.Passed)
+                : new ExportValidationCheck("source-unchanged", ExportValidation.Failed)
                 {
                     Detail = "The layer or its metadata changed during capture; retry the publish."
                 }
         ];
     }
 
-    private static StoredPair Describe(PairedPublishContext context, PairedArtifacts artifacts, PMTilesBuildResult build)
+    private static StoredPair Describe(ExportPublishContext context, PairedArtifacts artifacts, PMTilesBuildResult build)
     {
         var run = context.Run;
         return new StoredPair(
-            new PmtilesPublicationArtifact
+            new PmtilesExportArtifact
             {
-                Href = PairedPublicationDescriptorFactory.PmtilesFileName(run),
+                Href = ExportVersionFactory.PmtilesFileName(run),
                 Bytes = artifacts.Archive.Length,
                 Sha256 = artifacts.ArchiveSha256,
                 CaptureId = run.CaptureId,
@@ -250,9 +250,9 @@ internal sealed partial class TileOperationExecutionCore
                 Minzoom = build.MinZoom,
                 Maxzoom = build.MaxZoom
             },
-            new GeoparquetPublicationArtifact
+            new GeoparquetExportArtifact
             {
-                Href = PairedPublicationDescriptorFactory.GeoparquetFileName(run),
+                Href = ExportVersionFactory.GeoparquetFileName(run),
                 Bytes = artifacts.Parquet.Length,
                 Sha256 = artifacts.ParquetSha256,
                 CaptureId = run.CaptureId,
@@ -260,23 +260,23 @@ internal sealed partial class TileOperationExecutionCore
             });
     }
 
-    private static PublicationDescriptor Validated(
-        PairedPublishContext context,
-        PairedPublicationCapture capture,
+    private static ExportVersion Validated(
+        ExportPublishContext context,
+        ExportFeatureCapture capture,
         StoredPair artifacts,
-        List<PublicationValidationCheck> checks)
+        List<ExportValidationCheck> checks)
     {
-        var draft = PairedPublicationDescriptorFactory.Create(context.Run, context.Source, capture, context.Fields,
-            (artifacts, context.Fields.IdentityField, new PublicationValidation(PublicationValidation.Passed, DateTimeOffset.UtcNow, checks)));
-        var violations = PublicationDescriptorRules.Violations(draft);
+        var draft = ExportVersionFactory.Create(context.Run, context.Source, capture, context.Fields,
+            (artifacts, context.Fields.IdentityField, new ExportValidation(ExportValidation.Passed, DateTimeOffset.UtcNow, checks)));
+        var violations = ExportVersionRules.Violations(draft);
         checks.Add(violations.Count == 0
-            ? new PublicationValidationCheck("descriptor-rules", PublicationValidation.Passed)
-            : new PublicationValidationCheck("descriptor-rules", PublicationValidation.Failed) { Detail = string.Join(", ", violations) });
+            ? new ExportValidationCheck("descriptor-rules", ExportValidation.Passed)
+            : new ExportValidationCheck("descriptor-rules", ExportValidation.Failed) { Detail = string.Join(", ", violations) });
 
-        var failed = checks.Where(check => check.Status != PublicationValidation.Passed).ToList();
+        var failed = checks.Where(check => check.Status != ExportValidation.Passed).ToList();
         if (failed.Count > 0)
         {
-            throw new PairedPublicationException("Validation failed: " + string.Join("; ",
+            throw new ExportException("Validation failed: " + string.Join("; ",
                 failed.Select(check => check.Detail is null ? check.Name : $"{check.Name} ({check.Detail})")));
         }
 
@@ -285,7 +285,7 @@ internal sealed partial class TileOperationExecutionCore
 
     // The companion files describe the layer's public metadata and stored style as they are at publish time.
     private async Task<ExportLayerFacts> LayerFactsAsync(
-        PairedPublishContext context, IServiceProvider services, CancellationToken cancellationToken)
+        ExportPublishContext context, IServiceProvider services, CancellationToken cancellationToken)
     {
         var service = context.Source.Published.Service.Metadata;
         var style = await TryReadStoredStyleAsync(context, services, cancellationToken).ConfigureAwait(false);
@@ -298,7 +298,7 @@ internal sealed partial class TileOperationExecutionCore
     // The companion files are a convenience: a style catalog outage falls back to default paints
     // rather than failing a publish whose artifacts are already stored.
     private async Task<string?> TryReadStoredStyleAsync(
-        PairedPublishContext context, IServiceProvider services, CancellationToken cancellationToken)
+        ExportPublishContext context, IServiceProvider services, CancellationToken cancellationToken)
     {
         try
         {
@@ -315,7 +315,7 @@ internal sealed partial class TileOperationExecutionCore
 
     // A server image without the native renderer, or a style the renderer rejects, publishes without a thumbnail.
     private byte[]? TryRenderThumbnail(
-        PairedPublishContext context, PairedPublicationCapture capture, ExportCompanionInput companions)
+        ExportPublishContext context, ExportFeatureCapture capture, ExportCompanionInput companions)
     {
         try
         {
@@ -331,11 +331,11 @@ internal sealed partial class TileOperationExecutionCore
         }
     }
 
-    private static string VersionLabel(PairedPublicationRun run) => $"{run.PublicationId}/{run.Version}";
+    private static string VersionLabel(ExportVersionRun run) => $"{run.PublicationId}/{run.Version}";
 
     private async Task<TileOperationProgress> ActivateAsync(
         TileOperationProgress current,
-        PairedPublishContext context,
+        ExportPublishContext context,
         ExportCompanionInput validated,
         PMTilesBuildResult build,
         CancellationToken cancellationToken)
@@ -344,15 +344,15 @@ internal sealed partial class TileOperationExecutionCore
         var companions = validated with { Descriptor = validated.Descriptor with { PublishedAt = DateTimeOffset.UtcNow } };
         var collectionKey = context.Store.VersionKey(run.Version, ExportCollectionDocument.FileName);
         await PutCompanionFilesAsync(context, companions, cancellationToken).ConfigureAwait(false);
-        await context.Store.PutJsonOnceAsync(collectionKey, PairedPublicationDescriptorFactory.Collection(companions),
-            PublicationDescriptorJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
+        await context.Store.PutJsonOnceAsync(collectionKey, ExportVersionFactory.Collection(companions),
+            ExportVersionJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
 
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
         TileOperationLog.PairedPublishActivated(_logger, current.JobId, run.PublicationId, run.Version);
         return current with
         {
             ArchiveSizeBytes = build.ArchiveSize,
-            PublishedPublication = new PublishedPublication(run.PublicationId, run.Version, run.CaptureId, collectionKey, context.Store.PointerKey),
+            PublishedExportVersion = new PublishedExportVersion(run.PublicationId, run.Version, run.CaptureId, collectionKey, context.Store.PointerKey),
             Status = OperationStatus.Completed,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = null,
@@ -361,7 +361,7 @@ internal sealed partial class TileOperationExecutionCore
     }
 
     private static async Task PutCompanionFilesAsync(
-        PairedPublishContext context, ExportCompanionInput companions, CancellationToken cancellationToken)
+        ExportPublishContext context, ExportCompanionInput companions, CancellationToken cancellationToken)
     {
         foreach (var file in ExportCompanionFiles.Render(companions))
         {
@@ -369,23 +369,23 @@ internal sealed partial class TileOperationExecutionCore
         }
     }
 
-    private static async Task PutTextOnceAsync(PairedPublishContext context, ExportCompanionFile file, CancellationToken cancellationToken)
+    private static async Task PutTextOnceAsync(ExportPublishContext context, ExportCompanionFile file, CancellationToken cancellationToken)
     {
         using var body = new MemoryStream(file.Content, writable: false);
         await context.Store.PutOnceAsync(context.Store.VersionKey(context.Run.Version, file.FileName), body, file.MediaType,
             ImmutableDictionary<string, string>.Empty, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<PublicationValidationCheck> StoredCopyCheckAsync(
-        PairedPublicationStore store,
+    private static async Task<ExportValidationCheck> StoredCopyCheckAsync(
+        ExportStore store,
         (string Key, string Sha256) expected,
         string name,
         CancellationToken cancellationToken)
     {
         var stored = await store.ReadBackAsync(expected.Key, cancellationToken).ConfigureAwait(false);
         return stored is { } copy && copy.Sha256 == expected.Sha256
-            ? new PublicationValidationCheck(name, PublicationValidation.Passed)
-            : new PublicationValidationCheck(name, PublicationValidation.Failed) { Detail = "The stored copy does not match the generated bytes." };
+            ? new ExportValidationCheck(name, ExportValidation.Passed)
+            : new ExportValidationCheck(name, ExportValidation.Failed) { Detail = "The stored copy does not match the generated bytes." };
     }
 
     private static async Task<string> Sha256Async(Stream stream, CancellationToken cancellationToken)
@@ -396,7 +396,7 @@ internal sealed partial class TileOperationExecutionCore
         return Convert.ToHexStringLower(hash);
     }
 
-    private async Task DeleteUnusedVersionAsync(PairedPublishContext context, IServiceProvider services, string jobId)
+    private async Task DeleteUnusedVersionAsync(ExportPublishContext context, IServiceProvider services, string jobId)
     {
         var run = context.Run;
         if (await context.Store.PointerStateAsync(run.Version).ConfigureAwait(false) != PointerState.NamesOther)
@@ -407,8 +407,8 @@ internal sealed partial class TileOperationExecutionCore
         var storage = services.GetRequiredService<ICloudFileStorage>();
         foreach (var file in new[]
                  {
-                     PairedPublicationDescriptorFactory.PmtilesFileName(run),
-                     PairedPublicationDescriptorFactory.GeoparquetFileName(run),
+                     ExportVersionFactory.PmtilesFileName(run),
+                     ExportVersionFactory.GeoparquetFileName(run),
                      ExportCollectionDocument.FileName
                  }.Concat(ExportCompanionFiles.FileNames))
         {

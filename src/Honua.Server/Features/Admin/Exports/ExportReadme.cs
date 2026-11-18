@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // README.md for one export version: what the data is, under which licence, where it came from,
 // when it was captured, and which file to open for what.

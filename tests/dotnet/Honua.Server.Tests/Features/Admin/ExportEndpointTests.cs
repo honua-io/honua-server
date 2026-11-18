@@ -11,9 +11,9 @@ using Microsoft.AspNetCore.Hosting;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Authorization;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.Core.Features.Tiles.PMTiles;
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Infrastructure.Progress;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -33,8 +33,8 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
-public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTests.PairedPublishHost host)
-    : IClassFixture<PairedPublishEndpointTests.PairedPublishHost>, IAsyncLifetime
+public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost host)
+    : IClassFixture<ExportEndpointTests.ExportHost>, IAsyncLifetime
 {
     private const string JobsRoute = "/api/v1/admin/tile-operations/jobs";
     private const string IdentityField = "name";
@@ -60,7 +60,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
 
     // One host per class. Each case publishes under its own publication id. The cases that hide a
     // field or rebind the layer change the shared graph, so every case starts from the seeded graph.
-    public sealed class PairedPublishHost : IAsyncLifetime
+    public sealed class ExportHost : IAsyncLifetime
     {
         private MetadataV2Graph _seeded = null!;
         private long _revision;
@@ -111,8 +111,8 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
             string.Join("; ", errors.Select(error => $"{error.Path}: {error.Message}")));
         collectionJson.ToString().Should().NotContain($"\"{HiddenField}\"", "a non-public field appears nowhere in an Export");
         var descriptor = await ReadCollectionAsync(published.DescriptorKey);
-        descriptor.Validation.Status.Should().Be(PublicationValidation.Passed);
-        PublicationDescriptorRules.Violations(descriptor).Should().BeEmpty();
+        descriptor.Validation.Status.Should().Be(ExportValidation.Passed);
+        ExportVersionRules.Violations(descriptor).Should().BeEmpty();
         descriptor.Artifacts.Pmtiles.CaptureId.Should().Be(published.CaptureId);
         descriptor.Artifacts.Geoparquet.CaptureId.Should().Be(published.CaptureId);
         descriptor.Identity.Field.Should().Be(IdentityField);
@@ -124,7 +124,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
         Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(parquet)).Should().Be(descriptor.Artifacts.Geoparquet.Sha256);
         using (var reader = ArrowParquetTestReader.Open(parquet))
         {
-            reader.Schema.Metadata[PairedPublicationCapture.CaptureIdMetadataKey].Should().Be(published.CaptureId);
+            reader.Schema.Metadata[ExportFeatureCapture.CaptureIdMetadataKey].Should().Be(published.CaptureId);
             reader.Schema.FieldsList.Select(field => field.Name).Should().NotContain(HiddenField);
             reader.ParquetReader.FileMetaData.NumRows.Should().Be(descriptor.Capture.FeatureCount);
         }
@@ -132,7 +132,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
         var archive = await ReadBytesAsync(ArtifactKey(published, descriptor.Artifacts.Pmtiles.Href));
         var header = PMTilesHeader.ReadFrom(archive);
         var metadata = JsonNode.Parse(ArchiveMetadata(archive, header))!;
-        metadata[PairedPublicationCapture.CaptureIdMetadataKey]!.GetValue<string>().Should().Be(published.CaptureId);
+        metadata[ExportFeatureCapture.CaptureIdMetadataKey]!.GetValue<string>().Should().Be(published.CaptureId);
         metadata["vector_layers"]![0]!["fields"]!.AsObject().Select(field => field.Key).Should().NotContain(HiddenField);
     }
 
@@ -145,7 +145,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
 
         second.Version.Should().NotBe(first.Version);
         second.CaptureId.Should().NotBe(first.CaptureId);
-        (await ReadJsonAsync<PublicationPointer>(second.PointerKey)).Version.Should().Be(second.Version);
+        (await ReadJsonAsync<ExportPointer>(second.PointerKey)).Version.Should().Be(second.Version);
         (await Storage.ExistsAsync(first.DescriptorKey)).Should().BeTrue("a switched-out version stays readable for rollback");
     }
 
@@ -159,7 +159,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
         using var completed = json!;
         status.Should().Be(OperationStatus.Completed);
         var original = completed.RootElement.Deserialize<TileOperationProgress>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
-        var current = pointerMoved ? await PublishAsync(IdentityField) : original.PublishedPublication!;
+        var current = pointerMoved ? await PublishAsync(IdentityField) : original.PublishedExportVersion!;
         var request = new TileOperationStartRequest
         {
             Operation = "paired-publish",
@@ -179,16 +179,16 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
         var replayed = await core.ExecuteAsync(original with
         {
             Status = OperationStatus.Queued,
-            PublishedPublication = null,
+            PublishedExportVersion = null,
             CompletedAt = null
         }, request, scope.ServiceProvider, CancellationToken.None);
 
         replayed.Status.Should().Be(pointerMoved ? OperationStatus.Failed : OperationStatus.Completed);
         if (!pointerMoved)
         {
-            replayed.PublishedPublication.Should().Be(original.PublishedPublication);
+            replayed.PublishedExportVersion.Should().Be(original.PublishedExportVersion);
         }
-        (await ReadJsonAsync<PublicationPointer>(current.PointerKey)).Version.Should().Be(current.Version);
+        (await ReadJsonAsync<ExportPointer>(current.PointerKey)).Version.Should().Be(current.Version);
     }
 
     [IntegrationTest]
@@ -196,8 +196,8 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
     public async Task BeginOperation_OverlappingAttempts_ReservesOnlyOneArtifactVersion()
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = PairedPublicationStore.Create(Storage, options, _publicationId);
-        var run = new PairedPublicationRun(_publicationId, "first", "capture-first", DateTimeOffset.UtcNow);
+        var store = ExportStore.Create(Storage, options, _publicationId);
+        var run = new ExportVersionRun(_publicationId, "first", "capture-first", DateTimeOffset.UtcNow);
         var operationId = Guid.NewGuid().ToString("N");
 
         var results = await Task.WhenAll(
@@ -225,7 +225,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
             Property(json!.RootElement, "errorMessage").GetString().Should().Contain("Identity field");
         }
 
-        (await ReadJsonAsync<PublicationPointer>(first.PointerKey)).Version.Should().Be(first.Version);
+        (await ReadJsonAsync<ExportPointer>(first.PointerKey)).Version.Should().Be(first.Version);
     }
 
     [IntegrationTest]
@@ -233,12 +233,12 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
     public async Task PairedPublish_PublicationIdOfAnotherLayer_IsRefusedAndKeepsItsPointer()
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = PairedPublicationStore.Create(Storage, options, _publicationId);
+        var store = ExportStore.Create(Storage, options, _publicationId);
         var foreign = JsonNode.Parse(await File.ReadAllTextAsync(
             RepositoryPaths.Resolve("docs", "gis", "schemas", "export-collection.v1", "maui-county-parcels.json")))!.AsObject();
         await store.PutJsonOnceAsync(store.VersionKey("v0", ExportCollectionDocument.FileName), foreign,
-            PublicationDescriptorJsonContext.Default.JsonObject, CancellationToken.None);
-        var pointer = new PublicationPointer(_publicationId, "v0", $"v0/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
+            ExportVersionJsonContext.Default.JsonObject, CancellationToken.None);
+        var pointer = new ExportPointer(_publicationId, "v0", $"v0/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
         (await store.SwitchPointerAsync(pointer, expectedETag: null, CancellationToken.None)).Should().BeTrue();
 
         var (status, json) = await RunAsync(IdentityField);
@@ -249,7 +249,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
             Property(json!.RootElement, "errorMessage").GetString().Should().Contain("different layer");
         }
 
-        (await ReadJsonAsync<PublicationPointer>(store.PointerKey)).Version.Should().Be("v0");
+        (await ReadJsonAsync<ExportPointer>(store.PointerKey)).Version.Should().Be("v0");
     }
 
     [IntegrationTheory]
@@ -279,7 +279,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
             Property(json!.RootElement, "errorMessage").GetString().Should().Contain("canonical managed relation");
         }
 
-        (await ReadJsonAsync<PublicationPointer>(first.PointerKey)).Version.Should().Be(first.Version);
+        (await ReadJsonAsync<ExportPointer>(first.PointerKey)).Version.Should().Be(first.Version);
     }
 
     [IntegrationTest]
@@ -287,8 +287,8 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
     public async Task SwitchPointer_StaleOrMissingExpectation_IsRefused()
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = PairedPublicationStore.Create(Storage, options, _publicationId);
-        var v1 = new PublicationPointer(_publicationId, "v1", $"v1/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
+        var store = ExportStore.Create(Storage, options, _publicationId);
+        var v1 = new ExportPointer(_publicationId, "v1", $"v1/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
 
         (await store.SwitchPointerAsync(v1, expectedETag: null, CancellationToken.None)).Should().BeTrue();
         var firstTag = await store.ReadPointerETagAsync(CancellationToken.None);
@@ -297,7 +297,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
         (await store.SwitchPointerAsync(v1 with { Version = "v2" }, firstTag, CancellationToken.None)).Should().BeTrue();
         (await store.SwitchPointerAsync(v1 with { Version = "v3" }, firstTag, CancellationToken.None))
             .Should().BeFalse("a writer holding the replaced tag is stale");
-        (await ReadJsonAsync<PublicationPointer>(store.PointerKey)).Version.Should().Be("v2");
+        (await ReadJsonAsync<ExportPointer>(store.PointerKey)).Version.Should().Be("v2");
     }
 
     [IntegrationTheory]
@@ -346,13 +346,13 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
         maxTiles = 50
     };
 
-    private async Task<PublishedPublication> PublishAsync(string identityField)
+    private async Task<PublishedExportVersion> PublishAsync(string identityField)
     {
         var (status, json) = await RunAsync(identityField);
         using (json)
         {
             status.Should().Be(OperationStatus.Completed, Property(json!.RootElement, "errorMessage").ToString());
-            return Property(json.RootElement, "publishedPublication").Deserialize<PublishedPublication>(
+            return Property(json.RootElement, "publishedPublication").Deserialize<PublishedExportVersion>(
                 new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         }
     }
@@ -395,7 +395,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
         return inflated.ToArray();
     }
 
-    private static string ArtifactKey(PublishedPublication published, string href)
+    private static string ArtifactKey(PublishedExportVersion published, string href)
         => published.DescriptorKey[..(published.DescriptorKey.LastIndexOf('/') + 1)] + href;
 
     private async Task<byte[]> ReadBytesAsync(string key)
@@ -407,12 +407,12 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
         return copy.ToArray();
     }
 
-    private async Task<PublicationDescriptor> ReadCollectionAsync(string key)
+    private async Task<ExportVersion> ReadCollectionAsync(string key)
         => ExportCollectionDocument.Read(JsonNode.Parse(await ReadBytesAsync(key))!.AsObject())!;
 
     private async Task<T> ReadJsonAsync<T>(string key)
         => JsonSerializer.Deserialize(await ReadBytesAsync(key),
-            (System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>)PublicationDescriptorJsonContext.Default.GetTypeInfo(typeof(T))!)!;
+            (System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>)ExportVersionJsonContext.Default.GetTypeInfo(typeof(T))!)!;
 
     private static JsonElement Property(JsonElement element, string name)
         => element.EnumerateObject().First(property => string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)).Value;

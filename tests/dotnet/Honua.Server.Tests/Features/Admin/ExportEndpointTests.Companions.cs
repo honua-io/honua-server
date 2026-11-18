@@ -3,13 +3,13 @@
 
 using System.Text.Json.Nodes;
 using FluentAssertions;
-using Honua.Core.Features.Publishing.Descriptors;
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Core.Features.Exports;
+using Honua.Server.Features.Admin.Exports;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-public sealed partial class PairedPublishEndpointTests
+public sealed partial class ExportEndpointTests
 {
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
@@ -38,6 +38,6 @@ public sealed partial class PairedPublishEndpointTests
         thumbnail.Width.Should().Be(ExportThumbnail.Size);
     }
 
-    private async Task<string> ReadTextAsync(PublishedPublication published, string fileName)
+    private async Task<string> ReadTextAsync(PublishedExportVersion published, string fileName)
         => System.Text.Encoding.UTF8.GetString(await ReadBytesAsync(ArtifactKey(published, fileName)));
 }

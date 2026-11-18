@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Core.Features.Publishing.Descriptors;
+namespace Honua.Core.Features.Exports;
 
 // The one place that maps an Export version to its STAC 1.1 collection document.
 // The document follows the pinned Portolan profile; facts only Honua needs ride in the honua: extension.
@@ -26,7 +26,7 @@ public static class ExportCollectionDocument
     // A multihash prefix: SHA2-256 (0x12) with a 32-byte digest (0x20).
     private const string Sha256Multihash = "1220";
 
-    public static JsonObject Write(PublicationDescriptor export, ExportCollectionMetadata metadata)
+    public static JsonObject Write(ExportVersion export, ExportCollectionMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(export);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -51,7 +51,7 @@ public static class ExportCollectionDocument
         {
             ["rel"] = "pmtiles",
             ["href"] = export.Artifacts.Pmtiles.Href,
-            ["type"] = PmtilesPublicationArtifact.MediaTypeValue,
+            ["type"] = PmtilesExportArtifact.MediaTypeValue,
             ["pmtiles:layers"] = Strings([export.Artifacts.Pmtiles.VectorLayer])
         });
         collection["assets"] = new JsonObject
@@ -66,7 +66,7 @@ public static class ExportCollectionDocument
     private static string License(string? license)
         => SpdxLicensePolicy.IsLicenseIdentifier(license) ? license! : "other";
 
-    private static void AddHonuaFacts(JsonObject collection, PublicationDescriptor export, List<PublicationField> publicFields)
+    private static void AddHonuaFacts(JsonObject collection, ExportVersion export, List<ExportVersionField> publicFields)
     {
         collection["honua:capture_id"] = export.Capture.CaptureId;
         collection["honua:captured_at"] = Timestamp(export.Capture.CapturedAt);
@@ -87,7 +87,7 @@ public static class ExportCollectionDocument
 
     // Reads a document this class wrote. Returns null when a required Honua fact is missing or malformed,
     // so a hand-edited or third-party collection is never mistaken for an Export version.
-    public static PublicationDescriptor? Read(JsonObject collection)
+    public static ExportVersion? Read(JsonObject collection)
     {
         ArgumentNullException.ThrowIfNull(collection);
         try
@@ -100,7 +100,7 @@ public static class ExportCollectionDocument
         }
     }
 
-    private static PublicationDescriptor ReadRequired(JsonObject collection)
+    private static ExportVersion ReadRequired(JsonObject collection)
     {
         var assets = Node(collection, "assets").AsObject();
         var data = Node(assets, DataAssetKey).AsObject();
@@ -116,26 +116,26 @@ public static class ExportCollectionDocument
 
         var title = Node(collection, "title").GetValue<string>();
         var id = Text(collection, "id");
-        return new PublicationDescriptor
+        return new ExportVersion
         {
             PublicationId = id,
             Version = Text(collection, "version"),
             Title = title == id ? null : title,
             PublishedAt = Instant(collection, "updated"),
-            SourceLayer = new PublicationSourceLayer(Text(source, "service"), Text(source, "layer")) { Title = OptionalText(source, "title") },
-            Capture = new PublicationCapture(Text(collection, "honua:capture_id"), Instant(collection, "honua:captured_at"),
+            SourceLayer = new ExportSourceLayer(Text(source, "service"), Text(source, "layer")) { Title = OptionalText(source, "title") },
+            Capture = new ExportCapture(Text(collection, "honua:capture_id"), Instant(collection, "honua:captured_at"),
                 Text(collection, "honua:source_revision"), Node(collection, "honua:feature_count").GetValue<long>()),
             Bounds = [.. bbox.Select(value => Item(value).GetValue<double>())],
-            Crs = new PublicationCrs(Text(collection, "honua:source_crs"), "OGC:CRS84"),
+            Crs = new ExportCrs(Text(collection, "honua:source_crs"), "OGC:CRS84"),
             Fields = ReadColumns(collection),
-            Identity = new PublicationIdentity(Text(identity, "field"), Text(identity, "pmtiles_property"), Text(identity, "geoparquet_column")),
+            Identity = new ExportIdentity(Text(identity, "field"), Text(identity, "pmtiles_property"), Text(identity, "geoparquet_column")),
             Geometry = ReadGeometry(Node(collection, "honua:geometry").AsObject()),
-            Artifacts = new PublicationArtifacts(ReadVisual(collection, visual), ReadData(data)),
+            Artifacts = new ExportArtifacts(ReadVisual(collection, visual), ReadData(data)),
             Validation = ReadValidation(Node(collection, "honua:validation").AsObject())
         };
     }
 
-    private static JsonObject Extent(PublicationDescriptor export) => new()
+    private static JsonObject Extent(ExportVersion export) => new()
     {
         ["spatial"] = new JsonObject { ["bbox"] = new JsonArray(new JsonArray([.. export.Bounds.Select(value => (JsonNode)value)])) },
         ["temporal"] = new JsonObject
@@ -144,14 +144,14 @@ public static class ExportCollectionDocument
         }
     };
 
-    private static JsonObject Source(PublicationDescriptor export)
+    private static JsonObject Source(ExportVersion export)
     {
         var source = new JsonObject { ["service"] = export.SourceLayer.Service, ["layer"] = export.SourceLayer.Layer };
         AddOptional(source, "title", export.SourceLayer.Title);
         return source;
     }
 
-    private static JsonObject Column(PublicationField field)
+    private static JsonObject Column(ExportVersionField field)
     {
         var column = new JsonObject { ["name"] = field.Name, ["type"] = field.Type };
         AddOptional(column, "title", field.Title);
@@ -159,13 +159,13 @@ public static class ExportCollectionDocument
         return column;
     }
 
-    private static PublicationField[] ReadColumns(JsonObject collection)
+    private static ExportVersionField[] ReadColumns(JsonObject collection)
     {
         var publicFields = ReadStrings(Node(collection, "honua:public_fields")).ToHashSet(StringComparer.Ordinal);
         return [.. Node(collection, "table:columns").AsArray().Select(column => ReadColumn(Item(column).AsObject(), publicFields))];
     }
 
-    private static PublicationField ReadColumn(JsonObject column, HashSet<string> publicFields)
+    private static ExportVersionField ReadColumn(JsonObject column, HashSet<string> publicFields)
     {
         var name = Text(column, "name");
         return new(name, Text(column, "type"), publicFields.Contains(name))
@@ -175,7 +175,7 @@ public static class ExportCollectionDocument
         };
     }
 
-    private static JsonObject Geometry(PublicationGeometry geometry)
+    private static JsonObject Geometry(ExportGeometry geometry)
     {
         var node = new JsonObject
         {
@@ -187,13 +187,13 @@ public static class ExportCollectionDocument
         return node;
     }
 
-    private static PublicationGeometry ReadGeometry(JsonObject geometry)
+    private static ExportGeometry ReadGeometry(JsonObject geometry)
         => new(Text(geometry, "column"), Text(geometry, "encoding"), ReadStrings(Node(geometry, "types")))
         {
             BboxColumn = OptionalText(geometry, "bbox_column")
         };
 
-    private static JsonObject Validation(PublicationValidation validation) => new()
+    private static JsonObject Validation(ExportValidation validation) => new()
     {
         ["status"] = validation.Status,
         ["validated_at"] = Timestamp(validation.ValidatedAt),
@@ -205,17 +205,17 @@ public static class ExportCollectionDocument
         })])
     };
 
-    private static PublicationValidation ReadValidation(JsonObject validation)
+    private static ExportValidation ReadValidation(JsonObject validation)
         => new(Text(validation, "status"), Instant(validation, "validated_at"),
             [.. Node(validation, "checks").AsArray().Select(item => ReadCheck(Item(item).AsObject()))]);
 
-    private static PublicationValidationCheck ReadCheck(JsonObject check)
+    private static ExportValidationCheck ReadCheck(JsonObject check)
         => new(Text(check, "name"), Text(check, "status")) { Detail = OptionalText(check, "detail") };
 
-    private static JsonObject DataAsset(GeoparquetPublicationArtifact artifact) => new()
+    private static JsonObject DataAsset(GeoparquetExportArtifact artifact) => new()
     {
         ["href"] = artifact.Href,
-        ["type"] = GeoparquetPublicationArtifact.MediaTypeValue,
+        ["type"] = GeoparquetExportArtifact.MediaTypeValue,
         ["roles"] = Strings(["data"]),
         ["title"] = "GeoParquet",
         ["file:size"] = artifact.Bytes,
@@ -224,7 +224,7 @@ public static class ExportCollectionDocument
         ["honua:fields"] = Strings(artifact.Fields)
     };
 
-    private static GeoparquetPublicationArtifact ReadData(JsonObject asset) => new()
+    private static GeoparquetExportArtifact ReadData(JsonObject asset) => new()
     {
         Href = Text(asset, "href"),
         Bytes = Node(asset, "file:size").GetValue<long>(),
@@ -233,10 +233,10 @@ public static class ExportCollectionDocument
         Fields = ReadStrings(Node(asset, "honua:fields"))
     };
 
-    private static JsonObject VisualAsset(PmtilesPublicationArtifact artifact) => new()
+    private static JsonObject VisualAsset(PmtilesExportArtifact artifact) => new()
     {
         ["href"] = artifact.Href,
-        ["type"] = PmtilesPublicationArtifact.MediaTypeValue,
+        ["type"] = PmtilesExportArtifact.MediaTypeValue,
         ["roles"] = Strings(["visual"]),
         ["title"] = "PMTiles",
         ["file:size"] = artifact.Bytes,
@@ -247,11 +247,11 @@ public static class ExportCollectionDocument
         ["honua:maxzoom"] = artifact.Maxzoom
     };
 
-    private static PmtilesPublicationArtifact ReadVisual(JsonObject collection, JsonObject asset)
+    private static PmtilesExportArtifact ReadVisual(JsonObject collection, JsonObject asset)
     {
         var link = Node(collection, "links").AsArray().Select(node => Item(node).AsObject())
             .First(node => OptionalText(node, "rel") == "pmtiles");
-        return new PmtilesPublicationArtifact
+        return new PmtilesExportArtifact
         {
             Href = Text(asset, "href"),
             Bytes = Node(asset, "file:size").GetValue<long>(),

@@ -11,10 +11,10 @@ using Honua.Infrastructure.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // One read of the source layer in WGS 84, shared by the GeoParquet artifact and the descriptor.
-internal sealed class PairedPublicationCapture
+internal sealed class ExportFeatureCapture
 {
     internal const string CaptureIdMetadataKey = "honua:captureId";
     internal const string PublicationIdMetadataKey = "honua:publicationId";
@@ -22,7 +22,7 @@ internal sealed class PairedPublicationCapture
     private const int PageSize = 5000;
     private const int MaxFeatures = 500_000;
 
-    private PairedPublicationCapture(
+    private ExportFeatureCapture(
         QueryResult<Feature> features,
         (double[] Bounds, IReadOnlyList<string> GeometryTypes) extent,
         ImmutableArray<string> undeclaredAttributes)
@@ -42,10 +42,10 @@ internal sealed class PairedPublicationCapture
     // Stored attribute keys with no public field; tiles must withhold them as GeoParquet does.
     public ImmutableArray<string> UndeclaredAttributes { get; }
 
-    public static async Task<PairedPublicationCapture> ReadAsync(
+    public static async Task<ExportFeatureCapture> ReadAsync(
         IFeatureReader reader,
         int storageLayerId,
-        PairedPublicationFields fields,
+        ExportFields fields,
         CancellationToken cancellationToken)
     {
         var features = ImmutableArray.CreateBuilder<Feature>();
@@ -55,7 +55,7 @@ internal sealed class PairedPublicationCapture
             features.AddRange(page.Items);
             if (features.Count > MaxFeatures)
             {
-                throw new PairedPublicationException($"Paired publish supports at most {MaxFeatures} features per layer.");
+                throw new ExportException($"Paired publish supports at most {MaxFeatures} features per layer.");
             }
 
             if (page.Items.Length < PageSize)
@@ -70,7 +70,7 @@ internal sealed class PairedPublicationCapture
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Where(key => !fields.IsPublic(key))
             .ToImmutableArray();
-        return new PairedPublicationCapture(
+        return new ExportFeatureCapture(
             QueryResult<Feature>.Create(features.Count, features.ToImmutable()), Measure(features), undeclared);
     }
 
@@ -83,7 +83,7 @@ internal sealed class PairedPublicationCapture
             var value = feature.Attributes.TryGetValue(identityField, out var raw) ? raw?.ToString() : null;
             if (string.IsNullOrEmpty(value) || !seen.Add(value))
             {
-                throw new PairedPublicationException(
+                throw new ExportException(
                     $"Identity field '{identityField}' must hold a unique, non-empty value for every feature.");
             }
         }
@@ -91,7 +91,7 @@ internal sealed class PairedPublicationCapture
 
     public byte[] EncodeGeoParquet(
         MetadataV2Object resource,
-        PairedPublicationFields fields,
+        ExportFields fields,
         LimitsOptions limits,
         IReadOnlyDictionary<string, string> fileMetadata)
     {
@@ -110,7 +110,7 @@ internal sealed class PairedPublicationCapture
         return payload.ToArray();
     }
 
-    private static FeatureQuery PageQuery(PairedPublicationFields fields, int offset) => new()
+    private static FeatureQuery PageQuery(ExportFields fields, int offset) => new()
     {
         EnforcedMaskedFields = fields.Hidden,
         OutputSrid = SpatialReference.WGS84.Wkid,
@@ -141,7 +141,7 @@ internal sealed class PairedPublicationCapture
 
         if (envelope.IsNull || envelope.Width <= 0 || envelope.Height <= 0)
         {
-            throw new PairedPublicationException("Paired publish needs features whose geometries cover an area.");
+            throw new ExportException("Paired publish needs features whose geometries cover an area.");
         }
 
         return ([envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY], types.ToList());

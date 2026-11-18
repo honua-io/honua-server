@@ -5,15 +5,15 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Publishing.Descriptors;
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Core.Features.Exports;
+using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit.Attributes;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-public sealed class PairedPublicationActivationTests
+public sealed class ExportActivationTests
 {
     [UnitTheory]
     [InlineData(false)]
@@ -23,13 +23,13 @@ public sealed class PairedPublicationActivationTests
         var storage = Substitute.For<ICloudFileStorage>();
         storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateFailure("A transport failure does not prove rejection."));
-        var run = new PairedPublicationRun("test", "version", "capture", DateTimeOffset.UtcNow);
-        var pointer = new PublicationPointer(run.PublicationId, run.Version, "version/collection.json", DateTimeOffset.UtcNow);
+        var run = new ExportVersionRun("test", "version", "capture", DateTimeOffset.UtcNow);
+        var pointer = new ExportPointer(run.PublicationId, run.Version, "version/collection.json", DateTimeOffset.UtcNow);
         storage.DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult<Stream?>(activated
-                ? new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(pointer, PublicationDescriptorJsonContext.Default.PublicationPointer))
+                ? new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(pointer, ExportVersionJsonContext.Default.ExportPointer))
                 : null));
-        var store = PairedPublicationStore.Create(storage, new CloudStorageOptions(), run.PublicationId);
+        var store = ExportStore.Create(storage, new CloudStorageOptions(), run.PublicationId);
 
         var activate = () => TileOperationExecutionCore.SwitchPointerAsync(store, run, expectedETag: null);
 
@@ -39,7 +39,7 @@ public sealed class PairedPublicationActivationTests
         }
         else
         {
-            await activate.Should().ThrowAsync<PairedActivationUnknownException>();
+            await activate.Should().ThrowAsync<ExportActivationUnknownException>();
         }
         await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -50,12 +50,12 @@ public sealed class PairedPublicationActivationTests
         var storage = Substitute.For<ICloudFileStorage>();
         storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateFailure("Transport failure"));
-        var store = PairedPublicationStore.Create(storage, new CloudStorageOptions(), "test");
-        var run = new PairedPublicationRun("test", "version", "capture", DateTimeOffset.UtcNow);
+        var store = ExportStore.Create(storage, new CloudStorageOptions(), "test");
+        var run = new ExportVersionRun("test", "version", "capture", DateTimeOffset.UtcNow);
 
         var reserve = () => store.BeginOperationAsync("operation", run, CancellationToken.None);
 
-        await reserve.Should().ThrowAsync<PairedActivationUnknownException>();
+        await reserve.Should().ThrowAsync<ExportActivationUnknownException>();
         await storage.DidNotReceive().UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
     }
 }

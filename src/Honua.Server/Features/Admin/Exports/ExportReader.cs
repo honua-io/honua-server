@@ -7,27 +7,27 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
-internal sealed class PairedPublicationReader(
+internal sealed class ExportReader(
     ICloudFileStorage storage,
     IOptions<CloudStorageOptions> options,
     IMetadataV2GraphProvider graphProvider)
 {
-    internal async Task<PairedPublicationReadTarget?> ResolveCurrentAsync(
+    internal async Task<ExportReadTarget?> ResolveCurrentAsync(
         string publicationId, CancellationToken cancellationToken)
     {
-        if (!PairedPublishRequestRules.IsPublicationId(publicationId))
+        if (!ExportRequestRules.IsPublicationId(publicationId))
         {
             return null;
         }
 
-        var store = PairedPublicationStore.Create(storage, options.Value, publicationId);
+        var store = ExportStore.Create(storage, options.Value, publicationId);
         try
         {
             var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
@@ -52,8 +52,8 @@ internal sealed class PairedPublicationReader(
         }
     }
 
-    internal async Task<PairedPublicationReadTarget?> ResolvePinnedAsync(
-        PairedPublicationReadTarget current, string version, CancellationToken cancellationToken)
+    internal async Task<ExportReadTarget?> ResolvePinnedAsync(
+        ExportReadTarget current, string version, CancellationToken cancellationToken)
     {
         if (!IsVersion(version))
         {
@@ -75,8 +75,8 @@ internal sealed class PairedPublicationReader(
         }
     }
 
-    private async Task<PairedPublicationReadTarget?> ResolveVersionAsync(
-        PairedPublicationStore store, string version, MetadataV2GraphSnapshot snapshot, CancellationToken cancellationToken)
+    private async Task<ExportReadTarget?> ResolveVersionAsync(
+        ExportStore store, string version, MetadataV2GraphSnapshot snapshot, CancellationToken cancellationToken)
     {
         var descriptor = await store.ReadVersionAsync(version, cancellationToken).ConfigureAwait(false);
         if (!IsDescriptor(descriptor, version))
@@ -118,17 +118,17 @@ internal sealed class PairedPublicationReader(
             resource.FindPrimaryIdField() is null && string.Equals(name, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
     }
 
-    internal Task<CloudFile?> GetFileAsync(PairedPublicationReadTarget target, string fileName, CancellationToken cancellationToken)
+    internal Task<CloudFile?> GetFileAsync(ExportReadTarget target, string fileName, CancellationToken cancellationToken)
         => storage.GetMetadataAsync(target.Store.VersionKey(target.Descriptor.Version, fileName), cancellationToken);
 
-    internal static bool IsAllowedFile(PublicationDescriptor descriptor, string fileName)
+    internal static bool IsAllowedFile(ExportVersion descriptor, string fileName)
         => fileName == ExportCollectionDocument.FileName || ExportCompanionFiles.FileNames.Contains(fileName) ||
            fileName == descriptor.Artifacts.Pmtiles.Href || fileName == descriptor.Artifacts.Geoparquet.Href;
 
-    private static bool IsDescriptor(PublicationDescriptor? descriptor, string version)
+    private static bool IsDescriptor(ExportVersion? descriptor, string version)
         => descriptor is { SourceLayer: not null, Artifacts.Pmtiles.Fields: not null, Artifacts.Geoparquet.Fields: not null } &&
-           descriptor.Version == version && PairedPublishRequestRules.IsPublicationId(descriptor.PublicationId) &&
-           descriptor.Validation?.Status == PublicationValidation.Passed &&
+           descriptor.Version == version && ExportRequestRules.IsPublicationId(descriptor.PublicationId) &&
+           descriptor.Validation?.Status == ExportValidation.Passed &&
            descriptor.Artifacts.Pmtiles.Href == $"{descriptor.PublicationId}.pmtiles" &&
            descriptor.Artifacts.Geoparquet.Href == $"{descriptor.PublicationId}.parquet";
 
@@ -154,5 +154,5 @@ internal sealed class PairedPublicationReader(
            value.All(character => char.IsAsciiLetterOrDigit(character) || character == '-');
 }
 
-internal sealed record PairedPublicationReadTarget(
-    PairedPublicationStore Store, PublicationDescriptor Descriptor, PMTilesPublishedSource Source, MetadataV2GraphSnapshot Snapshot);
+internal sealed record ExportReadTarget(
+    ExportStore Store, ExportVersion Descriptor, PMTilesPublishedSource Source, MetadataV2GraphSnapshot Snapshot);

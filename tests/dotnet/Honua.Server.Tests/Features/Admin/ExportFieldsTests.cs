@@ -3,17 +3,17 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Admin.Exports;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-public sealed class PairedPublicationFieldsTests
+public sealed class ExportFieldsTests
 {
     [UnitTest]
     public void Resolve_HiddenFieldWithUnportableName_IsLeftOutOfTheDescriptor()
     {
-        var fields = PairedPublicationFields.Resolve(
+        var fields = ExportFields.Resolve(
             Resource(Field("objectid", MetadataV2FieldType.Integer), Field("tmk", MetadataV2FieldType.String),
                 Field("Owner Name", MetadataV2FieldType.String) with { Hidden = true }),
             "tmk");
@@ -25,7 +25,7 @@ public sealed class PairedPublicationFieldsTests
     [UnitTest]
     public void Resolve_HiddenField_DeclaresOnlyNameTypeAndVisibility()
     {
-        var fields = PairedPublicationFields.Resolve(
+        var fields = ExportFields.Resolve(
             Resource(Field("objectid", MetadataV2FieldType.Integer), Field("tmk", MetadataV2FieldType.String),
                 Field("owner", MetadataV2FieldType.String) with { Hidden = true, Alias = "Owner", Description = "Private" }),
             "tmk");
@@ -42,32 +42,32 @@ public sealed class PairedPublicationFieldsTests
     [InlineData("bbox")]
     public void Resolve_VisibleFieldNamedLikeAGeoParquetColumn_IsRefused(string name)
     {
-        var resolve = () => PairedPublicationFields.Resolve(
+        var resolve = () => ExportFields.Resolve(
             Resource(Field("objectid", MetadataV2FieldType.Integer), Field("tmk", MetadataV2FieldType.String),
                 Field(name, MetadataV2FieldType.String)),
             "tmk");
 
-        resolve.Should().Throw<PairedPublicationException>().WithMessage($"*'{name}'*");
+        resolve.Should().Throw<ExportException>().WithMessage($"*'{name}'*");
     }
 
     [UnitTest]
     public void Resolve_HiddenObjectId_IsRefused()
     {
-        var resolve = () => PairedPublicationFields.Resolve(
+        var resolve = () => ExportFields.Resolve(
             Resource(Field("objectid", MetadataV2FieldType.Integer) with { Hidden = true }, Field("tmk", MetadataV2FieldType.String)),
             "tmk");
 
-        resolve.Should().Throw<PairedPublicationException>().WithMessage("*'objectid' is hidden*");
+        resolve.Should().Throw<ExportException>().WithMessage("*'objectid' is hidden*");
     }
 
     [UnitTest]
     public void Resolve_NumericIdentity_IsRefused()
     {
-        var resolve = () => PairedPublicationFields.Resolve(
+        var resolve = () => ExportFields.Resolve(
             Resource(Field("objectid", MetadataV2FieldType.Integer), Field("tmk", MetadataV2FieldType.Integer)),
             "tmk");
 
-        resolve.Should().Throw<PairedPublicationException>().WithMessage("*Identity field 'tmk'*");
+        resolve.Should().Throw<ExportException>().WithMessage("*Identity field 'tmk'*");
     }
 
     private static MetadataV2Field Field(string name, MetadataV2FieldType type) => new() { Name = name, Type = type, Nullable = true };

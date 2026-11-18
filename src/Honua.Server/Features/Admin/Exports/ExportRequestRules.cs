@@ -4,9 +4,9 @@
 using System.Text.RegularExpressions;
 using Honua.Server.Features.Admin.TileOperations;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
-internal static partial class PairedPublishRequestRules
+internal static partial class ExportRequestRules
 {
     public static string? Problem(TileOperationStartRequest request)
     {

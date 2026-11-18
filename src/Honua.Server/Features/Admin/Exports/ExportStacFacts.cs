@@ -4,7 +4,7 @@
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // Licence and providers for the export's STAC collection, from metadata Honua holds.
 internal static class ExportStacFacts

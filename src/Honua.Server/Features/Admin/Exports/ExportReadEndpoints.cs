@@ -5,18 +5,18 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.FileStorage;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
-internal static class PairedPublicationReadEndpoints
+internal static class ExportReadEndpoints
 {
-    internal static IEndpointRouteBuilder MapPairedPublicationReadEndpoints(this IEndpointRouteBuilder endpoints)
+    internal static IEndpointRouteBuilder MapExportReadEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v1/publications/{publicationId}")
             .WithTags("Publications").CacheOutput(policy => policy.NoCache());
@@ -30,7 +30,7 @@ internal static class PairedPublicationReadEndpoints
     }
 
     private static async Task<IResult> CurrentAsync(
-        string publicationId, HttpContext context, [FromServices] PairedPublicationReader reader, CancellationToken cancellationToken)
+        string publicationId, HttpContext context, [FromServices] ExportReader reader, CancellationToken cancellationToken)
     {
         var unauthorized = RequireAuthentication(context);
         if (unauthorized is not null)
@@ -46,7 +46,7 @@ internal static class PairedPublicationReadEndpoints
 
     private static async Task<IResult> VersionAsync(
         string publicationId, string version, string fileName, HttpContext context,
-        [FromServices] PairedPublicationReader reader, [FromServices] ArtifactByteReader byteReader, CancellationToken cancellationToken)
+        [FromServices] ExportReader reader, [FromServices] ArtifactByteReader byteReader, CancellationToken cancellationToken)
     {
         var unauthorized = RequireAuthentication(context);
         if (unauthorized is not null)
@@ -60,7 +60,7 @@ internal static class PairedPublicationReadEndpoints
             return error;
         }
         var target = await reader.ResolvePinnedAsync(current!, version, cancellationToken).ConfigureAwait(false);
-        if (target is null || !PairedPublicationReader.IsAllowedFile(target.Descriptor, fileName))
+        if (target is null || !ExportReader.IsAllowedFile(target.Descriptor, fileName))
         {
             return Results.NotFound();
         }
@@ -81,7 +81,7 @@ internal static class PairedPublicationReadEndpoints
     }
 
     private static async Task<IResult?> RequireAccessAsync(
-        HttpContext context, PairedPublicationReadTarget? target, CancellationToken cancellationToken)
+        HttpContext context, ExportReadTarget? target, CancellationToken cancellationToken)
     {
         if (target is null || !TenantScopeHelpers.IsPublicationVisible(
             context, target.Source.Publication, target.Source.Resource, target.Source.Service))

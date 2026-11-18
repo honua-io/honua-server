@@ -8,7 +8,7 @@ using Honua.Infrastructure.Security;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
-using Honua.Server.Features.Admin.PairedPublications;
+using Honua.Server.Features.Admin.Exports;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -282,7 +282,7 @@ internal static class TileOperationsEndpoints
         }
 
         if (operation is TileCacheExecutionSpecBuilder.PairedPublishOperation
-            && PairedPublishRequestRules.Problem(request) is { } pairedProblem)
+            && ExportRequestRules.Problem(request) is { } pairedProblem)
         {
             return ProblemDetailsHelpers.CreateAdminProblemDetails(
                 context,

@@ -3,7 +3,7 @@
 
 using System.Text.Json.Nodes;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // The feature property names a MapLibre layer reads: ["get"/"has", name] expressions, legacy
 // filters (["==", name, value], ["in", name, ...], ["has", name]) and legacy function "property" keys.

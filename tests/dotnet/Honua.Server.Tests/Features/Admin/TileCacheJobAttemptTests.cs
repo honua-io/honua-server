@@ -7,7 +7,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
@@ -67,8 +67,8 @@ public sealed partial class TileCacheJobExecutorPublishTests
         var progress = new TileCacheAttemptProgress(store, context);
         var initial = TileOperationProgress.CreateInitial("paired-committed", "paired-publish", null, 1, "WebMercatorQuad");
         await progress.StartAsync(initial, CancellationToken.None);
-        var published = new PublishedPublication("publication", "version", "capture", "publication/version/descriptor.json", "publication/current.json");
-        var completed = initial with { Status = OperationStatus.Completed, PublishedPublication = published };
+        var published = new PublishedExportVersion("publication", "version", "capture", "publication/version/descriptor.json", "publication/current.json");
+        var completed = initial with { Status = OperationStatus.Completed, PublishedExportVersion = published };
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         context.ThrowIfExecutionLeaseLostAsync(Arg.Any<CancellationToken>())
@@ -98,7 +98,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         }
         else
         {
-            saved!.PublishedPublication.Should().Be(published);
+            saved!.PublishedExportVersion.Should().Be(published);
             saved.Status.Should().Be(OperationStatus.Completed);
         }
     }

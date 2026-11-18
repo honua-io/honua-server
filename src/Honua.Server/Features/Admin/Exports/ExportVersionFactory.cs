@@ -4,56 +4,56 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Core.Features.Exports;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
-internal sealed record PairedPublicationRun(
+internal sealed record ExportVersionRun(
     string PublicationId,
     string Version,
     string CaptureId,
     DateTimeOffset CapturedAt);
 
 internal sealed record StoredPair(
-    PmtilesPublicationArtifact Pmtiles,
-    GeoparquetPublicationArtifact Geoparquet);
+    PmtilesExportArtifact Pmtiles,
+    GeoparquetExportArtifact Geoparquet);
 
-internal static class PairedPublicationDescriptorFactory
+internal static class ExportVersionFactory
 {
-    public static string PmtilesFileName(PairedPublicationRun run) => $"{run.PublicationId}.pmtiles";
+    public static string PmtilesFileName(ExportVersionRun run) => $"{run.PublicationId}.pmtiles";
 
-    public static string GeoparquetFileName(PairedPublicationRun run) => $"{run.PublicationId}.parquet";
+    public static string GeoparquetFileName(ExportVersionRun run) => $"{run.PublicationId}.parquet";
 
     public static string NewVersion(DateTimeOffset capturedAt, string captureId)
         => string.Create(CultureInfo.InvariantCulture, $"{capturedAt:yyyyMMdd'T'HHmmss'Z'}-{captureId[^8..]}");
 
-    public static PublicationDescriptor Create(
-        PairedPublicationRun run,
-        PairedPublicationSource source,
-        PairedPublicationCapture capture,
-        PairedPublicationFields fields,
-        (StoredPair Artifacts, string IdentityField, PublicationValidation Validation) published)
+    public static ExportVersion Create(
+        ExportVersionRun run,
+        ExportLayerSource source,
+        ExportFeatureCapture capture,
+        ExportFields fields,
+        (StoredPair Artifacts, string IdentityField, ExportValidation Validation) published)
     {
         var resource = source.Resource;
         var srid = resource.ReadSrid() ?? 4326;
         var title = string.IsNullOrWhiteSpace(resource.Metadata.Title) ? null : resource.Metadata.Title.Trim();
-        return new PublicationDescriptor
+        return new ExportVersion
         {
             PublicationId = run.PublicationId,
             Version = run.Version,
             Title = title,
             PublishedAt = published.Validation.ValidatedAt,
-            SourceLayer = new PublicationSourceLayer(source.Published.Service.Metadata.Id, resource.Metadata.Id)
+            SourceLayer = new ExportSourceLayer(source.Published.Service.Metadata.Id, resource.Metadata.Id)
             {
                 Title = title
             },
-            Capture = new PublicationCapture(run.CaptureId, run.CapturedAt, source.Revision, capture.Features.Items.Length),
+            Capture = new ExportCapture(run.CaptureId, run.CapturedAt, source.Revision, capture.Features.Items.Length),
             Bounds = capture.Bounds,
-            Crs = new PublicationCrs(string.Create(CultureInfo.InvariantCulture, $"EPSG:{srid}"), "OGC:CRS84"),
+            Crs = new ExportCrs(string.Create(CultureInfo.InvariantCulture, $"EPSG:{srid}"), "OGC:CRS84"),
             Fields = fields.Declared,
-            Identity = new PublicationIdentity(published.IdentityField, published.IdentityField, published.IdentityField),
-            Geometry = new PublicationGeometry("geometry", "wkb", capture.GeometryTypes),
-            Artifacts = new PublicationArtifacts(published.Artifacts.Pmtiles, published.Artifacts.Geoparquet),
+            Identity = new ExportIdentity(published.IdentityField, published.IdentityField, published.IdentityField),
+            Geometry = new ExportGeometry("geometry", "wkb", capture.GeometryTypes),
+            Artifacts = new ExportArtifacts(published.Artifacts.Pmtiles, published.Artifacts.Geoparquet),
             Validation = published.Validation
         };
     }

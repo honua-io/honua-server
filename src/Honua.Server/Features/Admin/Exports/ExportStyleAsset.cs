@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Honua.Server.Features.Admin.PairedPublications;
+namespace Honua.Server.Features.Admin.Exports;
 
 // A MapLibre style for the export's PMTiles file, made from the layer's stored style. Every layer
 // is bound to one pmtiles:// source next to the style, so the file works wherever the version is copied.
