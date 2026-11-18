@@ -13,10 +13,10 @@ namespace Honua.Db.Postgres.Tests.Features.Security;
 [Collection("Database")]
 public sealed class PostgresAiAdmissionRegistrationTests(PostgresFixture fixture)
 {
-    // The monthly notice reconciler resolves its store from the real registrations, so a
+    // The spend notice reconciler resolves its store from the real registrations, so a
     // missing or mis-keyed registration would leave every 80% notice pending.
     [IntegrationTest]
-    public void RegisteredServices_ResolveAdmissionAndMonthlyNoticeStoreToOneScopedStore()
+    public void RegisteredServices_ResolveAdmissionAndSpendNoticeStoresToOneScopedStore()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -33,6 +33,8 @@ public sealed class PostgresAiAdmissionRegistrationTests(PostgresFixture fixture
 
         var notices = scope.ServiceProvider.GetRequiredService<IAiMonthlyActorNoticeStore>();
 
-        notices.Should().BeSameAs(scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>());
+        var admission = scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>();
+        notices.Should().BeSameAs(admission);
+        scope.ServiceProvider.GetRequiredService<IAiIncidentNoticeStore>().Should().BeSameAs(admission);
     }
 }
