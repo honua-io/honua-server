@@ -179,7 +179,7 @@ public static class ZarrGeoTiffRenderer
             float single when float.IsPositiveInfinity(single) => "inf",
             double number when double.IsNegativeInfinity(number) => "-inf",
             float single when float.IsNegativeInfinity(single) => "-inf",
-            _ when dtype is "f4" or "f8" && fillValue is not null => "nan",
+            _ when dtype is "f4" or "f8" => "nan",
             _ => null
         };
     }
