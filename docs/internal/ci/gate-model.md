@@ -2443,3 +2443,32 @@ job: wall 633 to 419-438 seconds; DeploymentCapabilityProfileIntegrationTests
 80.4 to 43.0-43.7 seconds and CapabilityManifestEndpointTests 305.0 to
 225.7-241.8 seconds, while the unchanged classes in the same job also ran
 148.5 to 102-110 seconds, so part of that difference is host load.
+
+### Collaboration co-editing host lifetime
+
+`CollaborationLiveCoEditingTests` used one database-less application per case.
+The class fixture now holds two lazily started applications with the default
+settings: one with the restart-durable operation log and one without. Every case
+creates its own draft, and session, operation log and checkpoint state is keyed
+by map, so a case never reads another case's map; the per-map participant limits
+are unaffected. Cases that change settings, decorate the operation log or supply
+a Studio store keep their own applications.
+
+The class stays in Server Features Collaboration Mobile and Identity 2 on
+selected PR runs and full trunk runs. No workflow, shard filter, required check,
+aggregate dependency or runner count changes. One build-host job, 24/24 passing
+cases, zero skipped: class span 118.1 to 57.2-58.0 seconds (process wall 123 to
+63-64 seconds).
+
+### SensorThings stream host lifetime
+
+`SensorThingsStreamEndpointsTests` shares one multi-tenant application across
+the class instead of one per case. Stream cases open their own connections and
+read from the live tail or from a cursor taken in the same case, so observations
+ingested by an earlier case are never expected; the tenant-collision case seeds
+and drops its own schema.
+
+The class stays in SensorThings 5 on selected PR runs and full trunk runs. No
+workflow, shard filter, required check, aggregate dependency or runner count
+changes. One build-host job, 25/25 passing cases, zero skipped: class span 179.7
+to 67.1 seconds on both head runs (process wall 194 to 83-84 seconds).
