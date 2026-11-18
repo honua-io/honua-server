@@ -1665,7 +1665,7 @@ job: wall 633 to 419-438 seconds; DeploymentCapabilityProfileIntegrationTests
 
 ### Collaboration co-editing host lifetime
 
-`CollaborationLiveCoEditingTests` used one database-less application per case.
+`CollaborationLiveCoEditingTests` started at least one database-less application per case.
 The class fixture now holds two lazily started applications with the default
 settings: one with the restart-durable operation log and one without. Every case
 creates its own draft, and session, operation log and checkpoint state is keyed
@@ -1695,8 +1695,8 @@ to 67.1 seconds on both head runs (process wall 194 to 83-84 seconds).
 ### Alert admin host lifetime
 
 `AlertAdminEndpointsTests` built its webhook-only application for every case,
-including the eight cases that then boot a private application with another
-channel policy or stubbed stores. The webhook-only application is now one class
+including the seven cases that then boot eight private applications with
+another channel policy or stubbed stores. The webhook-only application is now one class
 fixture: its cases scope every zone and rule to a fresh service id and probe
 missing ids far above the sequence, and each case still creates its own admin
 client. Application boots per run drop from 29 to 9; every assertion is kept.
@@ -1704,4 +1704,3 @@ client. Application boots per run drop from 29 to 9; every assertion is kept.
 The class stays in its admin shard on selected PR runs and full trunk runs. No
 workflow, shard filter, required check, aggregate dependency or runner count
 changes. Before: 80.4 seconds summed case time in full trunk run 44013566836.
-The build host is paused, so the after figure comes from the PR Gate run.
