@@ -34,7 +34,7 @@ remains in the existing GPServer suites.
 
 The adapter owner-denial test substitutes the job service. It therefore cannot show
 what the canonical runtime does when another caller names a job.
-`GPServerDurableRuntimeTests.SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership`
+`GPServerDurableRuntimeTests.OwnershipTests.SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership`
 closes that gap. It runs the real job service over the Redis job store with the
 production executor, and substitutes only the operator grant so that two distinct
 callers may both execute GP work.
