@@ -146,7 +146,10 @@ internal sealed partial class ClientCertificateEnforcementMiddleware(
         => options.Mode switch
         {
             ClientCertificateAuthenticationMode.RequiredForAdmin => IsAdminRequest(context, options),
-            ClientCertificateAuthenticationMode.RequiredForNative => IsProtectedGrpcRequest(context, options),
+            // RequiredForNative names the native HTTP/2 transport, so browser gRPC-Web stays on its
+            // ordinary credentials; RequiredForEnvironment has no transport exemption.
+            ClientCertificateAuthenticationMode.RequiredForNative =>
+                !IsGrpcWebRequest(context) && IsProtectedGrpcRequest(context, options),
             ClientCertificateAuthenticationMode.RequiredForEnvironment =>
                 IsAdminRequest(context, options) || IsProtectedGrpcRequest(context, options),
             _ => false,
@@ -214,11 +217,6 @@ internal sealed partial class ClientCertificateEnforcementMiddleware(
 
     private static bool IsProtectedGrpcRequest(HttpContext context, ClientCertificateAuthenticationOptions options)
     {
-        if (IsGrpcWebRequest(context))
-        {
-            return false;
-        }
-
         var path = context.Request.Path.Value;
         if (string.IsNullOrWhiteSpace(path))
         {

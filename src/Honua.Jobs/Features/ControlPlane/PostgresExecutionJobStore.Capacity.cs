@@ -16,7 +16,7 @@ internal sealed partial class PostgresExecutionJobStore
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumOutstanding);
         var created = job with { Version = 1 };
-        var row = ExecutionJobRow.From(created);
+        var row = ExecutionJobRow.From(created, _database.Secrets);
         var admitted = await _database.ExecuteAsync(async (connection, attempt, token) =>
         {
             if (attempt.EarlierAttemptMayHaveCommitted
@@ -61,7 +61,7 @@ internal sealed partial class PostgresExecutionJobStore
             throw new ArgumentException("A retry must enter the queue.", nameof(job));
         }
 
-        var row = ExecutionJobRow.From(job);
+        var row = ExecutionJobRow.From(job, _database.Secrets);
         var admitted = await _database.ExecuteAsync(async (connection, attempt, token) =>
         {
             if (attempt.EarlierAttemptMayHaveCommitted

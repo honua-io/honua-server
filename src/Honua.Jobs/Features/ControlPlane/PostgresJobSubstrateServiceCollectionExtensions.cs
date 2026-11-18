@@ -42,7 +42,10 @@ internal static class PostgresJobSubstrateServiceCollectionExtensions
         });
         services.TryAddSingleton(provider => new JobStoreDatabase(
             provider.GetRequiredService<NpgsqlDataSource>(),
-            configuration[SystemSchemaKey]));
+            configuration[SystemSchemaKey])
+        {
+            Secrets = provider.GetService<IExecutionJobSecretProtector>() ?? UnprotectedExecutionJobSecrets.Instance,
+        });
         services.TryAddSingleton<JobStoreRetentionSweeper>();
         services.TryAddSingleton<SharedStateRetentionSweeper>();
         services.TryAddSingleton(typeof(PollWakeSignal<>));

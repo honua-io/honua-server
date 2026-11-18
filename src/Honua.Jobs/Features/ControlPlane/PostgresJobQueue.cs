@@ -276,7 +276,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
 
-    private static async Task<ClaimedRow?> ReadClaimedRowAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+    private async Task<ClaimedRow?> ReadClaimedRowAsync(NpgsqlCommand command, CancellationToken cancellationToken)
     {
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -284,7 +284,7 @@ internal sealed partial class PostgresJobQueue : IJobQueue, IQueueClaimReconcile
             return null;
         }
 
-        return ExecutionJobRow.TryRead(reader) is { } job
+        return ExecutionJobRow.TryRead(reader, _database.Secrets) is { } job
             ? new ClaimedRow(job, UnreadableOperationId: null)
             : new ClaimedRow(Job: null, ExecutionJobRow.ReadOperationId(reader));
     }

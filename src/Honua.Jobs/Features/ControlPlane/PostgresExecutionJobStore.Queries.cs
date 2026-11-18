@@ -330,7 +330,7 @@ internal sealed partial class PostgresExecutionJobStore
 
             rows.Read++;
             rows.Last = ExecutionJobRow.ReadCursor(reader);
-            if (ExecutionJobRow.TryRead(reader) is { } job)
+            if (ExecutionJobRow.TryRead(reader, _database.Secrets) is { } job)
             {
                 rows.Jobs.Add(job);
             }
