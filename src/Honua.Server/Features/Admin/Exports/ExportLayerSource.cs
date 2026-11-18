@@ -53,18 +53,18 @@ internal sealed class ExportLayerSource
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var published = PMTilesProxySourceResolver.ResolveForPublish(snapshot, serviceId, layerId)
-            ?? throw new ExportException("The paired publish target is not a routable layer of the service.");
+            ?? throw new ExportException("The export target is not a routable layer of the service.");
 
         if (!IsManagedTable(published.Resource, snapshot.ResolveStorageBinding(published.Publication)))
         {
             throw new ExportException(
-                "Paired publish needs a layer stored in Honua's managed feature table, whose edits it can fence.");
+                "Export needs a layer stored in Honua's managed feature table, whose edits it can fence.");
         }
 
         var changeTracker = services.GetService<IChangeTracker>();
         if (changeTracker is null or NoOpChangeTracker)
         {
-            throw new ExportException("Paired publish needs edit change tracking, which this data provider does not record.");
+            throw new ExportException("Export needs edit change tracking, which this data provider does not record.");
         }
 
         var storageLayerId = snapshot.ResolveStorageLayerId(published.Publication)
@@ -102,7 +102,7 @@ internal sealed class ExportLayerSource
         var router = services.GetService<FeatureProviderQueryRouter>();
         if (router is null)
         {
-            throw new ExportException("Paired publish requires binding-aware managed relation validation.");
+            throw new ExportException("Export requires binding-aware managed relation validation.");
         }
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -119,7 +119,7 @@ internal sealed class ExportLayerSource
         if (reader is not IManagedFeatureWriteSupport support
             || !await support.SupportsManagedWritesAsync(StorageLayerId, cancellationToken).ConfigureAwait(false))
         {
-            throw new ExportException("Paired publish requires the canonical managed relation and layer partition.");
+            throw new ExportException("Export requires the canonical managed relation and layer partition.");
         }
 
         return reader;

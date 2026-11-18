@@ -20,31 +20,31 @@ internal sealed class ExportStore
     private const string JsonContentType = "application/json";
 
     private readonly ICloudFileStorage _storage;
-    private readonly string _publicationKey;
+    private readonly string _exportKey;
 
-    private ExportStore(ICloudFileStorage storage, string publicationKey)
+    private ExportStore(ICloudFileStorage storage, string exportKey)
     {
         _storage = storage;
-        _publicationKey = publicationKey;
+        _exportKey = exportKey;
     }
 
-    public string PointerKey => $"{_publicationKey}/{PointerFileName}";
+    public string PointerKey => $"{_exportKey}/{PointerFileName}";
 
-    public static ExportStore Create(ICloudFileStorage storage, CloudStorageOptions options, string publicationId)
+    public static ExportStore Create(ICloudFileStorage storage, CloudStorageOptions options, string exportId)
     {
         var root = PMTilesPublishKeyRoot.Resolve(options);
-        var publicationKey = string.IsNullOrEmpty(root) ? $"publications/{publicationId}" : $"{root}/publications/{publicationId}";
-        return new ExportStore(storage, publicationKey);
+        var exportKey = string.IsNullOrEmpty(root) ? $"exports/{exportId}" : $"{root}/exports/{exportId}";
+        return new ExportStore(storage, exportKey);
     }
 
-    public string VersionKey(string version, string fileName) => $"{_publicationKey}/{version}/{fileName}";
+    public string VersionKey(string version, string fileName) => $"{_exportKey}/{version}/{fileName}";
 
     // A create-only marker fences overlapping attempts before any artifact upload. It also
     // survives a lost job receipt; retries recover its version instead of recapturing data.
     public async Task<ExportPointer?> BeginOperationAsync(string operationId, ExportVersionRun run, CancellationToken cancellationToken)
     {
-        var operationKey = $"{_publicationKey}/operations/{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(operationId)))}.json";
-        var pointer = new ExportPointer(run.PublicationId, run.Version,
+        var operationKey = $"{_exportKey}/operations/{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(operationId)))}.json";
+        var pointer = new ExportPointer(run.ExportId, run.Version,
             $"{run.Version}/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
         using var content = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(pointer, ExportVersionJsonContext.Default.ExportPointer));
         UploadResult result;

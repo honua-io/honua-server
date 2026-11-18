@@ -23,9 +23,9 @@ public sealed partial class ExportEndpointTests
         var agents = await ReadTextAsync(published, ExportCompanionFiles.AgentsFileName);
         var style = JsonNode.Parse(await ReadTextAsync(published, ExportCompanionFiles.StyleFileName))!;
         var collection = JsonNode.Parse(await ReadTextAsync(published, ExportCollectionDocument.FileName))!;
-        readme.Should().Contain($"`{_publicationId}.parquet`").And.NotContain($"`{HiddenField}`");
+        readme.Should().Contain($"`{_exportId}.parquet`").And.NotContain($"`{HiddenField}`");
         agents.Should().Contain($"| `{IdentityField}` |").And.NotContain($"`{HiddenField}`");
-        style["sources"]![ExportStyleAsset.SourceId]!["url"]!.GetValue<string>().Should().Be($"pmtiles://{_publicationId}.pmtiles");
+        style["sources"]![ExportStyleAsset.SourceId]!["url"]!.GetValue<string>().Should().Be($"pmtiles://{_exportId}.pmtiles");
         style["layers"]!.AsArray().Should().NotBeEmpty()
             .And.OnlyContain(layer => layer!["source-layer"]!.GetValue<string>() == "layer");
         collection["table:columns"]!.AsArray().Select(column => column!["name"]!.GetValue<string>())

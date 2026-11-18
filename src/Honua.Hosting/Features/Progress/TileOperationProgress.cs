@@ -44,7 +44,7 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
     {
         "archive" => OperationType.PMTilesArchive,
         "publish" => OperationType.PMTilesPublish,
-        "paired-publish" => OperationType.PMTilesPublish,
+        "export" => OperationType.PMTilesPublish,
         _ => OperationType.TileCache
     };
 

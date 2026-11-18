@@ -18,7 +18,7 @@ internal static class ExportReadEndpoints
 {
     internal static IEndpointRouteBuilder MapExportReadEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v1/publications/{publicationId}")
+        var group = endpoints.MapGroup("/api/v1/publications/{exportId}")
             .WithTags("Publications").CacheOutput(policy => policy.NoCache());
         group.MapMethods("/current.json", ["GET", "HEAD"], CurrentAsync)
             .WithName("GetCurrentPairedPublication")
@@ -30,22 +30,22 @@ internal static class ExportReadEndpoints
     }
 
     private static async Task<IResult> CurrentAsync(
-        string publicationId, HttpContext context, [FromServices] ExportReader reader, CancellationToken cancellationToken)
+        string exportId, HttpContext context, [FromServices] ExportReader reader, CancellationToken cancellationToken)
     {
         var unauthorized = RequireAuthentication(context);
         if (unauthorized is not null)
         {
             return unauthorized;
         }
-        var target = await reader.ResolveCurrentAsync(publicationId, cancellationToken).ConfigureAwait(false);
+        var target = await reader.ResolveCurrentAsync(exportId, cancellationToken).ConfigureAwait(false);
         var error = await RequireAccessAsync(context, target, cancellationToken).ConfigureAwait(false);
         return error ?? Results.Redirect(
-            $"{context.Request.PathBase}/api/v1/publications/{publicationId}/{target!.Descriptor.Version}/{ExportCollectionDocument.FileName}",
+            $"{context.Request.PathBase}/api/v1/publications/{exportId}/{target!.Descriptor.Version}/{ExportCollectionDocument.FileName}",
             permanent: false, preserveMethod: true);
     }
 
     private static async Task<IResult> VersionAsync(
-        string publicationId, string version, string fileName, HttpContext context,
+        string exportId, string version, string fileName, HttpContext context,
         [FromServices] ExportReader reader, [FromServices] ArtifactByteReader byteReader, CancellationToken cancellationToken)
     {
         var unauthorized = RequireAuthentication(context);
@@ -53,7 +53,7 @@ internal static class ExportReadEndpoints
         {
             return unauthorized;
         }
-        var current = await reader.ResolveCurrentAsync(publicationId, cancellationToken).ConfigureAwait(false);
+        var current = await reader.ResolveCurrentAsync(exportId, cancellationToken).ConfigureAwait(false);
         var error = await RequireAccessAsync(context, current, cancellationToken).ConfigureAwait(false);
         if (error is not null)
         {

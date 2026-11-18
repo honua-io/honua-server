@@ -23,7 +23,7 @@ internal sealed record TileOperationStartRequest
     // A retry forwards the generation id so the run resumes rather than starting over.
     public string? GenerationId { get; init; }
 
-    public string? PublicationId { get; init; }
+    public string? ExportId { get; init; }
 
     public string? IdentityField { get; init; }
 }

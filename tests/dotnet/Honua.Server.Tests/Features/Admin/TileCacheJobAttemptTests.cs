@@ -65,7 +65,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         var store = new ComparingInMemoryProgressStore();
         var context = PublishingContext();
         var progress = new TileCacheAttemptProgress(store, context);
-        var initial = TileOperationProgress.CreateInitial("paired-committed", "paired-publish", null, 1, "WebMercatorQuad");
+        var initial = TileOperationProgress.CreateInitial("paired-committed", "export", null, 1, "WebMercatorQuad");
         await progress.StartAsync(initial, CancellationToken.None);
         var published = new PublishedExportVersion("publication", "version", "capture", "publication/version/descriptor.json", "publication/current.json");
         var completed = initial with { Status = OperationStatus.Completed, PublishedExportVersion = published };
@@ -90,7 +90,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         result.CompletedWithCommittedEffects.Should().BeTrue();
         await context.Received(1).RecordCommittedEffectAsync(
-            "paired-publication:" + published.DescriptorKey, CancellationToken.None);
+            "export-version:" + published.CollectionKey, CancellationToken.None);
         var saved = await store.GetProgressAsync<TileOperationProgress>(initial.JobId);
         if (rejectProjection)
         {

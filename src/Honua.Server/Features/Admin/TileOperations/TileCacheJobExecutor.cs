@@ -96,7 +96,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             try
             {
                 await context.RecordCommittedEffectAsync(
-                    "paired-publication:" + publication.DescriptorKey, CancellationToken.None).ConfigureAwait(false);
+                    "export-version:" + publication.CollectionKey, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {

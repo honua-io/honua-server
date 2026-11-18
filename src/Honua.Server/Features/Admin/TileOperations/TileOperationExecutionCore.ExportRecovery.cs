@@ -15,7 +15,7 @@ internal sealed partial class TileOperationExecutionCore
     private static async Task<TileOperationProgress> RecoverActivatedAsync(
         ExportPublishContext context, ExportPointer recoveryPointer, TileOperationProgress progress, CancellationToken cancellationToken)
     {
-        if (recoveryPointer.PublicationId != context.Run.PublicationId
+        if (recoveryPointer.ExportId != context.Run.ExportId
             || await context.Store.PointerStateAsync(recoveryPointer.Version).ConfigureAwait(false) != PointerState.NamesVersion)
         {
             throw new ExportActivationUnknownException(
@@ -25,7 +25,7 @@ internal sealed partial class TileOperationExecutionCore
         var previous = await context.Store.ReadCollectionAsync(recoveryPointer, cancellationToken).ConfigureAwait(false);
         if (previous is not null)
         {
-            if (previous.PublicationId != context.Run.PublicationId || previous.Version != recoveryPointer.Version
+            if (previous.ExportId != context.Run.ExportId || previous.Version != recoveryPointer.Version
                 || previous.SourceLayer.Service != context.Source.Published.Service.Metadata.Id
                 || previous.SourceLayer.Layer != context.Source.Resource.Metadata.Id
                 || previous.Validation.Status != ExportValidation.Passed
@@ -36,13 +36,13 @@ internal sealed partial class TileOperationExecutionCore
 
             return progress with
             {
-                PublishedExportVersion = new PublishedExportVersion(previous.PublicationId, previous.Version,
+                PublishedExportVersion = new PublishedExportVersion(previous.ExportId, previous.Version,
                     previous.Capture.CaptureId, context.Store.VersionKey(previous.Version, ExportCollectionDocument.FileName),
                     context.Store.PointerKey),
                 Status = OperationStatus.Completed,
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = null,
-                CurrentPhase = "Recovered activated paired publication"
+                CurrentPhase = "Recovered activated Export version"
             };
         }
 
@@ -54,7 +54,7 @@ internal sealed partial class TileOperationExecutionCore
     internal static async Task SwitchPointerAsync(ExportStore store, ExportVersionRun run, string? expectedETag)
     {
         var pointer = new ExportPointer(
-            run.PublicationId, run.Version, $"{run.Version}/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
+            run.ExportId, run.Version, $"{run.Version}/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
         bool switched;
         try
         {

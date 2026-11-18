@@ -40,7 +40,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     private const string IdentityField = "name";
     private const string HiddenField = "notes";
     private readonly WebAppFixture _fixture = host.Fixture;
-    private readonly string _publicationId = $"paired-{Guid.NewGuid():N}"[..24];
+    private readonly string _exportId = $"paired-{Guid.NewGuid():N}"[..24];
     private static readonly JSchema CollectionSchema = JSchema.Parse(
         File.ReadAllText(RepositoryPaths.Resolve("docs", "gis", "schemas", "stac-honua.v1.0.0.schema.json")));
     private HttpClient _client = null!;
@@ -100,17 +100,17 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task PairedPublish_Layer_WritesBothArtifactsFromOneCaptureWithoutHiddenFields()
+    public async Task Export_Layer_WritesBothArtifactsFromOneCaptureWithoutHiddenFields()
     {
         HideField(HiddenField);
 
         var published = await PublishAsync(IdentityField);
 
-        var collectionJson = JObject.Parse(System.Text.Encoding.UTF8.GetString(await ReadBytesAsync(published.DescriptorKey)));
+        var collectionJson = JObject.Parse(System.Text.Encoding.UTF8.GetString(await ReadBytesAsync(published.CollectionKey)));
         collectionJson.IsValid(CollectionSchema, out IList<ValidationError> errors).Should().BeTrue(
             string.Join("; ", errors.Select(error => $"{error.Path}: {error.Message}")));
         collectionJson.ToString().Should().NotContain($"\"{HiddenField}\"", "a non-public field appears nowhere in an Export");
-        var descriptor = await ReadCollectionAsync(published.DescriptorKey);
+        var descriptor = await ReadCollectionAsync(published.CollectionKey);
         descriptor.Validation.Status.Should().Be(ExportValidation.Passed);
         ExportVersionRules.Violations(descriptor).Should().BeEmpty();
         descriptor.Artifacts.Pmtiles.CaptureId.Should().Be(published.CaptureId);
@@ -138,7 +138,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task PairedPublish_Republish_SwitchesThePointerAndKeepsThePreviousVersion()
+    public async Task Export_Republish_SwitchesThePointerAndKeepsThePreviousVersion()
     {
         var first = await PublishAsync(IdentityField);
         var second = await PublishAsync(IdentityField);
@@ -146,14 +146,14 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
         second.Version.Should().NotBe(first.Version);
         second.CaptureId.Should().NotBe(first.CaptureId);
         (await ReadJsonAsync<ExportPointer>(second.PointerKey)).Version.Should().Be(second.Version);
-        (await Storage.ExistsAsync(first.DescriptorKey)).Should().BeTrue("a switched-out version stays readable for rollback");
+        (await Storage.ExistsAsync(first.CollectionKey)).Should().BeTrue("a switched-out version stays readable for rollback");
     }
 
     [IntegrationTheory]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task PairedPublish_ReplayedOperation_DoesNotCaptureOrActivateAnotherVersion(bool pointerMoved)
+    public async Task Export_ReplayedOperation_DoesNotCaptureOrActivateAnotherVersion(bool pointerMoved)
     {
         var (status, json) = await RunAsync(IdentityField);
         using var completed = json!;
@@ -162,10 +162,10 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
         var current = pointerMoved ? await PublishAsync(IdentityField) : original.PublishedExportVersion!;
         var request = new TileOperationStartRequest
         {
-            Operation = "paired-publish",
+            Operation = "export",
             ServiceId = WebAppFixture.TestServiceId,
             LayerId = WebAppFixture.TestLayerId,
-            PublicationId = _publicationId,
+            ExportId = _exportId,
             IdentityField = IdentityField,
             TileMatrixSetId = "WebMercatorQuad",
             MinZoom = 0,
@@ -196,8 +196,8 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     public async Task BeginOperation_OverlappingAttempts_ReservesOnlyOneArtifactVersion()
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = ExportStore.Create(Storage, options, _publicationId);
-        var run = new ExportVersionRun(_publicationId, "first", "capture-first", DateTimeOffset.UtcNow);
+        var store = ExportStore.Create(Storage, options, _exportId);
+        var run = new ExportVersionRun(_exportId, "first", "capture-first", DateTimeOffset.UtcNow);
         var operationId = Guid.NewGuid().ToString("N");
 
         var results = await Task.WhenAll(
@@ -212,7 +212,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task PairedPublish_FailedRun_LeavesThePreviousVersionActive()
+    public async Task Export_FailedRun_LeavesThePreviousVersionActive()
     {
         var first = await PublishAsync(IdentityField);
         HideField(IdentityField);
@@ -230,15 +230,15 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task PairedPublish_PublicationIdOfAnotherLayer_IsRefusedAndKeepsItsPointer()
+    public async Task Export_ExportIdOfAnotherLayer_IsRefusedAndKeepsItsPointer()
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = ExportStore.Create(Storage, options, _publicationId);
+        var store = ExportStore.Create(Storage, options, _exportId);
         var foreign = JsonNode.Parse(await File.ReadAllTextAsync(
             RepositoryPaths.Resolve("docs", "gis", "schemas", "export-collection.v1", "maui-county-parcels.json")))!.AsObject();
         await store.PutJsonOnceAsync(store.VersionKey("v0", ExportCollectionDocument.FileName), foreign,
             ExportVersionJsonContext.Default.JsonObject, CancellationToken.None);
-        var pointer = new ExportPointer(_publicationId, "v0", $"v0/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
+        var pointer = new ExportPointer(_exportId, "v0", $"v0/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
         (await store.SwitchPointerAsync(pointer, expectedETag: null, CancellationToken.None)).Should().BeTrue();
 
         var (status, json) = await RunAsync(IdentityField);
@@ -257,7 +257,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     [InlineData("schemaName", "unmanaged_paired_source")]
     [InlineData("layerDiscriminatorColumn", "other_layer_id")]
     [InlineData("primaryKeyColumn", "other_id")]
-    public async Task PairedPublish_NoncanonicalManagedBinding_IsRefusedBeforeCapture(string option, string value)
+    public async Task Export_NoncanonicalManagedBinding_IsRefusedBeforeCapture(string option, string value)
     {
         var first = await PublishAsync(IdentityField);
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -287,8 +287,8 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     public async Task SwitchPointer_StaleOrMissingExpectation_IsRefused()
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = ExportStore.Create(Storage, options, _publicationId);
-        var v1 = new ExportPointer(_publicationId, "v1", $"v1/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
+        var store = ExportStore.Create(Storage, options, _exportId);
+        var v1 = new ExportPointer(_exportId, "v1", $"v1/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
 
         (await store.SwitchPointerAsync(v1, expectedETag: null, CancellationToken.None)).Should().BeTrue();
         var firstTag = await store.ReadPointerETagAsync(CancellationToken.None);
@@ -302,12 +302,12 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
 
     [IntegrationTheory]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    [InlineData("""{"operation":"paired-publish","serviceId":"test","layerId":0,"identityField":"name"}""")]
-    [InlineData("""{"operation":"paired-publish","serviceId":"test","layerId":0,"publicationId":"Not_Valid","identityField":"name"}""")]
-    [InlineData("""{"operation":"paired-publish","serviceId":"test","layerId":0,"publicationId":"maui-parcels"}""")]
-    [InlineData("""{"operation":"paired-publish","layerId":0,"publicationId":"maui-parcels","identityField":"name"}""")]
-    [InlineData("""{"operation":"paired-publish","serviceId":"test","layerId":0,"publicationId":"maui-parcels","identityField":"name","bbox":[0,0,1,1]}""")]
-    public async Task StartJob_InvalidPairedPublishRequest_ReturnsBadRequest(string body)
+    [InlineData("""{"operation":"export","serviceId":"test","layerId":0,"identityField":"name"}""")]
+    [InlineData("""{"operation":"export","serviceId":"test","layerId":0,"exportId":"Not_Valid","identityField":"name"}""")]
+    [InlineData("""{"operation":"export","serviceId":"test","layerId":0,"exportId":"maui-parcels"}""")]
+    [InlineData("""{"operation":"export","layerId":0,"exportId":"maui-parcels","identityField":"name"}""")]
+    [InlineData("""{"operation":"export","serviceId":"test","layerId":0,"exportId":"maui-parcels","identityField":"name","bbox":[0,0,1,1]}""")]
+    public async Task StartJob_InvalidExportRequest_ReturnsBadRequest(string body)
     {
         using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
 
@@ -318,7 +318,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task StartJob_PairedPublishWithoutCredentials_IsRefused()
+    public async Task StartJob_ExportWithoutCredentials_IsRefused()
     {
         using var anonymous = _fixture.CreateClient();
 
@@ -336,10 +336,10 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
 
     private object PublishBody(string identityField) => new
     {
-        operation = "paired-publish",
+        operation = "export",
         serviceId = WebAppFixture.TestServiceId,
         layerId = WebAppFixture.TestLayerId,
-        publicationId = _publicationId,
+        exportId = _exportId,
         identityField,
         minZoom = 0,
         maxZoom = 2,
@@ -396,7 +396,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     }
 
     private static string ArtifactKey(PublishedExportVersion published, string href)
-        => published.DescriptorKey[..(published.DescriptorKey.LastIndexOf('/') + 1)] + href;
+        => published.CollectionKey[..(published.CollectionKey.LastIndexOf('/') + 1)] + href;
 
     private async Task<byte[]> ReadBytesAsync(string key)
     {

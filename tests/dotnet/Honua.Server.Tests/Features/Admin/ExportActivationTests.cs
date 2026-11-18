@@ -24,12 +24,12 @@ public sealed class ExportActivationTests
         storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateFailure("A transport failure does not prove rejection."));
         var run = new ExportVersionRun("test", "version", "capture", DateTimeOffset.UtcNow);
-        var pointer = new ExportPointer(run.PublicationId, run.Version, "version/collection.json", DateTimeOffset.UtcNow);
+        var pointer = new ExportPointer(run.ExportId, run.Version, "version/collection.json", DateTimeOffset.UtcNow);
         storage.DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult<Stream?>(activated
                 ? new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(pointer, ExportVersionJsonContext.Default.ExportPointer))
                 : null));
-        var store = ExportStore.Create(storage, new CloudStorageOptions(), run.PublicationId);
+        var store = ExportStore.Create(storage, new CloudStorageOptions(), run.ExportId);
 
         var activate = () => TileOperationExecutionCore.SwitchPointerAsync(store, run, expectedETag: null);
 

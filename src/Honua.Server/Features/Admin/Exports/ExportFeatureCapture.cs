@@ -17,7 +17,7 @@ namespace Honua.Server.Features.Admin.Exports;
 internal sealed class ExportFeatureCapture
 {
     internal const string CaptureIdMetadataKey = "honua:captureId";
-    internal const string PublicationIdMetadataKey = "honua:publicationId";
+    internal const string PublicationIdMetadataKey = "honua:exportId";
     internal const string VersionMetadataKey = "honua:publicationVersion";
     private const int PageSize = 5000;
     private const int MaxFeatures = 500_000;
@@ -55,7 +55,7 @@ internal sealed class ExportFeatureCapture
             features.AddRange(page.Items);
             if (features.Count > MaxFeatures)
             {
-                throw new ExportException($"Paired publish supports at most {MaxFeatures} features per layer.");
+                throw new ExportException($"Export supports at most {MaxFeatures} features per layer.");
             }
 
             if (page.Items.Length < PageSize)
@@ -141,7 +141,7 @@ internal sealed class ExportFeatureCapture
 
         if (envelope.IsNull || envelope.Width <= 0 || envelope.Height <= 0)
         {
-            throw new ExportException("Paired publish needs features whose geometries cover an area.");
+            throw new ExportException("Export needs features whose geometries cover an area.");
         }
 
         return ([envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY], types.ToList());

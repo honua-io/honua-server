@@ -129,7 +129,7 @@ public sealed class ExportCompanionFilesTests
 
     private static ExportVersion Descriptor() => new()
     {
-        PublicationId = "parcels",
+        ExportId = "parcels",
         Version = "20261117T120000Z-abcdef12",
         Title = "County parcels",
         PublishedAt = CapturedAt,

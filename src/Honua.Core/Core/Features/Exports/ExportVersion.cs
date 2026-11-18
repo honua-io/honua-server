@@ -9,7 +9,7 @@ namespace Honua.Core.Features.Exports;
 // One Export version as Honua models it. It is stored only as its STAC collection document (ExportCollectionDocument).
 public sealed record ExportVersion
 {
-    public required string PublicationId { get; init; }
+    public required string ExportId { get; init; }
 
     public required string Version { get; init; }
 
@@ -125,9 +125,9 @@ public sealed record ExportValidationCheck(string Name, string Status)
     public string? Detail { get; init; }
 }
 
-public sealed record PublishedExportVersion(string PublicationId, string Version, string CaptureId, string DescriptorKey, string PointerKey);
+public sealed record PublishedExportVersion(string ExportId, string Version, string CaptureId, string CollectionKey, string PointerKey);
 
-public sealed record ExportPointer(string PublicationId, string Version, string Collection, DateTimeOffset SwitchedAt);
+public sealed record ExportPointer(string ExportId, string Version, string Collection, DateTimeOffset SwitchedAt);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(ExportVersion))]

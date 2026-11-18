@@ -12,12 +12,12 @@ internal static partial class ExportRequestRules
     {
         if (!request.LayerId.HasValue || string.IsNullOrWhiteSpace(request.ServiceId))
         {
-            return "Paired publish operations require 'serviceId' and 'layerId'.";
+            return "Export operations require 'serviceId' and 'layerId'.";
         }
 
-        if (request.PublicationId is null || !IsPublicationId(request.PublicationId))
+        if (request.ExportId is null || !IsExportId(request.ExportId))
         {
-            return "Property 'publicationId' must be 3-64 lowercase letters, digits or hyphens, starting with a letter or digit.";
+            return "Property 'exportId' must be 3-64 lowercase letters, digits or hyphens, starting with a letter or digit.";
         }
 
         if (request.IdentityField is null || !IsPortableFieldName(request.IdentityField))
@@ -28,10 +28,10 @@ internal static partial class ExportRequestRules
         // Both artifacts must hold the same features; a tile window would clip only one of them.
         return request.Bbox is null
             ? null
-            : "Property 'bbox' does not apply to paired publish; tile coverage follows the captured features.";
+            : "Property 'bbox' does not apply to export; tile coverage follows the captured features.";
     }
 
-    public static bool IsPublicationId(string? name) => name is not null && PublicationIdPattern().IsMatch(name);
+    public static bool IsExportId(string? name) => name is not null && PublicationIdPattern().IsMatch(name);
 
     public static bool IsPortableFieldName(string name) => FieldNamePattern().IsMatch(name);
 

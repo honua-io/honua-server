@@ -31,13 +31,13 @@ public static class ExportCollectionDocument
         ArgumentNullException.ThrowIfNull(export);
         ArgumentNullException.ThrowIfNull(metadata);
         var publicFields = export.Fields.Where(field => field.Public).ToList();
-        var title = export.Title ?? export.PublicationId;
+        var title = export.Title ?? export.ExportId;
         var collection = new JsonObject
         {
             ["type"] = "Collection",
             ["stac_version"] = StacVersion,
             ["stac_extensions"] = Strings([PortolanSchemaUri, FileSchemaUri, TableSchemaUri, VersionSchemaUri, HonuaSchemaUri]),
-            ["id"] = export.PublicationId,
+            ["id"] = export.ExportId,
             ["title"] = title,
             ["description"] = metadata.Description ?? $"{title}, exported as PMTiles and GeoParquet files.",
             ["license"] = License(metadata.License),
@@ -118,7 +118,7 @@ public static class ExportCollectionDocument
         var id = Text(collection, "id");
         return new ExportVersion
         {
-            PublicationId = id,
+            ExportId = id,
             Version = Text(collection, "version"),
             Title = title == id ? null : title,
             PublishedAt = Instant(collection, "updated"),

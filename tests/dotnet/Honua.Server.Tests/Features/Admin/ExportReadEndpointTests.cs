@@ -22,13 +22,13 @@ namespace Honua.Server.Tests.Features.Admin;
 
 public sealed partial class ExportEndpointTests
 {
-    private string PublicationRoute => $"/api/v1/publications/{_publicationId}";
+    private string PublicationRoute => $"/api/v1/publications/{_exportId}";
 
     [IntegrationTheory]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/{version}/{fileName}")]
     [InlineData("GET", false)]
     [InlineData("HEAD", false)]
     [InlineData("GET", true)]
@@ -37,7 +37,7 @@ public sealed partial class ExportEndpointTests
     {
         var first = await PublishAsync(IdentityField);
         var second = await PublishAsync(IdentityField);
-        var route = $"{PublicationRoute}/{first.Version}/{_publicationId}.parquet";
+        var route = $"{PublicationRoute}/{first.Version}/{_exportId}.parquet";
         using var before = await _client.GetAsync(route);
         before.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -73,7 +73,7 @@ public sealed partial class ExportEndpointTests
             }
 
             var suffixes = new[] { "current.json" }.Concat(new[] { first.Version, second.Version }
-                .SelectMany(version => new[] { ExportCollectionDocument.FileName, $"{_publicationId}.pmtiles", $"{_publicationId}.parquet" }
+                .SelectMany(version => new[] { ExportCollectionDocument.FileName, $"{_exportId}.pmtiles", $"{_exportId}.parquet" }
                     .Select(file => $"{version}/{file}")));
             foreach (var suffix in suffixes)
             {
@@ -104,9 +104,9 @@ public sealed partial class ExportEndpointTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
     public async Task PublicationRead_Republish_PinsDescriptorAndRelativeArtifactsToOneVersion()
     {
         var first = await PublishAsync(IdentityField);
@@ -123,16 +123,16 @@ public sealed partial class ExportEndpointTests
         var second = await PublishAsync(IdentityField);
         using var pinned = await _client.GetAsync(current.Headers.Location);
         pinned.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await pinned.Content.ReadAsByteArrayAsync()).Should().Equal(await ReadBytesAsync(first.DescriptorKey));
+        (await pinned.Content.ReadAsByteArrayAsync()).Should().Equal(await ReadBytesAsync(first.CollectionKey));
         using var changed = await client.GetAsync($"{PublicationRoute}/current.json");
         changed.Headers.Location!.OriginalString.Should().Be($"{PublicationRoute}/{second.Version}/{ExportCollectionDocument.FileName}");
     }
 
     [IntegrationTheory]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/{version}/{fileName}")]
     [InlineData("GET")]
     [InlineData("HEAD")]
     public async Task PublicationRead_ImplicitObjectId_RemainsReadableUntilExplicitlyHidden(string method)
@@ -143,12 +143,12 @@ public sealed partial class ExportEndpointTests
         var published = await PublishAsync(IdentityField);
         _fixture.RestoreV2ResourceSchemaFields(WebAppFixture.TestLayerId,
             resource.SchemaFields.Where(field => field.Name != objectId.Name).ToArray());
-        var descriptor = await ReadCollectionAsync(published.DescriptorKey);
+        var descriptor = await ReadCollectionAsync(published.CollectionKey);
         descriptor.Artifacts.Pmtiles.Fields.Should().Contain("objectid");
         descriptor.Artifacts.Geoparquet.Fields.Should().Contain("objectid");
         using var client = _fixture.CreateClient(allowAutoRedirect: false);
         client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_exportId}.pmtiles", $"{published.Version}/{_exportId}.parquet" })
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
             using var response = await client.SendAsync(request);
@@ -156,7 +156,7 @@ public sealed partial class ExportEndpointTests
         }
 
         _fixture.UpdateV2ResourceSchemaField(WebAppFixture.TestLayerId, objectId with { Hidden = true });
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_exportId}.pmtiles", $"{published.Version}/{_exportId}.parquet" })
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
             using var response = await client.SendAsync(request);
@@ -165,15 +165,15 @@ public sealed partial class ExportEndpointTests
     }
 
     [IntegrationTheory]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/{version}/{fileName}")]
     [InlineData("pmtiles")]
     [InlineData("parquet")]
     public async Task PublicationRead_Artifacts_SupportRangeHeadAndConditionalRequests(string extension)
     {
         var published = await PublishAsync(IdentityField);
-        var route = $"{PublicationRoute}/{published.Version}/{_publicationId}.{extension}";
-        var bytes = await ReadBytesAsync(ArtifactKey(published, $"{_publicationId}.{extension}"));
+        var route = $"{PublicationRoute}/{published.Version}/{_exportId}.{extension}";
+        var bytes = await ReadBytesAsync(ArtifactKey(published, $"{_exportId}.{extension}"));
         using var request = new HttpRequestMessage(HttpMethod.Get, route);
         request.Headers.Range = new RangeHeaderValue(0, 15);
         using var ranged = await _client.SendAsync(request);
@@ -196,13 +196,13 @@ public sealed partial class ExportEndpointTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
     public async Task PublicationRead_Anonymous_IsRefusedBeforeExistenceOrConditionChecks()
     {
         var published = await PublishAsync(IdentityField);
         using var anonymous = _fixture.CreateClient();
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.parquet", "missing/collection.json" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_exportId}.parquet", "missing/collection.json" })
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, $"{PublicationRoute}/{suffix}");
             request.Headers.TryAddWithoutValidation("If-None-Match", "*");
@@ -212,10 +212,10 @@ public sealed partial class ExportEndpointTests
     }
 
     [IntegrationTheory]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/{version}/{fileName}")]
     [InlineData("GET")]
     [InlineData("HEAD")]
     public async Task PublicationRead_DeniedExport_IsRefusedBeforeArchivedVersionExistence(string method)
@@ -226,7 +226,7 @@ public sealed partial class ExportEndpointTests
             "publication-read-test", CancellationToken.None);
         using var denied = _fixture.CreateClient(allowAutoRedirect: false);
         denied.DefaultRequestHeaders.Add("X-API-Key", issued.Key);
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.parquet", "missing/collection.json", $"missing/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_exportId}.parquet", "missing/collection.json", $"missing/{_exportId}.parquet" })
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
             request.Headers.TryAddWithoutValidation("If-None-Match", "*");
@@ -238,13 +238,13 @@ public sealed partial class ExportEndpointTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
     public async Task PublicationRead_NewlyHiddenField_RefusesPreviouslyPublishedBytes()
     {
         var published = await PublishAsync(IdentityField);
         HideField(IdentityField);
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" }
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_exportId}.pmtiles", $"{published.Version}/{_exportId}.parquet" }
                      .Concat(ExportCompanionFiles.FileNames.Select(file => $"{published.Version}/{file}")))
         {
             using var response = await _client.GetAsync($"{PublicationRoute}/{suffix}");
@@ -253,10 +253,10 @@ public sealed partial class ExportEndpointTests
     }
 
     [IntegrationTheory]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/{version}/{fileName}")]
     [InlineData("GET")]
     [InlineData("HEAD")]
     public async Task PublicationRead_ReboundStorage_RefusesCurrentAndArchivedArtifacts(string method)
@@ -280,7 +280,7 @@ public sealed partial class ExportEndpointTests
 
         foreach (var suffix in new[] { "current.json" }.Concat(new[] { first, second }.SelectMany(published =>
             new[] { $"{published.Version}/{ExportCollectionDocument.FileName}",
-                $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })))
+                $"{published.Version}/{_exportId}.pmtiles", $"{published.Version}/{_exportId}.parquet" })))
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
             request.Headers.TryAddWithoutValidation("If-None-Match", "*");
@@ -296,15 +296,15 @@ public sealed partial class ExportEndpointTests
     [IntegrationTheory]
     [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
     [Endpoint("HEAD /api/v1/tiles/pmtiles/{*artifactId}")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
     [InlineData("GET")]
     [InlineData("HEAD")]
     public async Task PublicationRead_GenericPMTilesProxy_RefusesPairedArchives(string method)
     {
         var published = await PublishAsync(IdentityField);
-        var key = ArtifactKey(published, $"{_publicationId}.pmtiles");
+        var key = ArtifactKey(published, $"{_exportId}.pmtiles");
         (await ReadBytesAsync(key)).Should().NotBeEmpty();
-        using var paired = await _client.GetAsync($"{PublicationRoute}/{published.Version}/{_publicationId}.pmtiles");
+        using var paired = await _client.GetAsync($"{PublicationRoute}/{published.Version}/{_exportId}.pmtiles");
         paired.StatusCode.Should().Be(HttpStatusCode.OK);
         paired.Headers.CacheControl!.NoStore.Should().BeTrue();
 
@@ -316,8 +316,8 @@ public sealed partial class ExportEndpointTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
     public async Task PublicationRead_RetiredSource_RefusesPreviouslyPublishedBytes()
     {
         var published = await PublishAsync(IdentityField);
@@ -331,7 +331,7 @@ public sealed partial class ExportEndpointTests
             }).ToArray()
         }, schema: _fixture.MetadataGraphSchema);
 
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_exportId}.parquet" })
         {
             using var response = await _client.GetAsync($"{PublicationRoute}/{suffix}");
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -339,10 +339,10 @@ public sealed partial class ExportEndpointTests
     }
 
     [IntegrationTheory]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
-    [Endpoint("HEAD /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
+    [Endpoint("HEAD /api/v1/publications/{exportId}/{version}/{fileName}")]
     [InlineData("GET")]
     [InlineData("HEAD")]
     public async Task PublicationRead_TenantChanged_RefusesPreviouslyPublishedBytes(string method)
@@ -358,7 +358,7 @@ public sealed partial class ExportEndpointTests
             }).ToArray()
         }, schema: _fixture.MetadataGraphSchema);
 
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles", $"{published.Version}/{_publicationId}.parquet" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_exportId}.pmtiles", $"{published.Version}/{_exportId}.parquet" })
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{PublicationRoute}/{suffix}");
             request.Headers.TryAddWithoutValidation("If-None-Match", "*");
@@ -370,19 +370,19 @@ public sealed partial class ExportEndpointTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/publications/{publicationId}/current.json")]
-    [Endpoint("GET /api/v1/publications/{publicationId}/{version}/{fileName}")]
+    [Endpoint("GET /api/v1/publications/{exportId}/current.json")]
+    [Endpoint("GET /api/v1/publications/{exportId}/{version}/{fileName}")]
     public async Task PublicationRead_MalformedPointer_RefusesCurrentAndPinnedArtifacts()
     {
         var published = await PublishAsync(IdentityField);
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = ExportStore.Create(Storage, options, _publicationId);
+        var store = ExportStore.Create(Storage, options, _exportId);
         var pointer = await ReadJsonAsync<ExportPointer>(published.PointerKey);
         var expectedTag = await store.ReadPointerETagAsync(CancellationToken.None);
         (await store.SwitchPointerAsync(pointer with { Collection = "../collection.json" }, expectedTag, CancellationToken.None))
             .Should().BeTrue();
 
-        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_publicationId}.pmtiles" })
+        foreach (var suffix in new[] { "current.json", $"{published.Version}/{ExportCollectionDocument.FileName}", $"{published.Version}/{_exportId}.pmtiles" })
         {
             using var response = await _client.GetAsync($"{PublicationRoute}/{suffix}");
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);

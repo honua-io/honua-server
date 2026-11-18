@@ -27,7 +27,7 @@ internal sealed record ExportCompanionInput(ExportVersion Descriptor, ExportLaye
     // Only public fields reach the artifacts, so only they are described.
     public IReadOnlyList<ExportField> PublicFields => [.. Descriptor.Fields.Where(candidate => candidate.Public)];
 
-    public string DisplayTitle => Text(Descriptor.Title) ?? Text(Metadata.Title) ?? Descriptor.PublicationId;
+    public string DisplayTitle => Text(Descriptor.Title) ?? Text(Metadata.Title) ?? Descriptor.ExportId;
 
     public string? Description => Text(Metadata.Description);
 

@@ -20,13 +20,13 @@ internal static class TileOperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tile Operations")
-            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish/paired-publish job control")
+            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish/export job control")
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/jobs", HandleStartJob)
             .WithName("StartTileOperationJob")
             .WithSummary("Start a tile operation job")
-            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive, publish, paired-publish) for asynchronous execution");
+            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive, publish, export) for asynchronous execution");
 
         _ = group.MapGet("/jobs/{jobId}", HandleGetJobStatus)
             .WithName("GetTileOperationJobStatus")
@@ -205,8 +205,8 @@ internal static class TileOperationsEndpoints
             return null;
         }
 
-        var detail = operation is not ("archive" or "publish" or TileCacheExecutionSpecBuilder.PairedPublishOperation)
-            ? "Property 'tileCompression' applies only to archive, publish and paired-publish operations."
+        var detail = operation is not ("archive" or "publish" or TileCacheExecutionSpecBuilder.ExportOperation)
+            ? "Property 'tileCompression' applies only to archive, publish and export operations."
             : !TileArchiveCompression.IsSupported(tileCompression)
                 ? $"Property 'tileCompression' must be one of: {TileArchiveCompression.SupportedValues}."
                 : null;
@@ -281,7 +281,7 @@ internal static class TileOperationsEndpoints
                 "Publish operations require 'layerId'.");
         }
 
-        if (operation is TileCacheExecutionSpecBuilder.PairedPublishOperation
+        if (operation is TileCacheExecutionSpecBuilder.ExportOperation
             && ExportRequestRules.Problem(request) is { } pairedProblem)
         {
             return ProblemDetailsHelpers.CreateAdminProblemDetails(

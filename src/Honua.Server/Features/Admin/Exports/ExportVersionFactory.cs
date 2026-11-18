@@ -9,7 +9,7 @@ using Honua.Core.Features.Exports;
 namespace Honua.Server.Features.Admin.Exports;
 
 internal sealed record ExportVersionRun(
-    string PublicationId,
+    string ExportId,
     string Version,
     string CaptureId,
     DateTimeOffset CapturedAt);
@@ -20,9 +20,9 @@ internal sealed record StoredPair(
 
 internal static class ExportVersionFactory
 {
-    public static string PmtilesFileName(ExportVersionRun run) => $"{run.PublicationId}.pmtiles";
+    public static string PmtilesFileName(ExportVersionRun run) => $"{run.ExportId}.pmtiles";
 
-    public static string GeoparquetFileName(ExportVersionRun run) => $"{run.PublicationId}.parquet";
+    public static string GeoparquetFileName(ExportVersionRun run) => $"{run.ExportId}.parquet";
 
     public static string NewVersion(DateTimeOffset capturedAt, string captureId)
         => string.Create(CultureInfo.InvariantCulture, $"{capturedAt:yyyyMMdd'T'HHmmss'Z'}-{captureId[^8..]}");
@@ -39,7 +39,7 @@ internal static class ExportVersionFactory
         var title = string.IsNullOrWhiteSpace(resource.Metadata.Title) ? null : resource.Metadata.Title.Trim();
         return new ExportVersion
         {
-            PublicationId = run.PublicationId,
+            ExportId = run.ExportId,
             Version = run.Version,
             Title = title,
             PublishedAt = published.Validation.ValidatedAt,

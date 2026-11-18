@@ -20,18 +20,18 @@ internal sealed class ExportReader(
     IMetadataV2GraphProvider graphProvider)
 {
     internal async Task<ExportReadTarget?> ResolveCurrentAsync(
-        string publicationId, CancellationToken cancellationToken)
+        string exportId, CancellationToken cancellationToken)
     {
-        if (!ExportRequestRules.IsPublicationId(publicationId))
+        if (!ExportRequestRules.IsExportId(exportId))
         {
             return null;
         }
 
-        var store = ExportStore.Create(storage, options.Value, publicationId);
+        var store = ExportStore.Create(storage, options.Value, exportId);
         try
         {
             var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
-            if (pointer is null || pointer.PublicationId != publicationId || !IsVersion(pointer.Version) ||
+            if (pointer is null || pointer.ExportId != exportId || !IsVersion(pointer.Version) ||
                 pointer.Collection != $"{pointer.Version}/{ExportCollectionDocument.FileName}")
             {
                 return null;
@@ -39,7 +39,7 @@ internal sealed class ExportReader(
 
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var current = await ResolveVersionAsync(store, pointer.Version, snapshot, cancellationToken).ConfigureAwait(false);
-            if (current is null || current.Descriptor.PublicationId != publicationId)
+            if (current is null || current.Descriptor.ExportId != exportId)
             {
                 return null;
             }
@@ -66,7 +66,7 @@ internal sealed class ExportReader(
         try
         {
             var pinned = await ResolveVersionAsync(current.Store, version, current.Snapshot, cancellationToken).ConfigureAwait(false);
-            return pinned?.Descriptor.PublicationId == current.Descriptor.PublicationId &&
+            return pinned?.Descriptor.ExportId == current.Descriptor.ExportId &&
                 PMTilesProxySourceResolver.SameSource(current.Source, pinned.Source) ? pinned : null;
         }
         catch (JsonException)
@@ -86,7 +86,7 @@ internal sealed class ExportReader(
 
         var pmtiles = await storage.GetMetadataAsync(
             store.VersionKey(version, descriptor!.Artifacts.Pmtiles.Href), cancellationToken).ConfigureAwait(false);
-        // Paired publish always writes the full source stamp. Never use the legacy layer-only fallback.
+        // Export always writes the full source stamp. Never use the legacy layer-only fallback.
         if (pmtiles is null || !HasSourceStamp(pmtiles))
         {
             return null;
@@ -127,10 +127,10 @@ internal sealed class ExportReader(
 
     private static bool IsDescriptor(ExportVersion? descriptor, string version)
         => descriptor is { SourceLayer: not null, Artifacts.Pmtiles.Fields: not null, Artifacts.Geoparquet.Fields: not null } &&
-           descriptor.Version == version && ExportRequestRules.IsPublicationId(descriptor.PublicationId) &&
+           descriptor.Version == version && ExportRequestRules.IsExportId(descriptor.ExportId) &&
            descriptor.Validation?.Status == ExportValidation.Passed &&
-           descriptor.Artifacts.Pmtiles.Href == $"{descriptor.PublicationId}.pmtiles" &&
-           descriptor.Artifacts.Geoparquet.Href == $"{descriptor.PublicationId}.parquet";
+           descriptor.Artifacts.Pmtiles.Href == $"{descriptor.ExportId}.pmtiles" &&
+           descriptor.Artifacts.Geoparquet.Href == $"{descriptor.ExportId}.parquet";
 
     private static bool HasSourceStamp(CloudFile file)
         => HasStampValue(file, PMTilesProxySourceResolver.LayerIdMetadataKey) &&
