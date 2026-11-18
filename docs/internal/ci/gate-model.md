@@ -2656,9 +2656,13 @@ hosts or sub-second timing windows. They now run in parallel with the other
 classes in their shards. Cases, fixtures and assertions are unchanged; only the
 collection attribute is removed.
 
-`CapabilityManifestEndpointTests` stays in the collection: one case starts a
-production job-substrate host, and those hosts share the job tables and must run
-one at a time.
+`CapabilityManifestEndpointTests` leaves the collection too. Its one case that
+starts a production job-substrate host moves to the nested
+`ProductionJobSubstrate` class in the serial `JobSubstrate` collection, because
+those hosts share the job tables and must run one at a time; only its name and
+an assertion message change wording. The rollback cases, which build their own
+hosts over substitutes, become the nested `RollbackTargets` class and run in
+parallel with the default-application cases. Their bodies are unchanged.
 
 Shard filters select by class or method name, so every case stays in the same
 shards on selected PR runs and twice-daily full trunk runs. No workflow, shard
