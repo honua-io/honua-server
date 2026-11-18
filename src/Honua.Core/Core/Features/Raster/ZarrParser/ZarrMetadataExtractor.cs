@@ -21,6 +21,9 @@ public sealed class ZarrMetadataExtractor
     private const int MaxMetadataBytes = 16 * 1024 * 1024;
     private const int MaxVariables = 64;
 
+    private static readonly string[] HonuaGeoreferencingAttributes =
+        ["crs_wkid", "crs", "extent", "primary_variable", "x_dimension", "y_dimension", "t_dimension"];
+
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Retains the injected instance API after removing its single-implementation interface.")]
     public async Task<ZarrStoreMetadata> ReadMetadataAsync(
         ICloudRangeReader reader,
@@ -91,7 +94,7 @@ public sealed class ZarrMetadataExtractor
         var (srid, extent, primary, xDim, yDim, tDim, temporal, axes) =
             ResolveStoreGeoreferencing(attrsDoc?.RootElement, arrays);
 
-        return new ZarrStoreMetadata(
+        var metadata = new ZarrStoreMetadata(
             ZarrFormat: arrays[0].ZarrFormat,
             Srid: srid,
             Extent: extent,
@@ -102,7 +105,20 @@ public sealed class ZarrMetadataExtractor
             TemporalDimension: tDim,
             Temporal: temporal,
             Axes: axes);
+
+        // Without Honua's root georeferencing attributes, read the store's own CF conventions.
+        return DeclaresHonuaGeoreferencing(attrsDoc?.RootElement)
+            ? metadata
+            : await ZarrCfGeoreferencing.ApplyAsync(
+                    new ZarrCfScan(reader, bucket, normalizedRoot) { Consolidated = consolidatedDoc },
+                    metadata,
+                    cancellationToken)
+                .ConfigureAwait(false);
     }
+
+    private static bool DeclaresHonuaGeoreferencing(JsonElement? attributes)
+        => attributes is { ValueKind: JsonValueKind.Object } root
+            && HonuaGeoreferencingAttributes.Any(name => root.TryGetProperty(name, out _));
 
     private static string NormalizeRootPath(string rootPath)
     {

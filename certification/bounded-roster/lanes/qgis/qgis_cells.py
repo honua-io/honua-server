@@ -22,6 +22,9 @@ from rosterenv import url
 CLIENT_DETAIL = f"QGIS {Qgis.version()} (PyQGIS, qgis/qgis:3.44.13)"
 OAPIF = url("/ogc/features")
 WFS = url("/wfs")
+# WFS type names are publication graph IDs: layer 0 and its protected mirror 2011.
+WFS_TYPE = "honua:pub-test-service-feature-0"
+WFS_PROTECTED_TYPE = "honua:pub-cert-auth-vector-feature-2011"
 WMS = url("/rest/services/browser_compat/MapServer/WMS")
 WMS_PROTECTED = url("/rest/services/cert_auth_raster/MapServer/WMS")
 WMTS = url("/rest/services/browser_compat/MapServer/WMTS")
@@ -178,8 +181,8 @@ def oapif_collections() -> None:
         layers = sorted(item.name() for item in connection.createChildren())
         listed = [item for item in recorder.matching("/ogc/features/collections") if item.url.rstrip("/").endswith("/collections")]
         expect(listed and listed[0].status == 200, recorder.summary())
-        # client-compat layers 0, 10-12, 2000-2002, 3000 plus docker/cng/seed.sql's CNG Features.
-        expect(len(layers) == 9 and "CNG Features" in layers, layers)
+        # client-compat layers 0, 10-12, 20-22, 2000-2002, 3000 plus docker/cng/seed.sql's CNG Features.
+        expect(len(layers) == 12 and "CNG Features" in layers, layers)
         return f"browser listed {len(layers)} collections {layers}", OAPIF + "/collections"
     _oapif_cell("client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS",
                 "the QGIS browser lists the API's collections", body)
@@ -347,7 +350,7 @@ def _wfs(typename: str, label: str = "anonymous", extra: str = "") -> QgsVectorL
 def _wfs_positive(cell: Cell) -> None:
     with cell.check("positive", "GetCapabilities, DescribeFeatureType and GetFeature through the WFS provider") as c:
         with qgiskit.recording() as recorder:
-            names = _names(_wfs("honua:test_layer"))
+            names = _names(_wfs(WFS_TYPE))
         requests = sorted({item.url.split("REQUEST=")[1].split("&")[0] for item in recorder.exchanges if "REQUEST=" in item.url})
         expect(names == sorted(NAMES), names)
         expect({"GetCapabilities", "DescribeFeatureType", "GetFeature"} <= set(requests), requests)
@@ -356,14 +359,14 @@ def _wfs_positive(cell: Cell) -> None:
 
 def _wfs_metadata_media(cell: Cell) -> None:
     with cell.check("metadata", "capabilities title and extent become layer metadata") as c:
-        layer = _wfs("honua:test_layer")
+        layer = _wfs(WFS_TYPE)
         extent = layer.extent()
         expect(layer.crs().authid() == "EPSG:4326", layer.crs().authid())
         expect(round(extent.xMinimum(), 2) <= -122.49 and round(extent.yMaximum(), 2) >= 37.79, extent.toString())
         c.detail = f"crs {layer.crs().authid()}; extent {extent.toString(3)}; title {layer.dataProvider().layerMetadata().title()!r}"
     with cell.check("media-schema", "GML GetFeature responses decode against DescribeFeatureType types") as c:
         with qgiskit.recording() as recorder:
-            layer = _wfs("honua:test_layer")
+            layer = _wfs(WFS_TYPE)
             fields = {field.name(): field.typeName() for field in layer.fields()}
             list(layer.getFeatures())
         responses = [(item.url.split("REQUEST=")[1].split("&")[0], item.content_type) for item in recorder.exchanges
@@ -375,7 +378,7 @@ def _wfs_metadata_media(cell: Cell) -> None:
 
 def wfs_operation() -> None:
     cell = _cell("client-cert/qgis/ogc/OGC-OP-WFS-2-0", "2.0.0", "WFS 2.0 simple")
-    cell.primary_request_url = WFS + "?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=honua:test_layer"
+    cell.primary_request_url = WFS + "?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=" + WFS_TYPE
     _wfs_positive(cell)
     with cell.check("negative", "an unknown feature type yields an invalid layer") as c:
         layer = _wfs("honua:no_such_type")
@@ -389,7 +392,7 @@ def wfs_operation() -> None:
         c.detail = f"(features, statuses) {outcomes}"
     with cell.check("crs-axis", "EPSG:4326 WFS 2.0 axis order decodes to lon/lat geometry") as c:
         with qgiskit.recording() as recorder:
-            layer = _wfs("honua:test_layer")
+            layer = _wfs(WFS_TYPE)
             located = _xy(layer)
             window = _names(layer, QgsFeatureRequest().setFilterRect(QgsRectangle(-122.47, 37.715, -122.44, 37.745)))
         expect(all(located[name] == LOCATIONS[name] for name in LOCATIONS), located)
@@ -401,7 +404,7 @@ def wfs_operation() -> None:
 
 def wfs_auth_probe(label: str) -> object:
     with qgiskit.recording() as recorder:
-        layer = _wfs("honua:authenticated_test_layer", label)
+        layer = _wfs(WFS_PROTECTED_TYPE, label)
         result = layer.featureCount() if layer.isValid() else "invalid"
     return [result, sorted({item.status for item in recorder.exchanges if item.status})]
 
@@ -409,7 +412,7 @@ def wfs_auth_probe(label: str) -> object:
 def _wfs_metadata_media_only_media(cell: Cell) -> None:
     with cell.check("media-schema", "GML GetFeature responses decode against DescribeFeatureType types") as c:
         with qgiskit.recording() as recorder:
-            layer = _wfs("honua:test_layer")
+            layer = _wfs(WFS_TYPE)
             fields = {field.name(): field.typeName() for field in layer.fields()}
             list(layer.getFeatures())
         responses = [(item.url.split("REQUEST=")[1].split("&")[0], item.content_type) for item in recorder.exchanges
@@ -431,7 +434,8 @@ def wfs_service() -> None:
 # WMS 1.3.0 and WMTS 1.0.0
 # ---------------------------------------------------------------------------
 
-def _wms(label: str = "anonymous", layers: str = "Browser Points", base: str = WMS, crs: str = "EPSG:4326") -> QgsRasterLayer:
+# WMS layer names are the layer IDs (2000 is Browser Points, 2010 its protected mirror).
+def _wms(label: str = "anonymous", layers: str = "2000", base: str = WMS, crs: str = "EPSG:4326") -> QgsRasterLayer:
     auth = "" if label == "anonymous" else f"authcfg={qgiskit.AUTHCFG[label]}&"
     return QgsRasterLayer(f"{auth}crs={crs}&format=image/png&layers={layers}&styles=&url={base}", f"wms-{label}", "wms")
 
@@ -499,7 +503,7 @@ def wms_operation() -> None:
         outcomes = {}
         for label in DENIED + ADMITTED:
             with qgiskit.recording() as recorder:
-                layer = _wms(label, layers="Authenticated Browser Points", base=WMS_PROTECTED)
+                layer = _wms(label, layers="2010", base=WMS_PROTECTED)
                 painted = qgiskit.render(layer, BROWSER_EXTENT_4326, "EPSG:4326")[0] if layer.isValid() else "invalid"
             outcomes[label] = (painted, sorted({item.status for item in recorder.exchanges}))
         expect(all(outcomes[label][0] in ("invalid", 0) for label in DENIED), outcomes)
@@ -831,18 +835,27 @@ def mapserver() -> None:
         with qgiskit.recording() as recorder:
             layer = QgsRasterLayer(source, "ms", "arcgismapserver")
             painted, colours = qgiskit.render(layer, BROWSER_EXTENT_3857, "EPSG:3857")
-        exports = [item for item in recorder.matching("/MapServer/export") if item.status == 200]
+        # The service advertises its served tile cache (singleFusedMapCache), and QGIS
+        # then draws from /tile instead of /export; either is the MapServer render path.
+        exports = [item for item in recorder.exchanges if item.status == 200
+                   and ("/MapServer/export" in item.url or "/MapServer/tile/" in item.url)]
         expect(layer.isValid() and painted > 0 and exports, (layer.isValid(), painted, recorder.summary(6)))
-        c.detail = f"painted {painted} px in {colours} colours via {len(exports)} exports"
+        paths = sorted({"tile" if "/MapServer/tile/" in item.url else "export" for item in exports})
+        c.detail = f"painted {painted} px in {colours} colours via {len(exports)} {'/'.join(paths)} responses"
     with cell.check("metadata", "service and layer JSON drive CRS, extent and layer list") as c:
         layer = QgsRasterLayer(source, "ms", "arcgismapserver")
         expect(layer.isValid() and layer.extent().width() > 0, layer.extent().toString())
         c.detail = f"crs {layer.crs().authid()}; extent {layer.extent().toString(0)}; sublayers {len(layer.dataProvider().subLayers())}"
     with cell.check("media-schema", "service JSON and PNG32 exports carry their media types") as c:
+        # QGIS keeps fetched tiles in memory, so a second render in this process can draw without
+        # requesting them again; judge the image media types from the first render as well.
+        rendered = list(recorder.exchanges)
         with qgiskit.recording() as recorder:
             qgiskit.render(QgsRasterLayer(source, "ms", "arcgismapserver"), BROWSER_EXTENT_3857, "EPSG:3857")
-        types = sorted({(item.url.split("?")[0].rsplit("/", 1)[-1], item.content_type) for item in recorder.exchanges if item.status == 200})
-        expect(any(name == "export" and (ctype or "").startswith("image/png") for name, ctype in types), types)
+        types = sorted({("tile" if "/MapServer/tile/" in item.url else item.url.split("?")[0].rsplit("/", 1)[-1], item.content_type)
+                        for item in rendered + recorder.exchanges if item.status == 200})
+        expect(any(name in ("export", "tile") and (ctype or "").startswith("image/png") for name, ctype in types), types)
+        expect(any(name == "MapServer" and "json" in (ctype or "") for name, ctype in types), types)
         c.detail = f"{types}"
     cell.write()
 

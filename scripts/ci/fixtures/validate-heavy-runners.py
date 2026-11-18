@@ -301,6 +301,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
                 self.assertEqual(self.evaluate_routing(probe, context), expected)
         self.assertEqual(self.jobs["format"]["needs"], "runner-select")
         self.assertEqual(self.jobs["fast-tests"]["needs"], "runner-select")
+        self.assertEqual(self.jobs["fast-server-tests"]["needs"], ["runner-select", "server-test-producer"])
         self.assertEqual(self.jobs["format"]["if"], DRAFT_FORMAT_ADMISSION)
         self.assertNotIn("if", self.jobs["fast-tests"])
 
@@ -368,13 +369,14 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
                 self.assertIn("GITHUB_ENV", step["run"])
 
     def test_remaining_control_jobs_stay_hosted(self):
-        planned = {SHARD_JOBS["pr-gate.yml"][0], "affected-shard-held", "fast-tests"}
+        planned = {SHARD_JOBS["pr-gate.yml"][0], "affected-shard-held", "fast-tests", "fast-server-tests"}
         for name in set(self.jobs) - PR_GATE_SELECTED_JOBS - PR_GATE_LIGHT_JOBS - planned:
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-latest")
 
     def test_planned_start_jobs_use_the_fork_guarded_heavy_pool(self):
         self.assertEqual(self.jobs["fast-tests"]["runs-on"], FAST_RUNNER)
+        self.assertEqual(self.jobs["fast-server-tests"]["runs-on"], FAST_RUNNER)
         probe = JS_HELPERS + """const {expression, planned, fork, heavy, group, partition} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 const matrix = {'test-group': group, 'analyzer-partition': partition, 'analyzer-test-partition': group};
 const github = {event_name: 'pull_request', ref: 'refs/pull/1/merge', repository: 'owner/repo', event: {pull_request: {head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}}}};

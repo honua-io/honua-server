@@ -138,8 +138,9 @@ required_guide_fragments = (
     "Local` storage is invalid in",
     "Use `RollingUpdate` only when",
     "preStop:",
+    "sleep:",
     "Helm cannot downgrade the database schema",
-    "68fcb72f03aab74adc812df48f8f63677c829877",
+    "cc72784a7b5d4215091232c7c90996400bd60577",
 )
 for fragment in required_guide_fragments:
     if fragment not in text:

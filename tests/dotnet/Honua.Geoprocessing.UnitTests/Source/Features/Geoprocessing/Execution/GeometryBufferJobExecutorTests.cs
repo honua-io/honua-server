@@ -11,6 +11,7 @@ using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.Geometries;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
@@ -253,6 +254,56 @@ public sealed class GeometryBufferJobExecutorTests
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public void BufferCooperatively_LargeCollection_MatchesSingleBufferArea()
+    {
+        var factory = new GeometryFactory(new PrecisionModel(), 32610);
+        var points = Enumerable.Range(0, 5)
+            .Select(i => factory.CreatePoint(new Coordinate(i * 10d, 0d)))
+            .ToArray();
+        var multi = factory.CreateMultiPoint(points);
+
+        var direct = multi.Buffer(5d);
+        var chunked = GeometryBufferJobExecutor.BufferCooperatively(new GeometryBufferJobExecutor.BufferCooperativeRequest
+        {
+            Geometry = multi,
+            Distance = 5d,
+            CancellationToken = CancellationToken.None,
+            ChunkSize = 2,
+        });
+
+        chunked.IsEmpty.Should().BeFalse();
+        chunked.Area.Should().BeApproximately(direct.Area, 1e-6);
+    }
+
+    [UnitTest]
+    public void BufferCooperatively_StopsBetweenChunks_WhenCancelled()
+    {
+        var factory = new GeometryFactory(new PrecisionModel(), 32610);
+        var points = Enumerable.Range(0, 5)
+            .Select(i => factory.CreatePoint(new Coordinate(i * 10d, 0d)))
+            .ToArray();
+        var multi = factory.CreateMultiPoint(points);
+        using var cts = new CancellationTokenSource();
+        var chunks = 0;
+
+        var act = () => GeometryBufferJobExecutor.BufferCooperatively(new GeometryBufferJobExecutor.BufferCooperativeRequest
+        {
+            Geometry = multi,
+            Distance = 5d,
+            CancellationToken = cts.Token,
+            ChunkSize = 1,
+            AfterChunk = _ =>
+            {
+                chunks++;
+                cts.Cancel();
+            },
+        });
+
+        act.Should().Throw<OperationCanceledException>();
+        chunks.Should().Be(1);
     }
 
     // -------------------------------------------------------------------------

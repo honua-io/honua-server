@@ -370,7 +370,7 @@ public static class GdalInfoCoverageEnricher
         public string? Unit { get; set; }
     }
 
-    private static bool TryDecodeCfTime(string units, double min, double max, out DateTimeOffset start, out DateTimeOffset end)
+    internal static bool TryDecodeCfTime(string units, double min, double max, out DateTimeOffset start, out DateTimeOffset end)
     {
         start = default;
         end = default;

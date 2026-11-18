@@ -17,6 +17,24 @@ public sealed record OperationPolicyMetadata
     public required bool SupportsDryRun { get; init; }
 }
 
+public enum OperationCompensationAvailability
+{
+    NotApplicable,
+
+    Unavailable
+}
+
+public sealed record OperationCompensationMetadata(
+    OperationCompensationAvailability Availability,
+    string? Reason)
+{
+    public static OperationCompensationMetadata For(OperationSideEffectClass sideEffectClass) =>
+        sideEffectClass == OperationSideEffectClass.ReadOnly
+            ? new(OperationCompensationAvailability.NotApplicable, null)
+            : new(OperationCompensationAvailability.Unavailable,
+                "No compensation executor and durable recovery evidence are registered for this operation.");
+}
+
 public sealed record OperationDescriptor : IOperationDescriptor
 {
     public required string OperationId { get; init; }
@@ -40,6 +58,8 @@ public sealed record OperationDescriptor : IOperationDescriptor
     public bool IsCompatibilityOnly { get; init; }
 
     public required OperationPolicyMetadata Policy { get; init; }
+
+    public OperationCompensationMetadata Compensation => OperationCompensationMetadata.For(Policy.SideEffectClass);
 
     public OperationGroundingMetadata? Grounding { get; init; }
 }

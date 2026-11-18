@@ -601,6 +601,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
             with self.subTest(result=result):
                 env = {**os.environ, "GITHUB_EVENT_NAME": "pull_request",
                        "BUILD_AND_TEST_RESULT": "success", "FAST_RESULT": "success",
+                       "FAST_SERVER_RESULT": "success",
                        "FORMAT_RESULT": "success", "CI_ROUTER_RESULT": "success",
                        "SERVER_PRODUCER_RESULT": "success", "AFFECTED_SHARDS_RESULT": result}
                 run = subprocess.run(["bash", "-c", command], env=env, capture_output=True)

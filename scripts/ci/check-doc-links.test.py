@@ -115,7 +115,7 @@ def test_slug_rules() -> None:
         # to a run of hyphens. Reproducing this exactly is why the strip set is
         # pinned rather than re-derived.
         "Promote L2 -> L1 criteria": "promote-l2---l1-criteria",
-        "What needs Redis when multi-node": "what-needs-redis-when-multi-node",
+        "What needs PostgreSQL when multi-node": "what-needs-postgresql-when-multi-node",
         "<code>Escaped</code> HTML": "escaped-html",
         "Under_scores and 'quotes'": "under_scores-and-quotes",
     }
