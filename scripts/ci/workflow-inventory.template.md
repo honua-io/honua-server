@@ -1973,3 +1973,25 @@ class's read-only host is now one class fixture instead of one host per case.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs, twice-daily full trunk runs and the routing nightly. No workflow, shard
 definition, required check name or aggregate `needs` changed.
+
+### Proposal endpoint cases share one host
+
+On hosted full trunk run 44250783964 `ProposalEndpointsTests` started one
+`WebAppFixture` for each of its 74 cases: 131 seconds of case time across a
+324-second class span in Server Features Admin Governance and Sharing 2, the
+slowest server shard of that run. One class-fixture host now serves every case.
+Each case starts with the guardrail tier, executor and notifier counts and
+identity-provider token that a fresh host had. Proposals, operation instances,
+API keys and console content persist, and each case seeds and reads its own ids.
+`ListProposals_ReturnsActiveProposals` now looks for its own seeded proposal by
+id instead of accepting any non-empty list.
+
+The admin sign-in endpoints admit five requests a minute per client address, and
+the class signs in eleven times. Each browser session therefore gets its own
+address from a test-only header that the class host maps in a startup filter
+registered after the sign-in helper's fixed per-host address. The shared helper
+itself is unchanged.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
