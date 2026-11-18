@@ -241,6 +241,9 @@ if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
 // envelope was created on another node fails closed instead of being replayed with plaintext.
 builder.Services.AddDataProtection()
     .SetApplicationName("Honua.Server");
+// Job capabilities in stored execution records are protected with the same key ring.
+builder.Services.TryAddSingleton<Honua.ControlPlane.IExecutionJobSecretProtector>(static services =>
+    new Honua.Server.Features.Infrastructure.SecurityState.DataProtectionExecutionJobSecrets(services));
 builder.Services.AddSingleton<Honua.ControlPlane.OperationHumanApprovalAuthority>();
 builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
