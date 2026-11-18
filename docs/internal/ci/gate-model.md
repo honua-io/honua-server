@@ -3065,3 +3065,30 @@ not counted as case time. On hosted full run 44271438677 the three classes took
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Pooled control-plane schemas
+
+`ControlPlaneStateHarness` serves 38 store test classes (212 cases on hosted full
+run 44271438677, 1934.7 s of case time, almost all in
+`caching-file-storage-styling-infrastructure`). Every case created a schema, ran the
+job substrate migration and 13 control-plane migrations and dropped the schema
+again, and each of those steps takes the fixture's global schema-mutation lock, so
+cases from every class queued behind each other. `ControlPlaneSchemaPool` now keeps
+a finished case's schema for the next case when its catalog still matches a freshly
+migrated one (relations, columns in order, defaults, constraints, indexes, triggers
+and their enabled state, rules, routines, views, policies, grants, sequence
+settings and types, with the schema name normalised). Before reuse, one transaction
+truncates every table, inserts the rows the migrations insert again (the
+configuration generation row) and puts every sequence back where a fresh schema has
+it. A schema whose catalog changed, or that cannot be reset, is dropped as before.
+`ControlPlaneSchemaPoolTests` checks that a reused schema holds exactly the rows and
+sequence positions of a fresh one, that a changed schema is dropped and that a
+harness disposed twice is handed out once. Every store assertion is unchanged.
+
+Measured on the build host (Release, the same 240 cases, all passing before and
+after, plus the 3 new cases): case time went from 1619.6 s to 837.8 s and the test
+run from 1 m 40 s to 1 m 9 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
