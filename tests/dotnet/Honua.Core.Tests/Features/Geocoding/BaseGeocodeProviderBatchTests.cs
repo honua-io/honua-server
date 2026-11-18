@@ -42,7 +42,7 @@ public sealed class BaseGeocodeProviderBatchTests
         var provider = new RecordingBatchProvider();
 
         // MaxResultsPerQuery must flow through to each forward request so it is no longer a silent
-        // no-op (issue #2005).
+        // no-op.
         await provider.BatchGeocodeAsync(
             new BatchGeocodeRequest(["10 Downing St", "350 Fifth Ave"], 4326)
             {
@@ -59,7 +59,7 @@ public sealed class BaseGeocodeProviderBatchTests
     public async Task BatchGeocodeAsync_EmitsEveryCandidatePerInput_SharingResultId()
     {
         // Each input returns two candidates; the batch path must emit both, in order, each stamped
-        // with the originating input index so a multi-candidate input stays correlated (issue #2005).
+        // with the originating input index so a multi-candidate input stays correlated.
         var provider = new RecordingBatchProvider { CandidatesPerInput = 2 };
 
         var results = await provider.BatchGeocodeAsync(

@@ -903,7 +903,7 @@ public sealed class ODataAdvancedFeaturesTests : IClassFixture<ODataProHost>, IA
     public async Task Apply_WithComputeFloor_ReturnsFlooredField()
     {
         // floor() is the OData v4 canonical numeric function that makes histogram binning
-        // first-class instead of requiring the x sub (x mod w) workaround (#1620).
+        // first-class instead of requiring the x sub (x mod w) workaround.
         var response = await _client.GetAsync(
             $"/odata/Features({TestLayerId})/$apply?$apply=compute(floor(area_sq_km) as FlooredArea)");
 

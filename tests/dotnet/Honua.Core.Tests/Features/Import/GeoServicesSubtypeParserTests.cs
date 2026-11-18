@@ -185,7 +185,7 @@ public sealed class GeoServicesSubtypeParserTests
               "templates": [{ "name": "A" }, { "name": "B" }] }] }
             """);
 
-        // #4824 REQ-002: an editing construct the canonical model cannot represent is
+        // An editing construct the canonical model cannot represent is
         // reported as a named finding, not raised as a generic failure that aborts the
         // whole layer read. Nothing ambiguous is persisted either way.
         var act = () => GeoServicesSubtypeParser.Parse(layer);

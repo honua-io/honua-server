@@ -36,9 +36,9 @@ public sealed class FeatureQueryBuilderKnnTests
     [Fact]
     public void BuildSelectQuery_WithUnlistedGeographic4xxxKnn_UsesGeodesicOrdering()
     {
-        // #2740/#2731: EPSG:4674 (SIRGAS 2000) is a geographic degree CRS but is not on the curated
+        // EPSG:4674 (SIRGAS 2000) is a geographic degree CRS but is not on the curated
         // allowlist. Planar degree KNN (the <-> operator) would produce meaningless distances, so
-        // the 4000-4999 safety net must route it through the same geodesic path as 4326 (#2732).
+        // the 4000-4999 safety net must route it through the same geodesic path as 4326.
         var poolProvider = new DefaultObjectPoolProvider();
         var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
         var geometryProcessor = new GeometryProcessor();

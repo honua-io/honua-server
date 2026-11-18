@@ -54,10 +54,10 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         // Explicit Development/Test fixture endpoint, mapped only when
         // OperateObservabilityFixture:Enabled=true.
         "POST /api/v1/admin/dev/fixtures/operate-observability/{profile}",
-        // RFC 9728 protected-resource metadata (#2849). Mapped only when the host has a
+        // RFC 9728 protected-resource metadata. Mapped only when the host has a
         // valid OIDC authority configured; with no authorization server the surface is
         // deliberately absent rather than serving an empty authorization_servers array,
-        // which would be a false capability claim (#2803). The default test host
+        // which would be a false capability claim. The default test host
         // configures no authority, so the route is not deployed here. Both states are
         // proven directly by McpProtectedResourceMetadataTests in Honua.Ai.Tests
         // (…_WithOidcConfigured_ReturnsRfc9728Document asserts it appears when an
@@ -377,7 +377,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.Equals("/stac", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/stac/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/sta/", StringComparison.OrdinalIgnoreCase) ||
-               // Enterprise identity provisioning + SSO surfaces (#510 SCIM 2.0, #508 SAML 2.0).
+               // Enterprise identity provisioning + SSO surfaces (SCIM 2.0, SAML 2.0).
                // These routes are mapped unconditionally in Program.cs and tracked in
                // EndpointRegistry.All, so the drift comparison must include them.
                path.StartsWith("/scim/", StringComparison.OrdinalIgnoreCase) ||

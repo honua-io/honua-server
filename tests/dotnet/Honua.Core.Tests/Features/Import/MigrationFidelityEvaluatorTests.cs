@@ -27,9 +27,8 @@ public sealed class MigrationFidelityEvaluatorTests
     [Fact]
     public void Evaluate_WhenCatalogReconciliationFails_BlocksEvenThoughDataReconciliationPassed()
     {
-        // The exact shape #4600 calls out: the data-movement pass is green (every record moved)
-        // while the catalog pass found a dropped domain. The old gate keyed only on the data
-        // artifact and would have reported Completed.
+        // The data-movement pass is green (every record moved) while the catalog pass found a
+        // dropped domain. A gate keyed only on the data artifact would report Completed.
         var input = FullyVerifiedInput() with
         {
             CatalogReconciliation = CatalogReport(

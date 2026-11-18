@@ -154,15 +154,6 @@ internal static class WebAppFixtureSecureConnectionMixin
 
     private static async Task EnsureSecureConnectionProviderColumnAsync(IAdoNetDatabaseConnectionProvider connectionProvider)
     {
-        // honua-server#1568 (signature 2 — 40P01: deadlock detected): WebAppFixture runs this on
-        // every InitializeAsync, and the ALTER targets the literal, process-global
-        // honua.data_connections table (the per-test search_path isolation does not scope it).
-        // Under the parallel [Collection("Database")] shards, dozens of fixtures issue this
-        // ACCESS EXCLUSIVE ALTER against the same global table concurrently and deadlock against
-        // each other (and against the catalog ALTERs the seeds apply). Serialize it on the same
-        // SeedRunner advisory lock every other global-honua mutation now uses, in one transaction,
-        // with a bounded retry on the benign deadlock/serialization victim (the ALTER is
-        // idempotent — ADD COLUMN IF NOT EXISTS — so re-running is safe).
         const string sql = """
             ALTER TABLE IF EXISTS honua.data_connections
                 ADD COLUMN IF NOT EXISTS provider_name TEXT NOT NULL DEFAULT 'postgis';

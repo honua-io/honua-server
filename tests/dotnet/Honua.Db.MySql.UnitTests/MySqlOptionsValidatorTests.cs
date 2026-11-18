@@ -73,9 +73,8 @@ public class MySqlOptionsValidatorTests
     [InlineData("xyz")]
     public void ThrowIfInvalid_InvalidGeometryType_Throws(string geometryType)
     {
-        // A typo in GeometryType used to silently fall back to Point at mapping-build
-        // time, allowing point-only SQL paths (distance filters) to run against non-point
-        // data. The validator now rejects unknown values up front.
+        // Reject unknown GeometryType values before mapping construction can select
+        // point-only SQL paths for non-point data.
         var options = new MySqlOptions
         {
             ConnectionString = "Server=localhost;",

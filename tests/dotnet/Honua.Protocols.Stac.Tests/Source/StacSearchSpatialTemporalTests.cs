@@ -73,7 +73,7 @@ public sealed class StacSearchSpatialTemporalTests : IAsyncLifetime
     [Endpoint("POST /stac/search")]
     public async Task SearchPost_IntersectsPolygon_ReturnsTheItemInsideAndExcludesTheOneOutside()
     {
-        // honua-server#4425: `git grep 'intersects=' -- tests/` returned no /stac/ hit at all, so
+        // `git grep 'intersects=' -- tests/` returned no /stac/ hit at all, so
         // this parameter of the GA catalog surface had zero .NET coverage.
         await SeedPointsAsync();
 

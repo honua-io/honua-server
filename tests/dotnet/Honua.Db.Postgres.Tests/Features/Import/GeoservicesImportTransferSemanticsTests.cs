@@ -186,8 +186,8 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
                         return;
                     }
 
-                    // Bounded: before #4600 the competing job blocked on the first job's locks while the
-                    // first job waited here for it, so the wait is cut off rather than hanging the test.
+                    // Bounded: if the competing job blocks on the first job's locks while the first job
+                    // waits here for it, the wait is cut off rather than hanging the test.
                     using var bounded = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                     try
                     {

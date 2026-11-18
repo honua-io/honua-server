@@ -69,12 +69,12 @@ public sealed class BranchVersioningOverlayReadScaleTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // honua-server#1568 residual: serialize the raw CREATE SCHEMA on the shared schema-mutation
+        // Serialize the raw CREATE SCHEMA on the shared schema-mutation
         // advisory lock (symmetric with the locked migration set below) so this per-test namespace DDL
         // does not race a concurrent collection's locked DROP SCHEMA ... CASCADE and deadlock (40P01).
         await _fixture.CreateSchemaUnderLockAsync(_schema);
 
-        // honua-server#1568 follow-up: serialize the embedded migration set (it mutates the literal,
+        // Serialize the embedded migration set (it mutates the literal,
         // process-global honua schema, which per-test search_path isolation does NOT scope) under the
         // shared seed advisory lock so this upgrade does not race locked seeders on the shared catalog
         // and deadlock (40P01) the parallel [Collection("Database")] run.
@@ -83,7 +83,7 @@ public sealed class BranchVersioningOverlayReadScaleTests : IAsyncLifetime
             Assembly.GetAssembly(typeof(Program))!);
         result.Successful.Should().BeTrue(result.Error?.ToString());
 
-        // #2020: route the literal honua.layers INSERT through the shared schema-mutation advisory
+        // Route the literal honua.layers INSERT through the shared schema-mutation advisory
         // lock so it serializes with parallel-collection seeders instead of racing the catalog (40P01).
         await _fixture.ApplyGlobalSeedSqlAsync($"""
             INSERT INTO honua.layers (layer_id, layer_name, table_schema, table_name, geometry_type, srid)
@@ -101,7 +101,7 @@ public sealed class BranchVersioningOverlayReadScaleTests : IAsyncLifetime
         // remove them explicitly (deleting the version cascades honua.version_edits) before dropping the
         // schema, keeping the shared container clean for the rest of the Database collection.
         //
-        // #2020: every global-honua.* mutation here (the cleanup DELETEs and the CASCADE drop) goes
+        // Every global-honua.* mutation here (the cleanup DELETEs and the CASCADE drop) goes
         // through the shared schema-mutation advisory lock so this teardown serializes with concurrent
         // seeders instead of racing the catalog (40P01).
         if (_versionId != Guid.Empty)
@@ -245,7 +245,7 @@ public sealed class BranchVersioningOverlayReadScaleTests : IAsyncLifetime
         // Make the version highly divergent: thousands of overlay updates shadowing base noise rows
         // (operation 2), all far outside B. Seeded directly so the test exercises the read at scale
         // without paying thousands of write round-trips; the overlay trigger stamps branch_gen.
-        // #2020: this bulk INSERT into the global honua.version_edits runs through the shared
+        // This bulk INSERT into the global honua.version_edits runs through the shared
         // schema-mutation advisory lock so it serializes with concurrent seeders (40P01).
         await _fixture.ApplyGlobalSeedSqlAsync($"""
             INSERT INTO honua.version_edits (version_id, layer_id, objectid, operation, geometry, attributes, branch_gen)

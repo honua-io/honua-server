@@ -118,6 +118,7 @@ public static class Iso19139Writer
                 Name = contact?.Name,
                 Email = contact?.Email,
                 Url = contact?.Url,
+                Phone = contact?.Phone,
             };
     }
 

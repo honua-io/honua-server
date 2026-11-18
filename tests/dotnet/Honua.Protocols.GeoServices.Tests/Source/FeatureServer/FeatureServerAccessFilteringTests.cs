@@ -292,7 +292,7 @@ public sealed class FeatureServerAccessFilteringTests
         root.GetProperty("capabilities").GetString().Should().NotContain("Uploads");
         root.GetProperty("hasAttachments").GetBoolean().Should().BeTrue();
 
-        // Regression for #1453: when a layer exposes attachments it must also advertise
+        // When a layer exposes attachments it must also advertise
         // the attachment-capability flags Esri clients inspect. The ArcGIS Maps SDK for
         // JavaScript gates queryAttachments(where) on supportsQueryAttachments and refuses
         // to issue the request when it is absent/false.

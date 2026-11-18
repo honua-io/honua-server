@@ -113,7 +113,7 @@ public class ImageServerLegendHandlerTests
         }
     }
 
-    // Esri's legend layer names its renderer in legendType (#5238).
+    // Esri's legend layer names its renderer in legendType.
     [UnitTest]
     [Operation(Operations.Metadata)]
     public async Task GetLegendAsync_NamesRendererType()

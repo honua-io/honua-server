@@ -35,7 +35,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         // analytics.cluster is the bare-id catalog process that is NOT job-routed (it
         // executes through the layer-scoped PostGIS analytics protocol path, not the
         // dispatcher) — pick it for the unknown-id smoke. The managed counterpart
-        // analytics.cluster-managed IS job-routed (#1260) and so cannot be used here.
+        // analytics.cluster-managed IS job-routed and so cannot be used here.
         var record = CreateJobRecord("analytics.cluster");
 
         var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
@@ -756,7 +756,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
         monitor.CurrentValue.Returns(options);
 
-        // Auto-registration contract (#2122): the dispatcher routes by enumerating
+        // Auto-registration contract: the dispatcher routes by enumerating
         // the IProcessExecutor set and keying on each executor's self-declared
         // ProcessIds, so the test composes the same executor instances as a flat
         // list instead of the former positional constructor.

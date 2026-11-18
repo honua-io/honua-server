@@ -20,8 +20,8 @@ namespace Honua.Server.Tests.Features.Console;
 public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime
 {
     private const string AdminPassword = "catalog-discovery-admin-key";
-    private const string WorkspaceId = "default";
-    private const string EmptyWorkspaceId = "empty-ws";
+    private const string EnvironmentId = "default";
+    private const string EmptyEnvironmentId = "empty-ws";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -34,15 +34,15 @@ public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime
 
     public CatalogDiscoveryEndpointsTests()
     {
-        // Seed two workspaces: the canonical "default" (five dialects, mixed
+        // Seed two environments: the canonical "default" (five dialects, mixed
         // auto-default/opt-in), and an "empty-ws" with no published dialects so
         // the empty-registry contract is exercised.
         var seeds = new[]
         {
-            new CatalogDiscoveryWorkspaceSeed
+            new CatalogDiscoveryEnvironmentSeed
             {
-                WorkspaceId = WorkspaceId,
-                WorkspaceName = "Default workspace",
+                EnvironmentId = EnvironmentId,
+                EnvironmentName = "Default environment",
                 PublicHost = "https://example.test",
                 Endpoints =
                 [
@@ -51,7 +51,7 @@ public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime
                         Endpoint = new CatalogEndpoint
                         {
                             Key = "esri",
-                            Title = "Esri catalog",
+                            Title = "GeoServices catalog",
                             Dialect = CatalogDialects.Esri,
                             Enabled = true,
                             AutoDefault = true,
@@ -115,10 +115,10 @@ public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime
                     },
                 ],
             },
-            new CatalogDiscoveryWorkspaceSeed
+            new CatalogDiscoveryEnvironmentSeed
             {
-                WorkspaceId = EmptyWorkspaceId,
-                WorkspaceName = "Empty workspace",
+                EnvironmentId = EmptyEnvironmentId,
+                EnvironmentName = "Empty environment",
                 Endpoints = [],
             },
         };
@@ -144,15 +144,21 @@ public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}")]
     public async Task GetRegistry_ReturnsEndpointsWithAutoDefaultAndOptInAggregates()
     {
-        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{WorkspaceId}");
+        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{EnvironmentId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = payload.RootElement.GetProperty("data");
+        Assert.Equal(EnvironmentId, data.GetProperty("environmentId").GetString());
+        Assert.True(data.TryGetProperty("environmentName", out _));
+        Assert.False(data.TryGetProperty("workspaceId", out _));
+        Assert.False(data.TryGetProperty("workspaceName", out _));
         var registry = await ReadDataAsync<CatalogDiscoveryRegistry>(response);
 
-        Assert.Equal(WorkspaceId, registry.WorkspaceId);
+        Assert.Equal(EnvironmentId, registry.EnvironmentId);
         Assert.Equal("https://example.test", registry.PublicHost);
         Assert.Equal(2, registry.Endpoints.Count);
 
@@ -172,32 +178,32 @@ public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}")]
-    public async Task GetRegistry_ForEmptyWorkspace_ReturnsEmptyEndpointList()
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}")]
+    public async Task GetRegistry_ForEmptyEnvironment_ReturnsEmptyEndpointList()
     {
-        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{EmptyWorkspaceId}");
+        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{EmptyEnvironmentId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var registry = await ReadDataAsync<CatalogDiscoveryRegistry>(response);
-        Assert.Equal(EmptyWorkspaceId, registry.WorkspaceId);
+        Assert.Equal(EmptyEnvironmentId, registry.EnvironmentId);
         Assert.Empty(registry.Endpoints);
         Assert.Equal(0, registry.AutoDefaultCount);
         Assert.Equal(0, registry.OptInCount);
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}")]
-    public async Task GetRegistry_ForUnknownWorkspace_ReturnsNotFound()
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}")]
+    public async Task GetRegistry_ForUnknownEnvironment_ReturnsNotFound()
     {
         var response = await _adminClient.GetAsync("/api/v1/console/catalog-endpoints/does-not-exist");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}")]
     public async Task GetEndpoint_ReturnsDetailWithMirroredItems()
     {
-        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{WorkspaceId}/esri");
+        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{EnvironmentId}/esri");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var detail = await ReadDataAsync<CatalogEndpointDetail>(response);
@@ -210,18 +216,18 @@ public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}")]
     public async Task GetEndpoint_ForUnknownEndpoint_ReturnsNotFound()
     {
-        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{WorkspaceId}/nope");
+        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{EnvironmentId}/nope");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}/items/{itemId}")]
     public async Task GetItem_ReturnsFieldGroups()
     {
-        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{WorkspaceId}/esri/items/parcels");
+        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{EnvironmentId}/esri/items/parcels");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var item = await ReadDataAsync<CatalogItem>(response);
@@ -235,26 +241,26 @@ public sealed class CatalogDiscoveryEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}/items/{itemId}")]
     public async Task GetItem_ForUnknownItem_ReturnsNotFound()
     {
-        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{WorkspaceId}/esri/items/missing");
+        var response = await _adminClient.GetAsync($"/api/v1/console/catalog-endpoints/{EnvironmentId}/esri/items/missing");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}")]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}")]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}/items/{itemId}")]
     public async Task AnonymousRequests_AreRejectedWithoutAdminAuthorization()
     {
-        var registryResponse = await _anonymousClient.GetAsync($"/api/v1/console/catalog-endpoints/{WorkspaceId}");
+        var registryResponse = await _anonymousClient.GetAsync($"/api/v1/console/catalog-endpoints/{EnvironmentId}");
         Assert.Equal(HttpStatusCode.Unauthorized, registryResponse.StatusCode);
 
-        var endpointResponse = await _anonymousClient.GetAsync($"/api/v1/console/catalog-endpoints/{WorkspaceId}/esri");
+        var endpointResponse = await _anonymousClient.GetAsync($"/api/v1/console/catalog-endpoints/{EnvironmentId}/esri");
         Assert.Equal(HttpStatusCode.Unauthorized, endpointResponse.StatusCode);
 
-        var itemResponse = await _anonymousClient.GetAsync($"/api/v1/console/catalog-endpoints/{WorkspaceId}/esri/items/parcels");
+        var itemResponse = await _anonymousClient.GetAsync($"/api/v1/console/catalog-endpoints/{EnvironmentId}/esri/items/parcels");
         Assert.Equal(HttpStatusCode.Unauthorized, itemResponse.StatusCode);
     }
 

@@ -29,7 +29,6 @@
       "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/FeatureServerReplicaClientStateSerializerTests.cs",
       "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/FeatureServerReplicaServerStateCapturerTests.cs",
       "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/ReplicaUploadIdempotencyStoreTests.cs",
-      "tests/dotnet/RedisCollection.cs",
       "tests/dotnet/Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs",
       "tests/dotnet/Shared/ProtocolUnits/GeoServices/GeoServicesErrorAssertions.cs",
       "tests/dotnet/Shared/ProtocolUnits/GeoServices/ImageServerMultidimensionalSoapAssertions.cs",

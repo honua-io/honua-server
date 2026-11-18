@@ -42,7 +42,6 @@
     <PackageReference Include="Testcontainers.MsSql" />
     <PackageReference Include="Testcontainers.MySql" />
     <PackageReference Include="Testcontainers.PostgreSql" />
-    <PackageReference Include="Testcontainers.Redis" />
 
     <!-- Testcontainers -->
 
@@ -69,7 +68,6 @@
   <ItemGroup>
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <ProjectReference Include="../../../src/Honua.Db/SqlServer/Honua.SqlServer.csproj" />
-    <ProjectReference Include="../Honua.TestKit.Redis/Honua.TestKit.Redis.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="../Honua.TestKit.Postgres/Honua.TestKit.Postgres.csproj" />

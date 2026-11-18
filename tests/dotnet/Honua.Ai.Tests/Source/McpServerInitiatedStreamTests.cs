@@ -91,9 +91,9 @@ public sealed class McpServerInitiatedStreamTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task GetStreamTeardown_LeavesSessionUsable_ToolsListStill200()
     {
-        // The #2537 regression: initialize → open the standalone GET stream →
-        // close it → the same session must still accept POSTs. Before the fix a
-        // stream teardown destroyed the session and every later POST 404'd.
+        // Initialize → open the standalone GET stream → close it → the same session
+        // must still accept POSTs. A stream teardown must not destroy the session
+        // and make every later POST 404.
         var sessionId = await InitializeAndGetSessionIdAsync();
 
         using (var streamRequest = new HttpRequestMessage(HttpMethod.Get, "/mcp"))

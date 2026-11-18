@@ -97,10 +97,6 @@ on:
         description: Optional FeatureServer service ID for replica scale tests.
         required: false
         type: string
-      scale_test_redis:
-        description: Optional Redis connection string for scale validation.
-        required: false
-        type: string
     secrets:
       admin_api_key:
         description: Admin API key used for control-plane validation.
@@ -190,10 +186,6 @@ on:
         description: Optional FeatureServer service ID for replica scale tests.
         required: false
         type: string
-      scale_test_redis:
-        description: Optional Redis connection string for scale validation.
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -269,7 +261,6 @@ jobs:
           HONUA_SCALE_TEST_BASE_URL: ${{ inputs.scale_test_base_url }}
           HONUA_SCALE_TEST_ADMIN_API_KEY: ${{ secrets.scale_test_admin_api_key || secrets.admin_api_key || secrets.cloud_validation_admin_api_key || '' }}
           HONUA_SCALE_TEST_SERVICE_ID: ${{ inputs.scale_test_service_id }}
-          HONUA_SCALE_TEST_REDIS: ${{ inputs.scale_test_redis }}
         run: |
           chmod +x scripts/cloud/run-cloud-post-apply-validation.sh
           ./scripts/cloud/run-cloud-post-apply-validation.sh

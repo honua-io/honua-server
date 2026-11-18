@@ -46,8 +46,8 @@ the manifest candidate. The producer landed in
 [`3dc077f`](https://github.com/honua-io/honua-server/commit/3dc077f347c6f3cc47ac40b981a7f6fad1e9480c).
 
 The [frozen lock at the same release commit](https://github.com/honua-io/honua-release/blob/66a15364fa4c725c9b25ed78ca927f0a6fe0a943/certification/capacity-envelope.v1.json)
-has SHA-256 `c31ade28c813ab6523d086a31b5a7b17068e73b149146b6c434e892e1869aa53`,
-identical to the [retained contract fixture](../tests/python/fixtures/capacity/README.md).
+has SHA-256 `c31ade28c813ab6523d086a31b5a7b17068e73b149146b6c434e892e1869aa53`.
+The [contract fixture](../tests/python/fixtures/capacity/README.md) now follows a later re-frozen lock.
 It requires at least 3,600 seconds after the receipt-contract freeze
 `2026-09-29T01:15:00Z`. Passing the analytical fixture establishes implementation
 compatibility with this lock, not candidate performance or qualification.

@@ -29,7 +29,9 @@ public static class PrivateTempFile
             throw new ArgumentException("The extension must not contain path separators.", nameof(extension));
         }
 
-        return Path.Join(Path.GetTempPath(), $"{prefix}{Guid.NewGuid():N}{extension}");
+        var directory = Path.GetTempPath();
+        CreateDirectory(directory);
+        return Path.Join(directory, $"{prefix}{Guid.NewGuid():N}{extension}");
     }
 
     public static FileStreamOptions ApplyPrivateCreateNew(FileStreamOptions options)

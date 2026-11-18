@@ -54,7 +54,7 @@ internal sealed partial class ExecutionJobReconciler(
         // Count every reconciliation attempt that acquires the lease: the metric reflects
         // how often this job is actually processed by the reconciler, not merely how often
         // the background service surfaces it in the active list. Tagged with job kind and
-        // outcome (PA-165) so cycles can be sliced instead of only totaled.
+        // outcome so cycles can be sliced instead of only totaled.
         var reconcileJobKind = "unknown";
         var reconcileOutcome = "error";
 
@@ -185,7 +185,7 @@ internal sealed partial class ExecutionJobReconciler(
         {
             // A database timeout while observing says nothing about the job. A running
             // worker keeps heartbeating, and stamping the record terminal Failed here makes that
-            // worker lose its lease and cancel a healthy attempt (honua-server#6507). Leave the
+            // worker lose its lease and cancel a healthy attempt. Leave the
             // record as it is and let the next sweep observe it again.
             reconcileOutcome = "transient_error";
             Log.ExecutionJobReconciliationDeferred(logger, operationId, ex.GetType().Name);
@@ -347,8 +347,7 @@ internal sealed partial class ExecutionJobReconciler(
             await NotifyTerminalAsync(updated).ConfigureAwait(false);
         }
 
-        // The submission helper only bridges terminal progress; reconciliation historically
-        // also reflected nonterminal phase/percent changes. Mirror that so polled progress
+        // Bridge nonterminal phase/percent changes too, so polled progress
         // picks up "Queued on provider" etc. without waiting a full reconciler interval.
         if (!ReferenceEquals(updated, job) && !updated.Status.IsTerminal())
         {

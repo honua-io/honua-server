@@ -2,9 +2,15 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin.Jobs;
 
@@ -69,6 +75,65 @@ public sealed partial class ConsoleJobEndpointsTests
         var lostEvent = root.GetProperty("events").GetProperty("items").EnumerateArray().Single();
         lostEvent.GetProperty("phase").GetString().Should().Be("worker-lost");
         lostEvent.GetProperty("metadata").GetProperty("worker.id").GetString().Should().Be("worker-gone");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/logs")]
+    public async Task GetJobStepsAndLogs_ScopedReadKey_WithholdLostAttemptWorkerLikeDiagnostics()
+    {
+        // /steps, /logs and /diagnostics read the same log; the owner view must not serve on one
+        // endpoint the worker identity it withholds on the other.
+        const string AdminPassword = "console-job-steps-admin-bootstrap-key";
+        var jobStore = new InMemoryJobStore();
+        jobStore.Set(CreateJob("job-steps-owner", ExecutionJobStatus.Failed, DateTimeOffset.UtcNow.AddMinutes(-5), "corr-steps-owner"));
+        var gatedFixture = GatedFixture(AdminPassword, jobStore, LostAttemptLogStore("job-steps-owner", "worker-internal-9"));
+        await gatedFixture.InitializeAsync();
+        try
+        {
+            using var admin = gatedFixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var readKey = await CreateApiKeyAsync(admin, "console-job-steps-read-only", ["admin:read"]);
+            using var reader = gatedFixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", readKey.Key));
+
+            var ownerStep = await ReadLostAttemptStepAsync(reader);
+            ownerStep.GetProperty("metadata").TryGetProperty("worker.id", out _).Should().BeFalse();
+            ownerStep.GetProperty("metadata").GetProperty("failure.classification").GetString().Should().Be("worker_lost");
+
+            var ownerLogs = await reader.GetStringAsync("/api/v1/admin/jobs/job-steps-owner/logs");
+            ownerLogs.Should().Contain("worker_lost").And.NotContain("worker-internal-9");
+
+            var operatorStep = await ReadLostAttemptStepAsync(admin);
+            operatorStep.GetProperty("metadata").GetProperty("worker.id").GetString().Should().Be("worker-internal-9");
+            (await admin.GetStringAsync("/api/v1/admin/jobs/job-steps-owner/logs")).Should().Contain("worker-internal-9");
+        }
+        finally
+        {
+            await gatedFixture.DisposeAsync();
+        }
+    }
+
+    private static WebAppFixture GatedFixture(string adminPassword, InMemoryJobStore jobStore, InMemoryLogStore logStore) => new WebAppFixture()
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
+        })
+        .ConfigureServices(services =>
+        {
+            services.RemoveAll<IExecutionJobStore>();
+            services.RemoveAll<IExecutionLogStore>();
+            services.AddSingleton<IExecutionJobStore>(jobStore);
+            services.AddSingleton<IExecutionLogStore>(logStore);
+        });
+
+    private static async Task<JsonElement> ReadLostAttemptStepAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/api/v1/admin/jobs/job-steps-owner/steps");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.GetProperty("steps").EnumerateArray()
+            .Single(step => step.GetProperty("phase").GetString() == "worker-lost").Clone();
     }
 
     // The reconciler's record of a lost attempt, as stored in the job log.

@@ -79,7 +79,10 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
         }
 
         if (decision.Reservation is not { } reservation)
+        {
+            LogFinancialDenial(context, decision.Code);
             throw new AiAdmissionException(decision.Code, decision.RetryAfterSeconds);
+        }
         if (decision.Code != "admitted" || reservation.DeploymentId != context.DeploymentId || reservation.AttemptId != attemptId
             || reservation.Generation == Guid.Empty || reservation.Epoch <= 0
             || reservation.LeaseExpiresUtc < reservation.DeadlineUtc
@@ -162,6 +165,22 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
             ReleaseFailed(_logger, ex.GetType().Name);
         }
     }
+
+    // A financial denial rolls back its transaction and the caller falls back without saying
+    // why, so this log line is the operator's only record that budget caused it. The actor
+    // key is already a SHA-256 digest of the canonical actor.
+    private void LogFinancialDenial(AiExecutionContext context, string code)
+    {
+        if (code is not ("financial_monthly_actor_exceeded" or "financial_budget_exceeded" or "financial_ledger_full"
+            or "financial_stop" or "budget_exceeded"))
+            return;
+
+        var month = _clock.GetUtcNow().ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+        FinancialDenied(_logger, code, context.DeploymentId, context.ActorKey, context.UseCase, month);
+    }
+
+    [LoggerMessage(9542, LogLevel.Warning, "AI admission denied by budget ({AdmissionCode}) for deployment {DeploymentId}, actor {ActorKey}, use case {UseCase}, month {UtcMonth}")]
+    private static partial void FinancialDenied(ILogger logger, string admissionCode, string deploymentId, string actorKey, string useCase, string utcMonth);
 
     [LoggerMessage(9540, LogLevel.Warning, "AI admission state could not be verified ({ExceptionType})")]
     private static partial void StoreFailed(ILogger logger, string exceptionType);

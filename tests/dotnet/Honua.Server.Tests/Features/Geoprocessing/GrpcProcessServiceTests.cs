@@ -253,7 +253,7 @@ public sealed class GrpcProcessServiceTests
     [Endpoint("POST /geospatial.v1.ProcessService/ExecutePlan")]
     public async Task ExecutePlan_Unauthorized_ThrowsPermissionDenied()
     {
-        // Even though ExecutePlan is unimplemented (#721), auth is enforced first
+        // Even though ExecutePlan is unimplemented, auth is enforced first
         // so that unauthorized callers get 403 rather than an implementation-detail
         // 501 (consistent with the contract: auth on all mutating RPCs).
         _authEvaluator
@@ -554,7 +554,7 @@ public sealed class GrpcProcessServiceTests
 
         var response = await _sut.CancelJob(request, CreateCallContext());
 
-        // #4630: cancellation was only DELEGATED to the worker (not yet confirmed), so the
+        // Cancellation was only DELEGATED to the worker (not yet confirmed), so the
         // durable job status is still Running. The response must project that real nonterminal
         // state instead of manufacturing a terminal Cancelled the runtime never confirmed.
         response.Should().NotBeNull();
@@ -584,7 +584,7 @@ public sealed class GrpcProcessServiceTests
 
         var response = await _sut.CancelJob(request, CreateCallContext());
 
-        // #4630: cancellation was confirmed (no worker claimed the job, so the durable store was
+        // Cancellation was confirmed (no worker claimed the job, so the durable store was
         // updated synchronously), so the response must report the confirmed terminal Cancelled.
         response.Should().NotBeNull();
         response.State.Should().Be(Proto.JobState.Cancelled);
