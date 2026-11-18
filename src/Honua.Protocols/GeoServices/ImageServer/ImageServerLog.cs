@@ -336,4 +336,10 @@ internal static partial class ImageServerLog
         Level = LogLevel.Warning,
         Message = "Raster statistics computation for layer {LayerId} exceeded the {BudgetSeconds}s request budget; returning without statistics (#2991)")]
     public static partial void StatisticsComputeBudgetExceeded(ILogger logger, int layerId, double budgetSeconds);
+
+    [LoggerMessage(
+        EventId = 5855,
+        Level = LogLevel.Warning,
+        Message = "Cloud COG {RegistrationId} tile {Z}/{Y}/{X} could not be read for an ImageServer export or identify; the tile is skipped")]
+    public static partial void CogTileReadSkipped(ILogger logger, Exception exception, long registrationId, int z, int y, int x);
 }
