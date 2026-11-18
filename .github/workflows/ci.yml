@@ -2666,6 +2666,7 @@ jobs:
     environment: bedrock-smoke
     permissions:
       contents: read
+      packages: read
       id-token: write
     services:
       postgres:
@@ -2715,14 +2716,12 @@ jobs:
         shell: bash
         env:
           BEDROCK_ROLE_ARN: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
-          SAME_REPOSITORY: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
-          # Fork pull requests get no OIDC token, so they run without the live Bedrock driver.
-          if [[ -n "$BEDROCK_ROLE_ARN" && "$SAME_REPOSITORY" == "true" ]]; then
+          if [[ -n "$BEDROCK_ROLE_ARN" ]]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::HONUA_BEDROCK_SMOKE_ROLE_ARN is not set or this is a fork pull request; MCP LLM smoke will run without the live Bedrock driver."
+            echo "::notice::HONUA_BEDROCK_SMOKE_ROLE_ARN is not set; MCP LLM smoke will run without the live Bedrock driver."
           fi
 
       - name: Configure AWS credentials for Bedrock smoke
