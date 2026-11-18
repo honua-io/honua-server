@@ -237,7 +237,7 @@ builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
     services => services.GetRequiredService<Honua.ControlPlane.OperationHumanApprovalAuthority>());
 
-var systemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"));
+var systemDatabaseConfigured = Honua.Server.Startup.SystemDatabaseComposition.IsConfigured(builder.Configuration);
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
     .GetValue<bool>(nameof(JobDurabilityOptions.RequireDurableStore));
@@ -259,7 +259,7 @@ if (tracingSection.Exists() || tracingEnabled)
 var durableKeyRing = OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
     builder.Environment.IsDevelopment(),
     isTestEnvironment,
-    keyRingIsShared: !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")));
+    keyRingIsShared: systemDatabaseConfigured);
 if (durableKeyRing)
 {
     // The key ring lives in the system database so that every node unprotects what any node
