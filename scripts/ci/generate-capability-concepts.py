@@ -159,7 +159,7 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
     # and keeps the opening clause that reads like a feature announcement. All
     # four descriptions this used to cut lost something load-bearing - that
     # cross-tenant disclosure stays a full-severity defect, that control-plane
-    # isolation remains mandatory, that durable jobs require Redis, and what
+    # isolation remains mandatory, that durable jobs require a shared store, and what
     # serve.grpc does not cover. OKF sets no length limit on `description`.
     description = " ".join((entry.get("description") or "").split())
     # A capability description is a licensing and safety statement, not a

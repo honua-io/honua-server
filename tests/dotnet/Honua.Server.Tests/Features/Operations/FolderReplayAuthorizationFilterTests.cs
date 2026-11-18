@@ -52,17 +52,22 @@ public sealed class FolderReplayAuthorizationFilterTests
     [InlineData("missing-payload", false)]
     [InlineData("completed", false)]
     [InlineData("changed-plan", false)]
+    [InlineData("missing-definition", false)]
+    [InlineData("read-only-definition", false)]
+    [InlineData("wrong-definition", false)]
+    [InlineData("wrong-stored-proposal-id", false)]
     public async Task InvokeAsync_ReplayBoundary_DelegatesOnlySealedExecutingFolderOperation(string scenario, bool delegated)
     {
         var proposal = Proposal();
         if (scenario == "unapproved") proposal = proposal with { ResolvedBy = null };
-        if (scenario == "wrong-proposal-lineage") proposal = proposal with { ProposalId = "another" };
+        if (scenario is "wrong-proposal-lineage" or "wrong-stored-proposal-id") proposal = proposal with { ProposalId = "another" };
         if (scenario == "wrong-operation") proposal = proposal with { OperationId = "folder.delete" };
         if (scenario == "wrong-tenant") proposal = proposal with { TenantId = "another" };
         if (scenario == "completed") proposal = proposal with { Status = OperationProposalStatus.Succeeded };
         if (scenario == "missing-payload") proposal = proposal with { Plan = proposal.Plan with { ExecutionPayload = null } };
         if (scenario == "changed-plan") proposal = proposal with { SealedPlanHash = "invalid" };
-        using var services = Services(proposal, scenario == "wrong-resolved-tenant" ? "another" : "public");
+        using var services = Services(proposal, scenario == "wrong-resolved-tenant" ? "another" : "public",
+            scenario == "wrong-stored-proposal-id" ? "proposal" : null);
         var context = Context(scenario);
         context.RequestServices = services;
         var original = context.User;
@@ -76,6 +81,120 @@ public sealed class FolderReplayAuthorizationFilterTests
         invoked.Should().Be(delegated || scenario == "ordinary");
         if (!invoked) result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         context.User.Should().BeSameAs(original, "delegation must end with the folder invocation");
+    }
+
+    [UnitTheory]
+    [InlineData("valid", true)]
+    [InlineData("unapproved", false)]
+    [InlineData("wrong-instance", false)]
+    [InlineData("wrong-tenant", false)]
+    [InlineData("wrong-stored-proposal-id", false)]
+    [InlineData("missing-proposal-grant", false)]
+    [InlineData("wrong-route-grant", false)]
+    [InlineData("changed-plan", false)]
+    public async Task AuthorizeAsync_WithoutHttpContext_RequiresDurableApprovalBeforeDelegating(string scenario, bool authorized)
+    {
+        var proposal = Proposal();
+        if (scenario == "unapproved") proposal = proposal with { ResolvedBy = null };
+        if (scenario == "wrong-stored-proposal-id") proposal = proposal with { ProposalId = "another" };
+        if (scenario == "changed-plan") proposal = proposal with { SealedPlanHash = "invalid" };
+        using var services = Services(proposal, "public", "proposal");
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole),
+            new Claim(ClaimTypes.Role, "custom-service-role"),
+            new Claim(AdminApiKeyPermission.PermissionClaimType,
+                AdminApiKeyPermission.CreateApprovedOperationGrant(scenario == "wrong-route-grant" ? "DELETE" : "PATCH", "/api/v1/admin/folders/folder")),
+            new Claim(AdminApiKeyPermission.PermissionClaimType,
+                FolderOperationCredential.ProposalGrant(scenario == "missing-proposal-grant" ? "another" : "proposal")),
+            new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, "public")], "ApiKey"));
+        var authority = await FolderReplayAuthority.AuthorizeAsync(new FolderReplayAdmission
+        {
+            Principal = principal,
+            OperationId = "folder.update",
+            ProposalId = "proposal",
+            OperationInstanceId = scenario == "wrong-instance" ? "another" : "instance",
+            TenantId = scenario == "wrong-tenant" ? "another" : "public"
+        }, services);
+        (authority is not null).Should().Be(authorized);
+        principal.IsInRole("custom-service-role").Should().BeTrue();
+        principal.IsInRole(OperationPolicyBuiltInRules.FullAdministratorRole).Should().BeFalse();
+        if (authority is null) return;
+        authority.RequesterPrincipal.Claims.Should().NotContain(claim => claim.Type == ClaimTypes.Role);
+        authority.OperatorPrincipal.IsInRole(OperationPolicyBuiltInRules.FullAdministratorRole).Should().BeTrue();
+        authority.Proposal.Should().BeSameAs(proposal);
+    }
+
+    [UnitTheory]
+    [InlineData("valid", true)]
+    [InlineData("unapproved", false)]
+    [InlineData("wrong-instance", false)]
+    [InlineData("wrong-tenant", false)]
+    [InlineData("wrong-requester", false)]
+    [InlineData("wrong-operation", false)]
+    [InlineData("wrong-stored-proposal-id", false)]
+    [InlineData("changed-plan", false)]
+    [InlineData("changed-context-hash", false)]
+    [InlineData("completed", false)]
+    public async Task AuthorizeOperationAsync_WithoutTransportCredential_RequiresBoundDurableReplay(string scenario, bool authorized)
+    {
+        var proposal = Proposal();
+        if (scenario == "unapproved") proposal = proposal with { ResolvedBy = null };
+        if (scenario == "wrong-stored-proposal-id") proposal = proposal with { ProposalId = "another" };
+        if (scenario == "changed-plan") proposal = proposal with { SealedPlanHash = "invalid" };
+        if (scenario == "completed") proposal = proposal with { Status = OperationProposalStatus.Succeeded };
+        using var services = Services(proposal, "public", "proposal");
+        var authority = await FolderReplayAuthority.AuthorizeOperationAsync(new FolderOperationReplayAdmission(
+            new OperationRequest { OperationId = scenario == "wrong-operation" ? "folder.delete" : "folder.update" },
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal",
+                ApprovedPlanHash = scenario == "changed-context-hash" ? "another" : proposal.SealedPlanHash,
+                OperationInstanceId = scenario == "wrong-instance" ? "another" : "instance",
+                PrincipalId = scenario == "wrong-requester" ? "another" : "requester",
+                TenantId = scenario == "wrong-tenant" ? "another" : "public"
+            }), services);
+        (authority is not null).Should().Be(authorized);
+        if (authority is null) return;
+        authority.RequesterPrincipal.Identity!.IsAuthenticated.Should().BeTrue();
+        authority.RequesterPrincipal.Claims.Should().NotContain(claim => claim.Type == ClaimTypes.Role);
+        authority.OperatorPrincipal.IsInRole(OperationPolicyBuiltInRules.FullAdministratorRole).Should().BeTrue();
+        authority.Proposal.Should().BeSameAs(proposal);
+    }
+
+    [UnitTheory]
+    [InlineData("valid", true)]
+    [InlineData("changed-command", false)]
+    [InlineData("explicit-null-title", false)]
+    [InlineData("changed-operation", false)]
+    [InlineData("changed-etag", false)]
+    [InlineData("changed-namespace", false)]
+    [InlineData("changed-schema", false)]
+    public async Task MatchesExecution_TypedCommandAndPreconditions_MustMatchSealedPlan(string scenario, bool matches)
+    {
+        using var services = Services(Proposal(), "public");
+        var authority = await FolderReplayAuthority.AuthorizeAsync(new FolderReplayAdmission
+        {
+            Principal = Context("valid").User,
+            OperationId = "folder.update",
+            ProposalId = "proposal",
+            OperationInstanceId = "instance",
+            TenantId = "public"
+        }, services);
+        authority.Should().NotBeNull();
+        FolderMutationCommand command = scenario switch
+        {
+            "changed-command" => new FolderMutationCommand.Update("folder", "Unapproved", default),
+            "explicit-null-title" => new FolderMutationCommand.Update("folder", "Approved", new FolderTitleChange(null)),
+            "changed-operation" => new FolderMutationCommand.Delete("folder"),
+            _ => new FolderMutationCommand.Update("folder", "Approved", default)
+        };
+        authority!.MatchesExecution(new FolderReplayExecution
+        {
+            Command = command,
+            ExpectedEtag = scenario == "changed-etag" ? "\"another\"" : "\"revision\"",
+            Namespace = scenario == "changed-namespace" ? "another" : null,
+            SchemaName = scenario == "changed-schema" ? "another" : null
+        }).Should().Be(matches);
     }
 
     [UnitTest]
@@ -137,10 +256,10 @@ public sealed class FolderReplayAuthorizationFilterTests
         request.Title.Should().Be(title);
     }
 
-    private static ServiceProvider Services(OperationProposal proposal, string tenantId)
+    private static ServiceProvider Services(OperationProposal proposal, string tenantId, string? lookupId = null)
     {
         var store = Substitute.For<IOperationProposalStore>();
-        store.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
+        store.GetAsync(lookupId ?? proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns(tenantId);
         return new ServiceCollection().AddSingleton(store).AddSingleton(tenant)
@@ -172,6 +291,7 @@ public sealed class FolderReplayAuthorizationFilterTests
             Kind = OperationClass.AdminConfigChange,
             Status = OperationProposalStatus.Executing,
             ResolvedBy = "approver",
+            RequestedBy = "requester",
             Plan = plan,
             SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
             Audit = new OperationAuditInfo { OperationInstanceId = "instance" },
@@ -183,6 +303,17 @@ public sealed class FolderReplayAuthorizationFilterTests
     private static DefaultHttpContext Context(string scenario)
     {
         var context = new DefaultHttpContext();
+        if (scenario != "missing-definition")
+        {
+            var operationId = scenario switch
+            {
+                "read-only-definition" => "folder.list",
+                "wrong-definition" => "folder.delete",
+                _ => "folder.update"
+            };
+            context.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(
+                AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == operationId)), "folder"));
+        }
         context.Request.Method = "PATCH";
         context.Request.Path = scenario == "wrong-folder-path" ? "/api/v1/admin/folders/another" : "/api/v1/admin/folders/folder";
         context.Request.Headers.IfMatch = scenario == "changed-etag" ? "\"another\"" : "\"revision\"";
