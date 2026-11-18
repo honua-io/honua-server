@@ -212,9 +212,14 @@ internal sealed partial class PostgresOperationProposalStore(
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
 
+    // Both tables share one batch budget, so a full batch still tells the retention sweep to call again.
     public async Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
-        => await DeleteExpiredProposalsAsync(batchSize, cancellationToken).ConfigureAwait(false)
-            + await DeleteExpiredConsumptionsAsync(batchSize, cancellationToken).ConfigureAwait(false);
+    {
+        var proposals = await DeleteExpiredProposalsAsync(batchSize, cancellationToken).ConfigureAwait(false);
+        return proposals >= batchSize
+            ? proposals
+            : proposals + await DeleteExpiredConsumptionsAsync(batchSize - proposals, cancellationToken).ConfigureAwait(false);
+    }
 
     private Task<int> DeleteExpiredProposalsAsync(int batchSize, CancellationToken cancellationToken)
         => _database.ExecuteAsync(
