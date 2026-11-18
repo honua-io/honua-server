@@ -50,6 +50,19 @@ public sealed class MetadataV2GraphConcurrencyException : InvalidOperationExcept
     public string? ActualEtag { get; }
 }
 
+// Activation refused because a declared global-ID field covers stored values that are duplicate or
+// not UUIDs. Nothing was activated; the caller must repair the feature values before retrying.
+public sealed class MetadataV2GlobalIdIntegrityException : Exception
+{
+    public MetadataV2GlobalIdIntegrityException(Exception innerException)
+        : base(
+            "A declared global-ID field covers existing feature values that are duplicate or not UUIDs. " +
+            "Nothing was changed. Repair those values, then retry.",
+            innerException)
+    {
+    }
+}
+
 public sealed class MetadataV2GraphCommitOutcomeUnknownException : Exception
 {
     public MetadataV2GraphCommitOutcomeUnknownException(

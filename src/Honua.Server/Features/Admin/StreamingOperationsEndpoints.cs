@@ -33,6 +33,7 @@ internal static class StreamingOperationsEndpoints
             .Produces<ApiResponse<SubscriberListResponse>>();
 
         group.MapGet("/alerts", HandleAlertStream)
+            .AddEndpointFilter<LiveStreamAuthorizationFilter>()
             .WithDisplayName("Stream Alert Notifications")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .WithMetadata(WebSocketEndpointMetadata.Instance)

@@ -55,6 +55,7 @@ internal static class GrpcServiceCollectionExtensions
         });
 
         services.TryAddSingleton<GrpcExceptionInterceptor>();
+        services.TryAddSingleton<AttachmentDownloadLinks>();
         services.TryAddSingleton<IFeatureEditHooks>(NoOpFeatureEditHooks.Instance);
         services.TryAddSingleton<GrpcApplyEditsReceipts>(sp =>
             new GrpcApplyEditsReceipts(

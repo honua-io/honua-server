@@ -5,6 +5,7 @@
   "description": "Argument shape for the lifecycle service-publish tool (advertised name honua_publish_service). Publishes a table from a registered secure connection as a layer on a target service via the canonical service.publish operation. x-honua-reference-shape: tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "required": ["connectionId", "schema", "table", "layerName"],
   "properties": {
     "connectionId": {

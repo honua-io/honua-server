@@ -6,6 +6,7 @@
   "x-honua-extension": true,
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "properties": {
     "status": {
       "type": "array",

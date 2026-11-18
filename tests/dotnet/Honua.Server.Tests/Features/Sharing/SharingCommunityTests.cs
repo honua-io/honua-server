@@ -5,16 +5,11 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
-using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Portal.Sharing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -25,86 +20,26 @@ namespace Honua.Server.Tests.Features.Sharing;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class SharingCommunityTests : IAsyncLifetime
+public sealed partial class SharingCommunityTests
+    : IClassFixture<SharingCommunityTests.CommunityHost>, IAsyncLifetime
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string Referer = "https://app.example.com";
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
+    private readonly CommunityHost _host;
     private readonly WebAppFixture _fixture;
 
-    public SharingCommunityTests()
+    public SharingCommunityTests(CommunityHost host)
     {
-        var graph = new TestMetadataV2GraphBuilder()
-            .AddService("svc-rivers", "Rivers", protocols: [ServiceProtocols.FeatureServer],
-                accessPolicy: new AccessPolicy { AllowedRoles = ["publisher"] })
-            .AddService("svc-owned", "Owned", protocols: [ServiceProtocols.FeatureServer],
-                accessPolicy: new AccessPolicy { AllowedRoles = ["publisher"] })
-            .AddService("content-a", "First item", protocols: [ServiceProtocols.FeatureServer],
-                accessPolicy: new AccessPolicy { AllowAnonymous = true })
-            .AddService("content-b", "Second item", protocols: [ServiceProtocols.MapServer],
-                accessPolicy: new AccessPolicy { AllowAnonymous = true })
-            .AddService("content-private", "Restricted item", protocols: [ServiceProtocols.FeatureServer],
-                accessPolicy: new AccessPolicy { AllowedRoles = ["parcel-admin"] })
-            .AddResource("private-resource", "Private resource", accessPolicy: new AccessPolicy { AllowedRoles = ["parcel-admin"] })
-            .AddStorageBinding("private-binding", "private-resource", "features", storageLayerId: 0)
-            .AddPublication("private-publication", "content-private", "private-resource", layerIndex: 0,
-                storageBindingId: "private-binding", publicationType: MetadataV2LayerType.EsriFeatureLayer)
-            .Build();
-        graph = graph with
-        {
-            Services = graph.Services.Select(service => service with
-            { Metadata = service.Metadata with { Publisher = "alice" } }).ToArray()
-        };
-        _fixture = new WebAppFixture()
-            .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
-            .ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
-        });
-        _fixture.ConfigureServices(services =>
-        {
-            // The Test host skips the production composition root. Bind the
-            // isolated PostgreSQL profile used by the real Portal sharing path.
-            var schema = _fixture.CurrentSchema
-                ?? throw new InvalidOperationException("Portal fixture schema is missing.");
-            services.RemoveAll<IPortalGroupStore>();
-            services.RemoveAll<IPortalItemSharingStore>();
-            services.RemoveAll<IPortalAudienceSnapshotProvider>();
-            services.AddSingleton<IPortalGroupStore>(sp => new PostgresPortalGroupStore(
-                sp.GetRequiredService<NpgsqlDataSource>(), TimeProvider.System, schema));
-            services.AddSingleton<IPortalItemSharingStore>(sp => new PostgresPortalItemSharingStore(
-                sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<IHttpContextAccessor>(), schema));
-            services.AddSingleton<IPortalAudienceSnapshotProvider>(sp => new PostgresPortalAudienceSnapshotProvider(
-                sp.GetRequiredService<NpgsqlDataSource>(), schema));
-        });
+        _host = host;
+        _fixture = host.Fixture;
     }
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        var schema = _fixture.CurrentSchema
-            ?? throw new InvalidOperationException("Portal fixture schema is missing.");
-        await using var stream = typeof(PostgresPortalGroupStore).Assembly.GetManifestResourceStream(
-            "Honua.Server.Migrations.133_CreatePortalSharing.sql")
-            ?? throw new InvalidOperationException("Portal sharing migration resource is missing.");
-        using var reader = new StreamReader(stream);
-        using var builder = new NpgsqlCommandBuilder();
-        var migration = (await reader.ReadToEndAsync())
-            .Replace("$HonuaSchema$", builder.QuoteIdentifier(schema), StringComparison.Ordinal);
-        await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
-        {
-            await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
-            await using var command = new NpgsqlCommand(migration, connection);
-            await command.ExecuteNonQueryAsync();
-        });
-    }
+    public Task InitializeAsync() => _host.ClearSharingStateAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public Task DisposeAsync() => Task.CompletedTask;
 
     [IntegrationTest]
     [Operation(Operations.Security)]

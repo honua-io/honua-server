@@ -229,13 +229,12 @@ SELECTED_RUNNER = (
     " && needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
 )
 PR_GATE_LIGHT_JOBS = {"runner-select", "format", "affected-shards-select", "affected-shards", "ci-router-validation", "required"}
+# Pull-request gate jobs stay hosted. qualify_light on a trunk dispatch is the
+# only path onto honua-light. HONUA_LIGHT_RUNNER places the non-gate workflows.
 LIGHT_RUNNER = (
     "${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk'"
     " && inputs.qualify_light && fromJSON('{\"group\":\"honua-light\",\"labels\":[\"honua-light\"]}')"
-    " || vars.HONUA_LIGHT_RUNNER"
-    " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
-    " && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)"
-    " && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}"
+    " || 'ubuntu-latest' }}"
 )
 READY_ONLY = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
 DRAFT_FORMAT_ADMISSION = ("always() && !cancelled() && (needs.runner-select.result == 'success' "
@@ -279,7 +278,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
         scenarios = [
             ("", False, False, "ubuntu-latest"),
             ("", False, True, "ubuntu-latest"),
-            (json.dumps(pool), False, False, pool),
+            (json.dumps(pool), False, False, "ubuntu-latest"),
             (json.dumps(pool), True, False, "ubuntu-latest"),
         ]
         for name, selected, scenario, partition, planned in product(
@@ -313,7 +312,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
         )
         return json.loads(result.stdout)
 
-    def test_light_jobs_use_the_fork_guarded_light_pool_with_hosted_fallback(self):
+    def test_pr_gate_control_jobs_stay_hosted_unless_a_trunk_dispatch_qualifies_light(self):
         for name in PR_GATE_LIGHT_JOBS:
             with self.subTest(job=name):
                 expected = LIGHT_RUNNER
@@ -348,12 +347,8 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
             [True, False, None], ["", json.dumps(configured_pool)], [True, False], ["all", "source", "tests"],
         ):
             expected = "ubuntu-latest"
-            if light and (event == "workflow_dispatch" or not fork):
-                expected = configured_pool
-            if event == "workflow_dispatch" and ref == "refs/heads/trunk" and qualify:
+            if event == "workflow_dispatch" and ref == "refs/heads/trunk" and qualify and partition != "tests":
                 expected = {"group": "honua-light", "labels": ["honua-light"]}
-            if partition == "tests":
-                expected = "ubuntu-latest"
             context = {"expression": bracket_contexts(self.jobs["format"]["runs-on"][3:-2].strip()),
                        "event": event, "ref": ref, "qualify": qualify, "light": light, "fork": fork, "partition": partition}
             with self.subTest(event=event, ref=ref, qualify=qualify, light=light, fork=fork):

@@ -5,6 +5,8 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
+// Unknown properties are refused so a misspelled or unsupported setting cannot answer 200 and store nothing.
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record MetadataV2EditingPatch
 {
     [JsonPropertyName("globalIdField")]
@@ -21,6 +23,22 @@ public sealed record MetadataV2EditingPatch
 
     [JsonPropertyName("delete")]
     public bool? Delete { get; init; }
+
+    // Editor-tracking fields: null keeps the stored value, an empty string clears it.
+    [JsonPropertyName("creatorField")]
+    public string? CreatorField { get; init; }
+
+    [JsonPropertyName("createdAtField")]
+    public string? CreatedAtField { get; init; }
+
+    [JsonPropertyName("editorField")]
+    public string? EditorField { get; init; }
+
+    [JsonPropertyName("updatedAtField")]
+    public string? UpdatedAtField { get; init; }
+
+    internal bool ChangesTracking =>
+        CreatorField is not null || CreatedAtField is not null || EditorField is not null || UpdatedAtField is not null;
 }
 
 public static class MetadataV2EditingConfiguration
@@ -35,7 +53,7 @@ public static class MetadataV2EditingConfiguration
         ArgumentNullException.ThrowIfNull(publicationIds);
         ArgumentNullException.ThrowIfNull(patch);
         if (patch.GlobalIdField is null && patch.SupportsAttachments is null &&
-            patch.Create is null && patch.Update is null && patch.Delete is null)
+            patch.Create is null && patch.Update is null && patch.Delete is null && !patch.ChangesTracking)
         {
             return graph;
         }
@@ -129,7 +147,7 @@ public static class MetadataV2EditingConfiguration
             : editing.CanModify;
         var updatedResource = resource with
         {
-            Editing = editing with
+            Editing = MetadataV2EditorTrackingPatch.Apply(resource, editing, patch) with
             {
                 GlobalIdField = globalId,
                 SupportsAttachments = patch.SupportsAttachments ?? editing.SupportsAttachments,
