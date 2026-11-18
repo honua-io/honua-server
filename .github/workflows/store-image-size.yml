@@ -76,13 +76,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # A job-private SDK root: the locks pin SDK-implied packages, so the check must run on the
-      # exact SDK the images use, not a newer preinstalled one.
+      # The locks pin SDK-implied packages, so the check runs on exactly the SDK the server images
+      # use (their DOTNET_SDK_IMAGE tag), in a job-private root without newer preinstalled SDKs.
+      - name: Read the server image SDK version
+        id: sdk
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's|^ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:\([0-9.]*\)-.*|\1|p' Dockerfile)"
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Cannot read the SDK tag from Dockerfile" >&2; exit 1; }
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/honua-lock-sdk
         with:
-          global-json-file: global.json
+          dotnet-version: ${{ steps.sdk.outputs.version }}
       - name: Check every locked variant restores in locked mode
         env:
           GH_PACKAGES_TOKEN: ${{ github.token }}
