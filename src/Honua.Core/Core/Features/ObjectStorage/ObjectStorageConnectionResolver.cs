@@ -136,20 +136,12 @@ public static class ObjectStorageBuiltInConnections
             return [];
         }
 
-        var normalized = ServerFolders.Concat(configuredServerFolders).Append(storage.PMTilesPublish.KeyPrefix)
-            .Select(ObjectStoragePolicy.NormalizePrefix)
-            .ToList();
-        if (normalized.Contains(null))
+        if (Reserved(root, ServerFolders.Concat(configuredServerFolders).Append(storage.PMTilesPublish.KeyPrefix)) is not { } reserved)
         {
-            // A server prefix that cannot be compared safely turns built-ins off rather than leaving it uncovered.
             return [];
         }
 
         var template = Template(storage.AwsS3, builtIn.ExpectedBucketOwner!);
-        var reserved = normalized
-            .Where(folder => folder!.Length > 0)
-            .SelectMany(folder => new[] { root + folder, folder! })
-            .ToList();
         var connections = builtIn.DataPrefixes
             .Select(ObjectStoragePolicy.NormalizePrefix)
             .Where(folder => !string.IsNullOrEmpty(folder) && !reserved.Exists(server => Overlaps(server, root + folder)))
@@ -179,6 +171,16 @@ public static class ObjectStorageBuiltInConnections
             && string.IsNullOrWhiteSpace(s3.ServiceUrl)
             && string.IsNullOrWhiteSpace(s3.AccessKeyId)
             && string.IsNullOrWhiteSpace(s3.SecretAccessKey);
+
+    // Each server folder under the key prefix and at the bucket root; null when one cannot be compared safely,
+    // which turns built-ins off rather than leaving that folder uncovered.
+    private static List<string>? Reserved(string root, IEnumerable<string> folders)
+    {
+        var normalized = folders.Select(ObjectStoragePolicy.NormalizePrefix).ToList();
+        return normalized.Contains(null)
+            ? null
+            : normalized.Where(folder => folder!.Length > 0).SelectMany(folder => new[] { root + folder, folder! }).ToList();
+    }
 
     private static bool Overlaps(string first, string second)
         => first.StartsWith(second, StringComparison.Ordinal) || second.StartsWith(first, StringComparison.Ordinal);
