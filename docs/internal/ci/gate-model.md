@@ -2984,3 +2984,32 @@ removes. On that run the three classes took 354.5 s of case time.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Shared job hosts in GP ownership and vector parity tests, feature-lock manifest shapes
+
+`GPServerDurableRuntimeTests` started an identical Postgres job host for each of the
+five operations of its SOAP ownership theory. The theory now lives in the nested
+`OwnershipTests` class, in the same job-substrate collection, with one class host.
+It has to be a separate class: starting a durable host truncates the shared job
+tables and every durable host runs job workers, so a shared host must never be
+alive while another case runs its own. `VectorProcessParityIntegrationTests` built
+the same production-substrate host for eleven process cases; they now borrow one
+lazily started host that clears the job tables when it starts and stops, and the
+one case that needs a different host releases it first. In
+`FeatureLockCapabilityManifestTests`, the twelve cases whose host has the shared
+lock store read the manifest from one host per shape (composition path and
+authorizer, four hosts); rows with the in-memory store keep their own hosts.
+Every case still submits or reads only its own job or manifest, and every
+assertion is unchanged. A job that never finishes now stays on the shared host,
+so later cases in that class can time out behind it; that adds failures, never a
+false pass.
+
+Measured on the build host (Release, the same 52 cases, all passing): the
+ownership theory went from 79.3 to 7.1 s, `FeatureLockCapabilityManifestTests`
+from 195.3 to 49.4 s and `VectorProcessParityIntegrationTests` from 87.4 to 35.2 s
+of case time (362.0 to 91.7 s). On hosted full run 44271438677 the three took
+38, 105.6 and 87.9 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
