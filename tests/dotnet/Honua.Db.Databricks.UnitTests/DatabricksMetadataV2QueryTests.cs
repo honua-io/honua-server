@@ -148,7 +148,7 @@ public class DatabricksMetadataV2QueryTests
                     Host = "https://example.cloud.databricks.com",
                     WarehouseId = "wh-123",
                     Token = "dapi-test"
-                })))),
+                }))),
             new LayerReadSecurityResolver(null, null, null, null));
         return Layer0.CreateBinding(
             store,

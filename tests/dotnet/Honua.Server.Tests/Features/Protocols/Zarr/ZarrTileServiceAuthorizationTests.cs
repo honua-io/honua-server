@@ -93,8 +93,8 @@ public sealed class ZarrTileServiceAuthorizationTests
 
     private static MetadataV2Graph CreateSharedIndexGraph()
         => new TestMetadataV2GraphBuilder()
-            .AddResource("res-public", "public-raster", MetadataV2ObjectType.Raster)
-            .AddResource("res-private", "private-raster", MetadataV2ObjectType.Raster)
+            .AddResource("res-public", "public-raster", MetadataV2ObjectType.RasterDataset)
+            .AddResource("res-private", "private-raster", MetadataV2ObjectType.RasterDataset)
             .AddService("svc-public", "public-service")
             .AddService("svc-private", "private-service")
             .AddPublication(PublicPublicationId, "svc-public", "res-public", layerIndex: SharedLayerIndex)
