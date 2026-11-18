@@ -143,7 +143,8 @@ body='Automated regeneration of the tracked projections listed in scripts/ci/gen
 # lands, trunk's projections are stale against their sources and every lane's
 # local pre-pr refuses on them, so it carries the documented exception. The
 # label goes on first; the body edit after it raises the `edited` event that
-# re-runs hygiene with both (the `opened` run saw neither and is cancelled).
+# re-runs hygiene with both (the `opened` run saw neither; its result is
+# superseded or cancelled).
 exception='Bundle-exception: blocking red — trunk projections are stale against their authored sources until this lands, and local pre-pr refuses on that drift.'
 existing="$(gh api "repos/${repo}/pulls?state=open&base=trunk&head=${repo%%/*}:${branch}" \
   --jq '.[0].number // empty')"
