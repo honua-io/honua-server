@@ -701,8 +701,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "delete-api-v1-console-access-workspaceid-roles-roleid",
-      "route": "/api/v1/console/access/{workspaceId}/roles/{roleId}",
+      "id": "delete-api-v1-console-access-environmentid-roles-roleid",
+      "route": "/api/v1/console/access/{environmentId}/roles/{roleId}",
       "method": "DELETE",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -710,7 +710,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_DeleteAssignedRole_TombstonesNameAndRemovesPermissions",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossWorkspaceBoundary"
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossEnvironmentBoundary"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -725,6 +725,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.DeleteContent_RemovesItem",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetSearchAndDelete_PreservesReadOnlyIdentity",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_PublishedIdentity_DoesNotCreateMutableContentRows"
       ],
       "proof_ledger_surface": "console-content-rbac",
@@ -2326,8 +2327,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-forms-packages",
-      "route": "/api/v1/admin/forms/packages",
+      "id": "get-api-v1-admin-forms",
+      "route": "/api/v1/admin/forms",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -2340,8 +2341,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-admin-forms-packages-formid",
-      "route": "/api/v1/admin/forms/packages/{formId}",
+      "id": "get-api-v1-admin-forms-formid",
+      "route": "/api/v1/admin/forms/{formId}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -2354,8 +2355,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-admin-forms-packages-formid-versions",
-      "route": "/api/v1/admin/forms/packages/{formId}/versions",
+      "id": "get-api-v1-admin-forms-formid-versions",
+      "route": "/api/v1/admin/forms/{formId}/versions",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -2368,14 +2369,15 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-admin-forms-packages-formid-versions-packageversion",
-      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
+      "id": "get-api-v1-admin-forms-formid-versions-formversion",
+      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works"
+        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works",
+        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.RetiredPackageRoutes_AreNotAliases"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3007,7 +3009,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobLogs_PaginatesAndRejectsInvalidCursor"
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobLogs_PaginatesAndRejectsInvalidCursor",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobStepsAndLogs_ScopedReadKey_WithholdLostAttemptWorkerLikeDiagnostics"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3021,6 +3024,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobStepsAndLogs_ScopedReadKey_WithholdLostAttemptWorkerLikeDiagnostics",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_ForUnknownJob_Returns404",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_ProjectsSanitizedPerStepGlassBox",
         "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetJobSteps_RequiresAdminAuthorization",
@@ -3945,7 +3949,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.CommunityRedisOpsHealthEndpointsTests.GetOpsHealth_WithCommunityEditionAndRedisConfigured_DoesNotReturnServerError",
+        "Honua.Server.Tests.Features.Admin.CommunityOpsHealthEndpointsTests.GetOpsHealth_WithCommunityEdition_DoesNotReturnServerError",
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_ManagedServingServiceDown_ReportsTargetOutageAndRecovery",
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_WithAdminAuth_ReturnsComposedSnapshot",
         "Honua.Server.Tests.Features.Admin.OpsObservabilityEndpointsTests.GetOpsHealth_WithMixedChannelHealth_SerializesExactPrivacySafeProjection",
@@ -4377,7 +4381,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.Composition_WithoutRedis_RegistersNeitherDurableProposalStoreNorGateway",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.Composition_WithoutSystemDatabase_RegistersNeitherDurableProposalStoreNorGateway",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.ListProposals_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ListProposals_ReturnsActiveProposals"
       ],
@@ -5445,7 +5449,7 @@
       "protocol": "http-route",
       "code_location": "src/Honua.Server/Features/Protocols/Grpc/AttachmentDownloadLinks.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Grpc.GrpcIntegrationTests+GrpcHost.GetAttachmentUrl_LocalStorage_ReturnsAServerLinkThatDownloadsOnlyThatAttachment"
+        "Honua.Server.Tests.Features.Protocols.Grpc.GrpcIntegrationTests.GetAttachmentUrl_LocalStorage_ReturnsAServerLinkThatDownloadsOnlyThatAttachment"
       ],
       "proof_ledger_surface": "grpc-attachment-download-link",
       "maturity": "implemented",
@@ -5519,29 +5523,31 @@
       "capability": "discovery.capability-manifest"
     },
     {
-      "id": "get-api-v1-console-access-workspaceid-members",
-      "route": "/api/v1/console/access/{workspaceId}/members",
+      "id": "get-api-v1-console-access-environmentid-members",
+      "route": "/api/v1/console/access/{environmentId}/members",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_Members_OnlyIncludeRolesAssignedInRequestedWorkspace"
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_EnvironmentContract_UsesCanonicalIdentityAndScopes",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_Members_OnlyIncludeRolesAssignedInRequestedEnvironment"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-access-workspaceid-roles",
-      "route": "/api/v1/console/access/{workspaceId}/roles",
+      "id": "get-api-v1-console-access-environmentid-roles",
+      "route": "/api/v1/console/access/{environmentId}/roles",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_EnvironmentContract_UsesCanonicalIdentityAndScopes",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_WithoutAdminAuthentication_ReturnsUnauthorized"
       ],
       "proof_ledger_surface": "console-content-rbac",
@@ -5549,15 +5555,15 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-access-workspaceid-roles-audit",
-      "route": "/api/v1/console/access/{workspaceId}/roles/audit",
+      "id": "get-api-v1-console-access-environmentid-roles-audit",
+      "route": "/api/v1/console/access/{environmentId}/roles/audit",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_LongWorkspaceId_RetainsMutationAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_LongEnvironmentId_RetainsMutationAudit",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleAudit_MalformedCursorReturnsBadRequest"
       ],
       "proof_ledger_surface": "console-content-rbac",
@@ -5565,16 +5571,16 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-catalog-endpoints-workspaceid",
-      "route": "/api/v1/console/catalog-endpoints/{workspaceId}",
+      "id": "get-api-v1-console-catalog-endpoints-environmentid",
+      "route": "/api/v1/console/catalog-endpoints/{environmentId}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.AnonymousRequests_AreRejectedWithoutAdminAuthorization",
-        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForEmptyWorkspace_ReturnsEmptyEndpointList",
-        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForUnknownWorkspace_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForEmptyEnvironment_ReturnsEmptyEndpointList",
+        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForUnknownEnvironment_ReturnsNotFound",
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ReturnsEndpointsWithAutoDefaultAndOptInAggregates",
         "Honua.Server.Tests.Features.Console.ProjectedCatalogDiscoveryEndpointsTests.HostedProjection_RespectsMappingAdminAuthorizationAndCanonicalDirectory"
       ],
@@ -5583,8 +5589,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-catalog-endpoints-workspaceid-endpointkey",
-      "route": "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}",
+      "id": "get-api-v1-console-catalog-endpoints-environmentid-endpointkey",
+      "route": "/api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -5600,8 +5606,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-console-catalog-endpoints-workspaceid-endpointkey-items-itemid",
-      "route": "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}",
+      "id": "get-api-v1-console-catalog-endpoints-environmentid-endpointkey-items-itemid",
+      "route": "/api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}/items/{itemId}",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -5626,6 +5632,12 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.ListContent_WithItemTypeFilter_AppliesFilter",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_CollectionPublicationWithoutExplicitPath_OmitsUnresolvedLayerUrl",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetAcrossAccessTiers_UsesMostPublicAuthorizedExposure",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetFilterAndDetail_ReturnCanonicalDatasetMetadata",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetIdCollision_PreservesServiceAndLayerIdentity",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetKinds_UseTheCanonicalKind",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetSearchAndDelete_PreservesReadOnlyIdentity",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetWithMultipleServices_ListsOneDataset",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DuplicateGraphIdentities_UsesFirstItemWithoutFailing",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DuplicatePublicationAcrossServices_DoesNotExposeRestrictedIdentity",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphLifecycle_TracksPublishRepublishDisableAndDelete",
@@ -5634,7 +5646,10 @@
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_PublishedIdentity_DoesNotCreateMutableContentRows",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_ResourceWithMultipleProtocols_ListsItsPrimaryPublicationOnce",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_RestrictedResource_ExcludesLayerAndServiceFromTotalsAndSearch",
-        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership"
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_RetiredContentKind_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_UnclassifiedObject_DoesNotListAsDataset",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_UnreadableDatasetIdentity_CannotBeShadowedByAuthoredContent"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -5649,6 +5664,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.SearchContent_FindsByTerm",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetSearchAndDelete_PreservesReadOnlyIdentity",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_RestrictedResource_ExcludesLayerAndServiceFromTotalsAndSearch"
       ],
       "proof_ledger_surface": "console-content-rbac",
@@ -5665,10 +5681,12 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.CreateThenGetContentItem_ProducesComputedActions",
         "Honua.Server.Tests.Features.Console.ConsoleStateTwoTaskEndpointTests.ContentCreatedOnTaskA_IsServedByTaskB_AndTheSessionReportsSharedDurableState",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DatasetFilterAndDetail_ReturnCanonicalDatasetMetadata",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DuplicatePublicationAcrossServices_DoesNotExposeRestrictedIdentity",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphLifecycle_TracksPublishRepublishDisableAndDelete",
         "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_MixedResourceAccess_CountsOnlyReadableLayers",
-        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership"
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_UnreadableDatasetIdentity_CannotBeShadowedByAuthoredContent"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -6101,8 +6119,8 @@
       "capability": "fieldops.offline-sync"
     },
     {
-      "id": "get-api-v1-forms-packages-formid",
-      "route": "/api/v1/forms/packages/{formId}",
+      "id": "get-api-v1-forms-formid",
+      "route": "/api/v1/forms/{formId}",
       "method": "GET",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -6115,8 +6133,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-forms-packages-formid-compatibility",
-      "route": "/api/v1/forms/packages/{formId}/compatibility",
+      "id": "get-api-v1-forms-formid-compatibility",
+      "route": "/api/v1/forms/{formId}/compatibility",
       "method": "GET",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -6131,8 +6149,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-forms-packages-formid-offline-policy",
-      "route": "/api/v1/forms/packages/{formId}/offline-policy",
+      "id": "get-api-v1-forms-formid-offline-policy",
+      "route": "/api/v1/forms/{formId}/offline-policy",
       "method": "GET",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -6146,8 +6164,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "get-api-v1-forms-packages-formid-versions-packageversion",
-      "route": "/api/v1/forms/packages/{formId}/versions/{packageVersion}",
+      "id": "get-api-v1-forms-formid-versions-formversion",
+      "route": "/api/v1/forms/{formId}/versions/{formVersion}",
       "method": "GET",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -18014,8 +18032,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "post-api-v1-admin-forms-packages",
-      "route": "/api/v1/admin/forms/packages",
+      "id": "post-api-v1-admin-forms",
+      "route": "/api/v1/admin/forms",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -18029,8 +18047,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "post-api-v1-admin-forms-packages-formid-versions-packageversion-publish",
-      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish",
+      "id": "post-api-v1-admin-forms-formid-versions-formversion-publish",
+      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}/publish",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -18044,8 +18062,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "post-api-v1-admin-forms-packages-formid-versions-packageversion-reopen",
-      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen",
+      "id": "post-api-v1-admin-forms-formid-versions-formversion-reopen",
+      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}/reopen",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -18058,8 +18076,8 @@
       "capability": "fieldops.forms"
     },
     {
-      "id": "post-api-v1-admin-forms-packages-formid-versions-packageversion-validate",
-      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate",
+      "id": "post-api-v1-admin-forms-formid-versions-formversion-validate",
+      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}/validate",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -20151,6 +20169,7 @@
         "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PairedPublish_PublicationIdOfAnotherLayer_IsRefusedAndKeepsItsPointer",
         "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PairedPublish_ReplayedOperation_DoesNotCaptureOrActivateAnotherVersion",
         "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PairedPublish_Republish_SwitchesThePointerAndKeepsThePreviousVersion",
+        "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.PairedPublish_Version_CopiesAsSelfContainedFileTree",
         "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.StartJob_InvalidPairedPublishRequest_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.StartJob_PairedPublishWithoutCredentials_IsRefused",
         "Honua.Server.Tests.Features.Admin.PairedPublishEndpointTests.SwitchPointer_StaleOrMissingExpectation_IsRefused",
@@ -20409,8 +20428,8 @@
       "capability": "demo.showcase"
     },
     {
-      "id": "post-api-v1-console-access-workspaceid-roles",
-      "route": "/api/v1/console/access/{workspaceId}/roles",
+      "id": "post-api-v1-console-access-environmentid-roles",
+      "route": "/api/v1/console/access/{environmentId}/roles",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -20804,8 +20823,8 @@
       "capability": "fieldops.offline-sync"
     },
     {
-      "id": "post-api-v1-forms-packages-formid-submissions",
-      "route": "/api/v1/forms/packages/{formId}/submissions",
+      "id": "post-api-v1-forms-formid-submissions",
+      "route": "/api/v1/forms/{formId}/submissions",
       "method": "POST",
       "family": "Forms API",
       "protocol": "http-route-family",
@@ -20844,8 +20863,7 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_ReplaceRemovesScalarTarget_ExplicitSupersessionUnwedgesMap",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_UnresolvableMapId_ReturnsNotFound",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.CoEdit_TwoClientsConverge_AndCheckpointProducesStudioVersion",
-        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_MultiReplicaWithProcessLocalLog_FailClosedAndAdvertised",
-        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable"
+        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_MultiReplicaWithProcessLocalLog_FailClosedAndAdvertised"
       ],
       "proof_ledger_surface": "saved-map-collaboration",
       "maturity": "experimental",
@@ -20923,7 +20941,6 @@
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_ReplaceRemovesScalarTarget_ExplicitSupersessionUnwedgesMap",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.CoEdit_TwoClientsConverge_AndCheckpointProducesStudioVersion",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_MultiReplicaWithProcessLocalLog_FailClosedAndAdvertised",
-        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Join_NonCompositionDraftFamily_IsRejectedBeforeOperationsEnterTheLog",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Stream_ResumeCursorOutsideWindow_SnapshotKeepsRetainedOperations",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Stream_WindowAdvancesAfterPreliminaryReplay_StillAnnouncesResync"
@@ -20942,7 +20959,6 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Checkpoint_OperationLogNotRestartDurable_FailsClosedAndIsAdvertised",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_MultiReplicaWithProcessLocalLog_FailClosedAndAdvertised",
-        "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Join_NonCompositionDraftFamily_IsRejectedBeforeOperationsEnterTheLog",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests.Join_StudioIdentityModel_OwnerAllowed_NonOwnerAndUnresolvableDenied",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Join_WithAuthorizedSavedMapCapability_ReturnsSessionSnapshot",
@@ -25618,10 +25634,10 @@
       "protocol": "http-route-family",
       "code_location": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests\u002BAuthenticationTests.SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapArea_WithProductionExecutor_ReturnsIndependentRectangleAreaAndMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapBuffer_WithProductionExecutor_ReturnsRecordSetBoundedByTheIndependentBufferGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapScopedAPIKey_ExactAreaGrant_ExecutesAndOwnsDurableJob",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapScopedAPIKey_UnauthorizedAreaGrant_DeniesBeforeParameterParsing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapUnion_WithMultiValueInput_ReturnsTheIndependentlyComputedRectangle",
@@ -26590,8 +26606,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-forms-packages-formid-versions-packageversion",
-      "route": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
+      "id": "put-api-v1-admin-forms-formid-versions-formversion",
+      "route": "/api/v1/admin/forms/{formId}/versions/{formVersion}",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -27110,7 +27126,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.EnableLayerAndRoleGrants_AgentKey_RequireHumanApproval",
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.SetPermissions_ValidRequest_ReturnsUpdatedPermissions",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminPermissionReplacement_PreservesConsoleWorkspaceOwnership"
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminPermissionReplacement_PreservesConsoleEnvironmentOwnership"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -27365,15 +27381,15 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-console-access-workspaceid-roles-roleid",
-      "route": "/api/v1/console/access/{workspaceId}/roles/{roleId}",
+      "id": "put-api-v1-console-access-environmentid-roles-roleid",
+      "route": "/api/v1/console/access/{environmentId}/roles/{roleId}",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossWorkspaceBoundary",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossEnvironmentBoundary",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleRename_WithExistingAssignment_ReturnsBadRequestWithoutOrphaningMember"
       ],

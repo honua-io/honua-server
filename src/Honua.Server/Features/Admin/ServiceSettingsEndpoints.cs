@@ -327,7 +327,6 @@ internal static partial class ServiceSettingsEndpoints
             UpdateLayerMetadataRequest request,
             [FromServices] IMetadataV2GraphProvider graphProvider,
             [FromServices] IMetadataV2GraphStore graphStore,
-            [FromServices] IAdoNetDatabaseConnectionProvider connections,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -371,10 +370,13 @@ internal static partial class ServiceSettingsEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid source governance: {governanceError}"));
             }
 
+            var connections = context.RequestServices.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
             var mutation = await MutateResourceByIdAsync(
                 graphStore,
                 new LayerMetadataMutation(
-                    connections, serviceName, serviceLayerIndex, resource.Metadata.Id, request.Editing),
+                    connections,
+                    new LayerMetadataTarget(serviceName, serviceLayerIndex, resource.Metadata.Id),
+                    request.Editing),
                 next =>
                 {
                     if (request.AccessPolicy is { } incomingAccessPolicy)
@@ -791,9 +793,9 @@ internal static partial class ServiceSettingsEndpoints
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var bindingState = ResolveFeatureLayerBindingState(
                 snapshot.Graph,
-                mutation.ServiceName,
-                mutation.ServiceLayerIndex,
-                mutation.ResourceId);
+                mutation.Target.ServiceName,
+                mutation.Target.ServiceLayerIndex,
+                mutation.Target.ResourceId);
             if (bindingState == FeatureLayerBindingState.Conflict)
             {
                 return (null, true);
@@ -805,7 +807,7 @@ internal static partial class ServiceSettingsEndpoints
 
             var resources = snapshot.Graph.Resources.ToArray();
             var resourceIndex = Array.FindIndex(resources, resource =>
-                string.Equals(resource.Metadata.Id, mutation.ResourceId, StringComparison.Ordinal));
+                string.Equals(resource.Metadata.Id, mutation.Target.ResourceId, StringComparison.Ordinal));
             if (resourceIndex < 0)
             {
                 return (null, false);
@@ -823,7 +825,7 @@ internal static partial class ServiceSettingsEndpoints
             if (mutation.EditingPatch is not null)
             {
                 (updated, mutatedResource) = await ApplyEditingPatchAsync(
-                    mutation, snapshot, updated, cancellationToken).ConfigureAwait(false);
+                    mutation, new EditingGraphUpdate(snapshot, updated), cancellationToken).ConfigureAwait(false);
             }
 
             try

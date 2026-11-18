@@ -18,7 +18,7 @@ Read and submit online Forms. Disconnected/offline sync is Pro-gated separately 
 | Edition | Community |
 | Surface maturity | 21 implemented |
 | Registry entries | 21 |
-| Proving tests | 36 |
+| Proving tests | 37 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

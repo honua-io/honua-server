@@ -12,12 +12,14 @@ namespace Honua.Server.Features.Admin;
 
 internal static partial class ServiceSettingsEndpoints
 {
+    private readonly record struct LayerMetadataTarget(string ServiceName, int ServiceLayerIndex, string ResourceId);
+
     private readonly record struct LayerMetadataMutation(
         IAdoNetDatabaseConnectionProvider Connections,
-        string ServiceName,
-        int ServiceLayerIndex,
-        string ResourceId,
+        LayerMetadataTarget Target,
         MetadataV2EditingPatch? EditingPatch);
+
+    private readonly record struct EditingGraphUpdate(MetadataV2GraphSnapshot Snapshot, MetadataV2Graph Updated);
 
     private readonly record struct ManagedGlobalIdCheck(
         MetadataV2Graph Graph,
@@ -30,22 +32,23 @@ internal static partial class ServiceSettingsEndpoints
     // Production still builds the unique index; a refusal leaves the stored rows unchanged.
     private static async Task<(MetadataV2Graph Graph, MetadataV2Object Resource)> ApplyEditingPatchAsync(
         LayerMetadataMutation mutation,
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Graph updated,
+        EditingGraphUpdate update,
         CancellationToken cancellationToken)
     {
+        var snapshot = update.Snapshot;
+        var updated = update.Updated;
         var editingPatch = mutation.EditingPatch ?? throw new ArgumentNullException(nameof(mutation));
         var serviceIds = snapshot.Graph.Services.Where(service =>
-                string.Equals(service.Metadata.Name, mutation.ServiceName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(service.Metadata.Name, mutation.Target.ServiceName, StringComparison.OrdinalIgnoreCase) &&
                 ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
             .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var publicationIds = snapshot.Graph.Publications.Where(publication =>
-                publication.ResourceId == mutation.ResourceId && serviceIds.Contains(publication.ServiceId) &&
+                publication.ResourceId == mutation.Target.ResourceId && serviceIds.Contains(publication.ServiceId) &&
                 publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
-                publication.LayerIndex == mutation.ServiceLayerIndex && snapshot.IsRoutable(publication))
+                publication.LayerIndex == mutation.Target.ServiceLayerIndex && snapshot.IsRoutable(publication))
             .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-        updated = MetadataV2EditingConfiguration.Apply(updated, mutation.ResourceId, publicationIds, editingPatch);
-        var resource = updated.Resources.Single(candidate => candidate.Metadata.Id == mutation.ResourceId);
+        updated = MetadataV2EditingConfiguration.Apply(updated, mutation.Target.ResourceId, publicationIds, editingPatch);
+        var resource = updated.Resources.Single(candidate => candidate.Metadata.Id == mutation.Target.ResourceId);
         if (editingPatch.GlobalIdField is { Length: > 0 } && resource.Editing?.GlobalIdField is { } globalIdField)
         {
             await EnsureManagedGlobalIdValuesAreDistinctAsync(
