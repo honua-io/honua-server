@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
@@ -44,30 +45,30 @@ public sealed partial class PublishedOperationToolTests
     [InlineData("admin.connections.create")]
     [InlineData("admin.connections.update")]
     [InlineData("admin.connections.delete")]
+    [InlineData("admin.import.upload-object")]
     public void ConnectionChanges_ByAnAgent_FileAProposal(string operationId)
     {
         var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
 
         OperatorJourneyApproval.IsDirectExecute(operationId).Should().BeFalse();
+        AgentApprovalRule.IsGated(operationId).Should().BeTrue();
         descriptor.ApprovalModel.Should().Be(OperationApprovalModel.OperatorGate);
         new PublishedOperationTool(descriptor, "cat-agent", NullLogger.Instance).Describe().Description.Should().Contain("proposal only");
     }
 
-    [UnitTheory]
-    [InlineData("admin.connections.object-storage.setup")]
-    [InlineData("admin.connections.objects.list")]
-    public void ObjectStorageReads_AreReadOnlyOperations(string operationId)
+    [UnitTest]
+    public void ObjectStorageBrowse_IsAReadOnlyOperation()
     {
-        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(d => d.OperationId == "admin.connections.objects.list");
 
         descriptor.ApprovalModel.Should().Be(OperationApprovalModel.None);
         descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
     }
 
     [UnitTest]
-    public void ImportJourneyOperations_StillExecuteDirectly()
+    public void UrlImport_StillExecutesDirectly()
     {
-        OperatorJourneyApproval.ForMutation("admin.import.upload-object", mutating: true)
+        OperatorJourneyApproval.ForMutation("admin.import.upload-url", mutating: true)
             .Should().Be(OperationApprovalModel.None);
     }
 

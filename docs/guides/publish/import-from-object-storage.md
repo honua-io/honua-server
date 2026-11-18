@@ -14,7 +14,7 @@ You'll connect an S3 bucket prefix as a Connection and import an object from it 
 
 ## Connect the bucket
 
-1. Run `GET /api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels/`. The response has `externalId`, `roleNamePrefix` (`honua-connection-`), and `quickCreateUrl` when the operator set `Connections__ObjectStorage__QuickCreateTemplateUrl`. The external id works once and expires after 24 hours.
+1. Run `POST /api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels/`. The response has `externalId`, `roleNamePrefix` (`honua-connection-`), and `quickCreateUrl` when the operator set `Connections__ObjectStorage__QuickCreateTemplateUrl`. The external id works once, only for the caller who requested it, and expires after 24 hours. One caller may hold five open setups at a time.
 2. Create a role named `honua-connection-*` in your account (the quick-create link does this). Its trust policy names this installation's principal and requires `sts:ExternalId` equal to the external id. Grant it `s3:GetObject` on `arn:aws:s3:::customer-imports/parcels/*`, `s3:ListBucket` on the bucket, and `s3:GetBucketLocation`.
 3. Run `POST /api/v1/admin/connections` with `kind`, `provider`, `name`, `bucket`, `prefix`, `region`, `roleArn` and the `externalId` from step 1:
 
@@ -35,7 +35,9 @@ The bucket, prefix and external id cannot change after create; create a new conn
 
 Every read assumes the role for 15 minutes with an inline session policy that allows only `s3:GetObject` under the prefix, `s3:ListBucket` for the prefix, `s3:GetBucketLocation` and `s3:GetBucketRequestPayment`. A role broader than the prefix is still read-only on the prefix. Requester-pays buckets are refused.
 
-The installation's own data bucket (`FileStorage__AwsS3__BucketName` under `FileStorage__AwsS3__KeyPrefix`), and its public PMTiles prefix when `PMTilesPublish` uses public URLs, appear in the list as built-in connections. They are read with the server's own identity, cannot be changed or deleted, and are the only installation storage shown.
+Built-in connections over the installation's own bucket are off by default. To show folders of `FileStorage__AwsS3__BucketName` (under `FileStorage__AwsS3__KeyPrefix`) as read-only connections, set `Connections__ObjectStorage__BuiltIn__Enabled=true`, the bucket's account in `Connections__ObjectStorage__BuiltIn__ExpectedBucketOwner`, and each folder in `Connections__ObjectStorage__BuiltIn__DataPrefixes__0`, `__1`, and so on. Each folder becomes its own "Installation data" connection; the whole bucket is never shown. Folders the server writes (`imports/`, `exports/`, `publications/`, `audit/`, `gp/`, `studio-deliverables/`, `custom-code/`, the PMTiles prefix, and the geoprocessing output prefix) are refused, as is any folder that contains one of them. `Connections__ObjectStorage__BuiltIn__PublicFiles=true` also shows the public PMTiles prefix when `PMTilesPublish` uses public URLs. Built-ins are read with the server's own identity, cannot be changed or deleted, and are not offered when `FileStorage__AwsS3__ServiceUrl` or static file-storage keys are set.
+
+`import.objectStore` in the capability manifest is configured only while at least one connection exists. An agent's import from a connection files a proposal that a person approves in Console Approvals.
 
 Optional `Import__ObjectStore__Region`, `Import__ObjectStore__ServiceUrl`, and `Import__ObjectStore__ForcePathStyle` point the S3 and STS clients at an emulator. The server refuses `ServiceUrl` when the environment is Production.
 

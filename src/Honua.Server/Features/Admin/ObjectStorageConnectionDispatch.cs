@@ -144,18 +144,41 @@ internal static partial class ObjectStorageConnectionDispatch
     [LoggerMessage(EventId = 4590, Level = LogLevel.Warning, Message = "Object storage connections could not be read; database connections are served alone.")]
     private static partial void ObjectStorageReadFailed(ILogger logger, Exception exception);
 
-    private static Task RecordAsync(HttpContext http, string action, ObjectStorageConnection connection)
+    private static Task RecordAsync(HttpContext http, string action, ObjectStorageConnection connection, ObjectStorageConnection? previous = null)
+        => RecordAsync(http, action, AuditOutcome.Success, connection.Id, Details(connection) with
+        {
+            PreviousRegion = previous?.Region,
+            PreviousRoleArn = previous?.RoleArn,
+        });
+
+    // A draft test has no connection id yet.
+    private static Task RecordTestAsync(HttpContext http, ObjectStorageConnection connection, ObjectStorageTestResult result)
+        => RecordAsync(
+            http,
+            "connection.test",
+            result.IsHealthy ? AuditOutcome.Success : AuditOutcome.Failure,
+            connection.Id,
+            Details(connection) with { Healthy = result.IsHealthy });
+
+    private static Task RecordAsync(HttpContext http, string action, AuditOutcome outcome, Guid id, SecureConnectionAuditDetails details)
         => http.RequestServices.GetRequiredService<SecureConnectionGovernance>().RecordAsync(
             http,
             action,
-            AuditOutcome.Success,
-            connection.Id.ToString(),
-            new SecureConnectionAuditDetails
-            {
-                Name = connection.Name,
-                Provider = connection.Provider,
-            },
+            outcome,
+            id == Guid.Empty ? null : id.ToString(),
+            details,
             http.RequestAborted);
+
+    // What the customer role grants; the external id is never recorded.
+    private static SecureConnectionAuditDetails Details(ObjectStorageConnection connection) => new()
+    {
+        Name = connection.Name,
+        Provider = connection.Provider,
+        Bucket = connection.Bucket,
+        Prefix = connection.Prefix,
+        Region = connection.Region,
+        RoleArn = connection.RoleArn,
+    };
 
     private static BadRequest<ApiResponse<object>> Invalid(string message) => TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {message}"));
 

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Diagnostics;
 using System.Reflection;
 using System.Security.Claims;
@@ -122,7 +123,8 @@ internal sealed class CapabilityManifestService(
             : BuildCapabilities(policyContext, operationCapabilities);
         capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
         capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
-        capabilities = [.. capabilities, BuildObjectStoreImportCapability(policyContext)];
+        var objectStoreConfigured = await HasObjectStorageConnectionAsync(cancellationToken).ConfigureAwait(false);
+        capabilities = [.. capabilities, BuildObjectStoreImportCapability(policyContext, objectStoreConfigured)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         capabilities = ApplyCompiledProtocolProfile(capabilities);
         var packages = options.ManifestFromRegistry
@@ -1378,13 +1380,32 @@ internal sealed class CapabilityManifestService(
         };
     }
 
-    private CapabilityManifestCapability BuildObjectStoreImportCapability(CapabilityPolicyContext context)
+    // Object storage import is configured only once a connection exists, built in or created by an operator.
+    private async Task<bool> HasObjectStorageConnectionAsync(CancellationToken cancellationToken)
+    {
+        if (!options.ObjectStoreConfigured || options.ObjectStorageConnections is not { } connections)
+        {
+            return false;
+        }
+
+        try
+        {
+            return (await connections.ListAsync(cancellationToken).ConfigureAwait(false)).Count > 0;
+        }
+        catch (DbException)
+        {
+            // An unreadable connection table reports the capability as unconfigured rather than failing the manifest.
+            return false;
+        }
+    }
+
+    private CapabilityManifestCapability BuildObjectStoreImportCapability(CapabilityPolicyContext context, bool configured)
     {
         var capability = Capability(
             ObjectStoreImportCapabilityId,
             "import",
             context,
-            configured: options.ObjectStoreConfigured,
+            configured: configured,
             entitlementKey: "import.file",
             policyCapability: "metadata.write");
         return capability with { Schemes = ["s3"] };

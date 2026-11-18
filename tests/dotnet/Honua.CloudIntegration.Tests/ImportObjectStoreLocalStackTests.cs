@@ -159,7 +159,7 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
 
         var health = await connector.TestAsync(connection, CancellationToken.None);
         var page = await connector.BrowseAsync(new ObjectStorageBrowseRequest { Connection = connection, Prefix = "parcels/" }, CancellationToken.None);
-        var resolver = new ObjectStorageConnectionResolver(new StaticMonitor(new CloudStorageOptions()), new SingleStore(connection));
+        var resolver = new ObjectStorageConnectionResolver(new StaticMonitor<CloudStorageOptions>(new()), new StaticMonitor<ObjectStorageConnectionOptions>(new()), store: new SingleStore(connection));
         var outside = await resolver.ResolveObjectAsync(connection.Id, "private/secret.geojson", CancellationToken.None);
         var resolved = await resolver.ResolveObjectAsync(connection.Id, "parcels/lots.geojson", CancellationToken.None);
         var admission = await EvaluateAsync(ImportObjectLocation.From(resolved), new AwsImportObjectStoreReader(factory), SyncLimits());
@@ -312,18 +312,18 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         }
     }
 
-    private sealed class StaticMonitor(CloudStorageOptions value) : IOptionsMonitor<CloudStorageOptions>
+    private sealed class StaticMonitor<T>(T value) : IOptionsMonitor<T>
     {
-        public CloudStorageOptions CurrentValue => value;
+        public T CurrentValue => value;
 
-        public CloudStorageOptions Get(string? name) => value;
+        public T Get(string? name) => value;
 
-        public IDisposable? OnChange(Action<CloudStorageOptions, string?> listener) => null;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 
     private sealed class SingleStore(ObjectStorageConnection connection) : IObjectStorageConnectionStore
     {
-        public Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, CancellationToken cancellationToken) => Task.FromResult(true);
+        public Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, int maxOpenForMinter, CancellationToken cancellationToken) => Task.FromResult(true);
 
         public Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken)
             => Task.FromResult<ObjectStorageConnectionSetup?>(null);

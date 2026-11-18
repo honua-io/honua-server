@@ -60,7 +60,10 @@ internal static partial class ObjectStorageConnectionDispatch
         }
 
         var setup = await store.FindOpenSetupAsync(draft.ExternalId!, http.RequestAborted).ConfigureAwait(false);
-        if (setup is null || setup.Bucket != draft.Bucket || setup.Prefix != draft.Prefix)
+        if (setup is null
+            || setup.MintedBy != http.GetUserIdentity()
+            || setup.Bucket != draft.Bucket
+            || setup.Prefix != draft.Prefix)
         {
             return Invalid(SetupRejectedMessage);
         }
@@ -76,6 +79,7 @@ internal static partial class ObjectStorageConnectionDispatch
         }
 
         var result = await connector.TestAsync(connection, http.RequestAborted).ConfigureAwait(false);
+        await RecordTestAsync(http, connection, result).ConfigureAwait(false);
         return TypedResults.Ok(ApiResponse<ConnectionTestResult>.CreateSuccess(new ConnectionTestResult
         {
             ConnectionId = connection.Id,
@@ -108,7 +112,7 @@ internal static partial class ObjectStorageConnectionDispatch
             return TypedResults.NotFound(ApiResponse<object>.Failure("Connection not found"));
         }
 
-        await RecordAsync(http, "connection.update", updated).ConfigureAwait(false);
+        await RecordAsync(http, "connection.update", updated, previous: connection).ConfigureAwait(false);
         return TypedResults.Ok(ApiResponse<SecureConnectionSummary>.CreateSuccess(ToSummary(updated)));
     }
 
@@ -138,7 +142,7 @@ internal static partial class ObjectStorageConnectionDispatch
             (request.Description is { Length: > 1000 }, "description must be at most 1000 characters."),
             (!string.Equals(request.Provider, ObjectStorageConnectionKinds.Provider, StringComparison.Ordinal), "provider must be aws-s3."),
             (!ObjectStoragePolicy.IsValidBucketName(request.Bucket), "bucket is not a valid S3 bucket name."),
-            (ObjectStoragePolicy.NormalizePrefix(request.Prefix) is null, "prefix must be a plain relative path."),
+            (ObjectStoragePolicy.NormalizeConnectionPrefix(request.Prefix) is null, "prefix must be a plain relative path of at most 256 characters."),
             (!ObjectStoragePolicy.IsKnownRegion(request.Region), "region is not a known AWS region."),
             (!ObjectStoragePolicy.IsValidRoleArn(request.RoleArn), RoleArnMessage),
             (string.IsNullOrWhiteSpace(request.ExternalId), "externalId is required; request one from the object storage setup endpoint."),
@@ -155,7 +159,7 @@ internal static partial class ObjectStorageConnectionDispatch
             Name = name,
             Description = request.Description,
             Bucket = request.Bucket!,
-            Prefix = ObjectStoragePolicy.NormalizePrefix(request.Prefix)!,
+            Prefix = ObjectStoragePolicy.NormalizeConnectionPrefix(request.Prefix)!,
             Region = request.Region!,
             RoleArn = request.RoleArn,
             ExternalId = request.ExternalId!.Trim(),

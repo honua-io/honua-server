@@ -12,6 +12,8 @@ namespace Honua.Core.Tests.Features.ObjectStorage;
 
 public sealed class ObjectStorageConnectionResolverTests
 {
+    private const string Owner = "123456789012";
+
     private static readonly ObjectStorageConnection Stored = new()
     {
         Id = Guid.Parse("0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"),
@@ -38,36 +40,81 @@ public sealed class ObjectStorageConnectionResolverTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void BuiltIns_CoverOnlyTheDataPrefixAndThePublicPublishPrefix()
+    public void BuiltIns_CoverOnlyListedFoldersAndThePublicPublishPrefix()
     {
-        var options = new CloudStorageOptions
-        {
-            Provider = CloudStorageProvider.AwsS3,
-            AwsS3 = new AwsS3Options { BucketName = "honua-data", Region = "us-east-1", KeyPrefix = "tenant-a" },
-            PMTilesPublish = new PMTilesPublishOptions { UrlStrategy = PMTilesUrlStrategy.PublicUrl, KeyPrefix = "pmtiles" },
-        };
-
-        var builtIns = ObjectStorageBuiltInConnections.From(options);
+        var builtIns = ObjectStorageBuiltInConnections.From(Storage(), EnabledBuiltIns("drop", "survey/2026"));
 
         builtIns.Select(connection => (connection.Bucket, connection.Prefix))
-            .Should().Equal(("honua-data", "tenant-a/"), ("honua-data", "tenant-a/pmtiles/"));
-        builtIns.Should().OnlyContain(connection => connection.BuiltIn && connection.RoleArn == null && connection.ExternalId == null);
-        ObjectStorageBuiltInConnections.From(options).Select(connection => connection.Id)
+            .Should().Equal(("honua-data", "tenant-a/drop/"), ("honua-data", "tenant-a/survey/2026/"), ("honua-data", "tenant-a/pmtiles/"));
+        builtIns.Should().OnlyContain(connection => connection.BuiltIn
+            && connection.RoleArn == null
+            && connection.ExternalId == null
+            && connection.ExpectedBucketOwner == Owner);
+        ObjectStorageBuiltInConnections.From(Storage(), EnabledBuiltIns("drop", "survey/2026")).Select(connection => connection.Id)
             .Should().Equal(builtIns.Select(connection => connection.Id), "built-in ids are derived from configuration");
     }
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void BuiltIns_AreEmptyWithoutAnS3DataBucketAndOmitAPrivatePublishPrefix()
+    public void BuiltIns_AreOffByDefaultAndNeverCoverTheWholeRoot()
     {
-        ObjectStorageBuiltInConnections.From(new CloudStorageOptions { Provider = CloudStorageProvider.Local }).Should().BeEmpty();
-        var signedOnly = new CloudStorageOptions
+        ObjectStorageBuiltInConnections.From(Storage(), new ObjectStorageBuiltInOptions()).Should().BeEmpty("built-ins are opt-in");
+        var noFolders = EnabledBuiltIns();
+        noFolders.PublicFiles = false;
+        ObjectStorageBuiltInConnections.From(Storage(), noFolders).Should().BeEmpty("no folder means no data connection");
+        var withoutOwner = EnabledBuiltIns("drop");
+        withoutOwner.ExpectedBucketOwner = null;
+        ObjectStorageBuiltInConnections.From(Storage(), withoutOwner).Should().BeEmpty("the bucket owner must be pinned");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("exports")]
+    [InlineData("imports/batch")]
+    [InlineData("audit")]
+    [InlineData("gp/outputs")]
+    [InlineData("pmtiles/2026")]
+    [InlineData("custom")]
+    public void BuiltIns_RefuseFoldersTheServerWrites(string folder)
+    {
+        var builtIn = EnabledBuiltIns(folder);
+        builtIn.PublicFiles = false;
+
+        ObjectStorageBuiltInConnections.From(Storage(), builtIn, ["custom/outputs"]).Should().BeEmpty();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void BuiltIns_AreOffForEndpointOverridesStaticKeysAndOtherProviders()
+    {
+        var builtIn = EnabledBuiltIns("drop");
+
+        ObjectStorageBuiltInConnections.From(new CloudStorageOptions { Provider = CloudStorageProvider.Local }, builtIn).Should().BeEmpty();
+        ObjectStorageBuiltInConnections.From(Storage(s3 => s3 with { ServiceUrl = "http://minio:9000" }), builtIn).Should().BeEmpty();
+        ObjectStorageBuiltInConnections.From(Storage(s3 => s3 with { AccessKeyId = "key", SecretAccessKey = "secret" }), builtIn)
+            .Should().BeEmpty();
+    }
+
+    private static CloudStorageOptions Storage(Func<AwsS3Options, AwsS3Options>? change = null)
+    {
+        var s3 = new AwsS3Options { BucketName = "honua-data", Region = "us-east-1", KeyPrefix = "tenant-a" };
+        return new CloudStorageOptions
         {
             Provider = CloudStorageProvider.AwsS3,
-            AwsS3 = new AwsS3Options { BucketName = "honua-data", Region = "us-east-1" },
+            AwsS3 = change is null ? s3 : change(s3),
+            PMTilesPublish = new PMTilesPublishOptions { UrlStrategy = PMTilesUrlStrategy.PublicUrl, KeyPrefix = "pmtiles" },
         };
+    }
 
-        ObjectStorageBuiltInConnections.From(signedOnly).Should().ContainSingle().Which.Prefix.Should().BeEmpty();
+    private static ObjectStorageBuiltInOptions EnabledBuiltIns(params string[] folders)
+    {
+        var options = new ObjectStorageBuiltInOptions { Enabled = true, PublicFiles = true, ExpectedBucketOwner = Owner };
+        foreach (var folder in folders)
+        {
+            options.DataPrefixes.Add(folder);
+        }
+
+        return options;
     }
 
     [Trait("Tier", "Fast")]
@@ -103,20 +150,20 @@ public sealed class ObjectStorageConnectionResolverTests
         => Stored.ToString().Should().NotContain(Stored.ExternalId!);
 
     private static ObjectStorageConnectionResolver Resolver(params ObjectStorageConnection[] stored)
-        => new(new StaticMonitor(new CloudStorageOptions()), new ListStore(stored));
+        => new(new StaticMonitor<CloudStorageOptions>(new()), new StaticMonitor<ObjectStorageConnectionOptions>(new()), store: new ListStore(stored));
 
-    private sealed class StaticMonitor(CloudStorageOptions value) : IOptionsMonitor<CloudStorageOptions>
+    private sealed class StaticMonitor<T>(T value) : IOptionsMonitor<T>
     {
-        public CloudStorageOptions CurrentValue => value;
+        public T CurrentValue => value;
 
-        public CloudStorageOptions Get(string? name) => value;
+        public T Get(string? name) => value;
 
-        public IDisposable? OnChange(Action<CloudStorageOptions, string?> listener) => null;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 
     private sealed class ListStore(ObjectStorageConnection[] stored) : IObjectStorageConnectionStore
     {
-        public Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, CancellationToken cancellationToken) => Task.FromResult(true);
+        public Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, int maxOpenForMinter, CancellationToken cancellationToken) => Task.FromResult(true);
 
         public Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken)
             => Task.FromResult<ObjectStorageConnectionSetup?>(null);

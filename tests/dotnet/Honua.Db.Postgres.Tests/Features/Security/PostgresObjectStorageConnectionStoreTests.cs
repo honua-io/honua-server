@@ -15,6 +15,8 @@ namespace Honua.Db.Postgres.Tests.Features.Security;
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fixture)
 {
+    private const int MaxPerMinter = 5;
+
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task ConnectionWrittenByOneTask_IsReadByAnotherAndAdvancesTheGeneration()
@@ -43,7 +45,7 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ExternalId_IsSingleUseAndMustBeMintedForTheSameBucketAndPrefix()
+    public async Task ExternalId_IsSingleUseAndMustBeMintedByTheCreatorForTheSameBucketAndPrefix()
     {
         await WithSchemaAsync(async schema =>
         {
@@ -54,6 +56,8 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
                 .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "an unknown external id was never minted");
             (await store.CreateAsync(connection with { Prefix = "other/" }, CancellationToken.None))
                 .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "the setup was minted for another prefix");
+            (await store.CreateAsync(connection with { CreatedBy = "someone-else" }, CancellationToken.None))
+                .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "the setup was minted by another principal");
             (await store.CreateAsync(connection, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.Created);
             (await store.FindOpenSetupAsync(connection.ExternalId!, CancellationToken.None)).Should().BeNull();
             (await store.CreateAsync(connection with { Id = Guid.NewGuid() }, CancellationToken.None))
@@ -103,22 +107,41 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
             await SetupAsync(store, "expired/", DateTimeOffset.UtcNow.AddMinutes(-1));
             for (var i = 0; i < PostgresObjectStorageConnectionStore.MaxOpenSetups; i++)
             {
-                (await TrySetupAsync(store)).Should().BeTrue();
+                (await TrySetupAsync(store, $"operator-{i}")).Should().BeTrue();
             }
 
-            (await TrySetupAsync(store)).Should().BeFalse("the open-setup cap is reached");
+            (await TrySetupAsync(store, "operator-new")).Should().BeFalse("the installation-wide cap is reached");
         });
     }
 
-    private static Task<bool> TrySetupAsync(PostgresObjectStorageConnectionStore store)
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task OpenSetups_AreCappedPerMinter()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            for (var i = 0; i < MaxPerMinter; i++)
+            {
+                (await TrySetupAsync(store, "operator-a")).Should().BeTrue();
+            }
+
+            (await TrySetupAsync(store, "operator-a")).Should().BeFalse("one principal cannot exhaust the shared cap");
+            (await TrySetupAsync(store, "operator-b")).Should().BeTrue();
+        });
+    }
+
+    private static Task<bool> TrySetupAsync(PostgresObjectStorageConnectionStore store, string mintedBy)
         => store.SaveSetupAsync(
             new ObjectStorageConnectionSetup
             {
                 ExternalId = ObjectStoragePolicy.NewExternalId(),
+                MintedBy = mintedBy,
                 Bucket = "customer-imports",
                 Prefix = "parcels/",
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
             },
+            MaxPerMinter,
             CancellationToken.None);
 
     private async Task WithSchemaAsync(Func<string, Task> test)
@@ -145,10 +168,12 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
             new ObjectStorageConnectionSetup
             {
                 ExternalId = externalId,
+                MintedBy = "test",
                 Bucket = "customer-imports",
                 Prefix = prefix,
                 ExpiresAt = expiresAt ?? DateTimeOffset.UtcNow.AddHours(24),
             },
+            MaxPerMinter,
             CancellationToken.None);
         return new ObjectStorageConnection
         {

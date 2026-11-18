@@ -5,6 +5,7 @@
 -- Each external id is minted by setup, used once by create, and fixed for the life of the connection.
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.object_storage_connection_setups (
     external_id TEXT COLLATE "C" PRIMARY KEY,
+    minted_by TEXT NOT NULL,
     bucket TEXT COLLATE "C" NOT NULL,
     prefix TEXT COLLATE "C" NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
@@ -13,7 +14,7 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.object_storage_connection_setups (
 );
 
 CREATE INDEX IF NOT EXISTS object_storage_connection_setups_open
-    ON $HonuaSchema$.object_storage_connection_setups (expires_at) WHERE consumed_at IS NULL;
+    ON $HonuaSchema$.object_storage_connection_setups (minted_by, expires_at) WHERE consumed_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS $HonuaSchema$.object_storage_connections (
     connection_id UUID PRIMARY KEY,

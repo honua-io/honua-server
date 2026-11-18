@@ -24352,13 +24352,13 @@
       }
     },
     "/connections/object-storage/setup": {
-      "get": {
+      "post": {
         "tags": [
           "Connections"
         ],
         "summary": "Start an Object Storage Connection",
-        "description": "Mints a single-use external id for the customer role that will grant Honua read-only access to one bucket prefix, with an optional CloudFormation quick-create link.",
-        "operationId": "getObjectStorageConnectionSetup",
+        "description": "Mints a single-use external id, bound to the caller, for the customer role that will grant Honua read-only access to one bucket prefix, with an optional CloudFormation quick-create link.",
+        "operationId": "createObjectStorageConnectionSetup",
         "parameters": [
           {
             "name": "bucket",

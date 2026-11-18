@@ -24,7 +24,7 @@ public sealed class OperatorJourneyMcpRosterTests
         new Dictionary<string, OperationApprovalModel>(StringComparer.Ordinal)
         {
             ["admin.connections.create"] = OperationApprovalModel.OperatorGate,
-            ["admin.import.upload-object"] = OperationApprovalModel.None,
+            ["admin.import.upload-object"] = OperationApprovalModel.OperatorGate,
             ["admin.import.upload-url"] = OperationApprovalModel.None,
             ["admin.layer.publish"] = OperationApprovalModel.OperatorGate,
             ["admin.services.access-policy.set"] = OperationApprovalModel.OperatorGate,

@@ -13,6 +13,9 @@ public static partial class ObjectStoragePolicy
 {
     public const int MaxKeyBytes = 1024;
 
+    // Keeps the packed session policy, which repeats the prefix, well under the STS size limit.
+    public const int MaxPrefixLength = 256;
+
     private static readonly string[] ForbiddenBucketPrefixes = ["xn--", "sthree-", "amzn-s3-demo-"];
 
     private static readonly string[] ForbiddenBucketSuffixes = ["-s3alias", "--ol-s3", ".mrap", "--x-s3", "--table-s3"];
@@ -48,6 +51,13 @@ public static partial class ObjectStoragePolicy
     // arn:aws:iam::<12 digits>:role/[path/]honua-connection-<name>
     public static bool IsValidRoleArn(string? roleArn) => roleArn is not null && RoleArnPattern().IsMatch(roleArn);
 
+    public static bool IsValidAccountId(string? accountId)
+        => accountId is { Length: 12 } && accountId.All(char.IsAsciiDigit);
+
+    // A connection prefix: normalised, and short enough for the session policy; null when refused.
+    public static string? NormalizeConnectionPrefix(string? prefix)
+        => NormalizePrefix(prefix) is { Length: <= MaxPrefixLength } normalized ? normalized : null;
+
     // Accepts "" or a relative path and returns it with exactly one trailing '/'; null when refused.
     public static string? NormalizePrefix(string? prefix)
     {
@@ -58,6 +68,7 @@ public static partial class ObjectStoragePolicy
         }
 
         var withSlash = candidate.EndsWith('/') ? candidate : candidate + "/";
+
         // The prefix becomes an IAM resource, where '*', '?' and '${' are wildcards or variables.
         return IsSafePath(withSlash[..^1]) && withSlash.IndexOfAny(['*', '?', '$']) < 0 ? withSlash : null;
     }

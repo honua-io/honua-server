@@ -52,7 +52,7 @@ internal static class CoreMigrationTestFixture
     {
         await ApplyPreVocabularyMetadataV2Async(fixture, schema);
         await ApplyAsync(fixture, schema, "src", "Honua.Server", "Migrations", "156_CreateConfigurationDocuments.sql");
-        await ApplyAsync(fixture, schema, "src", "Honua.Server", "Migrations", "220_CreateObjectStorageConnections.sql");
+        await ApplyAsync(fixture, schema, "src", "Honua.Server", "Migrations", "222_CreateObjectStorageConnections.sql");
     }
 
     private static async Task ApplyAsync(

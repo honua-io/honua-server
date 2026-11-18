@@ -33,6 +33,9 @@ public sealed record ObjectStorageConnection
 
     public string? RoleArn { get; init; }
 
+    // Sent as ExpectedBucketOwner on every S3 call when set, so a bucket owned by another account is refused.
+    public string? ExpectedBucketOwner { get; init; }
+
     // Bound once at create time and never returned by the API or written to logs.
     public string? ExternalId { get; init; }
 
@@ -53,6 +56,9 @@ public sealed record ObjectStorageConnectionSetup
 {
     public required string ExternalId { get; init; }
 
+    // The principal that minted the setup; only it may test or create with the external id.
+    public required string MintedBy { get; init; }
+
     public required string Bucket { get; init; }
 
     public string Prefix { get; init; } = string.Empty;
@@ -70,13 +76,14 @@ public enum ObjectStorageCreateOutcome
 
 public interface IObjectStorageConnectionStore
 {
-    // False when the installation already holds the maximum number of open setups.
-    Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, CancellationToken cancellationToken);
+    // False when the minter or the installation already holds the maximum number of open setups.
+    Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, int maxOpenForMinter, CancellationToken cancellationToken);
 
     // Returns the setup only while it is unexpired and unconsumed.
     Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken);
 
-    // Consumes the matching open setup and inserts the connection in one transaction.
+    // Consumes the open setup minted by connection.CreatedBy for the same bucket and prefix, and inserts
+    // the connection, in one transaction.
     Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection connection, CancellationToken cancellationToken);
 
     Task<ObjectStorageConnection?> GetAsync(Guid id, CancellationToken cancellationToken);
@@ -146,4 +153,25 @@ public sealed class ObjectStorageConnectionOptions
     public string? TrustedPrincipalArn { get; set; }
 
     public TimeSpan SetupLifetime { get; set; } = TimeSpan.FromHours(24);
+
+    // Open setups one principal may hold at once; the installation-wide cap still applies.
+    public int MaxOpenSetupsPerPrincipal { get; set; } = 5;
+
+    public ObjectStorageBuiltInOptions BuiltIn { get; set; } = new();
+}
+
+// Built-in connections read the installation's own bucket with the task identity, so they are off by
+// default and limited to folders the operator lists. Server-written folders are never exposed.
+public sealed class ObjectStorageBuiltInOptions
+{
+    public bool Enabled { get; set; }
+
+    // Folders under FileStorage:AwsS3:KeyPrefix to show as "Installation data"; none means no data connection.
+    public IList<string> DataPrefixes { get; } = [];
+
+    // Shows the public PMTiles publish prefix as a read-only connection.
+    public bool PublicFiles { get; set; }
+
+    // Account that must own the data bucket (12 digits); built-ins stay off without it.
+    public string? ExpectedBucketOwner { get; set; }
 }

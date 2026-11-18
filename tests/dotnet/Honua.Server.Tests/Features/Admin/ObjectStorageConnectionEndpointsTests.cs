@@ -23,13 +23,13 @@ public sealed class ObjectStorageConnectionEndpointsTests(ObjectStorageConnectio
     private const string RoleArn = "arn:aws:iam::123456789012:role/honua-connection-imports";
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/connections/object-storage/setup")]
+    [Endpoint("POST /api/v1/admin/connections/object-storage/setup")]
     public async Task Setup_MintsADistinctExternalIdEachTime()
     {
         using var client = await host.ClientAsync();
 
-        var first = await DataAsync(await client.GetAsync("/api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels"));
-        var second = await DataAsync(await client.GetAsync("/api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels"));
+        var first = await DataAsync(await client.PostAsync("/api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels", content: null));
+        var second = await DataAsync(await client.PostAsync("/api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels", content: null));
 
         first.GetProperty("externalId").GetString().Should().MatchRegex("^[0-9a-f]{64}$");
         second.GetProperty("externalId").GetString().Should().NotBe(first.GetProperty("externalId").GetString());
@@ -38,13 +38,24 @@ public sealed class ObjectStorageConnectionEndpointsTests(ObjectStorageConnectio
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/connections/object-storage/setup")]
+    [Endpoint("POST /api/v1/admin/connections/object-storage/setup")]
+    public async Task Setup_IsNotAvailableOverGet()
+    {
+        using var client = await host.ClientAsync();
+
+        using var response = await client.GetAsync("/api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels");
+
+        response.StatusCode.Should().BeOneOf([HttpStatusCode.MethodNotAllowed, HttpStatusCode.NotFound], "minting stores state, so it is never a GET");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections/object-storage/setup")]
     public async Task Setup_RefusesAnInvalidBucketOrPrefix()
     {
         using var client = await host.ClientAsync();
 
-        using var badBucket = await client.GetAsync("/api/v1/admin/connections/object-storage/setup?bucket=192.168.0.1");
-        using var badPrefix = await client.GetAsync("/api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=../x");
+        using var badBucket = await client.PostAsync("/api/v1/admin/connections/object-storage/setup?bucket=192.168.0.1", content: null);
+        using var badPrefix = await client.PostAsync("/api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=../x", content: null);
 
         badBucket.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         badPrefix.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -163,7 +174,7 @@ public sealed class ObjectStorageConnectionEndpointsTests(ObjectStorageConnectio
 
     private static async Task<string> MintAsync(HttpClient client)
     {
-        var setup = await DataAsync(await client.GetAsync("/api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels/"));
+        var setup = await DataAsync(await client.PostAsync("/api/v1/admin/connections/object-storage/setup?bucket=customer-imports&prefix=parcels/", content: null));
         return setup.GetProperty("externalId").GetString()!;
     }
 

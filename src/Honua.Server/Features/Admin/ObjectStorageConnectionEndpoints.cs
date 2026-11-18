@@ -32,12 +32,11 @@ internal static class ObjectStorageConnectionEndpoints
             .WithTags("Admin", "Secure Connections")
             .RequireAdminAuthorization();
 
-        // Each call mints a new external id, so a cached GET would hand the same id out twice.
-        group.MapGet("/object-storage/setup", HandleSetupAsync)
-            .WithName("GetObjectStorageConnectionSetup")
-            .WithDisplayName("Get Object Storage Connection Setup")
-            .CacheOutput(policy => policy.NoCache())
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        // Each call mints and stores a new external id bound to the caller, so it is a POST.
+        group.MapPost("/object-storage/setup", HandleSetupAsync)
+            .WithName("CreateObjectStorageConnectionSetup")
+            .WithDisplayName("Create Object Storage Connection Setup")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapGet("/{id:guid}/objects", HandleBrowseAsync)
             .WithName("ListConnectionObjects")
@@ -45,17 +44,17 @@ internal static class ObjectStorageConnectionEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
-    // Mints a single-use external id for one bucket and prefix. The id is returned once and never logged.
+    // Mints a single-use external id for one bucket and prefix, bound to the caller. The id is returned once and never logged.
     private static async Task<IResult> HandleSetupAsync(
         [FromQuery] string? bucket,
         [FromQuery] string? prefix,
         HttpContext context)
     {
         context.Response.Headers.CacheControl = "no-store";
-        var normalized = ObjectStoragePolicy.NormalizePrefix(prefix);
+        var normalized = ObjectStoragePolicy.NormalizeConnectionPrefix(prefix);
         if (!ObjectStoragePolicy.IsValidBucketName(bucket) || normalized is null)
         {
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("A valid S3 bucket name and a plain relative prefix are required."));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("A valid S3 bucket name and a plain relative prefix of at most 256 characters are required."));
         }
 
         var services = context.RequestServices;
@@ -68,11 +67,12 @@ internal static class ObjectStorageConnectionEndpoints
         var setup = new ObjectStorageConnectionSetup
         {
             ExternalId = ObjectStoragePolicy.NewExternalId(),
+            MintedBy = context.GetUserIdentity(),
             Bucket = bucket!,
             Prefix = normalized,
             ExpiresAt = services.GetRequiredService<TimeProvider>().GetUtcNow() + options.SetupLifetime,
         };
-        if (!await store.SaveSetupAsync(setup, context.RequestAborted).ConfigureAwait(false))
+        if (!await store.SaveSetupAsync(setup, options.MaxOpenSetupsPerPrincipal, context.RequestAborted).ConfigureAwait(false))
         {
             return TypedResults.Json(ApiResponse<object>.Failure(TooManySetupsMessage), statusCode: StatusCodes.Status429TooManyRequests);
         }

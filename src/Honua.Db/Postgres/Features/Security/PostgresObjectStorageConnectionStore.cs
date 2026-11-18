@@ -29,30 +29,51 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
         _setups = SchemaSearchPath.QualifyTable("object_storage_connection_setups", schemaName);
     }
 
-    public async Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, CancellationToken cancellationToken)
+    public async Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, int maxOpenForMinter, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(setup);
         var sql = $"""
             WITH pruned AS (
                 DELETE FROM {_setups} WHERE consumed_at IS NULL AND expires_at <= clock_timestamp()
+            ), open_setups AS (
+                SELECT minted_by FROM {_setups} WHERE consumed_at IS NULL AND expires_at > clock_timestamp()
             )
-            INSERT INTO {_setups} (external_id, bucket, prefix, expires_at)
-            SELECT @external_id, @bucket, @prefix, @expires_at
-            WHERE (SELECT count(*) FROM {_setups} WHERE consumed_at IS NULL AND expires_at > clock_timestamp()) < @max_open;
+            INSERT INTO {_setups} (external_id, minted_by, bucket, prefix, expires_at)
+            SELECT @external_id, @minted_by, @bucket, @prefix, @expires_at
+            WHERE (SELECT count(*) FROM open_setups) < @max_open
+              AND (SELECT count(*) FROM open_setups WHERE minted_by = @minted_by) < @max_open_for_minter;
             """;
-        await using var command = _dataSource.CreateCommand(sql);
-        command.Parameters.AddWithValue("external_id", NpgsqlDbType.Text, setup.ExternalId);
-        command.Parameters.AddWithValue("bucket", NpgsqlDbType.Text, setup.Bucket);
-        command.Parameters.AddWithValue("prefix", NpgsqlDbType.Text, setup.Prefix);
-        command.Parameters.AddWithValue("expires_at", NpgsqlDbType.TimestampTz, setup.ExpiresAt);
-        command.Parameters.AddWithValue("max_open", NpgsqlDbType.Bigint, (long)MaxOpenSetups);
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
+        await using var db = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await db.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // Taken in its own statement so the counts below see every mint that committed before it: two concurrent
+        // requests cannot both pass the caps.
+        await using (var lockCommand = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended('honua.object_storage_connection_setups', 0))", db, transaction))
+        {
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        int inserted;
+        await using (var command = new NpgsqlCommand(sql, db, transaction))
+        {
+            command.Parameters.AddWithValue("external_id", NpgsqlDbType.Text, setup.ExternalId);
+            command.Parameters.AddWithValue("minted_by", NpgsqlDbType.Text, setup.MintedBy);
+            command.Parameters.AddWithValue("bucket", NpgsqlDbType.Text, setup.Bucket);
+            command.Parameters.AddWithValue("prefix", NpgsqlDbType.Text, setup.Prefix);
+            command.Parameters.AddWithValue("expires_at", NpgsqlDbType.TimestampTz, setup.ExpiresAt);
+            command.Parameters.AddWithValue("max_open", NpgsqlDbType.Bigint, (long)MaxOpenSetups);
+            command.Parameters.AddWithValue("max_open_for_minter", NpgsqlDbType.Bigint, (long)maxOpenForMinter);
+            inserted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        return inserted == 1;
     }
 
     public async Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT external_id, bucket, prefix, expires_at FROM {_setups}
+            SELECT external_id, minted_by, bucket, prefix, expires_at FROM {_setups}
             WHERE external_id = @external_id AND consumed_at IS NULL AND expires_at > clock_timestamp()
             """;
         await using var command = _dataSource.CreateCommand(sql);
@@ -66,9 +87,10 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
         return new ObjectStorageConnectionSetup
         {
             ExternalId = reader.GetString(0),
-            Bucket = reader.GetString(1),
-            Prefix = reader.GetString(2),
-            ExpiresAt = reader.GetFieldValue<DateTimeOffset>(3),
+            MintedBy = reader.GetString(1),
+            Bucket = reader.GetString(2),
+            Prefix = reader.GetString(3),
+            ExpiresAt = reader.GetFieldValue<DateTimeOffset>(4),
         };
     }
 
@@ -135,7 +157,7 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
-    // Single use: only an unexpired, unconsumed setup minted for the same bucket and prefix is accepted.
+    // Single use: only an unexpired, unconsumed setup minted by the creator for the same bucket and prefix is accepted.
     private async Task<bool> ConsumeSetupAsync(
         NpgsqlTransaction transaction,
         ObjectStorageConnection connection,
@@ -143,11 +165,12 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
     {
         var sql = $"""
             UPDATE {_setups} SET consumed_at = clock_timestamp()
-            WHERE external_id = @external_id AND bucket = @bucket AND prefix = @prefix
+            WHERE external_id = @external_id AND minted_by = @minted_by AND bucket = @bucket AND prefix = @prefix
               AND consumed_at IS NULL AND expires_at > clock_timestamp()
             """;
         await using var command = new NpgsqlCommand(sql, transaction.Connection, transaction);
         command.Parameters.AddWithValue("external_id", NpgsqlDbType.Text, connection.ExternalId ?? string.Empty);
+        command.Parameters.AddWithValue("minted_by", NpgsqlDbType.Text, connection.CreatedBy);
         command.Parameters.AddWithValue("bucket", NpgsqlDbType.Text, connection.Bucket);
         command.Parameters.AddWithValue("prefix", NpgsqlDbType.Text, connection.Prefix);
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;

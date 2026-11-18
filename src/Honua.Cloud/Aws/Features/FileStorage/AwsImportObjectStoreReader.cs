@@ -22,8 +22,14 @@ internal sealed partial class AwsImportObjectStoreReader(
         using var lease = await clients.LeaseAsync(location.Connection, cancellationToken).ConfigureAwait(false);
         try
         {
-            var response = await lease.Client.GetObjectMetadataAsync(location.Bucket, location.Key, cancellationToken)
-                .ConfigureAwait(false);
+            var response = await lease.Client.GetObjectMetadataAsync(
+                new GetObjectMetadataRequest
+                {
+                    BucketName = location.Bucket,
+                    Key = location.Key,
+                    ExpectedBucketOwner = location.Connection.ExpectedBucketOwner,
+                },
+                cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(response.ETag))
             {
                 throw ImportObjectStoreException.Changed("The object did not return an ETag.");
@@ -65,6 +71,7 @@ internal sealed partial class AwsImportObjectStoreReader(
             {
                 BucketName = location.Bucket,
                 Key = location.Key,
+                ExpectedBucketOwner = location.Connection.ExpectedBucketOwner,
                 EtagToMatch = etag,
             }, cancellationToken).ConfigureAwait(false);
             return new ResponseBody(response, lease.Detach());

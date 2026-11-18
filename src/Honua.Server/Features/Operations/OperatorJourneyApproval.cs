@@ -7,10 +7,10 @@ namespace Honua.Server.Features.Operations;
 
 internal static class OperatorJourneyApproval
 {
-    // Connection create, update and delete always file a proposal for operator approval.
+    // Connection create, update and delete, and imports from a connection, always file a proposal for
+    // operator approval; connections carry no per-principal grant, so a person approves each read.
     public static bool IsDirectExecute(string operationId) => operationId is
-        "admin.import.upload-url" or
-        "admin.import.upload-object";
+        "admin.import.upload-url";
 
     public static OperationApprovalModel ForMutation(string operationId, bool mutating) =>
         mutating && !IsDirectExecute(operationId)

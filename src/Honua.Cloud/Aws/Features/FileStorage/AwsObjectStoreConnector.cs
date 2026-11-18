@@ -26,7 +26,7 @@ internal sealed class AwsObjectStoreConnector(AwsObjectStoreClientFactory client
         {
             using var lease = await clients.LeaseAsync(connection, cancellationToken).ConfigureAwait(false);
             var location = await RunAsync(lease, connection, client => client.GetBucketLocationAsync(
-                new GetBucketLocationRequest { BucketName = connection.Bucket },
+                new GetBucketLocationRequest { BucketName = connection.Bucket, ExpectedBucketOwner = connection.ExpectedBucketOwner },
                 cancellationToken)).ConfigureAwait(false);
             var actualRegion = BucketRegion(location.Location?.Value);
             if (!string.Equals(actualRegion, connection.Region, StringComparison.Ordinal))
@@ -35,7 +35,13 @@ internal sealed class AwsObjectStoreConnector(AwsObjectStoreClientFactory client
             }
 
             await RunAsync(lease, connection, client => client.ListObjectsV2Async(
-                new ListObjectsV2Request { BucketName = connection.Bucket, Prefix = connection.Prefix, MaxKeys = 1 },
+                new ListObjectsV2Request
+                {
+                    BucketName = connection.Bucket,
+                    ExpectedBucketOwner = connection.ExpectedBucketOwner,
+                    Prefix = connection.Prefix,
+                    MaxKeys = 1,
+                },
                 cancellationToken)).ConfigureAwait(false);
             return new ObjectStorageTestResult { IsHealthy = true, Message = "Connected. The role can list the connection prefix." };
         }
@@ -54,6 +60,7 @@ internal sealed class AwsObjectStoreConnector(AwsObjectStoreClientFactory client
             new ListObjectsV2Request
             {
                 BucketName = connection.Bucket,
+                ExpectedBucketOwner = connection.ExpectedBucketOwner,
                 Prefix = request.Prefix,
                 Delimiter = "/",
                 MaxKeys = PageSize,
@@ -63,7 +70,7 @@ internal sealed class AwsObjectStoreConnector(AwsObjectStoreClientFactory client
         var objects = (page.S3Objects ?? [])
             .Where(item => item.Key != request.Prefix && ObjectStoragePolicy.IsKeyUnderPrefix(connection.Prefix, item.Key))
             .ToList();
-        var kinds = await SniffAsync(new SniffTarget(lease.Client, connection.Bucket), objects, cancellationToken).ConfigureAwait(false);
+        var kinds = await SniffAsync(new SniffTarget(lease.Client, connection.Bucket, connection.ExpectedBucketOwner), objects, cancellationToken).ConfigureAwait(false);
         return new ObjectStorageBrowseResult
         {
             Bucket = connection.Bucket,
@@ -102,6 +109,7 @@ internal sealed class AwsObjectStoreConnector(AwsObjectStoreClientFactory client
             using var response = await target.Client.GetObjectAsync(new GetObjectRequest
             {
                 BucketName = target.Bucket,
+                ExpectedBucketOwner = target.ExpectedBucketOwner,
                 Key = key,
                 ByteRange = new ByteRange(0, ObjectStorageObjectKinds.SniffBytes - 1),
             }, cancellationToken).ConfigureAwait(false);
@@ -174,5 +182,5 @@ internal sealed class AwsObjectStoreConnector(AwsObjectStoreClientFactory client
 
     private static ObjectStorageTestResult Unhealthy(string message) => new() { IsHealthy = false, Message = message };
 
-    private sealed record SniffTarget(IAmazonS3 Client, string Bucket);
+    private sealed record SniffTarget(IAmazonS3 Client, string Bucket, string? ExpectedBucketOwner);
 }

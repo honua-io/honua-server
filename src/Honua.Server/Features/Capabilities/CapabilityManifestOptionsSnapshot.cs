@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Import.ObjectStore;
+using Honua.Core.Features.ObjectStorage;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane;
@@ -45,11 +46,13 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IJobQueue? jobQueue = null,
         Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null,
         IImportObjectStoreReader? objectStoreReader = null,
-        IOperationProposalStore? proposalStore = null)
+        IOperationProposalStore? proposalStore = null,
+        IObjectStorageConnectionResolver? objectStorageConnections = null)
     {
         BackgroundImportRunner = backgroundImportRunner;
-        // Object storage import is reachable through connections whenever this host can read S3.
+        // This host can read S3; the manifest also requires at least one connection.
         ObjectStoreConfigured = objectStoreReader is not null;
+        ObjectStorageConnections = objectStorageConnections;
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
         ArgumentNullException.ThrowIfNull(realtimeLimits);
@@ -95,6 +98,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
     public Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? BackgroundImportRunner { get; }
 
     public bool ObjectStoreConfigured { get; }
+
+    public IObjectStorageConnectionResolver? ObjectStorageConnections { get; }
 
     public LimitsOptions Limits { get; }
 

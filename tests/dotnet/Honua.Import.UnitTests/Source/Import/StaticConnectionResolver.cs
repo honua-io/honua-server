@@ -22,8 +22,9 @@ internal sealed class StaticConnectionResolver(params ObjectStorageConnection[] 
     };
 
     private readonly ObjectStorageConnectionResolver _inner = new(
-        new StaticMonitor(new CloudStorageOptions()),
-        new Store(connections));
+        new StaticMonitor<CloudStorageOptions>(new()),
+        new StaticMonitor<ObjectStorageConnectionOptions>(new()),
+        store: new Store(connections));
 
     public Task<IReadOnlyList<ObjectStorageConnection>> ListAsync(CancellationToken cancellationToken)
         => _inner.ListAsync(cancellationToken);
@@ -34,18 +35,18 @@ internal sealed class StaticConnectionResolver(params ObjectStorageConnection[] 
     public Task<ObjectStorageResolution> ResolveObjectAsync(Guid connectionId, string? key, CancellationToken cancellationToken)
         => _inner.ResolveObjectAsync(connectionId, key, cancellationToken);
 
-    private sealed class StaticMonitor(CloudStorageOptions value) : IOptionsMonitor<CloudStorageOptions>
+    private sealed class StaticMonitor<T>(T value) : IOptionsMonitor<T>
     {
-        public CloudStorageOptions CurrentValue => value;
+        public T CurrentValue => value;
 
-        public CloudStorageOptions Get(string? name) => value;
+        public T Get(string? name) => value;
 
-        public IDisposable? OnChange(Action<CloudStorageOptions, string?> listener) => null;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 
     private sealed class Store(ObjectStorageConnection[] connections) : IObjectStorageConnectionStore
     {
-        public Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, CancellationToken cancellationToken)
+        public Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, int maxOpenForMinter, CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
         public Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken)

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
 using Microsoft.Extensions.Options;
@@ -42,11 +43,19 @@ public interface IObjectStorageConnectionResolver
 
 public sealed class ObjectStorageConnectionResolver(
     IOptionsMonitor<CloudStorageOptions> storageOptions,
+    IOptionsMonitor<ObjectStorageConnectionOptions> connectionOptions,
+    IOptionsMonitor<GeoprocessingOutputStagingOptions>? geoprocessingOutputs = null,
     IObjectStorageConnectionStore? store = null) : IObjectStorageConnectionResolver
 {
+    private IReadOnlyList<ObjectStorageConnection> BuiltIns()
+        => ObjectStorageBuiltInConnections.From(
+            storageOptions.CurrentValue,
+            connectionOptions.CurrentValue.BuiltIn,
+            geoprocessingOutputs?.CurrentValue.KeyPrefix is { } gp ? [gp] : []);
+
     public async Task<IReadOnlyList<ObjectStorageConnection>> ListAsync(CancellationToken cancellationToken)
     {
-        var builtIns = ObjectStorageBuiltInConnections.From(storageOptions.CurrentValue);
+        var builtIns = BuiltIns();
         if (store is null)
         {
             return builtIns;
@@ -58,7 +67,7 @@ public sealed class ObjectStorageConnectionResolver(
 
     public async Task<ObjectStorageConnection?> FindAsync(Guid connectionId, CancellationToken cancellationToken)
     {
-        var builtIn = ObjectStorageBuiltInConnections.From(storageOptions.CurrentValue)
+        var builtIn = BuiltIns()
             .FirstOrDefault(connection => connection.Id == connectionId);
         if (builtIn is not null || store is null)
         {
@@ -101,46 +110,83 @@ public sealed class ObjectStorageConnectionResolver(
     }
 }
 
-// The installation's own data bucket and public publish prefix, shown as read-only connections.
-// Backup, audit and configuration storage is never exposed this way.
+// The installation's own bucket, shown as read-only connections only when the operator opts in
+// (Connections:ObjectStorage:BuiltIn). Each data connection covers one listed folder; folders the server
+// writes (imports, exports, audit, geoprocessing outputs, studio deliverables, published tiles) are refused.
 public static class ObjectStorageBuiltInConnections
 {
     public const string DataRole = "data";
 
     public const string PublicRole = "public";
 
-    public static IReadOnlyList<ObjectStorageConnection> From(CloudStorageOptions options)
+    // Relative to FileStorage:AwsS3:KeyPrefix. The configured geoprocessing and PMTiles prefixes are added.
+    private static readonly string[] ServerFolders =
+        ["imports/", "exports/", "publications/", "audit/", "gp/", "studio-deliverables/", "custom-code/", "pmtiles/"];
+
+    public static IReadOnlyList<ObjectStorageConnection> From(CloudStorageOptions storage, ObjectStorageBuiltInOptions builtIn)
+        => From(storage, builtIn, extraServerFolders: []);
+
+    public static IReadOnlyList<ObjectStorageConnection> From(
+        CloudStorageOptions storage,
+        ObjectStorageBuiltInOptions builtIn,
+        IEnumerable<string> extraServerFolders)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        var s3 = options.AwsS3;
-        if (options.Provider != CloudStorageProvider.AwsS3
-            || s3 is null
-            || !ObjectStoragePolicy.IsValidBucketName(s3.BucketName)
-            || !ObjectStoragePolicy.IsKnownRegion(s3.Region)
-            || ObjectStoragePolicy.NormalizePrefix(s3.KeyPrefix) is not { } dataPrefix)
+        ArgumentNullException.ThrowIfNull(storage);
+        ArgumentNullException.ThrowIfNull(builtIn);
+        ArgumentNullException.ThrowIfNull(extraServerFolders);
+        if (!IsEligible(storage, builtIn) || ObjectStoragePolicy.NormalizePrefix(storage.AwsS3!.KeyPrefix) is not { } root)
         {
             return [];
         }
 
-        var data = BuiltIn(DataRole, s3, dataPrefix);
-        if (options.PMTilesPublish.UrlStrategy != PMTilesUrlStrategy.PublicUrl
-            || ObjectStoragePolicy.NormalizePrefix(dataPrefix + options.PMTilesPublish.KeyPrefix) is not { } publicPrefix
-            || publicPrefix == dataPrefix)
+        var s3 = storage.AwsS3;
+        var reserved = ServerFolders.Concat(extraServerFolders).Append(storage.PMTilesPublish.KeyPrefix)
+            .Select(ObjectStoragePolicy.NormalizePrefix)
+            .Where(folder => !string.IsNullOrEmpty(folder))
+            .Select(folder => root + folder)
+            .ToList();
+        var connections = builtIn.DataPrefixes
+            .Select(ObjectStoragePolicy.NormalizePrefix)
+            .Where(folder => !string.IsNullOrEmpty(folder) && !reserved.Exists(server => Overlaps(server, root + folder)))
+            .Select(folder => root + folder)
+            .Distinct(StringComparer.Ordinal)
+            .Select(prefix => BuiltIn(DataRole, s3, prefix, builtIn.ExpectedBucketOwner!))
+            .ToList();
+        if (builtIn.PublicFiles
+            && storage.PMTilesPublish.UrlStrategy == PMTilesUrlStrategy.PublicUrl
+            && ObjectStoragePolicy.NormalizePrefix(storage.PMTilesPublish.KeyPrefix) is { Length: > 0 } publicFolder)
         {
-            return [data];
+            connections.Add(BuiltIn(PublicRole, s3, root + publicFolder, builtIn.ExpectedBucketOwner!));
         }
 
-        return [data, BuiltIn(PublicRole, s3, publicPrefix)];
+        return connections;
     }
 
-    private static ObjectStorageConnection BuiltIn(string role, AwsS3Options s3, string prefix) => new()
+    // Built-ins use the task identity against real AWS S3 only: an endpoint override or static keys could make
+    // the same bucket name resolve to a bucket someone else owns.
+    private static bool IsEligible(CloudStorageOptions storage, ObjectStorageBuiltInOptions builtIn)
+        => builtIn.Enabled
+            && ObjectStoragePolicy.IsValidAccountId(builtIn.ExpectedBucketOwner)
+            && storage.Provider == CloudStorageProvider.AwsS3
+            && storage.AwsS3 is { } s3
+            && ObjectStoragePolicy.IsValidBucketName(s3.BucketName)
+            && ObjectStoragePolicy.IsKnownRegion(s3.Region)
+            && string.IsNullOrWhiteSpace(s3.ServiceUrl)
+            && string.IsNullOrWhiteSpace(s3.AccessKeyId)
+            && string.IsNullOrWhiteSpace(s3.SecretAccessKey);
+
+    private static bool Overlaps(string first, string second)
+        => first.StartsWith(second, StringComparison.Ordinal) || second.StartsWith(first, StringComparison.Ordinal);
+
+    private static ObjectStorageConnection BuiltIn(string role, AwsS3Options s3, string prefix, string owner) => new()
     {
         Id = ObjectStoragePolicy.BuiltInId(role, s3.BucketName, prefix),
-        Name = role == DataRole ? "Installation data" : "Installation public files",
+        Name = role == DataRole ? $"Installation data ({prefix.TrimEnd('/')})" : "Installation public files",
         Description = "Built in; read-only.",
         Bucket = s3.BucketName,
         Prefix = prefix,
         Region = s3.Region,
+        ExpectedBucketOwner = owner,
         BuiltIn = true,
         CreatedBy = "system",
     };
