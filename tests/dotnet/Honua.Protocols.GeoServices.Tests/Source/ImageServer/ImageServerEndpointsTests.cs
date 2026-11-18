@@ -42,51 +42,12 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
 
     public ImageServerEndpointsTests(DefaultRasterHost defaultHost) => _defaultHost = defaultHost;
 
-    // Borrowing and returning the store restore the seeded catalog under a new revision, so a
-    // response cached under one case's store is never served to another case.
-    public sealed class DefaultRasterHost : SeededMetadataHost
+    public sealed class DefaultRasterHost : SwitchedServiceHost<IRasterStore>
     {
-        private readonly ServiceSwitch<IRasterStore> _rasterStores;
-        private readonly IRasterStore _defaultStore;
-
         public DefaultRasterHost()
-            : this(ServiceSwitch<IRasterStore>.Create(CreateRasterStoreSubstitute()))
+            : base(CreateRasterStoreSubstitute())
         {
         }
-
-        private DefaultRasterHost(ServiceSwitch<IRasterStore> rasterStores)
-            : base(new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStores.Service)))
-        {
-            _rasterStores = rasterStores;
-            _defaultStore = rasterStores.Target;
-        }
-
-        public async Task<RasterStoreLease> BorrowAsync(IRasterStore rasterStore)
-        {
-            _rasterStores.Target = rasterStore;
-            await RestoreSeededStateAsync();
-            return new RasterStoreLease(this);
-        }
-
-        internal async ValueTask ReturnAsync()
-        {
-            _rasterStores.Target = _defaultStore;
-            await RestoreSeededStateAsync();
-        }
-    }
-
-    public sealed class RasterStoreLease : IAsyncDisposable
-    {
-        private readonly DefaultRasterHost _host;
-
-        internal RasterStoreLease(DefaultRasterHost host) => _host = host;
-
-        public HttpClient Client => _host.Application.Client;
-
-        public T GetService<T>()
-            where T : notnull => _host.Application.GetService<T>();
-
-        public ValueTask DisposeAsync() => _host.ReturnAsync();
     }
 
     private const int TestLayerId = 0;
@@ -480,7 +441,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
         }
     }
 
-    private Task<RasterStoreLease> UseRasterStoreAsync(IRasterStore rasterStore)
+    private Task<SwitchedServiceLease> UseRasterStoreAsync(IRasterStore rasterStore)
         => _defaultHost.BorrowAsync(rasterStore);
 
     [IntegrationTest]

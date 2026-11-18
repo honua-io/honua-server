@@ -6,9 +6,10 @@ using System.Runtime.ExceptionServices;
 
 namespace Honua.TestKit;
 
-// Registered in place of a service, the switch forwards every call to its current target, so one
-// shared host can serve cases that each bring their own substitute for that service. The owner
-// serializes those cases and points the switch back at its default target between them.
+// Created with DispatchProxy.Create<T, ServiceSwitch<T>>() and registered in place of a service,
+// the switch forwards every call to its current target, so one shared host can serve cases that
+// each bring their own substitute for that service. The owner serializes those cases and points
+// the switch back at its default target between them.
 public class ServiceSwitch<T> : DispatchProxy
     where T : class
 {
@@ -22,14 +23,6 @@ public class ServiceSwitch<T> : DispatchProxy
 
     // The proxy itself, typed as the service it stands in for.
     public T Service => (T)(object)this;
-
-    public static ServiceSwitch<T> Create(T initialTarget)
-    {
-        var service = Create<T, ServiceSwitch<T>>();
-        var serviceSwitch = (ServiceSwitch<T>)(object)service;
-        serviceSwitch.Target = initialTarget;
-        return serviceSwitch;
-    }
 
     protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
     {
