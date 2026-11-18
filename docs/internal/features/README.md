@@ -22,7 +22,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Package validation and read-only preview planning for generated plans, publish candidates, workflows, ETL candidates, app packages, and map packages through one shared response contract for admin HTTP, MCP, SDK, CI, and generated-app clients.
 - Spec workspace endpoints for validate, plan, apply, cancel, artifacts, and grounding helpers.
 - Runtime licensing loads offline Ed25519-signed JSON envelopes, publishes active edition/entitlement status through admin and health surfaces, and gates paid features by entitlement key with HTTP 402 or gRPC `FAILED_PRECONDITION`.
-- Configuration discovery, production monitoring, performance metrics, query-cache stats, health endpoints, OpenTelemetry, structured logs, Redis/in-memory caching, and output caching.
+- Configuration discovery, production monitoring, performance metrics, query-cache stats, health endpoints, OpenTelemetry, structured logs, per-node in-memory caching, and output caching.
 
 ## 3D and Scene Status
 

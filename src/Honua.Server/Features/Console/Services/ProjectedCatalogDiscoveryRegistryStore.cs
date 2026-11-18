@@ -21,34 +21,34 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
     ITenantContext tenantContext,
     IHttpContextAccessor httpContextAccessor) : ICatalogDiscoveryRegistryStore
 {
-    public async Task<CatalogDiscoveryRegistry?> GetRegistryAsync(string workspaceId, CancellationToken cancellationToken = default)
+    public async Task<CatalogDiscoveryRegistry?> GetRegistryAsync(string environmentId, CancellationToken cancellationToken = default)
     {
-        var projection = await ReadAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+        var projection = await ReadAsync(environmentId, cancellationToken).ConfigureAwait(false);
         return projection is null ? null : new CatalogDiscoveryRegistry
         {
-            WorkspaceId = projection.Workspace.Id,
-            WorkspaceName = projection.Workspace.DisplayName ?? projection.Workspace.Id,
+            EnvironmentId = projection.Environment.Id,
+            EnvironmentName = projection.Environment.DisplayName ?? projection.Environment.Id,
             PublicHost = projection.BaseUrl,
             Endpoints = projection.Entries.Count == 0 ? [] : [Endpoint(projection)],
             AutoDefaultCount = projection.Entries.Count == 0 ? 0 : 1,
         };
     }
 
-    public async Task<CatalogEndpointDetail?> GetEndpointAsync(string workspaceId, string endpointKey, CancellationToken cancellationToken = default)
+    public async Task<CatalogEndpointDetail?> GetEndpointAsync(string environmentId, string endpointKey, CancellationToken cancellationToken = default)
     {
         if (!string.Equals(endpointKey, CatalogDialects.Esri, StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        var projection = await ReadAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+        var projection = await ReadAsync(environmentId, cancellationToken).ConfigureAwait(false);
         return projection is null || projection.Entries.Count == 0 ? null : new CatalogEndpointDetail
         {
             Endpoint = Endpoint(projection),
             AutoMirror = true,
             Items = projection.Entries.Select(entry => new CatalogEndpointItem
             {
-                Id = ItemId(projection.Workspace, entry),
+                Id = ItemId(projection.Environment, entry),
                 Title = entry.DisplayName,
                 FromService = entry.DisplayName,
                 Resource = entry.Url,
@@ -56,23 +56,23 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
         };
     }
 
-    public async Task<CatalogItem?> GetItemAsync(string workspaceId, string endpointKey, string itemId, CancellationToken cancellationToken = default)
+    public async Task<CatalogItem?> GetItemAsync(string environmentId, string endpointKey, string itemId, CancellationToken cancellationToken = default)
     {
         if (!string.Equals(endpointKey, CatalogDialects.Esri, StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        var projection = await ReadAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+        var projection = await ReadAsync(environmentId, cancellationToken).ConfigureAwait(false);
         if (projection is null)
         {
             return null;
         }
 
-        var entry = projection.Entries.FirstOrDefault(entry => string.Equals(ItemId(projection.Workspace, entry), itemId, StringComparison.OrdinalIgnoreCase));
+        var entry = projection.Entries.FirstOrDefault(entry => string.Equals(ItemId(projection.Environment, entry), itemId, StringComparison.OrdinalIgnoreCase));
         return entry is null ? null : new CatalogItem
         {
-            Id = ItemId(projection.Workspace, entry),
+            Id = ItemId(projection.Environment, entry),
             Title = entry.DisplayName,
             AutoMirror = true,
             Live = true,
@@ -94,28 +94,28 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
         };
     }
 
-    private async Task<WorkspaceProjection?> ReadAsync(string workspaceId, CancellationToken cancellationToken)
+    private async Task<EnvironmentProjection?> ReadAsync(string environmentId, CancellationToken cancellationToken)
     {
-        var workspace = options.Value.Workspaces.FirstOrDefault(value => string.Equals(value.Id, workspaceId, StringComparison.OrdinalIgnoreCase));
+        var environment = options.Value.Environments.FirstOrDefault(value => string.Equals(value.Id, environmentId, StringComparison.OrdinalIgnoreCase));
         var context = httpContextAccessor.HttpContext;
-        if (workspace is null || context is null ||
+        if (environment is null || context is null ||
             !tenantContext.RequireTenantId(out var tenantId, out _) ||
-            !string.Equals(tenantId, workspace.TenantId, StringComparison.Ordinal))
+            !string.Equals(tenantId, environment.TenantId, StringComparison.Ordinal))
         {
             return null;
         }
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var scoped = FilterSnapshot(snapshot, workspace);
+        var scoped = FilterSnapshot(snapshot, environment);
         var entries = await ReadCatalogEntriesAsync(context, scoped).ConfigureAwait(false);
-        return new WorkspaceProjection(workspace, BaseUrlResolver.GetBaseUrl(context), entries);
+        return new EnvironmentProjection(environment, BaseUrlResolver.GetBaseUrl(context), entries);
     }
 
-    internal static MetadataV2GraphSnapshot FilterSnapshot(MetadataV2GraphSnapshot snapshot, CatalogDiscoveryWorkspaceOptions workspace)
+    internal static MetadataV2GraphSnapshot FilterSnapshot(MetadataV2GraphSnapshot snapshot, CatalogDiscoveryEnvironmentOptions environment)
     {
         bool Visible(MetadataV2ObjectMetadata metadata) =>
-            string.Equals(metadata.Namespace, workspace.Namespace, StringComparison.Ordinal) &&
-            MetadataV2TenantVisibility.IsVisibleToTenant(metadata.Tenant, workspace.TenantId);
+            string.Equals(metadata.Namespace, environment.Namespace, StringComparison.Ordinal) &&
+            MetadataV2TenantVisibility.IsVisibleToTenant(metadata.Tenant, environment.TenantId);
 
         var services = snapshot.Graph.Services.Where(service => Visible(service.Metadata)).ToArray();
         var resources = snapshot.Graph.Resources.Where(resource => Visible(resource.Metadata)).ToArray();
@@ -131,7 +131,7 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
         }, snapshot.Etag, snapshot.LoadedAt);
     }
 
-    private static CatalogEndpoint Endpoint(WorkspaceProjection projection) => new()
+    private static CatalogEndpoint Endpoint(EnvironmentProjection projection) => new()
     {
         Key = CatalogDialects.Esri,
         Title = "GeoServices catalog",
@@ -161,12 +161,12 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
 #endif
     }
 
-    private static string ItemId(CatalogDiscoveryWorkspaceOptions workspace, CatalogEntry entry) =>
+    private static string ItemId(CatalogDiscoveryEnvironmentOptions environment, CatalogEntry entry) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            workspace.Id.ToUpperInvariant() + "\0" + workspace.TenantId + "\0" + workspace.Namespace + "\0" + entry.Name + "\0" + entry.Type))).ToLowerInvariant();
+            environment.Id.ToUpperInvariant() + "\0" + environment.TenantId + "\0" + environment.Namespace + "\0" + entry.Name + "\0" + entry.Type))).ToLowerInvariant();
 
     private sealed record CatalogEntry(string Name, string Type, string Url, string DisplayName);
 
-    private sealed record WorkspaceProjection(
-        CatalogDiscoveryWorkspaceOptions Workspace, string BaseUrl, IReadOnlyList<CatalogEntry> Entries);
+    private sealed record EnvironmentProjection(
+        CatalogDiscoveryEnvironmentOptions Environment, string BaseUrl, IReadOnlyList<CatalogEntry> Entries);
 }

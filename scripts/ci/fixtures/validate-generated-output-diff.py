@@ -266,13 +266,13 @@ class WorkflowCompletion(unittest.TestCase):
         ready_only = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
         draft_format = ("always() && !cancelled() && (needs.runner-select.result == 'success' "
                         "|| github.event.pull_request.draft == true)")
-        expected_conditions = {'format': draft_format, 'fast-tests': None, 'pr-gate': None,
-                               'ci-router-validation': ready_only, 'required': 'always()'}
+        expected_conditions = {'format': draft_format, 'fast-tests': None, 'fast-server-tests': None,
+                               'pr-gate': None, 'ci-router-validation': ready_only, 'required': 'always()'}
         for job, condition in expected_conditions.items():
             self.assertEqual(gate['jobs'][job].get('if'), condition, job)
         self.assertEqual(gate['jobs']['required']['name'],
                          "${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}")
-        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'fast-tests', 'format', 'ci-router-validation', 'affected-shards', 'server-test-producer'])
+        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'fast-tests', 'fast-server-tests', 'format', 'ci-router-validation', 'affected-shards', 'server-test-producer'])
         # Evaluate actual Actions expressions for the expensive steps. True and
         # false/absent classification must respectively skip and preserve them.
         for verdict in ('true', 'false', ''):
@@ -290,11 +290,18 @@ class WorkflowCompletion(unittest.TestCase):
                     condition = condition.replace(variable, repr(values[variable]))
                 condition = condition.replace('&&', ' and ').replace('||', ' or ')
                 return eval(condition, {'__builtins__': {}}, {})
-            for job in ('format', 'fast-tests', 'pr-gate'):
+            for job in ('format', 'fast-tests', 'fast-server-tests', 'pr-gate'):
                 for step in gate['jobs'][job]['steps']:
                     if ('dotnet ' in step.get('run', '') or step.get('uses', '').startswith(('./.github/actions/', 'docker/'))
                             or 'scripts/ci/server-boot-smoke.sh' in step.get('run', '')):
-                        self.assertEqual(bool(evaluate(step['if'])), verdict != 'true', step.get('name'))
+                        condition = step.get('if', '')
+                        if job == 'fast-server-tests' and 'generated_only' not in condition:
+                            self.assertEqual(step.get('name'), 'Restore verified managed test outputs')
+                            plan = next(item for item in gate['jobs'][job]['steps'] if item.get('name') == 'Plan server test restore')
+                            self.assertIn("steps.generated-only.outputs.generated_only != 'true'", plan['if'])
+                            self.assertIn("steps.consumer-plan.outputs.producer == 'server'", condition)
+                            continue
+                        self.assertEqual(bool(evaluate(condition)), verdict != 'true', step.get('name'))
         selection = gate['jobs']['affected-shards-select']
         self.assertIn('steps.generated-only.outputs.generated_only', selection['outputs']['skip'])
         for name in ('normalize-derived-artifacts',):
@@ -322,8 +329,8 @@ class WorkflowCompletion(unittest.TestCase):
         import yaml
         gate = yaml.safe_load((ROOT / '.github/workflows/pr-gate.yml').read_text())
         aggregate = next(step for step in gate['jobs']['required']['steps'] if step.get("name") == "Require build, tests, format, CI router validation, and affected shards")['run']
-        keys = ('BUILD_AND_TEST_RESULT', 'FAST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
-                'AFFECTED_SHARDS_RESULT')
+        keys = ('BUILD_AND_TEST_RESULT', 'FAST_RESULT', 'FAST_SERVER_RESULT', 'FORMAT_RESULT',
+                'CI_ROUTER_RESULT', 'AFFECTED_SHARDS_RESULT')
         for key in keys:
             for result, expected in (('success', 0), ('failure', 1), ('skipped', 1), ('cancelled', 1)):
                 env = dict(os.environ, GITHUB_EVENT_NAME='pull_request', SERVER_PRODUCER_RESULT='success',

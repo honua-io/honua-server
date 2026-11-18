@@ -76,7 +76,7 @@ See the [OGC API Coverages Coverage](../../reference/protocols/ogc-apis.md) docu
 - List, poll, and dismiss jobs (`GET /jobs`, `GET /jobs/{jobId}`, `DELETE /jobs/{jobId}`)
 - Retrieve results when available (`GET /jobs/{jobId}/results`)
 
-> **V1 notes**: The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omission selects bounded synchronous execution for processes advertising `sync-execute`; async-only processes remain asynchronous, and `Prefer: respond-async` explicitly requests a durable job. All current execution modes and job lifecycle routes require Redis-backed durable storage (`503` when unavailable). Catalog results honor the execute request's response mode: document mode returns inline value-transmitted outputs, while `"response": "raw"` returns the native representation for synchronous executions and from the results endpoint for asynchronous jobs. The canonical `honua-geoprocessing` plan runner requires document mode and retains its artifact document. See the [OGC API Processes Coverage](../../reference/protocols/ogc-apis.md) for conformance classes, endpoint details, and V1 limitations.
+> **V1 notes**: The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omission selects bounded synchronous execution for processes advertising `sync-execute`; async-only processes remain asynchronous, and `Prefer: respond-async` explicitly requests a durable job. All current execution modes and job lifecycle routes require PostgreSQL-backed durable storage (`503` when unavailable). Catalog results honor the execute request's response mode: document mode returns inline value-transmitted outputs, while `"response": "raw"` returns the native representation for synchronous executions and from the results endpoint for asynchronous jobs. The canonical `honua-geoprocessing` plan runner requires document mode and retains its artifact document. See the [OGC API Processes Coverage](../../reference/protocols/ogc-apis.md) for conformance classes, endpoint details, and V1 limitations.
 
 ---
 
@@ -186,20 +186,19 @@ Studio route without updating the document fails the OpenAPI drift gate.
 > persistence succeeds. The endpoints are part of the
 > supported public interface.
 
-## Form Package API
+## Forms API
 
 **Protocol**: REST API
-**Base URLs**: `/api/v1/admin/forms/packages`, `/api/v1/forms/packages`
-**Authentication**: Admin route authorization for the shipped slice; submissions also require target layer data-editor authorization.
+**Base URLs**: `/api/v1/admin/forms`, `/api/v1/forms`
+**Authentication**: Admin route authorization; submissions also require edit permission on the target Layer.
 
-> **Note**: The Forms contract covers versioned package drafts, validation,
-> immutable publish, reopened drafts, published-package readback, offline-policy
-> discovery, and idempotent JSON-compatible or multipart submissions with attachment outcomes. The
-> bundled `admin-api.json` snapshot does not yet include the Forms routes or schemas, so the
-> response and usage contract is documented in
-> [Form Package API](../../reference/admin-api/forms.md). Offline-policy responses point to
-> the existing FeatureServer replica and FieldCollection mobile sync routes
-> instead of defining a separate form-only sync protocol.
+The Forms contract covers Drafts, validation, immutable Released Versions, reopened
+Drafts, runtime readback, offline-policy discovery, and idempotent JSON or multipart
+submissions with attachment outcomes. The bundled `admin-api.json` snapshot includes
+the authoring routes. See [Forms](../../reference/admin-api/forms.md) for runtime
+routes and response contracts, and the [migration guide](../../reference/control-plane-migration-guide.md#forms-routes-and-operation-names)
+for the route and operation renames. Offline-policy responses link to the existing
+FeatureServer replica and FieldCollection sync routes.
 
 ## Testing the APIs
 

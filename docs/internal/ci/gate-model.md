@@ -271,7 +271,7 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; selected shard consumers run the affected tests that fit the `pr_time_budget` in `.github/ci-shards.json` (shards over 10 measured minutes, or past 45 runner-minutes in total, are deferred to the next trunk run and named in the verdict). Independent Fast/architecture jobs (one per test group, each compiling only its test roots), format, analyzer and CI-router jobs remain required. `required.needs` includes `pr-gate`, `fast-tests`, `format`, `ci-router-validation`, and `affected-shards`. The affected-shard aggregate enforces every selected timing/TRX result before `PR Gate` succeeds. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
+| `pr-gate.yml` | **Required verification context `PR Gate`.** Admission includes tracked-text UTF-8 validation. The affected-scope warnings-as-errors producer publishes pristine, verified managed test outputs and runs the required boot/migration smoke against its canonical host output; selected shard consumers run the affected tests that fit the `pr_time_budget` in `.github/ci-shards.json` (shards over 10 measured minutes, or past 45 runner-minutes in total, are deferred to the next trunk run and named in the verdict). Independent Fast/architecture jobs remain required, one per test group: `architecture` and `unit-fast` compile their own roots, and `server-fast` and `server-governance` restore the producer Server.Tests output and compile it only when that restore is empty. Format, analyzer and CI-router jobs remain required. `required.needs` includes `pr-gate`, `fast-tests`, `fast-server-tests`, `format`, `ci-router-validation`, `affected-shards`, and `server-test-producer`. The affected-shard aggregate enforces every selected timing/TRX result before `PR Gate` succeeds. See the [artifact contract](server-test-binary-artifacts.md) for same-run identity, bounds, rollback and scoped fallback. | None — a required context must never be path-filtered |
 | `review-gate.yml` | **Required admission context `Review Gate`.** Immutable default-branch workflow policy publishes exact-head review evidence from an attesting reviewer (Codex or Claude — see [Attesting reviewers](#attesting-reviewers)) and, in enforce mode, releases one admitted PR Gate rerun. In observe mode it reports its decision without retaining an experiment artifact. Review events arrive through the read-only `review-event-bridge.yml`; no PR-authored workflow has status or Actions write authority. | Drafts skip; every ready PR head requires attestation |
 | `repo-hygiene.yml` | **Required context `repo-hygiene / Repository hygiene`.** Reads the root allowlist and exact gate-input exceptions from the trusted base branch; checks only PR-added paths for scratch, backups, run output, dated history, product samples and unexpected roots. The shared checker is pinned by SHA, runs with read-only permissions and has a five-minute timeout. | None — it must publish on every PR head |
 | `ci.yml` | **No `pull_request` trigger.** Full CI runs twice daily at 07:23 and 13:23 UTC (23:23 and 05:23 Pacific standard time) and through manual dispatch. It covers managed builds, protocol profiles, foundation and server shards, native Worker tests, runtime proofs, architecture checks, JavaScript checks and compatibility. `CI Gate` requires the runtime proof result and appears only on full CI runs. | n/a — not PR-triggered |
@@ -997,8 +997,76 @@ Shard ownership lookups reuse parsed filter syntax in a bounded, process-local c
 
 `--changed-only` is a local feedback mode: stdin routing cases skip only when their complete input closure (router, shard map, jq wrapper and validator infrastructure) is unchanged against the merge base with `origin/trunk`. Staged, unstaged, renamed and untracked inputs count. Unknown base or an ambiguous path runs everything; undeclared fixture input closures also run. CI and GitHub Actions ignore the optimization and always run every fixture.
 
-The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project and the full-coverage architecture collector, whose imported references pull Server.Tests into its graph. The independent architecture path and analyzer jobs retain collector compilation and verification. The shared import-aware project parser rejects any other reverse dependency on Server.Tests. Each producer publishes only the assemblies consumed by selected shards. The final required context directly requires the parallel producer on both pull-request and manual events; the PR-only affected-shards aggregate also checks it for an empty shard matrix. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
+The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project and the full-coverage architecture collector, whose imported references pull Server.Tests into its graph. The independent architecture path and analyzer jobs retain collector compilation and verification. The shared import-aware project parser rejects any other reverse dependency on Server.Tests. The parallel producer publishes the Server.Tests output after every non-docs build, and publishes other managed projects only when a selected shard consumes them. The `fast-server-tests` job restores Server.Tests for `server-fast` and `server-governance` and compiles that project only when the restore is empty. The final required context directly requires the parallel producer on both pull-request and manual events; the PR-only affected-shards aggregate also checks it for an empty shard matrix. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
 Fast-test selection retains every group for linked cross-project inputs and for empty closures unless the governed docs classifier positively proves the diff safe.
+
+### Server.Tests restore for the fast server groups
+
+`server-fast` and `server-governance` run on `fast-server-tests`.
+The `fast-tests` matrix keeps `architecture` and `unit-fast` only.
+Those two groups still compile their own test roots, start with runner select, and do not wait for the Server.Tests producer.
+
+`fast-server-tests` needs `runner-select` and `server-test-producer`.
+It does not need Build and tests.
+The check names stay `PR Gate / Fast and architecture (server-fast)` and `PR Gate / Fast and architecture (server-governance)`.
+Fail-fast is false on both matrices, so one server group does not cancel the other, and a fast-server failure does not cancel architecture or unit-fast.
+The job timeout stays 45 minutes.
+The runner expression matches `fast-tests`.
+It uses `HONUA_HEAVY_RUNNER` when `start_heavy` contains that test group, unless the event comes from a fork.
+A missing `HONUA_HEAVY_RUNNER` stays on `ubuntu-latest`.
+`workflow_dispatch` follows the same expression. This workflow has no `workflow_run` trigger.
+On a draft, `runner-select` is skipped, and `fast-server-tests` is skipped with it because the job has no `always()` condition.
+
+On every producer build that review-first has released, and that is neither docs-only nor generated-only, the producer publishes `tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj` unless `HONUA_MANAGED_TEST_ARTIFACTS` is `false`.
+When the selected-shard project list does not already contain that project, the plan step appends it before publish.
+A pull request that selects no Server.Tests shard still leaves a build for the fast server groups.
+Other managed projects stay published only when a selected shard consumes them.
+
+Each fast server group runs these steps, in order, unless a skip below applies:
+
+1. Await exact-head review. In enforce mode, pull-request attempt 1 exits before checkout.
+2. Check out the head with fetch depth 2.
+3. Classify a generated-only diff, then a docs-only diff.
+4. Select affected fast-test groups with `compute-fast-test-selection.py`.
+5. On a GitHub-hosted runner, free disk in the background.
+6. Set up .NET with `artifact-sdk-version` taken from the producer output `managed-sdk-version`.
+7. Load the flaky-test quarantine snapshot into `HONUA_TEST_QUARANTINE_FILE`.
+8. Plan a one-project consumer for `Honua.Server.Tests` through `managed-test-build.py projects --lane shard` and `partition-managed-producer.py consumer`. The plan file is `artifacts/pr-gate/fast-server-projects.json`.
+9. Restore that project from `needs.server-test-producer.outputs.producer-attempt` when the plan names the server producer and `HONUA_MANAGED_TEST_ARTIFACTS` is not `false`.
+10. Record `restored=true` when the restored project list contains `Honua.Server.Tests`, and `restored=false` otherwise. A missing receipt file is `restored=false`.
+11. Run lean-gate with `phase: test` when `restored=true`. That phase does not compile the project again.
+12. Run lean-gate with `phase: all` when `restored=false`. An empty restore compiles the test root in this job. It does not skip the tests. Artifacts disabled, a missing receipt, and a consumer plan that does not name the server producer are empty restores.
+
+Free disk, .NET setup, the consumer plan, the restore record, and lean-gate are skipped when review-first has not released the job, when the diff is docs-only or generated-only, or when fast-test selection sets that group to `false`.
+The restore action itself runs only when the consumer plan names the server producer.
+Classification, fast-test selection, and the quarantine snapshot still run whenever earlier steps succeeded.
+Unknown selection still runs the group.
+Lean-gate uses `trx-prefix` `pr-fast-<group>`, `build-scope: test-roots`, `run-format: false`, and `run-analyzers: false`.
+`server-governance` sets `prepull-postgis` true. `server-fast` does not.
+Both groups still regenerate the admin parity exports with `--no-build --no-restore` before the tests.
+`phase: test` uses the restored output. `phase: all` has already compiled it.
+Format and analyzers stay off on these groups.
+The analyzer matrix still compiles the architecture collector on its own job.
+In review-first enforce mode, pull-request attempt 2 and later revalidate the exact-head review after lean-gate, before the job reports success.
+That step uses the same script as the producer, `fast-tests`, and the required aggregate.
+Attempt 1 does not reach it: the await step fails the job before checkout.
+
+The required aggregate lists `fast-server-tests` in `needs` next to `fast-tests`.
+`required.needs` is `pr-gate`, `fast-tests`, `fast-server-tests`, `format`, `ci-router-validation`, `affected-shards`, and `server-test-producer`.
+On a ready pull request, and on manual dispatch, the aggregate fails unless `fast-server-tests` is `success`.
+`skipped` is not success there.
+A draft still accepts `success` or `skipped` for this dependency and fails on `failure` or `cancellation`.
+Format must still succeed on a draft.
+The ready context name stays `PR Gate`. A draft still reports `PR Gate (draft)`.
+
+Affected shards still restore Server.Tests only when their own closure consumes it.
+Shard filters, `pr_time_budget`, and the tests each group runs stay as they are.
+The required check names stay `PR Gate` and `PR Gate / Affected shards`.
+
+The split removes the second and third compile of `Honua.Server.Tests` from the fast path.
+The wall clock of a pull request stays bound by whichever remaining job is slowest, often architecture, which still builds its own roots.
+Hosted runner-minutes fall by the compiles that the restore replaces.
+A gate that skips both server groups, or that takes the empty-restore compile path, does not record that saving.
 
 Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` across producer, fast-test and aggregate jobs. The aggregate checks out code only for enforced attempt-2 review validation. Generated-output classification shares `scripts/ci/classify-generated-output.sh`; executable skip policy still comes from the immutable PR base, and uncertainty preserves all checks.
 
@@ -1134,7 +1202,7 @@ tests do not establish a test speedup or resolve the comparable-run evidence gap
 output caching remains opt-in; no cross-phase promotion is authorized by the
 observational sample.
 
-Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. Managed consumers also install the target framework’s .NET and ASP.NET shared runtimes into that private SDK root using the supported runtime bootstrap. The target channel comes from `HonuaTargetFramework`; non-versioned host files are preserved and exact producer SDK identity is verified afterward. This allows a newer producer SDK to execute older target artifacts without major runtime roll-forward or artifact changes. It adds no jobs and changes no required checks. The 12 November baseline aborted net10.0 tests and projection regeneration before execution when only the SDK 11 runtimes were present; recovery timing awaits a fresh eligible gate. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
+Each affected shard selects the SDK and workflow-attempt identity exported by its own managed producer. Managed consumers also install the target framework’s .NET and ASP.NET shared runtimes into that private SDK root using the supported runtime bootstrap. The target channel comes from `HonuaTargetFramework`; non-versioned host files are preserved and exact producer SDK identity is verified afterward. This allows a newer producer SDK to execute older target artifacts without major runtime roll-forward or artifact changes. It adds no jobs and changes no required checks. The 12 November baseline aborted net10.0 tests and projection regeneration before execution when only the SDK 11 runtimes were present; recovery timing awaits a fresh eligible gate. A shard spanning both producers rebuilds its projects locally instead of combining independently resolved SDK outputs. A shard whose whole closure is Honua.Server.Tests starts when the parallel producer finishes. Other closures wait for the main producer in Build and tests. Fast-test selection reads imported build documents through the shared project parser; unresolved imports or linked inputs retain all four groups.
 
 ### Test analyzer compilation roots
 
@@ -1172,6 +1240,17 @@ dispatch never cancels it. Their
 .NET formatter and import cells also run in the PR Gate affected shards.
 Measured on the 120 PRs merged since 9 Nov: GeoArrow 30 to 6 PR runs (4.4 runner
 minutes each), GeoParquet 34 to 15 (10.2 minutes each), about 300 runner minutes.
+
+Export Portolan Check (#8268) is advisory and not required. It runs on ready
+pull requests that touch Exports (paired publication sources and tests, the
+publication descriptor model and schema, `Exports/` folders) or the check itself,
+on one hosted runner. The paired-publish integration test publishes an Export and
+copies its version files to `HONUA_EXPORT_SNAPSHOT_DIR`; the validator pinned in
+`scripts/ci/portolan-pin.v1.json`, the one place the specification version lives,
+checks that copy. Specification findings are reported and never fail the job. A
+failing test, an empty snapshot, a validator crash or a validator that applies a
+different specification than the pin fails it, so a broken check never reads as a
+clean Export. The same test also runs in the PR Gate affected shards.
 
 Docs Link Gate retains its complete PR suite for documentation pages, skills,
 checker and manifest edits, and for every docs file its checkers read
@@ -2296,3 +2375,54 @@ selected PR runs and full trunk runs. No workflow, shard filter, required check,
 aggregate dependency or runner count changes. Paired class and existing-partition
 measurements are collected separately; test-body time excludes class-fixture
 startup and disposal, and does not establish complete CI job-wall savings.
+
+### Admin operations progress host lifetime
+
+`OperationsProgressEndpointsTests` (including its query partial) shares one
+application with in-memory durable job store and queue doubles across every
+case that uses them. Each case still writes progress and jobs under its own new
+operation id and deletes its progress afterwards; the shared queue is drained
+before each case, so the queue-depth assertion stays exact. Cases that replace
+the job store, queue or remote backend keep their private applications and no
+longer start an unused default application as well.
+
+The class stays in Server Features Admin Operations Endpoints on selected PR
+runs and full trunk runs. No workflow, shard filter, required check, aggregate
+dependency or runner count changes. Build-host class 39/39 identical passing
+cases, 391 to 88-92 seconds; existing partition 122/122, 981 to 628 seconds.
+
+### Cross-protocol permission matrix write hosts
+
+`CrossProtocolPermissionMatrixTests` write cases (the FeatureServer/gRPC
+ApplyEdits parity theory and the FeatureServer, OData and OGC Features write
+cases) differ only in the grants that the test role holds. They now share one
+application per write catalog (FeatureServer/OData/OGC and gRPC) instead of
+starting one per case: each case replaces the role's grants before its request,
+cases of a class run one at a time, permissions are resolved per request, and
+the test feature store is created per request, so no grant or edit outlives its
+case. Role names, payloads and every status assertion are unchanged; the two
+layer-scoped read cases keep their own applications.
+
+The class stays split across Security and Authorization 1 and 7 on selected PR
+runs and full trunk runs. No workflow, shard filter, required check, aggregate
+dependency or runner count changes. Build-host class 59/59 identical passing
+cases, 349.6 to 31.7-32.5 seconds.
+
+### Capability manifest and deployment profile host reuse
+
+`CapabilityManifestEndpointTests` cases that need only the default manifest
+configuration now use the class's default application, and cases that differ
+only by the manifest source (registry) or the experimental switch share one
+application per configuration, started on first use. Those cases only read the
+manifest. Cases with any other configuration or replaced services keep their own
+applications. `DeploymentCapabilityProfileIntegrationTests` folder-path cases
+share one application per configured capability (8 cases, 4 applications) with
+the test service moved into the "Public" folder once at start.
+
+The classes stay in Server Features Capabilities on selected PR runs and full
+trunk runs. No workflow, shard filter, required check, aggregate dependency or
+runner count changes. Build-host namespace 100/100 identical passing cases in one
+job: wall 633 to 419-438 seconds; DeploymentCapabilityProfileIntegrationTests
+80.4 to 43.0-43.7 seconds and CapabilityManifestEndpointTests 305.0 to
+225.7-241.8 seconds, while the unchanged classes in the same job also ran
+148.5 to 102-110 seconds, so part of that difference is host load.

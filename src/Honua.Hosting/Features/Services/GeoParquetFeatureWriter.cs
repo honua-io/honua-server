@@ -9,6 +9,7 @@ using System.Text.Json;
 using Apache.Arrow;
 using Apache.Arrow.Types;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Crs;
@@ -215,36 +216,40 @@ public static partial class GeoParquetFeatureWriter
     // return a clean 501 capability response instead of an unhandled 500.
     private static BoundedParquetStream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, GeoParquetLimits limits)
     {
-        var stream = new BoundedParquetStream(OutputByteCap(limits));
+        BoundedParquetStream stream;
         try
         {
-            // Construct and dispose the builder itself explicitly (rather than chaining off
-            // the fluent StoreSchema() return value) so the builder instance is always
-            // disposed even if StoreSchema() were ever changed to return a different object.
-            using var arrowWriterPropertiesBuilder = new ArrowWriterPropertiesBuilder();
-            arrowWriterPropertiesBuilder.StoreSchema();
-            using var arrowWriterProperties = arrowWriterPropertiesBuilder.Build();
-            using var writerPropertiesBuilder = new ParquetSharp.WriterPropertiesBuilder();
-            if (limits.RowsPerRowGroup is int rowsPerRowGroup)
-            {
-                writerPropertiesBuilder.MaxRowGroupLength(rowsPerRowGroup);
-            }
+            stream = new BoundedParquetStream(checked((int)OutputByteCap(limits)));
+        }
+        catch (IOException ex) when (IsStorageFull(ex))
+        {
+            throw new ServiceUnavailableException(ScratchFullClientMessage, ScratchFullRetryAfterSeconds);
+        }
 
-            if (limits.CompressWithZstd)
-            {
-                writerPropertiesBuilder.Compression(ParquetSharp.Compression.Zstd);
-            }
+        return WriteArrowParquet(schema, writeBatches, stream, limits);
+    }
 
-            using var writerProperties = limits.RowsPerRowGroup is null && !limits.CompressWithZstd
-                ? null
-                : writerPropertiesBuilder.Build();
-            using (var writer = new FileWriter(stream, schema, writerProperties, arrowWriterProperties, true))
-            {
-                writeBatches?.Invoke(writer);
+    // Encodes into a caller-supplied spool. A refused budget becomes 413, a full scratch
+    // volume becomes a retryable 503, and the spool is disposed on every failure.
+    internal static BoundedParquetStream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, BoundedParquetStream stream)
+        => WriteEncoded(schema, writeBatches, stream, limits: null);
 
-                writer.Close();
-            }
+    private static BoundedParquetStream WriteArrowParquet(
+        Schema schema,
+        Action<FileWriter>? writeBatches,
+        BoundedParquetStream stream,
+        GeoParquetLimits limits)
+        => WriteEncoded(schema, writeBatches, stream, limits);
 
+    private static BoundedParquetStream WriteEncoded(
+        Schema schema,
+        Action<FileWriter>? writeBatches,
+        BoundedParquetStream stream,
+        GeoParquetLimits? limits)
+    {
+        try
+        {
+            EncodeArrowParquet(schema, writeBatches, stream, limits);
             stream.Position = 0;
             return stream;
         }
@@ -254,6 +259,11 @@ public static partial class GeoParquetFeatureWriter
             // budget contract even when the refusal occurs while writing the footer.
             stream.Dispose();
             throw new GeoParquetLimitExceededException();
+        }
+        catch (Exception ex) when (stream.StorageFull || IsStorageFull(ex))
+        {
+            stream.Dispose();
+            throw new ServiceUnavailableException(ScratchFullClientMessage, ScratchFullRetryAfterSeconds);
         }
         catch (Exception ex) when (ParquetRuntimeUnavailableException.IsNativeLoadFailure(ex))
         {
@@ -265,6 +275,37 @@ public static partial class GeoParquetFeatureWriter
             stream.Dispose();
             throw;
         }
+    }
+
+    private static void EncodeArrowParquet(
+        Schema schema,
+        Action<FileWriter>? writeBatches,
+        BoundedParquetStream stream,
+        GeoParquetLimits? limits)
+    {
+        // Construct and dispose the builder itself explicitly (rather than chaining off
+        // the fluent StoreSchema() return value) so the builder instance is always
+        // disposed even if StoreSchema() were ever changed to return a different object.
+        using var arrowWriterPropertiesBuilder = new ArrowWriterPropertiesBuilder();
+        arrowWriterPropertiesBuilder.StoreSchema();
+        using var arrowWriterProperties = arrowWriterPropertiesBuilder.Build();
+        using var writerPropertiesBuilder = new ParquetSharp.WriterPropertiesBuilder();
+        if (limits?.RowsPerRowGroup is int rowsPerRowGroup)
+        {
+            writerPropertiesBuilder.MaxRowGroupLength(rowsPerRowGroup);
+        }
+
+        if (limits?.CompressWithZstd == true)
+        {
+            writerPropertiesBuilder.Compression(ParquetSharp.Compression.Zstd);
+        }
+
+        using var writerProperties = limits is null || (limits.RowsPerRowGroup is null && !limits.CompressWithZstd)
+            ? null
+            : writerPropertiesBuilder.Build();
+        using var writer = new FileWriter(stream, schema, writerProperties, arrowWriterProperties, true);
+        writeBatches?.Invoke(writer);
+        writer.Close();
     }
 
     public static List<MetadataV2Field> ResolveSelectedFields(

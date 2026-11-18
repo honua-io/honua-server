@@ -41,11 +41,10 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
     // for a host without a system database.
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/proposals")]
-    public void Composition_WithoutRedis_RegistersNeitherDurableProposalStoreNorGateway()
+    public void Composition_WithoutSystemDatabase_RegistersNeitherDurableProposalStoreNorGateway()
     {
         _fixture.Services.GetService<IOperationProposalStore>().Should().BeOfType<UnavailableOperationProposalStore>(
-            "the only durable implementation is Redis-backed and hard-depends on IConnectionMultiplexer, so "
-            + "a Redis-less host composes only the fail-closed placeholder");
+            "a host without a system database composes only the fail-closed placeholder");
         _fixture.Services.GetService<IOperationGateway>().Should().BeNull(
             "the gateway constructor-injects IOperationProposalStore, so it cannot be composed "
             + "wherever the store is not");

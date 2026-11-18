@@ -14,8 +14,8 @@ public enum ConsoleContentItemType
     [JsonStringEnumMemberName("layer")]
     Layer,
 
-    [JsonStringEnumMemberName("saved-map")]
-    SavedMap,
+    [JsonStringEnumMemberName("map")]
+    Map,
 
     [JsonStringEnumMemberName("dashboard")]
     Dashboard,
@@ -23,9 +23,12 @@ public enum ConsoleContentItemType
     [JsonStringEnumMemberName("report")]
     Report,
 
-    [JsonStringEnumMemberName("generated-app")]
-    GeneratedApp,
+    [JsonStringEnumMemberName("app")]
+    App,
 
     [JsonStringEnumMemberName("open-data")]
     OpenData,
+
+    [JsonStringEnumMemberName("dataset")]
+    Dataset,
 }

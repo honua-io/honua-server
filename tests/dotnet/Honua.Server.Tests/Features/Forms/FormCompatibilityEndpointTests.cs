@@ -30,13 +30,13 @@ public sealed class FormCompatibilityEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /api/v1/forms/packages/{formId}/compatibility")]
+    [Endpoint("GET /api/v1/forms/{formId}/compatibility")]
     public async Task Compatibility_CurrentVersion_IsCurrentAndSubmittable()
     {
         var published = await PublishPackageAsync(CreatePackage("Compatibility current"));
 
         var manifest = await GetJsonAsync(
-            $"/api/v1/forms/packages/{published.FormId}/compatibility?clientVersion={published.Version}",
+            $"/api/v1/forms/{published.FormId}/compatibility?clientVersion={published.Version}",
             FormPackageJsonContext.Default.FormCompatibilityManifest);
 
         manifest.Compatibility.Should().Be(FormCompatibilityLevel.Current);
@@ -47,13 +47,13 @@ public sealed class FormCompatibilityEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("GET /api/v1/forms/packages/{formId}/compatibility")]
+    [Endpoint("GET /api/v1/forms/{formId}/compatibility")]
     public async Task Compatibility_UnknownClientVersion_RequiresMigration()
     {
         var published = await PublishPackageAsync(CreatePackage("Compatibility unknown"));
 
         var manifest = await GetJsonAsync(
-            $"/api/v1/forms/packages/{published.FormId}/compatibility?clientVersion=999",
+            $"/api/v1/forms/{published.FormId}/compatibility?clientVersion=999",
             FormPackageJsonContext.Default.FormCompatibilityManifest);
 
         manifest.Compatibility.Should().Be(FormCompatibilityLevel.Unknown);

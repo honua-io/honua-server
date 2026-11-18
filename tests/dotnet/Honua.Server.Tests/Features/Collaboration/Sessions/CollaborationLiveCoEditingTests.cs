@@ -316,7 +316,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var factory = CreateFactory(configuration: new Dictionary<string, string?>
         {
             // The direct override, rather than Deployment:Mode=MultiNode, which additionally
-            // demands Redis and shared file storage from the platform config validator.
+            // demands shared file storage from the platform config validator.
             [SavedMapCollaborationTopology.MultiReplicaConfigurationKey] = "true"
         });
         using var client = CreateAdminClient(factory);
@@ -350,45 +350,6 @@ public sealed class CollaborationLiveCoEditingTests
         join.GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeFalse();
         join.GetProperty("snapshot").GetProperty("capabilities").GetProperty("operations").GetBoolean()
             .Should().BeFalse();
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/sessions/join")]
-    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
-    public async Task EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable()
-    {
-        // A configured shared cache alone must NEVER imply multi-replica: a single instance commonly
-        // uses one for caching and jobs and must keep full live co-editing.
-        using var factory = CreateFactory(
-            configuration: new Dictionary<string, string?>
-            {
-                ["Redis:ConnectionString"] = "localhost:6379",
-                ["ConnectionStrings:Redis"] = "localhost:6379",
-                ["Cache:Redis:ConnectionString"] = "localhost:6379"
-            },
-            // Checkpointing is gated on op-log restart durability, never on topology, so the
-            // durable log here isolates the claim under test: Redis presence must not disable
-            // any part of live co-editing.
-            restartDurableOperationLog: true);
-        using var client = CreateAdminClient(factory);
-        var draft = await CreateMapDraftAsync(client);
-        var mapId = draft.DraftId.ToString("D");
-
-        using var joinContent = new StringContent(
-            """{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
-        using var joinResponse = await client.PostAsync(
-            $"/api/v1/maps/{mapId}/collaboration/sessions/join", joinContent);
-        joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await ReadJsonAsync(joinResponse)).GetProperty("data")
-            .GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeTrue();
-
-        var append = await AppendOperationAsync(
-            client, mapId, "op-1", "SetViewport", baseCursor: 0, payload: """{"zoom":7}""");
-        append.GetProperty("status").GetString().Should().Be("accepted");
-
-        var checkpoint = await CheckpointAsync(client, mapId, "single instance");
-        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
     }
 
     [IntegrationTest]

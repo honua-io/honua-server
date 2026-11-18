@@ -326,14 +326,15 @@ GATED = (
     "|| github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'"
 )
 fmt = job("format", "fast-tests")
-fast = job("fast-tests", "server-test-producer")
+fast = job("fast-tests", "fast-server-tests")
+server_groups = job("fast-server-tests", "server-test-producer")
 server = job("server-test-producer", "pr-gate")
 gate = job("pr-gate", "affected-shards-select")
 select = job("affected-shards-select", "affected-shard")
 problems = []
-if text.count(CALL) != 5:
-    problems.append(f"expected the classifier in exactly five jobs, found {text.count(CALL)}")
-for label, body in (("format", fmt), ("fast-tests", fast), ("server-test-producer", server), ("pr-gate", gate), ("affected-shards-select", select)):
+if text.count(CALL) != 6:
+    problems.append(f"expected the classifier in exactly six jobs, found {text.count(CALL)}")
+for label, body in (("format", fmt), ("fast-tests", fast), ("fast-server-tests", server_groups), ("server-test-producer", server), ("pr-gate", gate), ("affected-shards-select", select)):
     if body.count(CALL) != 1 or "id: docs-only" not in body:
         problems.append(f"{label} must classify once, as step id docs-only")
 FORMAT_GATED = (
@@ -357,10 +358,11 @@ for name in ("Free disk space", "Setup .NET", "Plan managed test producer", "Lea
     block = gate.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
     if GATED not in block:
         problems.append(f"producer step {name} must obey docs-only and review verdicts")
-for name in ("Free disk space", "Setup .NET", "Lean gate (build and fast unit/architecture verification)"):
-    block = fast.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
-    if GATED not in block:
-        problems.append(f"Fast step {name} must obey docs-only and review verdicts")
+for label, body in (("fast-tests", fast), ("fast-server-tests", server_groups)):
+    for name in ("Free disk space", "Setup .NET", "Lean gate (build and fast unit/architecture verification)"):
+        block = body.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+        if GATED not in block:
+            problems.append(f"{label} step {name} must obey docs-only and review verdicts")
 order = [
     "- name: Revalidate exact-head review before verification",
     "- name: Validate the docs-only classifier before consuming it",

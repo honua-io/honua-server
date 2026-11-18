@@ -16,7 +16,7 @@ Published form metadata already includes a monotonic `version`, a `contentHash`,
 
 | Method | Route | Success | Contract |
 |---|---|---:|---|
-| `GET` | `/api/v1/forms/packages/{formId}/compatibility?clientVersion={n}` | `200` | Returns `FormCompatibilityManifest`; `Cache-Control: no-store`. |
+| `GET` | `/api/v1/forms/{formId}/compatibility?clientVersion={n}` | `200` | Returns `FormCompatibilityManifest`; `Cache-Control: no-store`. |
 
 - `clientVersion` is the version the offline client currently has cached. When omitted (or equal to the current published version) the manifest is `current`.
 - `404` when the form has no published version.

@@ -21,9 +21,9 @@ namespace Honua.Server.Tests.Features.Console;
 public sealed class ProjectedCatalogDiscoveryEndpointsTests
 {
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}")]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}")]
-    [Endpoint("GET /api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}")]
+    [Endpoint("GET /api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}/items/{itemId}")]
     public async Task HostedProjection_RespectsMappingAdminAuthorizationAndCanonicalDirectory()
     {
         var graph = ProjectedCatalogDiscoveryRegistryStoreTests.Graph();
@@ -35,15 +35,15 @@ public sealed class ProjectedCatalogDiscoveryEndpointsTests
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "catalog-live-projection-key");
-                builder.UseSetting("Console:CatalogDiscovery:Workspaces:0:Id", "default");
-                builder.UseSetting("Console:CatalogDiscovery:Workspaces:0:TenantId", "public");
-                builder.UseSetting("Console:CatalogDiscovery:Workspaces:0:Namespace", "alpha");
-                builder.UseSetting("Console:CatalogDiscovery:Workspaces:1:Id", "other-tenant");
-                builder.UseSetting("Console:CatalogDiscovery:Workspaces:1:TenantId", "other");
-                builder.UseSetting("Console:CatalogDiscovery:Workspaces:1:Namespace", "alpha");
-                builder.UseSetting("Console:CatalogDiscovery:Workspaces:2:Id", "empty");
-                builder.UseSetting("Console:CatalogDiscovery:Workspaces:2:TenantId", "public");
-                builder.UseSetting("Console:CatalogDiscovery:Workspaces:2:Namespace", "beta");
+                builder.UseSetting("Console:CatalogDiscovery:Environments:0:Id", "default");
+                builder.UseSetting("Console:CatalogDiscovery:Environments:0:TenantId", "public");
+                builder.UseSetting("Console:CatalogDiscovery:Environments:0:Namespace", "alpha");
+                builder.UseSetting("Console:CatalogDiscovery:Environments:1:Id", "other-tenant");
+                builder.UseSetting("Console:CatalogDiscovery:Environments:1:TenantId", "other");
+                builder.UseSetting("Console:CatalogDiscovery:Environments:1:Namespace", "alpha");
+                builder.UseSetting("Console:CatalogDiscovery:Environments:2:Id", "empty");
+                builder.UseSetting("Console:CatalogDiscovery:Environments:2:TenantId", "public");
+                builder.UseSetting("Console:CatalogDiscovery:Environments:2:Namespace", "beta");
             })
             .ConfigureServices(services =>
             {
@@ -60,9 +60,9 @@ public sealed class ProjectedCatalogDiscoveryEndpointsTests
             using var denied = await anonymous.GetAsync("/api/v1/console/catalog-endpoints/" + route);
             Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
         }
-        foreach (var workspace in new[] { "unknown", "other-tenant" })
+        foreach (var environment in new[] { "unknown", "other-tenant" })
         {
-            using var absent = await admin.GetAsync("/api/v1/console/catalog-endpoints/" + workspace);
+            using var absent = await admin.GetAsync("/api/v1/console/catalog-endpoints/" + environment);
             Assert.Equal(HttpStatusCode.NotFound, absent.StatusCode);
         }
 

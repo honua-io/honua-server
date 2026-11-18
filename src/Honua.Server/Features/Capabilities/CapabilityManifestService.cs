@@ -1643,7 +1643,7 @@ internal static class CapabilityReasonCodes
     public const string EnvironmentUnavailable = "environment-unavailable";
     public const string WorkspaceScopeRequired = "workspace-scope-required";
 
-    // A missing optional Redis reads as degraded, not as an available capability whose operations return 503.
+    // A missing required dependency reads as degraded, not as an available capability whose operations return 503.
     public const string DependencyUnavailable = Core.Features.Capabilities.CapabilityUnavailableCodes.ErrorCode;
 }
 

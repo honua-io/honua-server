@@ -5,7 +5,6 @@ Comprehensive test infrastructure for Honua Server integration and unit tests.
 ## Features
 
 - **PostgreSQL/PostGIS Integration**: Testcontainers-based database fixtures with schema-based isolation
-- **Redis Integration**: Testcontainers-based Redis fixture for caching and import coordination tests
 - **Parallel Test Execution**: Aggressive parallel execution with schema isolation for maximum throughput
 - **Custom Test Attributes**: Protocol, Operation, and Endpoint tracking for 100% API surface coverage
 - **Fluent Test Data Builders**: Build complex spatial data scenarios with ease
@@ -136,18 +135,6 @@ A reusable local PostGIS instance is available via `docker compose -f docker/doc
 
 ```bash
 export HONUA_TEST_DB_URL="Host=localhost;Database=honua_test;Username=test;Password=test"
-```
-
-### RedisFixture
-
-Shared Redis container for integration tests that need distributed caching or job coordination.
-
-#### External Redis (opt-in)
-
-Set `HONUA_TEST_REDIS_URL` to use an existing Redis instance instead of Testcontainers.
-
-```bash
-export HONUA_TEST_REDIS_URL="localhost:6379"
 ```
 
 #### External Service Tests (opt-in)
@@ -513,7 +500,7 @@ run. If the loader cannot locate a scenario under either root it also raises
 not yet wired (execution engine, publish surface, package composition, deploy
 promotion) report `Skipped` with a reason rather than failing — only `Failed`
 stages break the gate today. `SubmitJob` also degrades to
-`Skipped(redis-unavailable)` when the durable Redis-backed job store is absent,
+`Skipped(job-store-unavailable)` when the durable PostgreSQL job store is absent,
 which keeps local/dev runs honest instead of treating infrastructure gaps as
 contract failures.
 
@@ -585,7 +572,7 @@ pinned to `reportSchemaVersion = "1"` (`EvalReportSchema.Version`) and
 includes:
 
 - `environment` — `corpusSource`, `corpusVersion`, `corpusPath`,
-  `redisAvailable` (derived from observed successful `SubmitJob` stages)
+  `jobStoreAvailable` (derived from observed successful `SubmitJob` stages)
 - `scenarios[]` — id, mode, overall `status`
   (`Passed` / `Failed` / `PassedWithSkips`), per-stage outcomes, protocol parity
   probes, elapsed ms

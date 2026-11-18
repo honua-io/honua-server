@@ -31,7 +31,7 @@ internal static class MultidimensionalCoverageEndpoints
     private const string MultidimCoverageEntitlement = "raster.multidim-coverage";
 
     private const string JobSubstrateUnavailableDetail =
-        "The execution-job substrate (Redis-backed store/queue) is not available, so the GDAL " +
+        "The execution-job substrate (PostgreSQL-backed store/queue) is not available, so the GDAL " +
         "metadata scan cannot be dispatched. Configure the job substrate to enable coverage scans.";
 
     public static void MapMultidimensionalCoverageEndpoints(this IEndpointRouteBuilder endpoints)

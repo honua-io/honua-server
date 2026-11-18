@@ -15,7 +15,7 @@ internal sealed class TileExportPreconditionFailedException(string message) : Ex
 internal sealed class TileExportStoreUnavailableException(string message) : Exception(message)
 {
     public TileExportStoreUnavailableException()
-        : this("Durable tile-export jobs require Redis-backed storage and configured artifact storage. " +
+        : this("Durable tile-export jobs require PostgreSQL-backed storage and configured artifact storage. " +
                "Ensure both are configured before submitting an asynchronous export.")
     {
     }

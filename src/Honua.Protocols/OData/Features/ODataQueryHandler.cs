@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -886,6 +887,11 @@ internal sealed partial class ODataQueryHandler(
                 "NotImplemented",
                 ParquetRuntimeUnavailableException.CapabilityMessage,
                 StatusCodes.Status501NotImplemented);
+        }
+        catch (ServiceUnavailableException ex)
+        {
+            // Full scratch storage is transient; answer 503 with Retry-After, not a query error.
+            return StandardErrorHelpers.CreateFromException(context, ex);
         }
         catch (InvalidOperationException ex)
         {

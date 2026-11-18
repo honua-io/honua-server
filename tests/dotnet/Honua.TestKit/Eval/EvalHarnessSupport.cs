@@ -26,7 +26,7 @@ internal static class EvalHarnessSupport
         };
     }
 
-    public static bool DetermineRedisAvailability(IReadOnlyList<EvalScenarioResult> results)
+    public static bool DetermineJobStoreAvailability(IReadOnlyList<EvalScenarioResult> results)
     {
         ArgumentNullException.ThrowIfNull(results);
 

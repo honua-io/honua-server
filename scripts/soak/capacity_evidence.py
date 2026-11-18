@@ -93,7 +93,7 @@ def receipt(lock: dict, lock_hash: str, source: dict, payload: bytes, artifact_u
             return None
         return max(values)
 
-    components = {name: maximum(metrics, name) for name in ("worker", "database", "redis")}
+    components = {name: maximum(metrics, name) for name in ("worker", "database")}
     recovery_seconds = [{"seconds": (timestamp(e["recoveredAt"]) - timestamp(e["injectedAt"])).total_seconds()} for e in recoveries]
     values = dict(availability=(count-errors)/count, errorRate=errors/count,
                   p95LatencyMs=percentile(.95), p99LatencyMs=percentile(.99), throughputRps=count/duration,
@@ -108,7 +108,7 @@ def receipt(lock: dict, lock_hash: str, source: dict, payload: bytes, artifact_u
     }
     for name in values.keys() - populations.keys():
         populations[name] = dict(kind="distribution" if "Latency" in name else "duration" if name == "recoveryTimeSeconds" else "gauge",
-                                 sampleCount=count if "Latency" in name else len(recoveries) if name == "recoveryTimeSeconds" else len(metrics)*3 if name == "saturationRatio" else len(metrics))
+                                 sampleCount=count if "Latency" in name else len(recoveries) if name == "recoveryTimeSeconds" else len(metrics)*len(components) if name == "saturationRatio" else len(metrics))
     doc = f"https://github.com/honua-io/honua-server/blob/{candidate['serverRevision']}/docs/internal/operations/capacity-soak-runbook.md"
     signals = {}
     for name, value in values.items():
@@ -140,7 +140,7 @@ def receipt(lock: dict, lock_hash: str, source: dict, payload: bytes, artifact_u
     ga_dimensions_exercised = all(w["status"] == "exercised" for name, w in exercised.items() if name not in PREVIEW_DIMENSIONS)
     complete = (not source["samplingFailures"] and all(v is not None for v in values.values())
                 and ga_dimensions_exercised
-                and {event["dependency"] for event in recoveries} == {"worker", "database", "redis"}
+                and {event["dependency"] for event in recoveries} == {"worker", "database"}
                 and (drill is None or drill.get("passed") is True))
     preview_count = sum(bucket["count"] for bucket in preview_buckets)
     preview = dict(gp=dict(

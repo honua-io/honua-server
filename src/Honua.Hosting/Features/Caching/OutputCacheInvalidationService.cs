@@ -350,8 +350,8 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         }
 
         // Metadata cache keys are already schema-scoped by the cache implementation for
-        // the current request. Explicit scoped wildcard invalidation forces Redis keyspace
-        // scans on mutation paths, so this invalidator sticks to direct-key eviction here.
+        // the current request. Explicit scoped wildcard invalidation requires cache enumeration
+        // on mutation paths, so this invalidator sticks to direct-key eviction here.
     }
     private async Task<string[]> ResolveLayerServiceIdsAsync(
         string? serviceId,
