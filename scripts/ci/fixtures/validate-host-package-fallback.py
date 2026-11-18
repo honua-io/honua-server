@@ -11,6 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 ACTION = (ROOT / '.github/actions/setup-dotnet-ci/action.yml').read_text(encoding='utf-8')
 WORKFLOW = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+PR_GATE = (ROOT / '.github/workflows/pr-gate.yml').read_text(encoding='utf-8')
 STEP = 'Use host NuGet fallback folder'
 
 
@@ -18,9 +19,9 @@ def step_block(name):
     return ACTION.split('    - name: ' + name + '\n', 1)[1].split('    - name:', 1)[0]
 
 
-def job(name):
+def job(name, workflow=WORKFLOW):
     return re.search(r'^  ' + re.escape(name) + r':\n(.*?)(?=^  [\w-]+:\n|\Z)',
-                     WORKFLOW, re.M | re.S).group(1)
+                     workflow, re.M | re.S).group(1)
 
 
 @unittest.skipIf(os.name == 'nt' or os.geteuid() == 0, 'needs POSIX permissions as a non-root user')
@@ -111,9 +112,15 @@ class HostFallbackWiringTests(unittest.TestCase):
         self.assertLess(shard.index('Verify and unpack exact-head shard cache'), shard.index('Re-check package imports'))
         self.assertLess(shard.index('Re-check package imports'), shard.index('      - name: Run server test shard'))
 
-    def test_only_managed_output_consumers_opt_in(self):
+    def test_only_consumers_that_recheck_package_imports_opt_in(self):
         self.assertIn("host-package-fallback: 'true'", job('server-tests'))
         self.assertEqual(WORKFLOW.count('host-package-fallback:'), 1)
+        affected = job('affected-shard', PR_GATE)
+        self.assertIn("host-package-fallback: 'true'", affected)
+        build = affected.split('      - name: Build missing managed test outputs\n', 1)[1].split('      - name:', 1)[0]
+        self.assertNotIn('if:', build)
+        self.assertIn('managed-test-build.py fallback', build)
+        self.assertEqual(PR_GATE.count('host-package-fallback:'), 1)
 
 
 if __name__ == '__main__':

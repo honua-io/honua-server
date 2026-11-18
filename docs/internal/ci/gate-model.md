@@ -590,7 +590,10 @@ archive, and NuGet downloads only the packages the folder lacks (GitHub
 Packages ids are never in it). If the variable is unset, the target is missing
 or writable, or it holds no package, the job restores the cache archive as
 before. Hosted runners never set the variable. Only the `ci.yml` `server-tests`
-shards opt in, whereas a producer must keep its static web asset roots under the
+shards and the `PR Gate / Affected shard` jobs opt in, because both re-check
+package imports after consuming managed outputs. `fast-server-tests` stays out:
+a fully consumed group goes straight to its test phase. Producers stay out as
+well, since a producer must keep its static web asset roots under the
 package folder it packages. A consumed `obj` folder names the producer's
 `~/.nuget/packages`, which the fallback leaves mostly empty, so on the fallback
 even a fully consumed shard runs `managed-test-build.py fallback`: it restores
