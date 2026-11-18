@@ -80,6 +80,9 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
 
             if (_waiters.Count == 0 && _inFlight < _targetLimit)
             {
+                // An immediate admission waited zero: averaging it in lets the queue-wait EWMA
+                // fall once queueing stops, instead of holding the last burst's wait forever.
+                RecordQueueWaitLocked(_timeProvider.GetTimestamp());
                 _inFlight++;
                 return true;
             }

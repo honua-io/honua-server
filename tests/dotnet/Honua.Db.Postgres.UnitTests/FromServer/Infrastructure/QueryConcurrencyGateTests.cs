@@ -302,6 +302,31 @@ public sealed class QueryConcurrencyGateTests
         gate.Release();
     }
 
+    // Pressure readers (anonymous admission, ops findings, the adaptive controller) must not see a
+    // past burst's queue wait once requests are admitted without queueing again.
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task WaitAsync_ImmediateAdmissionsAfterABurst_DecayQueueWaitEwma()
+    {
+        var clock = new ManualTimeProvider();
+        var gate = new QueryConcurrencyGate(new ConnectionLimits { MaxConcurrentQueries = 1, MaxConnectionPoolSize = 1, ConnectionAcquisitionTimeoutSeconds = 5 }, clock);
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        var queued = gate.WaitAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromMilliseconds(800));
+        gate.Release();
+        (await queued).Should().BeTrue();
+        gate.Release();
+        gate.GetPressure().QueueWaitEwmaMs.Should().BeApproximately(800, 0.01);
+
+        for (var i = 0; i < 20; i++)
+        {
+            (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+            gate.Release();
+        }
+
+        gate.GetPressure().QueueWaitEwmaMs.Should().BeLessThan(10, "twenty unqueued admissions bring 800 ms below 10 ms (0.8^20 x 800)");
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Release_WithFastSaturatedLease_IncreasesAdaptiveLimitAndDrainsWaiter()
