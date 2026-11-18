@@ -67,7 +67,9 @@ public sealed class WithheldFieldStyleDocumentTests(WithheldFieldStyleDocumentFi
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        body.Should().NotContain(WithheldClassValue).And.NotContain(WithheldFilterValue);
+        body.Should().NotContain(WithheldClassValue)
+            .And.NotContain(WithheldFilterValue)
+            .And.NotContain(WithheldFieldStyleDocumentFixture.MaskedField);
     }
 
     [IntegrationTest]
@@ -120,9 +122,9 @@ public sealed class WithheldFieldStyleDocumentTests(WithheldFieldStyleDocumentFi
 public sealed class WithheldFieldStyleDocumentFixture : IAsyncLifetime
 {
     public const string MaskedField = "notes";
-    public const string ClassLayerId = "notes-classes";
-    public const string FilterLayerId = "notes-restricted";
-    public const string MaskedGroupName = "notes-pairs";
+    public const string ClassLayerId = "classes";
+    public const string FilterLayerId = "restricted";
+    public const string MaskedGroupName = "masked-pairs";
     public const string VisibleGroupName = "material-diameter";
 
     public WebAppFixture App { get; } = new WebAppFixture()
@@ -153,11 +155,11 @@ public sealed class WithheldFieldStyleDocumentFixture : IAsyncLifetime
         var layers = style["layers"]!.AsArray();
         var template = layers[0]!.AsObject();
         layers.Add(WithSource(template, """
-            {"id":"notes-classes","type":"circle","paint":{"circle-radius":4,
+            {"id":"classes","type":"circle","paint":{"circle-radius":4,
               "circle-color":["match",["get","notes"],"Confidential","#d7191c","#2c7bb6"]}}
             """));
         layers.Add(WithSource(template, """
-            {"id":"notes-restricted","type":"circle","filter":["==",["get","notes"],"Restricted"],
+            {"id":"restricted","type":"circle","filter":["==",["get","notes"],"Restricted"],
               "paint":{"circle-color":"#000000"}}
             """));
 

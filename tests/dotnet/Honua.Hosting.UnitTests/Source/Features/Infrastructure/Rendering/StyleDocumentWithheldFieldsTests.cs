@@ -46,7 +46,8 @@ public class StyleDocumentWithheldFieldsTests
         const string drawingInfo = """
             {"renderer":{"type":"uniqueValue","field1":"NOTES","defaultSymbol":{"type":"esriSMS","color":[1,2,3,255]},
               "uniqueValueInfos":[{"value":"Confidential","symbol":{"type":"esriSMS"}}]},
-             "labelingInfo":[{"labelExpressionInfo":{"expression":"$feature.notes"}},{"labelExpression":"[name]"}]}
+             "labelingInfo":[{"labelExpressionInfo":{"expression":"$feature.notes"}},{"where":"notes = 'Restricted'","labelExpression":"[name]"},
+               {"labelExpression":"[name]"}]}
             """;
 
         var result = JsonNode.Parse(StyleDocumentWithheldFields.WithoutWithheldDrawingInfo(drawingInfo, Withheld))!;
@@ -54,7 +55,7 @@ public class StyleDocumentWithheldFieldsTests
         result["renderer"]!["type"]!.GetValue<string>().Should().Be("simple");
         result["renderer"]!["symbol"]!["color"]!.AsArray().Should().HaveCount(4);
         result["labelingInfo"]!.AsArray().Should().ContainSingle();
-        result.ToJsonString().Should().NotContain("Confidential").And.NotContain("notes", "labels over a withheld field are dropped");
+        result.ToJsonString().Should().NotContain("Confidential").And.NotContain("Restricted").And.NotContain("notes");
     }
 
     [UnitTest]
@@ -65,12 +66,23 @@ public class StyleDocumentWithheldFieldsTests
             <StyledLayerDescriptor xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc"><NamedLayer><UserStyle><FeatureTypeStyle>
               <Rule><Name>secret</Name><ogc:Filter><ogc:PropertyIsEqualTo><ogc:PropertyName>notes</ogc:PropertyName><ogc:Literal>Confidential</ogc:Literal></ogc:PropertyIsEqualTo></ogc:Filter><PointSymbolizer/></Rule>
               <Rule><Name>all</Name><PointSymbolizer/><TextSymbolizer><Label><ogc:PropertyName> notes </ogc:PropertyName></Label></TextSymbolizer></Rule>
+              <Rule><Name>literal</Name><LineSymbolizer/><TextSymbolizer><Label>Note: {notes}</Label></TextSymbolizer></Rule>
             </FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>
             """;
 
         var result = StyleDocumentWithheldFields.WithoutWithheldSld(sld, Withheld);
 
-        result.Should().StartWith("<?xml").And.Contain("<Name>all</Name>").And.Contain("<PointSymbolizer />");
+        result.Should().StartWith("<?xml").And.Contain("<Name>all</Name>").And.Contain("<PointSymbolizer />").And.Contain("<LineSymbolizer />");
         result.Should().NotContain("Confidential").And.NotContain("notes").And.NotContain("TextSymbolizer");
+    }
+
+    [UnitTest]
+    public void MapLibre_KeepsLayoutVisibilityAndReturnsNullForADocumentThatIsNotJson()
+    {
+        var withheldNone = new HashSet<string>(["none"], StringComparer.OrdinalIgnoreCase);
+        const string style = """{"version":8,"layers":[{"id":"a","layout":{"visibility":"none"}}]}""";
+
+        StyleDocumentWithheldFields.WithoutWithheldMapLibre(style, withheldNone).Should().Contain("\"visibility\":\"none\"");
+        StyleDocumentWithheldFields.WithoutWithheldMapLibre("not json", Withheld).Should().BeNull();
     }
 }

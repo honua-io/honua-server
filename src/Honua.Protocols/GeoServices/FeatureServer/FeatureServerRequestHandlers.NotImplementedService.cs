@@ -74,9 +74,9 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IReadOnlyList<MetadataV2ContingentValueGroup>> VisibleContingentValueGroupsAsync(
         HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
     {
-        var schemaResource = await GeoServicesWithheldFields.HideMaskedFieldsAsync(context, resource, cancellationToken)
+        var withheld = await GeoServicesWithheldFields.WithheldFieldNamesAsync(context, resource, cancellationToken)
             .ConfigureAwait(false);
-        return [.. resource.ContingentValueGroups.Where(group => !group.Fields.Any(schemaResource.IsHiddenSchemaField))];
+        return [.. resource.ContingentValueGroups.Where(group => !group.Fields.Any(field => withheld.Contains(field.Trim())))];
     }
 
     private static async Task<IResult> HandleSharedTemplates(

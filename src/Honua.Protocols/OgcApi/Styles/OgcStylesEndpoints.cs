@@ -256,7 +256,8 @@ public static class OgcStylesEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
         }
 
-        var visibleContent = await WithoutWithheldFieldsAsync(context, styleId, stylesheet).ConfigureAwait(false);
+        var visibleContent = await StyleDocumentWithheldFields.WithoutWithheldStylesheetAsync(context, styleId, stylesheet)
+            .ConfigureAwait(false);
 
         // MapLibre sources/sprite/glyphs must be absolute (TileJSON 3.0.0 §3.2);
         // the derived SLD and drawingInfo encodings carry no endpoint URLs.
@@ -339,26 +340,6 @@ public static class OgcStylesEndpoints
         IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken)
         => await AuthorizeStyleAsync(context, styleId, graphProvider, cancellationToken).ConfigureAwait(false) is null;
-
-    // A layer's stylesheet must not name a field withheld from this caller or list that field's class values.
-    private static async Task<string> WithoutWithheldFieldsAsync(HttpContext context, string styleId, OgcStylesheet stylesheet)
-    {
-        var cancellationToken = context.RequestAborted;
-        var snapshot = await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
-            .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (ResolveStyleResource(snapshot, styleId) is not { } resource)
-        {
-            return stylesheet.Content;
-        }
-
-        var withheld = await StyleDocumentWithheldFields.ResolveAsync(context, resource, cancellationToken).ConfigureAwait(false);
-        return stylesheet.Encoding switch
-        {
-            OgcStyleEncoding.MapboxStyle => StyleDocumentWithheldFields.WithoutWithheldMapLibre(stylesheet.Content, withheld),
-            OgcStyleEncoding.GeoServicesDrawingInfo => StyleDocumentWithheldFields.WithoutWithheldDrawingInfo(stylesheet.Content, withheld),
-            _ => StyleDocumentWithheldFields.WithoutWithheldSld(stylesheet.Content, withheld),
-        };
-    }
 
     // Ordinal, matching OgcStyleProjection.ResolveResourceAsync. A case-variant
     // name is a different resource; authorizing the first ignore-case hit would
