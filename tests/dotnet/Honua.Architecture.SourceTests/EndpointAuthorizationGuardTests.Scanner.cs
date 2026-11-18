@@ -57,11 +57,11 @@ public sealed partial class EndpointAuthorizationGuardTests
 
     private static IEnumerable<string> FindUnmarkedRoutesInFile(string content, IReadOnlyCollection<string> verbs)
     {
-        var groupAuth = CollectGroupAuthFlags(content);
+        var file = new ScannedFile(content, CollectGroupAuthFlags(content));
         foreach (Match match in MapRouteRegex.Matches(content))
         {
             var verb = match.Groups["verb"].Value;
-            if (!verbs.Contains(verb) || HasAuthorizationDecision(content, match.Index, groupAuth))
+            if (!verbs.Contains(verb) || HasAuthorizationDecision(file, match.Index))
             {
                 continue;
             }
@@ -71,8 +71,9 @@ public sealed partial class EndpointAuthorizationGuardTests
         }
     }
 
-    private static bool HasAuthorizationDecision(string content, int matchIndex, Dictionary<string, bool> groupAuth)
+    private static bool HasAuthorizationDecision(ScannedFile file, int matchIndex)
     {
+        var content = file.Content;
         var chain = ExtractFluentChain(content, matchIndex);
         if (AuthOptInMarkers.Any(chain.Contains) || IsInsideAuthorizationWrapper(content, matchIndex))
         {
@@ -80,7 +81,7 @@ public sealed partial class EndpointAuthorizationGuardTests
         }
 
         var receiver = ExtractReceiverBefore(content, matchIndex);
-        if (receiver is not null && IsAuthorizedReceiver(content, matchIndex, receiver, groupAuth))
+        if (receiver is not null && IsAuthorizedReceiver(file, matchIndex, receiver))
         {
             return true;
         }
@@ -89,10 +90,10 @@ public sealed partial class EndpointAuthorizationGuardTests
         return assignedVar is not null && HasPostStatementAuthCall(content, matchIndex + chain.Length, assignedVar);
     }
 
-    private static bool IsAuthorizedReceiver(string content, int matchIndex, string receiver, Dictionary<string, bool> groupAuth)
-        => groupAuth.TryGetValue(receiver, out var hasGroupAuth)
+    private static bool IsAuthorizedReceiver(ScannedFile file, int matchIndex, string receiver)
+        => file.GroupAuth.TryGetValue(receiver, out var hasGroupAuth)
             ? hasGroupAuth
-            : IsAuthorizedGroupParameter(content, matchIndex, receiver, groupAuth);
+            : IsAuthorizedGroupParameter(file, matchIndex, receiver);
 
     private static bool IsInsideAuthorizationWrapper(string content, int matchIndex)
     {
@@ -103,10 +104,10 @@ public sealed partial class EndpointAuthorizationGuardTests
     // A route mapped on a builder parameter, e.g. `MapImportRoutes(IEndpointRouteBuilder group)`,
     // inherits the group's decision when every call to that method in the file passes an
     // authorized MapGroup variable.
-    private static bool IsAuthorizedGroupParameter(string content, int matchIndex, string receiver, Dictionary<string, bool> groupAuth)
+    private static bool IsAuthorizedGroupParameter(ScannedFile file, int matchIndex, string receiver)
     {
         var declarations = Regex.Matches(
-            content[..matchIndex],
+            file.Content[..matchIndex],
             @"(?<name>\w+)\s*\(\s*(?:this\s+)?(?:IEndpointRouteBuilder|RouteGroupBuilder)\s+" + Regex.Escape(receiver) + @"\b",
             RegexOptions.CultureInvariant);
         if (declarations.Count == 0)
@@ -116,12 +117,12 @@ public sealed partial class EndpointAuthorizationGuardTests
 
         var declaration = declarations[^1];
         var calls = Regex.Matches(
-                content,
+                file.Content,
                 @"\b" + Regex.Escape(declaration.Groups["name"].Value) + @"\s*\(\s*(?<arg>\w+)\s*[,)]",
                 RegexOptions.CultureInvariant)
             .Where(call => call.Index != declaration.Index)
             .ToList();
-        return calls.Count > 0 && calls.All(call => groupAuth.TryGetValue(call.Groups["arg"].Value, out var authorized) && authorized);
+        return calls.Count > 0 && calls.All(call => file.GroupAuth.TryGetValue(call.Groups["arg"].Value, out var authorized) && authorized);
     }
 
     private static List<string> ReadBaseline(string repoRoot)
@@ -258,4 +259,8 @@ public sealed partial class EndpointAuthorizationGuardTests
 
         return content.Length;
     }
+
+    // One source file with its comments stripped and its MapGroup variables mapped to whether
+    // the group carries an authorization decision.
+    private sealed record ScannedFile(string Content, Dictionary<string, bool> GroupAuth);
 }

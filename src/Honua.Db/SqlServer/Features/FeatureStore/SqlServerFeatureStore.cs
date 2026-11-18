@@ -190,6 +190,14 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
         };
     }
 
+    private async Task EnsureReadPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
+    {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await _readSecurity
+            .EnsureNoUnenforcedPolicyAsync("SQL Server", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public Task<QueryResult<Feature>> QueryTopFeaturesAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryTopFeaturesAsync), layerId);
@@ -205,14 +213,6 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
-
-    private async Task EnsureReadPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
-    {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-        await _readSecurity
-            .EnsureNoUnenforcedPolicyAsync("SQL Server", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken)
-            .ConfigureAwait(false);
-    }
 
     private async Task EnsureNoPermanentFilterAsync(int layerId, CancellationToken cancellationToken)
     {

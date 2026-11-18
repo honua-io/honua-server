@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
@@ -199,51 +200,36 @@ internal sealed class ZarrTileService : IZarrTileService
 
         foreach (var publication in publications)
         {
-            var denied = await AuthorizePublicationAsync(context, snapshot, publication, cancellationToken).ConfigureAwait(false);
-            if (denied is not null)
+            var resource = snapshot.ResolveResource(publication);
+            var access = resource is null
+                ? AccessDecision.Forbidden()
+                : await _layerAccessAuthorizer
+                    .AuthorizePublicationAsync(
+                        context.User,
+                        publication,
+                        resource,
+                        snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId),
+                        AuthorizationOperation.Query,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            if (!access.IsAllowed)
             {
-                return denied;
+                return CreateDeniedResult(context, access);
             }
         }
 
         return null;
     }
 
-    private async Task<IResult?> AuthorizePublicationAsync(
-        HttpContext context,
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Layer publication,
-        CancellationToken cancellationToken)
+    private static IResult CreateDeniedResult(HttpContext context, AccessDecision access)
     {
-        var resource = snapshot.ResolveResource(publication);
-        if (resource is null)
+        if (!access.RequiresAuthentication)
         {
             return StandardErrorHelpers.CreateForbidden(context, "Access to this resource is forbidden.");
         }
 
-        var service = snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId);
-        var access = await _layerAccessAuthorizer
-            .AuthorizePublicationAsync(
-                context.User,
-                publication,
-                resource,
-                service,
-                AuthorizationOperation.Query,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (access.IsAllowed)
-        {
-            return null;
-        }
-
-        if (access.RequiresAuthentication)
-        {
-            context.Response.Headers.Append("WWW-Authenticate", "Bearer");
-            return StandardErrorHelpers.CreateUnauthorized(
-                context, "Authentication is required to access this resource.");
-        }
-
-        return StandardErrorHelpers.CreateForbidden(context, "Access to this resource is forbidden.");
+        context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+        return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to access this resource.");
     }
 
     private static string? GetQueryValue(HttpContext context, string key)

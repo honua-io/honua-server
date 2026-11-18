@@ -54,8 +54,8 @@ internal static class ReadPolicyEnforceabilityTestGraph
             ],
             StorageBindings =
             [
-                CreateBinding("binding-parcels", "res-parcels", connectionId: null, storageLayerId: 1),
-                CreateBinding("binding-roads", "res-roads", WarehouseConnectionId, storageLayerId: 2)
+                CreateBinding("parcels", connectionId: null, storageLayerId: 1),
+                CreateBinding("roads", WarehouseConnectionId, storageLayerId: 2)
             ]
         };
 
@@ -69,13 +69,14 @@ internal static class ReadPolicyEnforceabilityTestGraph
         StorageBindingIds = [bindingId]
     };
 
-    private static MetadataV2StorageBinding CreateBinding(string id, string resourceId, string? connectionId, int storageLayerId) => new()
+    // Binding and resource ids follow the "binding-<layer>" / "res-<layer>" convention used above.
+    private static MetadataV2StorageBinding CreateBinding(string layerName, string? connectionId, int storageLayerId) => new()
     {
-        Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
-        ResourceId = resourceId,
+        Metadata = new MetadataV2ObjectMetadata { Id = "binding-" + layerName, Name = "binding-" + layerName },
+        ResourceId = "res-" + layerName,
         ConnectionId = connectionId,
         StorageType = MetadataV2StorageType.RelationalTable,
-        Locator = "public." + id,
+        Locator = "public.binding-" + layerName,
         StorageLayerId = storageLayerId
     };
 
