@@ -960,7 +960,7 @@ public sealed class ConfigurationDocumentationService
 
             // Key limits
             new() { Name = "Limits__Query__MaxRecordCount", ConfigPath = "Limits.Query", Description = "Max features per query", Default = limits.Query.MaxRecordCount.ToString(System.Globalization.CultureInfo.InvariantCulture), Example = "5000" },
-            new() { Name = "Limits__Query__QueryTimeout", ConfigPath = "Limits.Query", Description = "Query timeout", Default = "00:00:30", Example = "00:01:00" },
+            new() { Name = "Limits__Query__QueryTimeout", ConfigPath = "Limits.Query", Description = "Query timeout", Default = limits.Query.QueryTimeout.ToString("c", System.Globalization.CultureInfo.InvariantCulture), Example = "00:01:00" },
             new() { Name = "Limits__Geometry__MaxVerticesPerGeometry", ConfigPath = "Limits.Geometry", Description = "Max vertices", Default = limits.Geometry.MaxVerticesPerGeometry.ToString(System.Globalization.CultureInfo.InvariantCulture), Example = "10000" },
             new() { Name = "Limits__Connections__MaxConcurrentQueries", ConfigPath = "Limits.Connections", Description = "Max concurrent queries", Default = limits.Connections.MaxConcurrentQueries.ToString(System.Globalization.CultureInfo.InvariantCulture), Example = "50" },
 

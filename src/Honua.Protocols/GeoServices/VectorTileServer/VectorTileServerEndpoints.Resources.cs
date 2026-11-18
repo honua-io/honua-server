@@ -123,29 +123,13 @@ internal static partial class VectorTileServerEndpoints
 
         try
         {
-            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
-                resourceValidator,
-                serviceId,
-                MetadataV2ServiceProtocols.VectorTileServer,
-                context,
-                cancellationToken: cancellationToken);
-            if (!serviceResult.IsValid)
-            {
-                return serviceResult.ErrorResult!;
-            }
-
-            var service = serviceResult.Service!;
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-
             // Same Query-operation selection as the tile route, so root.json styles the publication the
             // tiles render, even under per-layer operation grants.
-            var (primary, accessError) = await ResolvePrimaryVectorTilePublicationAsync(
-                snapshot, service, context, cancellationToken).ConfigureAwait(false);
-            if (primary is null)
+            var resolved = await ResolveServicePrimaryAsync(context, serviceId, cancellationToken).ConfigureAwait(false);
+            var service = resolved.Service!;
+            if (resolved.Primary is not { } primary)
             {
-                return accessError ?? StandardErrorHelpers.CreateNotFound(
+                return resolved.Error ?? StandardErrorHelpers.CreateNotFound(
                     context,
                     "The VectorTileServer service has no accessible vector tile layer.");
             }
@@ -195,6 +179,41 @@ internal static partial class VectorTileServerEndpoints
     private readonly record struct PrimaryVectorTilePublication(
         VectorTilePublicationDescriptor? Primary,
         IResult? AccessError);
+
+    // The validated service, the snapshot it was resolved in and its primary tile publication, or
+    // the service's validation error or the 499/403 its denied publications give.
+    private readonly record struct ServicePrimary(
+        MetadataV2Service? Service,
+        MetadataV2GraphSnapshot? Snapshot,
+        PrimaryVectorTilePublication Selection)
+    {
+        public VectorTilePublicationDescriptor? Primary => Selection.Primary;
+
+        public IResult? Error => Selection.AccessError;
+    }
+
+    private static async Task<ServicePrimary> ResolveServicePrimaryAsync(
+        HttpContext context, string serviceId, CancellationToken cancellationToken)
+    {
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
+            resourceValidator,
+            serviceId,
+            MetadataV2ServiceProtocols.VectorTileServer,
+            context,
+            cancellationToken: cancellationToken);
+        if (!serviceResult.IsValid)
+        {
+            return new ServicePrimary(null, null, new PrimaryVectorTilePublication(null, serviceResult.ErrorResult));
+        }
+
+        var service = serviceResult.Service!;
+        var snapshot = await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
+            .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var selection = await ResolvePrimaryVectorTilePublicationAsync(
+            snapshot, service, context, cancellationToken).ConfigureAwait(false);
+        return new ServicePrimary(service, snapshot, selection);
+    }
 
     private static async Task<PrimaryVectorTilePublication> ResolvePrimaryVectorTilePublicationAsync(
         MetadataV2GraphSnapshot snapshot,

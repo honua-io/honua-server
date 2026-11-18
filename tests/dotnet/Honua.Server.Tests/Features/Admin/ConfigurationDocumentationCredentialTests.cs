@@ -80,6 +80,48 @@ public sealed class ConfigurationDocumentationCredentialTests
     [UnitTest]
     public void BuildDocumentation_LimitDefaultsComeFromUnconfiguredOptions()
     {
+        var documentation = CreateService(ConfiguredLimits()).BuildDocumentation();
+        var code = new LimitsOptions();
+
+        foreach (var limit in LimitCases)
+        {
+            var property = Property(documentation, limit.Path);
+            property.DefaultValue.Should().Be(limit.Read(code), limit.Path);
+            property.CurrentValue.Should().Be(limit.Configured, limit.Path);
+        }
+
+        EnvironmentDefault(documentation, "Limits__Query__MaxRecordCount")
+            .Should().Be(code.Query.MaxRecordCount.ToString(CultureInfo.InvariantCulture));
+        EnvironmentDefault(documentation, "Limits__Geometry__MaxVerticesPerGeometry")
+            .Should().Be(code.Geometry.MaxVerticesPerGeometry.ToString(CultureInfo.InvariantCulture));
+        EnvironmentDefault(documentation, "Limits__Connections__MaxConcurrentQueries")
+            .Should().Be(code.Connections.MaxConcurrentQueries.ToString(CultureInfo.InvariantCulture));
+    }
+
+    // Each documented limit: its path, how to read it from LimitsOptions and the value ConfiguredLimits sets.
+    private sealed record LimitCase(string Path, Func<LimitsOptions, object> Read, object Configured);
+
+    private static readonly LimitCase[] LimitCases =
+    [
+        new("Limits:Query:MaxRecordCount", options => options.Query.MaxRecordCount, 2000),
+        new("Limits:Geometry:MaxVerticesPerGeometry", options => options.Geometry.MaxVerticesPerGeometry, 1000),
+        new("Limits:Geometry:MaxGeometrySize", options => options.Geometry.MaxGeometrySize, 1L),
+        new("Limits:Geometry:MaxOverlayCandidatePairs", options => options.Geometry.MaxOverlayCandidatePairs, 1000L),
+        new("Limits:Edits:MaxFeaturesPerEdit", options => options.Edits.MaxFeaturesPerEdit, 2),
+        new("Limits:Edits:MaxEditsPerTransaction", options => options.Edits.MaxEditsPerTransaction, 3),
+        new("Limits:Edits:MaxPayloadSize", options => options.Edits.MaxPayloadSize, 4L),
+        new("Limits:Attachments:MaxAttachmentSize", options => options.Attachments.MaxAttachmentSize, 5L),
+        new("Limits:Attachments:MaxAttachmentsPerFeature", options => options.Attachments.MaxAttachmentsPerFeature, 1),
+        new("Limits:Attachments:MaxTotalAttachmentSize", options => options.Attachments.MaxTotalAttachmentSize, 6L),
+        new("Limits:Tiles:MaxTileZoom", options => options.Tiles.MaxTileZoom, 5),
+        new("Limits:Tiles:MaxFeaturesPerTile", options => options.Tiles.MaxFeaturesPerTile, 7),
+        new("Limits:Tiles:TileTimeout", options => options.Tiles.TileTimeout, TimeSpan.FromSeconds(1)),
+        new("Limits:Connections:MaxConcurrentQueries", options => options.Connections.MaxConcurrentQueries, 10),
+        new("Limits:Connections:RequestTimeout", options => options.Connections.RequestTimeout, TimeSpan.FromSeconds(11)),
+    ];
+
+    private static LimitsOptions ConfiguredLimits()
+    {
         var configured = new LimitsOptions();
         configured.Query.MaxRecordCount = 2000;
         configured.Geometry.MaxVerticesPerGeometry = 1000;
@@ -96,43 +138,7 @@ public sealed class ConfigurationDocumentationCredentialTests
         configured.Tiles.TileTimeout = TimeSpan.FromSeconds(1);
         configured.Connections.MaxConcurrentQueries = 10;
         configured.Connections.RequestTimeout = TimeSpan.FromSeconds(11);
-
-        var documentation = CreateService(configured).BuildDocumentation();
-        var code = new LimitsOptions();
-
-        ExpectDefault(documentation, "Limits:Query:MaxRecordCount", code.Query.MaxRecordCount, 2000);
-        ExpectDefault(documentation, "Limits:Geometry:MaxVerticesPerGeometry", code.Geometry.MaxVerticesPerGeometry, 1000);
-        ExpectDefault(documentation, "Limits:Geometry:MaxGeometrySize", code.Geometry.MaxGeometrySize, 1L);
-        ExpectDefault(documentation, "Limits:Geometry:MaxOverlayCandidatePairs", code.Geometry.MaxOverlayCandidatePairs, 1000L);
-        ExpectDefault(documentation, "Limits:Edits:MaxFeaturesPerEdit", code.Edits.MaxFeaturesPerEdit, 2);
-        ExpectDefault(documentation, "Limits:Edits:MaxEditsPerTransaction", code.Edits.MaxEditsPerTransaction, 3);
-        ExpectDefault(documentation, "Limits:Edits:MaxPayloadSize", code.Edits.MaxPayloadSize, 4L);
-        ExpectDefault(documentation, "Limits:Attachments:MaxAttachmentSize", code.Attachments.MaxAttachmentSize, 5L);
-        ExpectDefault(documentation, "Limits:Attachments:MaxAttachmentsPerFeature", code.Attachments.MaxAttachmentsPerFeature, 1);
-        ExpectDefault(documentation, "Limits:Attachments:MaxTotalAttachmentSize", code.Attachments.MaxTotalAttachmentSize, 6L);
-        ExpectDefault(documentation, "Limits:Tiles:MaxTileZoom", code.Tiles.MaxTileZoom, 5);
-        ExpectDefault(documentation, "Limits:Tiles:MaxFeaturesPerTile", code.Tiles.MaxFeaturesPerTile, 7);
-        ExpectDefault(documentation, "Limits:Tiles:TileTimeout", code.Tiles.TileTimeout, TimeSpan.FromSeconds(1));
-        ExpectDefault(documentation, "Limits:Connections:MaxConcurrentQueries", code.Connections.MaxConcurrentQueries, 10);
-        ExpectDefault(documentation, "Limits:Connections:RequestTimeout", code.Connections.RequestTimeout, TimeSpan.FromSeconds(11));
-
-        EnvironmentDefault(documentation, "Limits__Query__MaxRecordCount")
-            .Should().Be(code.Query.MaxRecordCount.ToString(CultureInfo.InvariantCulture));
-        EnvironmentDefault(documentation, "Limits__Geometry__MaxVerticesPerGeometry")
-            .Should().Be(code.Geometry.MaxVerticesPerGeometry.ToString(CultureInfo.InvariantCulture));
-        EnvironmentDefault(documentation, "Limits__Connections__MaxConcurrentQueries")
-            .Should().Be(code.Connections.MaxConcurrentQueries.ToString(CultureInfo.InvariantCulture));
-    }
-
-    private static void ExpectDefault(
-        ConfigurationDocumentation documentation,
-        string path,
-        object codeDefault,
-        object configuredCurrent)
-    {
-        var property = Property(documentation, path);
-        property.DefaultValue.Should().Be(codeDefault);
-        property.CurrentValue.Should().Be(configuredCurrent);
+        return configured;
     }
 
     private static string? EnvironmentDefault(ConfigurationDocumentation documentation, string name)

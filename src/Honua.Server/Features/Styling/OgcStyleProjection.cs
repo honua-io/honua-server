@@ -158,10 +158,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
         }
 
-        var stored = await _styleCatalog.GetLayerStyleAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
-        if (stored is not null && !string.IsNullOrWhiteSpace(stored.MapLibreStyleJson))
+        var layerStyleJson = await ResolveLayerStyleJsonAsync(resource, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(layerStyleJson))
         {
-            return await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored.MapLibreStyleJson, encoding, cancellationToken)
+            return await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, layerStyleJson, encoding, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -197,12 +197,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 return null;
             }
 
-            var stored = await _styleCatalog
-                .GetLayerStyleAsync(storageLayerId.Value, cancellationToken)
-                .ConfigureAwait(false);
-            return stored is null || string.IsNullOrWhiteSpace(stored.MapLibreStyleJson)
+            var layerStyleJson = await ResolveLayerStyleJsonAsync(resource, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(layerStyleJson)
                 ? null
-                : await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored.MapLibreStyleJson, encoding, cancellationToken)
+                : await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, layerStyleJson, encoding, cancellationToken)
                     .ConfigureAwait(false);
         }
 
@@ -214,6 +212,25 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return isAssociatedCatalogStyle
             ? await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false)
             : null;
+    }
+
+    // A layer's saved presentation (the Console drawingInfo override) is what its server-rendered
+    // outputs draw, so the vector style documents serve it too, ahead of the stored MapLibre style.
+    private JsonElement? SavedPresentation(MetadataV2Object resource, int storageLayerId)
+        => RasterMapRenderingPipeline.ResolveSavedDrawingInfoMapLibreStyle(resource, storageLayerId, _geoServicesConverter) is not null
+            && RasterMapRenderingPipeline.TryGetSavedDrawingInfo(resource, out var saved)
+                ? saved
+                : null;
+
+    private async Task<string?> ResolveLayerStyleJsonAsync(MetadataV2Object resource, int storageLayerId, CancellationToken cancellationToken)
+    {
+        if (RasterMapRenderingPipeline.ResolveSavedDrawingInfoMapLibreStyle(resource, storageLayerId, _geoServicesConverter) is { } saved)
+        {
+            return saved;
+        }
+
+        var stored = await _styleCatalog.GetLayerStyleAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        return stored?.MapLibreStyleJson;
     }
 
     private async Task<OgcStylesheet?> ProjectLayerStylesheetAsync(
@@ -231,8 +248,9 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         if (encoding == OgcStyleEncoding.GeoServicesDrawingInfo)
         {
             // Esri renderer is a server-side projection of the canonical MapLibre style (ADR-0002): the style
-            // service back-generates drawingInfo from the stored MapLibre. The console never converts.
-            var drawingInfo = await _styleService
+            // service back-generates drawingInfo from the stored MapLibre. A saved presentation is served as
+            // saved, as the MapLibre and SLD encodings above derive from it.
+            var drawingInfo = SavedPresentation(resource, storageLayerId) ?? await _styleService
                 .GetDrawingInfoAsync(resource, storageLayerId, cancellationToken)
                 .ConfigureAwait(false);
             if (drawingInfo is not { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) })

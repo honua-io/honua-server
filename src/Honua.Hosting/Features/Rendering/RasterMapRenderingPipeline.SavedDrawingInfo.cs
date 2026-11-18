@@ -40,6 +40,9 @@ internal static partial class RasterMapRenderingPipeline
             .ConfigureAwait(false);
     }
 
+    internal static bool IsSavedDrawingInfoKey(string key)
+        => key is SavedDrawingInfoExtensionKey or LegacyDrawingInfoExtensionKey;
+
     internal static bool TryGetSavedDrawingInfo(MetadataV2Object resource, out JsonElement drawingInfo)
     {
         if (resource.Extensions is { } extensions

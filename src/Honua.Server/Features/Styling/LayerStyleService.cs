@@ -7,6 +7,8 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
+using Honua.Infrastructure.Rendering;
+using Honua.Server.Features.Admin;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Styling;
@@ -21,19 +23,22 @@ internal sealed class LayerStyleService : ILayerStyleService
     private readonly IMetadataV2GraphProvider? _metadataV2GraphProvider;
     private readonly IStyleCatalog? _independentStyleCatalog;
     private readonly IMetadataV2StyleGraphSync? _styleGraphSync;
+    private readonly IMetadataV2GraphStore? _graphStore;
 
     public LayerStyleService(
         ILayerStyleCatalog styleCatalog,
         ILogger<LayerStyleService> logger,
         IMetadataV2GraphProvider? metadataV2GraphProvider = null,
         IStyleCatalog? independentStyleCatalog = null,
-        IMetadataV2StyleGraphSync? styleGraphSync = null)
+        IMetadataV2StyleGraphSync? styleGraphSync = null,
+        IMetadataV2GraphStore? graphStore = null)
     {
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _metadataV2GraphProvider = metadataV2GraphProvider;
         _independentStyleCatalog = independentStyleCatalog;
         _styleGraphSync = styleGraphSync;
+        _graphStore = graphStore;
     }
 
     public async Task<LayerStyleSnapshot?> GetStyleAsync(
@@ -127,6 +132,7 @@ internal sealed class LayerStyleService : ILayerStyleService
 
             var generatedDrawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, styleLayer);
 
+            await RetireSavedPresentationAsync(resource, styleLayer.Id).ConfigureAwait(false);
             await SyncIndependentStyleCatalogAsync(
                 styleLayer.Id,
                 resource,
@@ -161,6 +167,7 @@ internal sealed class LayerStyleService : ILayerStyleService
             return new LayerStyleUpdateResult(LayerStyleUpdateStatus.NotFound, null, null);
         }
 
+        await RetireSavedPresentationAsync(resource, styleLayer.Id).ConfigureAwait(false);
         await SyncIndependentStyleCatalogAsync(
             styleLayer.Id,
             resource,
@@ -176,6 +183,29 @@ internal sealed class LayerStyleService : ILayerStyleService
             null,
             conversion.Unsupported);
     }
+
+    // Every renderer and style document prefers a layer's saved presentation (the Console drawingInfo
+    // override) to its stored style, so a newer style write retires the override; otherwise the
+    // style just written would never show.
+    private async Task RetireSavedPresentationAsync(MetadataV2Object resource, int storageLayerId)
+    {
+        if (_graphStore is null || !RasterMapRenderingPipeline.TryGetSavedDrawingInfo(resource, out _))
+        {
+            return;
+        }
+
+        // The style write has committed; a cancelled request must not leave the override in front of it.
+        await AdminLayerConfigurationTargets.WriteAsync(_graphStore, storageLayerId, WithoutSavedPresentation, CancellationToken.None)
+            .ConfigureAwait(false);
+    }
+
+    private static MetadataV2Object WithoutSavedPresentation(MetadataV2Object resource)
+        => resource with
+        {
+            Extensions = resource.Extensions
+                .Where(pair => !RasterMapRenderingPipeline.IsSavedDrawingInfoKey(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
+        };
 
     private async Task SyncIndependentStyleCatalogAsync(
         int storageLayerId,
