@@ -1,6 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.FeatureStore.Domain;
+
 namespace Honua.Server.Hosting;
 
 // The entry point returns on a refusal so native finalizers do not run after their modules unload.
@@ -13,5 +16,22 @@ internal static class StartupRefusal
         ArgumentException.ThrowIfNullOrEmpty(message);
         Environment.ExitCode = ExitCode;
         Console.Error.WriteLine(message);
+    }
+
+    // Runs a startup check whose failure is an operator error. Left unhandled, its exception aborts the
+    // runtime (exit 139 on the AOT image) with a stack trace; it is reported as a refusal instead.
+    internal static bool Passes(Action check)
+    {
+        ArgumentNullException.ThrowIfNull(check);
+        try
+        {
+            check();
+            return true;
+        }
+        catch (Exception ex) when (ex is DataStoreProviderUnavailableException or DurableJobSubstrateUnavailableException)
+        {
+            Exit(ex.Message);
+            return false;
+        }
     }
 }
