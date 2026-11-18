@@ -23,20 +23,24 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class AlertAdminEndpointsTests : IAsyncLifetime
+public sealed class AlertAdminEndpointsTests(AlertAdminEndpointsTests.WebhookHost host)
+    : IClassFixture<AlertAdminEndpointsTests.WebhookHost>
 {
-    private readonly WebAppFixture _fixture = CreateFixture(
-        allowedChannels: [AlertChannelType.Webhook],
-        configuredChannels: [AlertChannelType.Webhook]);
-    private HttpClient _client = null!;
+    private readonly HttpClient _client = host.Fixture.CreateAdminClient();
 
-    public async Task InitializeAsync()
+    // Cases on the webhook-only policy scope every zone and rule to a fresh service id and probe
+    // missing ids far above the sequence, so one application serves them all; each case still
+    // creates its own client. Cases with other policies or stubbed stores build their own.
+    public sealed class WebhookHost : IAsyncLifetime
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
-    }
+        public WebAppFixture Fixture { get; } = CreateFixture(
+            allowedChannels: [AlertChannelType.Webhook],
+            configuredChannels: [AlertChannelType.Webhook]);
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/alerts/zones")]

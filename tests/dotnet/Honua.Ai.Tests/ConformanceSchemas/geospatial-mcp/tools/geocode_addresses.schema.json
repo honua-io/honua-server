@@ -5,6 +5,7 @@
   "description": "Argument shape for the analysis/geoprocessing batch geocode tool (advertised name honua_geocode_addresses). Resolves up to 100 freeform addresses in one call, returning one result per input in input order ({input, ok, location?, score?, error?}); a failed address surfaces per item without failing the batch. First step of the CSV-of-addresses workflow: geocode here, then load the coordinates with ingest_dataset and publish the table with publish_service. x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "required": ["addresses"],
   "properties": {
     "addresses": {
