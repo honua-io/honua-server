@@ -221,7 +221,7 @@ Markdown sources and doctor-only tooling have been removed.
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
 | `heavy-shutdown-retry.yml` | Heavy Runner Shutdown Retry | `workflow_run` | One bounded retry of proven full-trunk heavy runner shutdowns; no PR jobs. |
-| `pr-gate.yml` | PR Gate | `pull_request`, `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The independent `fast-tests` matrix keeps four check names alongside it, selecting each build/test body by the shared affected-project reverse closure and its existing test roots (empty closures skip only with positive governed-docs proof; unknown selection retains all). Every nonempty managed closure also retains architecture and Server governance checks. Selected groups compile only their own test roots: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as four jobs: Format, Analyzers (source projects), Analyzers (tests), and Analyzers (server tests, including the architecture collector so other tests do not recompile Server.Tests). Drafts instantiate only Format; ready PRs instantiate all four rows. The source job always retains all solution source roots, including dependencies of affected test roots, and evaluates ownership after SDK/NuGet imports and removes test-only compilation roots (multi-targeted roots remain conservative); all analyzer jobs compile forward dependencies; `HonuaAnalyzerPartition` assigns each project to exactly one diagnostics pass using `IsTestProject`. Runtime execution proofs and fidelity run in full CI, followed by the default PostGIS profile and connection-write policy checks. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Shard artifacts are named per run attempt. The aggregate downloads only the newest artifact id for each selected shard (`scripts/ci/download-affected-receipts.py`), keeps an earlier attempt when a failed-jobs rerun did not repeat that shard, and does not fall back from a missing or expired newest receipt. Full CI still downloads every attempt directory without merging them. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` reserves the gate label for `pr-gate` and `server-test-producer` and plans `start_heavy`: half of the idle heavy runners beyond a three-runner reserve (shards, advisory), at most two per gate, take both producers when the gate pool is busy, then `analyzers-server`, `architecture`, `server-fast` and `analyzers-other` through the fork-guarded `HONUA_HEAVY_RUNNER` selector; Format and source Analyzers use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector; unplanned test-analyzer rows and Fast/architecture groups stay on `ubuntu-latest`, as do drafts, forks and draft Format. Manual dispatch accepts a default-false `qualify_light` boolean: only `workflow_dispatch` on `refs/heads/trunk` may pin the six existing light selectors to the `honua-light` group and label while normal routing is disabled, with both test-analyzer rows still hosted. PR/fork routing, producer admission and aggregate dependencies remain unchanged. No early light job inherits the two producer slots; existing even-index affected-shard routing is unchanged ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
+| `pr-gate.yml` | PR Gate | `pull_request`, `workflow_dispatch` | Required verification context. Admission checks run first. `pr-gate` builds the affected graph plus planned managed test roots and the server host, publishes pristine per-project outputs and runs the required boot/migration smoke against its canonical host output. The four Fast and architecture check names stay alongside it: `fast-tests` runs `architecture` and `unit-fast`, and `fast-server-tests` runs `server-fast` and `server-governance`, selecting each build/test body by the shared affected-project reverse closure and its existing test roots (empty closures skip only with positive governed-docs proof; unknown selection retains all). Every nonempty managed closure also retains architecture and Server governance checks. `architecture` and `unit-fast` compile only their own test roots. `fast-server-tests` restores the producer Server.Tests output for `server-fast` and `server-governance` and compiles that project only when the restore is empty. The groups are: `architecture` (projection regeneration, source and collector architecture, MCP roster drift), `unit-fast` (isolated unit Fast tier), `server-fast` (Server Fast tier) and `server-governance` (Server governance/drift with PostGIS); both server jobs first refresh the admin parity exports Server.Tests compares. The `format` matrix runs `dotnet format` and the analyzer build (affected closure, analyzers, code style and documentation diagnostics as errors) as four jobs: Format, Analyzers (source projects), Analyzers (tests), and Analyzers (server tests, including the architecture collector so other tests do not recompile Server.Tests). Drafts instantiate only Format; ready PRs instantiate all four rows. The source job always retains all solution source roots, including dependencies of affected test roots, and evaluates ownership after SDK/NuGet imports and removes test-only compilation roots (multi-targeted roots remain conservative); all analyzer jobs compile forward dependencies; `HonuaAnalyzerPartition` assigns each project to exactly one diagnostics pass using `IsTestProject`. Runtime execution proofs and fidelity run in full CI, followed by the default PostGIS profile and connection-write policy checks. The independent format and CI-router jobs remain required; `required.needs` is `[pr-gate, fast-tests, fast-server-tests, format, ci-router-validation, affected-shards, server-test-producer]`. Selected shard jobs, bounded by the `pr_time_budget` in `.github/ci-shards.json` (over-budget shards are deferred to the next trunk run and named in a green `deferred` verdict), consume the same outputs; their aggregate enforces measured timing/TRX receipts and fails the required context on failed or missing execution. Shard artifacts are named per run attempt. The aggregate downloads only the newest artifact id for each selected shard (`scripts/ci/download-affected-receipts.py`), keeps an earlier attempt when a failed-jobs rerun did not repeat that shard, and does not fall back from a missing or expired newest receipt. Full CI still downloads every attempt directory without merging them. Review-first enforcement and docs-only exits remain inside the unfiltered workflow. See the [artifact contract](server-test-binary-artifacts.md) for identity, transport bounds, fallback and rollback. `runner-select` reserves the gate label for `pr-gate` and `server-test-producer` and plans `start_heavy`: half of the idle heavy runners beyond a three-runner reserve (shards, advisory), at most two per gate, take both producers when the gate pool is busy, then `analyzers-server`, `architecture`, `server-fast` and `analyzers-other` through the fork-guarded `HONUA_HEAVY_RUNNER` selector; PR Gate's runner select, Format and source Analyzers, shard selection, the shard aggregate, CI router validation and the required aggregate stay on `ubuntu-latest`. `HONUA_LIGHT_RUNNER` does not place them, so a busy light pool cannot hold the selector while `honua-build` runners sit idle. Unplanned test-analyzer rows and Fast/architecture groups stay on `ubuntu-latest`, as do drafts, forks and draft Format. Manual dispatch accepts a default-false `qualify_light` boolean: only `workflow_dispatch` on `refs/heads/trunk` may pin those six jobs to the `honua-light` group and label, with both test-analyzer rows still hosted. PR/fork routing, producer admission and aggregate dependencies remain unchanged. No early light job inherits the two producer slots; existing even-index affected-shard routing is unchanged ([gate-model.md → PR Gate compute runner selection](gate-model.md#pr-gate-compute-runner-selection)). |
 | `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, `repository_dispatch`, `workflow_run` | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Queues superseded events by resolved PR number and skips drafts, posts no red status on a pull request that merged or closed during attestation, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt. |
 | `repo-hygiene.yml` | Repository hygiene | `pull_request` | Required additions-only context `repo-hygiene / Repository hygiene`. Validates unique shard names and per-project filters against the PR merge tree in a five-minute job required by the existing aggregate; disjoint grouped projects may share a filter. Runs the execution-evidence checker and its tests from the trusted base commit against the explicit PR head, including older heads without those scripts. Calls the shared SHA-pinned workflow with read-only permissions; reads the repository-owned root allowlist and exact gate-input exceptions from the trusted base branch, rejecting new scratch, run output, dated history, samples and unexpected root entries. |
 | `review-event-bridge.yml` | Review Event Bridge | `pull_request_review`, `pull_request_review_comment` | Best-effort latency hint only; queues superseded events per PR and skips drafts. GitHub runs these event workflows from the PR merge branch, so the bridge is credential-free/no-checkout and is never trusted for invalidation or landing. |
@@ -708,7 +708,7 @@ The server matrix combines 33 small unit/component assemblies into four jobs:
 Provider and AI Units, Runtime Units, Protocol Units, and Protocol and Host
 Components. Each `csprojs` list is an explicit assembly union. Routing, build
 selection, resource classification, and the source coverage guard inspect every
-member. Catalogued Docker, Postgres, and Redis dependencies remain supported;
+member. Catalogued Docker and Postgres dependencies remain supported;
 resourceful members retain service provisioning. Unknown resources fail closed.
 The existing required check names and tier policies remain unchanged.
 
@@ -784,7 +784,7 @@ and aggregate dependencies are unchanged.
 
 The authorization matrix selects the live `AdminAuthorizationTests` class.
 The remaining authorization shard owns every other method in the original parent
-filter. Retired Redis endpoint selectors are removed; the coverage guard still
+filter. Retired cache endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
 
@@ -848,7 +848,7 @@ Normalization consumers preserve a producer’s recorded superseded admission ac
 
 `--changed-only` is a local feedback mode: stdin routing cases skip only when their complete input closure (router, shard map, jq wrapper and validator infrastructure) is unchanged against the merge base with `origin/trunk`. Staged, unstaged, renamed and untracked inputs count. Unknown base or an ambiguous path runs everything; undeclared fixture input closures also run. CI and GitHub Actions ignore the optimization and always run every fixture.
 
-The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project and the full-coverage architecture collector, whose imported references pull Server.Tests into its graph. The independent architecture path and analyzer jobs retain collector compilation and verification. The shared import-aware project parser rejects any other reverse dependency on Server.Tests. Each producer publishes only the assemblies consumed by selected shards. The final required context directly requires the parallel producer on both pull-request and manual events; the PR-only affected-shards aggregate also checks it for an empty shard matrix. Honua.Server.Tests shards start when that producer and the selector finish, and read heavy-runner readiness from runner select. Every other selected project stays behind Build and tests, which publishes its managed outputs. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
+The PR managed producer compiles `Honua.Server.Tests` in a parallel, review-admitted job. The main producer excludes that project and the full-coverage architecture collector, whose imported references pull Server.Tests into its graph. The independent architecture path and analyzer jobs retain collector compilation and verification. The shared import-aware project parser rejects any other reverse dependency on Server.Tests. The parallel producer publishes the Server.Tests output after every non-docs build, and publishes other managed projects only when a selected shard consumes them. The `fast-server-tests` job restores Server.Tests for `server-fast` and `server-governance` and compiles that project only when the restore is empty. The final required context directly requires the parallel producer on both pull-request and manual events; the PR-only affected-shards aggregate also checks it for an empty shard matrix. Honua.Server.Tests shards start when that producer and the selector finish, and read heavy-runner readiness from runner select. Every other selected project stays behind Build and tests, which publishes its managed outputs. Only the affected-shard matrix cancels sibling shards after a failure; fast-test and analyzer matrices retain every result.
 
 Review revalidation shares `.github/scripts/revalidate-exact-head-review.cjs` across producer, fast-test and aggregate jobs. The aggregate checks out code only for enforced attempt-2 review validation. Generated-output classification shares `scripts/ci/classify-generated-output.sh`; executable skip policy still comes from the immutable PR base, and uncertainty preserves all checks.
 
@@ -1045,7 +1045,7 @@ skipping or missing results fail the shell check. The required name and both
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
-The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+Operator Eval children keep Ryuk and PostGIS 17, and Core and Cloud Contracts children keep Ryuk, PostGIS 16 and PostGIS 18; the other split children prepare no images. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 
 ### Lightweight workflow runner admission
 
@@ -1607,6 +1607,57 @@ selected PR runs and full trunk runs. No workflow, shard filter, required check,
 aggregate dependency or runner count changes. Paired class and existing-partition
 measurements are collected separately; test-body time excludes class-fixture
 startup and disposal, and does not establish complete CI job-wall savings.
+
+### Admin operations progress host lifetime
+
+`OperationsProgressEndpointsTests` (including its query partial) shares one
+application with in-memory durable job store and queue doubles across every
+case that uses them. Each case still writes progress and jobs under its own new
+operation id and deletes its progress afterwards; the shared queue is drained
+before each case, so the queue-depth assertion stays exact. Cases that replace
+the job store, queue or remote backend keep their private applications and no
+longer start an unused default application as well.
+
+The class stays in Server Features Admin Operations Endpoints on selected PR
+runs and full trunk runs. No workflow, shard filter, required check, aggregate
+dependency or runner count changes. Build-host class 39/39 identical passing
+cases, 391 to 88-92 seconds; existing partition 122/122, 981 to 628 seconds.
+
+### Cross-protocol permission matrix write hosts
+
+`CrossProtocolPermissionMatrixTests` write cases (the FeatureServer/gRPC
+ApplyEdits parity theory and the FeatureServer, OData and OGC Features write
+cases) differ only in the grants that the test role holds. They now share one
+application per write catalog (FeatureServer/OData/OGC and gRPC) instead of
+starting one per case: each case replaces the role's grants before its request,
+cases of a class run one at a time, permissions are resolved per request, and
+the test feature store is created per request, so no grant or edit outlives its
+case. Role names, payloads and every status assertion are unchanged; the two
+layer-scoped read cases keep their own applications.
+
+The class stays split across Security and Authorization 1 and 7 on selected PR
+runs and full trunk runs. No workflow, shard filter, required check, aggregate
+dependency or runner count changes. Build-host class 59/59 identical passing
+cases, 349.6 to 31.7-32.5 seconds.
+
+### Capability manifest and deployment profile host reuse
+
+`CapabilityManifestEndpointTests` cases that need only the default manifest
+configuration now use the class's default application, and cases that differ
+only by the manifest source (registry) or the experimental switch share one
+application per configuration, started on first use. Those cases only read the
+manifest. Cases with any other configuration or replaced services keep their own
+applications. `DeploymentCapabilityProfileIntegrationTests` folder-path cases
+share one application per configured capability (8 cases, 4 applications) with
+the test service moved into the "Public" folder once at start.
+
+The classes stay in Server Features Capabilities on selected PR runs and full
+trunk runs. No workflow, shard filter, required check, aggregate dependency or
+runner count changes. Build-host namespace 100/100 identical passing cases in one
+job: wall 633 to 419-438 seconds; DeploymentCapabilityProfileIntegrationTests
+80.4 to 43.0-43.7 seconds and CapabilityManifestEndpointTests 305.0 to
+225.7-241.8 seconds, while the unchanged classes in the same job also ran
+148.5 to 102-110 seconds, so part of that difference is host load.
 
 ## Additional workflows
 
