@@ -145,7 +145,19 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
 
     private PostgresStorageMappedFeatureReader CreateReader()
     {
-        var resource = new MetadataV2Object
+        return new PostgresStorageMappedFeatureReader(
+            new ConnectionProvider(fixture.ConnectionString, fixture.DataSource),
+            new DefaultObjectPoolProvider().Create(new DefaultPooledObjectPolicy<Dictionary<string, object?>>()),
+            LedgerResource(),
+            new FeatureStorageMapping("ledger", SchemaName: _schema, PrimaryKeyColumn: "id",
+                GeometryColumn: "geom", StorageSrid: 4326),
+            connection: null,
+            connectionEncryptionService: null);
+    }
+
+    private static MetadataV2Object LedgerResource()
+    {
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -153,40 +165,37 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
                 Name = "Ledger"
             },
             Type = MetadataV2ObjectType.FeatureDataset,
-            SchemaFields =
-            [
-                new()
-                {
-                    Name = "id",
-                    Type = MetadataV2FieldType.Integer,
-                    SemanticRoles = ["id.primary"]
-                },
-                new()
-                {
-                    Name = "amount",
-                    Type = MetadataV2FieldType.Decimal
-                },
-                new()
-                {
-                    Name = "signed",
-                    Type = MetadataV2FieldType.TimestampOffset
-                },
-                new()
-                {
-                    Name = "geom",
-                    Type = MetadataV2FieldType.Geometry,
-                    SemanticRoles = ["geometry.primary"]
-                }
-            ]
+            SchemaFields = LedgerFields()
         };
-        return new PostgresStorageMappedFeatureReader(
-            new ConnectionProvider(fixture.ConnectionString, fixture.DataSource),
-            new DefaultObjectPoolProvider().Create(new DefaultPooledObjectPolicy<Dictionary<string, object?>>()),
-            resource,
-            new FeatureStorageMapping("ledger", SchemaName: _schema, PrimaryKeyColumn: "id",
-                GeometryColumn: "geom", StorageSrid: 4326),
-            connection: null,
-            connectionEncryptionService: null);
+    }
+
+    private static MetadataV2Field[] LedgerFields()
+    {
+        return
+        [
+            new()
+            {
+                Name = "id",
+                Type = MetadataV2FieldType.Integer,
+                SemanticRoles = ["id.primary"]
+            },
+            new()
+            {
+                Name = "amount",
+                Type = MetadataV2FieldType.Decimal
+            },
+            new()
+            {
+                Name = "signed",
+                Type = MetadataV2FieldType.TimestampOffset
+            },
+            new()
+            {
+                Name = "geom",
+                Type = MetadataV2FieldType.Geometry,
+                SemanticRoles = ["geometry.primary"]
+            }
+        ];
     }
 
     // The publishing service references the shared catalog unqualified, so route it to 'honua'.
