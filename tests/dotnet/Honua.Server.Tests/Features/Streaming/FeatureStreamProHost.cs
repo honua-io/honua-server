@@ -26,28 +26,37 @@ public sealed class FeatureStreamProHost : IAsyncLifetime
         // class, so the default 30s tick can land in the next frame a case reads as status.
         // Cases that assert a heartbeat call BroadcastHeartbeat themselves. Cases that need
         // the short scheduled interval build their own host.
-        Fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(_license)
-            .ConfigureWebHost(builder => builder.UseSetting(
-                "FeatureStreaming:HeartbeatInterval",
-                "01:00:00"));
+        Fixture = WithLongHeartbeat(new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(_license));
     }
+
+    // Keeps the scheduled heartbeat out of the frames that sequential cases read in order.
+    private static WebAppFixture WithLongHeartbeat(WebAppFixture fixture)
+        => fixture.ConfigureWebHost(builder => builder.UseSetting(
+            "FeatureStreaming:HeartbeatInterval",
+            "01:00:00"));
 
     public Task InitializeAsync() => Fixture.InitializeAsync();
 
     public async Task DisposeAsync()
     {
-        foreach (var variant in _variantFixtures)
+        try
         {
-            await variant.DisposeAsync();
+            foreach (var variant in _variantFixtures)
+            {
+                await variant.DisposeAsync();
+            }
         }
-
-        await Fixture.DisposeAsync();
+        finally
+        {
+            await Fixture.DisposeAsync();
+        }
     }
 
     // Cases that need the same non-default host share one host per variant key. A variant
     // starts on first use, so a shard whose filter skips those cases never boots it. Each
-    // acquisition drops sessions an earlier case left on the variant.
+    // acquisition drops sessions an earlier case left on the variant. A variant outlives
+    // many cases, so it gets the class host's long heartbeat interval too.
     public async Task<WebAppFixture> GetVariantAsync(string key, Func<WebAppFixture> create)
     {
         Task<WebAppFixture> started;
@@ -55,7 +64,7 @@ public sealed class FeatureStreamProHost : IAsyncLifetime
         {
             if (!_variants.TryGetValue(key, out started!))
             {
-                var fixture = create();
+                var fixture = WithLongHeartbeat(create());
                 _variantFixtures.Add(fixture);
                 started = StartAsync(fixture);
                 _variants[key] = started;

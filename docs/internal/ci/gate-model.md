@@ -2718,10 +2718,12 @@ one class at a time. The parallel saving is not yet measured.
 seconds each; cases that build their own host take 9 to 12 seconds, almost all of
 it host start. Cases that repeat a configuration now share one keyed variant host
 on `FeatureStreamProHost`, started on first use, so a shard whose filter skips
-those cases never starts it. Each acquisition drops sessions an earlier case left.
+those cases never starts it. Each acquisition drops sessions an earlier case left, and variants keep the class
+host's one-hour heartbeat so no scheduled frame lands in an ordered read.
 The ten subscriber-policy cases use two variants (each anchors its cursor on its
 own change); dev auth off, Community edition, the service-level access catalog and
-the service-only filter catalog use one each for nine read-only cases; and the
+the service-only filter catalog use one each for nine cases that read only their
+own requests or events; and the
 eight expired-cursor executions share one host over the fixed 50 to 60
 retention-window fake store, which none of them appends to. About 20 host starts
 are removed; assertions are unchanged. Cases that mutate metadata, policies,
