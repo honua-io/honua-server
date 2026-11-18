@@ -9,7 +9,7 @@
     },
     {
       "path": ".vscode/launch.json",
-      "sha256": "b353a235c0da97fbabe625e0411d7ea3e451c7083f1f2541874343109f9ab364",
+      "sha256": "a4540e74bbea2f9878279b9867b3998b8850f9cc3b3ac3c3ecf0ca002f8b1fd6",
       "sizeBytes": 2150
     },
     {
@@ -54,7 +54,7 @@
     },
     {
       "path": "process/packages.lock.json",
-      "sha256": "f8795fde599f0c99846af9ecb2328335320812900ad2b7d1a4c390e51093ebb2",
+      "sha256": "9c58217dc05d781cd9de3ce688c6c85dcdf9f82559abd53191d25c67fe6a2b70",
       "sizeBytes": 132
     },
     {
@@ -64,12 +64,12 @@
     },
     {
       "path": "process/SummaryTool.csproj",
-      "sha256": "16a844391a9bb382158c74cc8980e36b18db1de7e3b3eb0176fdcb71933b2eed",
+      "sha256": "65ec4b08c20207da6571d5449903e6ecc8a7a73339d9aa341c8b0a7195f5e2e8",
       "sizeBytes": 891
     },
     {
       "path": "README.md",
-      "sha256": "c71003279992ce25e022e4a669d8dead2778c17115f28f1eda5608f375fc161d",
+      "sha256": "69f7f37f89dc619fa84071fdc3d586147664bb779103d2926f062b12b9d22436",
       "sizeBytes": 6782
     },
     {
@@ -89,12 +89,12 @@
     },
     {
       "path": "tests/SummaryTool.Tests/packages.lock.json",
-      "sha256": "135f0dea00adbb99d16de79d12bcd3d018d267f24c10b7ccfd6363ed92f8081a",
-      "sizeBytes": 26071
+      "sha256": "d83509871159196f7442dca8c34bedeec9daed421788db4db1c263329f1cfbf0",
+      "sizeBytes": 20554
     },
     {
       "path": "tests/SummaryTool.Tests/SummaryTool.Tests.csproj",
-      "sha256": "aa322ca0a8b4ad2446d4b3d06827d2fd928974420a22c484316f7314dc2e7be8",
+      "sha256": "04e462331907d1fd2ab9136fd068682883d6a0538f16073856f58ea8588850a9",
       "sizeBytes": 770
     }
   ]
