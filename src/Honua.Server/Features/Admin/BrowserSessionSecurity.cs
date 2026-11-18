@@ -42,6 +42,18 @@ internal static class BrowserSessionSecurity
                 || (request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
                     && (metadata?.GetMetadata<UsesBrowserSessionMetadata>() is not null
                         || !HasAuthenticatedExplicitCredential(context)));
+            // A WebSocket upgrade is a GET, so the antiforgery check never sees it. When the browser
+            // session cookie is the credential, the upgrade must come from this origin: same-site
+            // pages on another origin (a sibling subdomain) would otherwise receive the cookie.
+            if (context.WebSockets.IsWebSocketRequest
+                && request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
+                && !HasAuthenticatedExplicitCredential(context)
+                && !IsSameOrigin(request))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
             // SAML POST bindings validate signed protocol messages and their own correlation state.
             if (!safe && requiresCsrf && metadata?.GetMetadata<BrowserCsrfProtocolBindingMetadata>() is null)
             {
