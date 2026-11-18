@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "Cache State Backup"
-description: "Enterprise automation for warm-cache recovery during regional failover. Recovery of enabled durable PostgreSQL job/workflow state remains a baseline obligation in every edition."
+description: "Enterprise automation for Redis warm-cache recovery during regional failover. Recovery of enabled durable Redis job/workflow state remains a baseline obligation in every edition."
 resource: "honua://capability/dr.cache-backup"
 tags: [capability, disasterrecovery, enterprise]
 ---
@@ -9,7 +9,7 @@ tags: [capability, disasterrecovery, enterprise]
 
 # Cache State Backup
 
-Enterprise automation for warm-cache recovery during regional failover. Recovery of enabled durable PostgreSQL job/workflow state remains a baseline obligation in every edition.
+Enterprise automation for Redis warm-cache recovery during regional failover. Recovery of enabled durable Redis job/workflow state remains a baseline obligation in every edition.
 
 | | |
 | --- | --- |
