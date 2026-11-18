@@ -11,10 +11,13 @@ using Xunit;
 namespace Honua.Architecture.Tests;
 
 [Trait("Category", "Architecture")]
-public sealed class EndpointAuthorizationGuardTests
+public sealed partial class EndpointAuthorizationGuardTests
 {
     private static readonly string[] FeaturesRelativePaths = ["src/Honua.Server/Features", "src/Honua.Ai/Features"];
     private const string ProgramRelativePath = "src/Honua.Server/Program.cs";
+    private const string BaselineRelativePath = "tests/dotnet/Honua.Architecture.SourceTests/endpoint-authorization-baseline.txt";
+    private static readonly string[] MutationVerbs = ["MapPost", "MapPut", "MapDelete", "MapPatch"];
+    private static readonly string[] BaselinedVerbs = ["MapGet", "MapMethods"];
 
     private static readonly string[] AuthOptInMarkers =
     {
@@ -48,66 +51,39 @@ public sealed class EndpointAuthorizationGuardTests
         "RequireConformanceMutateAuthorization",
     };
 
-    private static readonly Regex MapMutationRegex = new(
-        @"\.(MapPost|MapPut|MapDelete|MapPatch)\s*\(\s*(?:""(?<route>[^""]*)""|@""(?<route2>[^""]*)"")",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    private static readonly Regex MapGroupRegex = new(
-        @"\bMapGroup\b",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    private static readonly char[] StatementBoundaryChars = { ';', '{', '}' };
-
     [ArchitectureTest]
     public void EveryMutationEndpoint_HasExplicitAuthorizationDecision()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var featureRoots = FeaturesRelativePaths.Select(path => ArchitectureTestHelpers.CombinePath(repoRoot, path)).ToArray();
-        foreach (var featuresRoot in featureRoots)
-        {
-            Directory.Exists(featuresRoot).Should().BeTrue($"the audited features directory should exist at {featuresRoot}");
-        }
 
-        var gaps = new List<string>();
-
-        foreach (var file in featureRoots.SelectMany(path => Directory.EnumerateFiles(path, "*Endpoints.cs", SearchOption.AllDirectories)))
-        {
-            var raw = File.ReadAllText(file);
-            var content = StripComments(raw);
-            var groupAuth = CollectGroupAuthFlags(content);
-
-            foreach (Match match in MapMutationRegex.Matches(content))
-            {
-                var route = match.Groups["route"].Success
-                    ? match.Groups["route"].Value
-                    : match.Groups["route2"].Value;
-
-                var receiver = ExtractReceiverBefore(content, match.Index);
-                var assignedVar = ExtractAssignedVarBefore(content, match.Index);
-                var chain = ExtractFluentChain(content, match.Index);
-
-                var hasLocal = AuthOptInMarkers.Any(marker => chain.Contains(marker));
-                var hasGroup = receiver is not null
-                    && groupAuth.TryGetValue(receiver, out var flags)
-                    && flags;
-                var hasPostStatement = assignedVar is not null
-                    && HasPostStatementAuthCall(content, match.Index + chain.Length, assignedVar);
-
-                if (hasLocal || hasGroup || hasPostStatement)
-                {
-                    continue;
-                }
-
-                var lineNumber = raw[..match.Index].Count(c => c == '\n') + 1;
-                gaps.Add($"{Path.GetRelativePath(repoRoot, file)}:{lineNumber} {match.Groups[1].Value} {route}");
-            }
-        }
+        var gaps = FindUnmarkedRoutes(repoRoot, MutationVerbs);
 
         gaps.Should().BeEmpty(
-            "every HTTP mutation route under the canonical Server/Ai feature directories must call one of "
+            "every HTTP mutation route in any src project must call one of "
             + string.Join(", ", AuthOptInMarkers)
-            + " on either the route itself or its parent group; intentionally public endpoints "
-            + "must opt in via AllowAnonymous() so the decision is visible to reviewers.");
+            + " on the route itself, its parent group or the group passed into its mapping method; intentionally "
+            + "public endpoints must opt in via AllowAnonymous() so the decision is visible to reviewers. Unmarked: "
+            + string.Join("; ", gaps));
+    }
+
+    [ArchitectureTest]
+    public void EveryReadEndpoint_HasExplicitAuthorizationDecisionOrReviewedBaselineEntry()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var gaps = FindUnmarkedRoutes(repoRoot, BaselinedVerbs);
+        var baseline = ReadBaseline(repoRoot);
+
+        var unreviewed = SubtractMultiset(gaps, baseline);
+        var stale = SubtractMultiset(baseline, gaps);
+
+        unreviewed.Should().BeEmpty(
+            "there is no fallback authorization policy, so a GET or MapMethods route without an authorization "
+            + "marker is anonymous unless its handler checks access; mark the route or group, or add the route to "
+            + BaselineRelativePath + " after confirming the handler's access check. Unreviewed: "
+            + string.Join("; ", unreviewed));
+        stale.Should().BeEmpty(
+            "baseline entries must match an unmarked route; remove entries for routes that were marked, renamed "
+            + "or deleted from " + BaselineRelativePath + ". Stale: " + string.Join("; ", stale));
     }
 
     [ArchitectureTest]
@@ -141,150 +117,5 @@ public sealed class EndpointAuthorizationGuardTests
         fileCount.Should().BeGreaterThan(50,
             "the architecture guard depends on scanning *Endpoints.cs files in src/Honua.Server/Features; "
             + "a count this low usually means the directory layout changed and the regex needs to follow.");
-    }
-
-    private static string StripComments(string source)
-    {
-        // Strip C# line and block comments so accidental matches inside
-        // documentation comments do not skew the scan.
-        var noBlockComments = Regex.Replace(source, "/\\*.*?\\*/", string.Empty, RegexOptions.Singleline);
-        return Regex.Replace(noBlockComments, "//[^\n]*", string.Empty);
-    }
-
-    private static Dictionary<string, bool> CollectGroupAuthFlags(string content)
-    {
-        // Map "<variable assigned to a MapGroup(...) call>" => "does the group's
-        // fluent chain include any auth-opt-in marker?".
-        var groups = new Dictionary<string, bool>(System.StringComparer.Ordinal);
-
-        foreach (Match match in MapGroupRegex.Matches(content))
-        {
-            var statementStart = FindStatementStart(content, match.Index);
-            var statementEnd = FindStatementEnd(content, match.Index);
-            if (statementEnd <= statementStart)
-            {
-                continue;
-            }
-
-            var statement = content[statementStart..statementEnd];
-            var assignment = Regex.Match(
-                statement,
-                @"(?:var\s+)?(?<var>\w+)\s*=\s*[\w\.]*\s*\.?\s*MapGroup\s*\(",
-                RegexOptions.CultureInvariant);
-            if (!assignment.Success)
-            {
-                continue;
-            }
-
-            var variableName = assignment.Groups["var"].Value;
-            var hasAuth = AuthOptInMarkers.Any(marker => statement.Contains(marker));
-            groups[variableName] = hasAuth;
-        }
-
-        return groups;
-    }
-
-    private static string? ExtractReceiverBefore(string content, int matchIndex)
-    {
-        // The receiver of `.MapPost("/route", ...)` is the identifier
-        // immediately to the left of the dot. That identifier is what binds
-        // the route to a route group (or `endpoints` for the root builder).
-        var slice = content[..matchIndex];
-        var trailing = Regex.Match(slice, @"(?<name>\w+)\s*$", RegexOptions.CultureInvariant);
-        return trailing.Success ? trailing.Groups["name"].Value : null;
-    }
-
-    private static string? ExtractAssignedVarBefore(string content, int matchIndex)
-    {
-        // Recognise `var X = receiver.MapPost(...)` so we can pick up
-        // `X.AllowAnonymous();` that follows the statement.
-        var lineStart = content.LastIndexOfAny(StatementBoundaryChars, matchIndex - 1);
-        if (lineStart < 0)
-        {
-            lineStart = 0;
-        }
-        else
-        {
-            lineStart++;
-        }
-
-        var prefix = content[lineStart..matchIndex];
-        var assignment = Regex.Match(
-            prefix.Replace('\n', ' '),
-            @"(?:var\s+)?(?<var>\w+)\s*=\s*[\w\.]*\s*$",
-            RegexOptions.CultureInvariant);
-        return assignment.Success ? assignment.Groups["var"].Value : null;
-    }
-
-    private static string ExtractFluentChain(string content, int matchIndex)
-    {
-        // Walk forward from the MapPost/MapPut/etc. call until the statement
-        // terminator at parenthesis depth zero. That delimits the full
-        // fluent-builder chain attached to this route.
-        var depth = 0;
-        for (var i = matchIndex; i < content.Length; i++)
-        {
-            var ch = content[i];
-            if (ch == '(')
-            {
-                depth++;
-            }
-            else if (ch == ')')
-            {
-                depth--;
-            }
-            else if (ch == ';' && depth <= 0)
-            {
-                return content[matchIndex..i];
-            }
-        }
-
-        return content[matchIndex..];
-    }
-
-    private static bool HasPostStatementAuthCall(string content, int chainEnd, string assignedVariable)
-    {
-        // Catch the pattern used in some feature files where the route is
-        // captured into a variable and a follow-up statement attaches
-        // authorization, e.g. `var route = endpoints.MapPost(...); route.AllowAnonymous();`.
-        var tail = content[chainEnd..];
-        var pattern = new Regex(
-            @"\b" + Regex.Escape(assignedVariable) + @"\s*\.\s*("
-                + string.Join("|", AuthOptInMarkers.Select(Regex.Escape))
-                + @")\b",
-            RegexOptions.CultureInvariant);
-        return pattern.IsMatch(tail);
-    }
-
-    private static int FindStatementStart(string content, int index)
-    {
-        var i = index;
-        while (i > 0 && content[i - 1] != ';' && content[i - 1] != '{' && content[i - 1] != '}')
-        {
-            i--;
-        }
-        return i;
-    }
-
-    private static int FindStatementEnd(string content, int index)
-    {
-        var depth = 0;
-        for (var i = index; i < content.Length; i++)
-        {
-            var ch = content[i];
-            if (ch == '(')
-            {
-                depth++;
-            }
-            else if (ch == ')')
-            {
-                depth--;
-            }
-            else if (ch == ';' && depth <= 0)
-            {
-                return i;
-            }
-        }
-        return content.Length;
     }
 }
