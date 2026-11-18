@@ -2850,3 +2850,29 @@ edit-payload cap, and the maps classes use the default host they used before.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Versioning and middleware-header cases share one host per class
+
+On hosted full trunk run 44250783964 these classes started a host for every case
+in the serial Database collection:
+- `VersionManagementServerEndpointTests`: 42 cases, 86 seconds of case time over
+  a 204-second span, GeoServices Versioning 1.
+- `CorrelationIdMiddlewareTests`: 12 cases, 23 seconds, Admin and
+  Infrastructure 1.
+- `Infrastructure.Middleware.SecurityHeadersMiddlewareTests`: 6 cases, Admin and
+  Infrastructure 4.
+
+Each class now has one class-fixture host.
+
+Versioning cases create, lock, reconcile and post their own versions; every
+write to the global versioning tables is keyed by that case's version id. Five
+cases publish the managed branch-versioned layout, which renames the test
+service in the metadata graph. Every case therefore first restores the graph
+the host was seeded with, and the revision only moves forward.
+
+The middleware cases send their own request headers and read the response
+headers.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
