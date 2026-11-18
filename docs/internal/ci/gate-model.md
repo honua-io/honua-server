@@ -2529,3 +2529,45 @@ selected PR runs and full trunk runs. No workflow, shard filter, required
 check, aggregate dependency or runner count changes. One build-host job, 81/81
 passing cases, zero skipped: class span 243.7 to 23.0-24.2 seconds (process
 wall 248 to 27-28 seconds).
+
+### Collaboration co-editing host lifetime
+
+`CollaborationLiveCoEditingTests` started at least one database-less application per case.
+The class fixture now holds two lazily started applications with the default
+settings: one with the restart-durable operation log and one without. Every case
+creates its own draft, and session, operation log and checkpoint state is keyed
+by map, so a case never reads another case's map; the per-map participant limits
+are unaffected. Cases that change settings, decorate the operation log or supply
+a Studio store keep their own applications.
+
+The class stays in Server Features Collaboration Mobile and Identity 2 on
+selected PR runs and full trunk runs. No workflow, shard filter, required check,
+aggregate dependency or runner count changes. One build-host job, 24/24 passing
+cases, zero skipped: class span 118.1 to 57.2-58.0 seconds (process wall 123 to
+63-64 seconds).
+
+### SensorThings stream host lifetime
+
+`SensorThingsStreamEndpointsTests` shares one multi-tenant application across
+the class instead of one per case. Stream cases open their own connections and
+read from the live tail or from a cursor taken in the same case, so observations
+ingested by an earlier case are never expected; the tenant-collision case seeds
+and drops its own schema.
+
+The class stays in SensorThings 5 on selected PR runs and full trunk runs. No
+workflow, shard filter, required check, aggregate dependency or runner count
+changes. One build-host job, 25/25 passing cases, zero skipped: class span 179.7
+to 67.1 seconds on both head runs (process wall 194 to 83-84 seconds).
+
+### Alert admin host lifetime
+
+`AlertAdminEndpointsTests` built its webhook-only application for every case,
+including the seven cases that then boot eight private applications with
+another channel policy or stubbed stores. The webhook-only application is now one class
+fixture: its cases scope every zone and rule to a fresh service id and probe
+missing ids far above the sequence, and each case still creates its own admin
+client. Application boots per run drop from 29 to 9; every assertion is kept.
+
+The class stays in its admin shard on selected PR runs and full trunk runs. No
+workflow, shard filter, required check, aggregate dependency or runner count
+changes. Before: 80.4 seconds summed case time in full trunk run 44013566836.
