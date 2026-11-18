@@ -967,12 +967,17 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
-        var domains = accessibleLayers
-            .SelectMany(pair => pair.Resource.SchemaFields
+        // A masked field's domain names the field and lists its coded values, so it is left out as a hidden field's is.
+        var domainList = new List<DomainInfo>();
+        foreach (var pair in FilterAccessibleLayersV2(access, snapshot, selectedLayers))
+        {
+            var schemaResource = await HideMaskedFieldsAsync(context, pair.Resource, cancellationToken).ConfigureAwait(false);
+            domainList.AddRange(schemaResource.SchemaFields
                 .Where(static field => !field.Hidden && field.Domain is not null)
-                .Select(field => MapDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)))
-            .ToArray();
+                .Select(field => MapDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)));
+        }
+
+        var domains = domainList.ToArray();
 
         var response = new QueryDomainsResponse
         {

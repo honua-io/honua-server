@@ -127,15 +127,17 @@ internal static partial class MapServerEndpoints
             }
 
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
-            var drawingInfo = ResolveDynamicLayerDrawingInfo(
-                sourceLayer.Resource,
-                snapshot,
-                parsedDynamicLayer.DrawingInfoJson);
+            var schemaResource = await GeoServicesWithheldFields.HideMaskedFieldsAsync(
+                context, sourceLayer.Resource, cancellationToken).ConfigureAwait(false);
+            var drawingInfo = ResolveDynamicLayerDrawingInfo(parsedDynamicLayer.DrawingInfoJson)
+                ?? ResolveVisibleMapServerDrawingInfo(sourceLayer.Resource, schemaResource, snapshot);
 
             IReadOnlyList<MapServerFieldInfo>? joinedFields = null;
             if (parsedDynamicLayer.Join is { } join && joinRightLayer is not null)
             {
-                joinedFields = BuildJoinedFields(joinRightLayer.Resource, join.RightQualifier);
+                var rightSchemaResource = await GeoServicesWithheldFields.HideMaskedFieldsAsync(
+                    context, joinRightLayer.Resource, cancellationToken).ConfigureAwait(false);
+                joinedFields = BuildJoinedFields(rightSchemaResource, join.RightQualifier);
             }
 
             var mapExtent = await ResolveCachedExtentAsync(
@@ -145,7 +147,7 @@ internal static partial class MapServerEndpoints
             var response = MapLayerToMapServerLayerResponse(
                 service,
                 sourceLayer.Publication,
-                sourceLayer.Resource,
+                schemaResource,
                 snapshot,
                 limitsOptions.Query.MaxRecordCount,
                 mapExtent,
@@ -356,7 +358,7 @@ internal static partial class MapServerEndpoints
             : null;
     }
 
-    // Geometry and publisher-hidden fields are left off the joined field list so the right layer cannot surface them through the join.
+    // Geometry, publisher-hidden and masked fields are left off the joined field list so the right layer cannot surface them through the join.
     private static List<MapServerFieldInfo> BuildJoinedFields(
         MetadataV2Object rightResource,
         string qualifier)
@@ -388,18 +390,11 @@ internal static partial class MapServerEndpoints
         return fields;
     }
 
-    private static JsonElement? ResolveDynamicLayerDrawingInfo(
-        MetadataV2Object sourceResource,
-        MetadataV2GraphSnapshot snapshot,
-        string? drawingInfoJson)
-    {
-        if (!string.IsNullOrWhiteSpace(drawingInfoJson) &&
-            TryParseMapServerJsonElement(drawingInfoJson, out var drawingInfo) &&
-            drawingInfo.ValueKind == JsonValueKind.Object)
-        {
-            return drawingInfo;
-        }
-
-        return ResolveMapServerDrawingInfo(sourceResource, snapshot);
-    }
+    // The caller's own dynamicLayer renderer echoes back; otherwise the saved renderer applies.
+    private static JsonElement? ResolveDynamicLayerDrawingInfo(string? drawingInfoJson)
+        => !string.IsNullOrWhiteSpace(drawingInfoJson) &&
+           TryParseMapServerJsonElement(drawingInfoJson, out var drawingInfo) &&
+           drawingInfo.ValueKind == JsonValueKind.Object
+            ? drawingInfo
+            : null;
 }
