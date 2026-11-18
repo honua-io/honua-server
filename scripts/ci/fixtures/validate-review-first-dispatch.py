@@ -151,19 +151,21 @@ def main() -> None:
     for source, names in [
         (build_test_job, ["Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"]),
         (job("fast-tests"), ["Setup .NET", "Lean gate (build and fast unit/architecture verification)"]),
+        (job("fast-server-tests"), ["Setup .NET", "Plan server test restore", "Lean gate (build and fast unit/architecture verification)"]),
     ]:
         for name in names:
             step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
             if not review_gated(step):
                 raise AssertionError(f"{name} must remain behind exact-head review")
-    fast_job = job("fast-tests")
-    wait = fast_job.index("- name: Await exact-head review")
-    checkout = fast_job.index("- uses: actions/checkout@")
-    if wait >= checkout:
-        raise AssertionError("independent Fast job must fail admission before checkout")
-    require(fast_job[wait:checkout], wait_condition, "Fast attempt 1 must fail closed")
-    require(fast_job[wait:checkout], "exit 1", "Fast admission must fail for rerun release")
-    require(fast_job[checkout:].split("- name:", 1)[0], full_condition, "Fast checkout must wait for review")
+    for label in ("fast-tests", "fast-server-tests"):
+        fast_job = job(label)
+        wait = fast_job.index("- name: Await exact-head review")
+        checkout = fast_job.index("- uses: actions/checkout@")
+        if wait >= checkout:
+            raise AssertionError(f"{label} must fail admission before checkout")
+        require(fast_job[wait:checkout], wait_condition, f"{label} attempt 1 must fail closed")
+        require(fast_job[wait:checkout], "exit 1", f"{label} admission must fail for rerun release")
+        require(fast_job[checkout:].split("- name:", 1)[0], full_condition, f"{label} checkout must wait for review")
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
         "'pull_request' && github.run_attempt > 1"

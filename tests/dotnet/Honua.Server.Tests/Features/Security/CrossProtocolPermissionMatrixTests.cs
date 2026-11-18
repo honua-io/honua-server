@@ -33,21 +33,25 @@ using Proto = Geospatial.V1;
 namespace Honua.Server.Tests.Features.Security;
 
 public sealed partial class CrossProtocolPermissionMatrixTests
-    : IClassFixture<CrossProtocolPermissionMatrixTests.WildcardQueryReadFixture>
+    : IClassFixture<CrossProtocolPermissionMatrixTests.WildcardQueryReadFixture>,
+      IClassFixture<CrossProtocolPermissionMatrixTests.WriteApplications>
 {
     private const string GrantedRole = "matrix-grant-role";
     private const string UngrantedRole = "matrix-ungranted-role";
     private const string CoarseOnlyRole = "coarse-only-role";
 
     private readonly WildcardQueryReadFixture _readFixture;
+    private readonly WriteApplications _writeApplications;
 
-    public CrossProtocolPermissionMatrixTests(WildcardQueryReadFixture readFixture)
+    public CrossProtocolPermissionMatrixTests(WildcardQueryReadFixture readFixture, WriteApplications writeApplications)
     {
         _readFixture = readFixture;
+        _writeApplications = writeApplications;
     }
 
     // Read requests cannot change the wildcard-query policy or catalog, so one application serves
-    // every such case; each test still creates its own client. Writes and other grants keep their own hosts.
+    // every such case; each test still creates its own client. Writes share the WriteApplications
+    // hosts; other grants keep their own hosts.
     public sealed class WildcardQueryReadFixture : IDisposable
     {
         public WebApplicationFactory<Program> Application { get; } = CreateFactory(Grant("query"));
@@ -63,15 +67,21 @@ public sealed partial class CrossProtocolPermissionMatrixTests
                 ServiceRbacTestFixture.CreateServiceMetadata(readRoles: [CoarseOnlyRole])),
             grants);
 
-    private static WebApplicationFactory<Program> CreateWriteFactory(params PermissionGrant[] grants)
-        => CreateFactory(new RbacTestLayerCatalog(), grants);
+    // The write applications are shared by the class; callers must not dispose them.
+    private WebApplicationFactory<Program> CreateWriteFactory(params PermissionGrant[] grants)
+        => _writeApplications.FeatureServer(grants);
 
-    private static WebApplicationFactory<Program> CreateGrpcWriteFactory(PermissionGrant[] grants)
-        => CreateFactory(new GrpcWriteLayerCatalog(), grants);
+    private WebApplicationFactory<Program> CreateGrpcWriteFactory(PermissionGrant[] grants)
+        => _writeApplications.Grpc(grants);
 
     private static WebApplicationFactory<Program> CreateFactory(
         ITestMetadataV2GraphSource catalog,
         PermissionGrant[] grants)
+        => CreateFactory(catalog, new MatrixRoleStore(GrantedRole, grants));
+
+    private static WebApplicationFactory<Program> CreateFactory(
+        ITestMetadataV2GraphSource catalog,
+        MatrixRoleStore roleStore)
         => ServiceRbacTestFixture.CreateFactory(
             layerCatalogFactory: () => catalog,
             configureServices: services =>
@@ -79,7 +89,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
                 services.RemoveAll<ICrsDetectionService>();
                 services.AddSingleton<ICrsDetectionService, NoopCrsDetectionService>();
                 services.RemoveAll<IRoleStore>();
-                services.AddSingleton<IRoleStore>(new MatrixRoleStore(GrantedRole, grants));
+                services.AddSingleton<IRoleStore>(roleStore);
             });
 
     private static PermissionGrant Grant(string operation, string layer = "*")
@@ -115,7 +125,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         }
 
         var grants = operationNames.Select(operation => Grant(operation)).ToArray();
-        using var factory = string.Equals(surface, TestProtocols.Grpc, StringComparison.Ordinal)
+        var factory = string.Equals(surface, TestProtocols.Grpc, StringComparison.Ordinal)
             ? CreateGrpcWriteFactory(grants)
             : CreateWriteFactory(grants);
 
@@ -349,7 +359,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         // allow Update operations for a principal that lacks the data-editor role.
         // The payload is an updates-only request so the per-type Update check
         // also exercises the correct grant path.
-        using var factory = CreateWriteFactory(Grant("update"));
+        var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         using var payload = new StringContent(
@@ -371,7 +381,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     {
         // The principal can read but holds NO write grant; the coarse policy also
         // denies, so the write must be forbidden — proving query!=update.
-        using var factory = CreateWriteFactory(Grant("query"));
+        var factory = CreateWriteFactory(Grant("query"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.PostAsync(
@@ -387,7 +397,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task FeatureServerApplyEdits_NoGrant_FallsBackToCoarseDeny()
     {
-        using var factory = CreateWriteFactory(Grant("update"));
+        var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, UngrantedRole);
 
         var response = await client.PostAsync(
@@ -458,7 +468,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         // coarse data-editor denial. The fixture omits required objectid, so assert that
         // authorization succeeds rather than requiring creation to return 201. An Update
         // grant alone cannot authorize Insert.
-        using var factory = CreateWriteFactory(Grant("insert"));
+        var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.PostAsync(
@@ -478,7 +488,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     public async Task ODataCreate_UpdateOnlyGrant_DeniesCreate()
     {
         // An Update-only grantee must be denied an OData create (POST requires Insert).
-        using var factory = CreateWriteFactory(Grant("update"));
+        var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.PostAsync(
@@ -494,7 +504,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task ODataCreate_QueryOnlyGrant_DeniesWrite()
     {
-        using var factory = CreateWriteFactory(Grant("query"));
+        var factory = CreateWriteFactory(Grant("query"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.PostAsync(
@@ -514,7 +524,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     {
         // an OData PATCH authorizes as Update. A principal holding only an
         // Insert grant must be denied.
-        using var factory = CreateWriteFactory(Grant("insert"));
+        var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         using var payload = new StringContent(
@@ -537,7 +547,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     public async Task ODataDelete_InsertOnlyGrant_DeniesDelete()
     {
         // an OData DELETE authorizes as Delete. An Insert-only grantee must be denied.
-        using var factory = CreateWriteFactory(Grant("insert"));
+        var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.DeleteAsync(
@@ -557,7 +567,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         // an Update grantee must not be over-blocked on a PATCH. The request
         // may still 404 (no such feature in the in-memory fixture) but must clear authorization,
         // so it must not be Forbidden or Unauthorized.
-        using var factory = CreateWriteFactory(Grant("update"));
+        var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         using var payload = new StringContent(
@@ -682,7 +692,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         // grant must override the coarse data-editor deny. The in-memory fixture cannot complete
         // the create, so the assertion is that authorization is cleared (not Forbidden / not
         // Unauthorized) rather than a 201.
-        using var factory = CreateWriteFactory(Grant("insert"));
+        var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.PostAsync(
@@ -702,7 +712,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     public async Task OgcFeaturesCreate_UpdateOnlyGrant_DeniesCreate()
     {
         // an Update-only grantee must be denied an OGC create (POST=Insert).
-        using var factory = CreateWriteFactory(Grant("update"));
+        var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.PostAsync(
@@ -721,7 +731,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         // an OGC PUT
         // authorizes as Update, so an Insert-only grantee must be denied. Authorization runs before
         // feature resolution, so the denial is a clean 403.
-        using var factory = CreateWriteFactory(Grant("insert"));
+        var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.PutAsync(
@@ -739,7 +749,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task OgcFeaturesCreate_QueryOnlyGrant_DeniesWrite()
     {
-        using var factory = CreateWriteFactory(Grant("query"));
+        var factory = CreateWriteFactory(Grant("query"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         var response = await client.PostAsync(
@@ -789,7 +799,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     {
         // the deleteFeatures pre-body gate must gate on AuthorizationOperation.Delete,
         // not Update. A principal with only a "delete" grant must pass the gate.
-        using var factory = CreateWriteFactory(Grant("delete"));
+        var factory = CreateWriteFactory(Grant("delete"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         using var content = new StringContent(
@@ -817,7 +827,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         // the applyEdits handler must check AuthorizationOperation.Delete for a
         // deletes-only payload. A principal with only a "delete" grant (no "update") must
         // pass; if Update were the only check this would incorrectly deny.
-        using var factory = CreateWriteFactory(Grant("delete"));
+        var factory = CreateWriteFactory(Grant("delete"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         using var applyEditsContent = new StringContent(
@@ -842,7 +852,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     {
         // applyEdits must check AuthorizationOperation.Update for an updates-only payload
         // and return 403 for insert-only principals.
-        using var factory = CreateWriteFactory(Grant("insert"));
+        var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         using var payload = new StringContent(
@@ -865,7 +875,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
         // a principal with only an Update grant must be permitted to submit
         // an updates-only payload. Validates the positive case so the regression check does not
         // over-block.
-        using var factory = CreateWriteFactory(Grant("update"));
+        var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         using var payload = new StringContent(
@@ -889,7 +899,7 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     public async Task ApplyEdits_UpdatePayload_DeleteOnlyGrantDeniesUpdate()
     {
         // a delete-only principal must also be denied an updates-only payload.
-        using var factory = CreateWriteFactory(Grant("delete"));
+        var factory = CreateWriteFactory(Grant("delete"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
         using var payload = new StringContent(
@@ -918,13 +928,16 @@ public sealed partial class CrossProtocolPermissionMatrixTests
 
     private sealed class MatrixRoleStore(string roleName, PermissionGrant[] grants) : IRoleStore
     {
+        // A shared write application replaces the grants before each case's request.
+        public PermissionGrant[] Grants { get; set; } = grants;
+
         public Task<EffectivePermissions> GetEffectivePermissionsAsync(
             string userId,
             IReadOnlyList<string> roles,
             CancellationToken cancellationToken = default)
         {
             var resolved = roles.Any(r => string.Equals(r, roleName, StringComparison.OrdinalIgnoreCase))
-                ? grants
+                ? Grants
                 : [];
 
             return Task.FromResult(new EffectivePermissions
