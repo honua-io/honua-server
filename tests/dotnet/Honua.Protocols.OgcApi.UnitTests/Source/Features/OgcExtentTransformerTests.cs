@@ -52,7 +52,7 @@ public sealed class OgcExtentTransformerTests
     [UnitTest]
     public async Task TryTransformExtentToCrs84Async_WebMercatorEdgePoints_StaysOutsideRoundedCoordinates()
     {
-        // Storage coordinates from honua-server#8365. The in-memory mercator transform
+        // Edge storage coordinates of a 3857 point layer. The in-memory mercator transform
         // matches the advertised box; feature output rounds to 8 decimal degrees and
         // lands just outside that box. The reprojected margin has to contain them.
         var transformed = await OgcExtentTransformer.TryTransformExtentToCrs84Async(

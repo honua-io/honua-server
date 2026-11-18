@@ -92,30 +92,9 @@ public sealed partial class LayerPublishingIntegrationTests
                     (2, 'London', ST_SetSRID(ST_Point(-14226.63, 6711542.47), 3857));
                 """);
 
-            var layer = await PublishLayerAsync(new PublishLayerRequest
-            {
-                Schema = "public",
-                Table = table,
-                LayerName = "Projected edge points",
-                ServiceName = _serviceName,
-                GeometryColumn = "geom",
-                GeometryType = "Point",
-                Srid = 3857,
-                PrimaryKey = "id",
-                Fields = _idNameFields,
-                Enabled = true
-            });
-            _layerId = layer.StorageLayerId;
+            _layerId = (await PublishLayerAsync(ProjectedEdgeRequest(table))).StorageLayerId;
 
-            using var collectionResponse = await _client.GetAsync($"/ogc/features/collections/{_layerId}?f=json");
-            var collectionPayload = await collectionResponse.Content.ReadAsStringAsync();
-            collectionResponse.StatusCode.Should().Be(HttpStatusCode.OK, collectionPayload);
-            using var collection = JsonDocument.Parse(collectionPayload);
-            var advertised = collection.RootElement.GetProperty("extent").GetProperty("spatial").GetProperty("bbox")[0];
-            var west = advertised[0].GetDouble();
-            var south = advertised[1].GetDouble();
-            var east = advertised[2].GetDouble();
-            var north = advertised[3].GetDouble();
+            var (west, south, east, north) = await ReadAdvertisedCrs84ExtentAsync();
 
             using var items = JsonDocument.Parse(await ReadOgcItemsAsync("limit=10"));
             var features = items.RootElement.GetProperty("features");
@@ -127,9 +106,7 @@ public sealed partial class LayerPublishingIntegrationTests
                 coordinates[1].GetDouble().Should().BeInRange(south, north);
             }
 
-            var bbox = string.Create(
-                CultureInfo.InvariantCulture,
-                $"{west},{south},{east},{north}");
+            var bbox = string.Create(CultureInfo.InvariantCulture, $"{west},{south},{east},{north}");
             using var filtered = JsonDocument.Parse(await ReadOgcItemsAsync($"limit=10&bbox={bbox}"));
             filtered.RootElement.GetProperty("features").GetArrayLength().Should().Be(2);
         }
@@ -137,6 +114,30 @@ public sealed partial class LayerPublishingIntegrationTests
         {
             await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{table};");
         }
+    }
+
+    private PublishLayerRequest ProjectedEdgeRequest(string table) => new()
+    {
+        Schema = "public",
+        Table = table,
+        LayerName = "Projected edge points",
+        ServiceName = _serviceName,
+        GeometryColumn = "geom",
+        GeometryType = "Point",
+        Srid = 3857,
+        PrimaryKey = "id",
+        Fields = _idNameFields,
+        Enabled = true
+    };
+
+    private async Task<(double West, double South, double East, double North)> ReadAdvertisedCrs84ExtentAsync()
+    {
+        using var response = await _client.GetAsync($"/ogc/features/collections/{_layerId}?f=json");
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        using var collection = JsonDocument.Parse(payload);
+        var bbox = collection.RootElement.GetProperty("extent").GetProperty("spatial").GetProperty("bbox")[0];
+        return (bbox[0].GetDouble(), bbox[1].GetDouble(), bbox[2].GetDouble(), bbox[3].GetDouble());
     }
 
     private async Task AssertProjectedMetadataBoundsAsync(double xmin, double ymin, double xmax, double ymax)

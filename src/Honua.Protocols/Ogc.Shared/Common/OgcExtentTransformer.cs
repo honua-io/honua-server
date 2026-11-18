@@ -69,12 +69,8 @@ internal static class OgcExtentTransformer
             var transformed = await transformService
                 .TransformExtentAsync(minX, minY, maxX, maxY, fromSrid, 4326, cancellationToken)
                 .ConfigureAwait(false);
-            return transformed.HasValue
-                ? ExpandReprojectedCrs84(
-                    transformed.Value.MinX,
-                    transformed.Value.MinY,
-                    transformed.Value.MaxX,
-                    transformed.Value.MaxY)
+            return transformed is { } box
+                ? ExpandReprojectedCrs84(box.MinX, box.MinY, box.MaxX, box.MaxY)
                 : null;
         }
     }

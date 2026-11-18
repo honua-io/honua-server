@@ -112,10 +112,7 @@ public sealed class TablePublishValidationRequest
 
     public string? GeometryColumn { get; init; }
 
-    /// <summary>
-    /// Geometry family to publish. When the source mixes families, only rows of this
-    /// family are published. Omitted on a mixed table stays an error.
-    /// </summary>
+    // On a mixed table, the one geometry type to publish; without it a mixed table is an error.
     public string? GeometryType { get; init; }
 
     public string? PrimaryKey { get; init; }

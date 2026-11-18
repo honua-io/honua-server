@@ -238,9 +238,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static void AddGeometryHealthChecks(
         GeometryHealth? health,
         List<TablePublishValidationCheck> checks,
-        bool allowEmptyTable,
-        string? geometryFamily = null,
-        int? geometryFamilyCount = null)
+        bool allowEmptyTable)
     {
         if (health is not { } value)
         {
@@ -283,30 +281,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         if (value.DistinctGeometryTypeCount > 1)
         {
-            if (geometryFamily is not null && geometryFamilyCount is > 0)
-            {
-                checks.Add(Warning(
-                    "mixed-geometry",
-                    $"Publishing only the {geometryFamily} rows ({geometryFamilyCount.Value.ToString(CultureInfo.InvariantCulture)}). Other geometry types remain in the source table.",
-                    "1",
-                    value.DistinctGeometryTypeCount.ToString(CultureInfo.InvariantCulture)));
-            }
-            else if (geometryFamily is not null)
-            {
-                checks.Add(Error(
-                    "mixed-geometry",
-                    $"Source table has no {geometryFamily} geometries to publish.",
-                    geometryFamily,
-                    "0"));
-            }
-            else
-            {
-                checks.Add(Error(
-                    "mixed-geometry",
-                    "Source table contains mixed geometry types.",
-                    "1",
-                    value.DistinctGeometryTypeCount.ToString(CultureInfo.InvariantCulture)));
-            }
+            checks.Add(Error(
+                "mixed-geometry",
+                "Source table contains mixed geometry types.",
+                "1",
+                value.DistinctGeometryTypeCount.ToString(CultureInfo.InvariantCulture)));
         }
         else if (value.DistinctGeometryTypeCount == 1)
         {
@@ -452,23 +431,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
         CancellationToken cancellationToken,
         NpgsqlTransaction? transaction = null)
     {
-        var sourceTable = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
-        var sourceGeometry = SqlIdentifier.QuoteIdentifier(geometryColumn);
-        var sql = $"""
-            WITH source AS (
-                SELECT {sourceGeometry}::geometry AS geom
-                FROM {sourceTable}
-            )
-            SELECT
-                COUNT(*)::bigint,
-                COUNT(*) FILTER (WHERE geom IS NULL)::bigint,
-                COUNT(*) FILTER (WHERE geom IS NOT NULL AND NOT ST_IsValid(geom))::bigint,
-                COUNT(DISTINCT GeometryType(geom)) FILTER (WHERE geom IS NOT NULL)::int,
-                MIN(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int,
-                MAX(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int
-            FROM source;
-            """;
-
+        var sql = GeometryHealthSql(
+            $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}",
+            SqlIdentifier.QuoteIdentifier(geometryColumn));
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -482,8 +447,31 @@ internal sealed partial class PostgreSqlLayerPublishingService
             reader.GetInt64(2),
             reader.IsDBNull(3) ? 0 : reader.GetInt32(3),
             reader.IsDBNull(4) ? null : reader.GetInt32(4),
-            reader.IsDBNull(5) ? null : reader.GetInt32(5));
+            reader.IsDBNull(5) ? null : reader.GetInt32(5))
+        {
+            FamilyRowCounts = reader.GetFieldValue<long[]>(6)
+        };
     }
+
+    private static string GeometryHealthSql(string sourceTable, string sourceGeometry) => $"""
+        WITH source AS (
+            SELECT {sourceGeometry}::geometry AS geom
+            FROM {sourceTable}
+        )
+        SELECT
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (WHERE geom IS NULL)::bigint,
+            COUNT(*) FILTER (WHERE geom IS NOT NULL AND NOT ST_IsValid(geom))::bigint,
+            COUNT(DISTINCT GeometryType(geom)) FILTER (WHERE geom IS NOT NULL)::int,
+            MIN(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int,
+            MAX(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int,
+            ARRAY[
+                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyTypeList("Point")})),
+                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyTypeList("LineString")})),
+                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyTypeList("Polygon")}))
+            ]::bigint[]
+        FROM source;
+        """;
 
     private static async Task AddExistingLayerCheckAsync(
         NpgsqlConnection connection,
@@ -616,50 +604,78 @@ internal sealed partial class PostgreSqlLayerPublishingService
             $"Geometry type '{family}' cannot be published from a mixed table.")
     };
 
-    private static async Task<int> CountGeometryFamilyAsync(
-        NpgsqlConnection connection,
-        string schema,
-        string table,
-        string geometryColumn,
-        string family,
-        NpgsqlTransaction? transaction,
-        CancellationToken cancellationToken)
+    // A requested family on a mixed table turns the mixed-geometry error into a warning
+    // that names the rows that will publish, or a clearer error when there are none.
+    private static void SelectGeometryFamily(
+        GeometryHealth? health,
+        List<TablePublishValidationCheck> checks,
+        string? family)
     {
-        var sql = $"""
-            SELECT COUNT(*)::int
-            FROM {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}
-            WHERE GeometryType({SqlIdentifier.QuoteIdentifier(geometryColumn)}) IN ({GeometryFamilyTypeList(family)})
-            """;
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        var count = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return count is int value ? value : Convert.ToInt32(count, CultureInfo.InvariantCulture);
+        var mixedIndex = checks.FindIndex(check => check.Code == "mixed-geometry" && check.Severity == SeverityError);
+        if (family is null || health is not { } value || mixedIndex < 0)
+        {
+            return;
+        }
+
+        var rows = value.RowsOfFamily(family);
+        checks[mixedIndex] = rows > 0
+            ? Warning(
+                "mixed-geometry",
+                $"Publishing only the {family} rows ({rows.ToString(CultureInfo.InvariantCulture)}). Other geometry types remain in the source table.",
+                "1",
+                value.DistinctGeometryTypeCount.ToString(CultureInfo.InvariantCulture))
+            : Error("mixed-geometry", $"Source table has no {family} geometries to publish.", family, "0");
     }
 
-    private static async Task CreateMixedGeometryFamilyViewAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string schema,
-        string sourceTable,
-        string viewName,
-        string? geometryColumn,
-        string family,
-        CancellationToken cancellationToken)
+    private static GeometryFamilyView? GeometryFamilyViewFor(
+        TablePublishValidationResult validation,
+        string? requestedType)
     {
-        if (string.IsNullOrWhiteSpace(geometryColumn) || !IsSafeIdentifier(viewName))
+        var selected = validation.Checks.Any(check => check.Code == "mixed-geometry" && check.Severity == SeverityWarning);
+        if (!selected)
+        {
+            return null;
+        }
+
+        var family = MixedGeometryFamily(requestedType);
+        if (family is null || string.IsNullOrWhiteSpace(validation.GeometryColumn))
         {
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Validation,
-                "A mixed-geometry table needs a geometry column before one type can be published.");
+                "A geometry column and type are required when the source table mixes geometry types.");
         }
 
+        return new GeometryFamilyView
+        {
+            Schema = validation.Schema,
+            SourceTable = validation.Table,
+            GeometryColumn = validation.GeometryColumn,
+            Family = family
+        };
+    }
+
+    private static async Task<string> CreateGeometryFamilyViewAsync(
+        NpgsqlTransaction transaction,
+        GeometryFamilyView view,
+        CancellationToken cancellationToken)
+    {
+        if (!IsSafeIdentifier(view.ViewName))
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                $"Table '{view.SourceTable}' cannot carry a per-type view name.");
+        }
+
+        var schema = SqlIdentifier.QuoteIdentifier(view.Schema);
         var sql = $"""
-            CREATE OR REPLACE VIEW {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(viewName)} AS
+            CREATE OR REPLACE VIEW {schema}.{SqlIdentifier.QuoteIdentifier(view.ViewName)} AS
             SELECT *
-            FROM {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(sourceTable)}
-            WHERE GeometryType({SqlIdentifier.QuoteIdentifier(geometryColumn)}) IN ({GeometryFamilyTypeList(family)})
+            FROM {schema}.{SqlIdentifier.QuoteIdentifier(view.SourceTable)}
+            WHERE GeometryType({SqlIdentifier.QuoteIdentifier(view.GeometryColumn)}) IN ({GeometryFamilyTypeList(view.Family)})
             """;
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, transaction.Connection, transaction);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return view.ViewName;
     }
 
     private static string NormalizeGeometryType(string raw)

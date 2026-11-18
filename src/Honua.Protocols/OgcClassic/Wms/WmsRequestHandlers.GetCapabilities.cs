@@ -697,24 +697,25 @@ internal static partial class WmsRequestHandlers
         string indent)
     {
         sb.Append(indent).AppendLine("<EX_GeographicBoundingBox>");
-        sb.Append(indent).Append("  <westBoundLongitude>").Append(FormatGeographicBoundOutward(minX, towardNegative: true)).AppendLine("</westBoundLongitude>");
-        sb.Append(indent).Append("  <eastBoundLongitude>").Append(FormatGeographicBoundOutward(maxX, towardNegative: false)).AppendLine("</eastBoundLongitude>");
-        sb.Append(indent).Append("  <southBoundLatitude>").Append(FormatGeographicBoundOutward(minY, towardNegative: true)).AppendLine("</southBoundLatitude>");
-        sb.Append(indent).Append("  <northBoundLatitude>").Append(FormatGeographicBoundOutward(maxY, towardNegative: false)).AppendLine("</northBoundLatitude>");
+        sb.Append(indent).Append("  <westBoundLongitude>").Append(FormatLowerGeographicBound(minX)).AppendLine("</westBoundLongitude>");
+        sb.Append(indent).Append("  <eastBoundLongitude>").Append(FormatUpperGeographicBound(maxX)).AppendLine("</eastBoundLongitude>");
+        sb.Append(indent).Append("  <southBoundLatitude>").Append(FormatLowerGeographicBound(minY)).AppendLine("</southBoundLatitude>");
+        sb.Append(indent).Append("  <northBoundLatitude>").Append(FormatUpperGeographicBound(maxY)).AppendLine("</northBoundLatitude>");
         sb.Append(indent).AppendLine("</EX_GeographicBoundingBox>");
     }
 
     // Six decimal degrees is about 0.1 m. Half-away rounding can move an edge
     // inward past a feature that sits on it, so each edge rounds away from the box.
     // A value already on a 6-decimal boundary stays there.
-    private static string FormatGeographicBoundOutward(double value, bool towardNegative)
+    private static string FormatLowerGeographicBound(double value) => FormatGeographicBound(value, Math.Floor);
+
+    private static string FormatUpperGeographicBound(double value) => FormatGeographicBound(value, Math.Ceiling);
+
+    private static string FormatGeographicBound(double value, Func<double, double> outward)
     {
         var scaled = value * 1_000_000d;
         var nearest = Math.Round(scaled, MidpointRounding.AwayFromZero);
-        var onBoundary = Math.Abs(scaled - nearest) <= 1e-4;
-        var rounded = onBoundary
-            ? nearest
-            : towardNegative ? Math.Floor(scaled) : Math.Ceiling(scaled);
+        var rounded = Math.Abs(scaled - nearest) <= 1e-4 ? nearest : outward(scaled);
         return (rounded / 1_000_000d).ToString("F6", CultureInfo.InvariantCulture);
     }
 
@@ -767,13 +768,13 @@ internal static partial class WmsRequestHandlers
     {
         sb.Append(indent)
             .Append("<LatLonBoundingBox minx=\"")
-            .Append(FormatGeographicBoundOutward(minX, towardNegative: true))
+            .Append(FormatLowerGeographicBound(minX))
             .Append("\" miny=\"")
-            .Append(FormatGeographicBoundOutward(minY, towardNegative: true))
+            .Append(FormatLowerGeographicBound(minY))
             .Append("\" maxx=\"")
-            .Append(FormatGeographicBoundOutward(maxX, towardNegative: false))
+            .Append(FormatUpperGeographicBound(maxX))
             .Append("\" maxy=\"")
-            .Append(FormatGeographicBoundOutward(maxY, towardNegative: false))
+            .Append(FormatUpperGeographicBound(maxY))
             .AppendLine("\" />");
     }
 

@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -33,49 +32,12 @@ public sealed partial class LayerPublishingIntegrationTests
                     (3, 'empty', NULL);
                 """);
 
-            var points = await PublishLayerAsync(new PublishLayerRequest
-            {
-                Schema = "public",
-                Table = table,
-                LayerName = "Mixed points",
-                ServiceName = _serviceName,
-                GeometryColumn = "geom",
-                GeometryType = "Point",
-                Srid = 4326,
-                PrimaryKey = "id",
-                Fields = _idNameFields,
-                Enabled = true
-            });
-            _layerId = points.StorageLayerId;
-            points.GeometryType.Should().Be("Point");
-            using (var pointItems = JsonDocument.Parse(await ReadOgcItemsAsync("limit=10")))
-            {
-                var features = pointItems.RootElement.GetProperty("features");
-                features.GetArrayLength().Should().Be(1);
-                features[0].GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
-                features[0].GetProperty("properties").GetProperty("name").GetString().Should().Be("point");
-            }
+            await PublishMixedFamilyAndAssertSingleFeatureAsync(table, "Point", "point");
+            await PublishMixedFamilyAndAssertSingleFeatureAsync(table, "LineString", "line");
 
-            var lines = await PublishLayerAsync(new PublishLayerRequest
-            {
-                Schema = "public",
-                Table = table,
-                LayerName = "Mixed lines",
-                ServiceName = _serviceName,
-                GeometryColumn = "geom",
-                GeometryType = "LineString",
-                Srid = 4326,
-                PrimaryKey = "id",
-                Fields = _idNameFields,
-                Enabled = true
-            });
-            _layerId = lines.StorageLayerId;
-            lines.GeometryType.Should().Be("LineString");
-            using var lineItems = JsonDocument.Parse(await ReadOgcItemsAsync("limit=10"));
-            var lineFeatures = lineItems.RootElement.GetProperty("features");
-            lineFeatures.GetArrayLength().Should().Be(1);
-            lineFeatures[0].GetProperty("geometry").GetProperty("type").GetString().Should().Be("LineString");
-            lineFeatures[0].GetProperty("properties").GetProperty("name").GetString().Should().Be("line");
+            var rejected = await PostPublishLayerAsync(MixedFamilyRequest(table, "Polygon"));
+            rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            rejected.Payload.Should().Contain("no Polygon geometries");
         }
         finally
         {
@@ -86,5 +48,32 @@ public sealed partial class LayerPublishingIntegrationTests
                 DROP TABLE IF EXISTS public.{table};
                 """);
         }
+    }
+
+    private PublishLayerRequest MixedFamilyRequest(string table, string family) => new()
+    {
+        Schema = "public",
+        Table = table,
+        LayerName = $"Mixed {family}",
+        ServiceName = _serviceName,
+        GeometryColumn = "geom",
+        GeometryType = family,
+        Srid = 4326,
+        PrimaryKey = "id",
+        Fields = _idNameFields,
+        Enabled = true
+    };
+
+    private async Task PublishMixedFamilyAndAssertSingleFeatureAsync(string table, string family, string name)
+    {
+        var layer = await PublishLayerAsync(MixedFamilyRequest(table, family));
+        _layerId = layer.StorageLayerId;
+        layer.GeometryType.Should().Be(family);
+
+        using var items = JsonDocument.Parse(await ReadOgcItemsAsync("limit=10"));
+        var features = items.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+        features[0].GetProperty("geometry").GetProperty("type").GetString().Should().Be(family);
+        features[0].GetProperty("properties").GetProperty("name").GetString().Should().Be(name);
     }
 }

@@ -455,27 +455,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
 
-        // A chosen family from a mixed table is its own relation, so a second family
-        // can be published beside it. The view selects only that family.
-        if (!isManagedStore &&
-            validation.Checks.Any(check => check.Code == "mixed-geometry" && check.Severity == SeverityWarning))
+        // One type from a mixed table publishes through its own view, so each type is its own layer.
+        if (!isManagedStore && GeometryFamilyViewFor(validation, request.GeometryType) is { } familyView)
         {
-            var family = MixedGeometryFamily(request.GeometryType)
-                ?? throw new LayerPublishingException(
-                    LayerPublishingErrorKind.Validation,
-                    "Geometry type is required when the source table mixes geometry types.");
-            var familyView = MixedGeometryFamilyViewName(table, family);
-            await CreateMixedGeometryFamilyViewAsync(
-                    connection,
-                    transaction,
-                    schema,
-                    table,
-                    familyView,
-                    geometryColumn,
-                    family,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            table = familyView;
+            table = await CreateGeometryFamilyViewAsync(transaction, familyView, cancellationToken).ConfigureAwait(false);
         }
 
         var serviceCreated = await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
@@ -874,22 +857,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     cancellationToken,
                     transaction)
                 .ConfigureAwait(false);
-            var geometryFamily = request.ManagedStore ? null : MixedGeometryFamily(request.GeometryType);
-            int? familyCount = null;
-            if (geometryFamily is not null && geometryHealth?.DistinctGeometryTypeCount > 1)
-            {
-                familyCount = await CountGeometryFamilyAsync(
-                        connection,
-                        schema,
-                        table,
-                        geometryColumn!,
-                        geometryFamily,
-                        transaction,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            AddGeometryHealthChecks(geometryHealth, checks, request.AllowEmptyTable, geometryFamily, familyCount);
+            AddGeometryHealthChecks(geometryHealth, checks, request.AllowEmptyTable);
+            SelectGeometryFamily(geometryHealth, checks, request.ManagedStore ? null : MixedGeometryFamily(request.GeometryType));
         }
         else if (string.IsNullOrWhiteSpace(geometryColumn))
         {
@@ -1248,7 +1217,32 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         long InvalidGeometryCount,
         int DistinctGeometryTypeCount,
         int? MinSrid,
-        int? MaxSrid);
+        int? MaxSrid)
+    {
+        // Point, LineString and Polygon row counts, single and multi parts together.
+        public long[] FamilyRowCounts { get; init; } = [0L, 0L, 0L];
+
+        public long RowsOfFamily(string family) => family switch
+        {
+            "Point" => FamilyRowCounts[0],
+            "LineString" => FamilyRowCounts[1],
+            "Polygon" => FamilyRowCounts[2],
+            _ => 0
+        };
+    }
+
+    private sealed record GeometryFamilyView
+    {
+        public required string Schema { get; init; }
+
+        public required string SourceTable { get; init; }
+
+        public required string GeometryColumn { get; init; }
+
+        public required string Family { get; init; }
+
+        public string ViewName => MixedGeometryFamilyViewName(SourceTable, Family);
+    }
 
     private readonly record struct ResolvedPublishValidation(
         string? GeometryColumn,
