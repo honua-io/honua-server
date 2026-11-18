@@ -25,15 +25,19 @@ def consumer_script():
     return script
 
 
+def write_framework_helper(root):
+    helper = root / 'scripts' / 'ci' / 'honua-target-framework.sh'
+    helper.parent.mkdir(parents=True)
+    helper.write_text("#!/bin/sh\nprintf '%s\\n' net11.0\n")
+    helper.chmod(0o755)
+
+
 class PackageConsumers(unittest.TestCase):
     def test_package_consumer_builds_against_the_pinned_framework(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'packages').mkdir()
-            helper = root / 'scripts' / 'ci' / 'honua-target-framework.sh'
-            helper.parent.mkdir(parents=True)
-            helper.write_text("#!/bin/sh\nprintf '%s\\n' net11.0\n")
-            helper.chmod(0o755)
+            write_framework_helper(root)
             shim = root / 'dotnet'
             shim.write_text('''#!/usr/bin/env python3
 import json

@@ -152,7 +152,8 @@ class CredentialTests(unittest.TestCase):
             '" Version="4.0.0" /></ItemGroup></Project>')
         frameworks = []
 
-        def restore(project, config, cache, credential):
+        def restore(project, *ignored):
+            cache, credential = ignored[1], ignored[2]
             frameworks.append(ET.parse(project).findtext('.//TargetFramework'))
             if credential is None:
                 return subprocess.CompletedProcess([], 1, proof.FEED + ' response 401', '')
