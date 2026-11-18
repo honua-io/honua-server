@@ -119,7 +119,11 @@ public sealed partial class RowLevelSecurityEndpointsTests
             using var response = await client.GetAsync(
                 $"/rest/services/{Honua.TestKit.WebAppFixture.TestServiceId}/FeatureServer/{Honua.TestKit.WebAppFixture.TestLayerId}/query?where=1%3D1&outFields=*&f=json");
 
-            response.IsSuccessStatusCode.Should().BeFalse();
+            // GeoServices REST reports a refused query as an error body, usually with HTTP 200.
+            var payload = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(payload);
+            document.RootElement.TryGetProperty("error", out _).Should().BeTrue(payload);
+            document.RootElement.TryGetProperty("features", out _).Should().BeFalse(payload);
         }
         finally
         {

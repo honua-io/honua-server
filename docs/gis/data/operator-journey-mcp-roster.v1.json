@@ -116,6 +116,7 @@
         "description",
         "dryRun",
         "enabled",
+        "exactTypes",
         "fieldDomains",
         "fields",
         "folderId",
