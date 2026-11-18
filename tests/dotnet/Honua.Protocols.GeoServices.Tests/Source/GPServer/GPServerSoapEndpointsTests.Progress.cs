@@ -11,8 +11,6 @@ using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
@@ -30,15 +28,10 @@ public sealed partial class GPServerSoapEndpointsTests
     [InterfaceOperation(TestProtocols.GPServer, "GetJobStatus")]
     public async Task GetJobStatus_ProgressHint_PreservesScalarStatusAndSeparateMessages(string progressHint)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var jobs = fixture.ResetJobs();
         jobs.GetGPServerJobAsync("soap-job", "alpha", null, Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
             .Returns(SoapJob() with { Status = ExecutionJobStatus.Succeeded, CurrentPhase = "Completed" });
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         // Match Pro's measured GetProgressMsg=false request; the response contract
         // remains scalar even for the deliberately tolerated true hint.
         using var response = await PostAsync(client, "GetJobStatus",
@@ -70,13 +63,8 @@ public sealed partial class GPServerSoapEndpointsTests
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task GetJobStatus_InvalidProgressHint_ReturnsSoapFaultBeforeJobLookup(string arguments)
     {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        var jobs = fixture.ResetJobs();
+        using var client = ServiceRbacTestFixture.CreateClient(fixture.JobFactory, "alpha-reader");
         using var response = await PostAsync(client, "GetJobStatus", "<JobID>soap-job</JobID>" + arguments);
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);

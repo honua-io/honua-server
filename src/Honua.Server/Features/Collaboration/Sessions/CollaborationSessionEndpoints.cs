@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -42,7 +43,10 @@ internal static class CollaborationSessionEndpoints
         // Authenticated WebSocket v1-envelope stream. The join is authorized through
         // the Studio-lifecycle-backed authorizer before the upgrade, so an unauthorized client
         // receives a typed 401/403 rather than an opaque socket close.
+        // The join is authorized once before the upgrade; the live-stream filter keeps checking
+        // the credential and closes the socket once it is revoked or expires.
         group.MapGet("/stream", CollaborationSessionStreamEndpoint.HandleStream)
+            .AddEndpointFilter<LiveStreamAuthorizationFilter>()
             .WithDisplayName("Stream Saved Map Collaboration Session")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .WithMetadata(WebSocketEndpointMetadata.Instance)

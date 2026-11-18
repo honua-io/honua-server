@@ -24,7 +24,67 @@ namespace Honua.Server.Tests;
 
 [Collection("Database")]
 public sealed class PatchConcurrencyTests
+    : IClassFixture<PatchConcurrencyTests.DefaultMaskHost>, IClassFixture<PatchConcurrencyTests.TestMaskHost>
 {
+    private readonly DefaultMaskHost _defaultHost;
+    private readonly TestMaskHost _maskHost;
+
+    public PatchConcurrencyTests(DefaultMaskHost defaultHost, TestMaskHost maskHost)
+    {
+        _defaultHost = defaultHost;
+        _maskHost = maskHost;
+    }
+
+    // Two applications serve every case except the schema-changing one, which keeps its own.
+    // The product field-mask source must stay registered for the cases without a test mask:
+    // only it takes the combined row and field read path. Each case inserts and edits only
+    // its own feature, and Use() installs a fresh write barrier and clears the test mask.
+    public abstract class PatchHost : IAsyncLifetime
+    {
+        private readonly BarrierSlot _slot = new();
+        private readonly MutableFieldMask? _mask;
+
+        private protected PatchHost(MutableFieldMask? mask)
+        {
+            _mask = mask;
+            Fixture = CreateFixture(_slot, mask);
+        }
+
+        internal WebAppFixture Fixture { get; }
+
+        internal WebAppFixture Use(WriteBarrier barrier)
+        {
+            _slot.Current = barrier;
+            if (_mask is not null)
+            {
+                _mask.Fields = ImmutableArray<string>.Empty;
+            }
+            return Fixture;
+        }
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
+    public sealed class DefaultMaskHost() : PatchHost(null);
+
+    public sealed class TestMaskHost : PatchHost
+    {
+        public TestMaskHost()
+            : this(new MutableFieldMask())
+        {
+        }
+
+        private TestMaskHost(MutableFieldMask mask)
+            : base(mask)
+        {
+            Mask = mask;
+        }
+
+        internal MutableFieldMask Mask { get; }
+    }
+
     [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -35,38 +95,33 @@ public sealed class PatchConcurrencyTests
     {
         var barrier = new WriteBarrier();
         barrier.Resume.TrySetResult();
-        var mask = new MutableFieldMask();
-        var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
-        try
+        var mask = _maskHost.Mask;
+        var fixture = _maskHost.Use(barrier);
+        var id = await fixture.InsertFeatureAsync(0, "conditional delete");
+        var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+        await fixture.GetService<IFeatureWriter>().UpdateAsync(
+            0,
+            original with { Attributes = original.Attributes.SetItem("population", 12345L) });
+        mask.Fields = ImmutableArray.Create("population");
+
+        using var read = await fixture.Client.GetAsync($"/ogc/features/collections/0/items/{id}");
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        Assert.NotNull(read.Headers.ETag);
+        Assert.DoesNotContain("population", await read.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+        if (stale)
         {
-            var id = await fixture.InsertFeatureAsync(0, "conditional delete");
-            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            var current = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
             await fixture.GetService<IFeatureWriter>().UpdateAsync(
-                0,
-                original with { Attributes = original.Attributes.SetItem("population", 12345L) });
-            mask.Fields = ImmutableArray.Create("population");
-
-            using var read = await fixture.Client.GetAsync($"/ogc/features/collections/0/items/{id}");
-            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
-            Assert.NotNull(read.Headers.ETag);
-            Assert.DoesNotContain("population", await read.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
-            if (stale)
-            {
-                var current = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-                await fixture.GetService<IFeatureWriter>().UpdateAsync(
-                    0, current with { Attributes = current.Attributes.SetItem("name", "changed name") });
-            }
-
-            using var request = new HttpRequestMessage(
-                HttpMethod.Delete,
-                $"/ogc/features/collections/0/items/{id}");
-            request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
-            using var response = await fixture.Client.SendAsync(request);
-
-            Assert.Equal(stale ? HttpStatusCode.PreconditionFailed : HttpStatusCode.NoContent, response.StatusCode);
+                0, current with { Attributes = current.Attributes.SetItem("name", "changed name") });
         }
-        finally { await fixture.DisposeAsync(); }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"/ogc/features/collections/0/items/{id}");
+        request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
+        using var response = await fixture.Client.SendAsync(request);
+
+        Assert.Equal(stale ? HttpStatusCode.PreconditionFailed : HttpStatusCode.NoContent, response.StatusCode);
     }
 
     [IntegrationTest]
@@ -76,37 +131,32 @@ public sealed class PatchConcurrencyTests
     public async Task OgcDelete_ConcurrentMaskedChange_ReturnsPreconditionFailed()
     {
         var barrier = new WriteBarrier { PauseDelete = true };
-        var mask = new MutableFieldMask();
-        var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
+        var mask = _maskHost.Mask;
+        var fixture = _maskHost.Use(barrier);
+        var id = await fixture.InsertFeatureAsync(0, "conditional delete");
+        var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+        var populated = original with { Attributes = original.Attributes.SetItem("population", 12345L) };
+        await fixture.GetService<IFeatureWriter>().UpdateAsync(0, populated);
+        mask.Fields = ImmutableArray.Create("population");
+        using var read = await fixture.Client.GetAsync($"/ogc/features/collections/0/items/{id}");
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        Assert.NotNull(read.Headers.ETag);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"/ogc/features/collections/0/items/{id}");
+        request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
+        var pending = fixture.Client.SendAsync(request);
         try
         {
-            var id = await fixture.InsertFeatureAsync(0, "conditional delete");
-            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-            var populated = original with { Attributes = original.Attributes.SetItem("population", 12345L) };
-            await fixture.GetService<IFeatureWriter>().UpdateAsync(0, populated);
-            mask.Fields = ImmutableArray.Create("population");
-            using var read = await fixture.Client.GetAsync($"/ogc/features/collections/0/items/{id}");
-            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
-            Assert.NotNull(read.Headers.ETag);
-            using var request = new HttpRequestMessage(HttpMethod.Delete, $"/ogc/features/collections/0/items/{id}");
-            request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
-            var pending = fixture.Client.SendAsync(request);
-            try
-            {
-                await barrier.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
-                await fixture.GetService<IFeatureWriter>().UpdateAsync(
-                    0, populated with { Attributes = populated.Attributes.SetItem("population", 54321L) });
-            }
-            finally { barrier.Resume.TrySetResult(); }
-
-            using var response = await pending;
-            Assert.Equal(HttpStatusCode.PreconditionFailed, response.StatusCode);
-            mask.Fields = ImmutableArray<string>.Empty;
-            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-            Assert.Equal(54321L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
+            await barrier.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            await fixture.GetService<IFeatureWriter>().UpdateAsync(
+                0, populated with { Attributes = populated.Attributes.SetItem("population", 54321L) });
         }
-        finally { await fixture.DisposeAsync(); }
+        finally { barrier.Resume.TrySetResult(); }
+
+        using var response = await pending;
+        Assert.Equal(HttpStatusCode.PreconditionFailed, response.StatusCode);
+        mask.Fields = ImmutableArray<string>.Empty;
+        var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+        Assert.Equal(54321L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
     }
 
     [IntegrationTheory]
@@ -161,9 +211,8 @@ public sealed class PatchConcurrencyTests
     public async Task Patch_MaskedAttribute_PreservesStoredValueWithoutExposingIt(string protocol, bool concurrent)
     {
         var barrier = new WriteBarrier();
-        var mask = new MutableFieldMask();
-        var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
+        var mask = _maskHost.Mask;
+        var fixture = _maskHost.Use(barrier);
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "original name");
@@ -224,7 +273,6 @@ public sealed class PatchConcurrencyTests
         finally
         {
             barrier.Resume.TrySetResult();
-            await fixture.DisposeAsync();
         }
     }
 
@@ -241,25 +289,17 @@ public sealed class PatchConcurrencyTests
     [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task PatchEndpoints_DeclareConflictAndPreconditionResponses()
     {
-        var fixture = CreateFixture(new WriteBarrier());
-        await fixture.InitializeAsync();
-        try
+        var fixture = _defaultHost.Use(new WriteBarrier());
+        var names = new[] { "ODataUpdateFeature", "ODataUpdateLayerFeature", "ODataUpdateFeatureLegacy", "PatchItem", "ODataReplaceFeature", "ODataReplaceLayerFeature", "ODataReplaceFeatureLegacy", "UpdateItem" };
+        var endpoints = fixture.GetService<IEnumerable<EndpointDataSource>>().SelectMany(source => source.Endpoints).ToArray();
+        foreach (var name in names)
         {
-            var names = new[] { "ODataUpdateFeature", "ODataUpdateLayerFeature", "ODataUpdateFeatureLegacy", "PatchItem", "ODataReplaceFeature", "ODataReplaceLayerFeature", "ODataReplaceFeatureLegacy", "UpdateItem" };
-            var endpoints = fixture.GetService<IEnumerable<EndpointDataSource>>().SelectMany(source => source.Endpoints).ToArray();
-            foreach (var name in names)
+            var endpoint = Assert.Single(endpoints, e => e.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == name);
+            foreach (var status in new[] { 409, 412 })
             {
-                var endpoint = Assert.Single(endpoints, e => e.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == name);
-                foreach (var status in new[] { 409, 412 })
-                {
-                    var response = Assert.Single(endpoint.Metadata.GetOrderedMetadata<IProducesResponseTypeMetadata>(), m => m.StatusCode == status);
-                    Assert.Equal(name is "PatchItem" or "UpdateItem" ? typeof(Microsoft.AspNetCore.Mvc.ProblemDetails) : typeof(Honua.Protocols.OData.Models.ODataError), response.Type);
-                }
+                var response = Assert.Single(endpoint.Metadata.GetOrderedMetadata<IProducesResponseTypeMetadata>(), m => m.StatusCode == status);
+                Assert.Equal(name is "PatchItem" or "UpdateItem" ? typeof(Microsoft.AspNetCore.Mvc.ProblemDetails) : typeof(Honua.Protocols.OData.Models.ODataError), response.Type);
             }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
         }
     }
 
@@ -291,32 +331,27 @@ public sealed class PatchConcurrencyTests
     {
         var barrier = new WriteBarrier();
         barrier.Resume.TrySetResult();
-        var fixture = CreateFixture(barrier);
-        await fixture.InitializeAsync();
-        try
+        var fixture = _defaultHost.Use(barrier);
+        var id = await fixture.InsertFeatureAsync(0, "original name");
+        var secondBody = secondMethod == "PUT"
+            ? """{"name":"replacement","population":45678,"Geometry":{"type":"Point","coordinates":[-120,35]}}"""
+            : """{"population":45678}""";
+        var body = $$$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"{{{secondMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{{{secondBody}}}}]}""";
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var response = await fixture.Client.PostAsync("/odata/$batch", content);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responses = document.RootElement.GetProperty("responses");
+        Assert.Equal(2, responses.GetArrayLength());
+        foreach (var result in responses.EnumerateArray()) Assert.InRange(result.GetProperty("status").GetInt32(), 200, 299);
+        var current = await fixture.GetService<IFeatureReader>().GetAsync(0, id);
+        if (secondMethod == "DELETE")
         {
-            var id = await fixture.InsertFeatureAsync(0, "original name");
-            var secondBody = secondMethod == "PUT"
-                ? """{"name":"replacement","population":45678,"Geometry":{"type":"Point","coordinates":[-120,35]}}"""
-                : """{"population":45678}""";
-            var body = $$$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"{{{secondMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{{{secondBody}}}}]}""";
-            using var content = new StringContent(body, Encoding.UTF8, "application/json");
-            using var response = await fixture.Client.PostAsync("/odata/$batch", content);
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var responses = document.RootElement.GetProperty("responses");
-            Assert.Equal(2, responses.GetArrayLength());
-            foreach (var result in responses.EnumerateArray()) Assert.InRange(result.GetProperty("status").GetInt32(), 200, 299);
-            var current = await fixture.GetService<IFeatureReader>().GetAsync(0, id);
-            if (secondMethod == "DELETE")
-            {
-                Assert.Null(current);
-                return;
-            }
-            var stored = current!.Value;
-            Assert.Equal(secondMethod == "PUT" ? "replacement" : "changed name", stored.Attributes["name"]);
-            Assert.Equal(45678L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
+            Assert.Null(current);
+            return;
         }
-        finally { await fixture.DisposeAsync(); }
+        var stored = current!.Value;
+        Assert.Equal(secondMethod == "PUT" ? "replacement" : "changed name", stored.Attributes["name"]);
+        Assert.Equal(45678L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
     }
 
     [IntegrationTheory]
@@ -329,26 +364,21 @@ public sealed class PatchConcurrencyTests
     {
         var barrier = new WriteBarrier();
         barrier.Resume.TrySetResult();
-        var mask = new MutableFieldMask();
-        var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
-        try
-        {
-            var id = await fixture.InsertFeatureAsync(0, "original name");
-            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-            await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original with { Attributes = original.Attributes.SetItem("population", 12345L) });
-            mask.Fields = ImmutableArray.Create("population");
-            var url = $"/odata/Features(LayerId=0,ObjectId={id})";
-            using var read = await fixture.Client.GetAsync(url);
-            using var request = new HttpRequestMessage(HttpMethod.Put, url) { Content = new StringContent("""{"name":"replacement","Geometry":{"type":"Point","coordinates":[-120,35]}}""", Encoding.UTF8, "application/json") };
-            if (conditional) request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
-            using var response = await fixture.Client.SendAsync(request);
-            Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
-            mask.Fields = ImmutableArray<string>.Empty;
-            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-            Assert.False(stored.Attributes.ContainsKey("population"));
-        }
-        finally { await fixture.DisposeAsync(); }
+        var mask = _maskHost.Mask;
+        var fixture = _maskHost.Use(barrier);
+        var id = await fixture.InsertFeatureAsync(0, "original name");
+        var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+        await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original with { Attributes = original.Attributes.SetItem("population", 12345L) });
+        mask.Fields = ImmutableArray.Create("population");
+        var url = $"/odata/Features(LayerId=0,ObjectId={id})";
+        using var read = await fixture.Client.GetAsync(url);
+        using var request = new HttpRequestMessage(HttpMethod.Put, url) { Content = new StringContent("""{"name":"replacement","Geometry":{"type":"Point","coordinates":[-120,35]}}""", Encoding.UTF8, "application/json") };
+        if (conditional) request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
+        using var response = await fixture.Client.SendAsync(request);
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        mask.Fields = ImmutableArray<string>.Empty;
+        var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+        Assert.False(stored.Attributes.ContainsKey("population"));
     }
 
     [IntegrationTest]
@@ -361,7 +391,7 @@ public sealed class PatchConcurrencyTests
         barrier.Resume.TrySetResult();
         var mask = new MutableFieldMask();
         var errors = new ErrorCapture();
-        var fixture = CreateFixture(barrier, mask).ConfigureServices(services => services.AddSingleton<ILoggerProvider>(errors));
+        var fixture = CreateFixture(new BarrierSlot { Current = barrier }, mask).ConfigureServices(services => services.AddSingleton<ILoggerProvider>(errors));
         await fixture.InitializeAsync();
         try
         {
@@ -393,31 +423,26 @@ public sealed class PatchConcurrencyTests
     {
         var barrier = new WriteBarrier();
         barrier.Resume.TrySetResult();
-        var mask = new MutableFieldMask();
-        var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
-        try
+        var mask = _maskHost.Mask;
+        var fixture = _maskHost.Use(barrier);
+        var id = await fixture.InsertFeatureAsync(0, "original name");
+        var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+        await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original with { Attributes = original.Attributes.SetItem("population", 12345L) });
+        mask.Fields = ImmutableArray.Create("population");
+        var payload = clearAll ? """{"properties":null}""" : """{"properties":{"population":null}}""";
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"/ogc/features/collections/0/items/{id}")
         {
-            var id = await fixture.InsertFeatureAsync(0, "original name");
-            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-            await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original with { Attributes = original.Attributes.SetItem("population", 12345L) });
-            mask.Fields = ImmutableArray.Create("population");
-            var payload = clearAll ? """{"properties":null}""" : """{"properties":{"population":null}}""";
-            using var request = new HttpRequestMessage(HttpMethod.Patch, $"/ogc/features/collections/0/items/{id}")
-            {
-                Content = new StringContent(payload, Encoding.UTF8, "application/merge-patch+json")
-            };
-            using var response = await fixture.Client.SendAsync(request);
-            Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
-            Assert.DoesNotContain("population", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
-            mask.Fields = ImmutableArray<string>.Empty;
-            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-            Assert.False(stored.Attributes.ContainsKey("population"));
-            if (clearAll) Assert.False(stored.Attributes.ContainsKey("name"));
-            else Assert.Equal("original name", stored.Attributes["name"]);
-            Assert.Equal(original.Geometry, stored.Geometry);
-        }
-        finally { await fixture.DisposeAsync(); }
+            Content = new StringContent(payload, Encoding.UTF8, "application/merge-patch+json")
+        };
+        using var response = await fixture.Client.SendAsync(request);
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        Assert.DoesNotContain("population", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+        mask.Fields = ImmutableArray<string>.Empty;
+        var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+        Assert.False(stored.Attributes.ContainsKey("population"));
+        if (clearAll) Assert.False(stored.Attributes.ContainsKey("name"));
+        else Assert.Equal("original name", stored.Attributes["name"]);
+        Assert.Equal(original.Geometry, stored.Geometry);
     }
 
     [IntegrationTheory]
@@ -435,65 +460,60 @@ public sealed class PatchConcurrencyTests
     public async Task Patch_ConflictStatusUsesLockedSnapshot_WhenRowChangesAgain(string protocol, bool conditionFailsAtConflict)
     {
         var barrier = new WriteBarrier();
-        var mask = new MutableFieldMask();
-        var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
+        var mask = _maskHost.Mask;
+        var fixture = _maskHost.Use(barrier);
+        var id = await fixture.InsertFeatureAsync(0, "original name");
+        var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+        mask.Fields = ImmutableArray.Create("population");
+        var readUrl = protocol == "ogc" ? $"/ogc/features/collections/0/items/{id}" : $"/odata/Features(LayerId=0,ObjectId={id})";
+        async Task<string> ReadConditionEtagAsync()
+        {
+            if (protocol == "ogc")
+            {
+                var feature = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+                return Honua.Protocols.Ogc.Api.Features.Services.OgcFeatureEntityTag.Compute(
+                    feature, fixture.GetService<Honua.Infrastructure.Caching.IETagService>());
+            }
+            using var read = await fixture.Client.GetAsync(readUrl);
+            Assert.True(read.IsSuccessStatusCode);
+            return read.Headers.ETag!.ToString();
+        }
+        var originalEtag = await ReadConditionEtagAsync();
+        using var futureRequest = CreatePatch(protocol != "ogc", id, changeName: false);
+        using var futureResponse = await fixture.Client.SendAsync(futureRequest);
+        Assert.True(futureResponse.IsSuccessStatusCode);
+        var futureEtag = await ReadConditionEtagAsync();
+        Assert.NotEqual(originalEtag, futureEtag);
+        await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original);
+
+        var later = conditionFailsAtConflict ? original : original with
+        {
+            Attributes = original.Attributes.SetItem("name", "third writer").SetItem("population", 98765L)
+        };
+        barrier.AfterRejectedWrite = async writer => { await writer.UpdateAsync(0, later); };
+        var condition = conditionFailsAtConflict ? originalEtag : originalEtag + ", " + futureEtag;
+        using var request = CreatePatch(protocol != "ogc", id, changeName: true, batch: protocol == "batch", ifMatch: condition);
+        var pending = fixture.Client.SendAsync(request);
         try
         {
-            var id = await fixture.InsertFeatureAsync(0, "original name");
-            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-            mask.Fields = ImmutableArray.Create("population");
-            var readUrl = protocol == "ogc" ? $"/ogc/features/collections/0/items/{id}" : $"/odata/Features(LayerId=0,ObjectId={id})";
-            async Task<string> ReadConditionEtagAsync()
+            var firstCompleted = await Task.WhenAny(barrier.Reached.Task, pending).WaitAsync(TimeSpan.FromSeconds(30));
+            if (firstCompleted == pending)
             {
-                if (protocol == "ogc")
-                {
-                    var feature = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-                    return Honua.Protocols.Ogc.Api.Features.Services.OgcFeatureEntityTag.Compute(
-                        feature, fixture.GetService<Honua.Infrastructure.Caching.IETagService>());
-                }
-                using var read = await fixture.Client.GetAsync(readUrl);
-                Assert.True(read.IsSuccessStatusCode);
-                return read.Headers.ETag!.ToString();
+                using var earlyResponse = await pending;
+                Assert.Fail($"Request did not reach the write barrier: {earlyResponse.StatusCode} {await earlyResponse.Content.ReadAsStringAsync()}");
             }
-            var originalEtag = await ReadConditionEtagAsync();
-            using var futureRequest = CreatePatch(protocol != "ogc", id, changeName: false);
-            using var futureResponse = await fixture.Client.SendAsync(futureRequest);
-            Assert.True(futureResponse.IsSuccessStatusCode);
-            var futureEtag = await ReadConditionEtagAsync();
-            Assert.NotEqual(originalEtag, futureEtag);
-            await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original);
-
-            var later = conditionFailsAtConflict ? original : original with
-            {
-                Attributes = original.Attributes.SetItem("name", "third writer").SetItem("population", 98765L)
-            };
-            barrier.AfterRejectedWrite = async writer => { await writer.UpdateAsync(0, later); };
-            var condition = conditionFailsAtConflict ? originalEtag : originalEtag + ", " + futureEtag;
-            using var request = CreatePatch(protocol != "ogc", id, changeName: true, batch: protocol == "batch", ifMatch: condition);
-            var pending = fixture.Client.SendAsync(request);
-            try
-            {
-                var firstCompleted = await Task.WhenAny(barrier.Reached.Task, pending).WaitAsync(TimeSpan.FromSeconds(30));
-                if (firstCompleted == pending)
-                {
-                    using var earlyResponse = await pending;
-                    Assert.Fail($"Request did not reach the write barrier: {earlyResponse.StatusCode} {await earlyResponse.Content.ReadAsStringAsync()}");
-                }
-                using var secondRequest = CreatePatch(protocol != "ogc", id, changeName: false);
-                using var secondResponse = await fixture.Client.SendAsync(secondRequest);
-                Assert.True(secondResponse.IsSuccessStatusCode, await secondResponse.Content.ReadAsStringAsync());
-            }
-            finally { barrier.Resume.TrySetResult(); }
-
-            using var response = await pending;
-            Assert.Equal(conditionFailsAtConflict ? HttpStatusCode.PreconditionFailed : HttpStatusCode.Conflict,
-                await ReadStatusAsync(response, protocol == "batch"));
-            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-            Assert.Equal(later.Attributes["name"], stored.Attributes["name"]);
-            Assert.Equal(later.Geometry, stored.Geometry);
+            using var secondRequest = CreatePatch(protocol != "ogc", id, changeName: false);
+            using var secondResponse = await fixture.Client.SendAsync(secondRequest);
+            Assert.True(secondResponse.IsSuccessStatusCode, await secondResponse.Content.ReadAsStringAsync());
         }
-        finally { await fixture.DisposeAsync(); }
+        finally { barrier.Resume.TrySetResult(); }
+
+        using var response = await pending;
+        Assert.Equal(conditionFailsAtConflict ? HttpStatusCode.PreconditionFailed : HttpStatusCode.Conflict,
+            await ReadStatusAsync(response, protocol == "batch"));
+        var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+        Assert.Equal(later.Attributes["name"], stored.Attributes["name"]);
+        Assert.Equal(later.Geometry, stored.Geometry);
     }
 
     [IntegrationTheory]
@@ -508,61 +528,56 @@ public sealed class PatchConcurrencyTests
     public async Task Batch_FirstMutationControlsSnapshotGuard(string firstMethod, string secondMethod, bool firstConditional, bool succeeds)
     {
         var barrier = new WriteBarrier();
-        var fixture = CreateFixture(barrier);
-        await fixture.InitializeAsync();
+        var fixture = _defaultHost.Use(barrier);
+        var id = await fixture.InsertFeatureAsync(0, "original name");
+        var firstHeaders = firstConditional ? """ "headers":{"If-Match":"*"},""" : string.Empty;
+        var secondBody = secondMethod == "DELETE" ? string.Empty
+            : secondMethod == "PUT" ? """, "body":{"name":"replacement","population":45678}"""
+            : """, "body":{"population":45678}""";
+        var body = $$$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"{{{firstMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})",{{{firstHeaders}}}"body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"{{{secondMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})","headers":{"If-Match":"*"}{{{secondBody}}}}]}""";
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var pending = fixture.Client.PostAsync("/odata/$batch", content);
         try
         {
-            var id = await fixture.InsertFeatureAsync(0, "original name");
-            var firstHeaders = firstConditional ? """ "headers":{"If-Match":"*"},""" : string.Empty;
-            var secondBody = secondMethod == "DELETE" ? string.Empty
-                : secondMethod == "PUT" ? """, "body":{"name":"replacement","population":45678}"""
-                : """, "body":{"population":45678}""";
-            var body = $$$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"{{{firstMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})",{{{firstHeaders}}}"body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"{{{secondMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})","headers":{"If-Match":"*"}{{{secondBody}}}}]}""";
-            using var content = new StringContent(body, Encoding.UTF8, "application/json");
-            var pending = fixture.Client.PostAsync("/odata/$batch", content);
-            try
+            var firstCompleted = await Task.WhenAny(barrier.Reached.Task, pending).WaitAsync(TimeSpan.FromSeconds(30));
+            if (firstCompleted == pending)
             {
-                var firstCompleted = await Task.WhenAny(barrier.Reached.Task, pending).WaitAsync(TimeSpan.FromSeconds(30));
-                if (firstCompleted == pending)
-                {
-                    using var earlyResponse = await pending;
-                    Assert.Fail($"Batch did not reach the write barrier: {earlyResponse.StatusCode} {await earlyResponse.Content.ReadAsStringAsync()}");
-                }
-                using var concurrentRequest = CreatePatch(true, id, changeName: false);
-                using var concurrentResponse = await fixture.Client.SendAsync(concurrentRequest);
-                Assert.True(concurrentResponse.IsSuccessStatusCode, await concurrentResponse.Content.ReadAsStringAsync());
+                using var earlyResponse = await pending;
+                Assert.Fail($"Batch did not reach the write barrier: {earlyResponse.StatusCode} {await earlyResponse.Content.ReadAsStringAsync()}");
             }
-            finally { barrier.Resume.TrySetResult(); }
+            using var concurrentRequest = CreatePatch(true, id, changeName: false);
+            using var concurrentResponse = await fixture.Client.SendAsync(concurrentRequest);
+            Assert.True(concurrentResponse.IsSuccessStatusCode, await concurrentResponse.Content.ReadAsStringAsync());
+        }
+        finally { barrier.Resume.TrySetResult(); }
 
-            using var response = await pending;
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var responses = document.RootElement.GetProperty("responses");
-            Assert.Equal(2, responses.GetArrayLength());
-            if (succeeds)
-            {
-                foreach (var operation in responses.EnumerateArray()) Assert.InRange(operation.GetProperty("status").GetInt32(), 200, 299);
-                var stored = await fixture.GetService<IFeatureReader>().GetAsync(0, id);
-                if (secondMethod == "DELETE") Assert.Null(stored);
-                else
-                {
-                    Assert.NotNull(stored);
-                    Assert.Equal(45678L, Convert.ToInt64(stored!.Value.Attributes["population"], CultureInfo.InvariantCulture));
-                    Assert.Equal(secondMethod == "PUT" ? "replacement" : "changed name", stored!.Value.Attributes["name"]);
-                }
-            }
+        using var response = await pending;
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responses = document.RootElement.GetProperty("responses");
+        Assert.Equal(2, responses.GetArrayLength());
+        if (succeeds)
+        {
+            foreach (var operation in responses.EnumerateArray()) Assert.InRange(operation.GetProperty("status").GetInt32(), 200, 299);
+            var stored = await fixture.GetService<IFeatureReader>().GetAsync(0, id);
+            if (secondMethod == "DELETE") Assert.Null(stored);
             else
             {
-                Assert.Contains(responses.EnumerateArray(), operation => operation.GetProperty("status").GetInt32() == 409);
-                var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-                Assert.Equal("original name", stored.Attributes["name"]);
-                Assert.Equal(12345L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
+                Assert.NotNull(stored);
+                Assert.Equal(45678L, Convert.ToInt64(stored!.Value.Attributes["population"], CultureInfo.InvariantCulture));
+                Assert.Equal(secondMethod == "PUT" ? "replacement" : "changed name", stored!.Value.Attributes["name"]);
             }
         }
-        finally { await fixture.DisposeAsync(); }
+        else
+        {
+            Assert.Contains(responses.EnumerateArray(), operation => operation.GetProperty("status").GetInt32() == 409);
+            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            Assert.Equal("original name", stored.Attributes["name"]);
+            Assert.Equal(12345L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
+        }
     }
 
-    private static WebAppFixture CreateFixture(WriteBarrier barrier, MutableFieldMask? mask = null)
+    private static WebAppFixture CreateFixture(BarrierSlot slot, MutableFieldMask? mask)
     {
         return new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed(Path.Join("tests", "seed", "odata.yaml"))
@@ -579,7 +594,7 @@ public sealed class PatchConcurrencyTests
                     var inner = (IFeatureWriter)(registration.ImplementationInstance
                         ?? registration.ImplementationFactory?.Invoke(provider)
                         ?? ActivatorUtilities.CreateInstance(provider, registration.ImplementationType!));
-                    return new InterleavedWriter(inner, barrier);
+                    return new InterleavedWriter(inner, slot);
                 }, registration.Lifetime));
             });
     }
@@ -601,18 +616,17 @@ public sealed class PatchConcurrencyTests
         }
     }
 
-    private sealed class MutableFieldMask : IFieldMaskSource
+    internal sealed class MutableFieldMask : IFieldMaskSource
     {
         public ImmutableArray<string> Fields { get; set; } = ImmutableArray<string>.Empty;
         public Task<ImmutableArray<string>> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
             => Task.FromResult(Fields);
     }
 
-    private static async Task VerifyConcurrentPatchAsync(bool firstIsOData, bool otherIsOData, bool firstIsBatch = false, bool withIfNoneMatch = false, string? ifMatch = null, bool replace = false)
+    private async Task VerifyConcurrentPatchAsync(bool firstIsOData, bool otherIsOData, bool firstIsBatch = false, bool withIfNoneMatch = false, string? ifMatch = null, bool replace = false)
     {
         var barrier = new WriteBarrier();
-        var fixture = CreateFixture(barrier);
-        await fixture.InitializeAsync();
+        var fixture = _defaultHost.Use(barrier);
         try
         {
             var objectId = await fixture.InsertFeatureAsync(0, "original name");
@@ -666,7 +680,6 @@ public sealed class PatchConcurrencyTests
         finally
         {
             barrier.Resume.TrySetResult();
-            await fixture.DisposeAsync();
         }
     }
 
@@ -723,7 +736,12 @@ public sealed class PatchConcurrencyTests
         return (HttpStatusCode)responses[0].GetProperty("status").GetInt32();
     }
 
-    private sealed class WriteBarrier
+    internal sealed class BarrierSlot
+    {
+        public WriteBarrier Current { get; set; } = new();
+    }
+
+    internal sealed class WriteBarrier
     {
         public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -732,7 +750,7 @@ public sealed class PatchConcurrencyTests
         public Func<IFeatureWriter, Task>? AfterRejectedWrite { get; set; }
     }
 
-    private sealed class InterleavedWriter(IFeatureWriter inner, WriteBarrier barrier) : IFeatureWriter
+    private sealed class InterleavedWriter(IFeatureWriter inner, BarrierSlot slot) : IFeatureWriter
     {
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
             => inner.CreateAsync(layerId, feature, cancellationToken);
@@ -745,6 +763,7 @@ public sealed class PatchConcurrencyTests
 
         public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
         {
+            var barrier = slot.Current;
             if ((editBatch.Updates.Any(feature => feature.Attributes.TryGetValue("name", out var name) && Equals(name, "changed name"))
                     || (barrier.PauseDelete && !editBatch.Deletes.IsDefaultOrEmpty))
                 && Interlocked.CompareExchange(ref barrier.Claimed, 1, 0) == 0)
