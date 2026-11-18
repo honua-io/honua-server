@@ -1,0 +1,22 @@
+<Project>
+  <!--
+    Shipped Honua.Server images restore from a committed NuGet lock file in locked mode, so an
+    image only gets package versions and contents (sha512) recorded in eng/nuget-locks/.
+    scripts/docker/server-lock-args.sh selects the variant for a shipped image build; custom
+    builds (other profiles or provider flags) restore without a lock. Each container
+    architecture has its own lock (restore runs per RID). After changing a package version or a project
+    reference in the server graph, regenerate every variant on the build host:
+      remote-run bash scripts/ci/regenerate-server-lock-files.sh
+  -->
+  <PropertyGroup Condition="'$(HonuaLockVariant)' != ''">
+    <NuGetLockFilePath>$(MSBuildThisFileDirectory)nuget-locks/honua-server.$(HonuaLockVariant).$(RuntimeIdentifier).lock.json</NuGetLockFilePath>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(RestoreLockedMode)' == ''">true</RestoreLockedMode>
+  </PropertyGroup>
+
+  <Target Name="HonuaRequireServerLockFile"
+          BeforeTargets="_GenerateRestoreProjectSpec"
+          Condition="'$(HonuaLockVariant)' != '' and '$(RestoreLockedMode)' == 'true' and !Exists('$(NuGetLockFilePath)')">
+    <Error Text="Missing NuGet lock file $(NuGetLockFilePath) for variant '$(HonuaLockVariant)'. Regenerate with scripts/ci/regenerate-server-lock-files.sh." />
+  </Target>
+</Project>

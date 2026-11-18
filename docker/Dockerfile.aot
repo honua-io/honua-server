@@ -66,7 +66,10 @@ COPY --from=restore-inputs /restore-inputs/ ./
 COPY eng/Honua.BuildProfiles.props eng/
 COPY eng/Honua.ProtocolProfiles.props eng/
 COPY eng/protocol-profiles.v1.json eng/
+COPY eng/Honua.ServerLockFiles.props eng/
+COPY eng/nuget-locks/ eng/nuget-locks/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
+COPY scripts/docker/server-lock-args.sh scripts/docker/
 COPY scripts/ci/analyzer-baseline/ scripts/ci/analyzer-baseline/
 
 ARG TARGETARCH
@@ -103,6 +106,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then set -- "$@" "-p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
+    LOCK_ARG="$(sh scripts/docker/server-lock-args.sh aot)" && \
+    if [ -n "$LOCK_ARG" ]; then set -- "$@" "$LOCK_ARG"; fi && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
@@ -146,6 +151,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then set -- "$@" "-p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
+    LOCK_ARG="$(sh scripts/docker/server-lock-args.sh aot)" && \
+    if [ -n "$LOCK_ARG" ]; then set -- "$@" "$LOCK_ARG"; fi && \
     attempt=1 && \
     max_attempts="${AOT_PUBLISH_MAX_ATTEMPTS:-3}" && \
     until \

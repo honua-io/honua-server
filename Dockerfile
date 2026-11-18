@@ -47,7 +47,10 @@ COPY --from=restore-inputs /restore-inputs/ ./
 COPY eng/Honua.BuildProfiles.props eng/
 COPY eng/Honua.ProtocolProfiles.props eng/
 COPY eng/protocol-profiles.v1.json eng/
+COPY eng/Honua.ServerLockFiles.props eng/
+COPY eng/nuget-locks/ eng/nuget-locks/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
+COPY scripts/docker/server-lock-args.sh scripts/docker/
 COPY scripts/ci/analyzer-baseline/ scripts/ci/analyzer-baseline/
 
 ARG TARGETARCH
@@ -76,7 +79,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
+    LOCK_MSBUILD_ARGS="$(sh scripts/docker/server-lock-args.sh serving)" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS $LOCK_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS
@@ -105,7 +109,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
+    LOCK_MSBUILD_ARGS="$(sh scripts/docker/server-lock-args.sh serving)" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS $LOCK_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS && \
