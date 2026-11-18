@@ -13,7 +13,7 @@ Use these standard names at workflow top-level `env:` blocks or as reusable work
 | `DOTNET_SKIP_FIRST_TIME_EXPERIENCE` | `true` | All .NET workflows |
 | `DOTNET_NOLOGO` | `true` | All .NET workflows |
 | `PYTHON_VERSION` | `'3.11'` | Conformance and script workflows |
-| `NODE_VERSION` | `'20'` | JS SDK and integration tests |
+| `NODE_VERSION` | `'20'` | Browser and JavaScript integration jobs. MCP certification passes Node 22.23.3 separately. |
 
 ## Cache Keys
 
