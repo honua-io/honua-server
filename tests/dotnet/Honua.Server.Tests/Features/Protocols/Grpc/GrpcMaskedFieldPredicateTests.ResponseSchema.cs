@@ -65,6 +65,19 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         response.Fields.Select(field => field.Name).Should().Contain(["name", MaskedField]);
     }
 
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WhereClauseAndSchema_ResolveCallerMasksOnce()
+    {
+        using var context = CreateCallContext();
+
+        await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "name = 'visible'" },
+            context);
+
+        await _fieldMaskSource.Received(1).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
+    }
+
     private static async IAsyncEnumerable<Feature> RowsWithMaskedValue()
     {
         await Task.Yield();

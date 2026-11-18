@@ -1,8 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Grpc.Core;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -200,17 +202,27 @@ internal sealed partial class HonuaFeatureService
         return layer.Resource.SchemaFields.Where(field => !field.Hidden && !masked.Contains(field.Name)).ToArray();
     }
 
+    // Per request scope and resource, so every decision in one call sees the same masks and the store is read once.
+    private static readonly ConditionalWeakTable<IServiceProvider, ConcurrentDictionary<MetadataV2Object, Task<IReadOnlySet<string>>>>
+        _requestMasks = new();
+
     // The caller's masked attributes; metadata and query responses withhold them alike.
-    private static async Task<IReadOnlySet<string>> MaskedFieldNamesAsync(
+    private static Task<IReadOnlySet<string>> MaskedFieldNamesAsync(
         MetadataV2Object resource, IServiceProvider requestServices, CancellationToken cancellationToken)
     {
         if (requestServices.GetService<IFieldMaskSource>() is not { } maskSource)
         {
-            return ImmutableHashSet<string>.Empty;
+            return Task.FromResult<IReadOnlySet<string>>(ImmutableHashSet<string>.Empty);
         }
-        return (await maskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return _requestMasks
+            .GetValue(requestServices, static _ => new(ReferenceEqualityComparer.Instance))
+            .GetOrAdd(resource, _ => ResolveMaskedFieldNamesAsync(maskSource, resource, cancellationToken));
     }
+
+    private static async Task<IReadOnlySet<string>> ResolveMaskedFieldNamesAsync(
+        IFieldMaskSource maskSource, MetadataV2Object resource, CancellationToken cancellationToken)
+        => (await maskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private async Task<Proto.FeatureCapabilities> MetadataCapabilitiesAsync(GrpcLayerContext layer, ServerCallContext context)
     {

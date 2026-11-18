@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -1153,17 +1152,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid where clause."));
         }
 
-        if (requestServices.GetService<IFieldMaskSource>() is { } fieldMaskSource)
+        var maskedFields = await MaskedFieldNamesAsync(resource, requestServices, cancellationToken).ConfigureAwait(false);
+        try
         {
-            var maskedFields = await fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-            try
-            {
-                FeatureQuerySecurity.ValidateFilterExpression(expression, maskedFields, "where");
-            }
-            catch (ArgumentException ex)
-            {
-                throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
-            }
+            FeatureQuerySecurity.ValidateFilterExpression(expression, maskedFields, "where");
+        }
+        catch (ArgumentException ex)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
         }
 
         // ArcGIS clients send "1=1" for "no filter"; providers already accept it as raw text.
