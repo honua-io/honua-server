@@ -121,6 +121,8 @@ Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `b
 
 Native-resolution coverage exports, including `bbox` and `subset` windows, are limited to 8192 pixels on either axis before the provider exports the image. Select a smaller window or supply a bounded scaling control for larger rasters.
 
+Zarr-backed (multidimensional) collections serve CoverageJSON by default, where `subset` takes grid indices per dimension. With `f=geotiff` (or `Accept: image/tiff; application=geotiff`) they return one 2D slice as a single-band GeoTIFF in the source data type: spatial `subset` trims use storage-CRS coordinates on the `domainset` axis labels (`Lon`/`Lat` for EPSG:4326 stores, otherwise `x`/`y`), `scale-size` or `scaleSize` names both spatial axes, `datetime` selects the time step (the first step by default), and at most one other axis takes a single-position `subset`. Without a scaling control the trim is clipped to the coverage and served at the native cell size. These collections advertise a GeoTIFF coverage link, `domainset` and a `rangetype` for the default variable, which is what GDAL's OGC API driver needs to open them; the link is omitted for lat/long-ordered CRSs other than EPSG:4326 and for data types GeoTIFF output cannot carry, and the `rangetype` widens 8-bit signed and 64-bit integers to types GDAL maps. GeoTIFF output is limited to 8192 pixels per axis and 16 MiB, and one request reads at most 64 MiB of native cells.
+
 > Open `https://server.example.com/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9&properties=band_1` in a browser.
 
 ## OGC API Processes

@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Buffers.Binary;
 using System.Text;
 using Honua.Core.Features.Raster.Domain;
 
@@ -46,22 +45,22 @@ public static class CogTiffTileEncoder
 
         var fields = new List<(ushort Tag, ushort Type, uint Count, byte[] Value)>
         {
-            (256, 4, 1, LongValue(metadata.TileWidth)),
-            (257, 4, 1, LongValue(metadata.TileHeight)),
-            (258, 3, (uint)metadata.BandCount, ShortValues(Enumerable.Repeat((ushort)bits, metadata.BandCount).ToArray())),
-            (259, 3, 1, ShortValues(1)),
-            (262, 3, 1, ShortValues((ushort)metadata.PhotometricInterpretation)),
-            (277, 3, 1, ShortValues((ushort)metadata.BandCount)),
-            (284, 3, 1, ShortValues(1)),
-            (322, 4, 1, LongValue(metadata.TileWidth)),
-            (323, 4, 1, LongValue(metadata.TileHeight)),
-            (324, 4, 1, LongValue(0)), // Filled once all IFD and tag payload sizes are known.
-            (325, 4, 1, LongValue(samples.Length)),
-            (339, 3, (uint)metadata.BandCount, ShortValues(Enumerable.Repeat((ushort)sampleFormat, metadata.BandCount).ToArray())),
-            (33550, 12, 3, DoubleValues((extent.XMax - extent.XMin) / metadata.TileWidth,
+            (256, 4, 1, TiffFieldValues.Long(metadata.TileWidth)),
+            (257, 4, 1, TiffFieldValues.Long(metadata.TileHeight)),
+            (258, 3, (uint)metadata.BandCount, TiffFieldValues.Shorts(Enumerable.Repeat((ushort)bits, metadata.BandCount).ToArray())),
+            (259, 3, 1, TiffFieldValues.Shorts(1)),
+            (262, 3, 1, TiffFieldValues.Shorts((ushort)metadata.PhotometricInterpretation)),
+            (277, 3, 1, TiffFieldValues.Shorts((ushort)metadata.BandCount)),
+            (284, 3, 1, TiffFieldValues.Shorts(1)),
+            (322, 4, 1, TiffFieldValues.Long(metadata.TileWidth)),
+            (323, 4, 1, TiffFieldValues.Long(metadata.TileHeight)),
+            (324, 4, 1, TiffFieldValues.Long(0)), // Filled once all IFD and tag payload sizes are known.
+            (325, 4, 1, TiffFieldValues.Long(samples.Length)),
+            (339, 3, (uint)metadata.BandCount, TiffFieldValues.Shorts(Enumerable.Repeat((ushort)sampleFormat, metadata.BandCount).ToArray())),
+            (33550, 12, 3, TiffFieldValues.Doubles((extent.XMax - extent.XMin) / metadata.TileWidth,
                 (extent.YMax - extent.YMin) / metadata.TileHeight, 0)),
-            (33922, 12, 6, DoubleValues(0, 0, 0, extent.XMin, extent.YMax, 0)),
-            (34735, 3, 16, ShortValues(1, 1, 0, 3, 1024, 0, 1, 1, 1025, 0, 1, 1,
+            (33922, 12, 6, TiffFieldValues.Doubles(0, 0, 0, extent.XMin, extent.YMax, 0)),
+            (34735, 3, 16, TiffFieldValues.Shorts(1, 1, 0, 3, 1024, 0, 1, 1, 1025, 0, 1, 1,
                 3072, 0, 1, checked((ushort)extent.Srid)))
         };
         if (metadata.NoData is not null)
@@ -121,26 +120,5 @@ public static class CogTiffTileEncoder
         var trailer = stream.GetBuffer().AsSpan(tileOffset + samples.Length - BlockTrailerBytes, BlockTrailerBytes).ToArray();
         writer.Write(trailer);
         return stream.ToArray();
-    }
-
-    private static byte[] LongValue(int value)
-    {
-        var bytes = new byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
-        return bytes;
-    }
-
-    private static byte[] ShortValues(params ushort[] values)
-    {
-        var bytes = new byte[values.Length * 2];
-        for (var i = 0; i < values.Length; i++) BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(i * 2), values[i]);
-        return bytes;
-    }
-
-    private static byte[] DoubleValues(params double[] values)
-    {
-        var bytes = new byte[values.Length * 8];
-        for (var i = 0; i < values.Length; i++) BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(i * 8), values[i]);
-        return bytes;
     }
 }
