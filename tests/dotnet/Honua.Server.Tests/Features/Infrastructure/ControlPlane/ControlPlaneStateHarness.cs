@@ -53,11 +53,14 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
     ];
 
     private readonly IDatabaseFixture _fixture;
+    private readonly ControlPlaneSchemaPool _pool;
     private readonly PostgresJobSubstrateHarness _jobs;
+    private int _disposed;
 
-    private ControlPlaneStateHarness(IDatabaseFixture fixture, PostgresJobSubstrateHarness jobs)
+    private ControlPlaneStateHarness(IDatabaseFixture fixture, ControlPlaneSchemaPool pool, PostgresJobSubstrateHarness jobs)
     {
         _fixture = fixture;
+        _pool = pool;
         _jobs = jobs;
         Leases = new PostgresLeaseStore(jobs.JobStore);
     }
@@ -72,11 +75,17 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresExecutionJobStore CreateJobStore() => _jobs.CreateNodeJobStore();
 
-    public static async Task<ControlPlaneStateHarness> CreateAsync(IDatabaseFixture fixture, string testClassName)
+    public static Task<ControlPlaneStateHarness> CreateAsync(IDatabaseFixture fixture, string testClassName)
+        => CreateAsync(fixture, testClassName, ControlPlaneSchemaPool.Shared);
+
+    public static async Task<ControlPlaneStateHarness> CreateAsync(
+        IDatabaseFixture fixture,
+        string testClassName,
+        ControlPlaneSchemaPool pool)
     {
-        if (await ControlPlaneSchemaPool.TakeAsync(fixture) is { } pooled)
+        if (await pool.TakeAsync(fixture) is { } pooled)
         {
-            return new ControlPlaneStateHarness(fixture, PostgresJobSubstrateHarness.Adopt(fixture, pooled));
+            return new ControlPlaneStateHarness(fixture, pool, PostgresJobSubstrateHarness.Adopt(fixture, pooled));
         }
 
         var jobs = await PostgresJobSubstrateHarness.CreateAsync(fixture, testClassName);
@@ -86,8 +95,8 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
                 ReadMigration(migration).Replace("$HonuaSchema$", $"\"{jobs.Schema}\"", StringComparison.Ordinal));
         }
 
-        await ControlPlaneSchemaPool.RecordMigratedAsync(fixture, jobs.Schema);
-        return new ControlPlaneStateHarness(fixture, jobs);
+        await pool.RecordFreshAsync(fixture, jobs.Schema);
+        return new ControlPlaneStateHarness(fixture, pool, jobs);
     }
 
     public Task ReplayConfigurationMigrationAsync()
@@ -179,9 +188,12 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
         return new StoredTextScan(reader.GetInt64(0), reader.GetInt64(1));
     }
 
+    public string Schema => _jobs.Schema;
+
     public async ValueTask DisposeAsync()
     {
-        if (!await ControlPlaneSchemaPool.TryReturnAsync(_fixture, _jobs.Schema))
+        // A second dispose must not hand the same schema to the pool twice.
+        if (Interlocked.Exchange(ref _disposed, 1) == 0 && !await _pool.TryReturnAsync(_fixture, _jobs.Schema))
         {
             await _jobs.DisposeAsync();
         }
