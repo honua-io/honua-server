@@ -61,7 +61,7 @@ internal static class ImageServerCogExport
         if (canvas.Reads.Count > MaxTiles)
         {
             return new ImageServerCogExportResult(null, StandardErrorHelpers.CreateBadRequest(context,
-                $"The export needs more than {MaxTiles} COG tiles at the coarsest overview; request a smaller extent or size."));
+                $"The export needs more than {MaxTiles} COG tile reads; request a smaller extent or size."));
         }
 
         var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(typeof(ImageServerCogExport).FullName!)
@@ -108,8 +108,7 @@ internal static class ImageServerCogExport
     // the tile route's layer lookup; transparent (NoData) pixels let the next COG show through.
     private static RasterResult Compose(CogCanvas canvas, ConcurrentDictionary<TileRead, byte[]> tiles, RasterQuery query)
     {
-        using var surface = SKSurface.Create(new SKImageInfo(canvas.Width, canvas.Height, SKColorType.Rgba8888, SKAlphaType.Premul))
-            ?? throw new InvalidOperationException($"Cannot allocate a {canvas.Width} x {canvas.Height} export canvas.");
+        using var surface = SKSurface.Create(new SKImageInfo(canvas.Width, canvas.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
         surface.Canvas.Clear(SKColors.Transparent);
         var sampling = query.ResamplingAlgorithm == ResamplingAlgorithm.NearestNeighbor
             ? new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None)
@@ -201,8 +200,7 @@ internal static class ImageServerCogExport
         {
             var extent = RequestedExtent(request.Request.Bbox, registrations);
             var width = request.Query.OutputWidth ?? DefaultOutputDimension;
-            var height = request.Query.OutputHeight
-                ?? Math.Max(1, (int)Math.Round(width * (extent.YMax - extent.YMin) / (extent.XMax - extent.XMin)));
+            var height = request.Query.OutputHeight ?? DefaultOutputDimension;
             var resolution = Math.Max((extent.XMax - extent.XMin) / width, (extent.YMax - extent.YMin) / height);
             var reads = registrations
                 .SelectMany((registration, order) => CoverRegistration(registration, extent, resolution)

@@ -607,10 +607,6 @@ internal sealed class ImageServerExportHandler
         }
     }
 
-    // Builds the export response extent. Prefers a real extent from the raster store; when
-    // none is available falls back to the requested bbox (which Esri exportImage is expected
-    // to echo). Returns null when neither is available so callers can omit the property rather
-    // than emit a fabricated [0,0,1,1] envelope.
     // An image rendered without raster_data (an empty extent or composed COG tiles): inline
     // bytes for f=image, otherwise a temporary file described by the export response.
     private async Task<IResult> RespondWithImageAsync(HttpContext context, RenderedExport rendered, CancellationToken cancellationToken)
@@ -638,6 +634,10 @@ internal sealed class ImageServerExportHandler
         return Results.Json(response, ImageServerJsonContext.Default.ExportImageResponse);
     }
 
+    // Builds the export response extent. Prefers a real extent from the raster store; when
+    // none is available falls back to the requested bbox (which Esri exportImage is expected
+    // to echo). Returns null when neither is available so callers can omit the property rather
+    // than emit a fabricated [0,0,1,1] envelope.
     private static ImageServerExtent? BuildExtent(
         RasterExtent? extent,
         string? requestedBbox,
