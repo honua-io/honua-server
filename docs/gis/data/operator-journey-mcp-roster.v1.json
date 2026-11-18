@@ -226,6 +226,7 @@
       "mode": "read",
       "inputFields": [
         "dryRun",
+        "exactTypes",
         "fields",
         "geometryColumn",
         "id",
