@@ -132,20 +132,52 @@ public sealed class AnonymousPressureAdmissionTests
 
     [IntegrationTest]
     [Operation(Operations.Infrastructure)]
-    public async Task InvokeAsync_QueuedWorkWithLowUtilization_ShedsAnonymousWork()
+    public async Task InvokeAsync_QueueAsLongAsTheLimit_ShedsAnonymousWork()
     {
         var gate = PressuredGate();
-        gate.GetPressure().Returns(new DatabaseAdmissionPressure(1, 10, 1, 0, 0));
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(10, 10, 10, 0, 0));
         await using var app = await StartAsync(gate);
         using var response = await app.GetTestClient().GetAsync("/rest/services/test/FeatureServer/0/query");
 
         response.Headers.Contains("X-Database-Reached").Should().BeFalse();
     }
 
+    // A short queue at a busy gate is a burst that waits milliseconds; shedding it turned a
+    // 50-user anonymous load into 43% 503s (release-phase load run on candidate 532565b).
+    // An empty queue with a high wait average is a stale reading from an earlier flood.
+    [IntegrationTheory]
+    [InlineData(10, 3, 20)]
+    [InlineData(9, 0, 0)]
+    [InlineData(10, 9, 249)]
+    [InlineData(7, 1, 300)]
+    [InlineData(8, 0, 800)]
+    [Operation(Operations.Infrastructure)]
+    public async Task InvokeAsync_BusyGateWithoutQueuePain_AdmitsAnonymousWork(int inFlight, int queued, double queueWaitMs)
+    {
+        var gate = PressuredGate();
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(inFlight, 10, queued, queueWaitMs, 0));
+        await using var app = await StartAsync(gate);
+        using var response = await app.GetTestClient().GetAsync("/rest/services/test/FeatureServer/0/query");
+
+        response.Headers.Contains("X-Database-Reached").Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Infrastructure)]
+    public async Task InvokeAsync_GateReportingNoLimit_AdmitsAnonymousWork()
+    {
+        var gate = PressuredGate();
+        gate.GetPressure().Returns(default(DatabaseAdmissionPressure));
+        await using var app = await StartAsync(gate);
+        using var response = await app.GetTestClient().GetAsync("/rest/services/test/FeatureServer/0/query");
+
+        response.Headers.Contains("X-Database-Reached").Should().BeTrue();
+    }
+
     private static IRuntimeTunableAdmissionGate PressuredGate()
     {
         var gate = Substitute.For<IRuntimeTunableAdmissionGate>();
-        gate.GetPressure().Returns(new DatabaseAdmissionPressure(8, 10, 0, 0, 0));
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(8, 10, 1, 250, 0));
         return gate;
     }
 

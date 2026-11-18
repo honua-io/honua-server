@@ -27,8 +27,20 @@ internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
             : next(context);
     }
 
+    private const double SaturatedUtilization = 0.8;
+    private const double PainfulQueueWaitMs = 250;
+
+    // Shed on queue pain, not on any queue: a short queue at a busy gate is ordinary burst
+    // behaviour and waits milliseconds. A flood either queues at least as many requests as the
+    // gate has slots, or keeps a queue at a saturated gate while the average queue wait climbs;
+    // either way signed-in requests behind it would wait, so anonymous work gets a retry instead.
+    // The wait average only moves when a queued request is admitted, so it is read only while a
+    // queue exists; a stale value from an earlier flood must not refuse work at an empty queue.
     internal static bool IsUnderPressure(DatabaseAdmissionPressure pressure)
-        => pressure.Utilization >= 0.8 || pressure.QueuedWaiters > 0;
+        => (pressure.HasUtilization && pressure.QueuedWaiters >= pressure.CurrentLimit)
+            || (pressure.Utilization >= SaturatedUtilization
+                && pressure.QueuedWaiters > 0
+                && pressure.QueueWaitEwmaMs >= PainfulQueueWaitMs);
 
     private static bool IsExpensive(HttpContext context)
     {
