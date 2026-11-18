@@ -4,7 +4,9 @@ on:
   # Tier: security-path pull requests, trunk, and the weekly full scan.
   # - pull_request: C# no-build extraction on the paths in
   #   .github/codeql/pr-paths.txt (auth, admin endpoints, connections and
-  #   secrets, import and object storage, SQL building, workflows). That file
+  #   secrets, import and object storage, SQL building, operation approval,
+  #   the MCP and Studio AI surface, outbound HTTP proxies, sharing, sessions,
+  #   exports, workflows). That file
   #   is the only list; scripts/ci/codeql-pr-paths.test.py fails when this
   #   block drifts. Other source changes wait for the trunk push or the weekly
   #   scan, which also covers test code.
