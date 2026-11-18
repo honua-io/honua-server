@@ -18,15 +18,29 @@ public sealed partial class AdminAuthEndpointsTests
 {
     [Protocol(TestProtocols.Admin)]
     [Operation(Operations.Configuration)]
-    public sealed class BrowserSessions : IAsyncLifetime
+    public sealed class BrowserSessions
+        : IClassFixture<BaseSessionHost>,
+            IClassFixture<PasswordTokenSessionHost>,
+            IClassFixture<OidcCallbackSessionHost>,
+            IDisposable
     {
-        private readonly LazyBaseHost _baseHost = new();
+        private readonly BaseSessionHost _baseHost;
+        private readonly PasswordTokenSessionHost _passwordTokenHost;
+        private readonly OidcCallbackSessionHost _oidcHost;
+        private readonly HttpClient _baseClient;
 
-        public Task InitializeAsync() => Task.CompletedTask;
+        public BrowserSessions(
+            BaseSessionHost baseHost,
+            PasswordTokenSessionHost passwordTokenHost,
+            OidcCallbackSessionHost oidcHost)
+        {
+            _baseHost = baseHost;
+            _passwordTokenHost = passwordTokenHost;
+            _oidcHost = oidcHost;
+            _baseClient = baseHost.CreateBrowser();
+        }
 
-        public Task DisposeAsync() => _baseHost.DisposeAsync();
-
-        private Task<HttpClient> GetClientAsync() => _baseHost.GetClientAsync();
+        public void Dispose() => _baseClient.Dispose();
 
         [IntegrationTest]
         [Endpoint("POST /api/v1/admin/auth/password-token")]
@@ -34,9 +48,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("GET /api/v1/admin/auth/session")]
         public async Task PasswordToken_AllowedOrigin_IssuesUsableBearerWithoutCookies()
         {
-            await using var fixture = CreatePasswordTokenFixture();
-            await fixture.InitializeAsync();
-            using var browser = fixture.CreateClient();
+            using var browser = _passwordTokenHost.CreateBrowser();
             browser.BaseAddress = new Uri("https://localhost");
             browser.DefaultRequestHeaders.Add("Origin", "https://console.example.com");
             using var response = await browser.PostAsJsonAsync("/api/v1/admin/auth/password-token", new { password = "test-admin-key" });
@@ -45,7 +57,7 @@ public sealed partial class AdminAuthEndpointsTests
             response.Headers.CacheControl!.NoStore.Should().BeTrue();
             var token = await response.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
             token!.ExpiresIn.Should().BeInRange(1, 300);
-            using var api = fixture.CreateClient();
+            using var api = _passwordTokenHost.CreateBrowser();
             api.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token.AccessToken);
             using var authorized = await api.GetAsync("/api/v1/admin/config");
             authorized.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -67,9 +79,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/password-token")]
         public async Task PasswordToken_UntrustedRequest_IsRejected(string? origin, string server, HttpStatusCode expected)
         {
-            await using var fixture = CreatePasswordTokenFixture();
-            await fixture.InitializeAsync();
-            using var browser = fixture.CreateClient();
+            using var browser = _passwordTokenHost.CreateBrowser();
             browser.BaseAddress = new Uri(server);
             if (origin is not null)
             {
@@ -84,9 +94,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/password-token")]
         public async Task PasswordToken_InvalidPassword_IsUnauthorized()
         {
-            await using var fixture = CreatePasswordTokenFixture();
-            await fixture.InitializeAsync();
-            using var browser = fixture.CreateClient();
+            using var browser = _passwordTokenHost.CreateBrowser();
             browser.BaseAddress = new Uri("https://localhost");
             browser.DefaultRequestHeaders.Add("Origin", "https://console.example.com");
             using var response = await browser.PostAsJsonAsync("/api/v1/admin/auth/password-token", new { password = "invalid" });
@@ -98,7 +106,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/session")]
         public async Task PasswordSignIn_WithoutCsrf_IsRejected()
         {
-            var client = await GetClientAsync();
+            var client = _baseClient;
             client.BaseAddress = new Uri("https://localhost");
             var response = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -110,7 +118,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("GET /api/v1/admin/config")]
         public async Task PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout()
         {
-            var client = await GetClientAsync();
+            var client = _baseClient;
             client.BaseAddress = new Uri("https://localhost");
             await BrowserCsrf.SetHeaderAsync(client);
             var signIn = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
@@ -151,7 +159,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("GET /api/v1/studio/package-families")]
         public async Task PasswordSignIn_WithoutOidc_CanAccessStudio()
         {
-            var client = await GetClientAsync();
+            var client = _baseClient;
             client.BaseAddress = new Uri("https://localhost");
             await BrowserCsrf.SetHeaderAsync(client);
             using var signIn = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
@@ -204,7 +212,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/session")]
         public async Task PasswordSignIn_InvalidPassword_IsUnauthorized()
         {
-            var client = await GetClientAsync();
+            var client = _baseClient;
             client.BaseAddress = new Uri("https://localhost");
             await BrowserCsrf.SetHeaderAsync(client);
             var response = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "incorrect-password" });
@@ -217,7 +225,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("GET /api/v1/admin/auth/csrf")]
         public async Task PasswordSignIn_RequiresHttps()
         {
-            var client = await GetClientAsync();
+            var client = _baseClient;
             client.BaseAddress = new Uri("http://localhost");
             var token = await client.GetAsync("/api/v1/admin/auth/csrf");
             token.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -229,7 +237,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/session")]
         public async Task PasswordSignIn_WithDifferentOrigin_IsRejected()
         {
-            var client = await GetClientAsync();
+            var client = _baseClient;
             client.BaseAddress = new Uri("https://localhost");
             await BrowserCsrf.SetHeaderAsync(client);
             client.DefaultRequestHeaders.Add("Origin", "https://localhost:8443");
@@ -241,7 +249,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/session")]
         public async Task PasswordSignIn_WithInvalidCsrfToken_IsRejected()
         {
-            var client = await GetClientAsync();
+            var client = _baseClient;
             client.BaseAddress = new Uri("https://localhost");
             await BrowserCsrf.SetHeaderAsync(client);
             client.DefaultRequestHeaders.Remove("X-Honua-CSRF");
@@ -259,10 +267,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
         public async Task BrowserCallback_ExchangesCodeAndRedirectsToStoredConsolePath(string? returnTo, string expected)
         {
-            using var stubFactory = CreateCallbackStub();
-            await using var fixture = CreateGenericOidcFixture(stubFactory);
-            await fixture.InitializeAsync();
-            using var browser = fixture.CreateClient(allowAutoRedirect: false);
+            using var browser = _oidcHost.CreateBrowserWithoutRedirects();
             browser.BaseAddress = new Uri("https://localhost");
             using var authorize = await browser.PostAsJsonAsync(
                 "/api/v1/admin/auth/providers/oidc/authorize-url", new { returnTo });
@@ -295,10 +300,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
         public async Task BrowserCallback_UnlistedReturnPath_IsRejected(string returnTo)
         {
-            using var stubFactory = CreateCallbackStub();
-            await using var fixture = CreateGenericOidcFixture(stubFactory);
-            await fixture.InitializeAsync();
-            using var browser = fixture.CreateClient();
+            using var browser = _oidcHost.CreateBrowser();
             browser.BaseAddress = new Uri("https://localhost");
             using var response = await browser.PostAsJsonAsync(
                 "/api/v1/admin/auth/providers/oidc/authorize-url", new { returnTo });
@@ -310,8 +312,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("GET /admin/auth/callback")]
         public async Task BrowserCallback_WithoutPendingSession_IsRejected()
         {
-            await GetClientAsync();
-            using var browser = _baseHost.Fixture.CreateClient(allowAutoRedirect: false);
+            using var browser = _baseHost.CreateBrowserWithoutRedirects();
             browser.BaseAddress = new Uri("https://localhost");
             using var response = await browser.GetAsync("/admin/auth/callback?code=code-123&state=untrusted");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -328,10 +329,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
         public async Task BrowserCallback_InvalidProviderResponse_DoesNotAuthenticate(string failure)
         {
-            using var stubFactory = CreateCallbackStub();
-            await using var fixture = CreateGenericOidcFixture(stubFactory);
-            await fixture.InitializeAsync();
-            using var browser = fixture.CreateClient(allowAutoRedirect: false);
+            using var browser = _oidcHost.CreateBrowserWithoutRedirects();
             browser.BaseAddress = new Uri("https://localhost");
             using var authorize = await browser.PostAsJsonAsync(
                 "/api/v1/admin/auth/providers/oidc/authorize-url", new { });

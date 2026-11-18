@@ -2060,3 +2060,32 @@ headers.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Admin authentication browser sessions share one host per configuration
+
+On hosted full trunk run 44271438677 the Server Features Admin Authentication
+and Credentials shard ran `AdminAuthEndpointsTests` with an application per
+case:
+- `AdminAuthEndpointsTests+BrowserSessions`: 27 cases, 240 seconds of case time.
+- `AdminAuthEndpointsTests+GrpcBrowserSessions`: 12 cases, 133 seconds.
+- `AdminAuthEndpointsTests`: 33 cases, 266 seconds; 7 of them use the default
+  application.
+
+These classes now take one class-fixture host per configuration: the default
+application, the password-token application and the generic OIDC callback
+application. `BrowserSessions` boots 4 applications instead of 27,
+`GrpcBrowserSessions` 2 instead of 12, and the outer class 27 instead of 33.
+Cases with their own configuration or stub identity provider keep their own
+application.
+
+Every case uses fresh clients, so cookies, CSRF tokens and sessions stay per
+case, and each client gets its own client address from a test-only header that
+the host maps in a startup filter (the same technique as
+`ProposalEndpointsTests`, now shared as `PerClientAddress`). The in-process
+transport otherwise leaves the address empty, which skips the per-address
+limits; with an address per client, the sign-in endpoints' five requests a
+minute and the failed-password block now apply, per case.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.

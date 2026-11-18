@@ -13,17 +13,9 @@ public sealed partial class AdminAuthEndpointsTests
 {
     [Protocol(TestProtocols.Admin)]
     [Operation(Operations.Configuration)]
-    public sealed class WebSocketOrigin : IAsyncLifetime
+    public sealed class WebSocketOrigin(BaseSessionHost baseHost) : IClassFixture<BaseSessionHost>
     {
         private const string WebSocketProbePath = "wss://localhost/__websocket-origin-probe";
-
-        private readonly LazyBaseHost _baseHost = new();
-
-        public Task InitializeAsync() => Task.CompletedTask;
-
-        public Task DisposeAsync() => _baseHost.DisposeAsync();
-
-        private Task<HttpClient> GetClientAsync() => _baseHost.GetClientAsync();
 
         // A WebSocket upgrade carries the browser session cookie without an antiforgery check, so a
         // session-authenticated upgrade must come from the server's own origin.
@@ -44,7 +36,7 @@ public sealed partial class AdminAuthEndpointsTests
 
         private async Task<string> SignInSessionCookieAsync()
         {
-            var client = await GetClientAsync();
+            using var client = baseHost.CreateBrowser();
             client.BaseAddress = new Uri("https://localhost");
             await BrowserCsrf.SetHeaderAsync(client);
             using var signIn = await client.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
@@ -57,7 +49,7 @@ public sealed partial class AdminAuthEndpointsTests
         // The handshake outcome: "open", or the test host's incomplete-handshake message with its status.
         private async Task<string> UpgradeOutcomeAsync(string cookie, string origin)
         {
-            var client = _baseHost.Fixture.CreateWebSocketClient();
+            var client = baseHost.Fixture.CreateWebSocketClient();
             var inherited = client.ConfigureRequest;
             client.ConfigureRequest = request =>
             {
