@@ -65,6 +65,20 @@ public sealed class ServerNuGetLockFileTests
         }
     }
 
+    // The locks pin SDK-implied packages, so every locked image must build with one SDK.
+    [ArchitectureTest]
+    public void ServerDockerfiles_ShareOneSdkImage()
+    {
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var sdkImages = ServerDockerfiles
+            .Select(dockerfile => File.ReadLines(Path.Join(root, dockerfile.Path))
+                .Single(line => line.StartsWith("ARG DOTNET_SDK_IMAGE=", StringComparison.Ordinal)))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        sdkImages.Should().ContainSingle("a different SDK in one server Dockerfile needs its own locks");
+    }
+
     [ArchitectureTest]
     public void Regeneration_CoversEveryShippedVariant()
     {

@@ -7,6 +7,9 @@
     architecture has its own lock (restore runs per RID). After changing a package version or a project
     reference in the server graph, regenerate every variant on the build host:
       remote-run bash scripts/ci/regenerate-server-lock-files.sh
+    The locks also pin SDK-implied packages (ILCompiler, ILLink), so bumping the SDK image in the
+    server Dockerfiles needs a regeneration with that SDK. Locked mode verifies the packages in
+    Honua.Server's restore closure; private analyzer packages of referenced projects are outside it.
   -->
   <PropertyGroup Condition="'$(HonuaLockVariant)' != ''">
     <NuGetLockFilePath>$(MSBuildThisFileDirectory)nuget-locks/honua-server.$(HonuaLockVariant).$(RuntimeIdentifier).lock.json</NuGetLockFilePath>

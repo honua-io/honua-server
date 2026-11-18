@@ -22,8 +22,14 @@ custom=""
 [ "${HONUA_PROTOCOL_PROFILE:-all}" = all ] || custom=1
 [ -z "${HONUA_INCLUDE_AWS:-}" ] || custom=1
 [ -z "${HONUA_INCLUDE_AZURE:-}" ] || custom=1
-case "${HONUA_INCLUDE_ORACLE:-}" in ''|false) ;; *) custom=1 ;; esac
-case "${HONUA_INCLUDE_SNOWFLAKE:-}" in ''|false) ;; *) custom=1 ;; esac
+# Oracle and Snowflake are off by default only in the postgis store profile; an explicit
+# "false" there is the default, anywhere else it changes the package graph.
+case "$variant" in
+  *-postgis) optional_off='false' ;;
+  *) optional_off='' ;;
+esac
+[ -z "${HONUA_INCLUDE_ORACLE:-}" ] || [ "${HONUA_INCLUDE_ORACLE}" = "$optional_off" ] || custom=1
+[ -z "${HONUA_INCLUDE_SNOWFLAKE:-}" ] || [ "${HONUA_INCLUDE_SNOWFLAKE}" = "$optional_off" ] || custom=1
 case "$variant" in
   serving-postgis|serving-full|aot-postgis|lambda|lambda-aot) ;;
   *) custom=1 ;;
