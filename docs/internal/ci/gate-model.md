@@ -1782,11 +1782,11 @@ Image measurement exports stay outside the Docker build context: `.dockerignore`
 
 ## Lightweight workflow routing and compatibility
 
-The lightweight workflow callers use the fork-guarded `HONUA_LIGHT_RUNNER`
-JSON selector and `ubuntu-latest` fallback. PR Gate control jobs do not: they
-stay on `ubuntu-latest` except for a trunk `qualify_light` dispatch. This includes
-Repository hygiene, Clean code, Runner label lint, Review Gate Attestation,
-Review Event Bridge and OpenAPI drift/governance.
+The lightweight workflow callers (Repository hygiene, Clean code, Runner label
+lint, Review Gate Attestation, Review Event Bridge and OpenAPI drift/governance)
+use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector and `ubuntu-latest`
+fallback. PR Gate control jobs do not: they stay on `ubuntu-latest` except for
+a trunk `qualify_light` dispatch.
 Reusable workflow pins must include the shared selector support. Each local
 shell job exports `TMPDIR`, `TEMP` and `TMP` from `RUNNER_TEMP` before checkout.
 The variable remains an operator availability switch for newly admitted jobs.
