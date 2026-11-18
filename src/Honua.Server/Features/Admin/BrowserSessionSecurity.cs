@@ -42,13 +42,7 @@ internal static class BrowserSessionSecurity
                 || (request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
                     && (metadata?.GetMetadata<UsesBrowserSessionMetadata>() is not null
                         || !HasAuthenticatedExplicitCredential(context)));
-            // A WebSocket upgrade is a GET, so the antiforgery check never sees it. When the browser
-            // session cookie is the credential, the upgrade must come from this origin: same-site
-            // pages on another origin (a sibling subdomain) would otherwise receive the cookie.
-            if (context.WebSockets.IsWebSocketRequest
-                && request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
-                && !HasAuthenticatedExplicitCredential(context)
-                && !IsSameOrigin(request))
+            if (IsCrossOriginSessionWebSocket(context))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
@@ -78,6 +72,15 @@ internal static class BrowserSessionSecurity
             await next(context).ConfigureAwait(false);
         });
     }
+
+    // A WebSocket upgrade is a GET, so the antiforgery check never sees it. When the browser
+    // session cookie is the credential, the upgrade must come from this origin: same-site
+    // pages on another origin (a sibling subdomain) would otherwise receive the cookie.
+    private static bool IsCrossOriginSessionWebSocket(HttpContext context) =>
+        context.WebSockets.IsWebSocketRequest
+        && context.Request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
+        && !HasAuthenticatedExplicitCredential(context)
+        && !IsSameOrigin(context.Request);
 
     private static bool HasAuthenticatedExplicitCredential(HttpContext context) =>
         context.User.Identity is { IsAuthenticated: true } identity
