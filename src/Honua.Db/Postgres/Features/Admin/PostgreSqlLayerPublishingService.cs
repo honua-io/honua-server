@@ -303,6 +303,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     ServiceName = serviceName,
                     TargetSrid = request.Srid,
                     GeometryColumn = request.GeometryColumn,
+                    GeometryType = request.GeometryType,
                     PrimaryKey = request.PrimaryKey,
                     Fields = request.Fields,
                     ConnectionEndpointFingerprint = request.ConnectionEndpointFingerprint,
@@ -453,6 +454,29 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var transactionId = await PostgresTransactionOutcomeObserver
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
+
+        // A chosen family from a mixed table is its own relation, so a second family
+        // can be published beside it. The view selects only that family.
+        if (!isManagedStore &&
+            validation.Checks.Any(check => check.Code == "mixed-geometry" && check.Severity == SeverityWarning))
+        {
+            var family = MixedGeometryFamily(request.GeometryType)
+                ?? throw new LayerPublishingException(
+                    LayerPublishingErrorKind.Validation,
+                    "Geometry type is required when the source table mixes geometry types.");
+            var familyView = MixedGeometryFamilyViewName(table, family);
+            await CreateMixedGeometryFamilyViewAsync(
+                    connection,
+                    transaction,
+                    schema,
+                    table,
+                    familyView,
+                    geometryColumn,
+                    family,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            table = familyView;
+        }
 
         var serviceCreated = await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
         await AcquireLayerPublishLockAsync(connection, transaction, schema, table, cancellationToken);
@@ -850,7 +874,22 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     cancellationToken,
                     transaction)
                 .ConfigureAwait(false);
-            AddGeometryHealthChecks(geometryHealth, checks, request.AllowEmptyTable);
+            var geometryFamily = request.ManagedStore ? null : MixedGeometryFamily(request.GeometryType);
+            int? familyCount = null;
+            if (geometryFamily is not null && geometryHealth?.DistinctGeometryTypeCount > 1)
+            {
+                familyCount = await CountGeometryFamilyAsync(
+                        connection,
+                        schema,
+                        table,
+                        geometryColumn!,
+                        geometryFamily,
+                        transaction,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            AddGeometryHealthChecks(geometryHealth, checks, request.AllowEmptyTable, geometryFamily, familyCount);
         }
         else if (string.IsNullOrWhiteSpace(geometryColumn))
         {

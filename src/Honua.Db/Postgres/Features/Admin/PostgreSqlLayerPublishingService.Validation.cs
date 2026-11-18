@@ -238,7 +238,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static void AddGeometryHealthChecks(
         GeometryHealth? health,
         List<TablePublishValidationCheck> checks,
-        bool allowEmptyTable)
+        bool allowEmptyTable,
+        string? geometryFamily = null,
+        int? geometryFamilyCount = null)
     {
         if (health is not { } value)
         {
@@ -281,11 +283,30 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         if (value.DistinctGeometryTypeCount > 1)
         {
-            checks.Add(Error(
-                "mixed-geometry",
-                "Source table contains mixed geometry types.",
-                "1",
-                value.DistinctGeometryTypeCount.ToString(CultureInfo.InvariantCulture)));
+            if (geometryFamily is not null && geometryFamilyCount is > 0)
+            {
+                checks.Add(Warning(
+                    "mixed-geometry",
+                    $"Publishing only the {geometryFamily} rows ({geometryFamilyCount.Value.ToString(CultureInfo.InvariantCulture)}). Other geometry types remain in the source table.",
+                    "1",
+                    value.DistinctGeometryTypeCount.ToString(CultureInfo.InvariantCulture)));
+            }
+            else if (geometryFamily is not null)
+            {
+                checks.Add(Error(
+                    "mixed-geometry",
+                    $"Source table has no {geometryFamily} geometries to publish.",
+                    geometryFamily,
+                    "0"));
+            }
+            else
+            {
+                checks.Add(Error(
+                    "mixed-geometry",
+                    "Source table contains mixed geometry types.",
+                    "1",
+                    value.DistinctGeometryTypeCount.ToString(CultureInfo.InvariantCulture)));
+            }
         }
         else if (value.DistinctGeometryTypeCount == 1)
         {
@@ -543,6 +564,103 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Expected = expected,
             Actual = actual
         };
+
+    private static string? MixedGeometryFamily(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        string normalized;
+        try
+        {
+            normalized = NormalizeGeometryType(raw);
+        }
+        catch (LayerPublishingException)
+        {
+            return null;
+        }
+
+        return normalized switch
+        {
+            "Point" or "MultiPoint" => "Point",
+            "LineString" or "MultiLineString" => "LineString",
+            "Polygon" or "MultiPolygon" => "Polygon",
+            _ => null
+        };
+    }
+
+    private static string MixedGeometryFamilyViewName(string table, string family)
+    {
+        var suffix = family switch
+        {
+            "Point" => "__honua_pt",
+            "LineString" => "__honua_ln",
+            "Polygon" => "__honua_pg",
+            _ => throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                $"Geometry type '{family}' cannot be published from a mixed table.")
+        };
+        var stemLength = Math.Min(table.Length, 63 - suffix.Length);
+        return string.Concat(table.AsSpan(0, stemLength), suffix);
+    }
+
+    private static string GeometryFamilyTypeList(string family) => family switch
+    {
+        "Point" => "'POINT','POINTZ','POINTM','POINTZM','MULTIPOINT','MULTIPOINTZ','MULTIPOINTM','MULTIPOINTZM'",
+        "LineString" => "'LINESTRING','LINESTRINGZ','LINESTRINGM','LINESTRINGZM','MULTILINESTRING','MULTILINESTRINGZ','MULTILINESTRINGM','MULTILINESTRINGZM'",
+        "Polygon" => "'POLYGON','POLYGONZ','POLYGONM','POLYGONZM','MULTIPOLYGON','MULTIPOLYGONZ','MULTIPOLYGONM','MULTIPOLYGONZM'",
+        _ => throw new LayerPublishingException(
+            LayerPublishingErrorKind.Validation,
+            $"Geometry type '{family}' cannot be published from a mixed table.")
+    };
+
+    private static async Task<int> CountGeometryFamilyAsync(
+        NpgsqlConnection connection,
+        string schema,
+        string table,
+        string geometryColumn,
+        string family,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT COUNT(*)::int
+            FROM {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}
+            WHERE GeometryType({SqlIdentifier.QuoteIdentifier(geometryColumn)}) IN ({GeometryFamilyTypeList(family)})
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        var count = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return count is int value ? value : Convert.ToInt32(count, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task CreateMixedGeometryFamilyViewAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string schema,
+        string sourceTable,
+        string viewName,
+        string? geometryColumn,
+        string family,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(geometryColumn) || !IsSafeIdentifier(viewName))
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                "A mixed-geometry table needs a geometry column before one type can be published.");
+        }
+
+        var sql = $"""
+            CREATE OR REPLACE VIEW {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(viewName)} AS
+            SELECT *
+            FROM {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(sourceTable)}
+            WHERE GeometryType({SqlIdentifier.QuoteIdentifier(geometryColumn)}) IN ({GeometryFamilyTypeList(family)})
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     private static string NormalizeGeometryType(string raw)
     {

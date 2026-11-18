@@ -423,6 +423,7 @@ internal static class LayerPublishingEndpoints
                 ServiceName = request.ServiceName,
                 TargetSrid = request.TargetSrid,
                 GeometryColumn = request.GeometryColumn,
+                GeometryType = request.GeometryType,
                 PrimaryKey = request.PrimaryKey,
                 Fields = request.Fields ?? Array.Empty<string>()
             };

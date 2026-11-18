@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -63,6 +64,74 @@ public sealed partial class LayerPublishingIntegrationTests
 
             await AssertProjectedMetadataBoundsAsync(100, 200, 500, 600);
             await AssertPersistedExtentAsync(0.0008983153, 0.0017966306, 0.0044915764, 0.0053898917, 0.0000001);
+        }
+        finally
+        {
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{table};");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task PublishProjectedPoints_AdvertisedCrs84Extent_ContainsEveryFeature()
+    {
+        var table = $"projected_edge_{Guid.NewGuid():N}";
+        try
+        {
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
+                CREATE TABLE public.{table} (
+                    id integer PRIMARY KEY,
+                    name text NOT NULL,
+                    geom geometry(Point, 3857) NOT NULL);
+                INSERT INTO public.{table} VALUES
+                    (1, 'NYC', ST_SetSRID(ST_Point(-8238310.24, 4970071.58), 3857)),
+                    (2, 'London', ST_SetSRID(ST_Point(-14226.63, 6711542.47), 3857));
+                """);
+
+            var layer = await PublishLayerAsync(new PublishLayerRequest
+            {
+                Schema = "public",
+                Table = table,
+                LayerName = "Projected edge points",
+                ServiceName = _serviceName,
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 3857,
+                PrimaryKey = "id",
+                Fields = _idNameFields,
+                Enabled = true
+            });
+            _layerId = layer.StorageLayerId;
+
+            using var collectionResponse = await _client.GetAsync($"/ogc/features/collections/{_layerId}?f=json");
+            var collectionPayload = await collectionResponse.Content.ReadAsStringAsync();
+            collectionResponse.StatusCode.Should().Be(HttpStatusCode.OK, collectionPayload);
+            using var collection = JsonDocument.Parse(collectionPayload);
+            var advertised = collection.RootElement.GetProperty("extent").GetProperty("spatial").GetProperty("bbox")[0];
+            var west = advertised[0].GetDouble();
+            var south = advertised[1].GetDouble();
+            var east = advertised[2].GetDouble();
+            var north = advertised[3].GetDouble();
+
+            using var items = JsonDocument.Parse(await ReadOgcItemsAsync("limit=10"));
+            var features = items.RootElement.GetProperty("features");
+            features.GetArrayLength().Should().Be(2);
+            foreach (var feature in features.EnumerateArray())
+            {
+                var coordinates = feature.GetProperty("geometry").GetProperty("coordinates");
+                coordinates[0].GetDouble().Should().BeInRange(west, east);
+                coordinates[1].GetDouble().Should().BeInRange(south, north);
+            }
+
+            var bbox = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{west},{south},{east},{north}");
+            using var filtered = JsonDocument.Parse(await ReadOgcItemsAsync($"limit=10&bbox={bbox}"));
+            filtered.RootElement.GetProperty("features").GetArrayLength().Should().Be(2);
         }
         finally
         {
