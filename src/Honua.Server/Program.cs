@@ -241,6 +241,9 @@ if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
 // envelope was created on another node fails closed instead of being replayed with plaintext.
 builder.Services.AddDataProtection()
     .SetApplicationName("Honua.Server");
+// Job capabilities in stored execution records are protected with the same key ring.
+builder.Services.TryAddSingleton<Honua.ControlPlane.IExecutionJobSecretProtector>(static services =>
+    new Honua.Server.Features.Infrastructure.SecurityState.DataProtectionExecutionJobSecrets(services));
 builder.Services.AddSingleton<Honua.ControlPlane.OperationHumanApprovalAuthority>();
 builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
@@ -677,6 +680,8 @@ if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingL
 builder.Services.AddCloudFileStorage(builder.Configuration);
 builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions>(
     builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
+Honua.Core.Features.ObjectStorage.ObjectStorageServiceCollectionExtensions.AddObjectStorageConnections(
+    builder.Services, builder.Configuration);
 #if !HONUA_EXCLUDE_AWS
 builder.Services.AddAwsImportObjectStore();
 Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
@@ -1893,6 +1898,7 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+app.MapObjectStorageConnectionEndpoints();
 // Experimental gate (PA-001): only map federation endpoints when the feature is enabled.
 if (app.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", false))
 {

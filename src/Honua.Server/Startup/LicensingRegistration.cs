@@ -23,13 +23,14 @@ internal static class LicensingRegistration
             configuration.GetSection(LicenseOptions.SectionName));
         var mode = LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]);
         var devGrantEdition = configuration[$"{LicenseOptions.SectionName}:DevGrantEdition"];
-        // The production dev-grant guard applies in every mode, including Disabled.
-        if (!string.IsNullOrWhiteSpace(devGrantEdition) && environment.IsProduction())
+        // The dev-grant guard applies in every mode, including Disabled, and allows only the
+        // Development and Test environments so a renamed production environment cannot use it.
+        if (!string.IsNullOrWhiteSpace(devGrantEdition) && !IsDevGrantEnvironment(environment))
         {
             throw new InvalidOperationException(
-                $"{LicenseOptions.SectionName}:DevGrantEdition is a test/dev-only license override and must not be " +
-                "set in the Production environment; it would bypass every edition gate without a signed license. " +
-                "Remove it or install a signed license.");
+                $"{LicenseOptions.SectionName}:DevGrantEdition is a test/dev-only license override and is accepted " +
+                $"only in the Development and Test environments (current: '{environment.EnvironmentName}'); it would " +
+                "bypass every edition gate without a signed license. Remove it or install a signed license.");
         }
 
         if (mode == LicenseMode.Disabled)
@@ -102,4 +103,7 @@ internal static class LicensingRegistration
         services.AddHostedService(sp =>
             sp.GetRequiredService<FileBackedLicenseService>());
     }
+
+    private static bool IsDevGrantEnvironment(IHostEnvironment environment) =>
+        environment.IsDevelopment() || environment.IsEnvironment("Test");
 }

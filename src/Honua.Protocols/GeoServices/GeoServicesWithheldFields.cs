@@ -3,30 +3,16 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Rendering;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices;
 
 // Withheld fields are the publisher-hidden fields plus the caller's field masks; metadata must not name them.
-internal static partial class GeoServicesWithheldFields
+internal static class GeoServicesWithheldFields
 {
-    private static readonly HashSet<string> FieldReferenceProperties = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "field",
-        "field1",
-        "field2",
-        "field3",
-        "fields",
-        "normalizationField",
-        "normalizeField",
-        "tooltipField",
-        "fieldName",
-        "rotationField",
-    };
-
     // Label classes and popup field entries can be dropped one by one; other references drop the document.
     private static readonly string[] SeparableEntryArrays = ["labelingInfo", "fieldInfos"];
 
@@ -46,19 +32,9 @@ internal static partial class GeoServicesWithheldFields
     }
 
     // Hidden fields plus every field the caller's masks name, including masked names the schema does not declare.
-    public static async Task<IReadOnlySet<string>> WithheldFieldNamesAsync(
+    public static Task<IReadOnlySet<string>> WithheldFieldNamesAsync(
         HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(resource);
-        var withheld = new HashSet<string>(resource.HiddenSchemaFieldNames(), StringComparer.OrdinalIgnoreCase);
-        if (context.RequestServices.GetService<IFieldMaskSource>() is { } masks)
-        {
-            withheld.UnionWith(await masks.ResolveAsync(resource, cancellationToken).ConfigureAwait(false));
-        }
-
-        return withheld;
-    }
+        => StyleDocumentWithheldFields.ResolveAsync(context, resource, cancellationToken);
 
     // A renderer, label class or popup that names a withheld field would disclose it, and a class renderer its values.
     public static JsonElement? WithoutWithheldReferences(JsonElement? document, MetadataV2Object schemaResource)
@@ -119,32 +95,7 @@ internal static partial class GeoServicesWithheldFields
         {
             JsonValueKind.Object => element.EnumerateObject().Any(property => References(property.Value, property.Name, withheld)),
             JsonValueKind.Array => element.EnumerateArray().Any(item => References(item, propertyName, withheld)),
-            JsonValueKind.String => NamesWithheldField(propertyName, element.GetString() ?? string.Empty, withheld),
+            JsonValueKind.String => StyleDocumentWithheldFields.NamesWithheldField(propertyName, element.GetString() ?? string.Empty, withheld),
             _ => false,
         };
-
-    private static bool NamesWithheldField(string? propertyName, string value, IReadOnlySet<string> withheld)
-    {
-        if (propertyName is not null
-            && FieldReferenceProperties.Contains(propertyName)
-            && withheld.Contains(value.Trim()))
-        {
-            return true;
-        }
-
-        // Arcade ($feature.name, $feature["name"], DomainName($feature, "name")), label ([name]), popup ({name}) and SQL where references.
-        var pattern = string.Equals(propertyName, "where", StringComparison.OrdinalIgnoreCase)
-            ? SqlIdentifier()
-            : ExpressionFieldReference();
-        return pattern.Matches(value).Any(match => withheld.Contains(match.Groups["name"].Value.Trim()));
-    }
-
-    [GeneratedRegex(
-        """\$feature\.(?<name>[A-Za-z_]\w*)|\$feature\[\s*["'](?<name>[^"']+)["']\s*\]|\$feature\s*,\s*["'](?<name>[^"']+)["']|\[(?<name>[^\[\]]+)\]|\{(?<name>[^{}]+)\}""",
-        RegexOptions.CultureInvariant,
-        matchTimeoutMilliseconds: 100)]
-    private static partial Regex ExpressionFieldReference();
-
-    [GeneratedRegex("""(?<name>[A-Za-z_]\w*)""", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
-    private static partial Regex SqlIdentifier();
 }

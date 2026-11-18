@@ -6,15 +6,18 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.ObjectStore;
+using Honua.Core.Features.ObjectStorage;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Import.FileImport;
 
 internal static partial class ImportEndpoints
 {
+    internal const string RawSourceRefusedMessage =
+        "sourceUri and assumeRoleArn are not accepted. Import through a connection with connectionId and key.";
+
     private static async Task HandleImportFileFromObjectStore(HttpContext context)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
@@ -40,9 +43,15 @@ internal static partial class ImportEndpoints
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(request.SourceUri))
+        if (request.SourceUri is not null || request.AssumeRoleArn is not null)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, "sourceUri is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, RawSourceRefusedMessage, StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request.ConnectionId is not { } connectionId || connectionId == Guid.Empty || string.IsNullOrWhiteSpace(request.Key))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "connectionId and key are required", StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -80,13 +89,19 @@ internal static partial class ImportEndpoints
             return;
         }
 
+        var resolution = await context.RequestServices.GetRequiredService<IObjectStorageConnectionResolver>()
+            .ResolveObjectAsync(connectionId, request.Key, cancellationToken).ConfigureAwait(false);
+        if (!resolution.Succeeded)
+        {
+            await WriteResolutionFailureAsync(context, resolution, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         var importService = context.RequestServices.GetRequiredService<IFileImportService>();
-        var options = context.RequestServices.GetRequiredService<IOptions<ImportObjectStoreOptions>>().Value;
         var admission = await ImportObjectStoreCoordinator.EvaluateAsync(
             new ImportObjectStoreCoordinator.Command
             {
-                SourceUri = request.SourceUri,
-                AssumeRoleArn = request.AssumeRoleArn,
+                Location = ImportObjectLocation.From(resolution),
                 TableName = request.TableName,
                 TargetSchema = request.TargetSchema,
                 SourceSrid = request.SourceSrid,
@@ -100,23 +115,20 @@ internal static partial class ImportEndpoints
                 AuditId = ReadLineageHeader(context, "X-Honua-Audit-Id"),
                 ProposalId = ReadLineageHeader(context, "X-Honua-Proposal-Id"),
             },
-            options,
-            importService.Limits,
-            context.RequestServices.GetService<IImportObjectStoreReader>(),
-            CanAcceptBackgroundImports(context.RequestServices),
-            fileName => importService.DetectFormat(fileName) is not null,
+            new ImportObjectStoreCoordinator.Host
+            {
+                Limits = importService.Limits,
+                Reader = context.RequestServices.GetService<IImportObjectStoreReader>(),
+                CanAcceptBackground = CanAcceptBackgroundImports(context.RequestServices),
+                FormatSupported = fileName => importService.DetectFormat(fileName) is not null,
+            },
             cancellationToken).ConfigureAwait(false);
 
         if (admission.Problem is not null)
         {
             await ImportObjectStoreAudit.TryRecordAsync(
                 context,
-                admission.AuditSourceUri,
-                admission.ETag,
-                admission.SizeBytes,
-                admission.AuditRoleArn,
-                jobId: null,
-                admission.Outcome,
+                admission.ToAudit(admission.Outcome),
                 cancellationToken).ConfigureAwait(false);
             await WriteObjectStoreProblemAsync(context, admission.Problem).ConfigureAwait(false);
             return;
@@ -132,12 +144,7 @@ internal static partial class ImportEndpoints
                     .ConfigureAwait(false);
                 await ImportObjectStoreAudit.TryRecordAsync(
                     context,
-                    admission.AuditSourceUri,
-                    admission.ETag,
-                    admission.SizeBytes,
-                    admission.AuditRoleArn,
-                    jobId,
-                    ImportObjectStoreAudit.Queued,
+                    admission.ToAudit(ImportObjectStoreAudit.Queued, jobId),
                     cancellationToken).ConfigureAwait(false);
                 var response = new BackgroundImportResponse
                 {
@@ -177,12 +184,7 @@ internal static partial class ImportEndpoints
 
             await ImportObjectStoreAudit.TryRecordAsync(
                 context,
-                admission.AuditSourceUri,
-                admission.ETag,
-                admission.SizeBytes,
-                admission.AuditRoleArn,
-                jobId: null,
-                importResult.Success ? ImportObjectStoreAudit.Succeeded : ImportObjectStoreAudit.Failed,
+                admission.ToAudit(importResult.Success ? ImportObjectStoreAudit.Succeeded : ImportObjectStoreAudit.Failed),
                 cancellationToken).ConfigureAwait(false);
             await Results.Json(
                 importResult,
@@ -199,12 +201,7 @@ internal static partial class ImportEndpoints
         {
             await ImportObjectStoreAudit.TryRecordAsync(
                 context,
-                admission.AuditSourceUri,
-                admission.ETag,
-                admission.SizeBytes,
-                admission.AuditRoleArn,
-                jobId: null,
-                ImportObjectStoreAudit.QueueFull,
+                admission.ToAudit(ImportObjectStoreAudit.QueueFull),
                 cancellationToken).ConfigureAwait(false);
             await AdminResponseWriter.WriteErrorAsync(
                 context,
@@ -217,12 +214,7 @@ internal static partial class ImportEndpoints
             Log.ImportFailed(logger, importRequest.TableName, ex);
             await ImportObjectStoreAudit.TryRecordAsync(
                 context,
-                admission.AuditSourceUri,
-                admission.ETag,
-                admission.SizeBytes,
-                admission.AuditRoleArn,
-                jobId: null,
-                ImportObjectStoreAudit.Failed,
+                admission.ToAudit(ImportObjectStoreAudit.Failed),
                 cancellationToken).ConfigureAwait(false);
             await AdminResponseWriter.WriteErrorAsync(context, "Import failed: invalid or unsupported file format", StatusCodes.Status400BadRequest);
         }
@@ -232,14 +224,9 @@ internal static partial class ImportEndpoints
             Log.ImportFailed(logger, importRequest.TableName, ex);
             await ImportObjectStoreAudit.TryRecordAsync(
                 context,
-                admission.AuditSourceUri,
-                admission.ETag,
-                admission.SizeBytes,
-                admission.AuditRoleArn,
-                jobId: null,
-                ex.Message == BackgroundImportUnavailableMessage
+                admission.ToAudit(ex.Message == BackgroundImportUnavailableMessage
                     ? ImportObjectStoreAudit.Unavailable
-                    : ImportObjectStoreAudit.Failed,
+                    : ImportObjectStoreAudit.Failed),
                 cancellationToken).ConfigureAwait(false);
             if (ex.Message == BackgroundImportUnavailableMessage)
             {
@@ -264,6 +251,31 @@ internal static partial class ImportEndpoints
                 MultipartParsingHelpers.TryDeleteFile(importRequest.LocalFilePath);
             }
         }
+    }
+
+    // An unknown connection is a 404; a key that is not a plain path under the connection prefix is refused.
+    private static async Task WriteResolutionFailureAsync(
+        HttpContext context,
+        ObjectStorageResolution resolution,
+        CancellationToken cancellationToken)
+    {
+        var notFound = resolution.Failure == ObjectStorageResolveFailure.ConnectionNotFound;
+        await ImportObjectStoreAudit.TryRecordAsync(
+            context,
+            new ImportObjectStoreAudit.Entry
+            {
+                SourceUri = resolution.Connection is null ? null : $"s3://{resolution.Connection.Bucket}",
+                ConnectionId = resolution.Connection?.Id.ToString(),
+                Outcome = notFound ? ImportObjectStoreAudit.NotFound : ImportObjectStoreAudit.Forbidden,
+            },
+            cancellationToken).ConfigureAwait(false);
+        await WriteObjectStoreProblemAsync(context, new ImportObjectStoreProblem
+        {
+            StatusCode = notFound ? StatusCodes.Status404NotFound : StatusCodes.Status403Forbidden,
+            Title = notFound ? "Connection not found" : "Object store source forbidden",
+            Detail = resolution.Message,
+            Code = notFound ? null : ImportObjectStoreProblems.Forbidden,
+        }).ConfigureAwait(false);
     }
 
     internal static void ReportAuditFailure(HttpContext context, Exception exception)
@@ -294,7 +306,12 @@ internal static partial class ImportEndpoints
 
 internal sealed record ImportObjectStoreImportRequest
 {
-    public required string SourceUri { get; init; }
+    public Guid? ConnectionId { get; init; }
+
+    public string? Key { get; init; }
+
+    // Retired raw inputs; present only so a request that still sends them is refused with a clear message.
+    public string? SourceUri { get; init; }
 
     public string? AssumeRoleArn { get; init; }
 

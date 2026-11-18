@@ -62,7 +62,7 @@ Authentication__ClientCertificates__Mode=RequiredForAdmin
 | `Optional` | A valid mapped certificate is one more admin auth scheme; API key/OIDC still work |
 | `RequiredForAdmin` | Certificate required for admin path prefixes (default `/api/v1/admin`) |
 | `RequiredForNative` | Certificate required for the native gRPC services |
-| `RequiredForEnvironment` | Both admin and native surfaces |
+| `RequiredForEnvironment` | Admin paths and the protected gRPC services on every transport, including gRPC-Web |
 
 ### 4. Define a trust profile and principal mapping
 
@@ -120,7 +120,7 @@ Untrusted certificates return `200` with `data.valid=false` and a stable `data.c
 | TLS handshake fails for a client certificate issued by an intermediate CA (Kestrel terminating TLS) | Honua does not download missing intermediates during the handshake (the .NET 11 default for server-side TLS). Have the client send its full chain, or install the intermediate in the server's trust store. |
 | `client_certificate_forwarding_untrusted` behind a proxy | The immediate peer IP is outside `TrustedProxyNetworks`; when `ForwardedHeaders__Enabled=true` Honua checks the pre-rewrite peer IP, so list the proxy's real address. |
 | Profile rejected at startup or upsert (`400`) | Enabled profiles need an issuer subject, thumbprint, or custom anchor — and `AcceptedIssuerSubjects` requires `RequireChainTrust=true`. |
-| Browser/gRPC-Web users prompted for certificates | They shouldn't be: required native modes exempt `application/grpc-web*` requests; only native HTTP/2 gRPC and admin paths are enforced. |
+| Browser/gRPC-Web users prompted for certificates | `RequiredForNative` and `RequiredForAdmin` exempt `application/grpc-web*` requests to the gRPC services. `RequiredForEnvironment` has no transport exemption: gRPC-Web callers need a client certificate, presented directly or forwarded by a trusted proxy. |
 | Native gRPC mTLS fails locally | mTLS-required modes need HTTPS/HTTP2 to Kestrel (or trusted TLS termination); local h2c ports cannot satisfy them. |
 
 More general failures: [Troubleshooting](../deploy/troubleshooting.md).

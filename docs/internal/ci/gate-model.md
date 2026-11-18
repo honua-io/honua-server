@@ -399,7 +399,10 @@ producer so these checks do not wait for artifact publication. The required
 boot/migration smoke remains on the producer after pristine artifact publication.
 Full CI owns remote-source, raster, layer, geometry/calculate-field, imagery,
 GDAL/PDAL and import/export fidelity proofs, including the existing receipt
-tripwires. Protocol-profile compilation also runs in full CI.
+tripwires. Protocol-profile compilation also runs in full CI: full and scheduled
+runs select every profile with `protocol-profile-selection.py --all`. A range
+selection compares trunk with itself there and would build only `all`, which
+is what full run 44309947920 did.
 
 ### Import-fidelity gates: correctness and performance
 
@@ -546,9 +549,13 @@ compiler diagnostics and source generators still run; the PR Gate producer
 already publishes its managed outputs from this no-analyzer build mode under
 the same build-properties label. An analyzer finding that only appears when
 several landed PRs combine is left to the scheduled full run. Selected
-protocol-profile builds keep analyzers for the projects they recompile
-(Honua.Server, whose profile constants change); referenced projects are reused
-from the no-analyzer producer build, and PR Gate analyzed them on each PR.
+protocol-profile builds keep analyzers for Honua.Server, whose profile
+constants change. Referenced projects are first resolved in the producer's
+no-analyzer mode and then reused with `BuildProjectReferences=false`; PR Gate
+analyzed them on each PR. A single `RunAnalyzers=true` profile build would
+recompile all 29 referenced projects: affected run 44379685745 spent 10.2 of
+16.3 profile minutes on that (6.4-7.0 min before the producer dropped
+analyzers).
 
 The producer skips hosted sudo cleanup on self-hosted runners and installs its
 SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,
@@ -3061,6 +3068,33 @@ to 4 s for the Studio AI proxy class. Case time went from 96.8 to 46.7 s
 68.4 to 4.6 s (`StudioAiProxyEndpointsTests`); host start-up in a class fixture is
 not counted as case time. On hosted full run 44271438677 the three classes took
 168.0 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Pooled control-plane schemas
+
+`ControlPlaneStateHarness` serves 38 store test classes (212 cases on hosted full
+run 44271438677, 1934.7 s of case time, almost all in
+`caching-file-storage-styling-infrastructure`). Every case created a schema, ran the
+job substrate migration and 13 control-plane migrations and dropped the schema
+again, and each of those steps takes the fixture's global schema-mutation lock, so
+cases from every class queued behind each other. `ControlPlaneSchemaPool` now keeps
+a finished case's schema for the next case when its catalog still matches a freshly
+migrated one (relations, columns in order, defaults, constraints, indexes, triggers
+and their enabled state, rules, routines, views, policies, grants, sequence
+settings and types, with the schema name normalised). Before reuse, one transaction
+truncates every table, inserts the rows the migrations insert again (the
+configuration generation row) and puts every sequence back where a fresh schema has
+it. A schema whose catalog changed, or that cannot be reset, is dropped as before.
+`ControlPlaneSchemaPoolTests` checks that a reused schema holds exactly the rows and
+sequence positions of a fresh one, that a changed schema is dropped and that a
+harness disposed twice is handed out once. Every store assertion is unchanged.
+
+Measured on the build host (Release, the same 240 cases, all passing before and
+after, plus the 3 new cases): case time went from 1619.6 s to 837.8 s and the test
+run from 1 m 40 s to 1 m 9 s.
 
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required

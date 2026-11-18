@@ -766,8 +766,8 @@ jobs:
       # Selective (affected) dispatches compile without analyzers: PR Gate's
       # analyzer partitions proved each landed PR and Format Check below still
       # runs dotnet format. Scheduled and full runs keep the analyzer build.
-      # Protocol-profile builds keep analyzers for the projects they recompile
-      # (Honua.Server); referenced projects are reused from the producer build.
+      # Protocol-profile builds analyze Honua.Server; build-selected-protocol-
+      # profiles.py reads this variable to reuse the no-analyzer references.
       PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}
     steps:
       - name: Place the producer SDK in the runner temp directory
@@ -785,12 +785,12 @@ jobs:
       # before .NET setup and restore so runner diagnostics keep enough space.
       - name: Free disk space
         if: runner.environment == 'github-hosted'
+        # Detached: about 88 GB is free before cleanup (107 GB after), so the
+        # build need not wait 1-7.5 min (once a 28 min hang) for rm to finish.
         run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/swift || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
           df -h / || true
+          sudo -n setsid rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL < /dev/null > /dev/null 2>&1 &
 
       - name: Setup .NET
         id: managed-sdk
@@ -831,7 +831,11 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
-          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
+          # On trunk, full and scheduled runs compare trunk with itself, so a
+          # range selection may build only the default profile; they build all.
+          profile_scope=--changed-from-git
+          if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi
+          python3 scripts/ci/protocol-profile-selection.py --dry-run "${profile_scope}" > "${RUNNER_TEMP}/protocol-profiles.json"
           cat "${RUNNER_TEMP}/protocol-profiles.json"
 
       - name: Download selected shard matrix
@@ -976,12 +980,12 @@ jobs:
       # Reclaim runner disk before the build + coverage run; the modular
       # topology pushed some runners over the free-disk limit. Best-effort.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
+        # Detached for the same reason as the producer's cleanup.
         run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/swift || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
           df -h / || true
+          sudo -n setsid rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL < /dev/null > /dev/null 2>&1 &
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2658,6 +2662,12 @@ jobs:
     needs: mcp-certification
     continue-on-error: true
     timeout-minutes: 10
+    # The Bedrock role trusts only this environment; jobs assume it through OIDC, never a stored key.
+    environment: bedrock-smoke
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     services:
       postgres:
         image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
@@ -2705,22 +2715,21 @@ jobs:
         if: steps.setup.outputs.smoke-available == 'true'
         shell: bash
         env:
-          BEDROCK_AWS_ACCESS_KEY_ID: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
-          BEDROCK_AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          BEDROCK_ROLE_ARN: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
         run: |
-          if [[ -n "$BEDROCK_AWS_ACCESS_KEY_ID" && -n "$BEDROCK_AWS_SECRET_ACCESS_KEY" ]]; then
+          if [[ -n "$BEDROCK_ROLE_ARN" ]]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::BEDROCK_AWS_* secrets are not configured; MCP LLM smoke will run without the live Bedrock driver."
+            echo "::notice::HONUA_BEDROCK_SMOKE_ROLE_ARN is not set; MCP LLM smoke will run without the live Bedrock driver."
           fi
 
       - name: Configure AWS credentials for Bedrock smoke
         if: steps.bedrock.outputs.available == 'true'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          aws-access-key-id: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
+          role-session-name: honua-mcp-llm-smoke
           aws-region: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
 
       - name: Run MCP LLM Smoke Tests

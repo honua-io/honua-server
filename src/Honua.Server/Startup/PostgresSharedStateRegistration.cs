@@ -49,7 +49,10 @@ internal static class PostgresSharedStateRegistration
         services.AddPostgresConfigurationStores();
         services.TryAddSingleton(provider => new JobStoreDatabase(
             provider.GetRequiredService<NpgsqlDataSource>(),
-            configuration[SystemSchemaKey]));
+            configuration[SystemSchemaKey])
+        {
+            Secrets = provider.GetService<IExecutionJobSecretProtector>() ?? UnprotectedExecutionJobSecrets.Instance,
+        });
         // One wake signal per store kind, shared by the store that rings it and the loops that wait on it.
         services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.TryAddSingleton<PostgresExecutionJobStore>();

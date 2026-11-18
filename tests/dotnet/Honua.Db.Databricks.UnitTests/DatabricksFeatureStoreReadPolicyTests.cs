@@ -64,10 +64,10 @@ public class DatabricksFeatureStoreReadPolicyTests
 
     [Theory]
     [MemberData(nameof(ReadOperations))]
-    public async Task Read_WithNoPolicyResolved_EmitsSameSqlAsWithoutResolver(string operation)
+    public async Task Read_WithNoPolicyResolved_EmitsSameSqlAsEmptyResolver(string operation)
     {
         var baseline = new RecordingDataAccess();
-        await InvokeReadAsync(CreateStore(baseline, readSecurity: null), operation);
+        await InvokeReadAsync(CreateStore(baseline, new LayerReadSecurityResolver(null, null, null, null)), operation);
 
         var withResolver = new RecordingDataAccess();
         await InvokeReadAsync(CreateStore(withResolver, CreateResolver()), operation);
@@ -86,7 +86,7 @@ public class DatabricksFeatureStoreReadPolicyTests
             new StubRowFilterSource(rowFilter),
             new StubFieldMaskSource(maskedFields ?? []));
 
-    private static DatabricksFeatureStore CreateStore(RecordingDataAccess dataAccess, LayerReadSecurityResolver? readSecurity)
+    private static DatabricksFeatureStore CreateStore(RecordingDataAccess dataAccess, LayerReadSecurityResolver readSecurity)
     {
         var mapping = new DatabricksLayerMapping
         {

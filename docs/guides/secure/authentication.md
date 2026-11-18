@@ -456,7 +456,9 @@ When `Oidc:TokenValidation:EnableTokenReplayProtection` is enabled, replay regis
 
 Existing cached registrations keep their original expiration. Renew access tokens after upgrading all replay-tracking nodes to obtain the full retention window for new admissions.
 
-The system PostgreSQL database shares replay registrations across nodes. Without a system database data source, registrations use per-node memory; independent replicas need the same system database for cross-node isolation. If the selected replay store is unavailable or faults, the default is to admit the token without recording a replay registration. Set `Oidc:TokenValidation:ReplayProtectionFailClosed=true` to refuse that admission. A PostgreSQL failure does not switch replay tracking to per-node memory.
+The system PostgreSQL database shares replay registrations across nodes. Without a system database data source, registrations use per-node memory; independent replicas need the same system database for cross-node isolation. If the selected replay store is unavailable or faults, the token is refused with 401 by default (`Oidc:TokenValidation:ReplayProtectionFailClosed=true`). Setting it to `false` admits the token without a replay registration during the outage, trading single-use for availability. A PostgreSQL failure does not switch replay tracking to per-node memory.
+
+The ArcGIS-compatible `generateToken` OIDC bridge, including the OAuth sign-in callback, records the presented provider token in the same store as an ordinary HTTP API admission. Exchanging the same token again, or presenting it as an HTTP bearer, is accepted. A token already admitted on MCP or another surface is refused, an exchanged token cannot then open an MCP session, and a store outage follows the fail-closed setting. A provider token whose validity exceeds `TokenReplayCacheDuration` is still exchanged and is recorded for that maximum.
 
 #### Human operation approval
 
@@ -500,7 +502,7 @@ accepting an elicitation or opening a URL grants no approval by itself.
 
 ### 4. Issue GeoServices REST-compatible tokens
 
-GeoServices REST clients, including desktop GIS applications and native client SDKs, authenticate against the portal token endpoint, which is always available:
+GeoServices REST clients, including desktop GIS applications and native client SDKs, authenticate against the portal token endpoint, which is always available. Send the credentials as a POST form body. A password or portal token in the `generateToken` query string (a GET, or a POST without a form body) is refused with a `400` unless `Authentication__PortalToken__AllowQueryStringCredentials=true`; turn that on only for a legacy client that cannot POST a form, because URLs are recorded by proxies and access logs. The OAuth2 `token` endpoint reads its parameters from the form body only.
 
 Applications can call the same endpoint with `username`, `password`, `client: "referer"`, `referer: "https://app.example.com"`, and `expiration: 60`. Desktop GIS clients and other GeoServices REST clients can discover the endpoint when they prompt for credentials.
 

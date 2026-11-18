@@ -68,7 +68,8 @@ internal sealed class StudioAiHttpInvocation
             ReleaseId = certification.ReleaseId,
             EndpointIdentity = certification.EndpointIdentity,
             ActionId = certification.ActionId,
-            RunNonce = certification.RunNonce
+            RunNonce = certification.RunNonce,
+            RequestedBy = certification.RequestedBy
         } : null,
         Provider = request.Provider,
         Model = request.Model,

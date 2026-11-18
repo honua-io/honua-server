@@ -24,24 +24,34 @@ internal static class ImportObjectStoreAudit
 
     public const string Changed = "changed";
 
-    public const string UnsupportedScheme = "unsupported_scheme";
-
     public const string Unavailable = "unavailable";
 
     public const string Failed = "failed";
 
     public const string QueueFull = "queue_full";
 
+    internal sealed record Entry
+    {
+        public string? SourceUri { get; init; }
+
+        public string? ETag { get; init; }
+
+        public long? SizeBytes { get; init; }
+
+        public string? ConnectionId { get; init; }
+
+        public string? JobId { get; init; }
+
+        public required string Outcome { get; init; }
+    }
+
     public static async Task TryRecordAsync(
         HttpContext context,
-        string? sourceUri,
-        string? etag,
-        long? sizeBytes,
-        string? assumeRoleArn,
-        string? jobId,
-        string outcome,
+        Entry entry,
         CancellationToken cancellationToken)
     {
+        var sourceUri = entry.SourceUri;
+        var outcome = entry.Outcome;
         var audit = context.RequestServices.GetService<IAuditLog>();
         if (audit is null)
         {
@@ -60,10 +70,10 @@ internal static class ImportObjectStoreAudit
         var payload = new ImportObjectStoreAuditPayload
         {
             SourceUri = sourceUri,
-            ETag = etag,
-            SizeBytes = sizeBytes,
-            AssumeRoleArn = assumeRoleArn,
-            JobId = jobId,
+            ETag = entry.ETag,
+            SizeBytes = entry.SizeBytes,
+            ConnectionId = entry.ConnectionId,
+            JobId = entry.JobId,
             Outcome = outcome,
         };
         var auditEvent = new AuditEvent
@@ -102,7 +112,7 @@ internal sealed record ImportObjectStoreAuditPayload
 
     public long? SizeBytes { get; init; }
 
-    public string? AssumeRoleArn { get; init; }
+    public string? ConnectionId { get; init; }
 
     public string? JobId { get; init; }
 

@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.ObjectStore;
+using Honua.Core.Features.ObjectStorage;
 using Honua.Import.FileImport;
 using Honua.Import.FileImport.Durable;
 using Honua.TestKit.Attributes;
@@ -14,76 +15,13 @@ namespace Honua.Server.Tests.Import;
 
 public sealed class ImportObjectStoreCoordinatorTests
 {
-    private const string RoleArn = "arn:aws:iam::123456789012:role/honua-import";
-
-    [UnitTest]
-    public async Task UnsupportedScheme_IsRejectedBeforeAnyRead()
-    {
-        var reader = new FakeReader();
-        var admission = await Evaluate("https://example.com/parcels.geojson", reader, Buckets("example"));
-
-        admission.Problem!.Code.Should().Be(ImportObjectStoreProblems.UnsupportedScheme);
-        admission.Problem.StatusCode.Should().Be(400);
-        reader.Heads.Should().Be(0);
-        reader.Opens.Should().Be(0);
-    }
-
-    [UnitTest]
-    public async Task BucketOutsideTheAllowList_IsForbiddenWithoutACloudCall()
-    {
-        var reader = new FakeReader();
-        var admission = await Evaluate("s3://private/parcels.geojson", reader, Buckets("other"));
-
-        admission.Problem!.Code.Should().Be(ImportObjectStoreProblems.Forbidden);
-        admission.Problem.Detail.Should().Contain("private");
-        reader.Heads.Should().Be(0);
-    }
-
-    [UnitTest]
-    public async Task EmptyAllowList_DeniesEveryBucket()
-    {
-        var reader = new FakeReader();
-        var admission = await Evaluate("s3://private/parcels.geojson", reader, Buckets());
-
-        admission.Outcome.Should().Be(ImportObjectStoreAudit.Forbidden);
-        reader.Heads.Should().Be(0);
-    }
-
-    [UnitTest]
-    public async Task BucketPrefix_MatchesOnlyATrailingStar()
-    {
-        var reader = new FakeReader();
-        var allowed = await Evaluate("s3://logs-2026/parcels.geojson", reader, Buckets("logs-*"));
-        allowed.Problem.Should().BeNull();
-
-        var literal = await Evaluate("s3://logs-2026/parcels.geojson", new FakeReader(), Buckets("log*s"));
-        literal.Problem!.Code.Should().Be(ImportObjectStoreProblems.Forbidden);
-    }
-
-    [UnitTest]
-    public async Task RoleOutsideTheAllowList_IsForbiddenWithoutACloudCall()
-    {
-        var reader = new FakeReader();
-        var admission = await Evaluate(
-            "s3://customer/parcels.geojson",
-            reader,
-            Buckets("customer"),
-            assumeRoleArn: "arn:aws:iam::123456789012:role/other");
-
-        admission.Problem!.Code.Should().Be(ImportObjectStoreProblems.Forbidden);
-        admission.Problem.Detail.Should().Contain("assumeRoleArn");
-        reader.Heads.Should().Be(0);
-    }
-
     [UnitTest]
     public async Task ObjectOverTheMax_NamesBothSizesAndDoesNotOpen()
     {
         var reader = new FakeReader { Head = Head(size: 100) };
         var admission = await Evaluate(
-            "s3://customer/parcels.geojson",
-            reader,
-            Buckets("customer"),
-            limits: new ImportLimits { MaxObjectStoreImportBytes = 40, BackgroundJobThresholdBytes = 10 });
+            "parcels.geojson",
+            HostFor(reader, new ImportLimits { MaxObjectStoreImportBytes = 40, BackgroundJobThresholdBytes = 10 }));
 
         admission.Problem!.Code.Should().Be(ImportObjectStoreProblems.TooLarge);
         admission.Problem.StatusCode.Should().Be(413);
@@ -97,10 +35,8 @@ public sealed class ImportObjectStoreCoordinatorTests
     {
         var reader = new FakeReader { Head = Head(size: 11, etag: "\"pin\"") };
         var admission = await Evaluate(
-            "s3://customer/parcels.geojson",
-            reader,
-            Buckets("customer"),
-            limits: new ImportLimits { BackgroundJobThresholdBytes = 10, MaxObjectStoreImportBytes = 1000 });
+            "parcels.geojson",
+            HostFor(reader, new ImportLimits { BackgroundJobThresholdBytes = 10, MaxObjectStoreImportBytes = 1000 }));
 
         admission.Background.Should().BeTrue();
         admission.Request!.ObjectStoreUri.Should().Be("s3://customer/parcels.geojson");
@@ -114,10 +50,8 @@ public sealed class ImportObjectStoreCoordinatorTests
     {
         var reader = new FakeReader { Head = Head(size: 10, etag: "\"pin\""), Body = "{}"u8.ToArray() };
         var admission = await Evaluate(
-            "s3://customer/parcels.geojson",
-            reader,
-            Buckets("customer"),
-            limits: new ImportLimits { BackgroundJobThresholdBytes = 10, MaxObjectStoreImportBytes = 1000 });
+            "parcels.geojson",
+            HostFor(reader, new ImportLimits { BackgroundJobThresholdBytes = 10, MaxObjectStoreImportBytes = 1000 }));
 
         admission.Background.Should().BeFalse();
         admission.DisposeStream.Should().BeTrue();
@@ -134,11 +68,11 @@ public sealed class ImportObjectStoreCoordinatorTests
     {
         var reader = new FakeReader { Head = Head(size: 4) };
         var admission = await Evaluate(
-            "s3://customer/roads.zip",
-            reader,
-            Buckets("customer"),
-            limits: new ImportLimits { BackgroundJobThresholdBytes = 1000, MaxObjectStoreImportBytes = 5000 },
-            formatSupported: name => name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+            "roads.zip",
+            HostFor(reader, new ImportLimits { BackgroundJobThresholdBytes = 1000, MaxObjectStoreImportBytes = 5000 }) with
+            {
+                FormatSupported = name => name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase),
+            });
 
         admission.Background.Should().BeTrue();
         reader.Opens.Should().Be(0);
@@ -152,7 +86,7 @@ public sealed class ImportObjectStoreCoordinatorTests
             Head = Head(size: 4, etag: "\"one\""),
             OpenError = _ => ImportObjectStoreException.Changed("The object changed after the preflight ETag was recorded."),
         };
-        var admission = await Evaluate("s3://customer/parcels.geojson", reader, Buckets("customer"));
+        var admission = await Evaluate("parcels.geojson", HostFor(reader));
 
         admission.Problem!.Code.Should().Be(ImportObjectStoreProblems.Changed);
         admission.Problem.StatusCode.Should().Be(409);
@@ -163,7 +97,7 @@ public sealed class ImportObjectStoreCoordinatorTests
     public async Task MissingObject_IsNotFound()
     {
         var reader = new FakeReader { HeadError = ImportObjectStoreException.NotFound("The object was not found.") };
-        var admission = await Evaluate("s3://customer/missing.geojson", reader, Buckets("customer"));
+        var admission = await Evaluate("missing.geojson", HostFor(reader));
 
         admission.Problem!.Code.Should().Be(ImportObjectStoreProblems.NotFound);
         admission.Problem.StatusCode.Should().Be(404);
@@ -173,14 +107,7 @@ public sealed class ImportObjectStoreCoordinatorTests
     [UnitTest]
     public async Task MissingReader_IsUnavailableBeforeACloudCall()
     {
-        var admission = await ImportObjectStoreCoordinator.EvaluateAsync(
-            Command("s3://customer/parcels.geojson"),
-            Buckets("customer"),
-            new ImportLimits(),
-            reader: null,
-            canAcceptBackground: true,
-            static name => name.EndsWith(".geojson", StringComparison.OrdinalIgnoreCase),
-            CancellationToken.None);
+        var admission = await Evaluate("parcels.geojson", HostFor(new FakeReader()) with { Reader = null });
 
         admission.Problem!.StatusCode.Should().Be(503);
         admission.Problem.Detail.Should().Be(ImportObjectStoreCoordinator.ReaderUnavailableDetail);
@@ -192,11 +119,11 @@ public sealed class ImportObjectStoreCoordinatorTests
     {
         var reader = new FakeReader { Head = Head(size: 50) };
         var admission = await Evaluate(
-            "s3://customer/parcels.geojson",
-            reader,
-            Buckets("customer"),
-            limits: new ImportLimits { BackgroundJobThresholdBytes = 10, MaxObjectStoreImportBytes = 1000 },
-            canAcceptBackground: false);
+            "parcels.geojson",
+            HostFor(reader, new ImportLimits { BackgroundJobThresholdBytes = 10, MaxObjectStoreImportBytes = 1000 }) with
+            {
+                CanAcceptBackground = false,
+            });
 
         admission.Problem!.StatusCode.Should().Be(503);
         admission.Problem.Detail.Should().Be(ImportEndpoints.BackgroundImportUnavailableMessage);
@@ -205,16 +132,17 @@ public sealed class ImportObjectStoreCoordinatorTests
     }
 
     [UnitTest]
-    public async Task CredentialUri_IsNotCopiedIntoTheAuditSource()
+    public async Task Admission_RecordsTheConnectionAndPinsItOnTheJob()
     {
-        var reader = new FakeReader();
-        var admission = await Evaluate("s3://key:secret@customer/parcels.geojson", reader, Buckets("customer"));
+        var reader = new FakeReader { Head = Head(size: 11, etag: "\"pin\"") };
+        var admission = await Evaluate(
+            "parcels.geojson",
+            HostFor(reader, new ImportLimits { BackgroundJobThresholdBytes = 10, MaxObjectStoreImportBytes = 1000 }));
 
-        admission.Problem!.Code.Should().BeNull();
-        admission.Problem.Detail.Should().Be("sourceUri must not embed credentials.");
-        admission.AuditSourceUri.Should().BeNull();
-        admission.AuditRoleArn.Should().BeNull();
-        reader.Heads.Should().Be(0);
+        admission.AuditConnectionId.Should().Be(Connection.Id.ToString());
+        admission.AuditSourceUri.Should().Be("s3://customer/parcels.geojson");
+        admission.Request!.ObjectStoreConnectionId.Should().Be(Connection.Id.ToString());
+        reader.Locations.Should().ContainSingle().Which.Connection.Should().BeSameAs(Connection);
     }
 
     [UnitTest]
@@ -226,7 +154,7 @@ public sealed class ImportObjectStoreCoordinatorTests
                 SourceUri = "s3://customer/parcels.geojson",
                 ETag = "\"pin\"",
                 SizeBytes = 4,
-                AssumeRoleArn = RoleArn,
+                ConnectionId = Connection.Id.ToString(),
                 Outcome = ImportObjectStoreAudit.Queued,
             },
             ImportJsonContext.Default.ImportObjectStoreAuditPayload);
@@ -251,7 +179,7 @@ public sealed class ImportObjectStoreCoordinatorTests
             SourceUrl = "s3://customer/parcels.geojson",
             ObjectStoreUri = "s3://customer/parcels.geojson",
             ObjectStoreETag = "\"pin\"",
-            ObjectStoreRoleArn = RoleArn,
+            ObjectStoreConnectionId = Connection.Id.ToString(),
             ObjectStoreContentType = "application/geo+json",
             TargetSrid = targetSrid,
             SourceSrid = 7912,
@@ -283,38 +211,35 @@ public sealed class ImportObjectStoreCoordinatorTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*preflight ETag*");
     }
 
-    private static Task<ImportObjectStoreCoordinator.Admission> Evaluate(
-        string sourceUri,
-        FakeReader reader,
-        ImportObjectStoreOptions options,
-        ImportLimits? limits = null,
-        string? assumeRoleArn = null,
-        bool canAcceptBackground = true,
-        Func<string, bool>? formatSupported = null)
+    private static readonly ObjectStorageConnection Connection = new()
+    {
+        Id = Guid.Parse("8d0f5c55-2a3e-4a8b-9e57-0f5c6f3b9a11"),
+        Name = "Customer",
+        Bucket = "customer",
+        Region = "us-east-1",
+        RoleArn = "arn:aws:iam::123456789012:role/honua-connection-customer",
+        ExternalId = "external-id-from-setup",
+    };
+
+    private static Task<ImportObjectStoreCoordinator.Admission> Evaluate(string key, ImportObjectStoreCoordinator.Host host)
         => ImportObjectStoreCoordinator.EvaluateAsync(
-            Command(sourceUri, assumeRoleArn),
-            options,
-            limits ?? new ImportLimits { BackgroundJobThresholdBytes = 1000, MaxObjectStoreImportBytes = 5000 },
-            reader,
-            canAcceptBackground,
-            formatSupported ?? (static name => name.EndsWith(".geojson", StringComparison.OrdinalIgnoreCase)
-                || name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)),
+            new ImportObjectStoreCoordinator.Command
+            {
+                Location = new ImportObjectLocation { Connection = Connection, Key = key },
+                TableName = "parcels",
+                TargetSrid = 4326,
+            },
+            host,
             CancellationToken.None);
 
-    private static ImportObjectStoreCoordinator.Command Command(string sourceUri, string? assumeRoleArn = null)
+    private static ImportObjectStoreCoordinator.Host HostFor(FakeReader reader, ImportLimits? limits = null)
         => new()
         {
-            SourceUri = sourceUri,
-            AssumeRoleArn = assumeRoleArn,
-            TableName = "parcels",
-            TargetSrid = 4326,
-        };
-
-    private static ImportObjectStoreOptions Buckets(params string[] buckets)
-        => new()
-        {
-            AllowedBuckets = buckets,
-            AssumeRoles = [new ImportObjectStoreRoleOptions { RoleArn = RoleArn, ExternalId = "configured-only" }],
+            Limits = limits ?? new ImportLimits { BackgroundJobThresholdBytes = 1000, MaxObjectStoreImportBytes = 5000 },
+            Reader = reader,
+            CanAcceptBackground = true,
+            FormatSupported = static name => name.EndsWith(".geojson", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase),
         };
 
     private static ImportObjectHead Head(long size, string etag = "\"etag\"")
@@ -327,6 +252,8 @@ public sealed class ImportObjectStoreCoordinatorTests
         public int Opens { get; private set; }
 
         public string? OpenedEtag { get; private set; }
+
+        public List<ImportObjectLocation> Locations { get; } = [];
 
         public ImportObjectHead Head { get; init; } = new()
         {
@@ -344,6 +271,7 @@ public sealed class ImportObjectStoreCoordinatorTests
         public Task<ImportObjectHead> HeadAsync(ImportObjectLocation location, CancellationToken cancellationToken)
         {
             Heads++;
+            Locations.Add(location);
             if (HeadError is not null)
             {
                 throw HeadError;

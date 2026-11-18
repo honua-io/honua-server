@@ -161,8 +161,10 @@ COPY --from=runtime-assets /runtime-additions/ /
 
 
 WORKDIR /app
-COPY --from=build --chown=1001:1001 /app .
-COPY --chown=1001:1001 LICENSE THIRD-PARTY-NOTICES.md /app/
+# Application files stay root-owned and read-only to the runtime user; its writable state is
+# provisioned under /var/lib/honua and /tmp by stage-runtime.sh.
+COPY --from=build /app .
+COPY LICENSE THIRD-PARTY-NOTICES.md /app/
 
 USER 1001:1001
 
@@ -199,6 +201,7 @@ ENV HOME=/tmp/honua \
     XDG_CACHE_HOME=/tmp/honua/cache \
     TemporaryFiles__StorageDirectory=/tmp/honua/temp \
     FileStorage__LocalStorage__BasePath=/tmp/honua/storage \
+    SceneGeneration__OutputRoot=/var/lib/honua/storage/scenes-generated \
     ASPNETCORE_ENVIRONMENT=Production \
     HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
     ASPNETCORE_HTTP_PORTS= \

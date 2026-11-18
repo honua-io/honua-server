@@ -289,7 +289,7 @@ public class SqlServerProviderResolutionTests
             Options.Create(new SqlServerOptions()),
             NullLogger<SqlServerFeatureDataAccess>.Instance);
 
-        return new SqlServerFeatureStore(dataAccess, v2Provider, readSecurity);
+        return new SqlServerFeatureStore(dataAccess, v2Provider, readSecurity ?? new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private sealed class ThrowingConnectionFactory : ISqlServerConnectionFactory

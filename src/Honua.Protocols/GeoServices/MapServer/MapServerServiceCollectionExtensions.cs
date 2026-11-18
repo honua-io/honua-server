@@ -16,6 +16,7 @@ internal static class MapServerServiceCollectionExtensions
         // Rendering is handled by static utility classes (SkiaMapRenderer, StyleTranslator, etc.).
         // Query endpoints reuse FeatureServer query handling for ArcGIS REST parity.
         services.AddSingleton<Honua.Infrastructure.Rendering.RasterRenderCapacityLimiter>();
+        services.AddExportTilesArtifactBudget(configuration);
 
         // Opt-in dynamicLayers workspace (source.type=dataLayer) allowlist. Defaults OFF; the
         // mapLayer dynamic-layer path stays available regardless. Workspace data layers resolve

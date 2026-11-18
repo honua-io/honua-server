@@ -12,6 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Styles.Handlers;
 using Honua.Protocols.Ogc.Api.Styles.Models;
@@ -255,11 +256,14 @@ public static class OgcStylesEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
         }
 
+        var visibleContent = await StyleDocumentWithheldFields.WithoutWithheldStylesheetAsync(context, styleId, stylesheet)
+            .ConfigureAwait(false);
+
         // MapLibre sources/sprite/glyphs must be absolute (TileJSON 3.0.0 §3.2);
         // the derived SLD and drawingInfo encodings carry no endpoint URLs.
         var content = stylesheet.Encoding == OgcStyleEncoding.MapboxStyle
-            ? StyleEndpointUrlResolver.Resolve(stylesheet.Content, StyleUrlContext.From(context))
-            : stylesheet.Content;
+            ? StyleEndpointUrlResolver.Resolve(visibleContent, StyleUrlContext.From(context))
+            : visibleContent;
 
         return Results.Content(content, stylesheet.MediaType, Encoding.UTF8);
     }
@@ -337,6 +341,13 @@ public static class OgcStylesEndpoints
         CancellationToken cancellationToken)
         => await AuthorizeStyleAsync(context, styleId, graphProvider, cancellationToken).ConfigureAwait(false) is null;
 
+    // Ordinal, matching OgcStyleProjection.ResolveResourceAsync. A case-variant
+    // name is a different resource; authorizing the first ignore-case hit would
+    // check one layer and serve another's stylesheet.
+    private static MetadataV2Object? ResolveStyleResource(MetadataV2GraphSnapshot snapshot, string styleId)
+        => snapshot.Graph.Resources.FirstOrDefault(resource =>
+            string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal));
+
     internal static async Task<IResult?> AuthorizeStyleAsync(
         HttpContext context,
         string styleId,
@@ -344,11 +355,7 @@ public static class OgcStylesEndpoints
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        // Ordinal, matching OgcStyleProjection.ResolveResourceAsync. A case-variant
-        // name is a different resource; authorizing the first ignore-case hit would
-        // check one layer and serve another's stylesheet.
-        var resource = snapshot.Graph.Resources.FirstOrDefault(resource =>
-            string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal));
+        var resource = ResolveStyleResource(snapshot, styleId);
         if (resource is null)
         {
             // Standalone catalog styles have no layer policy and retain their existing
