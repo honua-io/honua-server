@@ -79,14 +79,17 @@ jobs:
           set -euo pipefail
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
           # Inspecting a published index reports no platform. Pull the runnable
-          # manifest for this platform; later steps keep that resolved reference.
-          docker buildx imagetools inspect --raw "$SCAN_IMAGE" > source-manifest.json
-          SCAN_IMAGE="$(python3 scripts/security/release_images.py resolve-scan-image \
-            --image "$SCAN_IMAGE" --platform "$SCAN_PLATFORM" < source-manifest.json)"
-          export SCAN_IMAGE
-          echo "SCAN_IMAGE=$SCAN_IMAGE" >> "$GITHUB_ENV"
-          docker pull --platform "$SCAN_PLATFORM" "$SCAN_IMAGE"
-          docker image inspect "$SCAN_IMAGE" > existing-image-inspect.json
+          # manifest for this platform. SCAN_IMAGE stays the digest the caller named
+          # so the OpenVEX document and the attestation-free resolution still see an index.
+          REQUESTED_IMAGE="$SCAN_IMAGE"
+          docker buildx imagetools inspect --raw "$REQUESTED_IMAGE" > requested-manifest.json
+          RESOLVED_IMAGE="$(python3 scripts/security/release_images.py resolve-scan-image \
+            --image "$REQUESTED_IMAGE" --platform "$SCAN_PLATFORM" < requested-manifest.json)"
+          export REQUESTED_IMAGE SCAN_IMAGE="$RESOLVED_IMAGE"
+          echo "REQUESTED_IMAGE=$REQUESTED_IMAGE" >> "$GITHUB_ENV"
+          echo "RESOLVED_IMAGE=$RESOLVED_IMAGE" >> "$GITHUB_ENV"
+          docker pull --platform "$SCAN_PLATFORM" "$RESOLVED_IMAGE"
+          docker image inspect "$RESOLVED_IMAGE" > existing-image-inspect.json
           python3 scripts/security/existing-image-scan.py identity
           : > "$RUNNER_TEMP/release-empty.trivyignore"
       # Buildx provenance and SBOM attestations live in the image index beside the platform
@@ -112,6 +115,8 @@ jobs:
       - name: Generate the release OpenVEX document
         run: |
           set -euo pipefail
+          # The caller may name an index. Customers scan that digest, so the document
+          # names it and the attestation-free platform manifest when they differ.
           images=(--image "$SCAN_IMAGE")
           if [ "$PLATFORM_REF" != "$SCAN_IMAGE" ]; then images+=(--image "$PLATFORM_REF"); fi
           python3 scripts/security/release_images.py vex-generate --name "$RELEASE" "${images[@]}" \
@@ -132,7 +137,7 @@ jobs:
           TRIVY_SHOW_SUPPRESSED: 'true'
         with:
           scan-type: image
-          image-ref: ${{ env.SCAN_IMAGE }}
+          image-ref: ${{ env.RESOLVED_IMAGE }}
           scanners: vuln
           format: json
           output: ${{ steps.names.outputs.asset_name }}.trivy.json
@@ -163,6 +168,7 @@ jobs:
             ${{ steps.names.outputs.asset_name }}.trivy.json
             ${{ steps.names.outputs.asset_name }}.verdict.json
             ${{ steps.names.outputs.asset_name }}.attestation-free-ref.txt
+            requested-manifest.json
           if-no-files-found: error
           retention-days: 90
 

@@ -210,16 +210,16 @@ def resolve_scan_image(document, image, platform):
 
     A published multi-arch digest is an index. Inspecting that index reports no
     operating system or architecture, and it also lists attestation manifests.
-    A single-manifest digest is returned unchanged.
+    A single-manifest digest is returned unchanged. Callers keep the requested
+    digest: a release OpenVEX document has to name that digest as well as this one.
     """
-    _require(isinstance(image, str) and re.fullmatch(
-        r"ghcr\.io/honua-io/honua-server@sha256:[0-9a-f]{64}", image),
-        "An immutable honua-server image digest is required")
+    _require(isinstance(image, str) and IMAGE_PATTERN.fullmatch(image),
+             "An immutable honua-server image digest is required")
     _require(platform in PLATFORMS, f"Unsupported platform: {platform!r}")
     _require(isinstance(document, dict), "Manifest must be an object")
     if "manifests" not in document:
         return image
-    return f"{image.split('@', 1)[0]}@{platform_manifest(document, platform)}"
+    return f"{_vex.IMAGE_REPOSITORY}@{platform_manifest(document, platform)}"
 
 
 def platform_manifest(index, platform):

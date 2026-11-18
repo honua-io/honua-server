@@ -18,7 +18,7 @@ def validate(image, platform, revision):
         raise ValueError("A full expected server revision is required")
 
 
-def bind_identity(image, platform, revision, inspected):
+def bind_identity(image, platform, revision, inspected, requested=None):
     validate(image, platform, revision)
     if len(inspected) != 1:
         raise ValueError("Expected exactly one inspected image")
@@ -30,8 +30,14 @@ def bind_identity(image, platform, revision, inspected):
     labels = metadata.get("Config", {}).get("Labels") or {}
     if labels.get("org.opencontainers.image.revision") != revision:
         raise ValueError("Pulled image source revision mismatch")
-    return {"image": image, "platform": platform, "sourceRevision": revision,
-            "imageId": metadata["Id"]}
+    identity = {"image": image, "platform": platform, "sourceRevision": revision,
+                "imageId": metadata["Id"]}
+    # A published index cannot be inspected. The scan binds the runnable manifest
+    # and keeps the digest the caller named, which is what a customer pulls.
+    if requested:
+        validate(requested, platform, revision)
+        identity["requestedImage"] = requested
+    return identity
 
 
 def verdict(identity, inventory):
@@ -77,7 +83,8 @@ def main():
         return 0
     if mode == "identity":
         identity = bind_identity(image, platform, revision,
-                                 json.loads(Path("existing-image-inspect.json").read_text()))
+                                 json.loads(Path("existing-image-inspect.json").read_text()),
+                                 os.environ.get("REQUESTED_IMAGE") or None)
         identity["workflowRun"] = f"{os.environ.get('GITHUB_SERVER_URL')}/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ.get('GITHUB_RUN_ID')}"
         Path("existing-image-identity.json").write_text(json.dumps(identity, indent=2) + "\n")
         return 0

@@ -85,13 +85,17 @@ jobs:
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
           # A published digest is often an index. Inspecting the index reports no
           # platform, so the scan pulls the one runnable manifest for this platform.
-          docker buildx imagetools inspect --raw "$SCAN_IMAGE" > source-manifest.json
-          SCAN_IMAGE="$(python3 scripts/security/release_images.py resolve-scan-image \
-            --image "$SCAN_IMAGE" --platform "$SCAN_PLATFORM" < source-manifest.json)"
-          export SCAN_IMAGE
-          echo "SCAN_IMAGE=$SCAN_IMAGE" >> "$GITHUB_ENV"
-          docker pull --platform "$SCAN_PLATFORM" "$SCAN_IMAGE"
-          docker image inspect "$SCAN_IMAGE" > existing-image-inspect.json
+          # SCAN_IMAGE stays the digest the caller named. Later steps must not treat
+          # the resolved manifest as if it were that published digest.
+          REQUESTED_IMAGE="$SCAN_IMAGE"
+          docker buildx imagetools inspect --raw "$REQUESTED_IMAGE" > requested-manifest.json
+          RESOLVED_IMAGE="$(python3 scripts/security/release_images.py resolve-scan-image \
+            --image "$REQUESTED_IMAGE" --platform "$SCAN_PLATFORM" < requested-manifest.json)"
+          export REQUESTED_IMAGE SCAN_IMAGE="$RESOLVED_IMAGE"
+          echo "REQUESTED_IMAGE=$REQUESTED_IMAGE" >> "$GITHUB_ENV"
+          echo "RESOLVED_IMAGE=$RESOLVED_IMAGE" >> "$GITHUB_ENV"
+          docker pull --platform "$SCAN_PLATFORM" "$RESOLVED_IMAGE"
+          docker image inspect "$RESOLVED_IMAGE" > existing-image-inspect.json
           python3 scripts/security/existing-image-scan.py identity
           # The action requires a regular file; /dev/null is rejected. Use a fresh
           # empty file so no repository ignore entries affect this inventory.
@@ -102,7 +106,7 @@ jobs:
           TRIVY_PLATFORM: ${{ inputs.existing_image_platform }}
         with:
           scan-type: image
-          image-ref: ${{ env.SCAN_IMAGE }}
+          image-ref: ${{ env.RESOLVED_IMAGE }}
           scanners: vuln
           format: json
           output: existing-image-trivy.json
@@ -122,6 +126,7 @@ jobs:
             existing-image-inspect.json
             existing-image-trivy.json
             existing-image-verdict.json
+            requested-manifest.json
           if-no-files-found: warn
           retention-days: 90
 
