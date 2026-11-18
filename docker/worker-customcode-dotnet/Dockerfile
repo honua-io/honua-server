@@ -25,6 +25,9 @@
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
 # Declared before the first FROM so the runtime stage FROM can use it.
 ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af330034ae0c3ada30deb1cfdaecf37585f96ed0924f1d1dfb7
+# The shipped SDK is copied from this untouched stage, so it is exactly the digest-pinned image's.
+FROM ${DOTNET_SDK_IMAGE} AS sdk
+
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
@@ -33,10 +36,18 @@ COPY docker/worker-customcode-dotnet/harness/ ./harness/
 
 WORKDIR /src/harness
 
+# Locked mode does not fail for a project without a lock file, so refuse one here: every
+# harness project (and the warm-cache project) must carry a committed packages.lock.json.
+RUN for project in $(find . -name '*.csproj'); do \
+      test -f "$(dirname "$project")/packages.lock.json" \
+        || { echo "missing packages.lock.json for $project" >&2; exit 1; }; \
+    done
+
 # Publish the harness host (framework-dependent; NOT AOT — it loads user assemblies
-# dynamically). NuGetAudit is off (offline restore from nuget.org only). Every restore in this
-# image is in locked mode: only package contents whose hashes are committed in the harness
-# packages.lock.json files get in.
+# dynamically). NuGetAudit is off (offline restore from nuget.org only). The harness, sample and
+# warm-cache restores are in locked mode: only package contents whose hashes are committed in
+# the harness packages.lock.json files get in. The build-stage GDAL probe below reuses the
+# packages RasterTool's locked restore just verified; it never ships.
 RUN dotnet publish src/Honua.CustomCode.Harness/Honua.CustomCode.Harness.csproj \
       --configuration Release \
       -p:NuGetAudit=false \
@@ -128,7 +139,7 @@ RUN apt-get update \
 # linux-x64 SDK the install script would download, but verified by the image digest and
 # pinned to one version instead of the newest of a channel.
 ENV DOTNET_ROOT=/usr/share/dotnet
-COPY --from=build /usr/share/dotnet ${DOTNET_ROOT}
+COPY --from=sdk /usr/share/dotnet ${DOTNET_ROOT}
 RUN ln -s "${DOTNET_ROOT}/dotnet" /usr/bin/dotnet \
  && dotnet --info > /dev/null
 
