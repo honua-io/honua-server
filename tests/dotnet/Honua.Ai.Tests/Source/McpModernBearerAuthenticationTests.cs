@@ -26,18 +26,28 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
-public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
+public sealed class McpModernBearerAuthenticationTests(McpModernBearerAuthenticationTests.ReplayProtectedHost host)
+    : IClassFixture<McpModernBearerAuthenticationTests.ReplayProtectedHost>
 {
     private static readonly Claim[] Authority =
     [
         new("tid", "tenant-a"), new("roles", "admin"), new("scope", "honua.mcp.full")
     ];
-    private readonly WebAppFixture _fixture = CreateReplayProtectedFixture().ConfigureServices(services =>
-        services.PostConfigure<CorsOptions>(options => options.AddPolicy(HttpCorsPolicyNames.Production,
-            policy => policy.WithOrigins("https://approved.example"))));
+    private readonly WebAppFixture _fixture = host.Fixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    // One replay-protected host serves every case. Each case mints its own tokens (a fresh jti unless
+    // the case pins one), so the replay record of one case never admits or refuses another's token.
+    // The zero-skew expiry case needs a different setting and keeps its own host.
+    public sealed class ReplayProtectedHost : IAsyncLifetime
+    {
+        internal WebAppFixture Fixture { get; } = CreateReplayProtectedFixture().ConfigureServices(services =>
+            services.PostConfigure<CorsOptions>(options => options.AddPolicy(HttpCorsPolicyNames.Production,
+                policy => policy.WithOrigins("https://approved.example"))));
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTheory]
     [InlineData("modern", "modern")]
