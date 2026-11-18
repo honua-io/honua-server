@@ -71,7 +71,7 @@ internal static class McpToolSchemas
             "layerName": {
               "type": "string",
               "minLength": 1,
-              "description": "Layer display name."
+              "description": "Caller-supplied name."
             },
             "serviceName": {
               "type": "string",
