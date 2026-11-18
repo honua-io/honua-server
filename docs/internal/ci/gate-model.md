@@ -3013,3 +3013,30 @@ of case time (362.0 to 91.7 s). On hosted full run 44271438677 the three took
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Shared hosts in MCP bearer, MCP scope and Studio AI proxy tests
+
+`McpBearerAuthenticationTests`, `McpScopeAuthorizationTests` and
+`StudioAiProxyEndpointsTests` started a new application for every case. The 34 MCP
+bearer cases, including the 8 that then start a host of their own configuration,
+now share one class host for the default configuration, and the 8 scope cases share
+one. Each case mints its own tokens and opens its own sessions, well under the
+32-session per-principal cap; the in-process client has no remote address, so the
+failed-attempt limiter never counts it; the API-key case issues and revokes a key of
+its own. The Studio AI proxy tests keep one class host per end-user authorization
+setting (two instead of 31). Borrowing a host empties the captured audit log and
+clears any admission denial or financial setup, and admission send counters are
+read relative to the start of the case. Cases with another configuration still own
+their hosts, and every assertion is unchanged.
+
+Measured on the build host (Release, the same 68 cases, 68/68 passing before and
+after): the test run went from 235 s to 51 s for the two MCP classes and from 148 s
+to 4 s for the Studio AI proxy class. Case time went from 96.8 to 46.7 s
+(`McpBearerAuthenticationTests`), 17.8 to 2.6 s (`McpScopeAuthorizationTests`) and
+68.4 to 4.6 s (`StudioAiProxyEndpointsTests`); host start-up in a class fixture is
+not counted as case time. On hosted full run 44271438677 the three classes took
+168.0 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
