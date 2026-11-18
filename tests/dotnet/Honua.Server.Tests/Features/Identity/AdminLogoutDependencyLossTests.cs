@@ -92,6 +92,7 @@ public sealed class AdminLogoutDependencyLossTests
                 builder.UseSetting("Saml:EntityId", SamlTestAssertions.Audience);
                 builder.UseSetting("Saml:IdpEntityId", SamlTestAssertions.Issuer);
                 builder.UseSetting("Saml:AssertionConsumerServiceUrl", SamlTestAssertions.Audience + "/saml/acs");
+                builder.UseSetting("Saml:SingleLogoutServiceUrl", SamlTestAssertions.Audience + "/saml/slo");
                 builder.UseSetting("Saml:IdpSigningCertificate", SamlTestAssertions.ToBase64Der(certificate));
             });
 
