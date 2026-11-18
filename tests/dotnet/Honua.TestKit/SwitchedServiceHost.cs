@@ -10,10 +10,12 @@ namespace Honua.TestKit;
 // TService. The host registers a ServiceSwitch in its place; a case borrows the host with its own
 // substitute and returns it when done. Borrow and return both restore the seeded catalog under a
 // new revision, so a response cached while one case's substitute answered is never served to another.
+// Work a request leaves running after the case returns the host reaches whichever substitute is
+// current, so classes whose requests start long-running background work keep their own hosts.
 public class SwitchedServiceHost<TService> : SeededMetadataHost
     where TService : class
 {
-    private readonly ServiceSwitch<TService> _services;
+    private readonly ServiceSwitch<TService> _switch;
     private readonly TService _defaultService;
 
     public SwitchedServiceHost(TService defaultService)
@@ -26,34 +28,35 @@ public class SwitchedServiceHost<TService> : SeededMetadataHost
     {
     }
 
-    private SwitchedServiceHost(ServiceSwitch<TService> services, Action<IServiceCollection> configureServices)
-        : base(new WebAppFixture().ConfigureServices(collection =>
+    private SwitchedServiceHost(ServiceSwitch<TService> serviceSwitch, Action<IServiceCollection> configureServices)
+        : base(new WebAppFixture().ConfigureServices(services =>
         {
-            configureServices(collection);
-            collection.AddSingleton(services.Service);
+            configureServices(services);
+            services.AddSingleton(serviceSwitch.Service);
         }))
     {
-        _services = services;
-        _defaultService = services.Target;
+        _switch = serviceSwitch;
+        _defaultService = serviceSwitch.Target;
     }
 
     private static ServiceSwitch<TService> CreateSwitch(TService defaultService)
     {
-        var services = (ServiceSwitch<TService>)(object)DispatchProxy.Create<TService, ServiceSwitch<TService>>();
-        services.Target = defaultService;
-        return services;
+        var serviceSwitch = (ServiceSwitch<TService>)(object)DispatchProxy.Create<TService, ServiceSwitch<TService>>();
+        serviceSwitch.Target = defaultService;
+        return serviceSwitch;
     }
 
     public async Task<SwitchedServiceLease> BorrowAsync(TService service)
     {
-        _services.Target = service;
+        // Restore first: if it fails, the default service stays in place for the next case.
         await RestoreSeededStateAsync();
+        _switch.Target = service;
         return new SwitchedServiceLease(Application, ReturnAsync);
     }
 
     private async ValueTask ReturnAsync()
     {
-        _services.Target = _defaultService;
+        _switch.Target = _defaultService;
         await RestoreSeededStateAsync();
     }
 }

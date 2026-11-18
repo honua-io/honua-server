@@ -51,8 +51,6 @@ public sealed partial class GeoservicesCatalogEndpointTests
             : base(CreateSoapRasterStore())
         {
         }
-
-        public Task<WebAppFixture> GetApplicationAsync() => Task.FromResult(Application);
     }
 
     [IntegrationTheory]
@@ -355,7 +353,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceName}/ImageServer")]
     public async Task PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         const string soapRequest = """
             <?xml version="1.0" encoding="utf-8"?>
@@ -541,7 +539,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_GeoServicesPro37LegacyNamespace_EchoesNegotiatedNamespace()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         const string operation =
             "<GetVersion xmlns=\"http://www.esri.com/schemas/ArcGIS/9.0\" />";
@@ -1168,7 +1166,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_MetadataFieldsAndVersion_AreGeoServicesShaped()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         using var metadata = await PostSoapAsync(
             fixture.Client,
@@ -1277,7 +1275,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_GetServiceInfo_EmitsResolvedOperationTelemetry()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         Activity? observedActivity = null;
         using var listener = new ActivityListener
@@ -1699,7 +1697,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_ExportImage_AcceptsEveryAdvertisedMosaicMethod()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         static string Operation(string mosaicRule) => $"""
             <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
@@ -1959,7 +1957,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_Soap12_ReturnsSoap12Response()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         const string request = """
             <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">

@@ -29,9 +29,9 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
     public ImageServerWmtsMatrixSetTests(MatrixSetHosts hosts) => _hosts = hosts;
 
     // One host per matrix-set configuration; each case borrows one with its own raster store.
-    // Database isolation does not isolate the file-backed tile cache, so each host owns a storage
-    // directory, and every borrow deletes the stored files: an earlier case's tile never
-    // satisfies a later case's first rendering request.
+    // Each host owns a storage directory for its file-backed tile cache. Tile keys already carry
+    // the catalog revision that every borrow advances; UseRasterStoreAsync also deletes the stored
+    // files, so an earlier case's tile cannot satisfy a later case's first rendering request.
     public sealed class MatrixSetHosts : IAsyncLifetime
     {
         private readonly DirectoryInfo _storageRoot = Directory.CreateTempSubdirectory("honua-wmts-matrix-");
@@ -64,9 +64,15 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
 
         public async Task DisposeAsync()
         {
-            await Default.DisposeAsync();
-            await WorldCrs84QuadEnabled.DisposeAsync();
-            _storageRoot.Delete(recursive: true);
+            try
+            {
+                await Default.DisposeAsync();
+            }
+            finally
+            {
+                await WorldCrs84QuadEnabled.DisposeAsync();
+                _storageRoot.Delete(recursive: true);
+            }
         }
 
         private static void UseStorage(IServiceCollection services, DirectoryInfo storage)
@@ -118,7 +124,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
         return store;
     }
 
-    private async Task<SwitchedServiceLease> CreateFixtureAsync(IRasterStore rasterStore, bool enableWorldCrs84Quad)
+    private async Task<SwitchedServiceLease> UseRasterStoreAsync(IRasterStore rasterStore, bool enableWorldCrs84Quad)
     {
         var host = enableWorldCrs84Quad ? _hosts.WorldCrs84QuadEnabled : _hosts.Default;
         var fixture = await host.BorrowAsync(rasterStore);
@@ -139,7 +145,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
     [Operation(Operations.Metadata)]
     public async Task Wmts_GetCapabilities_DefaultConfig_AdvertisesOnlyWebMercatorQuad()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: false);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: false);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -161,7 +167,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
     [Operation(Operations.Metadata)]
     public async Task Wmts_GetCapabilities_WithWorldCrs84QuadEnabled_AdvertisesMatrixSet()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -200,7 +206,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
                 Srid = 4326,
             });
 
-        var fixture = await CreateFixtureAsync(store, enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(store, enableWorldCrs84Quad: true);
         try
         {
             // WorldCRS84Quad level 0: 2 columns x 1 row. Tile (col 0, row 0) covers the western
@@ -256,7 +262,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
                 HasData = true,
             });
 
-        var fixture = await CreateFixtureAsync(store, enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(store, enableWorldCrs84Quad: true);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -285,7 +291,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_WorldCrs84QuadNotConfigured_ReturnsInvalidParameterValue()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: false);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: false);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -307,7 +313,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_UnknownMatrixSet_ReturnsInvalidParameterValue()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -328,7 +334,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_WorldCrs84QuadColumnOutOfBounds_ReturnsInvalidParameterValue()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
         try
         {
             // At level 0 WorldCRS84Quad has 2 columns (0..1); column 2 is out of bounds.
@@ -351,7 +357,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmt
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_WorldCrs84QuadRowOutOfBounds_ReturnsInvalidParameterValue()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
         try
         {
             // At level 0 WorldCRS84Quad has 1 row (0 only); row 1 is out of bounds.
