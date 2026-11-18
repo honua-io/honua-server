@@ -7,7 +7,10 @@ using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Protocols.Grpc;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Proto = Geospatial.V1;
@@ -58,20 +61,9 @@ public sealed partial class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/GetAttachmentUrl")]
-    public async Task GetAttachmentUrl_LocalStoragePath_IsNeverReturned()
+    public async Task GetAttachmentUrl_InsecureStorageUrl_IsRefusedWithoutThePath()
     {
-        ArrangeAttachmentParent();
-        var store = Substitute.For<IAttachmentStore>();
-        store.GetAsync(0, 17, 2, Arg.Any<CancellationToken>())
-            .Returns(Attachment.CreateForUpload(2, 17, 0, "two", "image/png", 4, "private/two"));
-        var storage = Substitute.For<ICloudFileStorage>();
-        storage.GetPresignedUrlAsync("private/two", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns("file:///private/two");
-        using var context = CreateCallContext(null, null, null, services =>
-        {
-            services.AddSingleton(store);
-            services.AddSingleton(storage);
-        });
+        using var context = AttachmentUrlContext("http://storage.internal/private/two");
         var action = () => _sut.GetAttachmentUrl(new Proto.GetAttachmentUrlRequest
         {
             Parent = AttachmentParent(),
@@ -80,6 +72,45 @@ public sealed partial class GrpcFeatureServiceTests
         var exception = (await action.Should().ThrowAsync<RpcException>()).Which;
         exception.StatusCode.Should().Be(StatusCode.FailedPrecondition);
         exception.Status.Detail.Should().NotContain("private/two");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/GetAttachmentUrl")]
+    public async Task GetAttachmentUrl_LocalStoragePath_ReturnsSignedLinkInsteadOfThePath()
+    {
+        using var context = AttachmentUrlContext("file:///private/two");
+        var response = await _sut.GetAttachmentUrl(new Proto.GetAttachmentUrlRequest
+        {
+            Parent = AttachmentParent(),
+            AttachmentId = 2
+        }, context);
+        response.Url.Should().StartWith("https://maps.example.test/api/v1/attachments/downloads/");
+        response.Url.Should().NotContain("private");
+    }
+
+    private TestServerCallContext AttachmentUrlContext(string presignedUrl)
+    {
+        ArrangeAttachmentParent();
+        var store = Substitute.For<IAttachmentStore>();
+        store.GetAsync(0, 17, 2, Arg.Any<CancellationToken>())
+            .Returns(Attachment.CreateForUpload(2, 17, 0, "two", "image/png", 4, "private/two"));
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetPresignedUrlAsync("private/two", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(presignedUrl);
+        var metadata = Substitute.For<IAttachmentNativeMetadataStore>();
+        metadata.GetNativeMetadataAsync(Arg.Any<AttachmentNativeMetadataQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, AttachmentNativeMetadata> { [2] = new(Guid.NewGuid(), [], new byte[32]) });
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Public:BaseUrl"] = "https://maps.example.test" })
+            .Build();
+        return CreateCallContext(null, null, null, services =>
+        {
+            services.AddSingleton(store);
+            services.AddSingleton(storage);
+            services.AddSingleton(metadata);
+            services.AddSingleton<IConfiguration>(configuration);
+            services.AddSingleton(new AttachmentDownloadLinks(new EphemeralDataProtectionProvider()));
+        });
     }
 
     [UnitTest]
