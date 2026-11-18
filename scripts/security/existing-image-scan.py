@@ -39,8 +39,7 @@ def note_requested_image(identity, requested):
     if not requested:
         return identity
     validate(requested, identity["platform"], identity["sourceRevision"])
-    identity["requestedImage"] = requested
-    return identity
+    return {**identity, "requestedImage": requested}
 
 
 def verdict(identity, inventory):
