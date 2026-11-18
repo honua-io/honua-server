@@ -44,10 +44,12 @@ public sealed class GeoParquetQueryFormatterMemoryTests
         });
         await using (payload)
         {
-            payload.Should().BeAssignableTo<FileStream>();
+            var spool = payload.Should().BeOfType<GeoParquetFeatureWriter.BoundedParquetStream>().Subject;
             contentType.Should().Be("application/vnd.apache.parquet");
             (GC.GetTotalMemory(true) - baseline).Should().BeLessThan(8 * 1024 * 1024);
-            var path = ((FileStream)payload).Name;
+            var path = spool.ScratchPath;
+            path.Should().NotBeNull();
+            File.Exists(path).Should().BeTrue();
             using (var reader = ArrowParquetTestReader.OpenLeavingStreamOpen(payload))
             using (var batches = reader.GetRecordBatchReader())
             {
