@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Mobile;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
 public sealed partial class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifetime
