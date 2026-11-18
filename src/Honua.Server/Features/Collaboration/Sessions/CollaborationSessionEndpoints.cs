@@ -43,10 +43,11 @@ internal static class CollaborationSessionEndpoints
         // Authenticated WebSocket v1-envelope stream. The join is authorized through
         // the Studio-lifecycle-backed authorizer before the upgrade, so an unauthorized client
         // receives a typed 401/403 rather than an opaque socket close.
-        // The join is authorized once before the upgrade; the live-stream filter keeps checking
-        // the credential and closes the socket once it is revoked or expires.
+        // The live-stream filter keeps checking the credential and the map permission, and closes
+        // the socket once the credential is revoked or expires or the join check refuses the caller.
         group.MapGet("/stream", CollaborationSessionStreamEndpoint.HandleStream)
             .AddEndpointFilter<LiveStreamAuthorizationFilter>()
+            .WithMetadata(SavedMapStreamResourceAuthorization.Instance)
             .WithDisplayName("Stream Saved Map Collaboration Session")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .WithMetadata(WebSocketEndpointMetadata.Instance)
