@@ -1005,6 +1005,8 @@ setup failure selects `ubuntu-latest`, without wake, wait, polling or retries.
 The existing global heavy selector does not control this producer. Light jobs
 stay hosted. The producer uses a private writable SDK directory, skips sudo
 cleanup off hosted runners and bounds all nested build workers to four.
+Selective dispatches build that graph with `RunAnalyzers=false`; scheduled
+and `full_ci` runs, and the protocol-profile builds, keep analyzers.
 See [producer admission and MAIN-owned preflight](gate-model.md#full-ci-producer-admission)
 before enabling the source contract; merging it does not activate any pool.
 

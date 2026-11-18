@@ -533,6 +533,15 @@ proof, stale proof, or busy/stopped capacity falls back hosted. There is no
 wake, wait, polling or retry loop. A snapshot is admission evidence, not a
 capacity reservation; a later queue remains possible.
 
+Selective (affected) dispatches build the producer graph with
+`RunAnalyzers=false`; scheduled and `full_ci` runs keep the analyzer build.
+PR Gate's analyzer partitions already proved each landed PR on its merge ref,
+and ci.yml's `Format Check` still runs `dotnet format` in the same affected
+run. Warnings-as-errors still applies to compiler diagnostics, source
+generators still run, and the published managed outputs are the same
+assemblies the PR Gate producer already publishes without analyzers. The
+selected protocol profiles keep analyzers, because PR Gate never builds them.
+
 The producer skips hosted sudo cleanup on self-hosted runners and installs its
 SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,
 build and nested MSBuild evaluation uses at most four workers; job-wide

@@ -785,6 +785,11 @@ jobs:
       DOTNET_PROCESSOR_COUNT: '4'
       DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
       MSBUILDDISABLENODEREUSE: '1'
+      # Selective (affected) dispatches compile without analyzers: PR Gate's
+      # analyzer partitions proved each landed PR and Format Check below still
+      # runs dotnet format. Scheduled and full runs keep the analyzer build.
+      # Protocol profiles keep analyzers because PR Gate never builds them.
+      PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}
     steps:
       - name: Place the producer SDK in the runner temp directory
         run: echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/honua-ci-producer-sdk" >> "$GITHUB_ENV"
@@ -878,12 +883,12 @@ jobs:
       - name: Restore producer build graph
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers="${PRODUCER_RUN_ANALYZERS}" -p:UseSharedCompilation=false
 
       - name: Build (warnings as errors)
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers="${PRODUCER_RUN_ANALYZERS}" -p:UseSharedCompilation=false
 
       - name: Build selected standalone tooling projects
         run: >-
