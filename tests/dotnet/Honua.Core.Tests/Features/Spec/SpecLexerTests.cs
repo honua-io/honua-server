@@ -213,6 +213,42 @@ public sealed class SpecLexerTests
             d.Severity == SpecDiagnosticSeverity.Error);
     }
 
+    // 64 KiB per literal, counted after escapes are decoded (each escaped backslash decodes to one character).
+    private const int StringLiteralCap = 64 * 1024;
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(0, StringLiteralCap + 1)]
+    [InlineData(StringLiteralCap, 1)]
+    public void Tokenize_StringBeyondCapAfterEscapesReportsError(int plainChars, int escapes)
+    {
+        var lexer = new SpecLexer(StringAssignment(plainChars, escapes));
+
+        var tokens = lexer.Tokenize();
+
+        lexer.Diagnostics.Should().Contain(d => d.Message.Contains("-character cap", StringComparison.Ordinal));
+        tokens.Should().NotContain(t => t.Type == SpecTokenType.String);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData(0, StringLiteralCap)]
+    [InlineData(StringLiteralCap - 1, 1)]
+    public void Tokenize_StringAtCapAfterEscapesIsAccepted(int plainChars, int escapes)
+    {
+        var lexer = new SpecLexer(StringAssignment(plainChars, escapes));
+
+        var tokens = lexer.Tokenize();
+
+        lexer.Diagnostics.Should().BeEmpty();
+        tokens.Should().ContainSingle(t => t.Type == SpecTokenType.String)
+            .Which.Text.Length.Should().Be(StringLiteralCap);
+    }
+
+    // Builds an assignment whose string holds plainChars letters followed by escaped backslashes.
+    private static string StringAssignment(int plainChars, int escapes) =>
+        "x = \"" + new string('a', plainChars) + string.Concat(Enumerable.Repeat("\\\\", escapes)) + "\"";
+
     [Trait("Tier", "Fast")]
     [Fact]
     public void Tokenize_UnterminatedBlockCommentReportsError()

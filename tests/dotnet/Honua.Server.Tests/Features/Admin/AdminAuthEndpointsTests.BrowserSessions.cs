@@ -350,6 +350,35 @@ public sealed partial class AdminAuthEndpointsTests
             var session = await identity.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
             session!.IsAuthenticated.Should().BeFalse();
         }
+
+        [IntegrationTest]
+        [Endpoint("POST /api/v1/admin/auth/bearer")]
+        [Endpoint("POST /api/v1/admin/auth/logout")]
+        [Endpoint("GET /api/v1/admin/config")]
+        public async Task SessionBearer_StopsWorkingWhenTheSessionSignsOut()
+        {
+            await using var fixture = CreatePasswordTokenFixture();
+            await fixture.InitializeAsync();
+            using var browser = fixture.CreateClient();
+            browser.BaseAddress = new Uri("https://localhost");
+            await BrowserCsrf.SetHeaderAsync(browser);
+            using var signIn = await browser.PostAsJsonAsync("/api/v1/admin/auth/session", new { password = "test-admin-key" });
+            signIn.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            await BrowserCsrf.SetHeaderAsync(browser);
+            using var bearer = await browser.PostAsync("/api/v1/admin/auth/bearer", null);
+            var token = await bearer.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminOperatorBearerResponse);
+            using var api = fixture.CreateClient();
+            api.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token!.AccessToken);
+            using var before = await api.GetAsync("/api/v1/admin/config");
+            before.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            await BrowserCsrf.SetHeaderAsync(browser);
+            using var logout = await browser.PostAsync("/api/v1/admin/auth/logout", null);
+            logout.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var after = await api.GetAsync("/api/v1/admin/config");
+            after.StatusCode.Should().Be(HttpStatusCode.Unauthorized, "a bearer minted from a session ends with it");
+        }
     }
 
     private static WebAppFixture CreatePasswordTokenFixture() => CreateBaseFixture().ConfigureWebHost(builder =>

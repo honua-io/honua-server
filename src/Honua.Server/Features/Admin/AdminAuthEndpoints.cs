@@ -261,7 +261,9 @@ internal static class AdminAuthEndpoints
                 "Operator bearer issuance is not configured on this server.");
         }
 
-        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt);
+        var binding = await sessionStore.BindOperatorBearerAsync(sessionId!, session.ExpiresAt, context.RequestAborted)
+            .ConfigureAwait(false);
+        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt, binding);
         if (issuance is null)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(

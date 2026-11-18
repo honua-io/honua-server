@@ -23,7 +23,11 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
         JwtRegisteredClaimNames.Nbf,
         JwtRegisteredClaimNames.Iat,
         JwtRegisteredClaimNames.Jti,
+        SessionBindingClaimType,
     };
+
+    // Present on bearers minted from a browser session; the request path refuses the bearer once that session ends.
+    internal const string SessionBindingClaimType = "honua_session_binding";
 
     private readonly OperatorBearerOptions _options = options.Value;
 
@@ -33,7 +37,8 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
 
     public OperatorBearerIssuance? Issue(
         IReadOnlyList<AdminAuthSessionClaim> sessionClaims,
-        DateTimeOffset sessionExpiresAt)
+        DateTimeOffset sessionExpiresAt,
+        string? sessionBinding = null)
     {
         ArgumentNullException.ThrowIfNull(sessionClaims);
 
@@ -50,32 +55,19 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             return null;
         }
 
-        var token = SignJwt(sessionClaims, now, expiresAt);
+        var token = SignJwt(CreateClaims(sessionClaims, sessionBinding), now, expiresAt);
         return new OperatorBearerIssuance(token, expiresAt);
     }
 
-    public async Task<IReadOnlyList<AdminAuthSessionClaim>?> TryValidateAsync(string? token)
+    public async Task<OperatorBearerValidation?> TryValidateAsync(string? token)
     {
         if (!Enabled || string.IsNullOrWhiteSpace(token))
         {
             return null;
         }
 
-        var parameters = new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(_options.ResolveKeyBytes()),
-            ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
-            ValidateIssuer = true,
-            ValidIssuer = _options.ResolveIssuer(),
-            ValidateAudience = true,
-            ValidAudience = _options.ResolveAudience(),
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromSeconds(30),
-        };
-
-        var handler = new JsonWebTokenHandler();
-        var result = await handler.ValidateTokenAsync(token, parameters).ConfigureAwait(false);
+        var result = await new JsonWebTokenHandler().ValidateTokenAsync(token, CreateValidationParameters())
+            .ConfigureAwait(false);
         if (!result.IsValid || result.ClaimsIdentity is null)
         {
             return null;
@@ -90,8 +82,28 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             })
             .ToArray();
 
-        return claims.Length == 0 ? null : claims;
+        if (claims.Length == 0)
+        {
+            return null;
+        }
+
+        var binding = result.ClaimsIdentity.FindFirst(SessionBindingClaimType)?.Value;
+        return new OperatorBearerValidation(claims, string.IsNullOrEmpty(binding) ? null : binding);
     }
+
+    private TokenValidationParameters CreateValidationParameters() =>
+        new()
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(_options.ResolveKeyBytes()),
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+            ValidateIssuer = true,
+            ValidIssuer = _options.ResolveIssuer(),
+            ValidateAudience = true,
+            ValidAudience = _options.ResolveAudience(),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30),
+        };
 
     public bool IsOperatorBearerCandidate(string? token)
     {
@@ -117,18 +129,27 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
         }
     }
 
+    private static List<Claim> CreateClaims(IReadOnlyList<AdminAuthSessionClaim> sessionClaims, string? sessionBinding)
+    {
+        var claims = sessionClaims
+            .Where(claim => !ReservedClaimTypes.Contains(claim.Type))
+            .Select(claim => new Claim(claim.Type, claim.Value))
+            .ToList();
+        if (!string.IsNullOrEmpty(sessionBinding))
+        {
+            claims.Add(new Claim(SessionBindingClaimType, sessionBinding));
+        }
+
+        return claims;
+    }
+
     private string SignJwt(
-        IReadOnlyList<AdminAuthSessionClaim> sessionClaims,
+        List<Claim> claims,
         DateTimeOffset issuedAt,
         DateTimeOffset expiresAt)
     {
         var key = new SymmetricSecurityKey(_options.ResolveKeyBytes());
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var claims = sessionClaims
-            .Where(claim => !ReservedClaimTypes.Contains(claim.Type))
-            .Select(claim => new Claim(claim.Type, claim.Value))
-            .ToList();
 
         var now = issuedAt.UtcDateTime;
         var descriptor = new SecurityTokenDescriptor
@@ -148,3 +169,5 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
 }
 
 internal sealed record OperatorBearerIssuance(string Token, DateTimeOffset ExpiresAt);
+
+internal sealed record OperatorBearerValidation(IReadOnlyList<AdminAuthSessionClaim> Claims, string? SessionBinding);
