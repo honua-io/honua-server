@@ -260,6 +260,46 @@ internal static partial class SamlEndpoints
             return BadRequest(context, "Expected a samlp:LogoutRequest.");
         }
 
+        if ((RejectUnverifiedLogoutSignature(context, logoutRequest, logger)
+             ?? RejectLogoutRequestPolicy(context, logoutRequest, logger)) is { } rejected)
+        {
+            return rejected;
+        }
+
+        var logoutError = await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false);
+        if (logoutError is not null)
+        {
+            return logoutError;
+        }
+
+        if (!context.RequestServices.GetRequiredService<SamlLogoutRequestValidator>().TryConsume(logoutRequest))
+        {
+            SamlLog.SingleLogoutRejected(logger, "replay detected or replay store unavailable");
+            return LogoutRejected(context, "SAML logout request replay was detected.");
+        }
+
+        var nameId = logoutRequest.Element(XName.Get("NameID", SamlAssertionNs))?.Value?.Trim();
+        SamlLog.SingleLogoutProcessed(logger, string.IsNullOrEmpty(nameId) ? "(unknown)" : nameId);
+
+        var requestId = logoutRequest.Attribute("ID")?.Value;
+        var logoutResponse = BuildLogoutResponse(opts, requestId);
+        var encodedResponse = Convert.ToBase64String(Encoding.UTF8.GetBytes(logoutResponse));
+
+        // Relay the LogoutResponse back to the IdP via an auto-submitting HTML form (HTTP-POST
+        // binding). With no IdP SLO endpoint configured, return the response payload directly.
+        if (string.IsNullOrWhiteSpace(opts.IdpSingleLogoutServiceUrl))
+        {
+            return Results.Content(logoutResponse, "application/samlp+xml", Encoding.UTF8);
+        }
+
+        var formHtml = BuildAutoPostForm(opts.IdpSingleLogoutServiceUrl!, encodedResponse, relayState);
+        return Results.Content(formHtml, "text/html", Encoding.UTF8);
+    }
+
+    // Unsigned or forged logout requests are refused before anything else is read from them.
+    private static IResult? RejectUnverifiedLogoutSignature(HttpContext context, XElement logoutRequest, ILogger logger)
+    {
+        var opts = context.RequestServices.GetRequiredService<IOptions<SamlAuthenticationOptions>>().Value;
         if (string.IsNullOrWhiteSpace(opts.IdpSigningCertificate))
         {
             SamlLog.SingleLogoutRejected(logger, "no signing certificate configured");
@@ -288,6 +328,13 @@ internal static partial class SamlEndpoints
             }
         }
 
+        return null;
+    }
+
+    // Issuer, freshness and destination checks for a verified logout request.
+    private static IResult? RejectLogoutRequestPolicy(HttpContext context, XElement logoutRequest, ILogger logger)
+    {
+        var opts = context.RequestServices.GetRequiredService<IOptions<SamlAuthenticationOptions>>().Value;
         var issuer = logoutRequest.Element(XName.Get("Issuer", SamlAssertionNs))?.Value?.Trim();
         if (!string.IsNullOrEmpty(opts.IdpEntityId) &&
             !string.Equals(issuer, opts.IdpEntityId, StringComparison.Ordinal))
@@ -296,28 +343,14 @@ internal static partial class SamlEndpoints
             return LogoutRejected(context, "SAML logout request issuer does not match the configured IdP.");
         }
 
-        var logoutError = await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false);
-        if (logoutError is not null)
+        var logoutValidator = context.RequestServices.GetRequiredService<SamlLogoutRequestValidator>();
+        if (logoutValidator.Validate(logoutRequest) is { } logoutFailure)
         {
-            return logoutError;
+            SamlLog.SingleLogoutRejected(logger, logoutFailure);
+            return LogoutRejected(context, logoutFailure);
         }
 
-        var nameId = logoutRequest.Element(XName.Get("NameID", SamlAssertionNs))?.Value?.Trim();
-        SamlLog.SingleLogoutProcessed(logger, string.IsNullOrEmpty(nameId) ? "(unknown)" : nameId);
-
-        var requestId = logoutRequest.Attribute("ID")?.Value;
-        var logoutResponse = BuildLogoutResponse(opts, requestId);
-        var encodedResponse = Convert.ToBase64String(Encoding.UTF8.GetBytes(logoutResponse));
-
-        // Relay the LogoutResponse back to the IdP via an auto-submitting HTML form (HTTP-POST
-        // binding). With no IdP SLO endpoint configured, return the response payload directly.
-        if (string.IsNullOrWhiteSpace(opts.IdpSingleLogoutServiceUrl))
-        {
-            return Results.Content(logoutResponse, "application/samlp+xml", Encoding.UTF8);
-        }
-
-        var formHtml = BuildAutoPostForm(opts.IdpSingleLogoutServiceUrl!, encodedResponse, relayState);
-        return Results.Content(formHtml, "text/html", Encoding.UTF8);
+        return null;
     }
 
     private const string SamlAssertionNs = "urn:oasis:names:tc:SAML:2.0:assertion";

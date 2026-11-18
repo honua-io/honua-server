@@ -142,6 +142,21 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /saml/slo")]
+    public async Task Slo_SameSignedLogoutRequestTwice_SecondIsRejected()
+    {
+        var samlRequest = SamlTestAssertions.CreateSignedLogoutRequest(_certificate, "replay-user@example.com");
+
+        using var first = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        using var second = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        var firstResponse = await _client.PostAsync("/saml/slo", first);
+        var secondResponse = await _client.PostAsync("/saml/slo", second);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, secondResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
     public async Task Slo_MissingSamlRequest_ReturnsBadRequest()
     {
         using var sloContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["RelayState"] = "x" });
