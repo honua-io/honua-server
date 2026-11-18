@@ -72,6 +72,19 @@ public class Cql2JsonParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"op":"=","args":[{"property":"name"},"\udc00 note"]}""")]
+    [InlineData("""{"op":"=","args":[{"property":"\ud800"},"value"]}""")]
+    [InlineData("""{"op":5,"args":[{"property":"name"},"value"]}""")]
+    [InlineData("""{"op":"=","args":[{"property":true},"value"]}""")]
+    public void Parse_UnreadableStringMember_ThrowsArgumentException(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>().WithMessage("Invalid CQL2-JSON payload*");
+    }
+
     private static string FlatLogicalJson(string op, int operandCount)
         => $$"""{"op":"{{op}}","args":[""" +
            string.Join(",", Enumerable.Repeat("""{"op":"=","args":[{"property":"name"},"a"]}""", operandCount)) +

@@ -42,7 +42,7 @@ public class ConsoleActionEvaluatorTests
 
     private static ClaimsPrincipal Anonymous() => new(new ClaimsIdentity());
 
-    private static ConsoleContentItem Sample(ConsoleVisibility visibility = ConsoleVisibility.Organization, string owner = "other-user", ConsoleContentItemType type = ConsoleContentItemType.SavedMap)
+    private static ConsoleContentItem Sample(ConsoleVisibility visibility = ConsoleVisibility.Organization, string owner = "other-user", ConsoleContentItemType type = ConsoleContentItemType.Map)
     {
         return new ConsoleContentItem
         {

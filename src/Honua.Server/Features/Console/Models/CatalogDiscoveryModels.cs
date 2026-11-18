@@ -11,7 +11,7 @@ namespace Honua.Server.Features.Console.Models;
 // (IHonuaCatalogDiscoveryClient) so the live binding activates the moment this
 // API publishes. This surface is DISTINCT from the singular content catalog
 // (/api/v1/console/content): it describes *which discovery dialects the
-// server publishes to consumers* (Esri catalog, OGC API Records, OData, STAC,
+// server publishes to consumers* (GeoServices catalog, OGC API Records, OData, STAC,
 // DCAT), not the content items themselves.
 
 public static class CatalogDialects
@@ -83,11 +83,11 @@ public sealed record CatalogEndpoint
 
 public sealed record CatalogDiscoveryRegistry
 {
-    [JsonPropertyName("workspaceId")]
-    public required string WorkspaceId { get; init; }
+    [JsonPropertyName("environmentId")]
+    public required string EnvironmentId { get; init; }
 
-    [JsonPropertyName("workspaceName")]
-    public string? WorkspaceName { get; init; }
+    [JsonPropertyName("environmentName")]
+    public string? EnvironmentName { get; init; }
 
     [JsonPropertyName("publicHost")]
     public string? PublicHost { get; init; }

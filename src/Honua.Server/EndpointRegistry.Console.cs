@@ -54,9 +54,9 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/open-data/stac/collections/{collectionId}"),
         new("GET", "/api/v1/open-data/stac/collections/{collectionId}/items/{itemId}"),
         // v1 Console catalog discovery-endpoints registry read API
-        new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}"),
-        new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}"),
-        new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}"),
+        new("GET", "/api/v1/console/catalog-endpoints/{environmentId}"),
+        new("GET", "/api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}"),
+        new("GET", "/api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}/items/{itemId}"),
         new("POST", "/api/v1/admin/packages/validate"),
         new("POST", "/api/v1/admin/packages/preview"),
         new("POST", "/api/v1/admin/packages"),

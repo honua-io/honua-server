@@ -206,11 +206,10 @@ The deterministic identifiers Console asserts by (auth: `X-API-Key` admin key):
 
 ## Notes
 
-- Durable jobs and logs persist to PostgreSQL fixture tables
-  (`honua.operate_fixture_execution_jobs`, `honua.operate_fixture_execution_logs`),
-  registered only when the fixture is enabled and no Redis-backed job/log store
-  is already present. This satisfies the PostgreSQL-only Testcontainers shape
-  without standing up Redis.
+- Durable jobs and logs are seeded into the regular PostgreSQL job and log
+  store. The fixture tables (`honua.operate_fixture_execution_jobs`,
+  `honua.operate_fixture_execution_logs`) are a fallback, registered only when
+  the fixture is enabled and no job/log store is already registered.
 - Recent logs are seeded into the process-local `RecentErrorBuffer`, matching the
   production `/observability/logs` source. They are deterministic for a single
   running server instance but are not durable across server restarts; re-seed

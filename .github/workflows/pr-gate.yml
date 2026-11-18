@@ -195,12 +195,12 @@ jobs:
     # (start_heavy); forks always stay hosted.
     runs-on: ${{ contains(needs.runner-select.outputs.start_heavy, format(',{0},', matrix.test-group)) && vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 45
-    # Each group compiles only its own test roots; the producer and the analyzer
-    # job compile the diff's affected closure.
+    # Architecture and unit-fast compile their own roots in parallel with the
+    # producer. server-fast and server-governance are fast-server-tests.
     strategy:
       fail-fast: false
       matrix:
-        test-group: [architecture, unit-fast, server-fast, server-governance]
+        test-group: [architecture, unit-fast]
     steps:
       - *job-temp
       # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
@@ -263,12 +263,119 @@ jobs:
           echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
 
 
-      # This independent build avoids serializing Fast coverage behind the producer.
+      # Keep this build off the producer path. Server.Tests groups restore it.
       - name: Lean gate (build and fast unit/architecture verification)
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
         uses: ./.github/actions/lean-gate
         with:
           phase: all
+          test-group: ${{ matrix.test-group }}
+          trx-prefix: pr-fast-${{ matrix.test-group }}
+          prepull-postgis: ${{ matrix.test-group == 'server-governance' }}
+          build-scope: test-roots
+          run-format: 'false'
+          run-analyzers: 'false'
+
+      - name: Revalidate exact-head review before success
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const revalidate = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/revalidate-exact-head-review.cjs`);
+            await revalidate({ github, context, core, expectedHead: '${{ github.event.pull_request.head.sha }}' });
+
+  fast-server-tests:
+    name: PR Gate / Fast and architecture (${{ matrix.test-group }})
+    # Start after the parallel producer so a ready Server.Tests build is restored
+    # instead of compiled again. Architecture and unit-fast stay on fast-tests.
+    needs: [runner-select, server-test-producer]
+    runs-on: ${{ contains(needs.runner-select.outputs.start_heavy, format(',{0},', matrix.test-group)) && vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        test-group: [server-fast, server-governance]
+    steps:
+      - *job-temp
+      - name: Await exact-head review
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
+        run: |
+          echo "Admission passed; exact-head review has not released Fast and architecture verification yet."
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        with:
+          fetch-depth: 2
+
+      - name: Classify validated generated-only diff
+        id: generated-only
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/classify-generated-output.sh
+
+      - name: Classify docs-only diff
+        id: docs-only
+        run: scripts/ci/docs-only-diff.sh --github-output
+
+      - name: Select affected fast-test groups
+        id: fast-selection
+        run: python3 scripts/ci/compute-fast-test-selection.py --github-output
+
+      - name: Free disk space
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false' && runner.environment == 'github-hosted'
+        run: |
+          nohup sudo rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup /opt/hostedtoolcache/CodeQL >/dev/null 2>&1 &
+
+      - name: Setup .NET
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          artifact-sdk-version: ${{ needs.server-test-producer.outputs.managed-sdk-version }}
+
+      - name: Load validated flaky-test quarantine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_TEST_QUARANTINE_FILE: ${{ runner.temp }}/honua-flake-quarantine.json
+        run: |
+          python3 scripts/ci/quarantine-issues.py snapshot --output "${HONUA_TEST_QUARANTINE_FILE}"
+          echo "HONUA_TEST_QUARANTINE_FILE=${HONUA_TEST_QUARANTINE_FILE}" >> "${GITHUB_ENV}"
+
+      - name: Plan server test restore
+        id: consumer-plan
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
+        run: |
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/managed-test-build.py projects --lane shard --project tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --output artifacts/pr-gate/fast-server-projects.json
+          python3 scripts/ci/partition-managed-producer.py consumer --projects-file artifacts/pr-gate/fast-server-projects.json --output "${GITHUB_OUTPUT}"
+
+      - name: Restore verified managed test outputs
+        id: managed-consumer
+        if: steps.consumer-plan.outputs.producer == 'server'
+        uses: ./.github/actions/managed-test-artifacts
+        with:
+          mode: consume
+          projects-file: artifacts/pr-gate/fast-server-projects.json
+          producer-attempt: ${{ needs.server-test-producer.outputs.producer-attempt }}
+          enabled: ${{ steps.consumer-plan.outputs.producer == 'server' && vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
+
+      - name: Record server test restore
+        id: server-restore
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
+        env:
+          RESTORED_PROJECTS: ${{ steps.managed-consumer.outputs.restored-projects-file }}
+        run: |
+          python3 -c 'import json, os, pathlib; p=os.environ.get("RESTORED_PROJECTS") or ""; want="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"; projects=json.loads(pathlib.Path(p).read_text()) if p and pathlib.Path(p).is_file() else []; open(os.environ["GITHUB_OUTPUT"], "a").write("restored=" + ("true" if want in projects else "false") + "\n")'
+
+      - name: Lean gate (build and fast unit/architecture verification)
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true' && steps.fast-selection.outputs[matrix.test-group] != 'false'
+        uses: ./.github/actions/lean-gate
+        with:
+          phase: ${{ steps.server-restore.outputs.restored == 'true' && 'test' || 'all' }}
           test-group: ${{ matrix.test-group }}
           trx-prefix: pr-fast-${{ matrix.test-group }}
           prepull-postgis: ${{ matrix.test-group == 'server-governance' }}
@@ -340,6 +447,7 @@ jobs:
           python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --time-budget --annotate-resources --json "artifacts/pr-gate/server-producer-shards.json"
           python3 scripts/ci/managed-test-build.py projects --lane pr-shards --matrix-file "artifacts/pr-gate/server-producer-shards.json" --output "artifacts/pr-gate/server-projects.json"
           python3 scripts/ci/partition-managed-producer.py server-projects --projects-file "artifacts/pr-gate/server-projects.json" --output "artifacts/pr-gate/server-projects.json"
+          python3 -c 'import json; from pathlib import Path; path = Path("artifacts/pr-gate/server-projects.json"); projects = json.loads(path.read_text() or "[]"); server = "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"; projects = projects if server in projects else projects + [server]; path.write_text(json.dumps(projects) + "\n")'
 
       # Compile even when no selected shard consumes Server.Tests: this retains
       # full-fallback coverage after excluding it from the main producer.
@@ -1361,7 +1469,7 @@ jobs:
     # PR marked ready merge before its heavy jobs ran. Ready runs keep the name.
     name: ${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}
     if: always()
-    needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]
+    needs: [pr-gate, fast-tests, fast-server-tests, format, ci-router-validation, affected-shards, server-test-producer]
     runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
@@ -1372,6 +1480,7 @@ jobs:
           SERVER_PRODUCER_RESULT: ${{ needs.server-test-producer.result }}
           BUILD_AND_TEST_RESULT: ${{ needs.pr-gate.result }}
           FAST_RESULT: ${{ needs.fast-tests.result }}
+          FAST_SERVER_RESULT: ${{ needs.fast-server-tests.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
           CI_ROUTER_RESULT: ${{ needs.ci-router-validation.result }}
           AFFECTED_SHARDS_RESULT: ${{ needs.affected-shards.result }}
@@ -1383,7 +1492,7 @@ jobs:
               echo "::error::Draft PR Gate failed: format=${FORMAT_RESULT}"
               exit 1
             fi
-            for result in "${SERVER_PRODUCER_RESULT}" "${BUILD_AND_TEST_RESULT}" "${FAST_RESULT}" "${CI_ROUTER_RESULT}" "${AFFECTED_SHARDS_RESULT}"; do
+            for result in "${SERVER_PRODUCER_RESULT}" "${BUILD_AND_TEST_RESULT}" "${FAST_RESULT}" "${FAST_SERVER_RESULT}" "${CI_ROUTER_RESULT}" "${AFFECTED_SHARDS_RESULT}"; do
               if [[ "${result}" != success && "${result}" != skipped ]]; then
                 echo "::error::Draft PR Gate failed: heavy dependency=${result}"
                 exit 1
@@ -1400,8 +1509,8 @@ jobs:
             echo "::error::PR Gate failed: server-producer=${SERVER_PRODUCER_RESULT}"
             exit 1
           fi
-          if [[ "${FAST_RESULT}" != "success" || "${BUILD_AND_TEST_RESULT}" != "success" || "${FORMAT_RESULT}" != "success" || "${CI_ROUTER_RESULT}" != "success" ]]; then
-            echo "::error::PR Gate failed: fast=${FAST_RESULT}, build=${BUILD_AND_TEST_RESULT}, format=${FORMAT_RESULT}, ci-router-validation=${CI_ROUTER_RESULT}"
+          if [[ "${FAST_RESULT}" != "success" || "${FAST_SERVER_RESULT}" != "success" || "${BUILD_AND_TEST_RESULT}" != "success" || "${FORMAT_RESULT}" != "success" || "${CI_ROUTER_RESULT}" != "success" ]]; then
+            echo "::error::PR Gate failed: fast=${FAST_RESULT}, fast-server=${FAST_SERVER_RESULT}, build=${BUILD_AND_TEST_RESULT}, format=${FORMAT_RESULT}, ci-router-validation=${CI_ROUTER_RESULT}"
             exit 1
           fi
 
