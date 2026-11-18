@@ -25,7 +25,17 @@ internal static class AdminApiOperationCatalog
         bool SupportsDryRun = false,
         string? DryRunPath = null,
         IReadOnlySet<string>? QueryParameters = null,
-        bool RawBody = false);
+        bool RawBody = false) : IAdminHttpOperationDefinition
+    {
+        public OperationSideEffectClass SideEffect => Destructive
+            ? OperationSideEffectClass.MutatesMetadata : OperationSideEffectClass.ReadOnly;
+        public OperationBlastRadiusClass BlastRadius => Path.StartsWith("/services", StringComparison.Ordinal)
+            ? OperationBlastRadiusClass.ServiceScope : OperationBlastRadiusClass.ResourceScope;
+        public OperationApprovalModel? ApprovalModel => OperatorJourneyApproval.ForMutation(OperationId, Destructive);
+        public HttpMethod? DryRunMethod => null;
+        public string? ContentType => OpenApiOperationId == "importLayerSldStyle" ? "application/xml" : "application/json";
+        public OperationClass OperationClass => OperationClass.AdminConfigChange;
+    }
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
@@ -129,11 +139,11 @@ internal static class AdminApiOperationCatalog
             Description = operation.TryGetProperty("description", out var description) ? description.GetString()! : definition.Title,
             Category = "admin",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = OperatorJourneyApproval.ForMutation(definition.OperationId, definition.Destructive),
+            ApprovalModel = definition.ApprovalModel!.Value,
             Policy = new OperationPolicyMetadata
             {
-                BlastRadiusClass = definition.Path.StartsWith("/services", StringComparison.Ordinal) ? OperationBlastRadiusClass.ServiceScope : OperationBlastRadiusClass.ResourceScope,
-                SideEffectClass = definition.Destructive ? OperationSideEffectClass.MutatesMetadata : OperationSideEffectClass.ReadOnly,
+                BlastRadiusClass = definition.BlastRadius,
+                SideEffectClass = definition.SideEffect,
                 Determinism = OperationDeterminism.RuntimeDynamic,
                 SupportsDryRun = definition.SupportsDryRun
             },
@@ -246,7 +256,7 @@ internal sealed class AdminApiOperationApprovalRequestMapper(
         {
             OperationInstanceId = context.OperationInstanceId,
             OperationId = OperationId,
-            Kind = OperationClass.AdminConfigChange,
+            Kind = definition.OperationClass,
             RequestedBy = context.PrincipalId,
             Reason = decision.Reason,
             CorrelationId = context.CorrelationId,

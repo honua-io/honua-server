@@ -20,6 +20,15 @@ services:
     image: ${HONUA_CANDIDATE_IMAGE:?set HONUA_CANDIDATE_IMAGE to the candidate image digest reference}
     pull_policy: never
     build: !reset null
+    environment:
+      # Every client reaches the candidate through the one `wire` proxy address, and the
+      # cells deliberately send wrong keys and expired bearers. The failed-attempt limiter
+      # (10 per source in 15 minutes) would then refuse the proxy, and with it every valid
+      # credential of later cells. The proxy fronts many clients, so exempt the container
+      # ranges as the authentication guide advises; wrong credentials are still refused.
+      Authentication__FailedAttempts__ExemptNetworks__0: "172.16.0.0/12"
+      Authentication__FailedAttempts__ExemptNetworks__1: "192.168.0.0/16"
+      Authentication__FailedAttempts__ExemptNetworks__2: "10.0.0.0/8"
     networks:
       compat:
         aliases:
