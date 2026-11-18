@@ -37,6 +37,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     : IClassFixture<ExportEndpointTests.ExportHost>, IAsyncLifetime
 {
     private const string JobsRoute = "/api/v1/admin/tile-operations/jobs";
+    private const string ExportsRoute = "/api/v1/admin/exports";
     private const string IdentityField = "name";
     private const string HiddenField = "notes";
     private readonly WebAppFixture _fixture = host.Fixture;
@@ -99,7 +100,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     private ICloudFileStorage Storage => _fixture.GetOptionalService<ICloudFileStorage>()!;
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("POST /api/v1/admin/exports")]
     public async Task Export_Layer_WritesBothArtifactsFromOneCaptureWithoutHiddenFields()
     {
         HideField(HiddenField);
@@ -137,7 +138,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("POST /api/v1/admin/exports")]
     public async Task Export_Republish_SwitchesThePointerAndKeepsThePreviousVersion()
     {
         var first = await PublishAsync(IdentityField);
@@ -150,7 +151,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     }
 
     [IntegrationTheory]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("POST /api/v1/admin/exports")]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Export_ReplayedOperation_DoesNotCaptureOrActivateAnotherVersion(bool pointerMoved)
@@ -192,7 +193,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("POST /api/v1/admin/exports")]
     public async Task BeginOperation_OverlappingAttempts_ReservesOnlyOneArtifactVersion()
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
@@ -211,7 +212,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("POST /api/v1/admin/exports")]
     public async Task Export_FailedRun_LeavesThePreviousVersionActive()
     {
         var first = await PublishAsync(IdentityField);
@@ -229,7 +230,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("POST /api/v1/admin/exports")]
     public async Task Export_ExportIdOfAnotherLayer_IsRefusedAndKeepsItsPointer()
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
@@ -253,7 +254,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     }
 
     [IntegrationTheory]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("POST /api/v1/admin/exports")]
     [InlineData("schemaName", "unmanaged_paired_source")]
     [InlineData("layerDiscriminatorColumn", "other_layer_id")]
     [InlineData("primaryKeyColumn", "other_id")]
@@ -283,7 +284,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("POST /api/v1/admin/exports")]
     public async Task SwitchPointer_StaleOrMissingExpectation_IsRefused()
     {
         var options = _fixture.Services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
@@ -301,28 +302,58 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     }
 
     [IntegrationTheory]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    [InlineData("""{"operation":"export","serviceId":"test","layerId":0,"identityField":"name"}""")]
-    [InlineData("""{"operation":"export","serviceId":"test","layerId":0,"exportId":"Not_Valid","identityField":"name"}""")]
-    [InlineData("""{"operation":"export","serviceId":"test","layerId":0,"exportId":"maui-parcels"}""")]
-    [InlineData("""{"operation":"export","layerId":0,"exportId":"maui-parcels","identityField":"name"}""")]
-    [InlineData("""{"operation":"export","serviceId":"test","layerId":0,"exportId":"maui-parcels","identityField":"name","bbox":[0,0,1,1]}""")]
-    public async Task StartJob_InvalidExportRequest_ReturnsBadRequest(string body)
+    [Endpoint("POST /api/v1/admin/exports")]
+    [InlineData("Not_Valid", null)]
+    [InlineData(null, "not portable")]
+    public async Task CreateExport_InvalidIdOrIdentityField_ReturnsBadRequest(string? exportId, string? identityField)
     {
-        using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
-
-        using var response = await _client.PostAsync(JobsRoute, content);
+        using var response = await _client.PostAsJsonAsync(ExportsRoute, new
+        {
+            source = new { kind = "layer", serviceId = WebAppFixture.TestServiceId, layerId = WebAppFixture.TestLayerId },
+            exportId,
+            identityField
+        });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/exports")]
+    [InlineData("upload", HttpStatusCode.UnprocessableEntity)]
+    [InlineData("layer", HttpStatusCode.NotFound)]
+    public async Task CreateExport_UnsupportedOrUnknownSource_IsRefused(string kind, HttpStatusCode expected)
+    {
+        using var response = await _client.PostAsJsonAsync(ExportsRoute, new
+        {
+            source = new { kind, serviceId = WebAppFixture.TestServiceId, layerId = 987654 }
+        });
+
+        response.StatusCode.Should().Be(expected);
+        Property(JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement, "success").GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTheory]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task StartJob_ExportWithoutCredentials_IsRefused()
+    [InlineData("export")]
+    [InlineData("paired-publish")]
+    public async Task StartJob_ExportOperation_IsRefusedAndNamesTheExportsRoute(string operation)
+    {
+        using var response = await _client.PostAsJsonAsync(JobsRoute, new
+        {
+            operation, serviceId = WebAppFixture.TestServiceId, layerId = WebAppFixture.TestLayerId
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(ExportsRoute);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/exports")]
+    public async Task CreateExport_WithoutCredentials_IsRefused()
     {
         using var anonymous = _fixture.CreateClient();
 
-        using var response = await anonymous.PostAsJsonAsync(JobsRoute, PublishBody(IdentityField));
+        using var response = await anonymous.PostAsJsonAsync(ExportsRoute, PublishBody(IdentityField));
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
     }
@@ -336,14 +367,11 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
 
     private object PublishBody(string identityField) => new
     {
-        operation = "export",
-        serviceId = WebAppFixture.TestServiceId,
-        layerId = WebAppFixture.TestLayerId,
+        source = new { kind = "layer", serviceId = WebAppFixture.TestServiceId, layerId = WebAppFixture.TestLayerId },
         exportId = _exportId,
         identityField,
         minZoom = 0,
-        maxZoom = 2,
-        maxTiles = 50
+        maxZoom = 2
     };
 
     private async Task<PublishedExportVersion> PublishAsync(string identityField)
@@ -352,17 +380,17 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
         using (json)
         {
             status.Should().Be(OperationStatus.Completed, Property(json!.RootElement, "errorMessage").ToString());
-            return Property(json.RootElement, "publishedPublication").Deserialize<PublishedExportVersion>(
+            return Property(json.RootElement, "publishedExportVersion").Deserialize<PublishedExportVersion>(
                 new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         }
     }
 
     private async Task<(OperationStatus? Status, JsonDocument? Json)> RunAsync(string identityField)
     {
-        using var response = await _client.PostAsJsonAsync(JobsRoute, PublishBody(identityField));
-        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        using var response = await _client.PostAsJsonAsync(ExportsRoute, PublishBody(identityField));
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
         using var started = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var jobId = Property(started.RootElement, "jobId").GetString()!;
+        var jobId = Property(Property(started.RootElement, "data"), "jobId").GetString()!;
 
         var deadline = DateTime.UtcNow.AddSeconds(60);
         while (DateTime.UtcNow < deadline)
