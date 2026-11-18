@@ -59,13 +59,19 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
         };
         if (await ExceedsMonthlyActorAsync(monthly, cancellationToken).ConfigureAwait(false))
             return ("financial_monthly_actor_exceeded", null);
+        var incident = policy.IncidentWorkflows?.SingleOrDefault(binding => binding.WorkflowKey == context.WorkflowKey);
+        var incidentCode = await CheckIncidentReservationAsync(monthly, incident, cancellationToken).ConfigureAwait(false);
+        if (incidentCode is not null) return (incidentCode, null);
+        var incidentColumns = policy.Incident is null ? string.Empty : ", incident_authority, incident_episode, incident_version";
+        var incidentValues = policy.Incident is null ? string.Empty : ", @incident_authority, @incident_episode, @incident_version";
         await using var insert = new NpgsqlCommand($"""
             INSERT INTO {_financial} (deployment_id, attempt_id, generation_id, grant_epoch, deadline_at, lease_expires_at, actor_key, use_case, workflow_key,
                 period_start, reserved_at, request_digest, provider, destination_digest, basis_digest, basis_json, currency, money_scale,
-                reserved_input, reserved_output, reserved_money, retained_input, retained_output, charged_tokens, charged_money, state)
+                reserved_input, reserved_output, reserved_money, retained_input, retained_output, charged_tokens, charged_money, state{incidentColumns})
             VALUES (@deployment, @attempt, @generation, @epoch, @deadline, @expires, @actor, @use_case, @workflow, @period, @now,
-                @request, @provider, @destination, @basis, @basis_json, @currency, @scale, @input, @output, @money, @input, @output, @tokens, @money, 'reserved')
+                @request, @provider, @destination, @basis, @basis_json, @currency, @scale, @input, @output, @money, @input, @output, @tokens, @money, 'reserved'{incidentValues})
             """, connection, transaction);
+        if (policy.Incident is not null) BindIncident(insert, incident!);
         insert.Parameters.AddWithValue("deployment", context.DeploymentId);
         insert.Parameters.AddWithValue("attempt", attemptId);
         insert.Parameters.AddWithValue("generation", state.Generation);
@@ -121,6 +127,8 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
             || state.Policy.Financial is not { IsValid: true } policy || policy.Basis.Digest != financial.BasisDigest
             || now < policy.Basis.EffectiveUtc || now >= policy.Basis.ExpiresUtc || now >= reservation.DeadlineUtc)
             return false;
+        if (policy.Incident is not null && !await ValidateIncidentSendAsync(
+            new(connection, transaction, reservation), cancellationToken).ConfigureAwait(false)) return false;
         await using var commit = new NpgsqlCommand($"""
             UPDATE {_financial} f SET state = 'send-committed', send_committed_at = @now
             WHERE f.deployment_id = @deployment AND f.attempt_id = @attempt AND f.generation_id = @generation

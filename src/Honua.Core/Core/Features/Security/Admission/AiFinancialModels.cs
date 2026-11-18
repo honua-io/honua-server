@@ -30,6 +30,10 @@ public sealed record AiFinancialPolicy
     public AiFinancialLimits Actor { get; init; } = new();
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AiFinancialLimits? MonthlyActor { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AiFinancialLimits? Incident { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AiIncidentWorkflowBinding[]? IncidentWorkflows { get; init; }
     public AiFinancialLimits Cohort { get; init; } = new();
     public AiFinancialLimits Workflow { get; init; } = new();
     // JournalCapacity is a lifetime cap. Exhaustion denies admission and does not evict liability history.
@@ -42,7 +46,11 @@ public sealed record AiFinancialPolicy
         && PeriodSeconds is >= 60 and <= 2_678_400 && JournalCapacity is > 0 and <= 8192
         && Deployment is { IsValid: true } && Actor is { IsValid: true } && Cohort is { IsValid: true }
         && Workflow is { IsValid: true } && Basis is { IsValid: true }
-        && (MonthlyActor is null || MonthlyActor.IsValid);
+        && (MonthlyActor is null || MonthlyActor.IsValid)
+        && (Incident is null || Incident.IsValid)
+        && (IncidentWorkflows is null || (Incident is not null && IncidentWorkflows.Length <= 64
+            && IncidentWorkflows.All(binding => binding is { IsValid: true })
+            && IncidentWorkflows.Select(binding => binding.Workflow).Distinct(StringComparer.Ordinal).Count() == IncidentWorkflows.Length));
 
     public bool HasSameAccountingIdentity(AiFinancialPolicy other) => Currency == other.Currency && MoneyScale == other.MoneyScale
         && PeriodAnchorUtc == other.PeriodAnchorUtc && PeriodSeconds == other.PeriodSeconds;
