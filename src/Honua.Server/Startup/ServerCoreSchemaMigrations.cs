@@ -29,6 +29,19 @@ internal static class ServerCoreSchemaMigrations
         KnownMigrationNames = typeof(ServerCoreSchemaMigrations).Assembly.GetManifestResourceNames()
             .Concat(typeof(PostgresDatabaseMigrationRunner).Assembly.GetManifestResourceNames())
             .Where(name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
-            .ToHashSet(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal),
+        ResidentTables =
+        [
+            new HonuaResidentTableBinding(
+                "Honua.Server.Migrations.157_FeatureChangeRealtimeStream.sql",
+                "feature_changes",
+                "feature_change_outbox"),
+            new HonuaResidentTableBinding(
+                "Honua.Server.Migrations.199_AddAnalysisContentTenantOwnership.sql",
+                "analysis_content_items"),
+            new HonuaResidentTableBinding(
+                "Honua.Server.Migrations.215_AddConsoleAccessEnvironmentOwnership.sql",
+                "rbac_role_permissions")
+        ]
     };
 }
