@@ -2054,6 +2054,7 @@ if (offlineSyncEnabled)
 }
 app.MapTileOperationsEndpoints();
 app.MapExportReadEndpoints();
+app.MapExportAdminEndpoints();
 
 // Map metrics endpoints for monitoring APIs
 app.MapMetricsEndpoints();

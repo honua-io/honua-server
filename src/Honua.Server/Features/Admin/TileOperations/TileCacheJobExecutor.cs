@@ -141,7 +141,8 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             request.Operation,
             request.ServiceId,
             request.LayerId,
-            request.TileMatrixSetId) with
+            request.TileMatrixSetId,
+            request.ExportId) with
         {
             Status = OperationStatus.Processing,
             CurrentPhase = $"Running {request.Operation} operation"

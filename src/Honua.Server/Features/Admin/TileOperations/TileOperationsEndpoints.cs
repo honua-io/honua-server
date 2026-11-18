@@ -8,7 +8,6 @@ using Honua.Infrastructure.Security;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
-using Honua.Server.Features.Admin.Exports;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -20,13 +19,13 @@ internal static class TileOperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tile Operations")
-            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish/export job control")
+            .WithDescription("Tile cache seed/warm/invalidate/purge/archive/publish job control")
             .RequireAdminAuthorization();
 
         _ = group.MapPost("/jobs", HandleStartJob)
             .WithName("StartTileOperationJob")
             .WithSummary("Start a tile operation job")
-            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive, publish, export) for asynchronous execution");
+            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive, publish) for asynchronous execution");
 
         _ = group.MapGet("/jobs/{jobId}", HandleGetJobStatus)
             .WithName("GetTileOperationJobStatus")
@@ -281,14 +280,13 @@ internal static class TileOperationsEndpoints
                 "Publish operations require 'layerId'.");
         }
 
-        if (operation is TileCacheExecutionSpecBuilder.ExportOperation
-            && ExportRequestRules.Problem(request) is { } pairedProblem)
+        if (operation is TileCacheExecutionSpecBuilder.ExportOperation or "paired-publish")
         {
             return ProblemDetailsHelpers.CreateAdminProblemDetails(
                 context,
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                pairedProblem);
+                "Export a Layer as files with POST /api/v1/admin/exports.");
         }
 
         return null;

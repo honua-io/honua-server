@@ -18,14 +18,14 @@ internal static class ExportReadEndpoints
 {
     internal static IEndpointRouteBuilder MapExportReadEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v1/publications/{exportId}")
-            .WithTags("Publications").CacheOutput(policy => policy.NoCache());
+        var group = endpoints.MapGroup("/api/v1/exports/{exportId}")
+            .WithTags("Exports").CacheOutput(policy => policy.NoCache());
         group.MapMethods("/current.json", ["GET", "HEAD"], CurrentAsync)
-            .WithName("GetCurrentPairedPublication")
-            .WithSummary("Resolve a paired publication to its immutable descriptor URL");
+            .WithName("GetCurrentExportVersion")
+            .WithSummary("Resolve an Export to its current Version's collection document");
         group.MapMethods("/{version}/{fileName}", ["GET", "HEAD"], VersionAsync)
-            .WithName("GetPairedPublicationArtifact")
-            .WithSummary("Read an authorized paired publication descriptor or artifact with byte ranges");
+            .WithName("GetExportVersionFile")
+            .WithSummary("Read an authorized Export collection document or file with byte ranges");
         return endpoints;
     }
 
@@ -40,7 +40,7 @@ internal static class ExportReadEndpoints
         var target = await reader.ResolveCurrentAsync(exportId, cancellationToken).ConfigureAwait(false);
         var error = await RequireAccessAsync(context, target, cancellationToken).ConfigureAwait(false);
         return error ?? Results.Redirect(
-            $"{context.Request.PathBase}/api/v1/publications/{exportId}/{target!.Descriptor.Version}/{ExportCollectionDocument.FileName}",
+            $"{context.Request.PathBase}/api/v1/exports/{exportId}/{target!.Descriptor.Version}/{ExportCollectionDocument.FileName}",
             permanent: false, preserveMethod: true);
     }
 
@@ -105,7 +105,7 @@ internal static class ExportReadEndpoints
             services.GetRequiredService<IFieldMaskSource>());
         var query = await security.ApplyAsync(target.Source.Resource, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         return query.EnforcedSqlFilter is not null || query.EnforcedMaskedFields is { IsDefaultOrEmpty: false }
-            ? StandardErrorHelpers.CreateForbidden(context, "This publication cannot satisfy the current read policy.")
+            ? StandardErrorHelpers.CreateForbidden(context, "This Export cannot satisfy the current read policy.")
             : null;
     }
 }

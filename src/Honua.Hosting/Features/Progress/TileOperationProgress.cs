@@ -27,6 +27,9 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
     public string? DownloadUrl { get; init; }
     public PMTilesArtifactDescriptor? PublishedArtifact { get; init; }
     public PublishedExportVersion? PublishedExportVersion { get; init; }
+
+    // The Export this job writes a Version of; null for tile operations.
+    public string? ExportId { get; init; }
     public DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public string? ErrorMessage { get; init; }
@@ -61,10 +64,12 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
         string operation,
         string? serviceId,
         int? layerId,
-        string? tileMatrixSetId)
+        string? tileMatrixSetId,
+        string? exportId = null)
         => new()
         {
             JobId = jobId,
+            ExportId = exportId,
             Operation = operation,
             ServiceId = serviceId,
             LayerId = layerId,
