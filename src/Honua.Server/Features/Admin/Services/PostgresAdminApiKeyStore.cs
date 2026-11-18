@@ -90,7 +90,7 @@ internal sealed class PostgresAdminApiKeyStore(
         });
         command.Parameters.AddWithValue("created", record.CreatedAt);
         command.Parameters.AddWithValue("updated", record.UpdatedAt);
-        command.Parameters.Add(new NpgsqlParameter("expires", NpgsqlDbType.TimestampTz) { Value = (object?)record.ExpiresAt ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter("expires", NpgsqlDbType.TimestampTz) { Value = record.ExpiresAt is { } expires ? expires : DBNull.Value });
         command.Parameters.Add(new NpgsqlParameter("createdBy", NpgsqlDbType.Text) { Value = (object?)record.CreatedBy ?? DBNull.Value });
         command.Parameters.Add(TextArrayOrNull("allowedReferrers", record.AllowedReferrers));
         command.Parameters.Add(TextArrayOrNull("allowedIpRanges", record.AllowedIpRanges));
