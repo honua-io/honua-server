@@ -169,7 +169,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
 
         // Standard feature query
-        foreach (var field in layer.AttributeFields)
+        foreach (var field in queryContext.SchemaFields)
         {
             response.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
         }
@@ -186,7 +186,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                     queryContext.GeometryLimits,
                     query.Distinct ? null : pkField,
                     queryContext.AttributeHiddenFields,
-                    layer.AttributeFields),
+                    queryContext.SchemaFields),
                 feature,
                 queryContext.GlobalIdField));
         }
@@ -237,7 +237,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                     queryContext.GeometryLimits,
                     query.Distinct ? null : pkField,
                     queryContext.AttributeHiddenFields,
-                    layer.AttributeFields),
+                    queryContext.SchemaFields),
                 enumerator.Current,
                 queryContext.GlobalIdField));
 
@@ -980,7 +980,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             page.GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType);
             page.SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(queryContext.ResponseSpatialReference);
 
-            foreach (var field in layer.AttributeFields)
+            foreach (var field in queryContext.SchemaFields)
             {
                 page.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
             }
@@ -1105,7 +1105,13 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 wkt: string.IsNullOrWhiteSpace(request.OutSr?.Wkt) ? null : request.OutSr!.Wkt)
             : layer.SpatialReference;
 
-        var (projected, attributeHiddenFields) = WithGlobalIdField(query, globalIdField, layer.HiddenFields);
+        var masked = await MaskedFieldNamesAsync(layer.Resource, requestServices, cancellationToken).ConfigureAwait(false);
+        var (projected, attributeHiddenFields) = WithGlobalIdField(
+            query,
+            globalIdField,
+            masked.Count == 0
+                ? layer.HiddenFields
+                : new HashSet<string>(layer.HiddenFields.Concat(masked), StringComparer.OrdinalIgnoreCase));
         return new QueryContext(
             projected,
             responseSpatialReference,
@@ -1114,6 +1120,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         {
             GlobalIdField = globalIdField,
             AttributeHiddenFields = attributeHiddenFields,
+            SchemaFields = layer.AttributeFields.Where(field => !masked.Contains(field.Name)).ToArray(),
         };
     }
 
@@ -1406,6 +1413,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         public string? GlobalIdField { get; init; }
 
         public IReadOnlySet<string> AttributeHiddenFields { get; init; } = new HashSet<string>();
+
+        // The response schema: attribute fields the caller may see.
+        public IReadOnlyList<MetadataV2Field> SchemaFields { get; init; } = [];
     }
 
     private readonly record struct GrpcLayerContext(
