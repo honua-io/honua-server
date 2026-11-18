@@ -117,7 +117,10 @@ public static class ObjectStorageBuiltInConnections
     // Relative to FileStorage:AwsS3:KeyPrefix ("gp/" covers the geoprocessing output prefix); the configured
     // PMTiles prefix is added.
     private static readonly string[] ServerFolders =
-        ["imports/", "exports/", "publications/", "audit/", "gp/", "studio-deliverables/", "custom-code/", "pmtiles/"];
+    [
+        "imports/", "exports/", "publications/", "audit/", "gp/", "studio-deliverables/", "custom-code/", "pmtiles/",
+        "mapserver/", "imageserver/", "temporary-files/", "attachments/",
+    ];
 
     public static IReadOnlyList<ObjectStorageConnection> From(CloudStorageOptions storage, ObjectStorageBuiltInOptions builtIn)
     {
